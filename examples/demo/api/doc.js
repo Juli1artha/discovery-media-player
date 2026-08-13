@@ -50,8 +50,18 @@ module.exports = async function handler(req, res) {
   // `/` et `/preview/<nom>` sont réécrits ici (cf. vercel.json). On construit les paramètres de
   // l'aperçu côté serveur : le visiteur ne voit jamais de chemin de fichier dans son navigateur,
   // et la garde de stockage reste seule juge de ce qui est lisible.
-  if (q.demo === "1" || q.name) {
-    const nom = path.basename(String(q.name || "sample.pdf"));
+  // ⚠️ `doc`, PAS `name` — et cette lettre a coûté un déploiement.
+  //
+  // La condition testait `q.name`. Or l'URL que le player construit lui-même pour aller chercher
+  // le fichier porte `name=sample.pdf` : cette requête entrait donc dans la branche, se faisait
+  // réécrire, PERDAIT son `stream=1`, et recevait la page HTML à la place du PDF. La visionneuse
+  // affichait « Impossible d'afficher ce document » — vrai, et sans indice.
+  //
+  // Mon propre test l'avait signalé avant le déploiement. Je l'ai écarté en me disant que le cas
+  // ne se présenterait pas. Un paramètre qui n'appartient qu'à ce fichier ne peut pas entrer en
+  // collision avec ceux du player.
+  if (q.demo === "1" || q.doc) {
+    const nom = path.basename(String(q.doc || "sample.pdf"));
     req.query = {
       preview: "1",
       name: nom,

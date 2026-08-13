@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     { "source": "/", "destination": "/api/doc?demo=1" },
-    { "source": "/preview/:name", "destination": "/api/doc?name=:name" }
+    { "source": "/preview/:name", "destination": "/api/doc?doc=:name" }
   ],
   "functions": {
     "api/doc.js": { "includeFiles": "documents/**" }
