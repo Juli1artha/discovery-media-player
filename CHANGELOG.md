@@ -51,6 +51,26 @@ The **host contract** has its own version, independent of the package version: i
   *Both changes come from the first third-party integration. The extraction had gone further than
   its own instructions said.*
 
+## [0.1.5] — 2026-08-13
+
+### Added
+- **A warning when embedding is requested with no host allowed to frame it.** With
+  `DOC_FRAME_ANCESTORS` empty, only a same-origin page and `*.vercel.app` may frame the viewer;
+  any other parent is blocked **by the browser, before the page loads** — so no `embed-denied` can
+  be sent, and the host sees a silence indistinguishable from an unreachable instance. This is the
+  one failure the player cannot signal to the host, so it now signals it to the operator, at the
+  only moment it can know: when serving an embedded page.
+- **A live demo** (`examples/demo`): one function, one dependency, no database and no secret.
+
+### Changed
+- Contract: the fourth requirement of *"the host serves the file"* gains its corollary — **when
+  the reference itself carries a capability, signing is not enough; it must be encrypted.**
+  *Signed* means nobody can forge it. It has never meant nobody can read it.
+- Contract: the search criteria you use to inventory your document-opening doors decides what you
+  find. Search by what the user **obtains**, not by the technique you expect.
+
+  *(All three come from the first host's real switchover.)*
+
 ## [Unreleased]
 
 ### Added

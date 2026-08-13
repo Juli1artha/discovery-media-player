@@ -125,9 +125,19 @@ which has already cost one host half a day.
 
 | Variable | |
 |---|---|
-| `DOC_FRAME_ANCESTORS` | extra domains allowed to frame the viewer (`?embed=1`) |
+| `DOC_FRAME_ANCESTORS` | domains allowed to frame the viewer (`?embed=1`) — **see the warning below** |
 | `PLAYER_PLUGINS_OFF` | disable optional modules: `bot`, `botBrowser`, `avatarClips`, `brandIntro`, `visitors`, `providerQuotas` |
 | `GOOGLE_MAPS_API_KEY` | map and Street View in presentations (restrict it by referrer) |
+
+⚠️ **Without `DOC_FRAME_ANCESTORS`, nobody can display the viewer in an iframe** — and the failure
+is the worst kind. Only a same-origin page and `*.vercel.app` may frame it by default; any other
+parent is blocked **by the browser, before the page loads**. So no `embed-denied` can be sent, and
+the host sees a silence indistinguishable from an unreachable instance. A host that falls back
+after a timeout will open the document in the browser's own viewer, untracked.
+
+This is the exact counterpart of `PLAYER_HOST_AUTHZ_URL`: without that one, nobody can **send**;
+without this one, nobody can **display**. The player logs a warning the first time an embedded page
+is served with no configured ancestor — it is the only moment at which it can know.
 
 ⚠️ Turning off `visitors` removes the access wall. Documents marked "sign-in required" then return
 **404** — they never become freely readable. That fail-closed default is not to be softened.

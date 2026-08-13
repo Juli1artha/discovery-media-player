@@ -2714,10 +2714,22 @@ async function handler(req, res) {
     // (+ extras via DOC_FRAME_ANCESTORS, séparés par des espaces — futurs domaines
     // custom d'XP). La CSP frame-ancestors PRIME sur le X-Frame-Options SAMEORIGIN
     // global du vercel.json (spec : XFO ignoré quand frame-ancestors est présent).
+    // ⚠️ EMBARQUEMENT DEMANDÉ SANS HÔTE AUTORISÉ : le seul cas où le player ne peut pas se
+    // défendre lui-même. C'est le NAVIGATEUR qui bloque, avant que la page ne soit chargée —
+    // donc aucun `embed-denied` ne peut partir, et l'hôte voit un silence indiscernable d'une
+    // instance injoignable. Le signaler ici est la seule occasion : c'est le moment exact où l'on
+    // sait qu'on est destiné à être encadré. Sans DOC_FRAME_ANCESTORS, personne ne peut AFFICHER,
+    // exactement comme sans PLAYER_HOST_AUTHZ_URL personne ne peut DIFFUSER.
+    if (share.embed && !(PLAYER.config.extraFrameAncestors || []).length) {
+      try {
+        PLAYER.errors.capture(
+          new Error("?embed=1 demandé mais DOC_FRAME_ANCESTORS est vide : seuls une page de même origine et *.vercel.app peuvent encadrer cette instance"),
+          { route: "doc", indice: "le navigateur bloquera l'iframe avant le chargement — aucun embed-denied ne partira" },
+        );
+      } catch { /* jamais bloquant */ }
+    }
     const frameAncestors = share.embed
-      ? ["'self'", "https://*.vercel.app"]
-          .concat(String(process.env.DOC_FRAME_ANCESTORS || "").split(/\s+/).filter(Boolean))
-          .join(" ")
+      ? embedFrameAncestors()
       : "'self'";
     return sendHtml(res, 200, viewerHtml(share, nonce, logoUrl, pitch), `'nonce-${nonce}'`, [originOf(logoUrl), originOf(share.bot_avatar), originOf(share.brand_logo)].filter(Boolean).join(" "), frameAncestors);
   } catch (error) {

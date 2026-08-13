@@ -1,0 +1,10 @@
+{
+  "name": "discovery-media-player-demo",
+  "private": true,
+  "version": "1.0.0",
+  "description": "The live demo: the player, a folder, one PDF. No database, no secret.",
+  "dependencies": {
+    "discovery-media-player": "0.1.4"
+  },
+  "engines": { "node": ">=18" }
+}

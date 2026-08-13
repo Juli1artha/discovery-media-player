@@ -30,6 +30,11 @@ to a third-party SaaS.
 
 ## Try it in two minutes
 
+**[▶ Open the live demo](https://discovery-media-player-demo.vercel.app)** — a document, in the
+real viewer, nothing to install.
+
+Or on your own machine, over your own files:
+
 ```bash
 docker run --rm -p 3000:3000 -v "$PWD/documents:/data" ghcr.io/juli1artha/discovery-media-player
 ```

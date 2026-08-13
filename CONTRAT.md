@@ -236,6 +236,13 @@ laissent aujourd'hui tout membre connecté lire, l'élévation n'existe pas enco
 au premier resserrement, des mois plus tard, et personne ne fera le lien entre « on a restreint un
 accès » et « une route signe encore n'importe quoi ».
 
+**Corollaire, rencontré par le même hôte une semaine plus tard : quand ce que la référence
+TRANSPORTE est elle-même une capacité, signer ne suffit pas — il faut chiffrer.** Une référence
+signée reste lisible : le base64 se décode. *Signé* veut dire « personne ne peut le forger » ; ça
+n'a jamais voulu dire « personne ne peut le lire ». Si votre référence contient une URL qui sert le
+fichier sans authentification et que rien n'expire, la publier en clair revient à publier le
+fichier.
+
 *(Signalée par le second hôte après l'avoir rencontrée en basculant ses premières surfaces.
 Vérifiée chez l'hôte historique le jour même : une route y signait un chemin reçu du client,
 derrière une liste NOIRE de rôles — un compte d'espace client passait, et tout rôle créé plus tard
@@ -401,7 +408,13 @@ documents **sans passer par le player**, donc sans être comptée. Ce n'est pas 
 c'est la pente naturelle d'un produit vivant — un `<iframe src="....pdf">` s'écrit en dix secondes.
 
 **Chaque hôte doit tenir la liste de ses portes et la rechasser périodiquement.** Une recherche
-suffit : `.pdf`, `window.open`, `<embed`, `<iframe` sur un fichier, `application/pdf`. Le tableau
+suffit : `.pdf`, `window.open`, `<embed`, `<iframe` sur un fichier, `application/pdf`.
+
+⚠️ **Et le critère de recherche décide de ce qu'on trouve.** Un hôte a inventorié ses portes en
+cherchant les appels de son moteur de stockage — et a manqué son plus gros gisement de documents,
+parce que ces fichiers-là ne sont pas dans son stockage. Aucune recherche de cette forme ne pouvait
+les voir. Cherchez par ce que l'utilisateur OBTIENT (un document qui s'ouvre), pas par la
+technique que vous vous attendez à trouver. Le tableau
 des portes recensées vit chez chaque hôte, pas ici. La règle, elle, est commune : **une porte non
 recensée est une lecture non comptée**, et l'écart ne se voit dans aucune statistique — il se voit
 seulement quand quelqu'un le cherche.
