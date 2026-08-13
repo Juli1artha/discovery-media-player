@@ -1,0 +1,11 @@
+{
+  "name": "player-in-express",
+  "private": true,
+  "version": "1.0.0",
+  "type": "commonjs",
+  "dependencies": {
+    "discovery-media-player": "^0.1.0",
+    "express": "^4.19.2"
+  },
+  "engines": { "node": ">=18" }
+}

@@ -1,0 +1,46 @@
+{
+  "name": "discovery-media-player",
+  "version": "0.1.0",
+  "description": "Self-hosted document viewer: per-recipient tracked links, reading analytics, live presentation. The core knows nothing about the application hosting it — everything it borrows arrives through an injected context.",
+  "keywords": [
+    "pdf-viewer", "document-tracking", "read-receipts", "document-analytics",
+    "live-presentation", "self-hosted", "pdfjs", "sales-enablement"
+  ],
+  "license": "AGPL-3.0-or-later",
+  "author": "3D Discovery",
+  "homepage": "https://github.com/Juli1artha/discovery-media-player#readme",
+  "repository": { "type": "git", "url": "git+https://github.com/Juli1artha/discovery-media-player.git" },
+  "bugs": { "url": "https://github.com/Juli1artha/discovery-media-player/issues" },
+  "main": "server/handler.js",
+  "bin": { "discovery-media-player": "bin/serve.js" },
+  "files": ["bin", "context", "server", "src", "supabase", "README.md", "CONTRAT.md", "LICENSE", "LICENSE-MIT"],
+  "exports": {
+    ".": "./server/handler.js",
+    "./shares": "./server/shares.js",
+    "./presentations": "./server/presentations.js",
+    "./brands": "./server/brands.js",
+    "./context/standalone": "./context/standalone.js",
+    "./context/storage": "./context/storage.js",
+    "./bridge": "./src/bridge.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "start": "node bin/serve.js",
+    "build": "node build/bundle.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint bin context server src build",
+    "lint:fix": "eslint bin context server src build --fix",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "engines": { "node": ">=18" },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "esbuild": "0.21.5",
+    "eslint": "^9.39.4",
+    "typescript": "^5.5.4",
+    "typescript-eslint": "^8.46.4",
+    "vitest": "^2.1.9"
+  }
+}

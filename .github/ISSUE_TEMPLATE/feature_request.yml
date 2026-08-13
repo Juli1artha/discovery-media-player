@@ -1,0 +1,22 @@
+name: Feature request
+description: Something the player should be able to do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What are you trying to do that you cannot?
+      description: The situation, not the solution. Most good features here started as a host describing a wall it hit.
+    validations: { required: true }
+  - type: textarea
+    id: today
+    attributes:
+      label: How are you working around it today?
+    validations: { required: true }
+  - type: checkboxes
+    id: boundary
+    attributes:
+      label: Does it change what a host application can call?
+      options:
+        - label: Yes — I have read CONTRAT.md and this changes the host boundary.
+        - label: No — it is internal to the player.

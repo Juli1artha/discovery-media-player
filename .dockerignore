@@ -1,0 +1,9 @@
+.git
+.github
+node_modules
+docs
+examples
+**/__tests__
+*.md
+!README.md
+documents

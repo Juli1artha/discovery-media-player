@@ -1,0 +1,23 @@
+# Le mode dossier : un lecteur de documents sur votre machine, sans base ni compte.
+#
+#   docker compose up
+#   → http://localhost:3000/preview/<votre-fichier>.pdf
+#
+# Pour les liens tracés, les statistiques et la présentation en direct, décommentez le bloc
+# `environment` et passez `supabase/init.sql` sur une base neuve. Cf. docs/CONFIGURATION.md.
+
+services:
+  player:
+    build: .
+    # image: ghcr.io/juli1artha/discovery-media-player:latest   # sans construire
+    ports: ["3000:3000"]
+    volumes:
+      # ⚠️ En lecture seule : le player sert des documents, il n'en écrit jamais. Le monter
+      # autrement lui donnerait un droit dont il n'a aucun usage.
+      - ./documents:/data:ro
+    environment:
+      PLAYER_BRAND_NAME: ""          # vide = neutre : aucune marque affichée
+      # SUPABASE_URL: https://xxxx.supabase.co
+      # SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      # PLAYER_SOURCE_URL: https://github.com/Juli1artha/discovery-media-player
+    restart: unless-stopped

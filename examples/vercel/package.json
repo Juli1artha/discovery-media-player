@@ -1,0 +1,10 @@
+{
+  "name": "my-player-instance",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Wiring for a Discovery Media Player instance.",
+  "dependencies": {
+    "discovery-media-player": "^0.1.0"
+  },
+  "engines": { "node": ">=18" }
+}
