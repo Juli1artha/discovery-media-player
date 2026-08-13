@@ -14,8 +14,8 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           # ⚠️ npm ≥ 11.5 est la version minimale qui sait s'authentifier auprès de npm par OIDC.
           # Sur une version antérieure, npm ignore le jeton d'identité et cherche un NODE_AUTH_TOKEN
