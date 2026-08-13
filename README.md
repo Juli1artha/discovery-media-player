@@ -1,6 +1,11 @@
 <div align="center">
 
-# Discovery Media Player
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Juli1artha/discovery-media-player/main/assets/logo-dark.svg">
+  <img alt="Discovery Media Player" src="https://raw.githubusercontent.com/Juli1artha/discovery-media-player/main/assets/logo.svg" width="520">
+</picture>
+
+<br><br>
 
 **Send a document. Know if it was read.**
 
@@ -137,6 +142,11 @@ Found a hole? [`SECURITY.md`](SECURITY.md) — please do not open a public issue
 if you run a modified version and people read documents through it over a network, they must be
 able to obtain your source. Set `PLAYER_SOURCE_URL` to where yours lives — the pages served
 link to it.
+
+**The name and the logo are not covered by it.** `assets/` and the words *Discovery Media
+Player* are trademarks of 3D Discovery: fork the code freely, but call your fork something else.
+This is the usual arrangement in open source, and it protects you as much as us — nobody should
+be able to publish something under this name that we did not write.
 
 One exception, on purpose: **[`src/bridge.ts`](src/bridge.ts) is MIT**
 ([`LICENSE-MIT`](LICENSE-MIT)). It is the message contract a host application imports to talk to
