@@ -2557,6 +2557,12 @@ async function handler(req, res) {
         capabilities: [
           "docshare", "presentations", "embed-denied", "host-fetch", "brand-reference",
         ],
+        // ⚠️ POUR QUELLES ORIGINES cette instance accepte d'être encadrée. Un booléen ne
+        // suffisait pas : un hôte a besoin de voir que SON domaine manque, pas seulement que
+        // l'intégration est possible. C'est la seule panne qu'il ne peut pas diagnostiquer
+        // autrement — le navigateur bloque avant tout script, et rien ne peut lui être émis.
+        // Ce n'est pas un secret : ces mêmes valeurs partent dans chaque en-tête CSP servi.
+        frameAncestors: ["'self'", "https://*.vercel.app"].concat(PLAYER.config.extraFrameAncestors || []),
         // Greffons de l'hôte : présents ou coupés (PLAYER_PLUGINS_OFF). Booléens uniquement.
         plugins: {
           bot: !!p.bot, visitors: !!p.visitors, brandIntro: !!p.brandIntro,
@@ -2612,7 +2618,12 @@ async function handler(req, res) {
       const supaKey = process.env.SUPABASE_PUBLISHABLE_KEY || "";
       let alogo = ""; try { alogo = await PLAYER.branding.logo(); } catch { /* sans logo */ }
       const anonce = crypto.randomBytes(16).toString("base64");
-      return sendPresentHtml(res, presentHtml(pres, anonce, alogo, supaUrl, supaKey), anonce, supaUrl, originOf(alogo));
+      // Même sujet, trouvé en vérifiant le précédent : cette page ne passait AUCUN paramètre,
+      // donc `frame-ancestors 'none'` — encadrable par personne, pas même par sa propre origine.
+      // `'none'` reste le défaut hors intégration (anti-clickjacking) ; en `?embed=1`, un hôte
+      // qui affiche l'audience dans son application doit pouvoir le faire.
+      return sendPresentHtml(res, presentHtml(pres, anonce, alogo, supaUrl, supaKey), anonce, supaUrl,
+        originOf(alogo), embed ? embedFrameAncestors() : "'none'");
     }
 
     // Aperçu interne (depuis la bibliothèque) : même visionneuse pdf.js, SANS lien tracé ni suivi.
@@ -2633,7 +2644,18 @@ async function handler(req, res) {
       const pnonce = crypto.randomBytes(16).toString("base64");
       // Aperçu interne : CSP relâchée (supabase-js jsdelivr + Realtime wss) pour la présence + le chat live,
       // framing MÊME ORIGINE (iframe DocViewer). La visionneuse PUBLIQUE /doc/:slug garde sa CSP stricte.
-      return sendPresentHtml(res, viewerHtml(pseudo, pnonce, plogo), pnonce, supaUrl, originOf(plogo), "'self'");
+      // ⚠️ `'self'` ÉTAIT ÉCRIT EN DUR ICI, et l'hypothèse était juste jusqu'au jour où elle a
+      // cessé de l'être. Chez l'hôte d'origine, l'application et le player sont le MÊME
+      // déploiement : même origine, `'self'` suffit, et c'est même le bon réglage. Pour une
+      // instance séparée — c'est toute la raison d'être d'une seconde instance — l'aperçu est sur
+      // un domaine et l'application sur un autre. Le navigateur bloquait alors l'iframe avant
+      // tout script : aucun `embed-denied` ne pouvait partir, et l'hôte voyait un silence.
+      //
+      // Conséquence absurde relevée par cet hôte : la page de REFUS, corrigée la veille, était
+      // encadrable chez lui — pas la page de SUCCÈS. Le chemin d'erreur était plus portable que
+      // le chemin nominal.
+      return sendPresentHtml(res, viewerHtml(pseudo, pnonce, plogo), pnonce, supaUrl, originOf(plogo),
+        embed ? embedFrameAncestors() : "'self'");
     }
 
     const share = slug ? await getShareBySlug(slug) : null;

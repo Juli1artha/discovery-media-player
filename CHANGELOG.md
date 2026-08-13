@@ -71,6 +71,27 @@ The **host contract** has its own version, independent of the package version: i
 
   *(All three come from the first host's real switchover.)*
 
+## [0.1.6] — 2026-08-13
+
+### Fixed
+- **A separate instance could not be framed by its own host — on the success path only.** The
+  internal preview branch had `frame-ancestors 'self'` written as a literal, so
+  `DOC_FRAME_ANCESTORS` was never consulted there. True while the application and the player share
+  a deployment; false the moment an instance is separate — which is the entire point of a separate
+  instance. Nothing signalled it.
+
+  The absurd consequence, spotted by the host: the **refusal** page was framable (fixed the day
+  before, on their report) while the **success** page was not. The error path was more portable
+  than the nominal one.
+- **The audience page passed no ancestors at all**, so `frame-ancestors 'none'` — framable by
+  nobody, not even by its own origin. Found while checking the first.
+
+### Added
+- **`frameAncestors` in `GET /api/doc?contract=1`.** A boolean would not have been enough: a host
+  needs to see that *its own domain* is missing, not merely that embedding is possible. This is
+  the one failure a host cannot diagnose — the browser blocks before any script runs, so nothing
+  can be emitted to it. Now it can see the mismatch without opening a single document.
+
 ## [Unreleased]
 
 ### Added

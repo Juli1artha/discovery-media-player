@@ -30,10 +30,17 @@
    reste ne va pas.
 
    ```json
-   { "product": "discovery-media-player", "contract": 1, "version": "0.1.0",
+   { "product": "discovery-media-player", "contract": 1, "version": "0.1.6",
      "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference"],
+     "frameAncestors": ["'self'", "https://*.vercel.app", "https://app.exemple.fr"],
      "plugins": { "bot": true, "visitors": true, "brandIntro": true, "botBrowser": true, "providerQuotas": true } }
    ```
+
+   ⚠️ **`frameAncestors` dit POUR QUELLES ORIGINES l'instance accepte d'être encadrée.** Un hôte
+   qui ne s'y trouve pas ne verra jamais la visionneuse : le navigateur bloque l'iframe **avant
+   tout script**, donc aucun `embed-denied` ne peut partir, et l'hôte voit un silence
+   indiscernable d'une instance injoignable. C'est la seule panne qu'un hôte ne peut pas
+   diagnostiquer autrement — **vérifiez que votre domaine y figure avant d'ouvrir un document.**
 
    **`contract` est LE champ à épingler** : il ne bouge que sur une rupture (règle 2) — ajouter une
    action, un paramètre ou un motif de refus ne le change pas. `capabilities` se teste par
