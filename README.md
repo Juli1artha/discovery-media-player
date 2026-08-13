@@ -18,6 +18,12 @@ to a third-party SaaS.
 [![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen.svg)](package.json)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io-informational.svg)](#docker)
 
+<br>
+
+<img src="https://raw.githubusercontent.com/Juli1artha/discovery-media-player/main/assets/captures/viewer.png" alt="The viewer: a document, a toolbar, and the tracked-reading timer running" width="900">
+
+<br>
+
 </div>
 
 ---
@@ -28,9 +34,11 @@ to a third-party SaaS.
 docker run --rm -p 3000:3000 -v "$PWD/documents:/data" ghcr.io/juli1artha/discovery-media-player
 ```
 
-Drop a PDF in `./documents`, open `http://localhost:3000/preview/your-file.pdf`. No database,
-no account, no configuration — the viewer, progressive page loading, and the reading timer all
-work from a folder on disk.
+Drop a PDF in `./documents` and open `http://localhost:3000`. No database, no account, no
+configuration — the viewer, progressive page loading and the reading timer all work from a folder
+on disk.
+
+<img src="https://raw.githubusercontent.com/Juli1artha/discovery-media-player/main/assets/captures/folder.png" alt="Folder mode: the server lists what it can display" width="760">
 
 From source, the same thing:
 
