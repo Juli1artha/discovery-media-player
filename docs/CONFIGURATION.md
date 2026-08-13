@@ -81,10 +81,29 @@ live work".
 | `PLAYER_HOST_AUTHZ_URL` | who may send, revoke, or read analytics |
 | `PLAYER_HOST_BRAND_URL` | resolves a client's brand from the key carried by a link |
 
-Both are called server-to-server with the same shared secret. **Unset means refusal** — a right
-that cannot be granted is not granted. Both must answer fast or not at all: a decision that hangs
-is a decision that is missing, and the player will never let either of them stop a document from
-opening.
+Both are called **POST JSON, server-to-server**, with the shared secret in the
+`x-player-fetch-secret` header. Timeout: 4 seconds.
+
+```
+PLAYER_HOST_AUTHZ_URL
+→  { "email": "…", "role": "…", "action": "create|list|list.all|revoke|setauth|overview|sessions|test" }
+←  { "allowed": true }        // strict boolean — anything else means refused
+
+PLAYER_HOST_BRAND_URL
+→  { "key": "…" }
+←  { "logo": "https://…", "name": "…", "dark": false }   or {} / null when unknown
+```
+
+⚠️ **Only `allowed` is read, and it must be a boolean.** `{"canManageShares": true}` means
+refused. The `email` is the authoritative identity — `role` is what the session token carried
+(`app_metadata.role`); a host whose roles live in its own database ignores it and looks them up
+from the email. That is expected, not a workaround. The token is already verified by the player
+before the call: your route does not receive it and must not re-verify it.
+
+**Unset means refusal** — a right that cannot be granted is not granted. Unreachable, timed out,
+non-JSON, or a wrongly-typed `allowed`: the player stays fail-closed **and logs the cause**.
+Without that, "my route answers badly" and "the right is denied" look identical from the outside,
+which has already cost one host half a day.
 
 ## Embedding and plugins
 

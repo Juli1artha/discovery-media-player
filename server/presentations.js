@@ -131,7 +131,13 @@ async function endPresentation(slug, control) {
 const ATT_KINDS = { "image/png": "image", "image/jpeg": "image", "image/webp": "image", "image/gif": "image", "application/pdf": "pdf" };
 async function createUploadUrl(slug, name, type) {
   const base = (process.env.SUPABASE_URL || "").replace(/\/+$/, ""); const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-  const kind = ATT_KINDS[String(type || "").toLowerCase()];
+  // ⚠️ `Object.hasOwn` et pas une simple lecture : un objet littéral hérite de `constructor`,
+  // `toString`, `valueOf`, `__proto__`… `ATT_KINDS["constructor"]` rend une FONCTION, donc une
+  // valeur vraie — la garde juste en dessous laissait alors passer un type qui n'a jamais été
+  // autorisé, et signait une URL d'envoi pour lui. Le type est fourni par l'appelant, sur une
+  // action publique. Signalé par un hôte tiers qui venait de trouver la même forme chez lui.
+  const demande = String(type || "").toLowerCase();
+  const kind = Object.hasOwn(ATT_KINDS, demande) ? ATT_KINDS[demande] : null;
   if (!kind || !slug || !base || !KEY) return { ok: false, status: 400 };
   const safe = (String(name || "fichier").replace(/[^a-zA-Z0-9._-]/g, "_").slice(-60)) || "fichier";
   const path = `${String(slug).replace(/[^a-zA-Z0-9._-]/g, "")}/${Date.now()}-${crypto.randomBytes(4).toString("hex")}-${safe}`;
@@ -140,6 +146,33 @@ async function createUploadUrl(slug, name, type) {
   const d = await r.json().catch(() => null); const url = d && d.url; if (!url) return { ok: false, status: 502 };
   const token = (String(url).split("token=")[1] || "").split("&")[0];
   return { ok: true, path, token, kind, publicUrl: `${base}/storage/v1/object/public/present-attachments/${path}` };
+}
+
+/**
+ * Les champs d'un message qui ont le droit de sortir du serveur.
+ *
+ * ⚠️ LISTE BLANCHE, jamais une liste noire. `author_hash` est l'empreinte du jeton qui autorise
+ * à éditer et supprimer ce message : le diffuser à toute l'audience donnerait à chacun le droit
+ * de réécrire les messages des autres. Une ligne de table renvoyée telle quelle emporterait ce
+ * champ sans que personne ne le remarque — d'où la projection explicite, ici et nulle part
+ * ailleurs. C'est le même jeu de champs que celui servi à l'historique.
+ */
+const CHAMPS_PUBLICS = [
+  "id", "author_name", "author_email", "author_avatar", "is_presenter", "is_member",
+  "body", "attachment", "reactions", "reply_to", "reply_name", "reply_text",
+  "deleted", "edited", "created_at",
+];
+function messagePublic(row) {
+  if (!row || typeof row !== "object") return null;
+  const out = {};
+  for (const c of CHAMPS_PUBLICS) if (c in row) out[c] = row[c];
+  return out;
+}
+
+/** Renvoie la ligne telle qu'elle est après écriture — sans jamais renvoyer plus que le public. */
+function premierPublic(reponse) {
+  const row = Array.isArray(reponse) ? reponse[0] : reponse;
+  return messagePublic(row);
 }
 
 async function addMessage(slug, { name, email, avatar, isPresenter, isMember, body, replyTo, replyName, replyText, authorToken, attachment }) {
@@ -159,8 +192,10 @@ async function addMessage(slug, { name, email, avatar, isPresenter, isMember, bo
     author_hash: authorToken ? sha(authorToken) : null,
     reply_to: rt, reply_name: rt ? ((replyName || "").slice(0, 80) || null) : null, reply_text: rt ? ((replyText || "").slice(0, 140) || null) : null,
   };
-  await PLAYER.db.request("doc_presentation_messages", { method: "POST", headers: { Prefer: "return=minimal" }, body: [row] });
-  return { ok: true };
+  // `return=representation` : c'est la ligne écrite qui part ensuite en diffusion vers l'audience.
+  // Sans elle, l'émetteur devrait deviner l'`id` et la date attribués par la base.
+  const cree = await PLAYER.db.request("doc_presentation_messages?select=*", { method: "POST", headers: { Prefer: "return=representation" }, body: [row] });
+  return { ok: true, message: premierPublic(cree) };
 }
 
 async function listMessages(slug) {
@@ -175,8 +210,8 @@ async function editMessage(slug, msgId, authorToken, body) {
   const rows = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&slug=eq.${enc(String(slug || ""))}&select=author_hash,deleted&limit=1`);
   const m = Array.isArray(rows) && rows[0]; if (!m || m.deleted) return { ok: false, status: 404 };
   if (!m.author_hash || m.author_hash !== sha(authorToken)) return { ok: false, status: 403 };
-  await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { body: b, edited: true } });
-  return { ok: true };
+  const maj = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&select=*`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: { body: b, edited: true } });
+  return { ok: true, message: premierPublic(maj) };
 }
 
 // Supprimer (soft) : l'auteur (jeton) OU le présentateur (control_token de la présentation).
@@ -189,8 +224,8 @@ async function deleteMessage(slug, msgId, { authorToken, control }) {
   let byPresenter = false;
   if (!byAuthor && control) { const pres = await getPresentation(slug); byPresenter = !!(pres && tokenMatches(control, pres.control_hash)); }
   if (!byAuthor && !byPresenter) return { ok: false, status: 403 };
-  await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { deleted: true, body: "", reactions: {}, attachment: null } });
-  return { ok: true };
+  const maj = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&select=*`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: { deleted: true, body: "", reactions: {}, attachment: null } });
+  return { ok: true, message: premierPublic(maj) };
 }
 
 // Verrouiller / déverrouiller le chat (présentateur uniquement).
@@ -212,8 +247,8 @@ async function toggleReaction(slug, msgId, emoji, reactor) {
   const i = arr.indexOf(who);
   if (i >= 0) arr.splice(i, 1); else arr.push(who);
   if (arr.length) cur[e] = arr; else delete cur[e];
-  await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { reactions: cur } });
-  return { ok: true };
+  const maj = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&select=*`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: { reactions: cur } });
+  return { ok: true, message: premierPublic(maj) };
 }
 
 // ── Statistiques de présentation (assistance) ────────────────────────────────────────────────────────────
@@ -316,4 +351,5 @@ async function listPresentationsForDoc(docId) {
   return list.map((p) => ({ slug: p.slug, presenterName: p.presenter_name, ownerName: p.owner_name, currentPage: p.current_page || 1, active: !!p.active, createdAt: p.created_at, endedAt: p.active ? null : p.updated_at, attendees: counts[p.slug] || 0 }));
 }
 
-module.exports = { init, createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent };
+module.exports = {
+  messagePublic, CHAMPS_PUBLICS, init, createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent };

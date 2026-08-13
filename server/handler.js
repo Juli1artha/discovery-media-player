@@ -230,6 +230,17 @@ var Live=(function(){
   // État de la présentation diffusé par le présentateur — même canal que la carte. Sert à se
   // passer de la lecture anonyme des tables : l'audience n'a plus besoin de lire la ligne.
   function sendState(p){try{if(ch)ch.send({type:'broadcast',event:'state',payload:p});}catch(e){}}
+  // CHAT EN DIFFUSION. Les messages arrivaient jusqu'ici par la lecture de TABLE en temps réel,
+  // qui exige que cette table soit lisible publiquement — donc, avec la clé publiable, les
+  // conversations de TOUTES les présentations, pas seulement la sienne. C'était le dernier
+  // obstacle avant de pouvoir fermer cette lecture.
+  // L'émetteur diffuse la ligne que le serveur vient d'écrire ; les autres l'ajoutent chez eux.
+  // ⚠️ La diffusion ne revient pas à son émetteur : il ajoute donc SA copie lui-même.
+  function sendMsg(m){if(!m)return;try{if(ch)ch.send({type:'broadcast',event:'msg',payload:m});}catch(e){}}
+  function sendMsgUpd(m){if(!m)return;try{if(ch)ch.send({type:'broadcast',event:'msg-upd',payload:m});}catch(e){}}
+  // Édition, suppression, réaction : le serveur renvoie la ligne à jour, on l'applique chez soi
+  // puis on la diffuse. Même chemin pour les trois — une seule façon de se tromper.
+  function majDiffusee(r){return r.json().then(function(d){if(d&&d.ok&&d.message){updateMsg(d.message);sendMsgUpd(d.message);}}).catch(function(){});}
   function onState(fn){_onState=fn;}
   // Badge « non lus » sur le bouton chat/FAB (panneau fermé) + pulse du FAB. Aperçu (ticker) au nouveau message.
   function chatHidden(){var pn=document.getElementById('chatPanel');return !pn||pn.classList.contains('hidden');}
@@ -276,17 +287,23 @@ var Live=(function(){
   function cmClass(m){return Player.chat.messageClassName(m,ME,isMentioned(m));}
   function hydratePdf(d,m){if(m&&m.attachment&&m.attachment.kind==='pdf'&&!m.deleted){var ph=d.querySelector('.cm-att-ph');if(ph)pdfThumb(m.attachment.url,ph);}}
   function pdfThumb(url,ph){if(!ph)return;if(pdfCache[url]){ph.innerHTML='<img src="'+pdfCache[url]+'" alt="">';return;}if(!window.pdfjsLib)return;try{pdfjsLib.getDocument(url).promise.then(function(pdf){return pdf.getPage(1);}).then(function(pg){var v0=pg.getViewport({scale:1}),sc=Math.min(1.6,208/v0.width),vp=pg.getViewport({scale:sc}),cv=document.createElement('canvas');cv.width=Math.ceil(vp.width);cv.height=Math.ceil(vp.height);return pg.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise.then(function(){var u=cv.toDataURL('image/jpeg',0.8);pdfCache[url]=u;ph.innerHTML='<img src="'+u+'" alt="">';});}).catch(function(){});}catch(e){}}
-  function addMsg(m){if(m.id&&seen[m.id])return;if(m.id)seen[m.id]=1;var box=document.getElementById('chatMsgs');if(!box)return;var em=box.querySelector('.chat-empty');if(em)em.remove();
+  // Renvoie true seulement si le message a réellement été AJOUTÉ. Pendant la transition, il
+  // arrive par deux voies (diffusion et lecture de table) : sans cette réponse, l'affichage était
+  // bien dédoublonné mais le compteur de non-lus comptait deux fois — une pastille à 2 pour un
+  // seul message. Le dédoublonnage doit valoir pour tout ce qui suit l'arrivée, pas seulement
+  // pour le rendu.
+  function addMsg(m){if(m.id&&seen[m.id])return false;if(m.id)seen[m.id]=1;var box=document.getElementById('chatMsgs');if(!box)return;var em=box.querySelector('.chat-empty');if(em)em.remove();
     if(m.id)msgData[m.id]=m;
     var d=document.createElement('div');d.className=cmClass(m);if(m.id)d.setAttribute('data-id',m.id);
     d.innerHTML=renderMsgInner(m);
-    if(m.id)msgEls[m.id]=d;box.appendChild(d);box.scrollTop=box.scrollHeight;hydratePdf(d,m);}
+    if(m.id)msgEls[m.id]=d;box.appendChild(d);box.scrollTop=box.scrollHeight;hydratePdf(d,m);
+    return true;}
   function updateMsg(m){if(!m.id)return;msgData[m.id]=m;var d=msgEls[m.id];if(!d)return;d.className=cmClass(m);d.innerHTML=renderMsgInner(m);hydratePdf(d,m);}
   function startEdit(id){var d=msgEls[id],m=msgData[id];if(!d||!m||m.deleted)return;var txt=d.querySelector('.txt');if(!txt)return;var inp=document.createElement('input');inp.className='cm-edit-in';inp.value=m.body||'';txt.replaceWith(inp);inp.focus();
-    function fin(save){var v=(inp.value||'').trim();if(save&&v&&v!==m.body){fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-msg-edit',slug:SLUG,msgId:+id,authorToken:authToken(),body:v})}).catch(function(){});}d.innerHTML=renderMsgInner(m);}
+    function fin(save){var v=(inp.value||'').trim();if(save&&v&&v!==m.body){fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-msg-edit',slug:SLUG,msgId:+id,authorToken:authToken(),body:v})}).then(majDiffusee).catch(function(){});}d.innerHTML=renderMsgInner(m);}
     inp.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();fin(true);}else if(e.key==='Escape'){fin(false);}});
     inp.addEventListener('blur',function(){fin(false);});}
-  function delMsg(id){fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-msg-delete',slug:SLUG,msgId:+id,authorToken:authToken(),control:CONTROL})}).catch(function(){});}
+  function delMsg(id){fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-msg-delete',slug:SLUG,msgId:+id,authorToken:authToken(),control:CONTROL})}).then(majDiffusee).catch(function(){});}
   // Modale de confirmation maison (l'iframe de présentation ne peut pas utiliser le useConfirm React). Repli window.confirm si absente.
   function confirmDialog(opts,onOk){opts=opts||{};var m=document.getElementById('lModal');if(!m){if(!onOk)return;if(window.confirm(opts.title||'Confirmer ?'))onOk();return;}
     var t=document.getElementById('lModalT'),d=document.getElementById('lModalD'),y=document.getElementById('lModalYes'),n=document.getElementById('lModalNo');
@@ -297,14 +314,17 @@ var Live=(function(){
     if(y)y.onclick=function(){close();if(onOk)onOk();};if(n)n.onclick=close;m.onclick=function(e){if(e.target===m)close();};
     document.addEventListener('keydown',key);m.classList.add('open');if(y)try{y.focus();}catch(e){}}
   function history(){fetch('/api/doc?present='+encodeURIComponent(SLUG)+'&chat=1').then(function(r){return r.json();}).then(function(d){var box=document.getElementById('chatMsgs');if(d&&d.messages&&d.messages.length){d.messages.forEach(function(m){addMsg(m);});}else if(box&&!box.children.length){box.innerHTML='<div class=chat-empty>Aucun message. Lancez la discussion.</div>';}if(d&&typeof d.locked!=='undefined')applyLock(d.locked);_histDone=true;}).catch(function(){_histDone=true;});}
-  function react(id,e){if(!ME||!id||!e)return;fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-react',slug:SLUG,msgId:+id,emoji:e,reactor:reactorId()})}).catch(function(){});}
+  function react(id,e){if(!ME||!id||!e)return;fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-react',slug:SLUG,msgId:+id,emoji:e,reactor:reactorId()})}).then(majDiffusee).catch(function(){});}
   function setReply(id){var m=msgData[id];if(!m||m.deleted)return;var nm=m.author_name||'Invité';replyCtx={id:+id,name:nm,text:(m.body||'').slice(0,120)};var el=document.getElementById('chatReply');if(el){el.style.display='flex';el.innerHTML='<span class=cq><b>'+esc(nm)+'</b> '+esc((m.body||'').slice(0,80))+'</span><button id=chatReplyX title=Annuler>×</button>';var x=document.getElementById('chatReplyX');if(x)x.addEventListener('click',clearReply);}var t=document.getElementById('chatText');if(t)t.focus();}
   function clearReply(){replyCtx=null;var el=document.getElementById('chatReply');if(el){el.style.display='none';el.innerHTML='';}}
   function send(){var i=document.getElementById('chatText');var t=(i.value||'').trim();if(!t||!ME)return;if(LOCKED&&!canMod())return;i.value='';toggleSend();
     var o={action:'present-chat',slug:SLUG,name:ME.name,email:ME.email,avatar:ME.avatar,isPresenter:ME.role==='presenter',isMember:!!ME.member,body:t,authorToken:authToken()};
     if(CONTROL)o.control=CONTROL;
     if(replyCtx){o.replyTo=replyCtx.id;o.replyName=replyCtx.name;o.replyText=replyCtx.text;clearReply();}
-    fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)}).catch(function(){});}
+    fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)})
+      .then(function(r){return r.json();})
+      .then(function(d){if(d&&d.ok&&d.message){addMsg(d.message);sendMsg(d.message);}})
+      .catch(function(){});}
   function uploadFile(file){if(!file||!ME||!sb)return;if(LOCKED&&!canMod())return;
     if(file.size>10*1024*1024){alert('Fichier trop volumineux (max 10 Mo).');return;}
     var s=document.getElementById('chatSend');if(s){s.disabled=true;s.textContent='…';}
@@ -377,8 +397,10 @@ var Live=(function(){
     try{sb=window.supabase.createClient(LIVECFG.supaUrl,LIVECFG.supaKey,{realtime:{params:{eventsPerSecond:10}}});
       ch=sb.channel('plive-'+slug,{config:{presence:{key:(me.email||me.name||'x')+':'+MYID}}});
       ch.on('presence',{event:'sync'},function(){renderPres(ch.presenceState());});
-      ch.on('postgres_changes',{event:'INSERT',schema:'public',table:'doc_presentation_messages',filter:'slug=eq.'+slug},function(p){if(p&&p.new){addMsg(p.new);notifyMsg(p.new);}});
+      ch.on('postgres_changes',{event:'INSERT',schema:'public',table:'doc_presentation_messages',filter:'slug=eq.'+slug},function(p){if(p&&p.new&&addMsg(p.new))notifyMsg(p.new);});
       ch.on('postgres_changes',{event:'UPDATE',schema:'public',table:'doc_presentation_messages',filter:'slug=eq.'+slug},function(p){if(p&&p.new)updateMsg(p.new);});
+      ch.on('broadcast',{event:'msg'},function(p){if(p&&p.payload&&addMsg(p.payload))notifyMsg(p.payload);});
+      ch.on('broadcast',{event:'msg-upd'},function(p){if(p&&p.payload)updateMsg(p.payload);});
       ch.on('broadcast',{event:'typing'},function(p){onTyping(p&&p.payload);});
       ch.on('broadcast',{event:'lock'},function(p){if(p&&p.payload)applyLock(p.payload.locked);});
       ch.on('broadcast',{event:'map'},function(p){if(_onMap&&p&&p.payload)_onMap(p.payload);});
@@ -2243,7 +2265,11 @@ async function handler(req, res) {
             return jp(200, { ok: true });
           }
           if (body.action === "bot-history") return jp(200, { ok: true, messages: await docbot.listMessages(String(body.sessionId || "")) });
-          const blang = docbot.I18N_LANGS[String(body.lang || "").toLowerCase()] ? String(body.lang).toLowerCase() : null; // fr/inconnu → null (langue source)
+          // ⚠️ Même piège : un objet littéral répond à `constructor`. Sans `Object.hasOwn`, une
+          // langue « constructor » passait la garde et finissait interpolée dans le prompt du
+          // modèle sous la forme « function Object() { [native code] } ».
+          const langueDemandee = String(body.lang || "").toLowerCase();
+          const blang = Object.hasOwn(docbot.I18N_LANGS, langueDemandee) ? langueDemandee : null; // fr/inconnu → null (langue source)
           if (body.action === "bot-start") return jp(200, { ok: true, ...(await docbot.botStart(share, pages, mobile, String(body.intent || ""), blang)) });
           // Bascule de langue EN COURS de présentation : renvoie le script (traduit ou FR) — le client
           // remplace sa liste d'étapes et rejoue le message courant dans la nouvelle langue.

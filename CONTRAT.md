@@ -271,6 +271,47 @@ d'environnement), et ce qui reste est du branchement. Un câblage qu'on ne pourr
 un câblage qui contient quelque chose qui n'a rien à y faire. *(Ce n'est pas un avis juridique :
 c'est la posture retenue, et elle est sûre dans les deux cas.)*
 
+### Les deux routes que le player appelle chez l'hôte
+
+⚠️ **Ces formats sont le contrat, pas une suggestion.** Ils manquaient à ce document : un hôte a
+écrit ses deux routes sur la *description* de `canManageShares`, ce qui donnait une intention juste
+et une forme fausse. Et le pire : **deux des trois écarts étaient silencieux** — une réponse d'une
+autre forme est lue comme un refus. Personne n'aurait pu diffuser un document, sans erreur nulle
+part, indiscernable d'un droit correctement refusé. On aurait cherché dans les rôles.
+
+Les deux routes sont appelées en **POST JSON, serveur à serveur**, avec le secret partagé dans
+l'en-tête `x-player-fetch-secret` (jamais en query). Délai : **4 secondes** — une décision qui tarde
+est une décision absente.
+
+**`PLAYER_HOST_AUTHZ_URL` — qui a le droit de diffuser**
+
+```
+→  { "email": "…", "role": "…", "action": "create|list|list.all|revoke|setauth|overview|sessions|test" }
+←  { "allowed": true }            // booléen STRICT ; tout le reste vaut refus
+```
+
+- **`email` est l'identité qui fait foi.** `role` est celui lu dans le jeton de session
+  (`app_metadata.role`) : un hôte dont les rôles vivent en base l'ignore et interroge la sienne à
+  partir de l'email. C'est un cas prévu, pas une entorse.
+- **Le jeton est déjà vérifié** par le player avant l'appel. La route n'a pas à le revalider — elle
+  ne le reçoit d'ailleurs pas.
+- **Seul `allowed` est lu**, et il doit être un booléen. `{ "canManageShares": true }` ou
+  `{ "allowed": "yes" }` valent refus. Le player le signale désormais dans son journal.
+
+**`PLAYER_HOST_BRAND_URL` — la marque d'un client**
+
+```
+→  { "key": "…" }                                  // la référence portée par le lien
+←  { "logo": "https://…", "name": "…", "dark": false }   ou   {} / null si inconnue
+```
+
+Une clé inconnue n'est pas une erreur : le lien retombe sur la marque de l'instance.
+
+**Une panne n'est plus muette.** Hôte injoignable, délai dépassé, réponse non-JSON, `allowed`
+d'un autre type : le player reste **fail-closed** (personne ne diffuse) mais l'écrit dans son
+journal, avec la cause. Sans ça, « ma route répond mal » et « le droit est refusé » se
+ressemblaient exactement.
+
 ### Le câblage d'une instance — à qui il appartient
 
 Une instance autonome, c'est **un petit dépôt qui appartient à l'hôte**, pas un dépôt généré par le
@@ -467,6 +508,10 @@ Toute évolution de la frontière se note ici, datée, avec sa nature.
 | 2026-08-13 | additif | **« L'hôte sert le fichier »** : la garde de streaming accepte une route de l'hôte comme origine, appelée serveur à serveur via `PLAYER_HOST_FETCH_SECRET`. Rendu nécessaire par ADV, dont les documents vivent sur un serveur de fichiers tiers derrière une clé d'API. Le studio n'est pas concerné (Storage direct) — **additif, aucune rupture**. |
 | 2026-08-13 | additif | **`embed-denied`** ajouté au pont : un refus d'afficher se dit, au lieu de se confondre avec une panne. Les pages de refus deviennent encadrables en mode intégré (sinon le message ne partirait pas). **Additif** — un hôte qui l'ignore garde le comportement d'avant. |
 | 2026-08-13 | correctif | **Taille annoncée** : les trois routes de streaming passent par `relayerFichier()`, qui envoie la taille des octets servis et jamais celle reçue de l'amont, demande `Accept-Encoding: identity` et refuse un `206` compressé. Corrige un PDF tronqué silencieux. |
+| 2026-08-13 | précision | **Le format d'appel des deux routes de l'hôte** (`PLAYER_HOST_AUTHZ_URL`, `PLAYER_HOST_BRAND_URL`) est enfin écrit. Il manquait : un hôte a écrit ses routes sur la description de `canManageShares` — intention juste, forme fausse, et **deux écarts sur trois étaient silencieux** (réponse lue comme un refus). |
+| 2026-08-13 | additif | **Une panne de route d'hôte se distingue d'un refus** : injoignable, délai dépassé, réponse non-JSON ou `allowed` d'un autre type sont journalisés avec leur cause. Le player reste fail-closed. |
+| 2026-08-13 | correctif | **Objet littéral utilisé comme table de correspondance** : `ATT_KINDS["constructor"]` rendait une fonction, donc une valeur vraie — la liste blanche des types de pièce jointe était contournable depuis une action publique. Même forme cinq fois dans le greffon de langue. Tout passe par `Object.hasOwn`, un test statique interdit le retour en arrière. Trouvé chez nous après signalement d'un hôte qui l'avait chez lui. |
+| 2026-08-13 | correctif | **Le chat passe en diffusion** : ses messages arrivaient par lecture de table en temps réel, ce qui exposait les conversations de TOUTES les présentations à qui détient la clé publiable. Dernier usage qui l'exigeait — `v12420` devient applicable. Les mutations renvoient la ligne écrite, **projetée sur une liste blanche** : `author_hash` (le jeton qui autorise à éditer et supprimer) ne sort jamais. |
 | 2026-08-13 | correctif | **Tous les chemins de refus** émettent `embed-denied`, pas seulement celui du lien tracé : l'aperçu interne (`url-not-allowed`) et la page d'audience (`ended`) se taisaient — or l'aperçu intégré est le premier mode qu'un nouvel hôte exerce. Deux motifs ajoutés, une garde de test empêche le prochain refus muet. |
 | 2026-08-13 | précision | **`branding.forKey` renvoie `{ logo, name, dark }`** — la forme de retour manquait au contrat, et `name` (le repli quand le logo ne charge pas) a été omis par le premier hôte qui l'a lu. Le registre `brand.*`, retiré, disparaît aussi de la section Marque. |
 | 2026-08-13 | précision | **« On ne replie pas » vaut pour ce qu'un hôte PROPOSE**, pas seulement pour ce qu'il fait tout seul : un bouton « Ouvrir ↗ » laissé après un refus revient à replier une seconde plus tard. Généralisation proposée par ADV. |
@@ -494,7 +539,7 @@ Un hôte qui a besoin d'une évolution de la frontière l'écrit ici. Il ne la c
 | 2026-08-13 | ADV | **Gestion des liens tracés accessible hors studio** : `docshare.create/list/revoke` vit dans la route de synchro derrière le modèle de droits du studio (`clients_registry`) — inappelable par un autre hôte. **Point d'intégration le plus sous-estimé.** | à faire |
 | 2026-08-13 | ADV | **Marque de l'hôte** : retirer les mentions « 3D Discovery » en dur | ✅ **livré** — `PLAYER_BRAND_NAME` / `PLAYER_BRAND_POWERED_BY`, neutre par défaut |
 | 2026-08-13 | ADV | **Mur d'accès Microsoft** en plus d'email+code et Google One-Tap (ADV est en SSO M365) | à faire |
-| 2026-08-13 | ADV | **Confidentialité Realtime** : la lecture anon large interdit d'y mettre des documents sensibles | 🟡 **code prêt, migration en attente de vérification en production** (`v12420`) |
+| 2026-08-13 | ADV | **Confidentialité Realtime** : la lecture anon large interdit d'y mettre des documents sensibles | 🟡 **code complet** — l'état ET le chat passent en diffusion ; migration `v12420` en attente d'une vérification en production |
 | 2026-08-13 | ADV | **Streaming via une route de l'hôte** (Range relayé + secret serveur à serveur) — cf. section dédiée | ✅ **livré côté player** — reste à ADV d'exposer sa route |
 | 2026-08-13 | ADV | **Le piège de la compression** : `fetch()` décompresse et garde les en-têtes → un `Content-Length` relayé sert un PDF tronqué, sans erreur | ✅ **livré** — 3e exigence de la section, et corrigé dans le player lui-même (le piège nous concernait) |
 | 2026-08-13 | ADV | **Distinguer « player absent » de « player refuse »** : le silence pousse l'hôte à replier sur son lecteur, ce qui ouvrirait un document refusé | ✅ **livré** — `embed-denied {reason}` + pages de refus encadrables |
@@ -513,3 +558,5 @@ Un hôte qui a besoin d'une évolution de la frontière l'écrit ici. Il ne la c
 | 2026-08-13 | ADV | **Comment on installe** : npm public, npm privé ou git ? | ✅ **tranché** — dépôt public + npm public, rien à configurer chez l'hôte |
 | 2026-08-13 | ADV | **Cible de `PLAYER_SOURCE_URL`** avant le premier lecteur | ✅ **tranché** — le dépôt public lui-même |
 | 2026-08-13 | ADV | **`?contract=1` n'existait pas** alors que la règle 4 repose dessus | ✅ **livré** — forme documentée, 3 tests |
+| 2026-08-13 | ADV | **Format des routes de l'hôte absent du contrat** — route d'autorisation réécrite après lecture du paquet publié | ✅ **livré** — les deux formats sont au contrat et dans `docs/CONFIGURATION.md` |
+| 2026-08-13 | ADV | **Un objet littéral comme table de correspondance répond à `constructor`** (trois occurrences chez eux) | ✅ **vérifié chez nous : deux sites, dont un atteignable depuis une action publique** — corrigés, plus un test statique |

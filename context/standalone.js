@@ -63,8 +63,14 @@ function creerDb(env) {
  * Appel d'une route de l'HÔTE (autorisation, marque). Authentifié par le même secret partagé que
  * la route de fichiers, et **jamais en query** : les journaux gardent les URL.
  */
-async function appelHote(url, secret, corps) {
+async function appelHote(url, secret, corps, errors) {
   if (!url) return null;
+  // ⚠️ UN REFUS ET UNE PANNE NE DOIVENT PAS SE RESSEMBLER. Le player reste fail-closed — hôte
+  // injoignable ⇒ personne ne diffuse — mais sans trace, « ma route répond mal » est
+  // indiscernable de « le droit est refusé », et on cherche pendant une demi-journée du côté des
+  // rôles. Un hôte qui a écrit sa route sur la description du contrat plutôt que sur le code a
+  // perdu exactement ce temps-là.
+  const signaler = (quoi) => { try { errors && errors.capture(new Error(`route hôte : ${quoi}`), { url }); } catch { /* jamais bloquant */ } };
   try {
     const r = await fetch(url, {
       method: "POST",
@@ -75,8 +81,12 @@ async function appelHote(url, secret, corps) {
       body: JSON.stringify(corps),
       signal: AbortSignal.timeout(4000), // une décision qui tarde est une décision absente
     });
-    return r.ok ? await r.json() : null;
-  } catch {
+    if (!r.ok) { signaler(`réponse ${r.status}`); return null; }
+    const d = await r.json().catch(() => null);
+    if (!d || typeof d !== "object") { signaler("réponse illisible (JSON attendu)"); return null; }
+    return d;
+  } catch (e) {
+    signaler(e && e.name === "TimeoutError" ? "délai dépassé" : "injoignable");
     return null;
   }
 }
@@ -107,6 +117,11 @@ function creerLimites() {
 /** Construit le contexte d'une instance autonome à partir de l'environnement. */
 function createStandaloneContext(env = process.env) {
   const db = creerDb(env);
+  const journal = {
+    async capture(error, meta) {
+      console.error("[player]", (meta && meta.route) || "", (error && error.message) || error, meta && meta.url ? `→ ${meta.url}` : "");
+    },
+  };
   const secret = String(env.PLAYER_HOST_FETCH_SECRET || "");
   const origins = () => storage.storageOrigins(env);
   const hostBase = () => storage.hostFetchBase(env);
@@ -163,8 +178,14 @@ function createStandaloneContext(env = process.env) {
         if (!user || !user.email) return false;
         const reponse = await appelHote(env.PLAYER_HOST_AUTHZ_URL, secret, {
           email: user.email, role: ((user.app_metadata || {}).role) || "", action: String(action || ""),
-        });
-        return !!(reponse && reponse.allowed);
+        }, journal);
+        // ⚠️ `allowed` doit être présent ET booléen. Une réponse d'une autre forme — même
+        // parfaitement intentionnée — vaut refus, et le dit. C'est le cas le plus courant au
+        // branchement d'un nouvel hôte.
+        if (reponse && typeof reponse.allowed !== "boolean") {
+          try { journal.capture(new Error("route d'autorisation : champ `allowed` booléen attendu"), { recu: Object.keys(reponse).join(",") }); } catch { /* ignore */ }
+        }
+        return reponse ? reponse.allowed === true : false;
       },
     },
 
@@ -185,7 +206,7 @@ function createStandaloneContext(env = process.env) {
        */
       async forKey(key) {
         if (!key) return null;
-        const b = await appelHote(env.PLAYER_HOST_BRAND_URL, secret, { key: String(key) });
+        const b = await appelHote(env.PLAYER_HOST_BRAND_URL, secret, { key: String(key) }, journal);
         return b && b.logo ? { logo: String(b.logo), name: String(b.name || ""), dark: !!b.dark } : null;
       },
 
@@ -196,11 +217,7 @@ function createStandaloneContext(env = process.env) {
       },
     },
 
-    errors: {
-      async capture(error, meta) {
-        console.error("[player]", (meta && meta.route) || "", (error && error.stack) || error);
-      },
-    },
+    errors: journal,
 
     legal: {
       get sourceUrl() { return String(env.PLAYER_SOURCE_URL || "https://github.com/Juli1artha/discovery-media-player").trim(); },

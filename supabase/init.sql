@@ -223,10 +223,22 @@ alter table public.doc_presentation_attendees        enable row level security;
 alter table public.doc_bot_sessions                  enable row level security;
 
 -- ── Temps réel ─────────────────────────────────────────────────────────────────────────────────
--- Le chat en direct reste en `postgres_changes` : ses messages sont écrits POUR être vus de
--- l'audience. L'état de la présentation, lui, voyage en broadcast — d'où l'absence de
--- `doc_presentations` ici, et l'absence de politique de lecture au-dessus.
--- ⚠️ Ne mettez jamais de donnée confidentielle dans un message de chat ni dans un nom d'auteur.
+-- L'état de la présentation (page courante, carte, verrou) voyage en BROADCAST : l'audience suit
+-- le présentateur sans qu'aucune table ne soit lisible publiquement. C'est ce qui permet de ne
+-- créer aucune politique de lecture au-dessus.
+--
+-- ⚠️ LE CHAT N'EST PAS ENCORE SUR CE CHEMIN. Ses messages sont livrés par `postgres_changes`, qui
+-- exige un SELECT au niveau de la TABLE — donc ouvert à quiconque détient la clé publiable, et
+-- pour TOUTES les présentations, pas seulement la sienne. Ce fichier refuse ce compromis : la
+-- table est publiée, mais AUCUNE politique de lecture n'est créée.
+--
+-- Conséquence assumée sur une installation neuve : un participant voit l'historique du chat en
+-- arrivant, et les messages suivants à l'actualisation — pas en direct. Le chat n'est pas cassé,
+-- il est différé. Le portage du chat en broadcast lèvera cette limite ; d'ici là, mieux vaut une
+-- fonctionnalité partiellement en retard qu'une base où chacun lit les conversations des autres.
+--
+-- ⚠️ Ne mettez de toute façon jamais de donnée confidentielle dans un message de chat ni dans un
+-- nom d'auteur.
 do $$
 begin
   if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then

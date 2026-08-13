@@ -6,6 +6,30 @@ versioning follows [Semantic Versioning](https://semver.org/).
 The **host contract** has its own version, independent of the package version: it appears as
 `contract` in `GET /api/doc?contract=1` and changes only on a break. See [`CONTRAT.md`](CONTRAT.md).
 
+## [0.1.2] — 2026-08-13
+
+### Security
+- **Attachment type whitelist could be bypassed.** `ATT_KINDS["constructor"]` returns a *function* —
+  a truthy value — so a public `present-upload-url` call with `type: "constructor"` passed the
+  whitelist and got a signed upload URL for a type that was never allowed. The storage bucket
+  remained a second barrier, but the first one was open. Every lookup of that shape now goes
+  through `Object.hasOwn`, and a static test refuses any that does not.
+  *Found after a third-party host reported the same pattern three times in their own code.*
+
+### Added
+- **Live chat now travels by broadcast.** It was delivered through table-level realtime, which
+  requires a public SELECT on the table — meaning anyone holding the publishable key could read
+  the conversations of *every* presentation. This was the last thing requiring that policy;
+  `supabase/init.sql` no longer needs one, and instances that had it can drop it.
+- **Host-route call formats are documented** (`PLAYER_HOST_AUTHZ_URL`, `PLAYER_HOST_BRAND_URL`).
+  They were missing, and a host implemented them from prose: right intention, wrong shape, and
+  two of the three mismatches were silent — a wrongly-shaped response reads as a refusal.
+- **A broken host route no longer looks like a refusal.** Unreachable, timed out, non-JSON, or a
+  wrongly-typed `allowed` are logged with their cause. The player stays fail-closed.
+
+### Fixed
+- Unread badge counted each chat message twice while both delivery paths were active.
+
 ## [Unreleased]
 
 ### Added
