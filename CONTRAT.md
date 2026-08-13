@@ -181,6 +181,40 @@ lire n'importe quoi, avec des identifiants : c'est précisément ce que la garde
    *(Le player applique lui-même cette règle depuis le 13/08 — `relayerFichier()`, un seul chemin
    pour ses trois routes de streaming. Le piège nous concernait aussi.)*
 
+⚠️ **ET UNE QUATRIÈME, D'UNE AUTRE NATURE — celle-ci n'abîme pas l'expérience, elle ouvre les
+données.**
+
+Les trois précédentes portent sur le TRANSPORT. Celle-ci porte sur ce qu'on transporte :
+
+> **Ce que votre route accepte de signer est ce que n'importe quel appelant peut lire.
+> Ne signez jamais un chemin fourni par le client.**
+
+Le raisonnement tient en trois phrases. Le player va chercher le fichier **serveur à serveur** —
+il n'a, par construction, aucune session à faire valoir : c'est tout l'objet du secret partagé.
+Votre route le sert donc avec **ses propres droits**, souvent une clé de service qui contourne
+vos politiques de ligne. Une action qui signe un chemin reçu du navigateur devient alors un
+oracle : un utilisateur fait signer un chemin que ses droits lui refusent, ouvre l'aperçu, et le
+player le lui lit avec les vôtres.
+
+**La garde anti-SSRF ne voit rien** — l'origine est parfaitement légitime, c'est la vôtre.
+
+La forme qui tient : **l'appelant fournit une SOURCE d'un ensemble fermé et un IDENTIFIANT de
+ligne, jamais un chemin.** Le chemin est relu en base avec la session de l'appelant, et vos
+politiques tranchent comme partout ailleurs. C'est la même règle que `brandKey` (une référence,
+pas une copie) et que `PLAYER_HOST_FETCH_BASE` (un préfixe, pas une origine) : **on transmet de
+quoi retrouver, jamais de quoi désigner.**
+
+⚠️ **Le piège est qu'elle est souvent théorique le jour où on l'écrit.** Si vos politiques
+laissent aujourd'hui tout membre connecté lire, l'élévation n'existe pas encore — elle apparaîtra
+au premier resserrement, des mois plus tard, et personne ne fera le lien entre « on a restreint un
+accès » et « une route signe encore n'importe quoi ».
+
+*(Signalée par le second hôte après l'avoir rencontrée en basculant ses premières surfaces.
+Vérifiée chez l'hôte historique le jour même : une route y signait un chemin reçu du client,
+derrière une liste NOIRE de rôles — un compte d'espace client passait, et tout rôle créé plus tard
+serait passé aussi.)*
+
+
 ### Un refus se dit — `embed-denied`
 
 Un hôte qui intègre la visionneuse (`?embed=1`) attend `embed-ready`. Il est tentant d'en faire un
