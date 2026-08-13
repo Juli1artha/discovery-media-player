@@ -19,6 +19,28 @@ player.init(createStandaloneContext(process.env));
 
 module.exports = async function handler(req, res) {
   const q = req.query || {};
+
+  // ⚠️ `?diag=1` — la démonstration sait dire ce qu'elle voit.
+  //
+  // Le premier déploiement a affiché « Document indisponible » : la garde refusait le fichier,
+  // sans qu'on puisse savoir si le dossier n'était pas embarqué ou s'il n'était pas là où on le
+  // cherche. Deux causes, un seul symptôme — exactement ce qu'on passe notre temps à séparer
+  // ailleurs. Aucune donnée sensible ici : des chemins et des booléens.
+  if (q.diag === "1") {
+    const fs = require("node:fs");
+    const lire = (d) => { try { return fs.readdirSync(d).slice(0, 20); } catch (e) { return `illisible: ${e.code}`; } };
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.end(JSON.stringify({
+      cwd: process.cwd(),
+      dossierAttendu: DOCUMENTS,
+      dossierExiste: fs.existsSync(DOCUMENTS),
+      contenu: lire(DOCUMENTS),
+      voisinsDuCwd: lire(process.cwd()),
+      racineDuLambda: lire("/var/task"),
+    }, null, 2));
+    return;
+  }
   // `/` et `/preview/<nom>` sont réécrits ici (cf. vercel.json). On construit les paramètres de
   // l'aperçu côté serveur : le visiteur ne voit jamais de chemin de fichier dans son navigateur,
   // et la garde de stockage reste seule juge de ce qui est lisible.
