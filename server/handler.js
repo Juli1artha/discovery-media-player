@@ -397,8 +397,8 @@ var Live=(function(){
     try{sb=window.supabase.createClient(LIVECFG.supaUrl,LIVECFG.supaKey,{realtime:{params:{eventsPerSecond:10}}});
       ch=sb.channel('plive-'+slug,{config:{presence:{key:(me.email||me.name||'x')+':'+MYID}}});
       ch.on('presence',{event:'sync'},function(){renderPres(ch.presenceState());});
-      ch.on('postgres_changes',{event:'INSERT',schema:'public',table:'doc_presentation_messages',filter:'slug=eq.'+slug},function(p){if(p&&p.new&&addMsg(p.new))notifyMsg(p.new);});
-      ch.on('postgres_changes',{event:'UPDATE',schema:'public',table:'doc_presentation_messages',filter:'slug=eq.'+slug},function(p){if(p&&p.new)updateMsg(p.new);});
+      // Plus d'abonnement à la table des messages : elle n'est plus publiée ni lisible
+      // publiquement. Tout passe par la diffusion, et l'historique par la route de chat.
       ch.on('broadcast',{event:'msg'},function(p){if(p&&p.payload&&addMsg(p.payload))notifyMsg(p.payload);});
       ch.on('broadcast',{event:'msg-upd'},function(p){if(p&&p.payload)updateMsg(p.payload);});
       ch.on('broadcast',{event:'typing'},function(p){onTyping(p&&p.payload);});
@@ -2016,6 +2016,12 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
     // diffusion temps réel. La règle d'ordre (terminée > carte > changement de doc > page) et la
     // re-validation du contenu vivent dans le module, pas ici.
     var _etatVu='';
+    // ⚠️ EXPOSÉ HORS DE CETTE FERMETURE, ET C'EST INDISPENSABLE. La couche Live est définie dans
+    // le bloc de script SUIVANT : y appeler onState avec ce nom-ci référence une fonction qui
+    // n'existe pas dans cette portée-là. L'exception partait dans un try/catch muet, donc
+    // l'audience n'avait aucun écouteur de diffusion — invisible tant que la lecture de table
+    // portait encore la page, puis « les pages ne tournent plus » le jour où on l'a retirée.
+    window.__presAppliquerEtat = appliquerEtat;
     function appliquerEtat(row){
       if(!row) return;
       // La table et la diffusion portent la même vérité : sans cette garde, chaque changement de
@@ -2042,16 +2048,13 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
     document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible') relireEtat(); });
     window.addEventListener('online', relireEtat);
 
-    // Realtime : suivre la page courante + la fin de session (UPDATE de notre ligne).
-    try{
-      if(window.supabase && CFG.supaUrl && CFG.supaKey){
-        var sb=window.supabase.createClient(CFG.supaUrl, CFG.supaKey, {realtime:{params:{eventsPerSecond:5}}});
-        sb.channel('present-'+CFG.slug)
-          .on('postgres_changes',{event:'UPDATE',schema:'public',table:'doc_presentations',filter:'slug=eq.'+CFG.slug},function(payload){
-            appliquerEtat(payload && payload.new);
-          }).subscribe();
-      }
-    }catch(e){}
+    // ⚠️ PLUS D'ABONNEMENT À LA TABLE ICI. Il exigeait une lecture publique de
+    // de la table des présentations — donc, avec la clé publiable, TOUTES les présentations de
+    // l'instance. L'état arrive par diffusion du présentateur, et la relecture d'état ci-dessus
+    // rattrape les arrivées tardives et les retours d'onglet en interrogeant le serveur.
+    //
+    // Le laisser en place n'était pas neutre : il ouvrait un abonnement qui ne recevra jamais
+    // rien, ce qui donne l'impression que le suivi est branché alors qu'il ne l'est pas.
     // Si on rejoint alors que le présentateur est DÉJÀ sur une carte / Street View → l'afficher dès que Map3DD est prêt.
     if(CFG.content && (CFG.content.kind==='map'||CFG.content.kind==='streetview')){ var _mi=setInterval(function(){ if(window.Map3DD){ clearInterval(_mi); if(CFG.content.kind==='streetview')Map3DD.enterSV(CFG.content,false); else Map3DD.enter(CFG.content,false); } },100); setTimeout(function(){ clearInterval(_mi); },8000); }
   })();
@@ -2067,7 +2070,16 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
     // L'état arrive maintenant par DEUX voies : la table (historique) et la diffusion du
     // présentateur (nouvelle). Les deux passent par le même filtre, qui ignore un état déjà
     // appliqué — recevoir deux fois la même chose ne doit pas re-rendre la page.
-    try{ if(window.Live) Live.onState(appliquerEtat); }catch(e){}
+    // Par la référence exposée plus haut : le nom local n'existe pas dans cette portée-ci.
+    try{
+      if(!window.Live || !window.__presAppliquerEtat) throw new Error('couche live absente');
+      Live.onState(window.__presAppliquerEtat);
+    }catch(e){
+      // PLUS DE SILENCE ICI. Ce try/catch a avalé une ReferenceError : l'audience n'avait aucun
+      // ecouteur d'etat, ce qui ne se voyait pas tant qu'une seconde voie portait la page. Un
+      // cablage rate doit se dire, meme si la page continue de vivre.
+      console.error('[present] suivi de l etat non branche :', e && e.message);
+    }
     // « Reprendre la main » : si le membre connecté (même origine) devient propriétaire de CETTE présentation
     // (après un transfert), on affiche un bouton pour ouvrir la visionneuse en pilotage — sinon on ne peut pas
     // piloter depuis la page audience.

@@ -41,5 +41,11 @@ export default tseslint.config(
   },
 
   { files: ["build/**/*.mjs"], extends: [js.configs.recommended], languageOptions: { sourceType: "module", globals: NODE } },
-  { files: ["**/*.{test,spec}.{ts,js}"], languageOptions: { globals: TEST }, rules: { "no-unused-vars": "off", "@typescript-eslint/no-unused-vars": "off" } },
+  // Les tests peuvent s'exécuter dans un DOM (`@vitest-environment jsdom`) : ils ont alors
+  // `window` et `document`, comme le code navigateur qu'ils font tourner.
+  {
+    files: ["**/*.{test,spec}.{ts,js}"],
+    languageOptions: { globals: { ...TEST, window: "readonly", document: "readonly", navigator: "readonly" } },
+    rules: { "no-unused-vars": "off", "@typescript-eslint/no-unused-vars": "off" },
+  },
 );
