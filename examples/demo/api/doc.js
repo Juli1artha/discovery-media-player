@@ -6,10 +6,16 @@
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 
-// ⚠️ Calculé ICI, pas posé en variable d'environnement : une plateforme serverless décide seule
-// d'où elle exécute la fonction. Un chemin absolu écrit à la main serait juste sur l'une et faux
-// sur la suivante — et le symptôme serait « aucun document », sans indice sur la cause.
-const DOCUMENTS = path.join(process.cwd(), "documents");
+// ⚠️ RÉSOLU DEPUIS CE FICHIER, PAS DEPUIS LE DOSSIER DE TRAVAIL.
+//
+// Première version : `path.join(process.cwd(), "documents")`. Le déploiement a répondu « Document
+// indisponible » — la garde refusait le fichier, parce qu'il n'était pas là. `cwd` valait
+// `/var/task`, mais la plateforme avait conservé l'arborescence du DÉPÔT dans la fonction : le
+// dossier se trouvait à `/var/task/examples/demo/documents`.
+//
+// Le dossier de travail est décidé par la plateforme ; `__dirname` est décidé par le code. Le
+// second est juste partout — en local, sur Vercel, et sur la prochaine plateforme.
+const DOCUMENTS = path.join(__dirname, "..", "documents");
 process.env.PLAYER_LOCAL_ROOT = DOCUMENTS;
 
 const player = require("discovery-media-player");
