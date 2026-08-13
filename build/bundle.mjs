@@ -102,6 +102,16 @@ export async function renderShared() {
   ].join("\n");
 }
 
+/**
+ * Le pont compilé est de l'ESM dans un paquet CommonJS. Sans ce marqueur, Node avertit à chaque
+ * import (« module type not specified ») et le reparse — bruyant chez le consommateur, et pour
+ * une raison qui ne le concerne pas. Un `package.json` d'un seul champ dans `dist/` suffit à le
+ * dire, et c'est la façon standard de mélanger les deux formats dans un paquet.
+ */
+export async function marquerDistEsm() {
+  await writeFile(resolve(ROOT, "dist/package.json"), JSON.stringify({ type: "module" }, null, 2) + "\n");
+}
+
 export async function render() {
   const js = await bundle();
   return [

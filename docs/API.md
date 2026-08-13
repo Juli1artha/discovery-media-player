@@ -2,7 +2,7 @@
 
 The English reference for what a host application can call, and what it must implement.
 The full contract — with the reasoning, the dated journal of every boundary change, and the
-requests hosts have made — is [`CONTRAT.md`](../CONTRAT.md), in French. **When the two disagree,
+requests hosts have made — is [`HOST-CONTRACT.md`](HOST-CONTRACT.md), in French. **When the two disagree,
 the contract wins.**
 
 Everything below is served by one handler. Mount it wherever you like; the paths are yours.

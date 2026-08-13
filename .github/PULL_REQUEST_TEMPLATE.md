@@ -12,7 +12,7 @@
 - [ ] `npm test`, `npm run lint`, `npm run typecheck` pass
 - [ ] A test fails without this change
 - [ ] `npm run build` run and generated bundles committed, if `src/` changed
-- [ ] `CONTRAT.md` updated (+ journal entry) if the host boundary changed
+- [ ] `docs/HOST-CONTRACT.md` updated (+ journal entry) if the host boundary changed
 - [ ] `CHANGELOG.md` updated under Unreleased
 
 <!-- If a host application needs a newer player, put "requires player >= x.y" in the PR title:

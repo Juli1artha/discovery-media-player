@@ -1,0 +1,26 @@
+version: 2
+updates:
+  # ⚠️ Groupé et mensuel, délibérément. Ce paquet n'a AUCUNE dépendance de production : tout ce
+  # qui suit est de l'outillage de test. Une PR par mise à jour et par semaine noierait les vraies
+  # contributions sous du bruit, et personne ne relirait plus rien.
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 3
+    groups:
+      dev-tooling:
+        patterns: ["*"]
+    commit-message: { prefix: "chore(deps)" }
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message: { prefix: "chore(ci)" }
+
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: monthly }
+    commit-message: { prefix: "chore(docker)" }
