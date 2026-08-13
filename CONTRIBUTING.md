@@ -43,6 +43,27 @@ prevents. A test whose name does not tell you what it protects will be asked abo
 they are deployed as-is by serverless platforms, which never run a build step. Change the `.ts`,
 run the build, commit both. CI fails if they drift.
 
+## If you run an instance
+
+Hosts are the best source of defects this project has: every one found so far came from someone
+integrating it, not from reading the code. The rule is short.
+
+**Fix the player in the player's repository — never in your own.** Open an issue or a pull request
+here. You have the context, and often the fix already written.
+
+**Releases stay with the maintainer.** Not hierarchy: publishing a version decides deploy order
+(the player ships before its hosts). If everyone publishes, nobody knows which instance runs what.
+
+**A local workaround is fine when you are blocked** — on two conditions: open the report the same
+day, and remove the workaround when the release lands. Otherwise it becomes permanent, and two
+implementations drift apart. That is the problem this project exists to avoid.
+
+One caution, from experience: a host naturally fixes for its own case. One reported that the
+handler reads `req.query`, which their bare HTTP server did not fill, and shimmed it in three
+lines. Their fix was right. The *right* fix was in the core, because the defect affected every
+host — present and future. Expect the maintainer to move your fix somewhere else, and read that
+as the system working.
+
 ## Commits and branches
 
 Conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`), with a body that

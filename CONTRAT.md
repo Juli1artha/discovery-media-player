@@ -14,10 +14,11 @@
 
 ## Les cinq règles
 
-1. **Un seul dépôt de vérité.** Le player se corrige dans le studio (`player/`, `api/doc.js`,
-   `api/_player-context.js`). **Jamais dans un hôte.** Un correctif écrit côté hôte est une copie
-   qui divergera — le précédent est documenté : un runtime copié dans 4 dépôts, 3 sur 4 servaient
-   une version périmée sans que personne ne le voie.
+1. **Un seul dépôt de vérité.** Le player se corrige **dans le dépôt du player**, jamais dans un
+   hôte — pas même dans celui qui l'a écrit à l'origine, qui l'installe aujourd'hui depuis npm
+   comme tous les autres. Un correctif écrit côté hôte est une copie qui divergera : le précédent
+   est documenté — un runtime copié dans 4 dépôts, 3 sur 4 servaient une version périmée sans que
+   personne ne le voie.
 2. **Additif par défaut.** Ajouter une action, un paramètre ou un champ ne casse aucun hôte : c'est
    libre, ça se note au journal. **Retirer ou renommer est une rupture** → nouvelle version, les
    deux servies pendant la migration.
@@ -43,7 +44,33 @@
    **Qui prévient qui.** Une PR d'hôte qui exige une version plus récente l'écrit **dans son titre**
    (« requiert player ≥ v2 »). Elle ne peut pas être mergée avant que l'instance correspondante soit
    déployée. C'est la seule règle nécessaire : il n'y a qu'une personne qui déploie les deux.
-5. **Un besoin d'hôte se demande, il ne se code pas sur place.** Section « Demandes » en bas.
+5. **Qui corrige le module générique.** Cette règle disait « un besoin d'hôte se demande, il ne
+   se code pas sur place ». Elle datait d'avant la publication, quand le player vivait dans un
+   hôte et qu'aucun autre ne pouvait y toucher. Maintenant qu'il a son dépôt, elle est trop
+   étroite : un hôte **peut** coder — dans le bon dépôt.
+
+   **N'importe quel hôte propose. Le mainteneur arbitre et publie.**
+
+   | | |
+   |---|---|
+   | Un hôte trouve un défaut du player | il ouvre une **issue ou une PR sur le dépôt du player** — il a le contexte, souvent déjà le code |
+   | Le mainteneur | tranche, fusionne, **publie la version** |
+   | Les hôtes | épinglent la nouvelle version quand ils décident de la prendre |
+
+   ⚠️ **La publication reste au mainteneur, et ce n'est pas une question de hiérarchie.** Publier
+   une version décide de l'ordre de déploiement (règle 3). Si chacun publie, plus personne ne sait
+   quelle instance tourne sur quoi.
+
+   ⚠️ **Et l'arbitrage n'est pas une formalité : un hôte optimise pour son cas, c'est normal.**
+   Exemple vécu — un hôte a corrigé chez lui, en trois lignes, le fait que le gestionnaire lise
+   `req.query` sur une plateforme qui ne le remplit pas. Son correctif était juste. Le bon
+   correctif était **dans le cœur**, parce que le défaut touchait tous les hôtes, présents et à
+   venir. Seul quelqu'un qui tient les contraintes des deux côtés voit ça.
+
+   **Le contournement local est autorisé quand il débloque**, à deux conditions : le signalement
+   est ouvert **le jour même**, et le contournement est **retiré quand la version arrive**. Sinon
+   il devient permanent, et on a deux implémentations qui divergent — c'est-à-dire le problème que
+   ce contrat existe pour empêcher.
 
 ---
 
@@ -556,6 +583,8 @@ Toute évolution de la frontière se note ici, datée, avec sa nature.
 | 2026-08-13 | précision | **Le câblage d'une instance appartient à l'HÔTE** (4 fichiers, un seul à écrire) : il ne contient que des décisions de l'hôte. `forKey` d'une instance séparée **appelle une route de l'hôte** plutôt que de recopier la correspondance clé → logo. |
 | 2026-08-13 | additif | **`GET /api/doc?contract=1`** existe enfin : la règle 4 reposait sur un point qui n'avait jamais été écrit. Carte d'identité sans session, sans base, sans cache, sans URL ni secret. |
 | 2026-08-13 | additif | **Le schéma part avec le player** (`player/supabase/init.sql`) : un fichier rejouable qui amène une base vierge à l'état attendu, **déjà durci** — une instance neuve ne connaît jamais l'état « lecture anonyme ouverte ». |
+| 2026-08-13 | précision | **Règle 5 réécrite : qui corrige le module générique.** Elle interdisait à un hôte de coder — c'était vrai quand le player vivait dans un hôte. N'importe quel hôte **propose** désormais (issue ou PR sur le dépôt du player) ; **le mainteneur arbitre et publie**, parce que publier décide de l'ordre de déploiement. Contournement local autorisé s'il débloque, à condition d'ouvrir le signalement le jour même et de le retirer à l'arrivée de la version. |
+| 2026-08-13 | précision | **Règle 1 recadrée** : « le player se corrige dans le studio » devient « dans le dépôt du player » — l'hôte historique l'installe depuis npm comme les autres. |
 | 2026-08-13 | décision | **Dépôt public dès la création, AGPL-3.0** : `PLAYER_SOURCE_URL` pointe dessus, aucun jeton ni clé de déploiement chez les hôtes. Le câblage d'un hôte est considéré couvert — il ne doit donc contenir aucun secret en clair, ce qui est de toute façon la bonne façon de l'écrire. |
 | 2026-08-13 | décision | **Aucun nom de tiers dans le dépôt publié** : les hôtes sont désignés par leur RÔLE (« l'hôte historique », « le second hôte »), jamais par leur raison sociale, et les exemples d'URL sont fictifs. Le rôle porte toute l'information technique ; le nom ne dit qu'une chose — quelles entreprises travaillent ensemble et où leurs documents vivent. |
 
