@@ -6,14 +6,14 @@
 # source servirait du code périmé sans que rien ne le signale, et c'est exactement le défaut que
 # la CI surveille par ailleurs.
 
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM node:22-alpine
+FROM node:26-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 # `dumb-init` : sans lui, le processus Node est PID 1 et n'a pas de gestionnaire de signal par
