@@ -97,3 +97,32 @@ describe("lecture d'un fichier local", () => {
     expect(await fetchAllowedFile(url(racine), {}, source)).toBeNull();
   });
 });
+
+// ⚠️ UN SVG EST UN DOCUMENT EXÉCUTABLE.
+//
+// Servi `image/svg+xml` en ligne, il s'ouvre sur l'origine du player et son script s'exécute avec
+// elle — et la réponse de streaming ne porte aucune CSP, puisque c'est un fichier et pas une page.
+// Il n'était par ailleurs pas affichable : `isImageDocument()` ne le reconnaît pas, la visionneuse
+// l'envoyait à pdf.js, écran blanc. Servi sans être affichable : le pire des deux mondes.
+describe("formats servis depuis un dossier local", () => {
+  const fs = require("node:fs"); const os = require("node:os"); const p = require("node:path");
+  const dir = fs.realpathSync(fs.mkdtempSync(p.join(os.tmpdir(), "player-types-")));
+  const root = localRoot({ PLAYER_LOCAL_ROOT: dir });
+  const source = { origins: [], hostBase: null, root };
+
+  it("ne sert jamais un SVG comme image en ligne", async () => {
+    fs.writeFileSync(p.join(dir, "piege.svg"), '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+    const r = await fetchAllowedFile("file://" + p.join(dir, "piege.svg"), {}, source);
+    expect(r.headers.get("content-type"), "un SVG ne doit pas sortir en image/svg+xml").not.toBe("image/svg+xml");
+    expect(r.headers.get("content-type")).toBe("application/octet-stream");
+  });
+
+  it("sert les formats de la matrice avec leur vrai type", async () => {
+    for (const [nom, type] of [["a.pdf", "application/pdf"], ["b.png", "image/png"], ["c.jpg", "image/jpeg"],
+                               ["d.webp", "image/webp"], ["e.gif", "image/gif"], ["f.avif", "image/avif"]]) {
+      fs.writeFileSync(p.join(dir, nom), "x");
+      const r = await fetchAllowedFile("file://" + p.join(dir, nom), {}, source);
+      expect(r.headers.get("content-type"), nom).toBe(type);
+    }
+  });
+});

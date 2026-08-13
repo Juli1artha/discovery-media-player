@@ -1098,6 +1098,24 @@ function botMarkup(share, pitch) {
  * ⚠️ Et un 206 compressé est irrécupérable : les bornes portent sur les octets compressés, un
  * fragment gzip ne se décompresse pas seul. On refuse bruyamment plutôt que de servir du faux.
  */
+
+// ⚠️ CE QU'ON RELAIE S'OUVRE SUR NOTRE ORIGINE.
+//
+// Un fichier relayé sort du domaine qui sert les documents — donc avec ses cookies, son
+// `localStorage` et ses jetons de présentation. Relayer un `Content-Type` exécutable revient à
+// héberger le script de quelqu'un d'autre chez soi : un SVG déposé dans une source autorisée
+// (bucket public, route de l'hôte) s'ouvre `image/svg+xml`, et son `<script>` s'exécute avec
+// notre origine. La réponse de streaming ne porte aucune CSP — c'est un fichier, pas une page.
+//
+// Retirer `.svg` de la table des types locaux (côté `context/storage.js`) ne réglait que la
+// moitié du sujet : l'amont distant annonce le type qu'il veut, et on le recopiait.
+//
+// On ne REFUSE pas pour autant : le fichier existe, quelqu'un a le droit de le récupérer, et un
+// 502 sur une pièce jointe légitime serait une panne. On le rend simplement **inerte** — type
+// générique et téléchargement forcé. Il n'était de toute façon pas affichable (la matrice des
+// formats du README ne connaît que le PDF et les images bitmap).
+const TYPES_EXECUTABLES = /^(image\/svg|text\/html|application\/xhtml|application\/xml|text\/xml)/i;
+
 async function relayerFichier(res, r, disposition) {
   if (!r) { res.statusCode = 404; res.end("Fichier indisponible"); return; }
   if (!r.ok && r.status !== 206) { res.statusCode = 502; res.end("Fichier indisponible"); return; }
@@ -1107,7 +1125,16 @@ async function relayerFichier(res, r, disposition) {
 
   const buf = Buffer.from(await r.arrayBuffer());
   res.statusCode = r.status;
-  res.setHeader("Content-Type", r.headers.get("content-type") || "application/pdf");
+  const typeAmont = r.headers.get("content-type") || "application/pdf";
+  const executable = TYPES_EXECUTABLES.test(typeAmont);
+  res.setHeader("Content-Type", executable ? "application/octet-stream" : typeAmont);
+  // ⚠️ On ÉCRASE la disposition, on ne la complète pas : les chemins de streaming passent
+  // `inline; filename=…` pour que la visionneuse affiche le document. Sur un type exécutable,
+  // `inline` est précisément ce qu'il ne faut pas — et un `|| "attachment"` n'aurait jamais servi.
+  if (executable) disposition = "attachment";
+  // `nosniff` : sans lui, un `text/plain` contenant du HTML peut être requalifié par le
+  // navigateur — la garde ci-dessus porterait alors sur un type qui n'est pas celui qui s'ouvre.
+  res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Accept-Ranges", "bytes");
   // Les bornes d'un `Content-Range` ne valent que si l'amont n'a pas compressé.
   const cr = !compresse && r.headers.get("content-range");

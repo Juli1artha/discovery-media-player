@@ -18,5 +18,5 @@ body:
     attributes:
       label: Does it change what a host application can call?
       options:
-        - label: Yes — I have read CONTRAT.md and this changes the host boundary.
+        - label: Yes — I have read docs/HOST-CONTRACT.md and this changes the host boundary.
         - label: No — it is internal to the player.

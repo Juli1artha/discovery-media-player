@@ -98,7 +98,7 @@ title and cannot merge before the corresponding instance is deployed.
 
 ## What the boundary is written down in
 
-[`CONTRAT.md`](../CONTRAT.md) — the contract with host applications, in French: five rules, the
+[`HOST-CONTRACT.md`](HOST-CONTRACT.md) — the contract with host applications, in French: five rules, the
 v1 surface, a dated journal of every change to the boundary, and the requests hosts have made.
 It is the file both sides read before touching integration. [`API.md`](API.md) is the English
 reference for the same surface; when the two disagree, the contract wins.

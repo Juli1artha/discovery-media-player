@@ -14,9 +14,10 @@ and live presentation — for teams who would rather not hand their commercial d
 to a third-party SaaS.
 
 [![CI](https://github.com/Juli1artha/discovery-media-player/actions/workflows/ci.yml/badge.svg)](https://github.com/Juli1artha/discovery-media-player/actions/workflows/ci.yml)
-[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen.svg)](package.json)
-[![Docker](https://img.shields.io/badge/docker-ghcr.io-informational.svg)](#docker)
+[![npm](https://img.shields.io/npm/v/discovery-media-player?logo=npm&color=cb3837)](https://www.npmjs.com/package/discovery-media-player)
+[![Container](https://img.shields.io/badge/ghcr.io-discovery--media--player-2496ed?logo=docker&logoColor=white)](https://github.com/Juli1artha/discovery-media-player/pkgs/container/discovery-media-player)
+[![Node](https://img.shields.io/node/v/discovery-media-player?logo=node.js&color=5fa04e)](package.json)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
 <br>
 
@@ -78,6 +79,21 @@ This player answers the same questions and runs on your own infrastructure.
 Two populations are never merged: a prospect reading your proposal and a colleague re-reading
 it in-house produce different records. Mixing them makes "this prospect read for 12 minutes"
 a lie, which is worse than having no number at all.
+
+### What it displays
+
+| Format | Status | What that means |
+|---|:---:|---|
+| **PDF** | ✅ | The format the player is built around. Rendered by pdf.js, progressive — the first page shows before the file has finished arriving. Per-page reading time, furthest page reached, page-level presenter sync. |
+| **Images** — `.png` `.jpg` `.jpeg` `.webp` `.gif` `.avif` | ✅ | Displayed, zoomable, tracked as a single page. Total reading time is real; there is no per-page breakdown because there are no pages. |
+| **Video** | ❌ | Not displayed. A document can *carry* a presenter video during a live presentation, but a video file is not something you can open as a document. |
+| **HTML** | ❌ | Deliberately. Displaying arbitrary HTML means executing someone's script in your instance's origin, next to sessions and analytics. The same reason `.svg` is refused. |
+| **Office** (`.docx`, `.pptx`, …) | ❌ | Convert to PDF before sending. Nothing in the player renders them, and pretending otherwise would show an empty page. |
+
+An unsupported file is never a security question either. A relayed file opens on the *player's*
+origin — the domain holding sessions and analytics — so anything a browser would **render** rather
+than download (SVG, HTML, XML) is served inert: generic type, forced download, `nosniff`. It stays
+retrievable; it cannot execute.
 
 ---
 

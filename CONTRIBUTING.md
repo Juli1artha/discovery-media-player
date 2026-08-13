@@ -35,7 +35,7 @@ prevents. A test whose name does not tell you what it protects will be asked abo
 3. **Can the plugins still be unplugged?** The core must display, track and present with every
    optional module disabled. Also enforced by a test.
 4. **Is the boundary documented?** If you change what a host can call, say so in
-   [`CONTRAT.md`](CONTRAT.md) — the contract with host applications, and its journal.
+   [`docs/HOST-CONTRACT.md`](docs/HOST-CONTRACT.md) — the contract with host applications, and its journal.
 
 ## Generated files
 

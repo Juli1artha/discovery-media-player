@@ -120,9 +120,20 @@ function resolveLocal(candidate, root) {
   }
 }
 
+// ⚠️ PAS DE `.svg`, ET C'EST DÉLIBÉRÉ — deux raisons qui pointent dans le même sens.
+//
+// 1. SÉCURITÉ. Un SVG est un document exécutable : servi `image/svg+xml` en ligne, il s'ouvre sur
+//    L'ORIGINE DU PLAYER et son script s'exécute avec elle. La réponse de streaming ne porte pas
+//    de CSP — c'est un fichier, pas une page. Quiconque pourrait déposer un SVG dans une source
+//    autorisée obtiendrait donc du script sur le domaine qui sert les documents.
+// 2. COHÉRENCE. `isImageDocument()` ne reconnaît pas `.svg` : la visionneuse l'envoyait à pdf.js,
+//    qui rendait un écran blanc. Le format était donc servi sans être affichable — le pire des
+//    deux mondes.
+//
+// Les formats affichables sont ceux de la matrice du README : PDF et images bitmap.
 const TYPES = {
   ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-  ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml", ".avif": "image/avif",
+  ".gif": "image/gif", ".webp": "image/webp", ".avif": "image/avif",
 };
 
 /**
