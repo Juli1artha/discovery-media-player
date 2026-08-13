@@ -1,4 +1,15 @@
-// LE CÂBLAGE — le seul fichier que vous écrivez.
+// LE CÂBLAGE — ⚠️ LISEZ CECI AVANT DE LE COPIER : vous n'en avez probablement pas besoin.
+//
+// `context/standalone` délègue DÉJÀ les deux décisions de l'hôte à `PLAYER_HOST_AUTHZ_URL` et
+// `PLAYER_HOST_BRAND_URL`. Si votre application expose ces deux routes dans la forme documentée,
+// il n'y a rien à écrire : `player.init(createStandaloneContext(process.env))` suffit, et votre
+// instance tient en quatre fichiers dont un seul de dix lignes.
+//
+// Ce fichier montre l'AUTRE cas : celui où une décision ne peut pas voyager en HTTP — un modèle
+// de droits en mémoire, une base dont vous tenez déjà la connexion. Le premier hôte intégré a
+// découvert qu'on lui faisait écrire un fichier inutile ; le code qu'on n'écrit pas ne diverge pas.
+//
+// L'ancien titre de ce fichier — « le seul fichier que vous écrivez » — était donc trop fort.
 //
 // Tout ce que le player emprunte à votre application arrive par ici, et rien d'autre. C'est aussi
 // la raison pour laquelle ce fichier vous appartient : il ne contient que des décisions qui sont

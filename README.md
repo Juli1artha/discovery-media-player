@@ -87,6 +87,9 @@ forking it. A fix lands once and reaches every instance on its next deploy.
 - **Node / Express / Next.js** — same handler, mounted on a route
 - **Standalone** — `npm start`, or the Docker image
 
+It reads `req.query` when the platform provides it (serverless, Express) and falls back to parsing
+`req.url` when it does not — so a bare `http.createServer` works too, without a shim.
+
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the boundary, and
 [`docs/API.md`](docs/API.md) for the surface an integrator implements.
 

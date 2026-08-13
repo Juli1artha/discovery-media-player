@@ -30,6 +30,27 @@ The **host contract** has its own version, independent of the package version: i
 ### Fixed
 - Unread badge counted each chat message twice while both delivery paths were active.
 
+## [0.1.4] — 2026-08-13
+
+### Fixed
+- **A wiring mistake looked like a refusal.** The handler reads `req.query` — the serverless and
+  Express convention — which a bare `http.createServer` does not fill. With no parameters, a
+  request went looking for a share named *nothing*, found none, and rendered *"this link is no
+  longer valid or has been revoked"*. An integrator saw a **refusal** where they had simply not
+  wired the platform. It now falls back to parsing `req.url`, so the handler is platform-agnostic
+  in fact and not only in the README.
+- **A request asking for nothing now says so** (`400`, naming the missing parameters) instead of
+  returning the revocation page. A refusal and a missing parameter must not look alike.
+
+### Changed
+- **Documentation: most hosts need no wiring file at all.** `context/standalone` already delegates
+  both host decisions to `PLAYER_HOST_AUTHZ_URL` and `PLAYER_HOST_BRAND_URL`; an instance whose
+  application exposes those routes is four files, one of them ten lines. The custom-context example
+  is now presented as the exception — for decisions that cannot travel over HTTP.
+
+  *Both changes come from the first third-party integration. The extraction had gone further than
+  its own instructions said.*
+
 ## [Unreleased]
 
 ### Added

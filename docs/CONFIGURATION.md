@@ -76,6 +76,22 @@ live work".
 
 ## Decisions that are yours
 
+⚠️ **You probably do not need to write a wiring file at all.** `context/standalone` already
+delegates both host decisions to the two routes below. If your application exposes them in the
+documented shape, your instance is four files, and the only one with any content is a ten-line
+entry point:
+
+```js
+const player = require("discovery-media-player");
+const { createStandaloneContext } = require("discovery-media-player/context/standalone");
+player.init(createStandaloneContext(process.env));
+module.exports = player.handler;
+```
+
+Write a custom context only when a decision cannot travel over HTTP — an in-process permission
+model, a database you already hold a connection to. *(The first host to integrate discovered this:
+we had told them to write a file they did not need. Code you don't write cannot drift.)*
+
 | Variable | |
 |---|---|
 | `PLAYER_HOST_AUTHZ_URL` | who may send, revoke, or read analytics |

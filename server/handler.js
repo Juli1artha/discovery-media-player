@@ -2113,9 +2113,34 @@ async function readJsonBody(req) {
   });
 }
 
+/**
+ * Paramètres de la requête, quelle que soit la plateforme.
+ *
+ * Le gestionnaire lit `req.query` — la convention des plateformes serverless (Vercel, Next.js) et
+ * d'Express. Un serveur HTTP nu ne la remplit pas : `req.query` est alors `undefined`, et TOUT
+ * paramètre disparaît.
+ *
+ * ⚠️ CE QUE ÇA DONNAIT, ET POURQUOI C'ÉTAIT LE PIRE DES SYMPTÔMES. Sans paramètres, la requête
+ * partait chercher un partage nommé « rien », n'en trouvait pas, et affichait « Ce lien n'est plus
+ * valide ou a été révoqué ». Un intégrateur voyait donc un REFUS là où il n'avait simplement pas
+ * branché la plateforme. C'est exactement l'inversion qu'on passe notre temps à corriger : une
+ * erreur de câblage ne doit jamais ressembler à une décision.
+ *
+ * Signalé par un hôte qui montait le player sur `http.createServer` : chez lui ça aurait marché en
+ * production (Vercel remplit `req.query`) — par chance, pas par construction.
+ */
+function parametres(req) {
+  if (req.query && typeof req.query === "object") return req.query;
+  try {
+    return Object.fromEntries(new URL(req.url || "/", "http://interne").searchParams);
+  } catch {
+    return {};
+  }
+}
+
 async function handler(req, res) {
   try {
-    const q = req.query || {};
+    const q = parametres(req);
     const slug = String(q.slug || "").trim();
 
     if (req.method === "POST") {
@@ -2493,6 +2518,17 @@ async function handler(req, res) {
         } catch { /* best-effort */ }
       }
       res.statusCode = 200; res.setHeader("Content-Type", "application/json"); res.end('{"ok":true}');
+      return;
+    }
+
+    // AUCUN DOCUMENT DEMANDÉ. Ni slug, ni présentation, ni aperçu, ni carte d'identité — il n'y a
+    // rien à afficher, et ce n'est pas un refus. Le dire franchement évite qu'un intégrateur
+    // cherche un lien révoqué là où il lui manque un paramètre.
+    if (req.method === "GET" && !slug && !q.present && !q.preview && !q.contract) {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.end("Aucun document demandé. Attendu : ?slug=… , ?present=… , ?preview=1 ou ?contract=1.\n" +
+              "Si vous intégrez le player, vérifiez que la plateforme fournit les paramètres de requête.");
       return;
     }
 
