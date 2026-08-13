@@ -82,3 +82,49 @@ describe("le player répond sans plateforme", () => {
     expect(await ctx.identity.canManageShares(null, "create")).toBe(false);
   });
 });
+
+// LA PREMIÈRE MINUTE DE QUELQU'UN QUI DÉCOUVRE LE PROJET.
+//
+// Écrit après avoir regardé un premier utilisateur suivre le README : dossier vide, nom d'exemple
+// tapé tel quel, et un « Impossible d'afficher ce document » rouge — le même message qu'un fichier
+// absent, qu'un dossier vide et qu'un format non géré. Trois causes, une phrase, aucune piste.
+// La racine du serveur montre désormais ce qu'il y a à lire.
+describe("page d'accueil du mode dossier", () => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const p = require("node:path");
+
+  it("liste ce qui est affichable, et rien d'autre", async () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(p.join(os.tmpdir(), "player-home-")));
+    fs.writeFileSync(p.join(dir, "rapport.pdf"), "%PDF-1.4");
+    fs.writeFileSync(p.join(dir, "plan.png"), "x");
+    fs.writeFileSync(p.join(dir, "notes.docx"), "x");   // format non géré : ne pas le proposer
+    fs.writeFileSync(p.join(dir, ".cache"), "x");        // fichier caché
+    fs.mkdirSync(p.join(dir, "archives"));               // dossier
+
+    const { pageAccueil } = require("../serve.js");
+    const html = await pageAccueil(dir);
+    expect(html).toContain('href="/preview/rapport.pdf"');
+    expect(html).toContain('href="/preview/plan.png"');
+    expect(html).not.toContain("notes.docx");
+    expect(html).not.toContain(".cache");
+    expect(html).not.toContain("archives");
+  });
+
+  it("dit qu'il est vide plutôt que de laisser deviner", async () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(p.join(os.tmpdir(), "player-vide-")));
+    const { pageAccueil } = require("../serve.js");
+    expect(await pageAccueil(dir)).toContain("Aucun document affichable");
+  });
+
+  // Un nom de fichier est écrit par quelqu'un d'autre — ici l'exploitant, mais la règle ne se
+  // relâche pas selon la confiance qu'on a dans la source.
+  it("échappe les noms de fichiers", async () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(p.join(os.tmpdir(), "player-xss-")));
+    fs.writeFileSync(p.join(dir, '<img src=x onerror=alert(1)>.pdf'), "%PDF");
+    const { pageAccueil } = require("../serve.js");
+    const html = await pageAccueil(dir);
+    expect(html).not.toContain("<img src=x");
+    expect(html).toContain("&lt;img");
+  });
+});

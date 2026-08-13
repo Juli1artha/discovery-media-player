@@ -14,6 +14,7 @@
 
 const http = require("node:http");
 const path = require("node:path");
+const fs = require("node:fs/promises");
 const { pathToFileURL } = require("node:url");
 const player = require("../server/handler");
 const { createStandaloneContext } = require("../context/standalone");
@@ -49,6 +50,58 @@ function versParametres(url) {
   return q;
 }
 
+const AFFICHABLES = new Set([".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".svg"]);
+
+/**
+ * Page d'accueil du mode dossier : ce qu'il y a à lire, et où le prendre.
+ *
+ * ⚠️ Écrite après avoir regardé quelqu'un essayer le projet pour la première fois. Il a suivi le
+ * README, ouvert `/preview/<nom>` avec le nom d'exemple, et reçu « Impossible d'afficher ce
+ * document » — le même message qu'un dossier vide, qu'un fichier absent et qu'un format non géré.
+ * Trois causes, une phrase, aucune piste. Le premier contact avec un projet ne se rejoue pas.
+ *
+ * N'existe qu'en mode dossier : c'est la racine que l'exploitant a lui-même désignée, il n'y a
+ * rien à divulguer qu'il ne connaisse déjà.
+ */
+async function pageAccueil(racine) {
+  let fichiers = [];
+  try {
+    fichiers = (await fs.readdir(racine, { withFileTypes: true }))
+      .filter((e) => e.isFile() && !e.name.startsWith(".") && AFFICHABLES.has(path.extname(e.name).toLowerCase()))
+      .map((e) => e.name).sort();
+  } catch { /* racine illisible : traitée comme vide, le message le dira */ }
+
+  const echapper = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const liste = fichiers.length
+    ? `<ul>${fichiers.map((n) => `<li><a href="/preview/${encodeURIComponent(n)}">${echapper(n)}</a></li>`).join("")}</ul>`
+    : `<p class=vide>Aucun document affichable dans <code>${echapper(racine)}</code>.<br>
+       Déposez-y un PDF ou une image, puis rechargez cette page.</p>`;
+
+  return `<!doctype html><html lang=fr><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1"><title>Discovery Media Player</title>
+<style>
+  body{font:15px/1.6 -apple-system,system-ui,Segoe UI,Roboto,sans-serif;color:#1c1a17;background:#f5f3ef;
+    margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:24px}
+  .c{width:100%;max-width:560px;background:#fff;border-radius:16px;padding:32px;box-shadow:0 18px 50px rgba(30,22,12,.10)}
+  h1{font-size:19px;margin:0 0 4px;letter-spacing:-.01em}
+  .s{color:#7c7266;font-size:13.5px;margin:0 0 22px}
+  ul{list-style:none;margin:0;padding:0}
+  li+li{border-top:1px solid #eee9e0}
+  a{display:block;padding:11px 12px;color:#1c1a17;text-decoration:none;border-radius:9px}
+  a:hover{background:#f5f2ec}
+  .vide{color:#7c7266;font-size:14px;background:#faf8f4;border:1px dashed #ddd4c6;border-radius:12px;padding:18px;margin:0}
+  code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace;background:#f0ece4;padding:1px 5px;border-radius:5px}
+  .f{margin:22px 0 0;padding-top:16px;border-top:1px solid #eee9e0;color:#9a9184;font-size:12.5px}
+  .f a{display:inline;padding:0;color:#9a9184;text-decoration:underline}
+</style></head><body><div class=c>
+  <h1>Discovery Media Player</h1>
+  <p class=s>Mode dossier — les documents servis viennent de <code>${echapper(racine)}</code>.</p>
+  ${liste}
+  <p class=f>Liens tracés, statistiques et présentation en direct demandent une base :
+    voir <a href="https://github.com/Juli1artha/discovery-media-player#going-further">la documentation</a>.</p>
+</div></body></html>`;
+}
+
 const serveur = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
 
@@ -57,6 +110,13 @@ const serveur = http.createServer(async (req, res) => {
   if (url.pathname === "/healthz") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  // Mode dossier : la racine du serveur montre ce qu'il y a à lire.
+  if ((url.pathname === "/" || url.pathname === "/preview" || url.pathname === "/preview/") && process.env.PLAYER_LOCAL_ROOT) {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+    res.end(await pageAccueil(path.resolve(process.env.PLAYER_LOCAL_ROOT)));
     return;
   }
 
@@ -112,4 +172,4 @@ if (require.main === module) serveur.listen(PORT, HOST, () => {
   console.log(`  état      : http://localhost:${PORT}/api/doc?contract=1`);
 });
 
-module.exports = { serveur, versParametres };
+module.exports = { serveur, versParametres, pageAccueil };
