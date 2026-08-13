@@ -9,12 +9,16 @@ permissions:
   contents: read
 
 jobs:
+  # Outillage de développement : eslint et typescript-eslint exigent Node ≥ 20.19. Le player,
+  # lui, tourne sur Node 18 — c'est ce que promet `engines`. Les deux sont vérifiés, mais pas au
+  # même endroit : ici l'outillage, plus bas l'exécution réelle. Faire tourner le lint sur 18
+  # n'aurait rien prouvé sur le player et aurait cassé pour une raison qui ne le concerne pas.
   check:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        node: ["18", "20", "22"]
+        node: ["20", "22", "24"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,6 +38,22 @@ jobs:
           npm run build
           git diff --exit-code -- server/*.generated.js \
             || { echo "::error::server/*.generated.js is stale — run 'npm run build' and commit."; exit 1; }
+
+  # LA PROMESSE `engines: node >=18`, vérifiée là où elle compte : sans dépendance de
+  # développement, on démarre le serveur et on lui parle. Un `engines` que personne n'exécute est
+  # une déclaration d'intention.
+  runtime-node18:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "18" }
+      - name: The player runs with no dependencies at all
+        run: |
+          mkdir -p documents
+          PLAYER_LOCAL_ROOT="$PWD/documents" PORT=3000 node bin/serve.js &
+          for i in $(seq 1 20); do curl -fsS localhost:3000/healthz && break || sleep 1; done
+          curl -fsS "localhost:3000/api/doc?contract=1" | grep -q '"contract":1'
 
   docker:
     runs-on: ubuntu-latest
