@@ -16,7 +16,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # ⚠️ Node 24 pour son npm ≥ 11.5 : c'est la version minimale qui sait s'authentifier
+          # auprès de npm par OIDC (« trusted publisher »). Sur Node 20, npm 10 ignore
+          # simplement le jeton d'identité et retombe sur NODE_AUTH_TOKEN — donc, une fois le
+          # jeton supprimé, une publication qui échoue pour une raison qui n'a rien à voir avec
+          # la configuration qu'on vient de faire.
+          node-version: "24"
           registry-url: https://registry.npmjs.org
           cache: npm
       - run: npm ci
@@ -40,8 +45,10 @@ jobs:
           else
             npm publish --provenance --access public
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # Aucun NODE_AUTH_TOKEN : l'authentification passe par OIDC (`id-token: write` plus haut)
+        # et l'éditeur de confiance déclaré côté npm. Plus aucun secret stocké, plus rien à faire
+        # expirer, plus rien à voler. C'est aussi la voie que npm impose progressivement — les
+        # jetons qui contournent la 2FA sont en cours de restriction.
 
       # ⚠️ `github.repository` conserve la casse du compte (`Juli1artha`), or un nom d'image doit
       # être en minuscules. La construction échouait au tout dernier moment, après la publication
