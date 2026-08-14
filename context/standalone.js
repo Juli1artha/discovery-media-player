@@ -164,6 +164,39 @@ function createStandaloneContext(env = process.env) {
       }),
       // Écriture de fichier : hors périmètre d'une instance autonome (elle sert, elle ne range pas).
       async put() { throw new Error("storage.put n'est pas disponible sans câblage d'hôte"); },
+
+      /**
+       * URL d'envoi signée, pour une pièce jointe de chat. **Capacité de l'HÔTE**, pas du cœur.
+       *
+       * ⚠️ Le cœur lisait `SUPABASE_SERVICE_ROLE_KEY` directement dans l'environnement — la clé
+       * qui ouvre toute la base, lue en contournant le contexte injecté, c'est-à-dire en violant
+       * la règle que le projet affiche partout ailleurs. Un hôte qui branche SA base se faisait
+       * court-circuiter ici sans que rien ne le signale.
+       *
+       * ⚠️ Honnête sur ce qui reste : la page renvoyée appelle `uploadToSignedUrl` de supabase-js.
+       * Cette capacité retire le secret du cœur ; elle ne rend pas la fonction portable pour
+       * autant. Un hôte sur une autre pile devra aussi remplacer la moitié navigateur.
+       */
+      async signUpload(bucket, chemin) {
+        const base = sansBarreFinale(env.SUPABASE_URL);
+        const cle = String(env.SUPABASE_SERVICE_ROLE_KEY || "");
+        if (!base || !cle || !bucket || !chemin) return null;
+        try {
+          const r = await fetch(`${base}/storage/v1/object/upload/sign/${bucket}/${chemin}`, {
+            method: "POST",
+            headers: { apikey: cle, Authorization: `Bearer ${cle}`, "Content-Type": "application/json" },
+            body: "{}",
+          });
+          if (!r.ok) return null;
+          const d = await r.json().catch(() => null);
+          const url = d && d.url;
+          if (!url) return null;
+          return {
+            token: (String(url).split("token=")[1] || "").split("&")[0],
+            publicUrl: `${base}/storage/v1/object/public/${bucket}/${chemin}`,
+          };
+        } catch { return null; }
+      },
     },
 
     db: { request: db.request, selectAll: db.selectAll },
