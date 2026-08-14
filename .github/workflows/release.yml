@@ -59,6 +59,22 @@ jobs:
           test -s /tmp/notes.md || { echo "::error::no CHANGELOG section for $V"; exit 1; }
           { echo "body<<EOFNOTES"; cat /tmp/notes.md; echo "EOFNOTES"; } >> "$GITHUB_OUTPUT"
 
+      # ⚠️ La démo épingle une version EXACTE (le contrat l'exige pour tout le monde, elle
+      # comprise). Elle ne suit donc pas toute seule, et personne ne regarde une démo qui marche :
+      # elle est restée trois versions en arrière sans que rien ne le signale. Non bloquant — la
+      # démo ne peut pointer une version qu'APRÈS sa publication, donc l'ordre correct est
+      # publier puis monter. Mais c'est écrit dans le résumé de la sortie, là où on le lit.
+      - name: Is the live demo still on the current version?
+        run: |
+          V=$(node -p 'require("./package.json").version')
+          D=$(node -p 'require("./examples/demo/package.json").dependencies["discovery-media-player"]')
+          if [ "$V" != "$D" ]; then
+            echo "::notice::the live demo still pins $D — bump examples/demo/package.json to $V"
+            echo "⚠️ **La démo en ligne épingle \`$D\`** — à monter en \`$V\`." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "✅ La démo est sur \`$V\`." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: GitHub Release
         uses: softprops/action-gh-release@v3
         with:
