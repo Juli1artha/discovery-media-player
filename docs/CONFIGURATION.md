@@ -36,6 +36,7 @@ expect a brand. Three identities meet on that page — see [API.md](API.md#brand
 | `PLAYER_SOURCE_URL` | where readers obtain the source of **this** instance |
 | `PLAYER_LEGAL_URL`, `PLAYER_PRIVACY_URL` | your own pages |
 | `PLAYER_TRACKING_NOTICE` | overrides the default measurement notice |
+| `PLAYER_TRACKING_NOTICE_ANON` | the same, for a link **nobody sent** — a public brochure opened from a map. Saying "passed on to its sender" there would be false, and this is the one sentence in the product whose whole job is to be exact. The player picks by the link itself: no recipient, no creator. |
 
 Two obligations, different in nature. **The source**: AGPL makes it owed to whoever *uses* the
 software over a network, not only to whoever distributes it — a reader of `/doc/:slug` qualifies.
