@@ -10,6 +10,48 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.14] — 2026-08-14
+
+### Security
+- **Re-sharing a document stripped its restrictions.** `createReshare` enumerated the columns to
+  copy, so every column added since was silently left out — and because these columns are
+  `not null default`, the omission did not leave a hole, it wrote the **most permissive value**:
+
+  - **`require_auth`** (default `false`) — a document behind the access wall, once forwarded,
+    opened **without the wall**. A recipient could therefore lift the protection by forwarding the
+    document to themselves. This was the worst of the three, and it was not in the report that led
+    here.
+  - **`allow_download`** (default `true`) — the Download button came back on a document where it
+    had been refused.
+  - **`brand_key`** — the brand was lost exactly where the document starts to travel.
+
+  Inheritance is now the rule and the exceptions are enumerated: a column added tomorrow is
+  inherited without anyone thinking about it. If it is a restriction, it propagates. A test covers
+  the *mechanism* — an unknown column must survive a re-share — rather than a list that would go
+  stale the same way the code did.
+
+  *Reported by the second host, who saw the brand — the one that **shows** — and assumed the rest
+  followed. The rest followed.*
+
+### Added
+- **Sending the re-share email can be delegated to the host** (`PLAYER_HOST_MAIL_URL` +
+  `PLAYER_HOST_MAIL_SECRET`), which is what a host with its own provider and templates wants.
+
+  ⚠️ **The player calls it only for a link that has a recipient.** The reader of an anonymous link
+  is any passing visitor; letting them request a send would turn the host's servers into a relay
+  for unsolicited mail, with the host's domain in the header. What that costs is not the message —
+  it is a sender reputation that takes weeks to recover, during which *none* of their mail arrives.
+  The guard sits on the path that acts, not in the host's route on arrival: a filter on arrival
+  depends on a list staying current, a path that cannot phrase the request never phrases it by
+  accident. *Requested by the host in our code rather than kept in theirs.*
+
+  The payload carries structured fields (`kind`, `doc`, `from`) next to the HTML, and isolates
+  caller-supplied text under `untrusted` — a host composing its own message can ignore it in one
+  gesture instead of remembering which field is doubtful.
+
+  A third secret, deliberately: the file secret travels on every document opened and lives in the
+  host's logs; adding "send mail in your name" to what a log leak permits is a different power.
+
 ## [0.1.13] — 2026-08-14
 
 ### Fixed
@@ -321,7 +363,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.13...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.14...HEAD
+[0.1.14]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.10...v0.1.11

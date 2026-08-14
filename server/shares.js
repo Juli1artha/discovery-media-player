@@ -43,10 +43,43 @@ async function createReshare(parentSlug, { email, name }) {
   const parent = await getShareBySlug(parentSlug);
   if (!parent) throw Object.assign(new Error("lien introuvable"), { statusCode: 404 });
   const slug = newSlug();
+
+  // ⚠️ ON HÉRITE DE TOUT, ON N'ÉNUMÈRE QUE LES EXCEPTIONS — ET LE SENS DE CETTE INVERSION EST LA
+  // CORRECTION ELLE-MÊME.
+  //
+  // Cette ligne énumérait les colonnes à recopier. Une énumération se périme à chaque colonne
+  // ajoutée, en silence, ET DU MAUVAIS CÔTÉ : la nouveauté est oubliée. Les colonnes de cette
+  // table sont `not null default`, donc l'oubli ne produisait pas un trou — il produisait une
+  // VALEUR PAR DÉFAUT, c'est-à-dire la plus permissive :
+  //
+  //   • `require_auth` (défaut `false`) — un document derrière le mur d'accès, une fois
+  //     re-partagé, s'ouvrait SANS mur. Un destinataire pouvait donc lever la protection en se
+  //     transmettant le document à lui-même. C'est le plus grave, et il n'était pas dans le
+  //     rapport qui a mené ici.
+  //   • `allow_download` (défaut `true`) — le bouton Télécharger revenait sur un document où il
+  //     avait été refusé.
+  //   • `brand_key` — la marque se perdait à l'endroit exact où le document commence à circuler :
+  //     le lecteur d'un document VALONEUF transmettait un lien qui s'ouvre sous une autre marque.
+  //
+  // Aucun de ces trois n'était visible : le lien fonctionne, il est simplement plus permissif que
+  // son parent. Signalé par le second hôte, qui a vu la marque — celle qui SE VOIT — et a supposé
+  // que le reste suivait. Le reste suivait.
+  //
+  // Sens de l'inversion : une colonne ajoutée demain sera héritée sans que personne y pense. Si
+  // c'est une restriction, elle se propage ; si elle ne doit pas l'être, il faudra l'écrire ici,
+  // et ce sera une décision au lieu d'un oubli.
+  //
+  // `created_at` est retiré : la base le pose. `is_test` est hérité — un lien de répétition dont
+  // un enfant compterait dans les vraies statistiques les fausserait.
+  const { created_at: _cree, ...herite } = parent;
   const row = {
-    slug, doc_id: parent.doc_id, doc_title: parent.doc_title, file_url: parent.file_url, file_name: parent.file_name,
-    recipient_email: low(email) || null, recipient_name: (name || "").trim() || null,
-    created_by: parent.recipient_email || parent.created_by || null, parent_slug: parent.slug,
+    ...herite,
+    slug,
+    recipient_email: low(email) || null,
+    recipient_name: (name || "").trim() || null,
+    created_by: parent.recipient_email || parent.created_by || null,
+    parent_slug: parent.slug,
+    revoked: false,
   };
   await PLAYER.db.request("commercial_doc_shares", { method: "POST", headers: { Prefer: "return=minimal" }, body: [row] });
   return { slug, docTitle: parent.doc_title };
@@ -225,7 +258,25 @@ async function sendReshareEmail({ parent, childSlug, origin, toEmail, toName }) 
     <p style="font-size:13px;color:#777">Vous pouvez répondre directement à cet email pour échanger avec ${e(forwarder)}.</p>
     <p style="font-size:11px;color:#999;margin-top:22px">Propulsé par 3D Discovery — visualisation 3D &amp; visites immersives.</p>
   </div>`;
-  return PLAYER.mail.send({ to: toEmail, subject: `${forwarder} vous recommande : ${title}`, html, replyTo: parent.recipient_email || undefined });
+  // ⚠️ LES CHAMPS STRUCTURÉS ACCOMPAGNENT LE HTML, ILS NE LE REMPLACENT PAS.
+  //
+  // Un hôte qui envoie avec sa propre identité voudra composer avec son gabarit — et surtout
+  // n'y laisser entrer AUCUN texte fourni par l'appelant. Notre HTML, lui, insère `toName` : un
+  // champ libre, échappé mais choisi par qui détient le lien, dans un message signé par l'hôte.
+  // Lui donner les éléments séparés, c'est lui permettre de n'en reprendre aucun.
+  //
+  // Le HTML reste là pour un hôte qui ne veut pas composer : rien ne casse pour l'existant.
+  return PLAYER.mail.send({
+    to: toEmail,
+    subject: `${forwarder} vous recommande : ${title}`,
+    html,
+    replyTo: parent.recipient_email || undefined,
+    kind: "reshare",
+    doc: { title, url },
+    from: { name: parent.recipient_name || null, email: parent.recipient_email || null },
+    // Fourni par l'appelant, donc à traiter comme tel : un hôte prudent l'ignore.
+    untrusted: { toName: (toName || "").trim() || null },
+  });
 }
 
 async function revokeShare(slug) {

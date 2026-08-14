@@ -204,7 +204,35 @@ function createStandaloneContext(env = process.env) {
 
     // Sans expéditeur configuré, le re-partage et le code du mur d'accès sont indisponibles — et
     // le disent. Ils ne prétendent pas avoir envoyé.
-    mail: { async send() { return null; } },
+    /**
+     * Envoi d'email : capacité de l'HÔTE. Sans route configurée, le player ne prétend pas avoir
+     * envoyé — il rend `null`, et l'interface dit « envoi indisponible ».
+     *
+     * ⚠️ UN SECRET À LUI, ET C'EST UN ARBITRAGE ASSUMÉ. Le troisième, donc l'inflation est réelle.
+     * Mais `PLAYER_HOST_FETCH_SECRET` part vers l'hôte à CHAQUE fichier ouvert : il vit dans ses
+     * journaux d'accès à raison de plusieurs entrées par lecture. Lui ajouter le pouvoir de faire
+     * partir du courrier au nom de l'hôte élargirait énormément ce qu'une fuite de journaux
+     * permettrait — et une réputation d'expéditeur perdue met des semaines à revenir. Répondre à
+     * une question et agir vers le dehors ne sont pas le même pouvoir, même dans la même
+     * direction.
+     *
+     * La charge utile porte les champs STRUCTURÉS en plus du HTML : un hôte qui compose lui-même
+     * (gabarit à sa marque, aucun texte venu de l'appelant) a tout ce qu'il lui faut sans avoir à
+     * découper le nôtre.
+     */
+    mail: {
+      async send(message) {
+        const url = String(env.PLAYER_HOST_MAIL_URL || "").trim();
+        const secret = String(env.PLAYER_HOST_MAIL_SECRET || "");
+        if (!url) return null;
+        if (!secret) {
+          try { journal.capture(new Error("PLAYER_HOST_MAIL_URL est configurée sans PLAYER_HOST_MAIL_SECRET : aucun envoi ne partira"), {}); } catch { /* ignore */ }
+          return null;
+        }
+        const reponse = await appelHote(url, secret, message, journal);
+        return reponse && reponse.sent === true ? { sent: true } : null;
+      },
+    },
 
     identity: {
       /**
@@ -367,6 +395,7 @@ function createStandaloneContext(env = process.env) {
       // Même raison que ci-dessus : « la capacité existe » et « elle est configurée »
       // sont deux questions, et seule la seconde explique un refus.
       hostShare: !!String(env.PLAYER_HOST_SHARE_SECRET || ""),
+      hostMail: !!String(env.PLAYER_HOST_MAIL_URL || "").trim(),
     },
   };
 }

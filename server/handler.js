@@ -2619,15 +2619,42 @@ async function handler(req, res) {
         try { out = await createReshare(body.slug || slug, { email: mail, name: body.name }); } catch { /* parent introuvable */ }
         if (!out) return j(404, { ok: false });
         let sent = false;
+        let refusEnvoi = null;
         if (body.send) {
           try {
             const parent = await getShareBySlug(body.slug || slug);
+            // ⚠️ ON N'ENVOIE DE COURRIER QUE POUR UN LIEN QUI A UN DESTINATAIRE.
+            //
+            // Le lecteur d'un lien ANONYME est un visiteur quelconque : lui laisser demander un
+            // envoi ferait des serveurs de l'hôte un relais de courrier non sollicité, avec SON
+            // domaine dans l'en-tête. Ce qui coûte cher n'est pas le message parti, c'est la
+            // réputation d'expéditeur : elle met des semaines à revenir, et pendant ce temps
+            // AUCUN de ses emails n'arrive — factures, relances, notifications d'équipe
+            // comprises. Une commodité sur une page publique mettrait en jeu tout son courrier
+            // transactionnel.
+            //
+            // Un lien nominatif, lui, a été créé par quelqu'un qui s'est authentifié et qui
+            // engage sa responsabilité. `recipient_email` est nul sur exactement les liens sans
+            // membre derrière — c'est déjà la clé d'idempotence du chemin serveur à serveur.
+            //
+            // ⚠️ La garde est ICI, sur le chemin qui agit, et pas chez l'hôte à l'arrivée. Un
+            // filtre à l'arrivée dépend d'une liste à jour ; un chemin qui ne sait pas formuler
+            // la demande ne la formulera jamais par accident. Même raison que les trois verrous
+            // de `docshare.create`. Demandé par le second hôte, qui l'a réclamée CHEZ NOUS alors
+            // qu'il aurait pu la poser chez lui.
+            if (!parent || !parent.recipient_email) {
+              refusEnvoi = "no-recipient";
+              throw new Error("envoi réservé aux liens nominatifs");
+            }
             const origin = `https://${req.headers.host}`;
             const r = await sendReshareEmail({ parent, childSlug: out.slug, origin, toEmail: mail, toName: body.name });
             sent = !!(r && r.sent);
           } catch { /* best-effort : le lien existe quand même */ }
         }
-        return j(200, { ok: true, slug: out.slug, sent });
+        // Le refus se DIT : « rien n'est parti » et « l'envoi n'était pas permis » ne se
+        // ressemblent pas, et une interface qui les confond propose un bouton qui ne marchera
+        // jamais.
+        return j(200, { ok: true, slug: out.slug, sent, ...(refusEnvoi ? { sendRefused: refusEnvoi } : {}) });
       }
       const ua0 = req.headers["user-agent"];
       const ip0 = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "";
@@ -2689,7 +2716,7 @@ async function handler(req, res) {
         // muette sur les URL.
         capabilities: [
           "docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth",
-          "host-share",
+          "host-share", "host-mail",
         ],
         // ⚠️ POUR QUELLES ORIGINES cette instance accepte d'être encadrée. Un booléen ne
         // suffisait pas : un hôte a besoin de voir que SON domaine manque, pas seulement que
@@ -2706,6 +2733,7 @@ async function handler(req, res) {
         // possible. Un hôte qui oublie le secret reçoit un 401 qui ressemble à un droit
         // manquant ; ce booléen le lui dit sans qu'il ait à essayer.
         hostShare: !!(PLAYER.config && PLAYER.config.hostShare),
+        hostMail: !!(PLAYER.config && PLAYER.config.hostMail),
         // Greffons de l'hôte : présents ou coupés (PLAYER_PLUGINS_OFF). Booléens uniquement.
         plugins: {
           bot: !!p.bot, visitors: !!p.visitors, brandIntro: !!p.brandIntro,
