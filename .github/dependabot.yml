@@ -11,6 +11,14 @@ updates:
       dev-tooling:
         patterns: ["*"]
     commit-message: { prefix: "chore(deps)" }
+    # ⚠️ TypeScript est couplé à `typescript-eslint`, qui déclare une plage de pairs STRICTE
+    # (`>=4.8.4 <6.1.0` à ce jour). Proposer TypeScript 7 sans le linter qui l'accepte produit une
+    # PR qui ne s'installe même pas — `npm ci` échoue avant le premier test, et les trois jobs
+    # tombent sur la même ligne. Ce n'est pas une régression à corriger chez nous : c'est l'amont
+    # qui n'a pas suivi. La majeure de TypeScript se prendra le jour où typescript-eslint l'accepte.
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /

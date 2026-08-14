@@ -1172,7 +1172,7 @@ const LEGAL_CSS = `
 function sendHtml(res, status, html, scriptSrc, imgExtra, frameAncestors) {
   res.statusCode = status;
   // Origine Supabase Storage (voix ElevenLabs mise en cache dans le bucket public tts-cache) → autorisée en media-src.
-  let supaOrigin = ""; try { supaOrigin = new URL(process.env.SUPABASE_URL || "").origin; } catch { supaOrigin = ""; }
+  let supaOrigin; try { supaOrigin = new URL(process.env.SUPABASE_URL || "").origin; } catch { supaOrigin = ""; }
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.setHeader("Cache-Control", "no-store, max-age=0");
   res.setHeader("X-Content-Type-Options", "nosniff");
