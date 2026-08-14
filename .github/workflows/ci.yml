@@ -52,6 +52,18 @@ jobs:
           ! grep -q '__tests__'     /tmp/files.txt || { echo "::error::tests are being published"; exit 1; }
           node --input-type=module -e "import('./dist/bridge.js').then(m => { if (typeof m.toWire !== 'function') process.exit(1); })"
 
+      # ⚠️ Le contrat d'hôte demande une version EXACTE — « une plage fait entrer une version que
+      # personne n'a décidé de déployer, le jour où quelqu'un lance npm install pour autre chose ».
+      # Deux exemples sur trois disaient `^0.1.0` : un intégrateur qui copie l'exemple récolte
+      # exactement ce contre quoi la page qu'il vient de lire le met en garde. La cohérence entre
+      # ce qu'on écrit et ce qu'on montre ne se relit pas, elle se garde.
+      - name: Examples pin an exact version
+        if: matrix.node == '22'
+        run: |
+          bad=$(grep -l '"discovery-media-player": *"[\^~]' examples/*/package.json || true)
+          [ -z "$bad" ] || { echo "::error::a version range in: $bad"; exit 1; }
+          grep -q '">=22"' examples/demo/package.json || { echo "::error::examples must declare node >=22"; exit 1; }
+
   docker:
     runs-on: ubuntu-latest
     steps:
