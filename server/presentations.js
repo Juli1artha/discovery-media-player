@@ -251,8 +251,28 @@ async function setChatLock(slug, control, locked) {
 async function toggleReaction(slug, msgId, emoji, reactor) {
   const id = Math.trunc(+msgId); const e = String(emoji || "").slice(0, 8); const who = String(reactor || "").slice(0, 160).toLowerCase();
   if (!id || !e || !who) return { ok: false, status: 400 };
+  // ⚠️ Une réaction est un EMOJI. Refuser tout ce qui ressemble à un identifiant ferme la porte à
+  // la source, en plus de l'objet sans prototype : `toString` stocké resterait affiché aux
+  // participants comme une réaction, ce qui est absurde même sans être dangereux. Deux barrières,
+  // parce que la seconde protège le jour où quelqu'un lève le plafond de longueur.
+  if (/[A-Za-z_$]/.test(e)) return { ok: false, status: 400 };
   const rows = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&slug=eq.${enc(String(slug || ""))}&select=reactions&limit=1`);
-  const cur = (Array.isArray(rows) && rows[0] && rows[0].reactions && typeof rows[0].reactions === "object") ? rows[0].reactions : {};
+  // ⚠️ LE NOM DE PROPRIÉTÉ ÉCRIT ICI VIENT DU CLIENT — et la garde posée en 0.1.2 ne couvrait que
+  // les LECTURES. `Object.hasOwn` empêchait de LIRE `constructor` ; rien n'empêchait de l'ÉCRIRE.
+  //
+  // Le plafond de 8 caractères bloquait le pire par accident : `__proto__` (9) et `constructor`
+  // (11) sont tronqués en clés inoffensives. Mais `toString` (8) et `valueOf` (7) passaient, et
+  // devenaient des propriétés PROPRES de l'objet stocké — masquant celles du prototype pour tout
+  // consommateur, y compris le navigateur qui itère cet objet pour dessiner les réactions.
+  //
+  // ⚠️ Et cette protection accidentelle est fragile : les emojis composés (famille, drapeaux
+  // régionaux, séquences ZWJ) dépassent 8 caractères. Le jour où quelqu'un lèvera le plafond pour
+  // les accepter — un changement d'apparence anodin — `__proto__` et `constructor` passeront avec.
+  //
+  // Un objet SANS prototype retire la classe entière : il n'y a plus rien à masquer ni à
+  // atteindre, quelle que soit la clé et quel que soit le plafond.
+  const brut = (Array.isArray(rows) && rows[0] && rows[0].reactions && typeof rows[0].reactions === "object" && !Array.isArray(rows[0].reactions)) ? rows[0].reactions : {};
+  const cur = Object.assign(Object.create(null), brut);
   const arr = Array.isArray(cur[e]) ? cur[e] : [];
   const i = arr.indexOf(who);
   if (i >= 0) arr.splice(i, 1); else arr.push(who);
