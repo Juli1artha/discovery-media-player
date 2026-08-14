@@ -75,6 +75,43 @@ jobs:
             echo "✅ La démo est sur \`$V\`." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      # ⚠️ CE QUI A MANQUÉ LE 14/08 : PERSONNE NE REGARDAIT L'ARTEFACT.
+      #
+      # Une version a été publiée, annoncée à l'hôte qui l'attendait, et ne contenait pas le
+      # correctif promis — un commit resté sur une branche dont la PR était déjà fusionnée. Rien
+      # dans la chaîne ne pouvait le voir : les tests tournent sur l'arbre de travail, la CI sur
+      # la branche, et les notes de version viennent d'un fichier écrit à la main. C'est l'HÔTE
+      # qui l'a trouvé, en comparant deux tarballs npm.
+      #
+      # Ce résumé liste ce qui a RÉELLEMENT changé dans le paquet depuis la version précédente.
+      # Une note de version qui promet un correctif de `server/handler.js` en face d'une liste qui
+      # ne le mentionne pas se voit d'un coup d'œil — ce qui est exactement le contrôle qui
+      # manquait. Non bloquant : c'est un révélateur, pas une règle.
+      - name: What actually changed in the published package
+        run: |
+          V=$(node -p 'require("./package.json").version')
+          PREC=$(npm view discovery-media-player versions --json | node -e '
+            let d=""; process.stdin.on("data",c=>d+=c).on("end",()=>{
+              const v=JSON.parse(d).filter(x=>x!==process.argv[1]);
+              console.log(v[v.length-1]||"");
+            })' "$V")
+          echo "## Contenu réel du paquet" >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$PREC" ]; then
+            echo "Première publication — rien à comparer." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          mkdir -p /tmp/cmp && cd /tmp/cmp
+          npm pack "discovery-media-player@$PREC" --silent >/dev/null 2>&1 || exit 0
+          mkdir -p a b && tar xzf "discovery-media-player-$PREC.tgz" -C a --strip-components=1
+          cd "$GITHUB_WORKSPACE" && npm pack --silent >/dev/null
+          tar xzf "discovery-media-player-$V.tgz" -C /tmp/cmp/b --strip-components=1
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Fichiers modifiés entre \`$PREC\` et \`$V\` :" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          diff -rq /tmp/cmp/a /tmp/cmp/b 2>/dev/null | sed 's|/tmp/cmp/[ab]/||g' | sort -u >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "⚠️ Comparez cette liste aux notes de version : un correctif annoncé dans un fichier absent d'ici n'est pas publié." >> "$GITHUB_STEP_SUMMARY"
+
       - name: GitHub Release
         uses: softprops/action-gh-release@v3
         with:
