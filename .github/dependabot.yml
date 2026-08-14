@@ -24,3 +24,11 @@ updates:
     directory: /
     schedule: { interval: monthly }
     commit-message: { prefix: "chore(docker)" }
+    # ⚠️ Les correctifs de la ligne courante passent ; le changement de MAJEURE, non. Il se
+    # décide sur le calendrier LTS de Node — Dependabot ne sait pas qu'une version est « Current »
+    # et a proposé la 26 le jour de sa sortie, deux mois avant qu'elle soit soutenue. Une PR verte
+    # qui fait tourner la prod sur une base non LTS reste une PR verte : c'est la relecture, pas
+    # la CI, qui attrape ça — donc on ne la propose plus du tout.
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]

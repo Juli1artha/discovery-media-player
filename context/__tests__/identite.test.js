@@ -119,3 +119,32 @@ describe("ce qui ne change pas", () => {
     expect(ctx.identity.isAdmin({ user_metadata: { role: "admin" } })).toBe(false);
   });
 });
+
+// ⚠️ « CONFIGURÉ » ET « SERVI » NE SE DEVINENT PAS L'UN DEPUIS L'AUTRE.
+//
+// La capacité `host-auth` dit que le code SAIT viser un émetteur distinct. Elle ne dit pas que la
+// variable est POSÉE. Sans ce second signal, un hôte qui l'oublie retrouve le symptôme exact que
+// cette version a retiré — ses membres sont « non authentifiés », ce qui ressemble à un droit
+// manquant — et il conclut que la montée de version n'a rien changé.
+describe("ce que la carte d'identité peut dire de l'émetteur", () => {
+  it("dit qu'un émetteur distinct est configuré", () => {
+    expect(contexte({ PLAYER_AUTH_URL: EMETTEUR, PLAYER_AUTH_KEY: "k" }).config.separateIssuer).toBe(true);
+  });
+
+  it("dit qu'il ne l'est pas, quand il ne l'est pas", () => {
+    expect(contexte({}).config.separateIssuer).toBe(false);
+  });
+
+  // Le booléen doit refléter la CONFIGURATION, pas le succès d'un appel : une URL posée sans clé
+  // reste une séparation demandée — et c'est justement le cas qu'on veut voir depuis dehors.
+  it("une URL sans clé compte quand même comme configurée", () => {
+    expect(contexte({ PLAYER_AUTH_URL: EMETTEUR }).config.separateIssuer).toBe(true);
+  });
+
+  // ⚠️ Un booléen, jamais l'URL. La carte reste muette sur l'émetteur lui-même.
+  it("ne laisse pas fuir l'émetteur", () => {
+    const c = contexte({ PLAYER_AUTH_URL: EMETTEUR, PLAYER_AUTH_KEY: "k" }).config;
+    expect(typeof c.separateIssuer).toBe("boolean");
+    expect(JSON.stringify(c)).not.toContain("lhote.supabase.co");
+  });
+});

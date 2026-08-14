@@ -10,6 +10,26 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.9] — 2026-08-14
+
+### Added
+- **`separateIssuer` in `GET /api/doc?contract=1`.** `host-auth` says an instance *can* verify
+  tokens against an issuer separate from its database; this says one *is configured*. Without the
+  second signal, a host that upgrades and forgets the variable sees exactly the failure 0.1.8
+  removed — members come back unauthenticated, which reads like a missing permission — and
+  concludes the upgrade changed nothing. A boolean, never the issuer: the host already knows which
+  one is theirs, and naming it would only inform whoever probes.
+
+### Changed
+- **The container image moves to Node 24 (active LTS).** It stays on the **active LTS**, never on
+  Current: Current ships every six weeks and carries breaking changes, and self-hosters should not
+  inherit that. Node 26 exists since August 2026 but is not supported long-term until October.
+  `engines` stays `>=22` — what the *package* accepts and what the *image* embeds are different
+  questions, and 22 is maintained until April 2027.
+- Dependabot no longer proposes Node **major** bumps for the image. It cannot know that a release
+  is Current, and proposed 26 the day it appeared. A green PR that puts production on an
+  unsupported base is still a green PR — review catches that, not CI, so the proposal stops.
+
 ## [0.1.8] — 2026-08-14
 
 ### Fixed
@@ -208,7 +228,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.5...v0.1.6
