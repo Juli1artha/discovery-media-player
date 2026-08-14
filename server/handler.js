@@ -2581,8 +2581,13 @@ async function handler(req, res) {
         contract: 1,
         version: PLAYER_VERSION,
         // Ce que cette instance sait faire. Un hôte teste la présence, jamais l'ordre.
+        // `host-auth` : cette instance sait vérifier les jetons auprès d'un émetteur DISTINCT de
+        // sa base (PLAYER_AUTH_URL). Un hôte tiers en a besoin pour savoir si ses membres
+        // peuvent seulement s'authentifier — sans ça, sa seule voie était d'essayer et de lire
+        // un refus qui ressemble à un droit manquant. Le nom, jamais l'émetteur : la carte reste
+        // muette sur les URL.
         capabilities: [
-          "docshare", "presentations", "embed-denied", "host-fetch", "brand-reference",
+          "docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth",
         ],
         // ⚠️ POUR QUELLES ORIGINES cette instance accepte d'être encadrée. Un booléen ne
         // suffisait pas : un hôte a besoin de voir que SON domaine manque, pas seulement que

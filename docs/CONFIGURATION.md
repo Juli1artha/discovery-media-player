@@ -74,6 +74,34 @@ file, and it installs **already hardened**: no table gets an anonymous read poli
 state travels by broadcast precisely so that no such policy is needed — do not add one "to make
 live work".
 
+### Who issues the tokens (separate instances)
+
+| Variable | |
+|---|---|
+| `PLAYER_AUTH_URL` | the Supabase project that **issues your members' tokens** |
+| `PLAYER_AUTH_KEY` | its publishable key |
+
+⚠️ **The player's database and your identity provider are two different things.** They are the
+same project when the player and your application share a deployment — and different by
+construction when the instance is separate: the database belongs to the player, identity belongs
+to you. Leave these unset and token verification falls back to `SUPABASE_URL`, so an instance
+where they coincide changes by not one character.
+
+Set them and your members can sign in; leave them unset on a separate instance and every member
+action — sending, revoking, analytics, authenticated presentations — is refused, in a way that
+reads like a missing permission rather than a misconfiguration.
+
+Point `PLAYER_AUTH_URL` at the **Supabase project**, not at your application: the player calls
+`<PLAYER_AUTH_URL>/auth/v1/user`.
+
+⚠️ **`PLAYER_AUTH_KEY` has no fallback, on purpose.** The key sent to the issuer used to fall back
+as far as `SUPABASE_SERVICE_ROLE_KEY` — harmless while the issuer was the player's own project,
+and a way to hand a third party the master key to your database the day it is not. A distinct
+issuer requires its own key; without one, the player refuses and says so instead of improvising.
+
+Check that an instance supports this without opening a document: `host-auth` appears in
+`capabilities` of `GET /api/doc?contract=1`.
+
 ## Decisions that are yours
 
 ⚠️ **You probably do not need to write a wiring file at all.** `context/standalone` already

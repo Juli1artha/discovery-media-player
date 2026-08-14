@@ -10,6 +10,34 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.8] — 2026-08-14
+
+### Fixed
+- **A third-party instance could not authenticate its own members.** `SUPABASE_URL` served two
+  roles at once: the player's database, and the issuer of the tokens it accepts. True — and
+  necessary — while the player and its application share a deployment; false by construction once
+  an instance is separate, because the database belongs to the player and identity belongs to the
+  host. Members were issued tokens by one project and verified against another, which put the
+  entire *member* half of the surface out of reach: sending, revoking, analytics, authenticated
+  presentations. `PLAYER_AUTH_URL` (+ `PLAYER_AUTH_KEY`) now names the issuer; unset, it falls back
+  to `SUPABASE_URL`, so an instance where both coincide changes by not one character.
+
+  *Reported by the second host, who had checked both sides before writing. It is the third
+  assumption of this shape in two days — after `'self'` for framing and "same origin" for the
+  internal preview. They only become visible by exercising the separation.*
+
+### Security
+- **The key sent to the issuer no longer falls back to the service role.** That fallback was
+  harmless while the issuer was the player's own project; toward a third-party issuer it would
+  hand over the master key to the player's database on a single configuration mistake. A distinct
+  issuer requires its own publishable key, and its absence is reported instead of improvised —
+  a silent refusal here reads like a missing permission, which is the failure this release exists
+  to remove.
+
+### Added
+- `host-auth` in `GET /api/doc?contract=1` capabilities: a host can tell whether an instance
+  supports a separate issuer without opening a document.
+
 ## [0.1.7] — 2026-08-13
 
 ### Security
@@ -180,7 +208,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.4...v0.1.5
