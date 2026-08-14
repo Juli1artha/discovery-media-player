@@ -130,7 +130,7 @@ async function endPresentation(slug, control) {
 // validés par le bucket (image/*+pdf, ≤10 Mo). L'URL publique finale est renvoyée pour attacher au message.
 const ATT_KINDS = { "image/png": "image", "image/jpeg": "image", "image/webp": "image", "image/gif": "image", "application/pdf": "pdf" };
 async function createUploadUrl(slug, name, type) {
-  const base = (process.env.SUPABASE_URL || "").replace(/\/+$/, ""); const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+
   // ⚠️ `Object.hasOwn` et pas une simple lecture : un objet littéral hérite de `constructor`,
   // `toString`, `valueOf`, `__proto__`… `ATT_KINDS["constructor"]` rend une FONCTION, donc une
   // valeur vraie — la garde juste en dessous laissait alors passer un type qui n'a jamais été
@@ -138,14 +138,21 @@ async function createUploadUrl(slug, name, type) {
   // action publique. Signalé par un hôte tiers qui venait de trouver la même forme chez lui.
   const demande = String(type || "").toLowerCase();
   const kind = Object.hasOwn(ATT_KINDS, demande) ? ATT_KINDS[demande] : null;
-  if (!kind || !slug || !base || !KEY) return { ok: false, status: 400 };
+  if (!kind || !slug) return { ok: false, status: 400 };
   const safe = (String(name || "fichier").replace(/[^a-zA-Z0-9._-]/g, "_").slice(-60)) || "fichier";
   const path = `${String(slug).replace(/[^a-zA-Z0-9._-]/g, "")}/${Date.now()}-${crypto.randomBytes(4).toString("hex")}-${safe}`;
-  const r = await fetch(`${base}/storage/v1/object/upload/sign/present-attachments/${path}`, { method: "POST", headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" }, body: "{}" });
-  if (!r.ok) return { ok: false, status: 502 };
-  const d = await r.json().catch(() => null); const url = d && d.url; if (!url) return { ok: false, status: 502 };
-  const token = (String(url).split("token=")[1] || "").split("&")[0];
-  return { ok: true, path, token, kind, publicUrl: `${base}/storage/v1/object/public/present-attachments/${path}` };
+
+  // ⚠️ La signature appartient à l'HÔTE : c'est lui qui détient la clé, pas le cœur. Un hôte qui
+  // ne fournit pas cette capacité voit la pièce jointe refusée — et prévenue. Le refus silencieux
+  // serait pire : une pièce jointe qui ne part jamais, sans que personne sache que la capacité
+  // manque.
+  if (!PLAYER.storage || typeof PLAYER.storage.signUpload !== "function") {
+    try { PLAYER.errors.capture(new Error("storage.signUpload absent du contexte : les pièces jointes de chat sont indisponibles"), {}); } catch { /* jamais bloquant */ }
+    return { ok: false, status: 501 };
+  }
+  const signe = await PLAYER.storage.signUpload("present-attachments", path);
+  if (!signe || !signe.token) return { ok: false, status: 502 };
+  return { ok: true, path, token: signe.token, kind, publicUrl: signe.publicUrl };
 }
 
 /**
@@ -177,7 +184,7 @@ function premierPublic(reponse) {
 
 async function addMessage(slug, { name, email, avatar, isPresenter, isMember, body, replyTo, replyName, replyText, authorToken, attachment }) {
   const b = String(body || "").trim().slice(0, 2000);
-  const base = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
+  const base = String((PLAYER.config && PLAYER.config.supabaseUrl) || "").replace(/\/+$/, "");
   let att = null;
   if (attachment && typeof attachment === "object" && attachment.url && String(attachment.url).startsWith(base + "/storage/v1/object/public/present-attachments/")) {
     att = { url: String(attachment.url).slice(0, 600), name: String(attachment.name || "").slice(0, 120), type: String(attachment.type || "").slice(0, 60), kind: attachment.kind === "pdf" ? "pdf" : "image" };

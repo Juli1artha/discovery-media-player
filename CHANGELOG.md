@@ -10,6 +10,31 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.10] — 2026-08-14
+
+### Changed
+- **The core no longer opens the environment; it goes through the injected context.** Eleven direct
+  `process.env` reads were bypassing the very boundary this project documents everywhere else —
+  six for the database, two for the maps key, one for frame ancestors, and one for the **service
+  role key**, which opens the whole database. A host wiring its own storage or database was
+  silently short-circuited. Nothing changes for a host whose context mirrors its environment,
+  which is both hosts today; what changes is that a host that does not is now actually obeyed.
+- **Signing an upload URL is a host capability** (`storage.signUpload`). The core asked the
+  environment for a service-role key to sign chat-attachment uploads; it now asks the host, which
+  is where the key lives. A host that does not provide it gets a clean refusal that says so,
+  rather than an attachment that never leaves. *Honest about what remains: the returned page still
+  calls supabase-js `uploadToSignedUrl`, so the feature is not portable yet — only the secret has
+  moved out of the core.*
+- **One source of truth for frame ancestors.** `embedFrameAncestors()` read the environment while
+  `?contract=1` announced `PLAYER.config.extraFrameAncestors`. They agree only as long as a host
+  fills its config from that same variable. A host computing it otherwise would have the card
+  announce one list and the CSP header serve another — configured and served diverging *inside*
+  the mechanism built to detect exactly that.
+
+  *Raised by an external review as "you are coupled to Supabase, add an abstraction layer". The
+  abstraction already existed — it was leaking. A static test now refuses any new leak, and it
+  found two the manual inventory had missed.*
+
 ## [0.1.9] — 2026-08-14
 
 ### Added
@@ -228,7 +253,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.9...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.10...HEAD
+[0.1.10]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.6...v0.1.7

@@ -1172,7 +1172,7 @@ const LEGAL_CSS = `
 function sendHtml(res, status, html, scriptSrc, imgExtra, frameAncestors) {
   res.statusCode = status;
   // Origine Supabase Storage (voix ElevenLabs mise en cache dans le bucket public tts-cache) → autorisée en media-src.
-  let supaOrigin; try { supaOrigin = new URL(process.env.SUPABASE_URL || "").origin; } catch { supaOrigin = ""; }
+  let supaOrigin; try { supaOrigin = new URL((PLAYER.config && PLAYER.config.supabaseUrl) || "").origin; } catch { supaOrigin = ""; }
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.setHeader("Cache-Control", "no-store, max-age=0");
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -1217,9 +1217,16 @@ function sendSoftWallHtml(res, html, nonce, imgExtra, frameAncestors) {
  * doit pouvoir être encadrée exactement comme la visionneuse qu'elle remplace — sinon le
  * navigateur bloque le rendu et le message de refus ci-dessous n'est jamais émis.
  */
+// ⚠️ LA MÊME SOURCE QUE LA CARTE D'IDENTITÉ, ET C'EST TOUT LE SUJET. Cette fonction lisait
+// `process.env.DOC_FRAME_ANCESTORS` pendant que `?contract=1` annonçait
+// `PLAYER.config.extraFrameAncestors`. Les deux coïncident tant qu'un hôte remplit sa
+// configuration depuis cette variable — c'est le cas des deux hôtes actuels, donc rien n'était
+// cassé. Mais un hôte qui la calcule autrement (base, fichier, autre nom de variable) verrait la
+// carte annoncer une liste et l'en-tête CSP en servir une autre : « configuré » et « servi »
+// divergents à l'intérieur même du mécanisme construit pour détecter cette divergence.
 function embedFrameAncestors() {
   return ["'self'", "https://*.vercel.app"]
-    .concat(String(process.env.DOC_FRAME_ANCESTORS || "").split(/\s+/).filter(Boolean))
+    .concat((PLAYER.config && PLAYER.config.extraFrameAncestors) || [])
     .join(" ");
 }
 
@@ -1580,7 +1587,7 @@ ${LEGAL_CSS}
   <script nonce="${nonce}">${PLAYER_BROWSER_JS}</script>
   <script nonce="${nonce}" src="${PDFJS}/pdf.min.js"></script>
   ${preview ? `<script nonce="${nonce}" src="${SUPAJS}"></script>
-  <script nonce="${nonce}">var LIVECFG={supaUrl:${JSON.stringify(share.supa_url || "")},supaKey:${JSON.stringify(share.supa_key || "")}};var GMAPS_KEY=${JSON.stringify(process.env.GOOGLE_MAPS_API_KEY || "")};${LIVE_JS}
+  <script nonce="${nonce}">var LIVECFG={supaUrl:${JSON.stringify(share.supa_url || "")},supaKey:${JSON.stringify(share.supa_key || "")}};var GMAPS_KEY=${JSON.stringify((PLAYER.config && PLAYER.config.mapsKey) || "" || "")};${LIVE_JS}
   ${MAP_JS}</script>` : ""}
   <script nonce="${nonce}">
   (function(){
@@ -2087,7 +2094,7 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
   })();
   </script>
   <script nonce="${nonce}">
-  var LIVECFG={supaUrl:${JSON.stringify(supaUrl || "")},supaKey:${JSON.stringify(supaKey || "")}};var GMAPS_KEY=${JSON.stringify(process.env.GOOGLE_MAPS_API_KEY || "")};
+  var LIVECFG={supaUrl:${JSON.stringify(supaUrl || "")},supaKey:${JSON.stringify(supaKey || "")}};var GMAPS_KEY=${JSON.stringify((PLAYER.config && PLAYER.config.mapsKey) || "" || "")};
   ${LIVE_JS}
   ${MAP_JS}
   (function(){
@@ -2252,7 +2259,7 @@ async function handler(req, res) {
           // `spoken` est renvoyé quand il diffère → le viewer aligne le karaoké dessus (mapping mot à mot).
           const spoken = (() => { if (!pron) return text; try { const s = pron(text).replace(/\s+/g, " ").trim().slice(0, 700); return s || text; } catch { return text; } })();
           const modelId = process.env.ELEVENLABS_MODEL || "eleven_multilingual_v2";
-          const base = process.env.SUPABASE_URL || "";
+          const base = (PLAYER.config && PLAYER.config.supabaseUrl) || "";
           // « v2 » = version du format de cache : les extraits v1 (sans alignement timestamps) sont ignorés
           // d'office et tout se régénère AVEC l'horodatage par caractère (karaoké exact). Anciens fichiers = poids mort minime.
           const keyFor = (vid) => crypto.createHash("sha256").update(vid + "|" + modelId + "|v2|" + spoken).digest("hex");
@@ -2651,8 +2658,8 @@ async function handler(req, res) {
         await relayerFichier(res, r, null);
         return;
       }
-      const supaUrl = process.env.SUPABASE_URL || "";
-      const supaKey = process.env.SUPABASE_PUBLISHABLE_KEY || "";
+      const supaUrl = (PLAYER.config && PLAYER.config.supabaseUrl) || "";
+      const supaKey = (PLAYER.config && PLAYER.config.supabasePublishableKey) || "";
       let alogo = ""; try { alogo = await PLAYER.branding.logo(); } catch { /* sans logo */ }
       const anonce = crypto.randomBytes(16).toString("base64");
       // Même sujet, trouvé en vérifiant le précédent : cette page ne passait AUCUN paramètre,
@@ -2674,8 +2681,8 @@ async function handler(req, res) {
         await relayerFichier(res, r, dispositionInline(q.name));
         return;
       }
-      const supaUrl = process.env.SUPABASE_URL || "";
-      const supaKey = process.env.SUPABASE_PUBLISHABLE_KEY || "";
+      const supaUrl = (PLAYER.config && PLAYER.config.supabaseUrl) || "";
+      const supaKey = (PLAYER.config && PLAYER.config.supabasePublishableKey) || "";
       const pseudo = { preview: true, slug: "", file_name: String(q.name || "document.pdf"), doc_title: String(q.title || q.name || "Document"), raw_url: url, doc_id: String(q.docId || ""), presenter_name: String(q.by || ""), presenter_avatar: String(q.av || ""), internal_email: String(q.uemail || ""), supa_url: supaUrl, supa_key: supaKey, auto_present: String(q.autopresent || "") === "1", resume_slug: String(q.resume || ""), stream_url: `/api/doc?preview=1&stream=1&url=${encodeURIComponent(url)}&name=${encodeURIComponent(String(q.name || ""))}` };
       let plogo = ""; try { plogo = await PLAYER.branding.logo(); } catch { /* sans logo */ }
       const pnonce = crypto.randomBytes(16).toString("base64");
