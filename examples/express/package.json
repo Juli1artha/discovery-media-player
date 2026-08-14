@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "type": "commonjs",
   "dependencies": {
-    "discovery-media-player": "^0.1.0",
+    "discovery-media-player": "0.1.7",
     "express": "^4.19.2"
   },
-  "engines": { "node": ">=18" }
+  "engines": { "node": ">=22" }
 }
