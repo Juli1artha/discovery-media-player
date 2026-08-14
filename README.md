@@ -189,6 +189,11 @@ the player, not the people plugging into it.
 [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to run the tests, what the review looks for, and the
 one rule that matters: a behaviour worth keeping is worth a test that fails without it.
 
+Your first pull request asks you to sign the [CLA](CLA.md) — one reply, once, for good. You keep
+the copyright in your work; you grant a licence that may be sublicensed, so that the core can stay
+AGPL while a commercial licence remains possible for organisations that cannot live with the
+network clause. Better said before you write the patch than after.
+
 The code comments are in French. The project was built in a French company and the reasoning
 behind each decision is written where the decision is; translating it would have meant either
 losing it or maintaining two versions. Everything an integrator needs is in English.
