@@ -199,6 +199,36 @@ We would rather write this down than let you discover it. A seam that exists in 
 leaks in a fourth is worth more, stated plainly, than an "agnostic" that has to be qualified after
 you have built on it.
 
+### The size of the database surface, measured
+
+If you are weighing a port, the useful number is not "is it coupled" but "how much". Counted, not
+estimated:
+
+| | |
+|---|---|
+| Call sites | **49**, in three files |
+| Tables | **9** |
+| Verbs | `GET`, `POST`, `PATCH`, one `HEAD` — no `DELETE` |
+| Embedded selects (`select=*,other(*)`) | **0** |
+| `or=()`, `and=()`, `offset=` | **0** |
+| `in.(…)` | **2** — translates to `WHERE column IN (…)`, so it costs a port nothing |
+| Used beyond plain filters | `order=`, `Prefer: return=…`, `Range` for pagination |
+
+Every query is of the shape `table?column=eq.value&select=*&limit=1`. **Nothing needs PostgREST
+semantics** — the coupling is syntactic, not semantic, and a guard keeps it that way: CI refuses
+the advanced syntax above, so the porting cost cannot quietly grow.
+
+⚠️ **What a repository layer would and would not buy.** Moving those 49 sites behind ~25 named
+methods is a real but bounded refactor. It would *not* make the product portable on its own: live
+presentation chat uses `supabase-js` realtime in the **browser**, and a chat attachment is
+uploaded with `uploadToSignedUrl`. A host implementing 25 methods and then discovering that would
+be worse served than one who read this table first. Displaying, tracking and tracked links —
+the part most instances use — is where a port would actually land.
+
+We have not done that refactor, because both hosts today run Supabase and speculative generality
+has a way of freezing the wrong shape. If you are the third host and you want it, open an issue —
+the number above is what it costs.
+
 ## Your file route
 
 If your documents live behind an API key, the player must **never** hold it. You expose one route
