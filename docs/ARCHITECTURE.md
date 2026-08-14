@@ -30,20 +30,10 @@ starts importing its host, extraction becomes a project again.
 
 ## The injected context
 
-```js
-player.init({
-  storage:  { isAllowedUrl, fetchFile, put },
-  db:       { request, selectAll },
-  identity: { verifyToken, roleOf, isAdmin, canManageShares },
-  branding: { name, poweredBy, loaderName, logo, forKey, title },
-  limits:   { allow },
-  mail:     { send },
-  errors:   { capture },
-  legal:    { sourceUrl, legalUrl, privacyUrl, trackingNotice },
-  config:   { supabaseUrl, supabasePublishableKey, mapsKey, extraFrameAncestors },
-  plugins:  { /* optional, host-owned */ },
-});
-```
+The full list of what a context provides — and which parts are optional — is in
+[`API.md`](API.md#what-you-implement). It is **not repeated here**: this page carried a copy that
+drifted three capabilities behind the code, which is how a reference stops being one. This page
+explains *why* the seam exists; that one says what it is made of.
 
 Two of these carry decisions the player deliberately refuses to make:
 
