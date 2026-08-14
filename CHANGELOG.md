@@ -10,6 +10,33 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.19] — 2026-08-14
+
+### Security
+- **A presentation broadcast is now a signal, not a truth.** The Realtime channel is **public**:
+  the publishable key and the slug are both in the page, so any participant can emit on it. The
+  audience applied the received payload directly, which let any viewer announce the end of the
+  presentation, change the page or document shown to everyone, lock the chat, or post a message
+  signed with someone else's name.
+
+  ⚠️ **Moving emission to the server would not have fixed this** — that was the audit's first
+  suggestion. On a public channel an attacker still emits, and the client cannot tell the two
+  sources apart. The only defence that holds is to stop believing the transport: authoritative
+  events now trigger a **re-read from the server**, which was already the source of truth
+  (`state=1`, `chat=1` — both routes already existed). An attacker can still emit; they trigger a
+  re-read and obtain nothing. That property also survives a future flaw in the transport itself.
+
+  `map` and `typing` still apply their payload, deliberately: ephemeral signals (live map
+  movement, "someone is typing") with no server state to check against and a high rate.
+  Re-verifying them would cost a round-trip per mouse move to protect a mouse move. Everything
+  authoritative goes through `state`, which is re-read. A test enforces that **no other event**
+  may trust its sender.
+
+  *Reported by an external audit. A private channel with row-level policies remains the cleaner
+  end state and is tracked in [`docs/AUDIT-2026-08-14-SUIVI.md`](docs/AUDIT-2026-08-14-SUIVI.md);
+  it needs short-lived tokens for an anonymous audience, which is infrastructure rather than a
+  fix — hence this first.*
+
 ## [0.1.18] — 2026-08-14
 
 ### Security
@@ -462,7 +489,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.18...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.19...HEAD
+[0.1.19]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.17...v0.1.18
 [0.1.17]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.15...v0.1.16
