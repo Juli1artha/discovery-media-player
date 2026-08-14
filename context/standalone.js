@@ -15,9 +15,31 @@
 
 const storage = require("./storage");
 
+/**
+ * Retire les barres finales d'une base d'URL.
+ *
+ * Sans expression régulière. L'analyse statique a signalé `.replace(/\/+$/, "")` dès son premier
+ * passage, sur les deux lignes que je venais d'écrire.
+ *
+ * Mesuré avant de corriger : V8 traite ce motif en temps linéaire (200 000 barres, moins d'une
+ * milliseconde), et l'entrée vient de toute façon d'une variable d'environnement — donc de
+ * l'exploitant, pas d'un visiteur. Ce n'était donc PAS une lenteur réelle ici.
+ *
+ * ⚠️ On change quand même, pour une raison qui n'est pas celle de l'alerte : cette forme se
+ * recopie. Elle est déjà à cinq endroits du dépôt, et la prochaine copie tombera peut-être sur
+ * une entrée venue du dehors, dans un moteur moins clément. Une boucle qui ne peut pas revenir en
+ * arrière retire la classe, pas l'occurrence — et évite d'apprendre à ignorer l'alerte.
+ */
+function sansBarreFinale(valeur) {
+  const s = String(valeur || "");
+  let fin = s.length;
+  while (fin > 0 && s.charCodeAt(fin - 1) === 47) fin--;
+  return s.slice(0, fin);
+}
+
 /** Client REST minimal (PostgREST). Absent de configuration ⇒ chaque appel échoue franchement. */
 function creerDb(env) {
-  const url = String(env.SUPABASE_URL || "").replace(/\/+$/, "");
+  const url = sansBarreFinale(env.SUPABASE_URL);
   const cle = String(env.SUPABASE_SERVICE_ROLE_KEY || "");
 
   async function request(chemin, options = {}) {
@@ -176,8 +198,8 @@ function createStandaloneContext(env = process.env) {
        */
       async verifyToken(authorization) {
         const jeton = String(authorization || "").replace(/^Bearer\s+/i, "").trim();
-        const emetteur = String(env.PLAYER_AUTH_URL || "").replace(/\/+$/, "");
-        const base = String(env.SUPABASE_URL || "").replace(/\/+$/, "");
+        const emetteur = sansBarreFinale(env.PLAYER_AUTH_URL);
+        const base = sansBarreFinale(env.SUPABASE_URL);
 
         const url = emetteur || base;
         const cle = emetteur
