@@ -13,6 +13,7 @@
 // ⚠️ Il ne remplace pas un câblage : il ne sait rien de vos rôles. Ce qu'il ne sait pas, il le
 // REFUSE — jamais il n'accorde par défaut. Cf. docs/CONFIGURATION.md, « Decisions that are yours ».
 
+const crypto = require("node:crypto");
 const storage = require("./storage");
 
 /**
@@ -252,6 +253,29 @@ function createStandaloneContext(env = process.env) {
           return r.ok ? await r.json() : null;
         } catch { return null; }
       },
+      /**
+       * Cet appel vient-il de l'HÔTE lui-même, et non d'un de ses membres ?
+       *
+       * ⚠️ UN SECRET DISTINCT DE `PLAYER_HOST_FETCH_SECRET`, ET C'EST LE POINT. Celui-là ne
+       * circule QUE dans un sens — le player l'envoie à l'hôte, à chaque fichier. Il traîne donc
+       * dans les journaux d'accès de l'hôte, ses proxys, son traceur d'erreurs. Aujourd'hui, qui
+       * l'obtient peut se faire passer pour le player AUPRÈS de l'hôte. L'accepter en entrée lui
+       * ajouterait le droit d'écrire ICI — créer des liens tracés qui collecteront des lectures.
+       * Une variable de plus contre un rayon d'explosion qui ne grandit pas : un secret ne suit
+       * ni un changement de destinataire, ni un changement de direction.
+       *
+       * ⚠️ Le cœur ne voit jamais le secret : il pose une QUESTION, l'adaptateur répond oui ou
+       * non. Non configuré ⇒ non — un pouvoir qu'on ne sait pas accorder ne s'accorde pas.
+       */
+      isTrustedHostCall(headers) {
+        const attendu = String(env.PLAYER_HOST_SHARE_SECRET || "");
+        const recu = String((headers && (headers["x-player-share-secret"] || headers["X-Player-Share-Secret"])) || "");
+        if (!attendu || !recu) return false;
+        // Comparaison à temps constant : une comparaison naïve fuit la longueur du préfixe commun.
+        const a = Buffer.from(attendu, "utf8"); const b = Buffer.from(recu, "utf8");
+        return a.length === b.length && crypto.timingSafeEqual(a, b);
+      },
+
       // ⚠️ Le rôle vient d'`app_metadata`, JAMAIS d'`user_metadata` : ce dernier est modifiable par
       // l'utilisateur lui-même. S'y fier revient à laisser chacun choisir ses droits.
       roleOf: (user) => String(((user || {}).app_metadata || {}).role || "").trim().toLowerCase(),
@@ -329,6 +353,9 @@ function createStandaloneContext(env = process.env) {
       // les deux, une variable oubliée redonne exactement le symptôme que 0.1.8 a retiré — des
       // membres « non authentifiés », ce qui ressemble à un droit manquant.
       separateIssuer: !!sansBarreFinale(env.PLAYER_AUTH_URL),
+      // Même raison que ci-dessus : « la capacité existe » et « elle est configurée »
+      // sont deux questions, et seule la seconde explique un refus.
+      hostShare: !!String(env.PLAYER_HOST_SHARE_SECRET || ""),
     },
   };
 }
