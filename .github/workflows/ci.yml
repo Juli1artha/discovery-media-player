@@ -69,6 +69,36 @@ jobs:
           diff=$(comm -3 /tmp/doc.txt /tmp/env.txt) || true
           [ -z "$diff" ] || { echo "::error::.env.example and docs/CONFIGURATION.md disagree:"; echo "$diff"; exit 1; }
 
+      # ⚠️ LA CARTE D'IDENTITÉ EST LA SEULE CHOSE QUE LES HÔTES ÉPINGLENT. Le contrat en montrait
+      # une version périmée de cinq publications, à laquelle il manquait deux capacités. Un hôte
+      # qui teste la présence d'une capacité d'après la doc conclut qu'elle n'existe pas. La
+      # synchroniser à la main est exactement ce qui a échoué — donc on la garde.
+      - name: The documented identity card matches the code
+        if: matrix.node == '22'
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const src = fs.readFileSync("server/handler.js", "utf8");
+            const bloc = src.slice(src.indexOf("capabilities: ["));
+            const code = [...bloc.slice(0, bloc.indexOf("]")).matchAll(/"([a-z-]+)"/g)].map(m => m[1]).sort();
+            const doc = fs.readFileSync("docs/HOST-CONTRACT.md", "utf8");
+            const ligne = doc.split("\n").find(l => l.includes("\"capabilities\""));
+            const documentees = [...ligne.matchAll(/"([a-z-]+)"/g)].map(m => m[1]).filter(c => c !== "capabilities").sort();
+            const manquantes = code.filter(c => !documentees.includes(c));
+            const inventees = documentees.filter(c => !code.includes(c));
+            if (manquantes.length || inventees.length) {
+              console.error("::error::identity card drift — missing from docs: " + (manquantes.join(", ") || "none") +
+                            " | documented but absent from code: " + (inventees.join(", ") || "none"));
+              process.exit(1);
+            }
+            // Les booléens de configuration doivent apparaître aussi : ils disent ce qui est POSÉ.
+            for (const champ of ["separateIssuer", "hostShare", "hostMail"]) {
+              if (!src.includes(champ + ":")) { console.error("::error::" + champ + " absent du code"); process.exit(1); }
+              if (!doc.includes("\"" + champ + "\"")) { console.error("::error::" + champ + " absent du contrat"); process.exit(1); }
+            }
+            console.log("carte d’identité : " + code.length + " capacités, doc et code d’accord");
+          '
+
       - name: Examples pin an exact version
         if: matrix.node == '22'
         run: |

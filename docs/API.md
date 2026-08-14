@@ -142,13 +142,19 @@ player.init(context)
 | | |
 |---|---|
 | `storage.isAllowedUrl(url)` · `fetchFile(url, {range})` · `put(...)` | where files may be read from — see [ARCHITECTURE](ARCHITECTURE.md#where-files-may-come-from) |
-| `db.request(path, opts)` · `selectAll(path)` | PostgREST-shaped access |
+| `storage.signUpload(bucket, path)` → `{token, publicUrl}` | signs a chat-attachment upload. **Optional**: absent ⇒ attachments are refused, and the player says so. The core must not hold the key that signs. |
+| `db.request(path, opts)` · `selectAll(path)` | PostgREST-shaped — see [what is portable](#what-is-portable-and-what-is-not) |
 | `identity.verifyToken(header)` · `roleOf` · `isAdmin` · `canManageShares(user, action)` | your permission model |
+| `identity.isTrustedHostCall(headers)` → `boolean` | **Optional**: lets *your server* create links in its own name. Absent ⇒ that path does not exist. The core never sees the secret; it asks, you answer. |
 | `branding.name` · `poweredBy` · `loaderName` · `logo()` · `forKey(key)` · `title(base, qualifier)` | three identities, see below |
 | `limits.allow(key, max, windowSeconds)` | fail-open: a rate limiter that is down must not kill a viewer |
-| `mail.send(message)` · `errors.capture(error, meta)` | |
+| `mail.send(message)` → `{sent: true}` \| `null` | see [the message shape](#mailsendmessage) |
+| `errors.capture(error, meta)` | |
 | `legal.sourceUrl` · `legalUrl` · `privacyUrl` · `trackingNotice` | shown to readers |
-| `config.*` · `plugins` | |
+| `legal.trackingNoticeAnonymous` | **Optional**: the notice for a link nobody sent. Absent ⇒ falls back to the first, rather than showing none. |
+| `config.supabaseUrl` · `supabasePublishableKey` · `mapsKey` · `extraFrameAncestors` | consumed as given — `supabaseUrl` **without a trailing slash**, the core no longer re-normalises |
+| `config.separateIssuer` · `hostShare` · `hostMail` | booleans echoed by the identity card: what is *configured*, next to what the code *can* do |
+| `plugins` | optional, host-owned |
 
 `context/standalone.js` implements all of it from environment variables — start there and replace
 only what is yours. See [`examples/vercel/player-context.js`](../examples/vercel/player-context.js).
@@ -171,20 +177,60 @@ which takes the loader's place). Mixing them puts a product name where a reader 
 
 ---
 
-## Three requirements on your file route
+## What is portable, and what is not
+
+The handler is genuinely framework-agnostic: serverless, Express, a bare `http.createServer`, the
+bundled standalone server. That claim is tested, not asserted.
+
+**The database is not.** `db.request(path, opts)` takes PostgREST paths — `commercial_doc_shares?slug=eq.X&select=*`,
+`Prefer: return=representation`, `Range` headers for pagination. A host on Prisma or raw SQL would
+have to *emulate PostgREST*, which is not an integration point, it is a chore. Today the realistic
+options are Supabase or a PostgREST in front of your Postgres.
+
+**Two browser-side pieces are Supabase-shaped too**: presentation chat and presence use
+`supabase-js` realtime, and a chat attachment is uploaded with `uploadToSignedUrl`. Moving
+`storage.signUpload` into the context took the *secret* out of the core; it did not make the
+feature portable.
+
+None of this affects the part most instances use: **displaying a document, tracking reading, and
+serving files from a folder, a storage origin or your own route needs no database at all.**
+
+We would rather write this down than let you discover it. A seam that exists in three places and
+leaks in a fourth is worth more, stated plainly, than an "agnostic" that has to be qualified after
+you have built on it.
+
+## Your file route
 
 If your documents live behind an API key, the player must **never** hold it. You expose one route
 (`PLAYER_HOST_FETCH_BASE`), fetch the file yourself, and the player is allowed to call only that.
-In order of what they cost when missed:
 
-1. **Never relay the upstream `Content-Length`.** `fetch()` decompresses the body and keeps the
-   upstream headers; relaying the announced size serves a **truncated PDF**, with no error
-   anywhere. Announce the length of what you send. Request `Accept-Encoding: identity`, and refuse
-   a compressed `206` — range bounds refer to compressed bytes, and a gzip fragment does not
-   decompress alone.
-2. **Relay `Range`** (`206` + `Accept-Ranges: bytes`). Progressive loading depends on it.
-3. **Accept a server-to-server call.** A tracked link is opened by a prospect with no session on
-   your side. Authenticate the player with the shared secret in the **`x-player-fetch-secret`
-   header** — header only, never a query string: logs keep URLs.
+⚠️ **The four requirements are in the [host contract](HOST-CONTRACT.md#3-serving-a-file-the-player-cannot-reach)**,
+and they are not repeated here on purpose: this page said *three* while the contract said *four*
+for a while, and the missing one was the only one that opens your data rather than degrading the
+experience. Two copies of a rule are two rules, and the one you read is the one you follow.
 
 Working implementation: [`examples/express/server.js`](../examples/express/server.js).
+
+## `mail.send(message)`
+
+Called only for a re-share of a link that **has a recipient**. A link nobody sent is read by any
+passing visitor; letting them trigger a send would make your servers a relay for unsolicited mail,
+with your domain in the header — and a lost sender reputation takes weeks to recover, during which
+none of your mail arrives. The guard sits on the path that acts, not in your route on arrival.
+
+```json
+{ "to": "…", "subject": "…", "html": "…", "replyTo": "…",
+  "kind": "reshare",
+  "doc":  { "title": "…", "url": "https://…/doc/<slug>" },
+  "from": { "name": "…", "email": "…" },
+  "untrusted": { "toName": "…" } }
+```
+
+The structured fields sit next to the HTML so a host composing with its own template borrows
+nothing from ours. ⚠️ **Everything supplied by the caller is under `untrusted`** — isolated so you
+can ignore it in one gesture, rather than remembering which field is doubtful. Our own HTML does
+interpolate that name: escaped, but chosen by whoever holds the link, inside a message signed with
+your name.
+
+Answer `{"sent": true}`. Any other shape means not sent, and the player says so instead of
+pretending. Unconfigured ⇒ `null`, and the viewer offers "copy link" only.
