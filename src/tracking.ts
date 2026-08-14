@@ -123,9 +123,31 @@ export function createTracker(options: TrackerOptions = {}): Tracker {
     (typeof doc.hasFocus === "function" ? doc.hasFocus() : true) &&
     !idle;
 
+  /**
+   * Durée réellement lue depuis `activeSince`, PLAFONNÉE.
+   *
+   * ⚠️ LE TEMPS PEUT SAUTER SANS QU'AUCUN ÉVÉNEMENT NE PRÉVIENNE. Machine en veille, capot
+   * rabattu, processus gelé : l'onglet reste `visible`, la fenêtre garde le focus, aucun
+   * `visibilitychange` ni `blur` ne part — et les minuteries ne tournent pas non plus. Au réveil,
+   * un delta brut versait la totalité du sommeil dans la page courante. Mesuré avant de corriger :
+   * huit heures de veille rendaient **28 805 secondes de lecture**.
+   *
+   * C'est la même règle que la boucle d'inactivité, appliquée au cas où elle N'A PAS PU tourner :
+   * on compte jusqu'à la dernière activité, plus le délai de grâce. Ni plus. Un utilisateur qui
+   * lit vraiment produit des événements ; une machine endormie n'en produit aucun.
+   *
+   * Le suivi mesure une intention de lecture, pas une durée d'horloge. La confondre avec la
+   * seconde rend le produit menteur exactement là où il prétend être exact.
+   */
+  const dureeLue = (depuis: number) => {
+    const brut = now() - depuis;
+    const plafond = Math.max(0, lastActivity - depuis) + idleMs;
+    return Math.max(0, Math.min(brut, plafond));
+  };
+
   const commit = () => {
     if (activeSince != null && activePage > 0) {
-      pageTimes[activePage] = (pageTimes[activePage] || 0) + (now() - activeSince) / 1000;
+      pageTimes[activePage] = (pageTimes[activePage] || 0) + dureeLue(activeSince) / 1000;
     }
     activeSince = viewable() ? now() : null;
   };
@@ -136,7 +158,7 @@ export function createTracker(options: TrackerOptions = {}): Tracker {
   const totalSeconds = () => {
     let s = 0;
     for (const k in pageTimes) s += pageTimes[k];
-    if (activeSince != null) s += (now() - activeSince) / 1000;
+    if (activeSince != null) s += dureeLue(activeSince) / 1000;
     return Math.round(s);
   };
 
