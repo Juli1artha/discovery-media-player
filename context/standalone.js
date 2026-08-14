@@ -11,7 +11,7 @@
 //     déléguées à des routes de l'hôte, ou refusées si elles ne sont pas configurées.
 //
 // ⚠️ Il ne remplace pas un câblage : il ne sait rien de vos rôles. Ce qu'il ne sait pas, il le
-// REFUSE — jamais il n'accorde par défaut. Cf. CONTRAT.md, « Le câblage d'une instance ».
+// REFUSE — jamais il n'accorde par défaut. Cf. docs/CONFIGURATION.md, « Decisions that are yours ».
 
 const storage = require("./storage");
 

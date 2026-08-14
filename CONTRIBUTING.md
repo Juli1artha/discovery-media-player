@@ -13,7 +13,7 @@ npm run typecheck
 npm run build     # regenerates the browser bundle (committed — see below)
 ```
 
-Node ≥ 18. There is nothing else to install: the tests spin the player up in-process against a
+Node ≥ 22. There is nothing else to install: the tests spin the player up in-process against a
 temporary folder, so they run offline and finish in seconds.
 
 ## The one rule
@@ -63,6 +63,26 @@ handler reads `req.query`, which their bare HTTP server did not fill, and shimme
 lines. Their fix was right. The *right* fix was in the core, because the defect affected every
 host — present and future. Expect the maintainer to move your fix somewhere else, and read that
 as the system working.
+
+## Signing the CLA
+
+Your first pull request gets one comment from a bot, asking you to reply with a single line. That
+reply signs the [Contributor License Agreement](CLA.md), once, for every contribution you ever
+make here.
+
+**What you are agreeing to, in one paragraph.** You keep the copyright in your work. You grant the
+maintainer a licence to use it — including the right to sublicense it. That last part is the whole
+point: the core is AGPL-3.0-or-later and stays that way, but the maintainer may also offer the
+same code commercially to organisations that cannot operate under the AGPL's network clause. That
+second licence needs permission from everyone whose code is in the project, and a single
+contribution from someone who later becomes unreachable would make it impossible for good.
+
+**What it is not.** It is not an assignment: nothing is taken from you, and you remain free to use
+your own work anywhere else, under any terms. It grants exactly what dual licensing requires and
+stops there — read [`CLA.md`](CLA.md), it is two pages and says so in plain words.
+
+If you contribute on behalf of an employer, that organisation signs too — see the last section of
+the agreement.
 
 ## Commits and branches
 
