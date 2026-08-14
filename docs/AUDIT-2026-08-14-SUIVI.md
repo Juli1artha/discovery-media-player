@@ -87,7 +87,7 @@ d'export/effacement.
 |---|---|---|
 | P3-1 | Jeton d'auteur de chat généré avec `Math.random` | ✅ **0.1.23** |
 | P3-2 | `postMessage` ne compare pas `event.source` | ✅ **0.1.23** |
-| P3-3 | `allow_download` présenté comme une protection | **doc à corriger** — c'est une préférence d'affichage |
+| P3-3 | `allow_download` présenté comme une protection | ✅ **0.1.24** — dit comme préférence d'affichage |
 | P3-4 | Commentaires de `init.sql` en retard sur le code | à corriger avec A |
 
 **P3-3** est le seul de la liste qui puisse tromper un utilisateur sur ce qu'il achète : le

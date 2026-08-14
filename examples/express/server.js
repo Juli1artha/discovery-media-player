@@ -16,6 +16,18 @@ player.init(createStandaloneContext(process.env));
 // ── 1. Vous montez le player ───────────────────────────────────────────────────────────────────
 // C'est un gestionnaire `(req, res)` : rien à adapter. Express fournit déjà `req.query` et, avec
 // `express.json()`, `req.body` — les deux seules choses qu'il attend d'une requête.
+//
+// ⚠️ SUR LE DÉBIT, ET POURQUOI IL N'Y A PAS DE LIMITEUR ICI. L'analyse statique réclame un
+// `express-rate-limit` devant ces trois routes. Ce serait une erreur, pas une omission :
+//
+//   • le player limite déjà par ACTION (re-partage, courriel, session interne) via `PLAYER.limits`,
+//     avec l'adresse que VOUS lui donnez — un limiteur externe s'y superposerait sans rien ajouter ;
+//   • `/doc/:slug` et `/present/:slug` sont des liens partagés. Vingt personnes d'un même bureau
+//     sortent par une seule adresse : les limiter par IP ferme le document à dix-neuf d'entre elles.
+//     Une protection qui casse l'usage normal finit désactivée, donc ne protège rien.
+//
+// Ce qu'il faut limiter, en revanche, c'est ce que VOUS ajoutez : toute route à vous qui écrit, ou
+// qui lit une source coûteuse. Voyez la route de fichiers plus bas.
 app.use("/api/doc", express.json({ limit: "1mb" }), (req, res) => player.handler(req, res));
 
 // ⚠️ Ces deux URL vivent dans des courriels envoyés à des tiers. Une fois l'instance en service
@@ -60,6 +72,9 @@ app.post("/player/brand", express.json(), (req, res) => {
  *   3. accepter un appel serveur à serveur (le lecteur n'a pas de session chez vous).
  */
 app.get("/player/files/:nom", async (req, res) => {
+  // Le secret EST le débit : sans lui, rien ne touche le disque. Une limite par IP en plus serait
+  // ici plus nuisible qu'utile — c'est le player qui appelle, toujours depuis la même adresse.
+  // Si vous remplacez ce secret par une session ou un jeton par utilisateur, remettez une limite.
   if (!secretValide(req)) return res.status(403).end();
 
   // Contenance : un nom de fichier n'est pas un chemin.
@@ -92,7 +107,9 @@ app.get("/player/files/:nom", async (req, res) => {
   fs.createReadStream(cible).pipe(res);
 });
 
-// Confort de démonstration : ouvrir un document local par son nom.
+// Confort de DÉMONSTRATION : ouvrir un document local par son nom, sans lien ni partage.
+// ⚠️ Cette route n'a rien à faire dans une instance en service — elle ouvre le dossier local à
+// quiconque connaît un nom de fichier. Elle existe pour que `node server.js` montre quelque chose.
 app.get("/documents/:nom", (req, res) => {
   req.query = {
     preview: "1",

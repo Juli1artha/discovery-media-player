@@ -10,6 +10,40 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.24] — 2026-08-14
+
+### Security
+- **One long address froze the whole instance.** Re-sharing validated the recipient with
+  `/.+@.+\..+/`. That pattern restarts at every position, so its cost grows with the *square* of
+  the length — measured before fixing: 49 ms at 10 000 characters, **3 900 ms at 100 000**. Node has
+  one event loop and a regular expression does not yield: one request, four seconds of frozen
+  instance, for every reader — not only the caller.
+
+  ⚠️ The rate limit did not help: 8/h per IP is checked **after** the pattern, two lines below. A
+  guard placed behind what it is meant to guard guards nothing. The length is now checked first, at
+  254 — the maximum length of an address (RFC 5321), past which it is not "long", it is invalid.
+
+### Fixed
+- **A local read could describe one file while sending another.** `readLocal` did `stat(path)` and
+  then, further down, `open(path)` — two resolutions of the same *name* at two moments. Between
+  them the file can be replaced (a sync, a deployment `mv`, a client rewriting their document), and
+  we would then send the bytes of the **new** file with the size of the **old** one. Not a crash —
+  worse: a `Content-Range` that does not describe what it carries, so the viewer assembles a wrong
+  document and nothing reports it. A descriptor designates an object, not a name: `fh.stat()` now
+  speaks about the same file `fh.read()` does.
+
+### Documentation
+- `allow_download` is stated for what it is: a **display preference**, not a protection. A reader
+  looking at the document already has its bytes; hiding the button removes a convenience, not an
+  access. A document that must not leave should not be shared, or should be shared behind
+  `require_auth` — that one decides who gets the bytes. (P3-3)
+- The Express example says why there is **no rate limiter** in front of the player routes, rather
+  than leaving the absence to be read as an oversight: the player already limits per action, and
+  limiting a shared link by IP shuts the document to nineteen people out of twenty behind one
+  office NAT. What must be limited is what the host adds around it.
+
+  *The first two reported by static analysis; neither appeared in the external audit.*
+
 ## [0.1.23] — 2026-08-14
 
 ### Security
@@ -617,7 +651,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.23...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.24...HEAD
+[0.1.24]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.23...v0.1.24
 [0.1.23]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.21...v0.1.22
 [0.1.21]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.20...v0.1.21
