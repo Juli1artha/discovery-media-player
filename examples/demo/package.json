@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "The live demo: the player, a folder, one PDF. No database, no secret.",
   "dependencies": {
-    "discovery-media-player": "0.1.7"
+    "discovery-media-player": "0.1.10"
   },
   "engines": {
     "node": ">=22"
