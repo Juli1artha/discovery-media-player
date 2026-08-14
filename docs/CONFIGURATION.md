@@ -99,8 +99,10 @@ as far as `SUPABASE_SERVICE_ROLE_KEY` — harmless while the issuer was the play
 and a way to hand a third party the master key to your database the day it is not. A distinct
 issuer requires its own key; without one, the player refuses and says so instead of improvising.
 
-Check that an instance supports this without opening a document: `host-auth` appears in
-`capabilities` of `GET /api/doc?contract=1`.
+Check both without opening a document, in `GET /api/doc?contract=1`: `host-auth` in
+`capabilities` means the instance **can** do this, and `separateIssuer: true` means one **is
+configured**. The first without the second is the failure this whole section exists to prevent —
+a supported split that nobody switched on behaves exactly like no support at all.
 
 ## Decisions that are yours
 

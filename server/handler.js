@@ -2595,6 +2595,11 @@ async function handler(req, res) {
         // autrement — le navigateur bloque avant tout script, et rien ne peut lui être émis.
         // Ce n'est pas un secret : ces mêmes valeurs partent dans chaque en-tête CSP servi.
         frameAncestors: ["'self'", "https://*.vercel.app"].concat(PLAYER.config.extraFrameAncestors || []),
+        // Même besoin que `frameAncestors`, l'inverse de la réponse : là on nomme les origines
+        // parce qu'un hôte doit voir que LA SIENNE manque ; ici un booléen suffit, parce que
+        // l'hôte connaît déjà son émetteur — il veut seulement savoir si l'instance le regarde.
+        // Dire lequel n'aiderait personne et renseignerait qui sonde.
+        separateIssuer: !!(PLAYER.config && PLAYER.config.separateIssuer),
         // Greffons de l'hôte : présents ou coupés (PLAYER_PLUGINS_OFF). Booléens uniquement.
         plugins: {
           bot: !!p.bot, visitors: !!p.visitors, brandIntro: !!p.brandIntro,

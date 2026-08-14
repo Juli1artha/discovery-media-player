@@ -289,6 +289,12 @@ function createStandaloneContext(env = process.env) {
       supabasePublishableKey: env.SUPABASE_PUBLISHABLE_KEY || "",
       mapsKey: env.GOOGLE_MAPS_API_KEY || "",
       extraFrameAncestors: String(env.DOC_FRAME_ANCESTORS || "").split(/\s+/).filter(Boolean),
+      // ⚠️ Un BOOLÉEN, jamais l'URL. La carte d'identité doit pouvoir dire « un émetteur distinct
+      // est configuré » sans dire lequel : c'est le dernier endroit où un hôte devait deviner.
+      // `host-auth` dit que le code SAIT faire la séparation ; ceci dit qu'elle est POSÉE. Sans
+      // les deux, une variable oubliée redonne exactement le symptôme que 0.1.8 a retiré — des
+      // membres « non authentifiés », ce qui ressemble à un droit manquant.
+      separateIssuer: !!sansBarreFinale(env.PLAYER_AUTH_URL),
     },
   };
 }

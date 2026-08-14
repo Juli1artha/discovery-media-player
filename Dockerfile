@@ -1,19 +1,26 @@
 # Image du serveur autonome. Deux étapes : on construit les artefacts navigateur, on n'embarque
 # que ce qui sert à répondre.
 #
+# ⚠️ LA VERSION DE NODE DE CETTE IMAGE EST UNE DÉCISION, PAS UNE MISE À JOUR.
+# On suit la LTS ACTIVE (24, « Krypton »), jamais la Current : la Current sort toutes les six
+# semaines et reçoit les ruptures. Node 26 existe depuis août 2026 mais ne devient LTS qu'en
+# octobre — la proposer ici ferait tourner la prod d'auto-hébergeurs sur une base que rien ne
+# soutient dans la durée. `engines` reste `>=22` : ce que le PAQUET accepte et ce que l'IMAGE
+# embarque sont deux questions différentes, et 22 est encore maintenue jusqu'en avril 2027.
+#
 # ⚠️ `server/*.generated.js` sont committés (les plateformes serverless ne construisent rien) —
 # on les REconstruit ici quand même. Une image qui embarquerait un bundle plus ancien que sa
 # source servirait du code périmé sans que rien ne le signale, et c'est exactement le défaut que
 # la CI surveille par ailleurs.
 
-FROM node:22-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM node:22-alpine
+FROM node:24-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 # `dumb-init` : sans lui, le processus Node est PID 1 et n'a pas de gestionnaire de signal par

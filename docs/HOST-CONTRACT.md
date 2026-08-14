@@ -25,9 +25,10 @@ need.
 {
   "product": "discovery-media-player",
   "contract": 1,
-  "version": "0.1.8",
+  "version": "0.1.9",
   "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth"],
   "frameAncestors": ["'self'", "https://*.vercel.app", "https://app.example.com"],
+  "separateIssuer": true,
   "plugins": { "bot": false, "visitors": false, "brandIntro": false, "botBrowser": false, "providerQuotas": false }
 }
 ```
@@ -67,8 +68,14 @@ things. They are the same project while the player and your application share a 
 different by construction once the instance is separate. Point `PLAYER_AUTH_URL` at the project
 that issues your members' tokens (with its own publishable key in `PLAYER_AUTH_KEY`), or every
 member action is refused in a way that reads like a missing permission. Unset, it falls back to
-the player's own project, so a shared deployment changes by not one character. The `host-auth`
-capability tells you an instance supports the split.
+the player's own project, so a shared deployment changes by not one character.
+
+Two signals, and you need both: **`host-auth` in `capabilities`** says this instance *can* target
+a separate issuer; **`separateIssuer: true`** says one *is configured*. A version that supports
+the split with the variable left unset fails exactly like the version before it — members come
+back unauthenticated, which reads like a missing permission — and you would conclude the upgrade
+changed nothing. The card answers with a boolean and never the issuer itself: you already know
+which one is yours.
 
 ### 2. What a client's brand is
 
