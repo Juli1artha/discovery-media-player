@@ -10,6 +10,31 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.18] — 2026-08-14
+
+### Security
+- **The file proxy followed redirects, and the host secret followed with it.** `isAllowedStorageUrl`
+  validated only the *initial* URL; `fetch` then followed redirects by default, so the final
+  destination faced no origin list, no route prefix and no `https:` check. An allowed upstream —
+  the host's own file route, or any listed storage origin — answering `302` took the call wherever
+  it wanted: `localhost`, a private address, a cloud metadata endpoint. The invariant this project
+  documents ("no redirect following into your private network") was false.
+
+  ⚠️ **And `x-player-fetch-secret` travelled.** `fetch` strips only `Authorization`, `Cookie` and
+  `Proxy-Authorization` across a cross-origin redirect; a custom header is forwarded as-is.
+  Measured with two local servers before fixing: the destination received the host's shared secret
+  in clear. That is not only an SSRF — it is exfiltration of the key that authorises reading
+  **every** document the host serves.
+
+  Redirects are now followed by hand, with three properties: every hop re-passes the full guard, so
+  a redirect opens nothing the starting URL could not; **the secret is recomputed per hop**, so it
+  travels only where *that* hop is under the host's route; and the chain is bounded, with protocol
+  changes refused — a redirect to `file:` would have turned a remote upstream into a local disk
+  read. `AbortSignal.timeout` added: an upstream that never answers used to hold the request
+  forever.
+
+  *Reported by an external audit, confirmed by measurement rather than by reading.*
+
 ## [0.1.17] — 2026-08-14
 
 ### Security
@@ -437,7 +462,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.17...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.18...HEAD
+[0.1.18]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.17...v0.1.18
 [0.1.17]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.14...v0.1.15

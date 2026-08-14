@@ -218,15 +218,56 @@ function isAllowedStorageUrl(candidate, origins, hostBase, root) {
  * ⚠️ Le secret n'accompagne QUE la route de l'hôte. L'envoyer à un Storage public le ferait fuiter
  * dans les journaux d'un tiers, où il n'a rien à faire.
  */
+// ⚠️ `fetch` SUIT LES REDIRECTIONS PAR DÉFAUT, ET N'EN REVALIDE AUCUNE.
+//
+// La garde ci-dessus n'examinait que l'URL de DÉPART. Un amont autorisé — la route de l'hôte, ou
+// n'importe quelle origine de Storage listée — qui répond `302` emmenait donc l'appel où il
+// voulait : `localhost`, une adresse privée, une API de métadonnées cloud. L'invariant annoncé
+// dans le README (« no redirect following into your private network ») était faux.
+//
+// ⚠️ ET LE SECRET SUIVAIT. `fetch` ne retire que `Authorization`, `Cookie` et
+// `Proxy-Authorization` lors d'une redirection inter-origines — un en-tête maison comme
+// `x-player-fetch-secret` est transmis tel quel. Mesuré avec deux serveurs locaux avant de
+// corriger : la destination recevait le secret partagé de l'hôte en clair. Ce n'est donc pas
+// seulement une SSRF, c'est une exfiltration de la clé qui autorise à lire TOUS ses documents.
+//
+// On suit donc les sauts à la main. Trois propriétés, et chacune ferme une porte différente :
+//   1. chaque saut repasse la garde complète — une redirection n'ouvre rien que l'URL de départ
+//      n'aurait pas ouvert ;
+//   2. le secret est recalculé À CHAQUE SAUT — il ne part que si CE saut-là est sous la route de
+//      l'hôte, jamais parce que le premier l'était ;
+//   3. le nombre de sauts est borné, et le protocole ne peut pas changer de nature : une
+//      redirection vers `file:` transformerait un amont distant en lecture de disque local.
+const MAX_REDIRECTIONS = 5;
+const DELAI_MAX_MS = 60_000;
+
 async function fetchAllowedFile(url, { range } = {}, { origins, hostBase, root, secret } = {}) {
   if (!isAllowedStorageUrl(url, origins || [], hostBase, root)) return null;
   const local = root && resolveLocal(url, root);
   if (local) return readLocal(local, range);
 
-  const headers = { "accept-encoding": "identity" };
-  if (range) headers.range = range;
-  if (isHostFetchUrl(url, hostBase) && secret) headers["x-player-fetch-secret"] = secret;
-  return fetch(url, { headers });
+  let cible = String(url);
+  for (let saut = 0; saut <= MAX_REDIRECTIONS; saut++) {
+    const headers = { "accept-encoding": "identity" };
+    if (range) headers.range = range;
+    // Recalculé à chaque tour : c'est CE saut-ci qui doit être sous la route de l'hôte.
+    if (isHostFetchUrl(cible, hostBase) && secret) headers["x-player-fetch-secret"] = secret;
+
+    // Un amont qui ne répond jamais immobiliserait la requête et ses ressources indéfiniment.
+    // Le délai est large — un gros document met du temps — mais il est borné.
+    const r = await fetch(cible, { headers, redirect: "manual", signal: AbortSignal.timeout(DELAI_MAX_MS) });
+    if (r.status < 300 || r.status > 399) return r;
+
+    const suivante = r.headers.get("location");
+    if (!suivante) return r; // 3xx sans destination : on rend la réponse telle quelle
+    let absolue;
+    try { absolue = new URL(suivante, cible); } catch { return null; }
+    // ⚠️ Jamais de changement de nature : `file:` ferait d'un amont distant une lecture de disque.
+    if (absolue.protocol !== "https:" && absolue.protocol !== "http:") return null;
+    if (!isAllowedStorageUrl(absolue.href, origins || [], hostBase, root)) return null;
+    cible = absolue.href;
+  }
+  return null; // boucle de redirections : on refuse plutôt que de tourner
 }
 
 /**
