@@ -1,0 +1,39 @@
+#!/bin/sh
+# Hook pre-push du player. Un seul garde-fou, mais il a déjà coûté une version publiée à vide.
+#
+# Installation (une fois par clone) :
+#   cp tools/git-hooks/pre-push "$(git rev-parse --git-common-dir)/hooks/pre-push"
+#   chmod +x "$(git rev-parse --git-common-dir)/hooks/pre-push"
+#
+# Contournement en connaissance de cause : git push --no-verify
+
+# ══ BRANCHE DÉJÀ MERGÉE = COMMIT ORPHELIN ══════════════════════════════════════════════════
+#
+# La fusion referme la PR : les commits poussés APRÈS n'atteindront plus jamais main. La branche
+# locale, elle, reste ouverte et accepte tout. Le travail est commité, poussé, visible sur
+# GitHub — et nulle part.
+#
+# ⚠️ Arrivé le 14/08/2026 sur ce dépôt : un correctif d'intégration commité quatre minutes après
+# la fusion de sa propre PR. La version suivante a été publiée, annoncée à l'hôte qui l'attendait,
+# et ne contenait pas le correctif. C'est l'HÔTE qui l'a découvert, en comparant les tarballs npm
+# — pas nous. Le dépôt voisin a ce hook depuis le 05/08 pour la même raison ; celui-ci ne l'avait
+# pas, et la règle écrite n'a pas suffi : elle demandait de penser à vérifier au bon moment.
+BRANCHE=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+if [ -n "$BRANCHE" ] && [ "$BRANCHE" != "HEAD" ] && [ "$BRANCHE" != "main" ] \
+   && command -v gh >/dev/null 2>&1; then
+  ETAT=$(gh pr view "$BRANCHE" --json state -q .state 2>/dev/null)
+  if [ "$ETAT" = "MERGED" ]; then
+    echo ""
+    echo "✖ pre-push refusé : la PR de « $BRANCHE » est déjà MERGÉE."
+    echo "  Ce que tu pousses n'ira PAS dans main."
+    echo ""
+    echo "  Repars d'un main frais :"
+    echo "    git fetch origin main"
+    echo "    git checkout -b <nouvelle-branche> origin/main"
+    echo "    git cherry-pick <tes commits>"
+    echo ""
+    echo "  Si tu sais ce que tu fais : git push --no-verify"
+    exit 1
+  fi
+fi
+exit 0

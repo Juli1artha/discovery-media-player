@@ -10,6 +10,37 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.16] — 2026-08-14
+
+### Fixed
+- **An embedded preview never said it was there** — *announced in 0.1.15 and not actually in it;
+  see below.* `embed-ready` tells a host "I am alive". A host waiting for it and hearing nothing
+  cannot tell an **absent** player from a **living** one, and a prudent startup watchdog replaces
+  the second with the browser's own viewer a few seconds in, in front of the reader.
+
+  One variable answered two questions: *should the embedded close button be drawn?* (no in
+  preview — it already has its own, and drawing both would show two crosses) and *is this page
+  served inside a frame?*. Only the second governs the handshake. The server already knew — it
+  derives the response's `frame-ancestors` from it — and the page already spoke to its host
+  (`share`, `close`); it simply never announced itself. Preview is precisely the mode a host uses
+  for its **own** documents. The chrome is unchanged.
+
+### Fixed (release process)
+- ⚠️ **0.1.15 was published without the fix above, and announced as containing it.** The commit
+  landed on a branch whose pull request had already been merged, so it never reached `main`. Every
+  check passed, because every check looks at the working tree or the branch — never at the
+  artifact. **The host found it**, by diffing the two npm tarballs.
+
+  Two guards now exist, and the second is the one that generalises:
+  - a `pre-push` hook refuses to push to a branch whose pull request is already merged (the
+    neighbouring repository has had one since a similar incident on 5 August; this one did not);
+  - the release summary lists **what actually changed inside the published package** since the
+    previous version. Release notes promising a fix in a file that is absent from that list are
+    visibly wrong, at the moment of publishing rather than days later.
+
+  *A mutation test cannot catch this: it runs on the working tree, not on the tarball. The lesson
+  is the host's, and it is exact — verify the published artifact, not the sources.*
+
 ## [0.1.15] — 2026-08-14
 
 ### Fixed
@@ -391,7 +422,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.15...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.16...HEAD
+[0.1.16]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.12...v0.1.13
