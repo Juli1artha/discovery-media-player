@@ -1182,6 +1182,31 @@ function botMarkup(share, pitch) {
 // formats du README ne connaît que le PDF et les images bitmap).
 const TYPES_EXECUTABLES = /^(image\/svg|text\/html|application\/xhtml|application\/xml|text\/xml)/i;
 
+// ⚠️ `X-Forwarded-For` EST UN EN-TÊTE, DONC UNE AFFIRMATION DU CLIENT.
+//
+// Onze endroits en prenaient la première valeur pour identifier l'appelant, et toutes les limites
+// de débit s'appuyaient dessus. Un client qui atteint directement le serveur — c'est le cas du
+// serveur autonome, et de toute instance dont le proxy ne réécrit pas cet en-tête — pouvait donc
+// en changer à chaque requête et n'être jamais limité. La limite existait, elle ne limitait rien.
+//
+// Le caractère « par processus » des compteurs était documenté ; la confiance dans un en-tête non
+// authentifié ne l'était pas. C'est la différence entre une limite approximative et une limite
+// décorative.
+//
+// La décision revient à l'hôte, parce que lui seul sait s'il y a un proxy devant lui :
+// `identity.clientIp(req)` s'il la fournit, sinon l'adresse de la socket — jamais l'en-tête. Un
+// hôte derrière un proxy déclare sa politique dans son câblage ; un hôte sans proxy n'a rien à
+// faire, et il est protégé par défaut.
+function adresseAppelant(req) {
+  try {
+    if (PLAYER.identity && typeof PLAYER.identity.clientIp === "function") {
+      const v = PLAYER.identity.clientIp(req);
+      if (v) return String(v).slice(0, 60);
+    }
+  } catch { /* une IP indisponible ne doit pas empêcher de lire un document */ }
+  return String((req.socket && req.socket.remoteAddress) || "").slice(0, 60);
+}
+
 async function relayerFichier(res, r, disposition) {
   if (!r) { res.statusCode = 404; res.end("Fichier indisponible"); return; }
   if (!r.ok && r.status !== 206) { res.statusCode = 502; res.end("Fichier indisponible"); return; }
@@ -2337,7 +2362,7 @@ async function handler(req, res) {
         const jv = (status, obj, cookie) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); if (cookie) res.setHeader("Set-Cookie", cookie); res.end(JSON.stringify(obj)); };
         const V = PLAYER.plugins.visitors;
         if (!V) return jv(404, { ok: false, error: "disabled" });
-        const ip = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || "ip";
+        const ip = adresseAppelant(req) || "ip";
         if (body.action === "visitor-request") {
           if (!(await PLAYER.limits.allow(`vcode:${ip}`, 20, 3600))) return jv(429, { ok: false, error: "rate" });
           const sh = await getShareBySlug(String(body.slug || ""));
@@ -2365,7 +2390,7 @@ async function handler(req, res) {
         try {
           if (body.action === "present-start") {
             if (!isAllowedStorageUrl(String(body.fileUrl || ""))) return jp(400, { ok: false, error: "url" });
-            const ip = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "anon";
+            const ip = adresseAppelant(req) || "anon";
             const allowed = await PLAYER.limits.allow(`pstart:${ip}`, 60, 3600);
             if (!allowed) return jp(429, { ok: false, error: "rate" });
             // On rattache la présentation au membre (JWT) → reprise / liste / transfert. Best-effort : sans
@@ -2398,7 +2423,7 @@ async function handler(req, res) {
           if (!share || !share.bot_enabled) return jp(404, { ok: false, error: "bot" });
           const text = String(body.text || "").replace(/\s+/g, " ").trim().slice(0, 700);
           if (!text) return jp(400, { ok: false, error: "empty" });
-          const ip = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "anon";
+          const ip = adresseAppelant(req) || "anon";
           if (!(await PLAYER.limits.allow(`doctts:${ip}`, 400, 3600))) return jp(429, { ok: false, error: "rate" });
           const defaultVoiceId = process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
           let voiceId = defaultVoiceId;
@@ -2471,7 +2496,7 @@ async function handler(req, res) {
         const jp = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
         if (!docbot) return jp(404, { ok: false, error: "disabled" });
         try {
-          const ip = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "anon";
+          const ip = adresseAppelant(req) || "anon";
           const allowed = await PLAYER.limits.allow(`docbot:${ip}`, 120, 3600);
           if (!allowed) return jp(429, { ok: false, error: "rate" });
           const share = await getShareBySlug(String(body.slug || ""));
@@ -2520,7 +2545,7 @@ async function handler(req, res) {
       if (body.action === "present-attend") {
         const jp = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
         try {
-          const ip = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "anon";
+          const ip = adresseAppelant(req) || "anon";
           const allowed = await PLAYER.limits.allow(`patt:${ip}`, 1000, 3600);
           if (!allowed) return jp(429, { ok: false, error: "rate" });
           const r = await recordAttendance(String(body.slug || ""), { key: body.key, name: body.name, email: body.email, avatar: body.avatar, isMember: !!body.isMember, isPresenter: !!body.isPresenter });
@@ -2556,7 +2581,7 @@ async function handler(req, res) {
         try {
           const pres = await getPresentation(String(body.slug || ""));
           if (!pres) return jp(404, { ok: false });
-          const ip = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "anon";
+          const ip = adresseAppelant(req) || "anon";
           const allowed = await PLAYER.limits.allow(`pchat:${ip}`, 60, 3600);
           if (!allowed) return jp(429, { ok: false, error: "rate" });
           // Le badge « présentateur » n'est accordé QUE si le control_token est valide (sinon n'importe quel
@@ -2573,7 +2598,7 @@ async function handler(req, res) {
         try {
           const pres = await getPresentation(String(body.slug || ""));
           if (!pres) return jp(404, { ok: false });
-          const ip = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "anon";
+          const ip = adresseAppelant(req) || "anon";
           const allowed = await PLAYER.limits.allow(`pup:${ip}`, 30, 3600);
           if (!allowed) return jp(429, { ok: false, error: "rate" });
           const r = await createUploadUrl(String(body.slug || ""), body.name, body.type);
@@ -2595,7 +2620,7 @@ async function handler(req, res) {
       if (body.action === "present-react") {
         const jp = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
         try {
-          const ip = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "anon";
+          const ip = adresseAppelant(req) || "anon";
           const allowed = await PLAYER.limits.allow(`preact:${ip}`, 200, 3600);
           if (!allowed) return jp(429, { ok: false, error: "rate" });
           const r = await toggleReaction(String(body.slug || ""), body.msgId, body.emoji, body.reactor);
@@ -2645,7 +2670,7 @@ async function handler(req, res) {
             const docId = String(body.docId || "").trim();
             if (!docId || !body.fileUrl) return jd(400, { ok: false, error: "docId/fileUrl requis" });
 
-            const ipH = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "hote";
+            const ipH = adresseAppelant(req) || "hote";
             if (!(await PLAYER.limits.allow(`hshare:${ipH}`, 120, 3600))) return jd(429, { ok: false, error: "rate" });
 
             // ⚠️ La clé d'idempotence n'a PAS demandé de colonne : « le lien de l'hôte pour ce
@@ -2731,7 +2756,7 @@ async function handler(req, res) {
         const mail = String(body.email || "").trim().toLowerCase();
         const j = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
         if (!/.+@.+\..+/.test(mail)) return j(400, { ok: false, error: "email" });
-        const ip = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "anon";
+        const ip = adresseAppelant(req) || "anon";
         const allowed = await PLAYER.limits.allow(`reshare:${ip}`, 8, 3600);
         if (!allowed) return j(429, { ok: false, error: "rate", message: "Trop de partages, réessayez plus tard." });
         let out = null;
@@ -2790,7 +2815,7 @@ async function handler(req, res) {
         return j(200, { ok: true, slug: out.slug, sent, ...(refusEnvoi ? { sendRefused: refusEnvoi } : {}) });
       }
       const ua0 = req.headers["user-agent"];
-      const ip0 = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "";
+      const ip0 = adresseAppelant(req);
       // ⚠️ CONSULTATION INTERNE : L'IDENTITÉ EST AFFIRMÉE PAR LE NAVIGATEUR, PAS PROUVÉE.
       //
       // La population interne est celle que le produit promet de ne jamais mélanger aux prospects.

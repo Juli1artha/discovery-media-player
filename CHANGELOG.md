@@ -38,6 +38,21 @@ the notes there are this file's section for that version.
 
   *Reported by an external audit (P1-2). The presence claims `isMember` / `isPresenter` remain and
   are tracked separately.*
+- **Rate limits keyed on a header the caller writes.** Eleven places took the first value of
+  `X-Forwarded-For` to identify the caller. A client reaching the server directly — the standalone
+  case, and any instance whose proxy does not rewrite that header — changed it per request and was
+  never limited. **The limit existed; it limited nothing**, which is worse than no limit because it
+  gives assurance.
+
+  The caller's address is now a host decision (`identity.clientIp`), since only the host knows
+  whether a proxy sits in front. Unset, the header is ignored entirely and the socket address is
+  used — **an instance without a proxy is protected without doing anything**.
+  `PLAYER_TRUSTED_PROXY_HOPS=1` reads from the **end** of the chain, not the beginning: the
+  beginning is what the client wrote, the end is what the proxies observed. Reading the first
+  element is the classic mistake with this header, and it is the one the code made.
+
+  *This also makes the new limit above real: without it, the internal-session throttle would have
+  been bypassable by the same trick it was meant to stop.* (P1-6)
 
 ## [0.1.21] — 2026-08-14
 
