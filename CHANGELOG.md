@@ -10,6 +10,20 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.15] — 2026-08-14
+
+### Fixed
+- **The folder-mode home page offered a format the viewer no longer opens.** It kept its own list
+  of displayable extensions, and that list still contained `.svg` after it was dropped from the
+  type table in 0.1.7. The file appeared, the click produced a download, and a first-time visitor
+  concluded the project does not work — on the one screen that never gets a second run. The list
+  is now **derived** from the type table rather than copied.
+
+  *Found while checking an external review about MIME sniffing. Its recommendation — `nosniff`, a
+  generic type, forced download — has been in place since 0.1.7, and measurement confirms it: a
+  `.png` containing HTML is served `image/png` with `nosniff`, so the browser will not sniff it
+  into a script. The defect was next door: a list promising a format that had been removed.*
+
 ## [0.1.14] — 2026-08-14
 
 ### Security
@@ -363,7 +377,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.14...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.15...HEAD
+[0.1.15]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.11...v0.1.12
