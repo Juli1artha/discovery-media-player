@@ -109,3 +109,30 @@ describe("carte d'identité", () => {
     expect(carte.frameAncestors).toEqual(["'self'", "https://*.vercel.app"]);
   });
 });
+
+// ⚠️ `form-action` NE RETOMBE PAS SUR `default-src`, contrairement à la plupart des directives.
+// Une page en `default-src 'none'` peut malgré tout poster un formulaire vers n'importe quel
+// domaine : c'est une voie d'exfiltration que la CSP la plus stricte laissait ouverte.
+//
+// Trouvé en vérifiant une relecture externe qui recommandait `object-src 'none'` — lui EST
+// couvert par `default-src 'none'`, donc sa recommandation était redondante. La directive qui
+// manquait vraiment n'était pas dans sa liste.
+describe("les directives qui n'héritent pas de default-src", () => {
+  it("form-action est posée — sinon un script injecté exfiltre par formulaire", async () => {
+    const r = await csp(APERCU);
+    expect(r.corps).toBeTruthy();
+  });
+
+  it.each([
+    ["aperçu interne", { preview: "1", url: "https://exemple.supabase.co/storage/v1/object/public/resources/demo.pdf", name: "demo.pdf" }],
+    ["lien tracé", { slug: "Ab3-_xYz9012" }],
+  ])("%s : form-action et base-uri sont explicites", async (_nom, query) => {
+    process.env.DOC_FRAME_ANCESTORS = HOTE;
+    player.init(contexte([HOTE]));
+    const res = { statusCode: 0, headers: {}, body: "", setHeader(k, v) { this.headers[k.toLowerCase()] = v; }, end(b) { this.body = String(b == null ? "" : b); } };
+    await player.handler({ method: "GET", headers: {}, socket: {}, query }, res);
+    const h = res.headers["content-security-policy"] || "";
+    expect(h, "form-action n'hérite pas de default-src").toContain("form-action 'self'");
+    expect(h, "base-uri non plus").toContain("base-uri 'none'");
+  });
+});
