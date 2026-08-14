@@ -1,0 +1,21 @@
+name: "Discovery Media Player"
+
+# ⚠️ POURQUOI UNE RÈGLE EST RETIRÉE, ET POURQUOI CE N'EST PAS « IGNORER UNE ALERTE ».
+#
+# `js/user-controlled-bypass` signale toute condition contrôlée par l'utilisateur qui garde une
+# action sensible. Ce cœur est construit autour d'un AIGUILLAGE : `body.action === "docshare.list"`
+# choisit le gestionnaire, et l'autorisation vit DANS chaque branche — jeton vérifié puis
+# `canManageShares`, ou secret comparé en temps constant. La règle ne peut pas distinguer un
+# dispatcher d'un contrôle de droits : elle produit 33 alertes, toutes sur la même forme.
+#
+# Trente-trois alertes de bruit ne rendent pas un dépôt plus sûr : elles apprennent à passer la
+# liste sans la lire, et c'est ce jour-là qu'une vraie se perd dedans. Le 14/08/2026, les 33 ont
+# été analysées une par une avant ce retrait — l'une portait un résidu réel (`body.internal`), qui
+# a été CORRIGÉ et non écarté : borné, limité en débit, journalisé, et fermable par
+# `PLAYER_INTERNAL_STRICT=1`.
+#
+# Ce qui remplace la règle ici : des tests qui portent sur l'autorisation de chaque branche, et une
+# relecture qui sait ce qu'elle regarde. Détail complet : docs/AUDIT-2026-08-14-SUIVI.md
+query-filters:
+  - exclude:
+      id: js/user-controlled-bypass
