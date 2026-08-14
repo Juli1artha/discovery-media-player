@@ -16,19 +16,27 @@ name: "Discovery Media Player"
 #
 # Ce qui remplace la règle ici : des tests qui portent sur l'autorisation de chaque branche, et une
 # relecture qui sait ce qu'elle regarde. Détail complet : docs/AUDIT-2026-08-14-SUIVI.md
-# ⚠️ CE QU'ON N'A PAS FAIT : EXCLURE `examples/`.
+# ⚠️ `js/missing-rate-limiting` SUR `examples/` : ÉCARTÉE À LA MAIN, ET IL N'Y A PAS MIEUX.
 #
-# `js/missing-rate-limiting` réclame un limiteur devant chaque route qui touche le disque, et vise
-# cinq routes de l'exemple Express. Aucune ne le mérite (les raisons sont dans le fichier lui-même),
-# et elles reviennent sous un NOUVEAU numéro dès qu'un commentaire décale une ligne.
+# La règle réclame un limiteur devant chaque route qui touche le disque, et vise cinq routes de
+# l'exemple Express. Aucune ne le mérite — les raisons sont écrites dans le fichier lui-même, à
+# côté de chaque route. Elles reviennent sous un NOUVEAU numéro dès qu'un commentaire décale une
+# ligne, ce qui use la liste et apprend à la parcourir sans la lire.
 #
-# La tentation était d'ajouter `paths-ignore: examples/**`. C'est le mauvais échange : un exemple
-# est le code que les gens RECOPIENT en production. Cesser de l'analyser pour supprimer cinq
-# alertes connues, c'est laisser passer la sixième — celle qu'on n'a pas encore vue.
+# ⚠️ CE QUI NE MARCHE PAS : les commentaires de suppression `// codeql[js/...]`. Ils ont été posés
+# le 14/08/2026, sur leur propre ligne juste avant chaque route, et MESURÉS sur le commit fusionné
+# (731bba2) : les alertes sont remontées identiques. Le code scanning de GitHub ne les honore pas —
+# c'est un mécanisme du CLI (`AlertSuppression.ql`), pas du service. Ils ont été retirés : un
+# marqueur qui ressemble à une mécanique sans en être une est pire que rien, parce que le suivant
+# le croira.
 #
-# On garde donc l'analyse complète sur `examples/`, et ces cinq-là se suppriment une par une, sur
-# place, avec leur raison écrite à côté (`// codeql[js/missing-rate-limiting]`). Le coût est de les
-# reposer si les routes bougent ; il est assumé.
+# ⚠️ CE QU'ON N'A PAS FAIT : `paths-ignore: examples/**`. C'était la ligne qui règle tout, et c'est
+# le mauvais échange — un exemple est le code que les gens RECOPIENT en production. Cesser de
+# l'analyser pour supprimer cinq alertes connues, c'est laisser passer la sixième, celle qu'on n'a
+# pas encore vue.
+#
+# Il reste donc l'écartement à la main, avec motif, dans l'onglet Security. C'est manuel et ça se
+# refait quand les routes bougent ; c'est le prix pour garder l'analyse entière là où elle compte.
 query-filters:
   - exclude:
       id: js/user-controlled-bypass
