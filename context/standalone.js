@@ -318,7 +318,8 @@ function createStandaloneContext(env = process.env) {
     },
 
     config: {
-      supabaseUrl: env.SUPABASE_URL || "",
+      // Sans barre finale : le cœur consomme cette valeur telle quelle. Un seul endroit décide.
+      supabaseUrl: sansBarreFinale(env.SUPABASE_URL),
       supabasePublishableKey: env.SUPABASE_PUBLISHABLE_KEY || "",
       mapsKey: env.GOOGLE_MAPS_API_KEY || "",
       extraFrameAncestors: String(env.DOC_FRAME_ANCESTORS || "").split(/\s+/).filter(Boolean),

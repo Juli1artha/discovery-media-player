@@ -184,7 +184,10 @@ function premierPublic(reponse) {
 
 async function addMessage(slug, { name, email, avatar, isPresenter, isMember, body, replyTo, replyName, replyText, authorToken, attachment }) {
   const b = String(body || "").trim().slice(0, 2000);
-  const base = String((PLAYER.config && PLAYER.config.supabaseUrl) || "").replace(/\/+$/, "");
+  // ⚠️ Pas de normalisation ici : `config.supabaseUrl` arrive SANS barre finale, c'est le
+  // contrat de l'adaptateur. En rajouter une deuxième couche, c'est deux endroits qui décident —
+  // et c'est comme ça que `.replace(/\/+$/, "")` s'est retrouvé à cinq exemplaires dans ce dépôt.
+  const base = String((PLAYER.config && PLAYER.config.supabaseUrl) || "");
   let att = null;
   if (attachment && typeof attachment === "object" && attachment.url && String(attachment.url).startsWith(base + "/storage/v1/object/public/present-attachments/")) {
     att = { url: String(attachment.url).slice(0, 600), name: String(attachment.name || "").slice(0, 120), type: String(attachment.type || "").slice(0, 60), kind: attachment.kind === "pdf" ? "pdf" : "image" };
