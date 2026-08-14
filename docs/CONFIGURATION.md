@@ -167,6 +167,7 @@ we had told them to write a file they did not need. Code you don't write cannot 
 | `PLAYER_HOST_BRAND_URL` | resolves a client's brand from the key carried by a link |
 | `PLAYER_HOST_MAIL_URL` + `PLAYER_HOST_MAIL_SECRET` | your route that **sends** the re-share email |
 | `PLAYER_INTERNAL_STRICT` | `1` ⇒ an internal reading session is written **only** with a token your server signed |
+| `PLAYER_TRUSTED_PROXY_HOPS` | how many **trusted** proxies sit in front of this instance |
 
 ### Internal reading sessions
 
@@ -193,6 +194,19 @@ Set `PLAYER_INTERNAL_STRICT=1` once your application mints it, and the door clos
 write. It is not closed by default because that would break every instance already running,
 including ours. **An open door nobody mentions is a defect; an open door stated, with the lock
 supplied, is a transition.**
+
+### Who is calling
+
+⚠️ **`X-Forwarded-For` is a header, therefore a claim.** Every rate limit used to key on its first
+value, so a caller reaching the server directly — the standalone case, and any instance whose proxy
+does not rewrite it — changed it per request and was never limited. The limit existed; it limited
+nothing.
+
+Unset, the header is ignored and the socket address identifies the caller. **An instance without a
+proxy is protected without doing anything.** Set `PLAYER_TRUSTED_PROXY_HOPS=1` when exactly one
+trusted proxy sits in front: the value is then read from the **end** of the chain, not the
+beginning — the beginning is what the client wrote, the end is what the proxies observed. Reading
+the first element is the classic mistake with this header, and it is the one the code made.
 
 ### Sending mail
 

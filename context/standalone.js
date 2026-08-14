@@ -305,6 +305,32 @@ function createStandaloneContext(env = process.env) {
       },
 
       /**
+       * Qui appelle ? **La socket, pas l'en-tête** — sauf si l'exploitant déclare son proxy.
+       *
+       * ⚠️ `X-Forwarded-For` est une affirmation du client. Toutes les limites de débit s'y
+       * appuyaient : un appelant direct — le cas du serveur autonome — en changeait à chaque
+       * requête et n'était jamais limité. La limite existait, elle ne limitait rien.
+       *
+       * `PLAYER_TRUSTED_PROXY_HOPS=1` dit « il y a UN proxy devant moi, sa dernière valeur ajoutée
+       * est l'IP réelle ». On lit alors depuis la FIN de la chaîne, pas depuis le début : le début
+       * est ce que le client a écrit, la fin est ce que les proxys ont constaté. C'est l'inverse
+       * de ce que faisait le code, et c'est l'erreur classique sur cet en-tête.
+       *
+       * Non configuré ⇒ l'en-tête est ignoré. Un hôte sans proxy est protégé sans rien faire.
+       */
+      clientIp(req) {
+        const sauts = Math.max(0, Math.min(10, Number(env.PLAYER_TRUSTED_PROXY_HOPS || 0) || 0));
+        const socket = String((req && req.socket && req.socket.remoteAddress) || "");
+        if (!sauts) return socket;
+        const chaine = String((req && req.headers && req.headers["x-forwarded-for"]) || "")
+          .split(",").map((v) => v.trim()).filter(Boolean);
+        if (!chaine.length) return socket;
+        // Le proxy le plus proche a ajouté la dernière valeur : on remonte de `sauts` depuis la fin.
+        const i = chaine.length - sauts;
+        return chaine[i >= 0 ? i : 0] || socket;
+      },
+
+      /**
        * Vérifie un jeton de session INTERNE, émis par l'hôte pour son propre membre.
        *
        * ⚠️ POURQUOI DANS LE CORPS ET PAS EN EN-TÊTE. Le suivi de lecture part par `sendBeacon`,

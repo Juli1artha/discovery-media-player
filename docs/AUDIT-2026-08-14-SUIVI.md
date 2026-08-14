@@ -51,7 +51,7 @@ d'où l'ordre B puis A.
 | P1-3 | PDF.js 3.11.174 concerné par CVE-2024-4367 | 🟡 **atténué en 0.1.21** — migration ESM à part |
 | P1-4 | Fichiers entièrement tamponnés, pas de délai maximal | partiellement fait |
 | P1-5 | Idempotence des liens hôte non atomique (`SELECT` puis `INSERT`) | à faire — index unique partiel |
-| P1-6 | Limites de débit contournables par `X-Forwarded-For` | à faire |
+| P1-6 | Limites de débit contournables par `X-Forwarded-For` | ✅ **0.1.22** — `PLAYER_TRUSTED_PROXY_HOPS` |
 | P1-7 | Aucune politique de rétention des données personnelles | à décider — hors technique seul |
 
 **P1-3** — `isEvalSupported: false` est forcé sur les trois appels depuis `0.1.21` : la protection
