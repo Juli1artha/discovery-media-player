@@ -28,12 +28,15 @@ player.init(createStandaloneContext(process.env));
 //
 // Ce qu'il faut limiter, en revanche, c'est ce que VOUS ajoutez : toute route à vous qui écrit, ou
 // qui lit une source coûteuse. Voyez la route de fichiers plus bas.
+// codeql[js/missing-rate-limiting] le player limite par action via PLAYER.limits — voir ci-dessus
 app.use("/api/doc", express.json({ limit: "1mb" }), (req, res) => player.handler(req, res));
 
 // ⚠️ Ces deux URL vivent dans des courriels envoyés à des tiers. Une fois l'instance en service
 // elles ne changent plus : un lien tracé cassé, c'est une relation commerciale qui tombe sur une
 // page d'erreur.
+// codeql[js/missing-rate-limiting] lien partagé : limiter par IP ferme le document à tout un bureau
 app.get("/doc/:slug", (req, res) => { req.query.slug = req.params.slug; player.handler(req, res); });
+// codeql[js/missing-rate-limiting] idem — un public entier derrière une seule adresse
 app.get("/present/:slug", (req, res) => { req.query.present = req.params.slug; player.handler(req, res); });
 
 // ── 2. Le player vous rappelle ─────────────────────────────────────────────────────────────────
@@ -71,6 +74,7 @@ app.post("/player/brand", express.json(), (req, res) => {
  *   2. relayer les `Range` (sinon un document lourd reste blanc plusieurs secondes) ;
  *   3. accepter un appel serveur à serveur (le lecteur n'a pas de session chez vous).
  */
+// codeql[js/missing-rate-limiting] gardée par un secret : sans lui rien ne touche le disque
 app.get("/player/files/:nom", async (req, res) => {
   // Le secret EST le débit : sans lui, rien ne touche le disque. Une limite par IP en plus serait
   // ici plus nuisible qu'utile — c'est le player qui appelle, toujours depuis la même adresse.
@@ -110,6 +114,7 @@ app.get("/player/files/:nom", async (req, res) => {
 // Confort de DÉMONSTRATION : ouvrir un document local par son nom, sans lien ni partage.
 // ⚠️ Cette route n'a rien à faire dans une instance en service — elle ouvre le dossier local à
 // quiconque connaît un nom de fichier. Elle existe pour que `node server.js` montre quelque chose.
+// codeql[js/missing-rate-limiting] route de démonstration, à ne pas mettre en service
 app.get("/documents/:nom", (req, res) => {
   req.query = {
     preview: "1",
