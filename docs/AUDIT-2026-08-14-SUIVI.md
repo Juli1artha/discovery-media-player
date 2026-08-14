@@ -96,11 +96,54 @@ comme un contrôle de copie.
 
 ## Trouvé pendant les correctifs, hors audit
 
-**Écriture indexée par une donnée du client** (`toggleReaction`, ✅ 0.1.22). La garde de 0.1.2
+L'audit externe et l'analyse statique n'ont pas vu les mêmes choses. Ce qui suit vient de la
+seconde, et n'était dans aucun constat CODEX.
+
+| Constat | État |
+|---|---|
+| Écriture indexée par une donnée du client (`toggleReaction`) | ✅ **0.1.22** |
+| Le pont `postMessage` acceptait n'importe quelle fenêtre émettrice | ✅ **0.1.23** |
+| Jeton d'auteur du chat et identifiant de session issus de `Math.random` | ✅ **0.1.23** |
+| Une adresse longue figeait la boucle d'événements (motif quadratique) | ✅ **0.1.24** |
+| Une lecture locale pouvait décrire un fichier et en envoyer un autre | ✅ **0.1.24** |
+
+**Écriture indexée par une donnée du client** (`toggleReaction`, 0.1.22). La garde de 0.1.2
 couvrait les LECTURES seulement : `Object.hasOwn` empêche de lire `constructor`, rien n'empêchait
 de l'écrire. Le plafond de 8 caractères bloquait `__proto__` et `constructor` par accident —
 `toString` et `valueOf` passaient. Deux barrières posées, et le balayage statique couvre désormais
-les écritures. Trouvé par l'analyse statique, ni par l'audit ni par nous.
+les écritures.
+
+**L'adresse longue** (0.1.24) est la seule de la liste à avoir été *mesurée avant* d'être corrigée,
+et c'est ce qui la sépare du cas voisin : sur la chaîne d'UA, la même famille d'alerte a été
+mesurée et s'est révélée sans effet réel (V8 reste linéaire), donc bornée sans être présentée comme
+une faille. Sur l'adresse, 3 900 ms sur 100 000 caractères — une requête, l'instance entière figée.
+⚠️ Et la limite de débit censée protéger la route était vérifiée APRÈS le motif : une garde placée
+derrière ce qu'elle doit garder ne garde rien.
+
+### État de l'analyse statique
+
+Au 14/08/2026, sur `main` : **0 alerte ouverte** — 12 corrigées, 45 écartées avec motif. Vérifié sur
+l'analyse du commit publié, pas sur le compteur de l'onglet.
+
+⚠️ **Deux leçons de méthode, payées ce jour-là :**
+
+1. **`js/user-controlled-bypass` a été retirée de la configuration**, pas ignorée : elle produisait
+   33 alertes sur la même forme (un aiguillage `body.action`, dont l'autorisation vit dans chaque
+   branche). Les 33 ont été relues une par une avant le retrait — l'une portait un résidu réel
+   (`body.internal`), corrigé et non écarté. Trente-trois alertes de bruit n'aident pas : elles
+   apprennent à parcourir la liste sans la lire.
+
+2. **Les commentaires `// codeql[js/...]` ne suppriment rien.** Posés dans la forme documentée,
+   puis mesurés sur le commit fusionné : les alertes remontent identiques. C'est un mécanisme du
+   CLI (`AlertSuppression.ql`), pas du service GitHub. Ils ont été retirés — un marqueur qui
+   ressemble à une mécanique sans en être une est pire que rien.
+   ⚠️ Et l'erreur d'avant : le compteur était passé de 5 à 2, ce que j'ai lu comme une réussite
+   partielle. Les 3 « disparues » l'étaient par des écartements manuels antérieurs. **Une baisse
+   n'est pas une preuve de cause.**
+
+   `paths-ignore: examples/**` réglait tout en une ligne et a été refusé : un exemple est le code
+   que les gens recopient en production. Reste l'écartement à la main, à refaire quand les routes
+   bougent.
 
 ## Anomalie relevée hors constats
 
