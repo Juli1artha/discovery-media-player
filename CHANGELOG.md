@@ -10,6 +10,26 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.12] — 2026-08-14
+
+### Fixed
+- **A sleeping machine reported hours of reading.** The tab stays `visible`, the window keeps
+  focus, no `visibilitychange` or `blur` fires — and the timers do not run either, so the idle
+  loop cannot do its job. On wake, a raw timestamp delta poured the entire sleep into the current
+  page: **eight hours of a closed laptop measured as 28 805 seconds read.**
+
+  Accumulated time is now capped at "up to the last activity, plus the idle grace" — the same rule
+  the idle loop applies, extended to the case where it could not run. An active reader produces
+  events, so a real reading session is untouched; a sleeping machine produces none.
+
+  *This is not an exotic case: it is how a laptop closes in the evening. And it is the number the
+  whole product rests on — "this client read for twelve minutes" is only worth something if the
+  number is honest when it is large as well as when it is small.*
+
+  *Found while checking an external review that pointed at the right place with the wrong
+  diagnosis: it recommended cutting on `visibilitychange`, which has been done since day one,
+  alongside `blur`/`focus` and a 60-second idle timeout. The hole was where no event fires at all.*
+
 ## [0.1.11] — 2026-08-14
 
 ### Added
@@ -283,7 +303,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.11...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.12...HEAD
+[0.1.12]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.8...v0.1.9

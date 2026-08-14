@@ -215,3 +215,63 @@ describe("tracking — cycle de vie", () => {
     expect(h.tracker.maxPage()).toBe(2); // l'état interne reste juste
   });
 });
+
+// ⚠️ LE TEMPS PEUT SAUTER SANS QU'AUCUN ÉVÉNEMENT NE PRÉVIENNE.
+//
+// Machine en veille, capot rabattu, processus gelé : l'onglet reste `visible`, la fenêtre garde le
+// focus, aucun `visibilitychange` ni `blur` ne part — et les minuteries ne tournent pas non plus,
+// donc la boucle d'inactivité ne peut pas faire son travail. Au réveil, un delta brut versait la
+// totalité du sommeil dans la page courante : **28 805 secondes** pour huit heures de veille.
+//
+// Ce n'est pas un cas tordu, c'est la façon dont un portable se ferme le soir. Et c'est
+// exactement le nombre sur lequel repose tout le produit — « ce client a lu pendant douze
+// minutes » n'a de valeur que si le nombre est honnête quand il est petit ET quand il est grand.
+//
+// Trouvé en vérifiant une relecture externe qui pointait le bon endroit avec le mauvais
+// diagnostic : elle recommandait de couper sur `visibilitychange`, ce qui était déjà fait depuis
+// le premier jour. Le trou était là où aucun événement ne part.
+describe("tracking — le temps qui saute", () => {
+  it("huit heures de veille ne font pas huit heures de lecture", () => {
+    const h = harness();
+    h.tracker.start();
+    h.tracker.setPage(1);
+    h.advance(5000);
+    h.fire("mousemove");        // dernière activité réelle
+    h.advance(8 * 3600_000);    // capot rabattu : ni événement, ni minuterie
+    h.tickTimers();             // réveil
+    // Jusqu'à la dernière activité, plus le délai de grâce — ce que la boucle d'inactivité aurait
+    // décompté si elle avait pu tourner.
+    expect(h.tracker.totalSeconds()).toBeLessThanOrEqual(70);
+    expect(h.tracker.totalSeconds()).toBeGreaterThanOrEqual(60);
+  });
+
+  it("le plafond vaut aussi pour le total lu en cours de route", () => {
+    const h = harness();
+    h.tracker.start();
+    h.tracker.setPage(1);
+    h.advance(3000);
+    h.fire("scroll");
+    h.advance(4 * 3600_000);    // veille, SANS réveil des minuteries
+    expect(h.tracker.totalSeconds()).toBeLessThanOrEqual(70);
+  });
+
+  // ⚠️ Le plafond ne doit pas rogner une lecture NORMALE : quelqu'un qui lit produit des
+  // événements, donc `lastActivity` avance et le plafond avance avec lui.
+  it("une lecture active longue n'est pas rognée", () => {
+    const h = harness();
+    h.tracker.start();
+    h.tracker.setPage(1);
+    for (let i = 0; i < 20; i++) { h.advance(10_000); h.fire("mousemove"); }  // 200 s, actif
+    expect(h.tracker.totalSeconds()).toBeGreaterThanOrEqual(195);
+    expect(h.tracker.totalSeconds()).toBeLessThanOrEqual(205);
+  });
+
+  // Lire sans bouger reste lire, tant qu'on est sous le seuil d'inactivité.
+  it("une pause silencieuse sous le seuil compte toujours", () => {
+    const h = harness();
+    h.tracker.start();
+    h.tracker.setPage(1);
+    h.advance(30_000);
+    expect(h.tracker.totalSeconds()).toBeGreaterThanOrEqual(29);
+  });
+});
