@@ -16,7 +16,11 @@
 FROM node:24-alpine AS build
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+# ⚠️ `--ignore-scripts` : le `prepare` de ce paquet installe le hook git, et il n'a rien à faire
+# ici — une image n'a ni dépôt ni poussée. Sans ce drapeau, `npm ci` échoue, parce que les
+# dépendances s'installent AVANT que les sources soient copiées : le script n'existe pas encore.
+# Sans effet par ailleurs — ce paquet n'a aucune dépendance de production.
+RUN npm ci --ignore-scripts
 COPY . .
 RUN npm run build
 
@@ -28,7 +32,7 @@ ENV NODE_ENV=production
 RUN apk add --no-cache dumb-init
 
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=build /app/bin ./bin
 COPY --from=build /app/server ./server
 COPY --from=build /app/context ./context
