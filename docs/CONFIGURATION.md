@@ -158,6 +158,31 @@ we had told them to write a file they did not need. Code you don't write cannot 
 |---|---|
 | `PLAYER_HOST_AUTHZ_URL` | who may send, revoke, or read analytics |
 | `PLAYER_HOST_BRAND_URL` | resolves a client's brand from the key carried by a link |
+| `PLAYER_HOST_MAIL_URL` + `PLAYER_HOST_MAIL_SECRET` | your route that **sends** the re-share email |
+
+### Sending mail
+
+⚠️ **The player calls your mail route only for a link that has a recipient.** The reader of an
+anonymous link is any passing visitor; letting them request a send would turn your servers into a
+relay for unsolicited mail, with your domain in the header. What that costs is not the message
+sent — it is your sender reputation, which takes weeks to recover, and during which *none* of your
+mail arrives: invoices, reminders, team notifications included. A convenience on a public page
+would put your whole transactional mail at stake.
+
+The guard is here, on the path that acts, rather than in your route on arrival. A filter on
+arrival depends on a list staying current; a path that cannot phrase the request will never phrase
+it by accident.
+
+The payload carries **structured fields** next to the HTML — `kind`, `doc {title, url}`,
+`from {name, email}` — so a host composing with its own template needs to borrow nothing from
+ours. Anything supplied by the caller sits under `untrusted`, isolated so you can ignore it in one
+gesture rather than remembering which field is doubtful. Answer `{"sent": true}`; anything else
+means not sent, and the player says so instead of pretending.
+
+⚠️ **A third secret, and it is a deliberate trade.** `PLAYER_HOST_FETCH_SECRET` travels to you on
+every file opened — several entries per document in your access logs. Adding "send mail in your
+name" to what a log leak permits is a much larger power than answering a question, even in the
+same direction.
 
 Both are called **POST JSON, server-to-server**, with the shared secret in the
 `x-player-fetch-secret` header. Timeout: 4 seconds.
