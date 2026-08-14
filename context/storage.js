@@ -229,7 +229,18 @@ async function fetchAllowedFile(url, { range } = {}, { origins, hostBase, root, 
   return fetch(url, { headers });
 }
 
+/**
+ * Les extensions que le player sait AFFICHER — dérivées de la table ci-dessus, jamais recopiées.
+ *
+ * ⚠️ `bin/serve.js` en tenait une seconde liste pour sa page d'accueil, et elle contenait encore
+ * `.svg` après son retrait en 0.1.7. La page de PREMIER CONTACT proposait donc un format que la
+ * visionneuse ne sait plus ouvrir : on clique, et on reçoit un téléchargement. Deux listes du même
+ * fait finissent toujours par diverger — celle-ci se déduit.
+ */
+const EXTENSIONS_AFFICHABLES = Object.freeze(Object.keys(TYPES));
+
 module.exports = {
+  EXTENSIONS_AFFICHABLES,
   PUBLIC_OBJECT_PREFIX,
   storageOrigins,
   hostFetchBase,

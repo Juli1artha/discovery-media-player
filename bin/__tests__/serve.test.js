@@ -128,3 +128,34 @@ describe("page d'accueil du mode dossier", () => {
     expect(html).toContain("&lt;img");
   });
 });
+
+// ⚠️ LA PAGE DE PREMIER CONTACT NE DOIT PROMETTRE QUE CE QUE LA VISIONNEUSE SAIT OUVRIR.
+//
+// Elle tenait sa propre liste d'extensions, qui contenait encore `.svg` après son retrait de la
+// table des types en 0.1.7. Résultat : le fichier apparaissait dans la liste, le clic rendait un
+// téléchargement, et le visiteur en concluait que le projet ne marche pas — sur l'écran qui ne se
+// rejoue pas. La liste est désormais DÉRIVÉE de la table des types.
+//
+// Trouvé en vérifiant une relecture externe sur le reniflage de type MIME. Sa recommandation
+// (`nosniff`, type générique, téléchargement forcé) était en place depuis 0.1.7 ; mesuré :
+// un `.png` contenant du HTML sort en `image/png` + `nosniff`, donc inerte. Le défaut était à
+// côté — une liste qui promettait un format retiré.
+describe("ce que la page d'accueil propose", () => {
+  const { EXTENSIONS_AFFICHABLES } = require("../../context/storage");
+
+  it("ne propose aucun format que la table des types ignore", () => {
+    const src = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "serve.js"), "utf8");
+    expect(src, "la liste doit être dérivée, pas recopiée").toContain("EXTENSIONS_AFFICHABLES");
+    expect(src).not.toMatch(/new Set\(\[".pdf"/);
+  });
+
+  it("le SVG n'y est plus — il a été retiré des types servis", () => {
+    expect(EXTENSIONS_AFFICHABLES).not.toContain(".svg");
+  });
+
+  it("les formats affichables y sont tous", () => {
+    for (const ext of [".pdf", ".png", ".jpg", ".jpeg", ".webp", ".avif", ".gif"]) {
+      expect(EXTENSIONS_AFFICHABLES, ext).toContain(ext);
+    }
+  });
+});

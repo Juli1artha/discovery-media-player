@@ -50,7 +50,11 @@ function versParametres(url) {
   return q;
 }
 
-const AFFICHABLES = new Set([".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".svg"]);
+// ⚠️ DÉRIVÉE, PAS RECOPIÉE. Cette liste disait encore `.svg` après son retrait de la table des
+// types en 0.1.7 : la page de premier contact proposait un format que la visionneuse ne sait plus
+// ouvrir. Un clic, un téléchargement, et l'impression que le projet ne marche pas — sur l'écran
+// qui ne se rejoue pas.
+const AFFICHABLES = new Set(require("../context/storage").EXTENSIONS_AFFICHABLES);
 
 /**
  * Page d'accueil du mode dossier : ce qu'il y a à lire, et où le prendre.
