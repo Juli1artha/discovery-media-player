@@ -2461,6 +2461,67 @@ async function handler(req, res) {
       if (String(body.action || "").startsWith("docshare.")) {
         const jd = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
         try {
+          // ── L'HÔTE PARLE EN SON NOM PROPRE ────────────────────────────────────────────────
+          //
+          // Un lien ANONYME — la plaquette publique d'un programme, lue par un prospect sans
+          // compte — n'a pas de membre derrière lui. Exiger un JWT forcerait l'hôte à inventer
+          // une identité qui n'existe pas : un compte de service dont le mot de passe ouvre bien
+          // plus que la création d'un lien, ou pire, l'aperçu interne détourné — ce qui rangerait
+          // un prospect dans la population INTERNE et ferait mentir la seule phrase qui compte
+          // ici : « ce client a lu pendant douze minutes ».
+          //
+          // C'est la même nature que `/authz` et `/branding`, que l'hôte sert déjà en serveur à
+          // serveur. Demandé par le second hôte, qui avait écarté les trois contournements
+          // lui-même avant d'écrire.
+          //
+          // ⚠️ TROIS VERROUS, et chacun ferme une porte différente :
+          //   1. `create` UNIQUEMENT — révoquer, lister, lire des statistiques restent des actes
+          //      de membre. Un secret de serveur ne doit pas donner à voir qui a lu quoi.
+          //   2. AUCUN destinataire — le nominatif a un membre. L'admettre ici rouvrirait par la
+          //      bande ce que le JWT protège.
+          //   3. IDEMPOTENT par `docId` — sans ça, un redéploiement, une reprise sur erreur ou un
+          //      double clic donnent trois liens pour la même plaquette, donc des statistiques
+          //      fragmentées en trois, découvertes en les lisant six mois plus tard.
+          if (typeof PLAYER.identity.isTrustedHostCall === "function"
+              && PLAYER.identity.isTrustedHostCall(req.headers)) {
+            if (body.action !== "docshare.create") {
+              return jd(403, { ok: false, error: "L'appel serveur à serveur ne crée que des liens sans destinataire." });
+            }
+            if (body.recipientEmail) {
+              return jd(400, { ok: false, error: "Un lien avec destinataire appartient à un membre : il exige son jeton." });
+            }
+            const docId = String(body.docId || "").trim();
+            if (!docId || !body.fileUrl) return jd(400, { ok: false, error: "docId/fileUrl requis" });
+
+            const ipH = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "hote";
+            if (!(await PLAYER.limits.allow(`hshare:${ipH}`, 120, 3600))) return jd(429, { ok: false, error: "rate" });
+
+            // ⚠️ La clé d'idempotence n'a PAS demandé de colonne : « le lien de l'hôte pour ce
+            // document » est exactement la ligne sans créateur ET sans destinataire. Seul ce
+            // chemin en produit, donc elle est sans ambiguïté — et une instance déjà en service
+            // n'a aucune migration à passer.
+            const dejaLa = await PLAYER.db.request(
+              `commercial_doc_shares?doc_id=eq.${encodeURIComponent(docId)}&created_by=is.null&recipient_email=is.null&select=slug&limit=1`,
+            );
+            if (Array.isArray(dejaLa) && dejaLa[0]) {
+              await PLAYER.db.request(`commercial_doc_shares?slug=eq.${encodeURIComponent(dejaLa[0].slug)}`, {
+                method: "PATCH", headers: { Prefer: "return=minimal" },
+                body: { doc_title: body.docTitle || null, file_url: String(body.fileUrl), file_name: body.fileName || null, revoked: false },
+              });
+              return jd(200, { ok: true, slug: dejaLa[0].slug, reused: true });
+            }
+            // `createdBy` reste NUL : personne ne l'a créé. Le filtre « mes liens » compare
+            // `created_by=eq.<email>`, qui exclut les NUL — ce lien n'apparaît donc dans la liste
+            // de personne, et reste visible en administration (`list.all`, qui ne filtre pas).
+            const neuf = await createShare({
+              brandKey: body.brandKey, docId, docTitle: body.docTitle, fileUrl: body.fileUrl,
+              fileName: body.fileName, createdBy: null, bot: body.bot, botScript: body.botScript,
+              guided: body.guided, profileId: body.profileId, allowDownload: body.allowDownload,
+              videoLayout: body.videoLayout, logo: body.logo, logoDark: body.logoDark,
+            });
+            return jd(200, { ok: true, slug: neuf.slug, reused: false });
+          }
+
           const u = await PLAYER.identity.verifyToken(req.headers.authorization);
           if (!u || !u.email) return jd(401, { ok: false, error: "auth" });
           // L'action est transmise telle quelle (`create`, `revoke`…) : l'hôte peut séparer
@@ -2595,6 +2656,7 @@ async function handler(req, res) {
         // muette sur les URL.
         capabilities: [
           "docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth",
+          "host-share",
         ],
         // ⚠️ POUR QUELLES ORIGINES cette instance accepte d'être encadrée. Un booléen ne
         // suffisait pas : un hôte a besoin de voir que SON domaine manque, pas seulement que
@@ -2607,6 +2669,10 @@ async function handler(req, res) {
         // l'hôte connaît déjà son émetteur — il veut seulement savoir si l'instance le regarde.
         // Dire lequel n'aiderait personne et renseignerait qui sonde.
         separateIssuer: !!(PLAYER.config && PLAYER.config.separateIssuer),
+        // « L'hôte peut-il créer un lien en son nom propre ? » — configuré, pas seulement
+        // possible. Un hôte qui oublie le secret reçoit un 401 qui ressemble à un droit
+        // manquant ; ce booléen le lui dit sans qu'il ait à essayer.
+        hostShare: !!(PLAYER.config && PLAYER.config.hostShare),
         // Greffons de l'hôte : présents ou coupés (PLAYER_PLUGINS_OFF). Booléens uniquement.
         plugins: {
           bot: !!p.bot, visitors: !!p.visitors, brandIntro: !!p.brandIntro,

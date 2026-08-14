@@ -99,9 +99,40 @@ as far as `SUPABASE_SERVICE_ROLE_KEY` — harmless while the issuer was the play
 and a way to hand a third party the master key to your database the day it is not. A distinct
 issuer requires its own key; without one, the player refuses and says so instead of improvising.
 
+### Links the host owns
+
+| Variable | |
+|---|---|
+| `PLAYER_HOST_SHARE_SECRET` | lets your **server** create tracked links in its own name |
+
+For a link nobody sends: the public brochure of a listing, opened by a prospect who has no account
+and should not need one. No member is present, so there is no token to require — and requiring one
+would force you to invent an identity that does not exist (a service account whose password opens
+far more than link creation, or the internal preview diverted, which would file a prospect among
+your colleagues and make "this client read for twelve minutes" a lie).
+
+⚠️ **A different secret from `PLAYER_HOST_FETCH_SECRET`, on purpose.** That one only ever travels
+*outward* — the player sends it to you on every file fetch, so it sits in your access logs, your
+proxies, your error tracker. Today whoever obtains it can impersonate the player *to you*.
+Accepting it inbound would additionally grant write access *here*. One more variable against a
+blast radius that does not grow.
+
+Sent as the `x-player-share-secret` **header**, compared in constant time. Not configured ⇒ the
+path does not exist.
+
+**Three locks, each closing a different door:**
+
+1. **`docshare.create` only.** Revoking, listing and reading analytics stay member actions — a
+   server secret must not reveal who read what.
+2. **No recipient.** A named link belongs to a member and requires their token.
+3. **Idempotent by `docId`.** Without it, a redeploy, a retry or a double click gives you three
+   links for the same brochure — and analytics split three ways, discovered six months later while
+   reading them. The link carries no creator (`created_by` null), so it never appears in any
+   member's "my links" and stays visible under `list.all`.
+
 Check both without opening a document, in `GET /api/doc?contract=1`: `host-auth` in
 `capabilities` means the instance **can** do this, and `separateIssuer: true` means one **is
-configured**. The first without the second is the failure this whole section exists to prevent —
+configured**. Same pair for host-owned links: `host-share` and `hostShare`. The first without the second is the failure this whole section exists to prevent —
 a supported split that nobody switched on behaves exactly like no support at all.
 
 ## Decisions that are yours

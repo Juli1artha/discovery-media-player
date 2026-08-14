@@ -10,6 +10,36 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.11] — 2026-08-14
+
+### Added
+- **The host can create a tracked link in its own name** (`PLAYER_HOST_SHARE_SECRET`). Some links
+  have no sender: the public brochure of a listing, opened by a prospect who has no account and
+  should not need one. No member is present, so there is no token to require — and requiring one
+  forces the host to invent an identity that does not exist. Same nature as `/authz` and
+  `/branding`, which the host already answers server to server.
+
+  ⚠️ **A different secret from `PLAYER_HOST_FETCH_SECRET`, deliberately.** That one only ever
+  travels *outward* — the player sends it on every file fetch, so it sits in the host's access
+  logs, proxies and error tracker. Whoever holds it can impersonate the player *to the host*;
+  accepting it inbound would additionally grant write access *here*. One more variable against a
+  blast radius that does not grow. The core never sees the secret: it asks the context a question,
+  the adapter answers yes or no.
+
+  **Three locks:** `docshare.create` only (revoking, listing and analytics stay member actions — a
+  server secret must not reveal who read what); no recipient (a named link belongs to a member);
+  idempotent by `docId`, which needed no new column — "the host's link for this document" is the
+  row with no creator *and* no recipient, so an instance already in service migrates nothing.
+  Without idempotence, a redeploy or a double click yields three links for one brochure, and
+  analytics split three ways that nobody notices until they read them six months later.
+
+  The link carries no creator, so it appears in no member's "my links" and stays visible under
+  `list.all` — the existing filter already did the right thing. *Requested by the second host,
+  who had ruled out all three workarounds themselves before writing, including the one that would
+  have filed a prospect among internal readers.*
+- `host-share` in `capabilities`, and `hostShare` alongside `separateIssuer`: what the instance
+  *can* do, and what is *configured*.
+
 ## [0.1.10] — 2026-08-14
 
 ### Changed
@@ -253,7 +283,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.10...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.11...HEAD
+[0.1.11]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.7...v0.1.8
