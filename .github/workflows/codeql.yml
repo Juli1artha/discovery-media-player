@@ -22,4 +22,6 @@ jobs:
         with:
           languages: javascript-typescript
           queries: security-and-quality
+          # La raison du filtre est dans le fichier, à côté du filtre.
+          config-file: ./.github/codeql/codeql-config.yml
       - uses: github/codeql-action/analyze@v3
