@@ -10,6 +10,28 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.21] — 2026-08-14
+
+### Security
+- **Email links no longer come from the `Host` header** (`PLAYER_PUBLIC_URL`). The client chooses
+  that header: on the standalone server, or behind a proxy that does not rewrite it strictly, a
+  reader could request a perfectly legitimate send — signed by the host, carrying its brand and its
+  sender reputation — **whose button points at their own domain**. Phishing supplied turn-key, to a
+  recipient the attacker picks, and the victim has no reason to suspect it. Unset, the player falls
+  back to `Host` so no running instance breaks, and **says so**: an instance sending mail without a
+  public URL should learn it before a phishing report teaches it.
+- **`isEvalSupported: false` forced on every PDF render.** The pinned pdf.js is within the range of
+  CVE-2024-4367 (script execution when opening a crafted PDF). Our CSP does not allow
+  `unsafe-eval`, which blocks the path today — but that mitigation was **implicit**, and one CSP
+  edit would have reopened it without a word. The protection no longer depends on a header written
+  somewhere else.
+
+  *Upgrading pdf.js is not a version bump: cdnjs ships only ES modules from 4.0, while we load a
+  classic script and configure the worker by hand. That migration is tracked separately, together
+  with bundling the library — which also settles the CDN-without-integrity finding.*
+
+  *Both reported by an external audit (P1-1, P1-3).*
+
 ## [0.1.20] — 2026-08-14
 
 ### Fixed
@@ -502,7 +524,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.20...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.21...HEAD
+[0.1.21]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.20...v0.1.21
 [0.1.20]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.19...v0.1.20
 [0.1.19]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.17...v0.1.18

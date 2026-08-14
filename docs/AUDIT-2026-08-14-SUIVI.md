@@ -46,17 +46,20 @@ d'où l'ordre B puis A.
 
 | | Constat | Décision |
 |---|---|---|
-| P1-1 | Les emails de re-partage font confiance à l'en-tête `Host` | à faire — `PLAYER_PUBLIC_URL` |
+| P1-1 | Les emails de re-partage font confiance à l'en-tête `Host` | ✅ **0.1.21** — `PLAYER_PUBLIC_URL` |
 | P1-2 | Écritures d'analytics : le client choisit `internal`, `isMember`, `isPresenter` | à faire |
-| P1-3 | PDF.js 3.11.174 concerné par CVE-2024-4367 | à faire — voir note |
+| P1-3 | PDF.js 3.11.174 concerné par CVE-2024-4367 | 🟡 **atténué en 0.1.21** — migration ESM à part |
 | P1-4 | Fichiers entièrement tamponnés, pas de délai maximal | partiellement fait |
 | P1-5 | Idempotence des liens hôte non atomique (`SELECT` puis `INSERT`) | à faire — index unique partiel |
 | P1-6 | Limites de débit contournables par `X-Forwarded-For` | à faire |
 | P1-7 | Aucune politique de rétention des données personnelles | à décider — hors technique seul |
 
-**P1-3** — la CSP n'autorise pas `unsafe-eval`, ce qui réduit l'exploitabilité aujourd'hui. Mais
-l'audit a raison : cette atténuation est **implicite**. Forcer `isEvalSupported: false` et monter
-de version. Embarquer PDF.js plutôt que le charger d'un CDN règle aussi P2-4.
+**P1-3** — `isEvalSupported: false` est forcé sur les trois appels depuis `0.1.21` : la protection
+ne dépend plus d'un en-tête CSP écrit ailleurs. **Ce qui reste** : cdnjs ne publie plus que des
+modules ES à partir de 4.0, alors qu'on charge un script classique et qu'on configure le worker à
+la main. La montée est donc une migration, à faire avec l'embarquement de la bibliothèque — qui
+règle aussi P2-4. Tant qu'elle n'est pas faite, la version reste dans la plage de la CVE, avec deux
+barrières indépendantes devant.
 
 **P1-4** — le délai maximal est arrivé avec P0-1. Le tampon intégral reste : à remplacer par un
 flux avec backpressure et une taille maximale configurable.
