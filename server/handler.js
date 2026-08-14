@@ -1145,7 +1145,17 @@ async function relayerFichier(res, r, disposition) {
   res.end(buf);
 }
 
-function legalFooter({ tracked }) {
+// ⚠️ UNE MENTION DONT L'OBJET EST D'ÊTRE EXACTE NE DOIT PAS INVENTER UN EXPÉDITEUR.
+//
+// Le texte par défaut disait « transmise à son expéditeur ». Vrai pour un lien nominatif, faux
+// pour un lien que PERSONNE n'a envoyé — la plaquette publique d'un programme, ouverte depuis une
+// carte par un visiteur qui n'a reçu aucun message. Le défaut est antérieur au mode serveur à
+// serveur ; c'est lui qui l'a rendu visible, puisqu'il crée précisément des liens sans
+// destinataire NI créateur.
+//
+// La distinction ne demande aucune donnée nouvelle : c'est déjà la clé d'idempotence de ces
+// liens-là. Signalé par le second hôte en regardant son propre écran — ce qu'aucun test ne fait.
+function legalFooter({ tracked, sansExpediteur }) {
   const L = PLAYER.legal;
   const liens = [
     L.legalUrl ? `<a href="${esc(L.legalUrl)}" target=_blank rel=noreferrer>Mentions légales</a>` : "",
@@ -1153,7 +1163,10 @@ function legalFooter({ tracked }) {
     // Obligation AGPL : l'accès au source se propose à qui UTILISE le logiciel, pas seulement à qui le distribue.
     L.sourceUrl ? `<a href="${esc(L.sourceUrl)}" target=_blank rel=noreferrer>Code source</a>` : "",
   ].filter(Boolean).join("<span class=lgl-sep>·</span>");
-  const mesure = tracked ? `<span class=lgl-note>${esc(L.trackingNotice)}</span>` : "";
+  // Un contexte qui ne fournit pas le second texte retombe sur le premier : rien ne casse chez un
+  // hôte qui n'a pas encore de liens sans expéditeur.
+  const texte = sansExpediteur ? (L.trackingNoticeAnonymous || L.trackingNotice) : L.trackingNotice;
+  const mesure = tracked ? `<span class=lgl-note>${esc(texte)}</span>` : "";
   if (!liens && !mesure) return "";
   return `<div class=lgl>${mesure}${liens ? `<span class=lgl-links>${liens}</span>` : ""}</div>`;
 }
@@ -1363,6 +1376,26 @@ ${gcid ? `<script nonce="${nonce}" src="https://accounts.google.com/gsi/client" 
 </body></html>`;
 }
 
+/**
+ * ⚠️ LE VISITEUR EST VENU SOUS UNE MARQUE ; C'EST CELLE-LÀ QU'IL DOIT LIRE.
+ *
+ * Le titre ajoutait le nom de l'INSTANCE — celui de la société qui exploite l'outil. Vrai tant
+ * qu'une instance ne sert qu'un public ; faux dès qu'elle en sert deux, et le visiteur d'une
+ * marque cliente voit alors le nom d'une société qui ne le concerne pas.
+ *
+ * Aucune configuration nouvelle : la marque du lien est DÉJÀ résolue (`brandForShare`, la même
+ * qui habille le loader) et posée sur `share.brand_name` avant qu'on arrive ici. Le titre ne la
+ * consultait simplement pas.
+ *
+ * Le « propulsé par » reste celui de l'instance, lui, et c'est délibéré : dire qui opère l'outil
+ * est une information honnête, pas une trahison de marque.
+ */
+function titreOnglet(share) {
+  const base = share.doc_title || share.file_name || "Document";
+  const marque = String((share && share.brand_name) || "").trim();
+  return marque ? `${base} — ${marque}` : PLAYER.branding.title(base);
+}
+
 function viewerHtml(share, nonce, logoUrl, pitch) {
   const title = esc(share.doc_title || share.file_name || "Document");
   // Aperçu interne : slug vide (= pas de tracking, pas de bouton de re-partage) + stream depuis le bucket public.
@@ -1394,7 +1427,7 @@ function viewerHtml(share, nonce, logoUrl, pitch) {
 <meta name=robots content="noindex,nofollow">
 <link rel=icon href="data:,">
 <link rel=preconnect href="https://cdnjs.cloudflare.com" crossorigin>
-<title>${esc(PLAYER.branding.title(share.doc_title || share.file_name || "Document"))}</title>
+<title>${esc(titreOnglet(share))}</title>
 <style>
   :root{--bg:#33312e;--bar:#26241f}
   *{box-sizing:border-box}
@@ -1582,7 +1615,7 @@ ${LEGAL_CSS}
     ${botOn ? botMarkup(share, pitch) : ""}
   </div>
   ${PLAYER.branding.poweredBy ? `<div class=brand>Propulsé par ${esc(PLAYER.branding.poweredBy)}</div>` : ""}
-  ${legalFooter({ tracked: !preview && !!share.slug })}
+  ${legalFooter({ tracked: !preview && !!share.slug, sansExpediteur: !share.recipient_email && !share.created_by })}
   ${brandLogo || !brandIntroRuntime ? "" : `<script nonce="${nonce}">(${brandIntroRuntime.toString()})();</script>`}
   <script nonce="${nonce}">${PLAYER_BROWSER_JS}</script>
   <script nonce="${nonce}" src="${PDFJS}/pdf.min.js"></script>

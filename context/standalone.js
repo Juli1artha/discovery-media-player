@@ -335,6 +335,17 @@ function createStandaloneContext(env = process.env) {
       get sourceUrl() { return String(env.PLAYER_SOURCE_URL || "https://github.com/Juli1artha/discovery-media-player").trim(); },
       get legalUrl() { return String(env.PLAYER_LEGAL_URL || "").trim(); },
       get privacyUrl() { return String(env.PLAYER_PRIVACY_URL || "").trim(); },
+      /**
+       * ⚠️ Mention d'un lien que PERSONNE n'a envoyé — plaquette publique ouverte depuis une carte.
+       * Parler d'« expéditeur » y serait faux, et c'est la seule phrase du produit dont l'objet
+       * est d'être exacte. Le player choisit d'après le lien lui-même : ni destinataire, ni
+       * créateur.
+       */
+      get trackingNoticeAnonymous() {
+        const perso = String(env.PLAYER_TRACKING_NOTICE_ANON || "").trim();
+        return perso || "La consultation de ce document est mesurée (pages vues, temps de lecture).";
+      },
+
       get trackingNotice() {
         const perso = String(env.PLAYER_TRACKING_NOTICE || "").trim();
         return perso || "La consultation de ce document est mesurée (pages vues, temps de lecture) et transmise à son expéditeur.";

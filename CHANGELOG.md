@@ -10,6 +10,24 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.13] — 2026-08-14
+
+### Fixed
+- **The tracking notice invented a sender.** "…passed on to its sender" is right for a named link
+  and false for a public brochure opened from a map by someone who received no message. This is
+  the one sentence in the product whose whole job is to be exact. The player now picks by the link
+  itself — no recipient and no creator means nobody sent it — which needed no new data: that is
+  already the idempotency key for host-owned links. `PLAYER_TRACKING_NOTICE_ANON` overrides it; a
+  context that provides no second text falls back to the first rather than showing none.
+- **The tab title showed the operator instead of the brand the visitor clicked.** Someone arriving
+  on a client's brand read the name of the company that runs the tool. The link's brand was
+  *already* resolved for the loader and sitting on the share — the title simply did not consult it.
+  No new configuration. "Powered by" stays the instance's, deliberately: saying who operates the
+  tool is honest disclosure, not a brand leak.
+
+  *Both reported by the second host looking at their own screen — which no test does. Both were
+  true while an instance served one audience, and false the moment it served two.*
+
 ## [0.1.12] — 2026-08-14
 
 ### Fixed
@@ -303,7 +321,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.12...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.13...HEAD
+[0.1.13]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.9...v0.1.10
