@@ -1407,7 +1407,27 @@ function viewerHtml(share, nonce, logoUrl, pitch) {
   // INTÉGRÉ (?embed=1) : la visionneuse est en surimpression dans une page hôte de MÊME
   // ORIGINE (le plan d'un lot dans une expérience 3D). L'hôte n'a alors plus besoin de sa
   // propre barre de titre : celle-ci porte la croix, et la sortie remonte en postMessage.
+  // ⚠️ DEUX QUESTIONS DIFFÉRENTES, QU'UNE SEULE VARIABLE CONFONDAIT.
+  //
+  // `embed` décide de l'HABILLAGE : la visionneuse porte sa propre croix, et l'hôte retire sa
+  // barre de titre. L'aperçu a déjà la sienne (`closeBtn`, à droite) — lever la condition
+  // afficherait donc DEUX croix. Le `!preview` n'était pas arbitraire.
+  //
+  // `embedded` répond à l'autre question : cette page est-elle SERVIE dans un cadre ? C'est elle
+  // qui commande la poignée de main. Le serveur le sait déjà — il en tire les `frame-ancestors`
+  // de la réponse — mais le navigateur ne l'apprenait qu'en aperçu de lien tracé.
+  //
+  // ⚠️ Conséquence signalée par le second hôte, et c'est exactement la panne que le contrat
+  // décrit : `embed-ready` n'était jamais émis en aperçu, donc l'hôte recevait un SILENCE. Or le
+  // silence couvre deux cas opposés — instance absente, ou player vivant. Leur guetteur de
+  // démarrage a conclu « injoignable » et remplacé un player qui fonctionnait par la visionneuse
+  // du navigateur, six secondes après l'ouverture, sous les yeux du lecteur. Et l'aperçu est
+  // précisément le mode qu'un hôte utilise pour SES documents.
+  //
+  // La page était pourtant encadrable et parlait déjà (`share`, `close` en postMessage) : il ne
+  // lui manquait que de dire qu'elle était là.
   const embed = !preview && !!share.embed;
+  const embedded = !!share.embed;
   const fileUrl = preview ? share.stream_url : `/api/doc?slug=${encodeURIComponent(share.slug)}&file=1`;
   // Logo de MARQUE du loader : celui du promoteur (brand_logo, ex. MJ
   // Développement) s'il est renseigné, avec la mention de l'éditeur dessous (si configurée)
@@ -1421,7 +1441,7 @@ function viewerHtml(share, nonce, logoUrl, pitch) {
   // En aperçu interne, on embarque de quoi démarrer une présentation live (URL Storage brute + métadonnées).
   // `fileName` : c'est LUI qui dit la nature du document côté page. L'URL publique est
   // `/api/doc?slug=…&file=1`, sans extension — sans ce champ, une image partait dans pdf.js.
-  const cfg = JSON.stringify({ brand: PLAYER.branding.name, slug: preview ? "" : share.slug, fileUrl, fileName: share.file_name || "", pdfjs: PDFJS, title, preview, embed, bot: botOn, botGuided: !preview && !!share.bot_enabled && share.bot_guided !== false, botAv: (!preview && share.bot_enabled && share.bot_avatar) || "", botName: (!preview && share.bot_enabled && share.bot_name) || "", botGreet: (!preview && share.bot_enabled && share.bot_greeting) || "", botGreetDoc: (!preview && share.bot_enabled && share.bot_greeting_doc) || "", dl: share.allow_download !== false, autoPresent: !!share.auto_present, botAnim: share.bot_page_anim !== false, botVoice: !preview && !!share.bot_enabled && !!process.env.ELEVENLABS_API_KEY, vIcOn: ICONS.sound, vIcOff: ICONS.mute, kStyle: (!preview && share.bot_enabled && share.bot_karaoke) || "classic", vLayout: (!preview && share.bot_enabled && share.video_layout) || "", vClips: !preview && !!share.bot_vclips, botVAv: (!preview && share.bot_enabled && share.bot_vphoto) || "", resumeSlug: preview ? (share.resume_slug || "") : "", supaUrl: preview ? (share.supa_url || "") : "", supaKey: preview ? (share.supa_key || "") : "", internal: preview && share.internal_email ? { email: share.internal_email, name: share.presenter_name || "", docId: share.doc_id || "" } : null, present: preview ? { url: share.raw_url || "", name: share.file_name || "", title: share.doc_title || "", docId: share.doc_id || "", by: share.presenter_name || "", email: share.internal_email || "", av: share.presenter_avatar || "" } : null });
+  const cfg = JSON.stringify({ brand: PLAYER.branding.name, slug: preview ? "" : share.slug, fileUrl, fileName: share.file_name || "", pdfjs: PDFJS, title, preview, embed, embedded, bot: botOn, botGuided: !preview && !!share.bot_enabled && share.bot_guided !== false, botAv: (!preview && share.bot_enabled && share.bot_avatar) || "", botName: (!preview && share.bot_enabled && share.bot_name) || "", botGreet: (!preview && share.bot_enabled && share.bot_greeting) || "", botGreetDoc: (!preview && share.bot_enabled && share.bot_greeting_doc) || "", dl: share.allow_download !== false, autoPresent: !!share.auto_present, botAnim: share.bot_page_anim !== false, botVoice: !preview && !!share.bot_enabled && !!process.env.ELEVENLABS_API_KEY, vIcOn: ICONS.sound, vIcOff: ICONS.mute, kStyle: (!preview && share.bot_enabled && share.bot_karaoke) || "classic", vLayout: (!preview && share.bot_enabled && share.video_layout) || "", vClips: !preview && !!share.bot_vclips, botVAv: (!preview && share.bot_enabled && share.bot_vphoto) || "", resumeSlug: preview ? (share.resume_slug || "") : "", supaUrl: preview ? (share.supa_url || "") : "", supaKey: preview ? (share.supa_key || "") : "", internal: preview && share.internal_email ? { email: share.internal_email, name: share.presenter_name || "", docId: share.doc_id || "" } : null, present: preview ? { url: share.raw_url || "", name: share.file_name || "", title: share.doc_title || "", docId: share.doc_id || "", by: share.presenter_name || "", email: share.internal_email || "", av: share.presenter_avatar || "" } : null });
   return `<!doctype html><html lang=fr><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=3,viewport-fit=cover,interactive-widget=resizes-content">
 <meta name=robots content="noindex,nofollow">
@@ -1744,7 +1764,7 @@ ${LEGAL_CSS}
     // qu'on est là — sans cette poignée de main elle ne peut pas savoir si la croix
     // existe (visionneuse d'une version antérieure) et garde la sienne par sécurité.
     // Le format du fil, le targetOrigin et la validation vivent dans player/src/bridge.ts.
-    if(CFG.embed){
+    if(CFG.embedded){
       Player.bridge.sendToHost({type:'embed-ready'});
       var _xb=document.getElementById('embedCloseBtn');
       if(_xb) _xb.addEventListener('click',function(){ Player.bridge.sendToHost({type:'close'}); });
@@ -2810,7 +2830,7 @@ async function handler(req, res) {
       }
       const supaUrl = (PLAYER.config && PLAYER.config.supabaseUrl) || "";
       const supaKey = (PLAYER.config && PLAYER.config.supabasePublishableKey) || "";
-      const pseudo = { preview: true, slug: "", file_name: String(q.name || "document.pdf"), doc_title: String(q.title || q.name || "Document"), raw_url: url, doc_id: String(q.docId || ""), presenter_name: String(q.by || ""), presenter_avatar: String(q.av || ""), internal_email: String(q.uemail || ""), supa_url: supaUrl, supa_key: supaKey, auto_present: String(q.autopresent || "") === "1", resume_slug: String(q.resume || ""), stream_url: `/api/doc?preview=1&stream=1&url=${encodeURIComponent(url)}&name=${encodeURIComponent(String(q.name || ""))}` };
+      const pseudo = { preview: true, embed, slug: "", file_name: String(q.name || "document.pdf"), doc_title: String(q.title || q.name || "Document"), raw_url: url, doc_id: String(q.docId || ""), presenter_name: String(q.by || ""), presenter_avatar: String(q.av || ""), internal_email: String(q.uemail || ""), supa_url: supaUrl, supa_key: supaKey, auto_present: String(q.autopresent || "") === "1", resume_slug: String(q.resume || ""), stream_url: `/api/doc?preview=1&stream=1&url=${encodeURIComponent(url)}&name=${encodeURIComponent(String(q.name || ""))}` };
       let plogo = ""; try { plogo = await PLAYER.branding.logo(); } catch { /* sans logo */ }
       const pnonce = crypto.randomBytes(16).toString("base64");
       // Aperçu interne : CSP relâchée (supabase-js jsdelivr + Realtime wss) pour la présence + le chat live,
