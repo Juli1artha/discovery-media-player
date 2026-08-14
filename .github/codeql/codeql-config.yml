@@ -16,6 +16,19 @@ name: "Discovery Media Player"
 #
 # Ce qui remplace la règle ici : des tests qui portent sur l'autorisation de chaque branche, et une
 # relecture qui sait ce qu'elle regarde. Détail complet : docs/AUDIT-2026-08-14-SUIVI.md
+# ⚠️ CE QU'ON N'A PAS FAIT : EXCLURE `examples/`.
+#
+# `js/missing-rate-limiting` réclame un limiteur devant chaque route qui touche le disque, et vise
+# cinq routes de l'exemple Express. Aucune ne le mérite (les raisons sont dans le fichier lui-même),
+# et elles reviennent sous un NOUVEAU numéro dès qu'un commentaire décale une ligne.
+#
+# La tentation était d'ajouter `paths-ignore: examples/**`. C'est le mauvais échange : un exemple
+# est le code que les gens RECOPIENT en production. Cesser de l'analyser pour supprimer cinq
+# alertes connues, c'est laisser passer la sixième — celle qu'on n'a pas encore vue.
+#
+# On garde donc l'analyse complète sur `examples/`, et ces cinq-là se suppriment une par une, sur
+# place, avec leur raison écrite à côté (`// codeql[js/missing-rate-limiting]`). Le coût est de les
+# reposer si les routes bougent ; il est assumé.
 query-filters:
   - exclude:
       id: js/user-controlled-bypass
