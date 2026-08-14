@@ -151,11 +151,44 @@ function createStandaloneContext(env = process.env) {
     mail: { async send() { return null; } },
 
     identity: {
-      /** Vérifie un jeton auprès de Supabase Auth. Sans base : personne n'est authentifié. */
+      /**
+       * Vérifie un jeton auprès de Supabase Auth. Sans émetteur : personne n'est authentifié.
+       *
+       * ⚠️ LA BASE DU PLAYER ET L'ÉMETTEUR DES JETONS SONT DEUX CHOSES DIFFÉRENTES.
+       *
+       * `SUPABASE_URL` servait les deux rôles. Vrai tant que le player et son application
+       * partagent un déploiement — et faux par construction dès qu'une instance est séparée : la
+       * base appartient au player, l'identité appartient à l'hôte. Les membres de l'hôte
+       * recevaient donc des jetons émis par un projet, vérifiés contre un autre : toute la moitié
+       * « membre » de la surface (diffusion, statistiques, présentations authentifiées) était
+       * hors d'atteinte. Signalé par le second hôte, c'est la troisième hypothèse de cette forme
+       * en deux jours — elles ne se voient qu'en exerçant la séparation.
+       *
+       * `PLAYER_AUTH_URL` désigne donc l'émetteur, et `SUPABASE_URL` reste la base. Absente, on
+       * retombe sur `SUPABASE_URL` : une instance où les deux coïncident ne change pas d'un
+       * caractère.
+       *
+       * ⚠️ ET LA CLÉ NE RETOMBE PAS, ELLE. Le repli historique allait jusqu'à
+       * `SUPABASE_SERVICE_ROLE_KEY` — la clé maîtresse de NOTRE base. Tant que l'émetteur était
+       * notre propre projet, c'était sans conséquence ; vers un émetteur tiers, ce serait
+       * l'envoyer à un serveur qui n'a rien à en faire. Un émetteur distinct exige donc sa propre
+       * clé publiable, et son absence se dit au lieu de se replier.
+       */
       async verifyToken(authorization) {
         const jeton = String(authorization || "").replace(/^Bearer\s+/i, "").trim();
-        const url = String(env.SUPABASE_URL || "").replace(/\/+$/, "");
-        const cle = String(env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_SERVICE_ROLE_KEY || "");
+        const emetteur = String(env.PLAYER_AUTH_URL || "").replace(/\/+$/, "");
+        const base = String(env.SUPABASE_URL || "").replace(/\/+$/, "");
+
+        const url = emetteur || base;
+        const cle = emetteur
+          ? String(env.PLAYER_AUTH_KEY || "")
+          : String(env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_SERVICE_ROLE_KEY || "");
+
+        if (emetteur && !cle) {
+          // Le refus silencieux est le piège de cette configuration : sans clé, chaque membre est
+          // simplement « non authentifié », ce qui ressemble à un droit manquant. On le dit.
+          try { journal.capture(new Error("PLAYER_AUTH_URL est configurée sans PLAYER_AUTH_KEY : aucun jeton ne peut être vérifié"), {}); } catch { /* ignore */ }
+        }
         if (!jeton || !url || !cle) return null;
         try {
           const r = await fetch(`${url}/auth/v1/user`, {
