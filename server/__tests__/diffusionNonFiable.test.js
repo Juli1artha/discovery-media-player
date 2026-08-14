@@ -82,3 +82,24 @@ describe("ce qui reste un signal, et c'est un choix", () => {
     expect(croient, "seuls typing et map ont le droit de croire l'émetteur").toEqual(["map", "typing"]);
   });
 });
+
+// ⚠️ LA RELECTURE DOIT NOTIFIER CE QU'ELLE AJOUTE — ET SEULEMENT ÇA.
+//
+// La première version de ce correctif ajoutait les messages relus sans jamais appeler
+// `notifyMsg` : la pastille de non-lus ne montait plus. Personne ici ne l'a vu — c'est le test
+// d'un HÔTE, qui lit le source de ce paquet une fois installé, qui l'a attrapé à travers la
+// frontière de deux dépôts.
+//
+// Et la condition compte autant que l'appel : la relecture ramène tout l'historique, donc notifier
+// sans vérifier l'ajout réel ferait recompter chaque message à chaque relecture. C'est exactement
+// le défaut « la pastille monte de 2 » corrigé en 0.1.2, qui reviendrait par une autre porte.
+describe("la relecture notifie ce qui est neuf, sans recompter le reste", () => {
+  it("notifie uniquement les messages réellement ajoutés", () => {
+    expect(SRC, "sans cet appel, la pastille ne monte plus").toContain("if(addMsg(m))notifyMsg(m);else updateMsg(m);");
+  });
+
+  it("ne notifie jamais sans condition", () => {
+    expect(SRC).not.toMatch(/addMsg\(m\);\s*notifyMsg/);
+    expect(SRC).not.toMatch(/forEach\(function\(m\)\{notifyMsg/);
+  });
+});

@@ -399,6 +399,11 @@ var Live=(function(){
       ch.on('presence',{event:'sync'},function(){renderPres(ch.presenceState());});
       // Plus d'abonnement à la table des messages : elle n'est plus publiée ni lisible
       // publiquement. Tout passe par la diffusion, et l'historique par la route de chat.
+      // ⚠️⚠️ TOUT CE BLOC VIT DANS UN TEMPLATE LITERAL : AUCUN BACKTICK, MÊME EN COMMENTAIRE.
+      // Un seul termine la chaîne qui porte tout le script navigateur, et l'erreur remonte
+      // ailleurs — « Unexpected token » sur une ligne qui n'a rien fait. Cinq fois sur ce fichier.
+      // Le lint l'attrape à chaque fois ; ça coûte un aller-retour, pas une panne.
+      //
       // ⚠️ UNE DIFFUSION EST UN SIGNAL, PAS UNE VÉRITÉ.
       //
       // Ce canal est PUBLIC : la clé publiable et le slug sont dans la page, donc tout participant
@@ -433,7 +438,12 @@ var Live=(function(){
       },120);}
       function relireChat(){clearTimeout(_relChat);_relChat=setTimeout(function(){
         relire('&chat=1',function(d){
-          if(d.messages)d.messages.forEach(function(m){if(!addMsg(m))updateMsg(m);});
+          // ⚠️ NOTIFIER CE QUI VIENT D'ARRIVER, ET SEULEMENT ÇA. 'addMsg' rend faux pour un
+          // message déjà connu — la relecture ramène tout l'historique, donc sans cette condition
+          // la pastille de non-lus compterait chaque message à chaque relecture. Et sans l'appel,
+          // elle ne compte plus rien : c'est la régression que le test d'un hôte a attrapée en
+          // lisant le source de ce paquet, à travers la frontière de deux dépôts.
+          if(d.messages)d.messages.forEach(function(m){if(addMsg(m))notifyMsg(m);else updateMsg(m);});
           if(typeof d.locked!=='undefined')applyLock(d.locked);
         });
       },120);}
