@@ -209,3 +209,53 @@ describe("live — badge de non-lus", () => {
     expect([0, 1, 9, 10, 250].map(unreadLabel)).toEqual(["", "1", "9", "9+", "9+"]);
   });
 });
+
+// ⚠️ CE JETON AUTORISE — IL NE DÉSIGNE PAS.
+//
+// C'est lui qui prouve « ce message est le mien » pour le modifier ou le supprimer. Il était tiré
+// de `Math.random()`, dont la suite est déterministe à partir de l'état interne du moteur : qui en
+// devine un peut réécrire les messages d'un autre participant.
+//
+// Acceptable pour un identifiant d'analyse, jamais pour un droit. Signalé par l'analyse statique
+// et par l'audit externe (P3-1).
+describe("le jeton d'auteur est imprévisible", () => {
+  const magasin = () => {
+    const m = new Map<string, string>();
+    return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { m.set(k, v); } };
+  };
+
+  it("ne vient pas de Math.random", () => {
+    const vraiRandom = Math.random;
+    Math.random = () => { throw new Error("Math.random ne doit pas servir à autoriser"); };
+    try {
+      expect(() => authorToken(magasin())).not.toThrow();
+    } finally { Math.random = vraiRandom; }
+  });
+
+  it("deux navigateurs n'obtiennent pas le même", () => {
+    const vus = new Set(Array.from({ length: 200 }, () => authorToken(magasin())));
+    expect(vus.size, "aucune collision attendue").toBe(200);
+  });
+
+  it("il est assez long pour ne pas se deviner", () => {
+    expect(authorToken(magasin()).length).toBeGreaterThanOrEqual(32);
+  });
+
+  // Le repli existe pour un environnement sans `crypto`, mais il ne doit pas être silencieux :
+  // mieux vaut un jeton faible qu'un chat cassé — à condition que ça se sache.
+  it("sans crypto, il prévient au lieu de se taire", () => {
+    const vrai = (globalThis as { crypto?: unknown }).crypto;
+    const avertis: unknown[] = [];
+    const vraiWarn = console.warn;
+    console.warn = (...a: unknown[]) => avertis.push(a.join(" "));
+    try {
+      delete (globalThis as { crypto?: unknown }).crypto;
+      const t = authorToken(magasin());
+      expect(t.length).toBeGreaterThan(0);
+      expect(avertis.join(" ")).toMatch(/crypto/i);
+    } finally {
+      (globalThis as { crypto?: unknown }).crypto = vrai;
+      console.warn = vraiWarn;
+    }
+  });
+});

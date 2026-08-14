@@ -156,12 +156,37 @@ export function attendeeKey(
 }
 
 /**
+ * Valeur imprévisible, pour ce qui AUTORISE.
+ *
+ * ⚠️ `Math.random()` n'est pas fait pour ça : la suite est déterministe à partir de l'état interne
+ * du moteur, et deux exécutions voisines produisent des valeurs voisines. Acceptable pour un
+ * identifiant d'analyse, jamais pour un jeton qui décide d'un droit.
+ *
+ * Le repli existe pour les environnements sans `crypto` — un très vieux navigateur, ou un test.
+ * Il n'est PAS silencieux : mieux vaut un jeton faible qu'un chat qui ne fonctionne pas, mais on
+ * ne veut pas que ce cas devienne le cas normal sans que personne ne le sache.
+ */
+function valeurImprevisible(): string {
+  const c = typeof globalThis !== "undefined" ? (globalThis as { crypto?: Crypto }).crypto : undefined;
+  if (c && typeof c.randomUUID === "function") return c.randomUUID().replace(/-/g, "");
+  if (c && typeof c.getRandomValues === "function") {
+    const octets = c.getRandomValues(new Uint8Array(24));
+    return Array.from(octets, (o) => o.toString(16).padStart(2, "0")).join("");
+  }
+  try { console.warn("[player] crypto indisponible : jeton d'auteur affaibli"); } catch { /* sans console */ }
+  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+}
+
+/**
  * Jeton d'auteur : c'est lui qui prouve « ce message est le mien » pour le modifier ou le
  * supprimer. Persistant, propre au navigateur, jamais envoyé par le serveur.
+ *
+ * ⚠️ C'est un jeton D'AUTORISATION, pas un identifiant : qui le devine peut modifier et supprimer
+ * les messages d'un autre participant. Il était tiré de `Math.random()`.
  */
 export function authorToken(
   store?: KeyValueStore | null,
-  randomId: () => string = () => Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2),
+  randomId: () => string = valeurImprevisible,
 ): string {
   const existing = readStore(store, STORAGE_KEYS.authorToken);
   if (existing) return existing;

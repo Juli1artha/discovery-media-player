@@ -116,11 +116,44 @@ export function sendToPlayer(frame: HTMLIFrameElement | null | undefined, msg: H
   } catch { /* iframe déjà détruite */ }
 }
 
-/** Côté HÔTE : écoute les messages du player. Renvoie la fonction de désabonnement. */
-export function onPlayerMessage(cb: (msg: PlayerMessage) => void, win?: Window): () => void {
+/**
+ * ⚠️ POURQUOI ON NE VÉRIFIE PAS L'ORIGINE, ET CE QU'ON VÉRIFIE À LA PLACE.
+ *
+ * Un contrôle d'origine est impossible ici : le player est encadré par des hôtes sur des domaines
+ * quelconques, déclarés à l'exploitation (`DOC_FRAME_ANCESTORS`), et il ne connaît pas celui de son
+ * hôte au moment où il écoute. C'est pour cette raison que le contrôle avait été écarté.
+ *
+ * Mais comparer la FENÊTRE SOURCE ne demande aucune origine. `e.source` est une référence : soit
+ * elle est celle qu'on attend, soit elle vient d'ailleurs. Sans ce test, n'importe quel onglet ou
+ * cadre détenant une référence à la fenêtre pouvait envoyer `close`, `share` ou `handover-done` —
+ * et la page les traitait comme venant de son hôte.
+ *
+ * Côté player, la fermeture est PAR DÉFAUT : le seul émetteur légitime est `window.parent`, aucun
+ * hôte n'a de code à changer. Côté hôte, le paramètre est optionnel — imposer une fermeture par
+ * défaut ferait taire les messages chez tous ceux qui ne l'auraient pas encore passé, et un
+ * message qui n'arrive plus est la pire façon d'annoncer un durcissement.
+ */
+function memeFenetre(attendue: unknown, source: unknown): boolean {
+  if (!attendue) return true;                                   // rien d'attendu : on n'exclut rien
+  const w = (attendue as HTMLIFrameElement).contentWindow ?? attendue;
+  return source === w;
+}
+
+/**
+ * Côté HÔTE : écoute les messages du player. Renvoie la fonction de désabonnement.
+ *
+ * `expected` — l'iframe du player, ou sa fenêtre. **Recommandé** : sans lui, un autre cadre peut
+ * se faire passer pour le player.
+ */
+export function onPlayerMessage(
+  cb: (msg: PlayerMessage) => void,
+  win?: Window,
+  expected?: HTMLIFrameElement | Window | null,
+): () => void {
   const target = win || (typeof window !== "undefined" ? window : null);
   if (!target) return () => {};
   const handler = (e: MessageEvent) => {
+    if (!memeFenetre(expected, e.source)) return;
     const msg = parsePlayerMessage(e.data);
     if (msg) cb(msg);
   };
@@ -128,11 +161,19 @@ export function onPlayerMessage(cb: (msg: PlayerMessage) => void, win?: Window):
   return () => target.removeEventListener("message", handler);
 }
 
-/** Côté PLAYER : écoute les messages de l'hôte. Renvoie la fonction de désabonnement. */
+/**
+ * Côté PLAYER : écoute les messages de l'hôte. Renvoie la fonction de désabonnement.
+ *
+ * N'accepte que `window.parent` — le seul émetteur qui ait un sens dans un cadre.
+ */
 export function onHostMessage(cb: (msg: HostMessage) => void, win?: Window): () => void {
   const target = win || (typeof window !== "undefined" ? window : null);
   if (!target) return () => {};
+  const parent = (target as Window).parent ?? null;
   const handler = (e: MessageEvent) => {
+    // ⚠️ `parent === target` quand la page n'est PAS encadrée : il n'y a alors pas d'hôte, donc
+    // rien à accepter — et surtout pas ses propres messages renvoyés par un script de la page.
+    if (!parent || parent === target || e.source !== parent) return;
     const msg = parseHostMessage(e.data);
     if (msg) cb(msg);
   };

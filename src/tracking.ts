@@ -59,6 +59,15 @@ export interface Tracker {
 const ACTIVITY_EVENTS = ["mousemove", "mousedown", "keydown", "wheel", "touchstart", "pointerdown"] as const;
 
 function defaultSessionId(): string {
+  // ⚠️ Cet identifiant est la CLÉ d'upsert de la session côté serveur : qui en devine un écrase la
+  // mesure de quelqu'un d'autre. Ce n'est pas un jeton d'autorisation, mais ce n'est pas non plus
+  // un simple compteur — et le coût d'une valeur imprévisible est nul.
+  const c = typeof globalThis !== "undefined" ? (globalThis as { crypto?: Crypto }).crypto : undefined;
+  if (c && typeof c.randomUUID === "function") return c.randomUUID().replace(/-/g, "");
+  if (c && typeof c.getRandomValues === "function") {
+    const o = c.getRandomValues(new Uint8Array(16));
+    return Array.from(o, (v) => v.toString(16).padStart(2, "0")).join("");
+  }
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 

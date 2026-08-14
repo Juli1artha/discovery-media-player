@@ -1,13 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import {
-  toWire,
-  parsePlayerMessage,
-  parseHostMessage,
-  sendToHost,
-  sendToPlayer,
-  onPlayerMessage,
-  type PlayerMessage,
-} from "../bridge";
+import { toWire, parsePlayerMessage, parseHostMessage, sendToHost, sendToPlayer, onPlayerMessage, type PlayerMessage, onHostMessage } from "../bridge";
 
 describe("bridge — format sur le fil", () => {
   it("préfixe le type et ne transporte le slug que s'il existe", () => {
@@ -104,5 +96,85 @@ describe("bridge — runtime", () => {
     off();
     fire({ type: "3dd-doc-close" });
     expect(seen).toHaveLength(1);
+  });
+});
+
+// ⚠️ UNE RÉFÉRENCE DE FENÊTRE SUFFIT POUR SE FAIRE PASSER POUR L'HÔTE.
+//
+// Un contrôle d'ORIGINE est impossible ici : le player est encadré par des hôtes sur des domaines
+// quelconques, et il ne connaît pas celui de son hôte au moment où il écoute. C'est pour ça que le
+// contrôle avait été écarté — à raison sur l'origine, à tort sur la source.
+//
+// Comparer `e.source` ne demande aucune origine : soit c'est la fenêtre attendue, soit non. Sans
+// ce test, n'importe quel onglet ou cadre détenant une référence pouvait envoyer `close`, `share`
+// ou `handover-done`, et la page les traitait comme venant de son hôte.
+//
+// Signalé par l'analyse statique et par l'audit externe (P3-2).
+describe("d'où un message a le droit de venir", () => {
+  function fausseFenetre() {
+    const ecouteurs: Array<(e: unknown) => void> = [];
+    return {
+      w: {
+        addEventListener: (_t: string, h: (e: unknown) => void) => ecouteurs.push(h),
+        removeEventListener: () => {},
+      } as unknown as Window,
+      emettre: (data: unknown, source: unknown) => ecouteurs.forEach((h) => h({ data, source })),
+    };
+  }
+
+  it("côté PLAYER : un message qui ne vient pas du parent est ignoré", () => {
+    const { w, emettre } = fausseFenetre();
+    const parent = { nom: "hote" };
+    (w as unknown as { parent: unknown }).parent = parent;
+    const recus: unknown[] = [];
+    onHostMessage((m) => recus.push(m), w);
+
+    emettre({ type: "3dd-doc-handover-done" }, { nom: "un-autre-onglet" });
+    expect(recus, "un cadre tiers ne doit pas piloter la visionneuse").toHaveLength(0);
+
+    emettre({ type: "3dd-doc-handover-done" }, parent);
+    expect(recus, "le parent, lui, reste écouté").toHaveLength(1);
+  });
+
+  // Page non encadrée : `parent === window`. Il n'y a pas d'hôte, donc rien à accepter — et
+  // surtout pas un message que la page se serait envoyé à elle-même.
+  it("côté PLAYER : une page non encadrée n'écoute personne", () => {
+    const { w, emettre } = fausseFenetre();
+    (w as unknown as { parent: unknown }).parent = w;
+    const recus: unknown[] = [];
+    onHostMessage((m) => recus.push(m), w);
+    emettre({ type: "3dd-doc-handover-done" }, w);
+    expect(recus).toHaveLength(0);
+  });
+
+  it("côté HÔTE : sans source attendue, rien ne change — aucun hôte ne devient muet", () => {
+    const { w, emettre } = fausseFenetre();
+    const recus: unknown[] = [];
+    onPlayerMessage((m) => recus.push(m), w);
+    emettre({ type: "3dd-doc-close" }, { nom: "quiconque" });
+    expect(recus).toHaveLength(1);
+  });
+
+  it("côté HÔTE : avec l'iframe attendue, les autres sont ignorés", () => {
+    const { w, emettre } = fausseFenetre();
+    const contentWindow = { nom: "player" };
+    const iframe = { contentWindow } as unknown as HTMLIFrameElement;
+    const recus: unknown[] = [];
+    onPlayerMessage((m) => recus.push(m), w, iframe);
+
+    emettre({ type: "3dd-doc-close" }, { nom: "autre-cadre" });
+    expect(recus).toHaveLength(0);
+
+    emettre({ type: "3dd-doc-close" }, contentWindow);
+    expect(recus, "l'iframe attendue passe").toHaveLength(1);
+  });
+
+  it("côté HÔTE : une fenêtre peut être donnée directement", () => {
+    const { w, emettre } = fausseFenetre();
+    const player = { nom: "player" };
+    const recus: unknown[] = [];
+    onPlayerMessage((m) => recus.push(m), w, player as unknown as Window);
+    emettre({ type: "3dd-doc-share" }, player);
+    expect(recus).toHaveLength(1);
   });
 });
