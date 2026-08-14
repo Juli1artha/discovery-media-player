@@ -166,6 +166,33 @@ we had told them to write a file they did not need. Code you don't write cannot 
 | `PLAYER_HOST_AUTHZ_URL` | who may send, revoke, or read analytics |
 | `PLAYER_HOST_BRAND_URL` | resolves a client's brand from the key carried by a link |
 | `PLAYER_HOST_MAIL_URL` + `PLAYER_HOST_MAIL_SECRET` | your route that **sends** the re-share email |
+| `PLAYER_INTERNAL_STRICT` | `1` ⇒ an internal reading session is written **only** with a token your server signed |
+
+### Internal reading sessions
+
+The **internal** population is the one this product promises never to mix with prospects: "this
+client read for twelve minutes" is worth something only if a colleague re-reading the document does
+not land in the same count. That route used to accept any email, any document, any duration, with
+no token — so anyone could manufacture "this colleague read this document for three hours".
+
+⚠️ **Why not a JWT.** Reading analytics leave through `sendBeacon`, the only transport that
+survives a closing tab — and it cannot carry a header. Requiring a JWT would lose the measurement
+at the exact moment it matters most. The proof therefore travels in the **body**, and comes from
+you: only you know who your member is.
+
+```
+token = base64url(JSON) + "." + HMAC-SHA256(base64url(JSON), PLAYER_HOST_FETCH_SECRET)
+JSON  = { "email": "…", "name": "…", "docId": "…", "exp": <unix seconds> }
+```
+
+Pass it as `it` in the tracking body. `exp` is **required**: a signature without expiry would
+still be valid after that member left the company. When a valid token is present, its claims win —
+the caller's `email` and `docId` are ignored.
+
+Set `PLAYER_INTERNAL_STRICT=1` once your application mints it, and the door closes: no token, no
+write. It is not closed by default because that would break every instance already running,
+including ours. **An open door nobody mentions is a defect; an open door stated, with the lock
+supplied, is a transition.**
 
 ### Sending mail
 

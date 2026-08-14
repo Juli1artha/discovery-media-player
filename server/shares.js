@@ -291,15 +291,44 @@ async function setShareAuth(slug, requireAuth) {
 
 // — Consultations INTERNES (équipe), table dédiée → n'affecte PAS les stats prospects. —
 // Upsert d'une session interne (depuis l'aperçu interne de la visionneuse).
+// ⚠️ CES CHAMPS VIENNENT DU NAVIGATEUR, DONC ILS SONT DES AFFIRMATIONS, PAS DES MESURES.
+//
+// La population INTERNE est celle dont le produit dit qu'elle ne doit jamais être mélangée aux
+// prospects : « ce client a lu douze minutes » ne vaut que si un collègue relisant le document
+// n'entre pas dans le même compte. Or n'importe qui pouvait écrire une session interne avec
+// n'importe quel e-mail et n'importe quelle durée.
+//
+// Les bornes ci-dessous ne rendent pas la donnée authentique — elles empêchent qu'elle soit
+// ABSURDE, et qu'un appel répété fasse grossir la base sans limite. L'authenticité, elle, demande
+// que l'hôte se porte garant de l'identité (jeton signé) : c'est le second volet, et il est
+// signalé au point d'entrée plutôt qu'ici.
+const BORNES = { pages: 10_000, secondes: 24 * 3600, entreesPagesTime: 2_000 };
+
 async function upsertInternalSession(p, { ip, ua }) {
   const num = (v) => (Number.isFinite(+v) ? Math.trunc(+v) : null);
+  const borne = (v, max) => { const n = num(v); return n == null ? null : Math.max(0, Math.min(n, max)); };
   const sessionId = String(p.sessionId || "").slice(0, 64);
   if (!sessionId || !p.docId) return;
   const { device, os, browser } = parseUa(ua);
   const row = {
-    session_id: sessionId, doc_id: String(p.docId), user_email: low(p.userEmail) || null, user_name: (p.userName || "").trim() || null,
-    num_pages: num(p.numPages), max_page: num(p.maxPage), total_seconds: num(p.totalSeconds) || 0,
-    pages_time: (p.pagesTime && typeof p.pagesTime === "object") ? p.pagesTime : {},
+    session_id: sessionId, doc_id: String(p.docId).slice(0, 200), user_email: low(p.userEmail).slice(0, 160) || null,
+    user_name: (p.userName || "").trim().slice(0, 120) || null,
+    num_pages: borne(p.numPages, BORNES.pages), max_page: borne(p.maxPage, BORNES.pages),
+    total_seconds: borne(p.totalSeconds, BORNES.secondes) || 0,
+    // ⚠️ Un objet libre venu du dehors : sans plafond, un seul appel peut écrire un JSON de la
+    // taille qu'il veut, autant de fois qu'il veut. On garde la forme, bornée.
+    pages_time: (() => {
+      const src = (p.pagesTime && typeof p.pagesTime === "object" && !Array.isArray(p.pagesTime)) ? p.pagesTime : {};
+      const out = {};
+      let n = 0;
+      for (const k in src) {
+        if (++n > BORNES.entreesPagesTime) break;
+        const page = num(k);
+        if (page == null || page < 0 || page > BORNES.pages) continue;
+        out[String(page)] = borne(src[k], BORNES.secondes) || 0;
+      }
+      return out;
+    })(),
     ua: String(ua || "").slice(0, 300), ip: String(ip || "").slice(0, 60), device, os, browser, last_at: new Date().toISOString(),
   };
   await PLAYER.db.request("commercial_doc_internal_sessions?on_conflict=session_id", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: [row] });

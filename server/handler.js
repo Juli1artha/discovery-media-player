@@ -2791,9 +2791,54 @@ async function handler(req, res) {
       }
       const ua0 = req.headers["user-agent"];
       const ip0 = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "";
-      // Consultation INTERNE (aperçu interne) : session dédiée, séparée des stats prospects. Pas de slug.
+      // ⚠️ CONSULTATION INTERNE : L'IDENTITÉ EST AFFIRMÉE PAR LE NAVIGATEUR, PAS PROUVÉE.
+      //
+      // La population interne est celle que le produit promet de ne jamais mélanger aux prospects.
+      // Or cette route acceptait n'importe quel e-mail, n'importe quel document, sans jeton ni
+      // limite : on pouvait fabriquer « tel collègue a lu ce document trois heures ».
+      //
+      // Le suivi part par `sendBeacon`, qui ne sait pas porter d'en-tête — exiger un JWT casserait
+      // le seul transport qui survive à la fermeture d'un onglet, c'est-à-dire le moment où la
+      // mesure compte le plus. La preuve doit donc voyager dans le CORPS, et venir de l'hôte :
+      // lui seul sait qui est son membre.
+      //
+      // `PLAYER_INTERNAL_STRICT` laisse chaque hôte fermer la porte à son rythme :
+      //   • absent  → on accepte, borné et limité, et on le SIGNALE une fois de temps en temps ;
+      //   • posé    → sans jeton valide, rien n'est écrit.
+      // Une fermeture par défaut casserait les instances en service, dont la nôtre. Une porte
+      // qu'on laisse ouverte sans le dire est un défaut ; une porte qu'on laisse ouverte en le
+      // disant, avec le verrou fourni, est une transition.
       if (body.internal && body.event === "session") {
-        try { await upsertInternalSession({ sessionId: body.sessionId, docId: body.docId, userEmail: body.email, userName: body.name, numPages: body.numPages, maxPage: body.maxPage, totalSeconds: body.totalSeconds, pagesTime: body.pagesTime }, { ip: ip0, ua: ua0 }); } catch { /* best-effort */ }
+        const ipInt = ip0 || "anon";
+        if (!(await PLAYER.limits.allow(`intsess:${ipInt}`, 120, 3600))) {
+          res.statusCode = 429; res.setHeader("Content-Type", "application/json"); res.end('{"ok":false,"error":"rate"}');
+          return;
+        }
+        const jeton = typeof PLAYER.identity.verifyInternalToken === "function"
+          ? PLAYER.identity.verifyInternalToken(String(body.it || ""))
+          : null;
+        const strict = !!(PLAYER.config && PLAYER.config.internalStrict);
+        if (strict && !jeton) {
+          res.statusCode = 403; res.setHeader("Content-Type", "application/json"); res.end('{"ok":false,"error":"internal-token"}');
+          return;
+        }
+        if (!strict && !jeton) {
+          // Une fois par heure et par instance : assez pour être vu dans les journaux, pas assez
+          // pour les noyer — un avertissement répété à chaque battement ne se lit plus.
+          if (await PLAYER.limits.allow("intsess:avert", 1, 3600)) {
+            try { PLAYER.errors.capture(new Error("session interne écrite sans jeton : l'identité vient du navigateur. Poser PLAYER_INTERNAL_STRICT=1 une fois l'hôte à jour"), { route: "internal-session" }); } catch { /* ignore */ }
+          }
+        }
+        // Le jeton fait foi quand il est là : c'est l'hôte qui se porte garant, pas l'appelant.
+        try {
+          await upsertInternalSession({
+            sessionId: body.sessionId,
+            docId: jeton ? jeton.docId : body.docId,
+            userEmail: jeton ? jeton.email : body.email,
+            userName: jeton ? (jeton.name || body.name) : body.name,
+            numPages: body.numPages, maxPage: body.maxPage, totalSeconds: body.totalSeconds, pagesTime: body.pagesTime,
+          }, { ip: ip0, ua: ua0 });
+        } catch { /* best-effort */ }
         res.statusCode = 200; res.setHeader("Content-Type", "application/json"); res.end('{"ok":true}');
         return;
       }

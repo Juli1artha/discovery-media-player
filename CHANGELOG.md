@@ -10,6 +10,35 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.22] — 2026-08-14
+
+### Security
+- **The internal reading population was open to anyone.** It is the population this product
+  promises never to mix with prospects — "this client read for twelve minutes" is worth something
+  only if a colleague re-reading the document does not land in the same count. Yet the route
+  accepted any email, any document, any duration, with no token and no limit: "this colleague read
+  this document for three hours" could be manufactured with one request.
+
+  ⚠️ **A JWT was not an option.** Reading analytics leave through `sendBeacon`, the only transport
+  that survives a closing tab, and it cannot carry a header — requiring one would lose the
+  measurement at the exact moment it matters most. The proof therefore travels in the **body** and
+  comes from the host, who alone knows who its member is: an HMAC over `{email, name, docId, exp}`
+  signed with the secret the host already holds. When it is present, its claims win and the
+  caller's are ignored. `exp` is required — a signature without expiry would outlive the member.
+
+  `PLAYER_INTERNAL_STRICT=1` closes the door entirely. It is **not** the default, because that
+  would break every instance already running, including ours; without it the write is still
+  accepted, but bounded, rate-limited, and **reported once an hour** so the gap is visible in the
+  logs. An open door nobody mentions is a defect; an open door stated, with the lock supplied, is
+  a transition.
+
+  Client-asserted numbers are now bounded regardless: page counts, durations, and the free-form
+  per-page object — which had no ceiling at all, so a single call could write a JSON of any size,
+  as often as it liked.
+
+  *Reported by an external audit (P1-2). The presence claims `isMember` / `isPresenter` remain and
+  are tracked separately.*
+
 ## [0.1.21] — 2026-08-14
 
 ### Security
@@ -524,7 +553,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.21...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.22...HEAD
+[0.1.22]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.21...v0.1.22
 [0.1.21]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.20...v0.1.21
 [0.1.20]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.19...v0.1.20
 [0.1.19]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.18...v0.1.19

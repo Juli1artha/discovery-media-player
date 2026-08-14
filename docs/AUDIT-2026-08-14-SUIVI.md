@@ -47,7 +47,7 @@ d'où l'ordre B puis A.
 | | Constat | Décision |
 |---|---|---|
 | P1-1 | Les emails de re-partage font confiance à l'en-tête `Host` | ✅ **0.1.21** — `PLAYER_PUBLIC_URL` |
-| P1-2 | Écritures d'analytics : le client choisit `internal`, `isMember`, `isPresenter` | à faire |
+| P1-2 | Écritures d'analytics : le client choisit `internal`, `isMember`, `isPresenter` | 🟡 **interne fermé en 0.1.22** · présence à faire |
 | P1-3 | PDF.js 3.11.174 concerné par CVE-2024-4367 | 🟡 **atténué en 0.1.21** — migration ESM à part |
 | P1-4 | Fichiers entièrement tamponnés, pas de délai maximal | partiellement fait |
 | P1-5 | Idempotence des liens hôte non atomique (`SELECT` puis `INSERT`) | à faire — index unique partiel |

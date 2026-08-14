@@ -304,6 +304,39 @@ function createStandaloneContext(env = process.env) {
         return a.length === b.length && crypto.timingSafeEqual(a, b);
       },
 
+      /**
+       * Vérifie un jeton de session INTERNE, émis par l'hôte pour son propre membre.
+       *
+       * ⚠️ POURQUOI DANS LE CORPS ET PAS EN EN-TÊTE. Le suivi de lecture part par `sendBeacon`,
+       * seul transport qui survive à la fermeture d'un onglet — et il ne sait pas porter
+       * d'en-tête. Exiger un JWT reviendrait à perdre la mesure au moment où elle compte le plus.
+       *
+       * Format : base64url(JSON) + "." + HMAC-SHA256 du même JSON, signé avec le secret que
+       * l'hôte détient déjà. Charge utile : { email, name, docId, exp }.
+       *
+       * ⚠️ Comparaison à temps constant, et `exp` obligatoire : un jeton sans expiration signé une
+       * fois vaudrait pour toujours, y compris après le départ du membre de l'entreprise.
+       */
+      verifyInternalToken(jeton) {
+        const secret = String(env.PLAYER_HOST_FETCH_SECRET || "");
+        const brut = String(jeton || "");
+        if (!secret || !brut) return null;
+        const sep = brut.lastIndexOf(".");
+        if (sep <= 0) return null;
+        const corps = brut.slice(0, sep);
+        const signature = brut.slice(sep + 1);
+        try {
+          const attendue = crypto.createHmac("sha256", secret).update(corps).digest("base64url");
+          const a = Buffer.from(attendue, "utf8"); const b = Buffer.from(signature, "utf8");
+          if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+          const d = JSON.parse(Buffer.from(corps, "base64url").toString("utf8"));
+          if (!d || typeof d !== "object") return null;
+          if (!Number.isFinite(d.exp) || d.exp * 1000 < Date.now()) return null;
+          if (!d.email || !d.docId) return null;
+          return { email: String(d.email), name: d.name ? String(d.name) : "", docId: String(d.docId) };
+        } catch { return null; }
+      },
+
       // ⚠️ Le rôle vient d'`app_metadata`, JAMAIS d'`user_metadata` : ce dernier est modifiable par
       // l'utilisateur lui-même. S'y fier revient à laisser chacun choisir ses droits.
       roleOf: (user) => String(((user || {}).app_metadata || {}).role || "").trim().toLowerCase(),
@@ -408,6 +441,8 @@ function createStandaloneContext(env = process.env) {
       // sont deux questions, et seule la seconde explique un refus.
       hostShare: !!String(env.PLAYER_HOST_SHARE_SECRET || ""),
       hostMail: !!String(env.PLAYER_HOST_MAIL_URL || "").trim(),
+      // Porte fermée : sans jeton de l'hôte, aucune session interne n'est écrite.
+      internalStrict: String(env.PLAYER_INTERNAL_STRICT || "") === "1",
     },
   };
 }
