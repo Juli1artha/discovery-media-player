@@ -10,6 +10,21 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.17] — 2026-08-14
+
+### Security
+- **`form-action 'self'` added to every page.** `form-action` is one of the few CSP directives
+  that does **not** fall back to `default-src`: a page served with `default-src 'none'` could still
+  post a form to any domain. No page here contains a `<form>` — submissions go through `fetch`, so
+  `connect-src` governs them — but an injected script could build one to exfiltrate, and nothing
+  stopped it. `'self'` rather than `'none'`: the access wall and visitor sign-in may need a
+  same-origin post, and breaking authentication to close a door nobody walked through would be a
+  poor trade. `'self'` closes exfiltration, which is the real risk.
+
+  *Found while checking an external review that recommended `object-src 'none'` — that one **is**
+  covered by `default-src 'none'`, so the recommendation was redundant. The directive that was
+  genuinely missing was not on its list.*
+
 ## [0.1.16] — 2026-08-14
 
 ### Fixed
@@ -422,7 +437,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.16...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.17...HEAD
+[0.1.17]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.13...v0.1.14

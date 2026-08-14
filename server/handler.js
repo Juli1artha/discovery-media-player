@@ -1199,6 +1199,17 @@ function sendHtml(res, status, html, scriptSrc, imgExtra, frameAncestors) {
     `media-src 'self'${supaOrigin ? " " + supaOrigin : ""}`,
     "style-src 'unsafe-inline'",
     "base-uri 'none'",
+    // ⚠️ `form-action` NE RETOMBE PAS SUR `default-src`. C'est l'une des rares directives à ne pas
+    // hériter : une page en `default-src 'none'` peut malgré tout poster un formulaire n'importe
+    // où. Aucune de nos pages ne contient de `<form>` — les envois passent par `fetch`, donc par
+    // `connect-src` — mais un script injecté pourrait en fabriquer un pour exfiltrer vers un
+    // domaine tiers, et rien ne l'en empêchait.
+    //
+    // `'self'` plutôt que `'none'` : le mur d'accès et la connexion visiteur peuvent avoir besoin
+    // d'un envoi de même origine, et casser une authentification pour fermer une porte que
+    // personne n'a franchie serait un mauvais échange. `'self'` ferme l'exfiltration, qui est le
+    // risque réel.
+    "form-action 'self'",
     // Aperçu interne : framing MÊME ORIGINE autorisé (iframe DocViewer). Page publique : 'none' (anti-clickjacking).
     `frame-ancestors ${frameAncestors || "'none'"}`,
   ].join("; "));
@@ -1220,6 +1231,17 @@ function sendSoftWallHtml(res, html, nonce, imgExtra, frameAncestors) {
     `img-src 'self' data: blob:${imgExtra ? " " + imgExtra : ""}`,
     "style-src 'unsafe-inline' https://accounts.google.com/gsi/style",
     "base-uri 'none'",
+    // ⚠️ `form-action` NE RETOMBE PAS SUR `default-src`. C'est l'une des rares directives à ne pas
+    // hériter : une page en `default-src 'none'` peut malgré tout poster un formulaire n'importe
+    // où. Aucune de nos pages ne contient de `<form>` — les envois passent par `fetch`, donc par
+    // `connect-src` — mais un script injecté pourrait en fabriquer un pour exfiltrer vers un
+    // domaine tiers, et rien ne l'en empêchait.
+    //
+    // `'self'` plutôt que `'none'` : le mur d'accès et la connexion visiteur peuvent avoir besoin
+    // d'un envoi de même origine, et casser une authentification pour fermer une porte que
+    // personne n'a franchie serait un mauvais échange. `'self'` ferme l'exfiltration, qui est le
+    // risque réel.
+    "form-action 'self'",
     `frame-ancestors ${frameAncestors || "'self'"}`,
   ].join("; "));
   res.end(html);
@@ -1963,6 +1985,17 @@ function sendPresentHtml(res, html, nonce, supaUrl, imgExtra, frameAncestors) {
     "style-src 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com",
     "font-src https://fonts.gstatic.com data:",
     "base-uri 'none'",
+    // ⚠️ `form-action` NE RETOMBE PAS SUR `default-src`. C'est l'une des rares directives à ne pas
+    // hériter : une page en `default-src 'none'` peut malgré tout poster un formulaire n'importe
+    // où. Aucune de nos pages ne contient de `<form>` — les envois passent par `fetch`, donc par
+    // `connect-src` — mais un script injecté pourrait en fabriquer un pour exfiltrer vers un
+    // domaine tiers, et rien ne l'en empêchait.
+    //
+    // `'self'` plutôt que `'none'` : le mur d'accès et la connexion visiteur peuvent avoir besoin
+    // d'un envoi de même origine, et casser une authentification pour fermer une porte que
+    // personne n'a franchie serait un mauvais échange. `'self'` ferme l'exfiltration, qui est le
+    // risque réel.
+    "form-action 'self'",
     `frame-ancestors ${frameAncestors || "'none'"}`,
   ].join("; "));
   res.end(html);
