@@ -360,6 +360,18 @@ function createStandaloneContext(env = process.env) {
     errors: journal,
 
     legal: {
+      /**
+       * L'URL PUBLIQUE de cette instance, telle que l'exploitant l'a écrite.
+       *
+       * ⚠️ Sert à fabriquer les liens qui partent par email. L'en-tête `Host` ne convient pas :
+       * il est choisi par le client, donc un lecteur pouvait faire envoyer un message signé de
+       * l'hôte dont le bouton pointe ailleurs. Vide ⇒ repli sur `Host`, mais signalé.
+       */
+      get publicUrl() {
+        const v = sansBarreFinale(env.PLAYER_PUBLIC_URL).trim();
+        return v.startsWith("https://") ? v : "";
+      },
+
       get sourceUrl() { return String(env.PLAYER_SOURCE_URL || "https://github.com/Juli1artha/discovery-media-player").trim(); },
       get legalUrl() { return String(env.PLAYER_LEGAL_URL || "").trim(); },
       get privacyUrl() { return String(env.PLAYER_PRIVACY_URL || "").trim(); },

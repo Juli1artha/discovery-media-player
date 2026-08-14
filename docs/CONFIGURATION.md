@@ -33,10 +33,17 @@ expect a brand. Three identities meet on that page — see [API.md](API.md#brand
 
 | Variable | |
 |---|---|
+| `PLAYER_PUBLIC_URL` | this instance's public URL, as **you** write it |
 | `PLAYER_SOURCE_URL` | where readers obtain the source of **this** instance |
 | `PLAYER_LEGAL_URL`, `PLAYER_PRIVACY_URL` | your own pages |
 | `PLAYER_TRACKING_NOTICE` | overrides the default measurement notice |
 | `PLAYER_TRACKING_NOTICE_ANON` | the same, for a link **nobody sent** — a public brochure opened from a map. Saying "passed on to its sender" there would be false, and this is the one sentence in the product whose whole job is to be exact. The player picks by the link itself: no recipient, no creator. |
+
+⚠️ **`PLAYER_PUBLIC_URL` is a security setting, not a convenience.** Links that leave by email are
+built from it. The `Host` header will not do: the client chooses it, so a reader could have a
+message sent — signed by you, carrying your brand and your sender reputation — whose button points
+at their own domain. Unset, the player falls back to `Host` so no running instance breaks, and
+says so in the logs.
 
 Two obligations, different in nature. **The source**: AGPL makes it owed to whoever *uses* the
 software over a network, not only to whoever distributes it — a reader of `/doc/:slug` qualifies.

@@ -49,6 +49,21 @@ const dispositionInline = (name) => {
   return `inline; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(raw)}`;
 };
 const originOf = (u) => { try { return new URL(u).origin; } catch { return ""; } };
+// ⚠️ CETTE VERSION EST DANS LA PLAGE DE CVE-2024-4367 (exécution de script à l'ouverture d'un PDF
+// forgé, quand `isEvalSupported` garde sa valeur par défaut). Deux raisons pour lesquelles elle
+// est encore là, et il faut les distinguer :
+//
+//   1. Notre CSP n'autorise pas `unsafe-eval`, ce qui bloque le chemin d'exploitation. Mais cette
+//      atténuation était IMPLICITE — une modification de CSP la rouvrait sans que rien ne le dise.
+//      Les quatre appels à `getDocument` forcent donc désormais `isEvalSupported: false`, en
+//      défense en profondeur : la protection ne dépend plus d'un en-tête écrit ailleurs.
+//   2. La montée vers 4.x n'est PAS un changement de numéro : cdnjs ne publie plus que des modules
+//      ES (`pdf.min.mjs`) à partir de 4.0, alors qu'on charge un script classique et qu'on
+//      configure le worker à la main. C'est une migration, elle est suivie séparément dans
+//      docs/AUDIT-2026-08-14-SUIVI.md (P1-3) avec l'embarquement de la bibliothèque, qui règle
+//      aussi la dépendance CDN sans intégrité (P2-4).
+//
+// Signalé par un audit externe. Fermer le chemin d'abord, migrer ensuite — dans cet ordre.
 const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174";
 const SUPAJS = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js";
 
@@ -286,7 +301,7 @@ var Live=(function(){
   function renderMsgInner(m){return Player.chat.renderMessage(m,{me:ME,reactIcon:RSVG});}
   function cmClass(m){return Player.chat.messageClassName(m,ME,isMentioned(m));}
   function hydratePdf(d,m){if(m&&m.attachment&&m.attachment.kind==='pdf'&&!m.deleted){var ph=d.querySelector('.cm-att-ph');if(ph)pdfThumb(m.attachment.url,ph);}}
-  function pdfThumb(url,ph){if(!ph)return;if(pdfCache[url]){ph.innerHTML='<img src="'+pdfCache[url]+'" alt="">';return;}if(!window.pdfjsLib)return;try{pdfjsLib.getDocument(url).promise.then(function(pdf){return pdf.getPage(1);}).then(function(pg){var v0=pg.getViewport({scale:1}),sc=Math.min(1.6,208/v0.width),vp=pg.getViewport({scale:sc}),cv=document.createElement('canvas');cv.width=Math.ceil(vp.width);cv.height=Math.ceil(vp.height);return pg.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise.then(function(){var u=cv.toDataURL('image/jpeg',0.8);pdfCache[url]=u;ph.innerHTML='<img src="'+u+'" alt="">';});}).catch(function(){});}catch(e){}}
+  function pdfThumb(url,ph){if(!ph)return;if(pdfCache[url]){ph.innerHTML='<img src="'+pdfCache[url]+'" alt="">';return;}if(!window.pdfjsLib)return;try{pdfjsLib.getDocument({url:url,isEvalSupported:false}).promise.then(function(pdf){return pdf.getPage(1);}).then(function(pg){var v0=pg.getViewport({scale:1}),sc=Math.min(1.6,208/v0.width),vp=pg.getViewport({scale:sc}),cv=document.createElement('canvas');cv.width=Math.ceil(vp.width);cv.height=Math.ceil(vp.height);return pg.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise.then(function(){var u=cv.toDataURL('image/jpeg',0.8);pdfCache[url]=u;ph.innerHTML='<img src="'+u+'" alt="">';});}).catch(function(){});}catch(e){}}
   // Renvoie true seulement si le message a réellement été AJOUTÉ. Pendant la transition, il
   // arrive par deux voies (diffusion et lecture de table) : sans cette réponse, l'affichage était
   // bien dédoublonné mais le compteur de non-lus comptait deux fois — une pastille à 2 pour un
@@ -1934,7 +1949,7 @@ ${LEGAL_CSS}
     }
     function render(){
       if(IS_IMG){ renderImage(); return; }
-      var task=pdfjsLib.getDocument(CFG.fileUrl);
+      var task=pdfjsLib.getDocument({url:CFG.fileUrl,isEvalSupported:false});
       task.onProgress=function(p){ if(p&&p.total){ var pct=Math.max(8,Math.min(99,Math.round(p.loaded/p.total*100))); var bar=document.getElementById('lbar'); if(bar)bar.classList.remove('idle'); var f=document.getElementById('lbarFill'); if(f)f.style.width=pct+'%'; var l=document.getElementById('lpct'); if(l)l.textContent=pct+' %'; } };
       task.promise.then(function(pdf){
         pdfDoc=pdf; numPages=pdf.numPages; window.__n=pdf.numPages; T.setPageCount(pdf.numPages);
@@ -2161,7 +2176,7 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
       }).catch(function(){ pdfjsLib.GlobalWorkerOptions.workerSrc=wsrc; load(); });
     }
     function load(){
-      pdfjsLib.getDocument(CFG.fileUrl).promise.then(function(pdf){
+      pdfjsLib.getDocument({url:CFG.fileUrl,isEvalSupported:false}).promise.then(function(pdf){
         PDF=pdf; total=pdf.numPages; ready=true;
         var tot=document.getElementById('tot'); if(tot)tot.textContent=total;
         show(cur); hideLoader();
@@ -2750,7 +2765,21 @@ async function handler(req, res) {
               refusEnvoi = "no-recipient";
               throw new Error("envoi réservé aux liens nominatifs");
             }
-            const origin = `https://${req.headers.host}`;
+            // ⚠️ `Host` EST CHOISI PAR LE CLIENT. Le lien inséré dans un email signé par l'hôte
+            // était construit avec cet en-tête : sur le serveur autonome, ou derrière un proxy qui
+            // ne le réécrit pas strictement, un lecteur pouvait demander un envoi parfaitement
+            // légitime dont le bouton pointe vers SON domaine. L'email part de l'hôte, avec sa
+            // marque et sa réputation, vers le destinataire choisi par l'attaquant.
+            //
+            // `PLAYER_PUBLIC_URL` d'abord — une valeur que l'exploitant a écrite. Le repli sur
+            // `Host` reste pour ne casser aucune instance existante, mais il est SIGNALÉ : une
+            // instance qui envoie des emails sans URL publique configurée doit le savoir avant de
+            // le découvrir dans un rapport d'hameçonnage.
+            const publique = String(PLAYER.legal.publicUrl || "").trim();
+            if (!publique) {
+              try { PLAYER.errors.capture(new Error("PLAYER_PUBLIC_URL non configurée : le lien de l'email est construit depuis l'en-tête Host, que le client choisit"), { route: "reshare" }); } catch { /* jamais bloquant */ }
+            }
+            const origin = publique || `https://${req.headers.host}`;
             const r = await sendReshareEmail({ parent, childSlug: out.slug, origin, toEmail: mail, toName: body.name });
             sent = !!(r && r.sent);
           } catch { /* best-effort : le lien existe quand même */ }
