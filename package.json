@@ -53,6 +53,7 @@
     "./package.json": "./package.json"
   },
   "scripts": {
+    "prepare": "node tools/install-hooks.mjs",
     "start": "node bin/serve.js",
     "build": "node build/bundle.mjs && tsc -p tsconfig.build.json && node -e \"import('./build/bundle.mjs').then(m=>m.marquerDistEsm())\"",
     "test": "vitest run",

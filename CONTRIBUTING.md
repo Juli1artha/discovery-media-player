@@ -16,6 +16,19 @@ npm run build     # regenerates the browser bundle (committed — see below)
 Node ≥ 22. There is nothing else to install: the tests spin the player up in-process against a
 temporary folder, so they run offline and finish in seconds.
 
+## The hooks install themselves
+
+`npm install` puts a `pre-push` hook in place: it refuses a push to a branch whose pull request is
+already merged. It runs only in a clone of *this* repository — never when the package is installed
+as a dependency — and it is idempotent.
+
+⚠️ **Why automatic rather than documented.** The neighbouring repository has had this hook since
+5 August, after an identical incident. This one received it on 14 August, once the same thing had
+happened here: a fix committed to a branch four minutes after its pull request was merged, a
+version published without it, and announced as containing it. A guard that needs a manual step per
+clone is a guard that half the clones do not have — and that half is always where the incident
+happens. Bypass in full knowledge with `git push --no-verify`.
+
 ## The one rule
 
 **A behaviour worth keeping is worth a test that fails without it.**
