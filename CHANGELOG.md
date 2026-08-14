@@ -10,6 +10,19 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.20] — 2026-08-14
+
+### Fixed
+- **The unread badge stopped counting.** 0.1.19 routed chat broadcasts through a re-read, and the
+  re-read added the messages without ever notifying — so a new message arrived silently. The
+  condition matters as much as the call: a re-read returns the whole history, so notifying without
+  checking what was *actually* added would recount every message on every re-read, which is the
+  "badge goes up by 2" defect fixed back in 0.1.2 returning through another door.
+
+  *Nobody here saw it. **A host's test caught it**, by reading this package's source once installed
+  — across the boundary of two repositories. That guard was written for a different reason and
+  still did its job.*
+
 ## [0.1.19] — 2026-08-14
 
 ### Security
@@ -489,7 +502,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.19...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.20...HEAD
+[0.1.20]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.19...v0.1.20
 [0.1.19]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.17...v0.1.18
 [0.1.17]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.16...v0.1.17
