@@ -10,6 +10,36 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.23] — 2026-08-14
+
+### Security
+- **The postMessage bridge accepted messages from any window.** An origin check is impossible here
+  — the player is framed by hosts on arbitrary domains and does not know its host's origin when it
+  starts listening, which is why the check had been dropped. But comparing the **source window**
+  needs no origin: either it is the window you expect, or it is not. Without it, any tab or frame
+  holding a reference could send `close`, `share` or `handover-done`, and the page treated them as
+  coming from its host.
+
+  Player side, it is closed **by default** — the only legitimate sender is `window.parent`, and no
+  host has code to change. Host side the parameter is optional: forcing it would silence messages
+  for every host that has not passed it yet, and a message that stops arriving is the worst way to
+  announce hardening.
+- **The chat author token came from `Math.random()`.** That token *authorises* — it proves "this
+  message is mine" for editing and deleting. `Math.random` is deterministic from the engine's
+  internal state, so guessing another participant's token means rewriting their messages. Now from
+  `crypto`, with a fallback that **warns** rather than degrading in silence. The analytics session
+  id follows the same rule: it is the upsert key, so guessing one overwrites someone else's
+  measurement.
+
+### Changed
+- The user-agent string is bounded before parsing. Static analysis flagged `Android.*Mobile` as
+  backtracking-prone; measured first, V8 handles it linearly even at 200 000 characters, so this
+  was not a real slowdown. Bounded anyway — the stored column was already truncated to 300, only
+  the parsing saw the whole string, and feeding an unbounded length into a regular expression is a
+  habit that eventually costs.
+
+  *All three reported by static analysis; the first two also by the external audit (P3-1, P3-2).*
+
 ## [0.1.22] — 2026-08-14
 
 ### Security
@@ -587,7 +617,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.22...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.23...HEAD
+[0.1.23]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.21...v0.1.22
 [0.1.21]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.20...v0.1.21
 [0.1.20]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.19...v0.1.20

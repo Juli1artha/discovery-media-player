@@ -202,7 +202,12 @@ async function overview() {
 
 // Parse minimal d'un User-Agent → appareil / OS / navigateur (sans dépendance).
 function parseUa(ua) {
-  const s = String(ua || "");
+  // ⚠️ Bornée AVANT analyse. L'analyse statique signale `Android.*Mobile` comme pouvant revenir en
+  // arrière ; mesuré avant de corriger, V8 traite ce motif en temps linéaire même sur 200 000
+  // caractères — ce n'était donc pas une lenteur réelle. On borne quand même : la colonne stockée
+  // était déjà tronquée à 300, seule l'analyse recevait la chaîne entière. Faire entrer une
+  // longueur non bornée dans une expression régulière est une habitude qui finit par coûter.
+  const s = String(ua || "").slice(0, 300);
   let device = /Mobile|iPhone|Android.*Mobile/.test(s) ? "Mobile" : /iPad|Tablet/.test(s) ? "Tablette" : "Ordinateur";
   let os = /Windows/.test(s) ? "Windows" : /iPhone|iPad|iOS/.test(s) ? "iOS" : /Mac OS X|Macintosh/.test(s) ? "macOS" : /Android/.test(s) ? "Android" : /Linux/.test(s) ? "Linux" : "—";
   let browser = /Edg\//.test(s) ? "Edge" : /OPR\/|Opera/.test(s) ? "Opera" : /Chrome\//.test(s) ? "Chrome" : /Firefox\//.test(s) ? "Firefox" : /Safari\//.test(s) ? "Safari" : "—";

@@ -85,8 +85,8 @@ d'export/effacement.
 
 | | Constat | Décision |
 |---|---|---|
-| P3-1 | Jeton d'auteur de chat généré avec `Math.random` | à corriger — c'est un jeton d'autorisation |
-| P3-2 | `postMessage` ne compare pas `event.source` | à corriger |
+| P3-1 | Jeton d'auteur de chat généré avec `Math.random` | ✅ **0.1.23** |
+| P3-2 | `postMessage` ne compare pas `event.source` | ✅ **0.1.23** |
 | P3-3 | `allow_download` présenté comme une protection | **doc à corriger** — c'est une préférence d'affichage |
 | P3-4 | Commentaires de `init.sql` en retard sur le code | à corriger avec A |
 
