@@ -399,12 +399,53 @@ var Live=(function(){
       ch.on('presence',{event:'sync'},function(){renderPres(ch.presenceState());});
       // Plus d'abonnement à la table des messages : elle n'est plus publiée ni lisible
       // publiquement. Tout passe par la diffusion, et l'historique par la route de chat.
-      ch.on('broadcast',{event:'msg'},function(p){if(p&&p.payload&&addMsg(p.payload))notifyMsg(p.payload);});
-      ch.on('broadcast',{event:'msg-upd'},function(p){if(p&&p.payload)updateMsg(p.payload);});
+      // ⚠️ UNE DIFFUSION EST UN SIGNAL, PAS UNE VÉRITÉ.
+      //
+      // Ce canal est PUBLIC : la clé publiable et le slug sont dans la page, donc tout participant
+      // peut émettre. Appliquer directement la charge utile revenait à laisser n'importe quel
+      // spectateur annoncer la fin de la présentation, changer la page affichée, verrouiller le
+      // chat, ou publier un message signé du nom de quelqu'un d'autre.
+      //
+      // Déplacer l'émission vers le serveur n'y changerait rien : sur un canal public, un
+      // attaquant émet quand même, et le client ne distingue pas les deux sources. La seule
+      // défense qui tienne est de CESSER DE CROIRE le transport — on relit auprès du serveur, qui
+      // est déjà la source de vérité (routes state=1 et chat=1, elles existaient).
+      //
+      // Un attaquant peut donc toujours émettre : il déclenche une relecture, et n'obtient rien.
+      // C'est une meilleure propriété que d'essayer de l'empêcher — elle vaut aussi le jour où le
+      // transport lui-même a un défaut.
+      //
+      // ⚠️ 'map' et 'typing' restent appliqués tels quels, et c'est un choix : ce sont des signaux
+      // ÉPHÉMÈRES (mouvements de carte, « untel écrit »), sans état serveur à confronter et à
+      // fréquence élevée. Les revérifier coûterait un aller-retour par déplacement de souris pour
+      // protéger… un déplacement de souris. Ce qui fait autorité — la page affichée, le document,
+      // la fin de la présentation — passe par 'state', qui est relu.
+      function relire(url,applique){
+        fetch('/api/doc?present='+encodeURIComponent(SLUG)+url)
+          .then(function(r){return r.json();})
+          .then(function(d){if(d&&d.ok)applique(d);})
+          .catch(function(){});
+      }
+      var _relEtat=null,_relChat=null;
+      // Groupé : dix diffusions d'affilée ne doivent pas produire dix requêtes.
+      function relireEtat(){clearTimeout(_relEtat);_relEtat=setTimeout(function(){
+        relire('&state=1',function(d){if(d.state&&_onState)_onState(d.state);});
+      },120);}
+      function relireChat(){clearTimeout(_relChat);_relChat=setTimeout(function(){
+        relire('&chat=1',function(d){
+          if(d.messages)d.messages.forEach(function(m){if(!addMsg(m))updateMsg(m);});
+          if(typeof d.locked!=='undefined')applyLock(d.locked);
+        });
+      },120);}
+
+      // Le message reçu sert à savoir QU'IL SE PASSE quelque chose, et à notifier ; son CONTENU
+      // vient de la relecture. Sans ça, une notification pourrait afficher un texte forgé.
+      ch.on('broadcast',{event:'msg'},function(){relireChat();});
+      ch.on('broadcast',{event:'msg-upd'},function(){relireChat();});
+      ch.on('broadcast',{event:'lock'},function(){relireChat();});
+      ch.on('broadcast',{event:'state'},function(){relireEtat();});
       ch.on('broadcast',{event:'typing'},function(p){onTyping(p&&p.payload);});
-      ch.on('broadcast',{event:'lock'},function(p){if(p&&p.payload)applyLock(p.payload.locked);});
       ch.on('broadcast',{event:'map'},function(p){if(_onMap&&p&&p.payload)_onMap(p.payload);});
-      ch.on('broadcast',{event:'state'},function(p){if(_onState&&p&&p.payload)_onState(p.payload);});
       ch.subscribe(function(st){if(st==='SUBSCRIBED'){ch.track({name:me.name,email:me.email,avatar:me.avatar,role:me.role,member:!!me.member,uid:attKey(me)});sendAttend();}});
       _tyIv=setInterval(renderTyping,1500);
       _atIv=setInterval(sendAttend,25000);
