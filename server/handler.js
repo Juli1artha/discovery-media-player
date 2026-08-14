@@ -2755,7 +2755,13 @@ async function handler(req, res) {
       if (body.action === "reshare") {
         const mail = String(body.email || "").trim().toLowerCase();
         const j = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
-        if (!/.+@.+\..+/.test(mail)) return j(400, { ok: false, error: "email" });
+        // ⚠️ LA LONGUEUR AVANT LE MOTIF — et ici ce n'est pas de la prudence, c'est mesuré :
+        // `.+@.+\..+` reprend à chaque position de départ, coût 49 ms sur 10 000 caractères,
+        // 3 900 ms sur 100 000. Une seule requête, sur une route ouverte au lecteur, bloquait la
+        // boucle d'événements quatre secondes — l'instance entière, pas seulement l'appelant.
+        // Le débit (8/h par IP) ne protégeait rien : il est vérifié APRÈS, deux lignes plus bas.
+        // 254 est le maximum d'une adresse (RFC 5321) : au-delà ce n'est pas « long », c'est faux.
+        if (mail.length > 254 || !/.+@.+\..+/.test(mail)) return j(400, { ok: false, error: "email" });
         const ip = adresseAppelant(req) || "anon";
         const allowed = await PLAYER.limits.allow(`reshare:${ip}`, 8, 3600);
         if (!allowed) return j(429, { ok: false, error: "rate", message: "Trop de partages, réessayez plus tard." });

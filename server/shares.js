@@ -58,6 +58,10 @@ async function createReshare(parentSlug, { email, name }) {
   //     rapport qui a mené ici.
   //   • `allow_download` (défaut `true`) — le bouton Télécharger revenait sur un document où il
   //     avait été refusé.
+  //     ⚠️ À ne pas prendre pour une protection : c'est une PRÉFÉRENCE D'AFFICHAGE. Le lecteur qui
+  //     voit le document en a déjà les octets ; masquer le bouton retire une commodité, pas un
+  //     accès. Un document qu'on ne veut pas voir sortir ne doit pas être partagé, ou doit l'être
+  //     derrière `require_auth` — celui-là, lui, décide de qui obtient les octets.
   //   • `brand_key` — la marque se perdait à l'endroit exact où le document commence à circuler :
   //     le lecteur d'un document VALONEUF transmettait un lien qui s'ouvre sous une autre marque.
   //

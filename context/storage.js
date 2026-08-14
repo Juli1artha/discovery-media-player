@@ -142,10 +142,24 @@ const TYPES = {
  * des premières pages avant la fin du téléchargement.
  */
 async function readLocal(cible, range) {
-  let stat;
-  try { stat = await fsp.stat(cible); } catch { return null; }
-  if (!stat.isFile()) return null;
+  // ⚠️ ON OUVRE D'ABORD, ON INTERROGE ENSUITE. `stat(chemin)` puis `open(chemin)` sont deux
+  // résolutions du même NOM à deux instants : entre les deux, le fichier peut avoir été remplacé.
+  // On lisait alors les octets du NOUVEAU fichier avec la taille de l'ANCIEN — un `Content-Range`
+  // qui ne décrit pas ce qu'il transporte, donc un document faux sans qu'aucune erreur ne sorte.
+  // Un descripteur, lui, désigne un objet et non un nom : `fh.stat()` parle du même fichier que
+  // `fh.read()`, quoi qu'il advienne du chemin entre-temps.
+  let fh;
+  try { fh = await fsp.open(cible, "r"); } catch { return null; }
+  try {
+    const stat = await fh.stat();
+    if (!stat.isFile()) return null;
+    return await lireDepuis(fh, stat, cible, range);
+  } finally {
+    await fh.close();
+  }
+}
 
+async function lireDepuis(fh, stat, cible, range) {
   const type = TYPES[path.extname(cible).toLowerCase()] || "application/octet-stream";
   const total = stat.size;
   const m = /^bytes=(\d*)-(\d*)$/.exec(String(range || ""));
@@ -159,17 +173,12 @@ async function readLocal(cible, range) {
     statut = 206;
   }
 
-  const fh = await fsp.open(cible, "r");
-  try {
-    const buf = Buffer.alloc(fin - debut + 1);
-    const { bytesRead } = await fh.read(buf, 0, buf.length, debut);
-    const corps = bytesRead === buf.length ? buf : buf.subarray(0, bytesRead);
-    const entetes = { "content-type": type };
-    if (statut === 206) entetes["content-range"] = `bytes ${debut}-${fin}/${total}`;
-    return reponse(statut, entetes, corps);
-  } finally {
-    await fh.close();
-  }
+  const buf = Buffer.alloc(fin - debut + 1);
+  const { bytesRead } = await fh.read(buf, 0, buf.length, debut);
+  const corps = bytesRead === buf.length ? buf : buf.subarray(0, bytesRead);
+  const entetes = { "content-type": type };
+  if (statut === 206) entetes["content-range"] = `bytes ${debut}-${fin}/${total}`;
+  return reponse(statut, entetes, corps);
 }
 
 function reponse(status, entetes, corps) {
