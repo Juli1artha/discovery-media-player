@@ -38,6 +38,25 @@ the notes there are this file's section for that version.
 
   *Reported by an external audit (P1-2). The presence claims `isMember` / `isPresenter` remain and
   are tracked separately.*
+- **A property name written from client input** (`toggleReaction`). In 0.1.2 a whitelist indexed by
+  outside data let `constructor` through, because an object literal answers for its prototype; the
+  fix put `Object.hasOwn` everywhere and a static test refused any unguarded **read**. It covered
+  half the shape: `Object.hasOwn` stops you *reading* `constructor`, and nothing stopped you
+  *writing* it.
+
+  What saved us from the worst was an accident — the 8-character cap truncates `__proto__` (9) and
+  `constructor` (11) into harmless keys. But `toString` (8) and `valueOf` (7) got through and
+  became own properties of the stored object, shadowing the prototype's for every consumer,
+  browser included. ⚠️ That accidental protection is fragile: composed emoji (family, ZWJ
+  sequences) exceed 8 characters, so raising the cap to accept them — an innocuous cosmetic change
+  — would let the real keys in.
+
+  Two barriers now: identifier-shaped keys are refused outright, and the object is built with no
+  prototype at all, so there is nothing left to shadow or reach whatever the cap becomes. **And the
+  static guard now sweeps writes, not only reads** — without it, the next `obj[outsideValue] = …`
+  passes exactly as this one did.
+
+  *Found by static analysis. Neither the external audit nor we had seen it.*
 - **Rate limits keyed on a header the caller writes.** Eleven places took the first value of
   `X-Forwarded-For` to identify the caller. A client reaching the server directly — the standalone
   case, and any instance whose proxy does not rewrite that header — changed it per request and was

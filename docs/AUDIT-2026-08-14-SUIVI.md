@@ -94,6 +94,14 @@ d'export/effacement.
 navigateur reçoit forcément le fichier. Le champ doit être décrit comme une préférence, jamais
 comme un contrôle de copie.
 
+## Trouvé pendant les correctifs, hors audit
+
+**Écriture indexée par une donnée du client** (`toggleReaction`, ✅ 0.1.22). La garde de 0.1.2
+couvrait les LECTURES seulement : `Object.hasOwn` empêche de lire `constructor`, rien n'empêchait
+de l'écrire. Le plafond de 8 caractères bloquait `__proto__` et `constructor` par accident —
+`toString` et `valueOf` passaient. Deux barrières posées, et le balayage statique couvre désormais
+les écritures. Trouvé par l'analyse statique, ni par l'audit ni par nous.
+
 ## Anomalie relevée hors constats
 
 Le `node_modules` local portait `jsdom@25` alors que le lock demande `30`. Les tests passaient sur
