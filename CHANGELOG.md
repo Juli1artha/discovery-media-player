@@ -13,6 +13,20 @@ the notes there are this file's section for that version.
 ## [0.1.15] — 2026-08-14
 
 ### Fixed
+- **An embedded preview never said it was there.** `embed-ready` tells a host "I am alive". A host
+  waiting for it and hearing nothing cannot tell an **absent** player from a **living** one — and
+  a prudent startup watchdog replaces the second with the browser's own viewer a few seconds in,
+  in front of the reader. That is what happened: the second host removed their watchdog until
+  silence became information again.
+
+  One variable was answering two questions: *should the embedded close button be drawn?* (no in
+  preview — it already has its own, and drawing both would show two crosses) and *is this page
+  served inside a frame?*. Only the second governs the handshake. The server already knew — it
+  derives the response's `frame-ancestors` from it — and the page already spoke to its host
+  (`share`, `close`); it simply never announced itself.
+
+  Preview is precisely the mode a host uses for **its own** documents: no tracked link, no
+  recipient. The chrome is unchanged.
 - **The folder-mode home page offered a format the viewer no longer opens.** It kept its own list
   of displayable extensions, and that list still contained `.svg` after it was dropped from the
   type table in 0.1.7. The file appeared, the click produced a download, and a first-time visitor
