@@ -13,7 +13,7 @@ perde entre une lecture et la suivante.
 | | Constat | État |
 |---|---|---|
 | P0-1 | Le relais suivait les redirections ; le secret de l'hôte suivait avec | ✅ **0.1.18** |
-| P0-2 | Canal Realtime public : tout participant peut émettre un état autoritatif | ✅ **B en 0.1.19** · A à faire |
+| P0-2 | Canal Realtime public : tout participant peut émettre un état autoritatif | ✅ **B en 0.1.19** · **titre usurpé fermé en 0.1.25** · canal privé : voir ci-dessous |
 
 ### P0-1 — redirections du relais ✅
 
@@ -42,12 +42,37 @@ l'audience est **anonyme**, donc il faut fabriquer des jetons courts pour des vi
 compte, plus les politiques sur `realtime.messages`. C'est une infrastructure, pas un correctif —
 d'où l'ordre B puis A.
 
+### ⚠️ Le volet A n'est pas le chantier qu'on croyait (15/08/2026)
+
+Le suivi annonçait « canal Realtime privé + politiques par ligne ». En le préparant, une phrase de
+l'audit a tranché autrement : l'attaquant y est décrit comme **« tout participant connaissant le
+slug »**.
+
+Un canal privé exclut qui n'a pas le droit d'y être. **Cet attaquant-là a le droit d'y être** — il
+détient le lien, et le slug est déjà la clé qui ouvre le chat et l'état par les routes HTTP. Le
+rendre privé n'aurait donc rien fermé du scénario décrit, tout en demandant une authentification
+Supabase pour une audience anonyme (jetons courts, renouvellement en cours de présentation, table
+de droits, RLS sur `realtime.messages`).
+
+Ce qui sépare réellement un participant du présentateur est le `control_token`. Trois endroits
+accordaient un statut sans le vérifier — corrigés en **0.1.25** : `present-attend` (les deux
+drapeaux venaient du corps), `present-chat` (`isMember` seul restait déclaratif), et le badge de la
+liste des participants (tiré de la charge de présence, que chacun compose). ⚠️ Ce dernier ne se
+corrige PAS au niveau du canal : un participant légitime a le droit d'écrire sa propre présence.
+
+**Ce qu'un canal privé apporterait encore**, et qui reste ouvert : empêcher physiquement l'audience
+d'émettre `map` (mouvements de carte appliqués tels quels par choix, cf. 0.1.19) et tout événement
+autoritaire ajouté demain sans y penser. `realtime.messages` porte `topic`, `extension` ET `event`,
+donc la règle est exprimable — audience en lecture plus sa propre présence, présentateur en
+écriture. Ça reste souhaitable ; ce n'est plus un P0, et ça demande une authentification que le
+projet n'a pas aujourd'hui (clés Supabase asymétriques : on ne peut pas signer soi-même un jeton).
+
 ## P1 — important
 
 | | Constat | Décision |
 |---|---|---|
 | P1-1 | Les emails de re-partage font confiance à l'en-tête `Host` | ✅ **0.1.21** — `PLAYER_PUBLIC_URL` |
-| P1-2 | Écritures d'analytics : le client choisit `internal`, `isMember`, `isPresenter` | 🟡 **interne fermé en 0.1.22** · présence à faire |
+| P1-2 | Écritures d'analytics : le client choisit `internal`, `isMember`, `isPresenter` | ✅ **interne 0.1.22** · **présence 0.1.25** |
 | P1-3 | PDF.js 3.11.174 concerné par CVE-2024-4367 | 🟡 **atténué en 0.1.21** — migration ESM à part |
 | P1-4 | Fichiers entièrement tamponnés, pas de délai maximal | partiellement fait |
 | P1-5 | Idempotence des liens hôte non atomique (`SELECT` puis `INSERT`) | à faire — index unique partiel |
