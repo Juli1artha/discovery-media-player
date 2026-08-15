@@ -112,6 +112,62 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "⚠️ Comparez cette liste aux notes de version : un correctif annoncé dans un fichier absent d'ici n'est pas publié." >> "$GITHUB_STEP_SUMMARY"
 
+      # ⚠️ CE QUI EST PUBLIÉ S'EXÉCUTE-T-IL ? C'EST UN AUTRE AXE.
+      #
+      # L'étape ci-dessus compare le CONTENU du paquet à la version précédente ; la tâche horaire
+      # `publication.yml` vérifie que ce que `main` déclare est bien publié. Aucune des deux
+      # n'aurait attrapé 0.1.25 : elle était publiée, conforme à `main`, et son contenu différait
+      # bien de 0.1.24. Elle était simplement CASSÉE — un `return var h2={…}` dans le script en
+      # ligne, et toute la couche live morte.
+      #
+      # Ce qui l'a trouvée, c'est un hôte qui a rendu une page depuis le paquet installé. Le second
+      # hôte l'a formulé : « le vôtre vérifie que ce qui est écrit est publié, le nôtre que ce qui
+      # est publié s'exécute — aucun des deux ne couvre l'autre ».
+      #
+      # Cette étape ferme cet axe-là, sur le paquet TÉLÉCHARGÉ DEPUIS LE REGISTRE et non sur l'arbre
+      # de travail : on l'installe, on rend une page, on COMPILE chacun de ses scripts en ligne.
+      # ⚠️ Elle échoue la course. Une version cassée qui reste publiée sans que rien ne le dise est
+      # exactement ce qui est arrivé, et ça s'est vu chez un tiers.
+      - name: The published package renders and its scripts compile
+        run: |
+          V=$(node -p 'require("./package.json").version')
+          # Le registre met quelques instants à servir une version fraîche.
+          for i in $(seq 1 20); do npm view "discovery-media-player@$V" version >/dev/null 2>&1 && break || sleep 6; done
+          mkdir -p /tmp/fume && cd /tmp/fume && npm init -y >/dev/null
+          npm i "discovery-media-player@$V" --silent
+          node -e '
+            const vm = require("node:vm");
+            const P = "/tmp/fume/node_modules/discovery-media-player";
+            const id = require.resolve(P + "/server/presentations.js");
+            const vraies = require(id);
+            require.cache[id] = { id, filename: id, loaded: true, exports: { ...vraies,
+              getPresentation: async () => ({ slug: "s1", doc_title: "T", file_name: "d.pdf",
+                file_url: "https://x.supabase.co/storage/v1/object/public/r/d.pdf", current_page: 1, active: true }),
+              listMessages: async () => [] } };
+            const player = require(P);
+            player.init({
+              plugins: {}, has: () => false,
+              storage: { isAllowedUrl: () => true, async fetchFile() { return null; }, async put() {} },
+              db: { async request() { return []; }, async selectAll() { return []; } },
+              mail: { async send() {} },
+              identity: { async verifyToken() { return null; }, roleOf: () => "", isAdmin: () => false, async canManageShares() { return false; } },
+              limits: { async allow() { return true; } },
+              branding: { async logo() { return ""; }, name: "", poweredBy: "", loaderName: "", async forKey() { return null; }, title: (b) => b },
+              errors: { async capture() {} },
+              legal: { sourceUrl: "", legalUrl: "", privacyUrl: "", trackingNotice: "", trackingNoticeAnonymous: "", publicUrl: "" },
+              config: { supabaseUrl: "https://x.supabase.co", supabasePublishableKey: "k", mapsKey: "", extraFrameAncestors: [] },
+            });
+            (async () => {
+              const res = { statusCode: 0, body: "", setHeader() {}, end(b) { this.body = String(b || ""); } };
+              await player.handler({ method: "GET", headers: {}, socket: {}, query: { present: "s1" } }, res);
+              const blocs = [...res.body.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]).filter((c) => c.trim());
+              if (!blocs.length) { console.error("::error::la page publiée ne contient aucun script en ligne"); process.exit(1); }
+              let ko = 0;
+              for (const c of blocs) { try { new vm.Script(c); } catch (e) { ko++; console.error("::error::script en ligne non compilable : " + e.message); } }
+              if (ko) process.exit(1);
+              console.log("page rendue : " + res.body.length + " octets, " + blocs.length + " scripts, tous compilables");
+            })();'
+
       - name: GitHub Release
         uses: softprops/action-gh-release@v3
         with:
