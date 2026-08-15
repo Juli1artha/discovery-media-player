@@ -10,6 +10,48 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.25] — 2026-08-15
+
+### Security
+- **The presenter title was claimed, not proven.** The audit names the attacker precisely: *any
+  participant who knows the slug*. ⚠️ That wording disqualifies the fix that looked obvious —
+  making the Realtime channel private. A private channel excludes whoever has no right to be
+  there; this attacker **has** the right, they hold the link. What separates them from the
+  presenter is not channel access, it is the `control_token`.
+
+  Three places granted status without checking it:
+
+  - **`present-attend` took `isPresenter` *and* `isMember` straight from the request body.** A
+    prospect could count themselves as a colleague — polluting the very separation of populations
+    this product sells — and take the presenter title in the attendance table.
+  - **`present-chat` verified `isPresenter` against the control token but left `isMember` to the
+    caller.** Two weights on one line: the presenter badge had to be earned, the colleague badge
+    could be asked for.
+  - **The participant list rendered "presenter" from the *presence* payload**, which each
+    participant composes: `track({role:'presenter'})` was enough to appear as the presenter to the
+    whole audience, with the name and avatar of one's choosing.
+
+  ⚠️ That third one cannot be fixed at the channel level — a legitimate participant is entitled to
+  write *their own* presence. The title now comes from the server, which alone knows who proved the
+  control token, and the audience compares a key rather than believing a claim. **No key, no
+  title**: better none than a stolen one.
+
+  Membership is now proven by the session's access token. This route is a `fetch`, so it can carry
+  a header — unlike reading analytics, which leave through `sendBeacon` and therefore sign in the
+  body (0.1.22). No fallback to what the caller asserts: a check that yields to the claim it was
+  meant to replace only ever protects the honest.
+
+  The two attendance flags also stop being frozen at the first heartbeat. Frozen, they described
+  the moment someone arrived rather than the truth — a handover changed who held the title and the
+  record did not follow, and the first to arrive was right forever.
+
+  *Closes the remaining half of P1-2 (presence) and the part of P0-2 that a private channel would
+  not have closed.*
+
+### Note
+- A page open from before this version keeps sending the old body: it will simply lose the badge
+  until it reloads. Degrading toward "no title" is the intended direction.
+
 ## [0.1.24] — 2026-08-14
 
 ### Security
@@ -651,7 +693,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.24...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.25...HEAD
+[0.1.25]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.23...v0.1.24
 [0.1.23]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.21...v0.1.22

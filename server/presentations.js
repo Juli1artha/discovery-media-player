@@ -281,6 +281,23 @@ async function toggleReaction(slug, msgId, emoji, reactor) {
   return { ok: true, message: premierPublic(maj) };
 }
 
+/**
+ * La clé du participant qui porte le titre de présentateur, telle que le SERVEUR la connaît.
+ *
+ * ⚠️ Elle existe parce que la liste des participants affichait le titre d'après la charge de
+ * PRÉSENCE, que chacun compose lui-même : `track({role:'presenter'})` suffisait à apparaître comme
+ * présentateur devant toute l'audience, avec le nom et l'avatar de son choix. Le canal ne peut pas
+ * arbitrer ça — un participant légitime a le droit d'y écrire sa présence.
+ *
+ * Le titre est désormais accordé ici, à partir de `is_presenter`, lui-même dérivé du `control_token`.
+ * Null quand personne ne l'a prouvé : mieux vaut aucun titre qu'un titre usurpé.
+ */
+async function presenterKey(slug) {
+  if (!slug) return null;
+  const rows = await PLAYER.db.request(`doc_presentation_attendees?slug=eq.${enc(slug)}&is_presenter=is.true&select=attendee_key&order=last_seen.desc&limit=1`);
+  return (Array.isArray(rows) && rows[0] && rows[0].attendee_key) || null;
+}
+
 // ── Statistiques de présentation (assistance) ────────────────────────────────────────────────────────────
 // Heartbeat d'un participant : upsert de sa ligne d'assistance. On accumule le temps de présence (intervalles
 // < 60 s → un aller-retour ne gonfle pas total_ms) et l'ensemble des pages vues (page courante de la présentation).
@@ -302,7 +319,12 @@ async function recordAttendance(slug, { key, name, email, avatar, isMember, isPr
   const addMs = gap > 0 && gap <= ATTEND_MAX_GAP_MS ? gap : 0;
   const pages = Array.isArray(cur.pages) ? cur.pages.slice() : [];
   if (!pages.includes(page)) pages.push(page);
-  await PLAYER.db.request(`doc_presentation_attendees?slug=eq.${enc(slug)}&attendee_key=eq.${enc(String(key))}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { last_seen: new Date(now).toISOString(), total_ms: Number(cur.total_ms || 0) + addMs, pages, name: (name || cur.name || "").slice(0, 120) || null, avatar: (avatar || cur.avatar || "").slice(0, 600) || null } });
+  await PLAYER.db.request(`doc_presentation_attendees?slug=eq.${enc(slug)}&attendee_key=eq.${enc(String(key))}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { last_seen: new Date(now).toISOString(), total_ms: Number(cur.total_ms || 0) + addMs, pages, name: (name || cur.name || "").slice(0, 120) || null, avatar: (avatar || cur.avatar || "").slice(0, 600) || null,
+    // ⚠️ Les deux drapeaux se remettent à jour à chaque battement, ils ne sont plus figés à la
+    // première ligne : un transfert de présentation change qui porte le titre, et une session qui
+    // s'authentifie en cours de route devient un membre. Figés, ils décriraient l'instant de
+    // l'arrivée et non la réalité — et le premier arrivé aurait raison pour toujours.
+    is_member: !!isMember, is_presenter: !!isPresenter } });
   return { ok: true };
 }
 
@@ -382,4 +404,4 @@ async function listPresentationsForDoc(docId) {
 }
 
 module.exports = {
-  messagePublic, CHAMPS_PUBLICS, init, createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent };
+  messagePublic, CHAMPS_PUBLICS, init, createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presenterKey, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent };

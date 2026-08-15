@@ -6,7 +6,7 @@
 const crypto = require("crypto");
 const { getShareBySlug, logView, upsertSession, createReshare, sendReshareEmail, upsertInternalSession,
   createShare, revokeShare, setShareAuth, overview: docOverview, listSharesForDoc, listSessionsForDoc, internalStatsForDoc } = require("./shares");
-const { createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent } = require("./presentations");
+const { createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presenterKey, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent } = require("./presentations");
 // CONTEXTE INJECTÉ : tout ce que le player emprunte à l'application hôte passe par ici — stockage,
 // base, identité, limites, marque, journalisation — et rien d'autre. C'est la frontière qui permettra
 // de brancher un second projet, puis d'ouvrir le cœur. Cf. api/_player-context.js.
@@ -233,7 +233,7 @@ const LIVE_PANEL = `<div class="chat hidden" id=chatPanel><div class=chat-grip i
 // JS partagé : présence + chat via Supabase Realtime. Live.connect(slug, me) / Live.disconnect().
 const LIVE_JS = `
 var Live=(function(){
-  var sb=null,ch=null,ME=null,SLUG=null,CONTROL=null,LOCKED=false,AUTHTOK=null,PRESENT=[],seen={},msgEls={},msgData={},replyCtx=null,typers={},pdfCache={},_tyT=0,_tyIv=0,_atIv=0,unread=0,autoOpened=false,_histDone=false,_phWired=false,_onMap=null,_onState=null,_peekT=0,MUTED=false;
+  var sb=null,ch=null,ME=null,SLUG=null,CONTROL=null,LOCKED=false,AUTHTOK=null,PRESENT=[],PRESKEY='',seen={},msgEls={},msgData={},replyCtx=null,typers={},pdfCache={},_tyT=0,_tyIv=0,_atIv=0,unread=0,autoOpened=false,_histDone=false,_phWired=false,_onMap=null,_onState=null,_peekT=0,MUTED=false;
   try{ MUTED=localStorage.getItem('3dd-present-mute')==='1'; }catch(e){}
   // Couper/rétablir les notifications du chat (cloche) : coupé = plus de ticker ni de pulse (badge silencieux gardé).
   function applyMute(){ var b=document.getElementById('chatMute'); if(b){b.classList.toggle('muted',MUTED);b.title=MUTED?'Réactiver les notifications du chat':'Couper les notifications du chat';} setBadge(); }
@@ -276,7 +276,11 @@ var Live=(function(){
   function attKey(me){ return Player.live.attendeeKey(me,_store(),MYID); }
   // Heartbeat d'assistance → le serveur journalise qui suit, combien de temps, et les pages vues (via la page
   // courante de la présentation). Envoyé à la connexion puis toutes les 25 s. Best-effort (silencieux).
-  function sendAttend(){ if(!SLUG||!ME)return; try{ fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-attend',slug:SLUG,key:attKey(ME),name:ME.name||'',email:ME.email||'',avatar:ME.avatar||'',isMember:!!ME.member,isPresenter:ME.role==='presenter'})}); }catch(e){} }
+  // Le serveur ne croit plus 'isMember' ni 'isPresenter' sur parole : l'appartenance se prouve par
+  // le jeton d'acces de la session, le titre de presentateur par le control_token. Ce qui part d'ici
+  // n'est plus qu'une AFFIRMATION, et le serveur la remplace par ce qu'il a verifie.
+  function sendAttend(){ if(!SLUG||!ME)return; try{ var h={'Content-Type':'application/json'};var jw=accessToken();if(jw)h.Authorization='Bearer '+jw;
+    fetch('/api/doc',{method:'POST',headers:h,body:JSON.stringify({action:'present-attend',slug:SLUG,control:CONTROL,key:attKey(ME),name:ME.name||'',email:ME.email||'',avatar:ME.avatar||''})}); }catch(e){} }
   var EMOJIS=['👍','❤️','😂','😮','👏','🎉'];
   var RSVG='<svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2 stroke-linecap=round><circle cx=12 cy=12 r=9 /><path d="M8.5 14.5s1.4 1.7 3.5 1.7 3.5-1.7 3.5-1.7"/><line x1=9 y1=9.2 x2=9.01 y2=9.2 /><line x1=15 y1=9.2 x2=15.01 y2=9.2 /></svg>';
   function esc(s){return Player.live.escapeHtml(s);}
@@ -294,7 +298,7 @@ var Live=(function(){
   function isMentioned(m){return Player.live.isMentioned(m,ME);}
   function renderPres(st){var l=flat(st),c=l.length;PRESENT=l;var e=document.getElementById('presCount');if(e)e.textContent=c;
     var a=document.getElementById('presAvs');if(a)a.innerHTML=l.slice(0,4).map(function(m){return '<span class=pres-av>'+av(m.avatar,m.name)+'</span>';}).join('');
-    var p=document.getElementById('presList');if(p)p.innerHTML='<h5>'+c+' en ligne</h5>'+l.map(function(m){return '<div class=pres-item><span class=a>'+av(m.avatar,m.name)+'</span><span class=b><div class=n>'+esc(m.name||'Invité')+(m.role==='presenter'?' <span class=tag>présentateur</span>':'')+'</div>'+(m.email?'<div class=e>'+esc(m.email)+'</div>':'')+'</span></div>';}).join('');}
+    var p=document.getElementById('presList');if(p)p.innerHTML='<h5>'+c+' en ligne</h5>'+l.map(function(m){return '<div class=pres-item><span class=a>'+av(m.avatar,m.name)+'</span><span class=b><div class=n>'+esc(m.name||'Invité')+(m.uid&&m.uid===PRESKEY?' <span class=tag>présentateur</span>':'')+'</div>'+(m.email?'<div class=e>'+esc(m.email)+'</div>':'')+'</span></div>';}).join('');}
   // Rendu d'un message → player/src/chat.ts (échappement testé sous jsdom : on y vérifie ce que
   // le NAVIGATEUR fabrique, pas seulement la chaîne produite).
   function renderRe(m){return Player.chat.renderReactions(m,ME);}
@@ -333,10 +337,11 @@ var Live=(function(){
   function setReply(id){var m=msgData[id];if(!m||m.deleted)return;var nm=m.author_name||'Invité';replyCtx={id:+id,name:nm,text:(m.body||'').slice(0,120)};var el=document.getElementById('chatReply');if(el){el.style.display='flex';el.innerHTML='<span class=cq><b>'+esc(nm)+'</b> '+esc((m.body||'').slice(0,80))+'</span><button id=chatReplyX title=Annuler>×</button>';var x=document.getElementById('chatReplyX');if(x)x.addEventListener('click',clearReply);}var t=document.getElementById('chatText');if(t)t.focus();}
   function clearReply(){replyCtx=null;var el=document.getElementById('chatReply');if(el){el.style.display='none';el.innerHTML='';}}
   function send(){var i=document.getElementById('chatText');var t=(i.value||'').trim();if(!t||!ME)return;if(LOCKED&&!canMod())return;i.value='';toggleSend();
-    var o={action:'present-chat',slug:SLUG,name:ME.name,email:ME.email,avatar:ME.avatar,isPresenter:ME.role==='presenter',isMember:!!ME.member,body:t,authorToken:authToken()};
+    var o={action:'present-chat',slug:SLUG,name:ME.name,email:ME.email,avatar:ME.avatar,body:t,authorToken:authToken()};
     if(CONTROL)o.control=CONTROL;
     if(replyCtx){o.replyTo=replyCtx.id;o.replyName=replyCtx.name;o.replyText=replyCtx.text;clearReply();}
-    fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)})
+    var h1={'Content-Type':'application/json'};var j1=accessToken();if(j1)h1.Authorization='Bearer '+j1;
+    fetch('/api/doc',{method:'POST',headers:h1,body:JSON.stringify(o)})
       .then(function(r){return r.json();})
       .then(function(d){if(d&&d.ok&&d.message){addMsg(d.message);sendMsg(d.message);}})
       .catch(function(){});}
@@ -349,9 +354,10 @@ var Live=(function(){
       return sb.storage.from('present-attachments').uploadToSignedUrl(d.path,d.token,file).then(function(u){
         if(u&&u.error)throw 0;
         var i=document.getElementById('chatText'),cap=(i&&i.value||'').trim();if(i)i.value='';
-        var o={action:'present-chat',slug:SLUG,name:ME.name,email:ME.email,avatar:ME.avatar,isPresenter:ME.role==='presenter',isMember:!!ME.member,body:cap,authorToken:authToken(),attachment:{url:d.publicUrl,name:file.name,type:file.type,kind:d.kind}};
+        var o={action:'present-chat',slug:SLUG,name:ME.name,email:ME.email,avatar:ME.avatar,body:cap,authorToken:authToken(),attachment:{url:d.publicUrl,name:file.name,type:file.type,kind:d.kind}};
         if(CONTROL)o.control=CONTROL;
-        return fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)});
+        return var h2={'Content-Type':'application/json'};var j2=accessToken();if(j2)h2.Authorization='Bearer '+j2;
+        fetch('/api/doc',{method:'POST',headers:h2,body:JSON.stringify(o)});
       });
     }).then(done).catch(function(){done();});}
   function applyLock(v){LOCKED=!!v;var t=document.getElementById('chatText'),s=document.getElementById('chatSend');var can=!LOCKED||canMod();if(t){t.disabled=!can;t.placeholder=can?'Écrire un message…':'Chat en lecture seule';}if(s)s.disabled=!can;var lk=document.getElementById('chatLockBtn');if(lk)lk.classList.toggle('on',LOCKED);var no=document.getElementById('chatLocked');if(no)no.style.display=(LOCKED&&!canMod())?'block':'none';toggleSend();}
@@ -449,7 +455,7 @@ var Live=(function(){
       var _relEtat=null,_relChat=null;
       // Groupé : dix diffusions d'affilée ne doivent pas produire dix requêtes.
       function relireEtat(){clearTimeout(_relEtat);_relEtat=setTimeout(function(){
-        relire('&state=1',function(d){if(d.state&&_onState)_onState(d.state);});
+        relire('&state=1',function(d){if(d.state)appliquerEtat(d.state);});
       },120);}
       function relireChat(){clearTimeout(_relChat);_relChat=setTimeout(function(){
         relire('&chat=1',function(d){
@@ -462,6 +468,21 @@ var Live=(function(){
           if(typeof d.locked!=='undefined')applyLock(d.locked);
         });
       },120);}
+
+      // ⚠️ LE TITRE VIENT D'ICI, PAS DE LA PRÉSENCE. La liste des participants tirait
+      // « présentateur » de la charge de présence, que chacun compose lui-même : un
+      // 'track({role:"presenter"})' suffisait à apparaître comme le présentateur devant toute
+      // l'audience, avec le nom et l'avatar de son choix. Le canal ne peut pas arbitrer ça — un
+      // participant légitime a le droit d'y écrire SA présence.
+      //
+      // Le serveur renvoie la CLÉ de celui qui a prouvé le control_token ; l'audience compare. Pas
+      // de clé, pas de titre : mieux vaut aucun titre qu'un titre usurpé.
+      function appliquerEtat(st){
+        if(typeof st.presenter_key!=='undefined'){var k=st.presenter_key||'';
+          if(k!==PRESKEY){PRESKEY=k;try{if(ch)renderPres(ch.presenceState());}catch(e){}}}
+        if(_onState)_onState(st);
+      }
+      relire('&state=1',function(d){if(d.state)appliquerEtat(d.state);});
 
       // Le message reçu sert à savoir QU'IL SE PASSE quelque chose, et à notifier ; son CONTENU
       // vient de la relecture. Sans ça, une notification pourrait afficher un texte forgé.
@@ -480,6 +501,10 @@ var Live=(function(){
     }catch(e){}}
   function disconnect(){try{clearInterval(_tyIv);}catch(e){}try{clearInterval(_atIv);}catch(e){}try{sendAttend();}catch(e){}try{if(ch){ch.untrack();ch.unsubscribe();ch=null;}}catch(e){}var pb=document.getElementById('presBtn');if(pb)pb.style.display='none';var cb=document.getElementById('chatBtn');if(cb)cb.style.display='none';var _fb=document.getElementById('chatFab');if(_fb)_fb.classList.remove('on');var pn=document.getElementById('chatPanel');if(pn)pn.classList.add('hidden');}
   // Membre de l'équipe reconnu via la session app (MÊME ORIGINE, localStorage) → avatar + nom auto.
+  // Le jeton d'acces de la session locale, quand il y en a une. C'est la SEULE chose qui prouve au
+  // serveur qu'on est un membre ; 'member:true' dans la page ne prouve rien, il ne sert qu'a l'affichage.
+  function accessToken(){try{var raw=localStorage.getItem('3dd-supabase-auth');if(!raw)return '';var s=JSON.parse(raw);
+    return String((s&&(s.access_token||(s.currentSession&&s.currentSession.access_token)||(s.session&&s.session.access_token)))||'');}catch(e){return '';}}
   function detectMember(){try{var raw=localStorage.getItem('3dd-supabase-auth');if(!raw)return null;var s=JSON.parse(raw);var u=s&&(s.user||(s.currentSession&&s.currentSession.user)||(s.session&&s.session.user));if(u&&u.email){var m=u.user_metadata||{};return{name:m.name||u.email,email:u.email,avatar:m.avatarUrl||'',member:true,role:'viewer'};}}catch(e){}return null;}
   return {connect:connect,disconnect:disconnect,detectMember:detectMember,sendMap:sendMap,onMap:onMap,sendState:sendState,onState:onState};
 })();`;
@@ -1205,6 +1230,24 @@ function adresseAppelant(req) {
     }
   } catch { /* une IP indisponible ne doit pas empêcher de lire un document */ }
   return String((req.socket && req.socket.remoteAddress) || "").slice(0, 60);
+}
+
+/**
+ * Cet appelant est-il un MEMBRE de l'hôte, prouvé — pas déclaré ?
+ *
+ * ⚠️ L'appartenance décide de quelle POPULATION une lecture rejoint. « Ce client a lu douze
+ * minutes » ne vaut que si un collègue relisant le document n'entre pas dans le même compte : c'est
+ * la promesse que ce produit vend. Un booléen envoyé par le navigateur ne prouve rien — il est
+ * choisi par qui l'envoie.
+ *
+ * Le jeton d'accès, lui, est vérifié par l'hôte. Absent ou invalide : pas membre. Jamais de repli
+ * sur ce que l'appelant affirme, sinon la vérification ne sert qu'aux honnêtes.
+ */
+async function membreVerifie(req) {
+  try {
+    const u = await PLAYER.identity.verifyToken((req.headers && req.headers.authorization) || "");
+    return !!(u && u.email);
+  } catch { return false; }
 }
 
 async function relayerFichier(res, r, disposition) {
@@ -2548,7 +2591,21 @@ async function handler(req, res) {
           const ip = adresseAppelant(req) || "anon";
           const allowed = await PLAYER.limits.allow(`patt:${ip}`, 1000, 3600);
           if (!allowed) return jp(429, { ok: false, error: "rate" });
-          const r = await recordAttendance(String(body.slug || ""), { key: body.key, name: body.name, email: body.email, avatar: body.avatar, isMember: !!body.isMember, isPresenter: !!body.isPresenter });
+          // ⚠️ CES DEUX BOOLÉENS ÉTAIENT CEUX DE L'APPELANT. `isMember` sépare la population interne
+          // de celle des prospects — c'est la promesse même du produit — et `isPresenter` accorde le
+          // titre dans la liste des participants. Les deux venaient du corps de la requête : un
+          // prospect pouvait se compter comme collègue, et se donner le titre de présentateur.
+          //
+          // Ce qui distingue un présentateur d'un participant n'est pas ce qu'il affirme, c'est le
+          // `control_token` — `present-chat` le vérifiait déjà pour le badge des messages, cette
+          // route ne le faisait pas. Et l'appartenance se prouve par le jeton d'accès de la session :
+          // cette route est un `fetch`, elle peut porter un en-tête (contrairement au suivi de
+          // lecture, qui part par `sendBeacon` et signe donc dans le corps).
+          const pres = await getPresentation(String(body.slug || ""));
+          if (!pres) return jp(404, { ok: false });
+          const estPresentateur = !!(body.control && require("crypto").createHash("sha256").update(String(body.control)).digest("hex") === pres.control_hash);
+          const estMembre = await membreVerifie(req);
+          const r = await recordAttendance(String(body.slug || ""), { key: body.key, name: body.name, email: body.email, avatar: body.avatar, isMember: estMembre, isPresenter: estPresentateur });
           return jp(r.ok ? 200 : (r.status || 400), r);
         } catch { return jp(500, { ok: false }); }
       }
@@ -2588,7 +2645,10 @@ async function handler(req, res) {
           // participant pourrait poster un message usurpant le présentateur). Sert aussi au chat verrouillé.
           const validControl = !!(body.control && require("crypto").createHash("sha256").update(String(body.control)).digest("hex") === pres.control_hash);
           if (pres.chat_locked && !validControl) return jp(423, { ok: false, error: "locked" });
-          const r = await addMessage(String(body.slug || ""), { name: body.name, email: body.email, avatar: body.avatar, isPresenter: validControl, isMember: !!body.isMember, body: body.body, replyTo: body.replyTo, replyName: body.replyName, replyText: body.replyText, authorToken: body.authorToken, attachment: body.attachment });
+          // `isMember` restait l'affirmation du client, alors que `isPresenter` était vérifié juste
+          // au-dessus. Deux poids sur la même ligne : le badge « présentateur » se méritait, celui
+          // de collègue se réclamait.
+          const r = await addMessage(String(body.slug || ""), { name: body.name, email: body.email, avatar: body.avatar, isPresenter: validControl, isMember: await membreVerifie(req), body: body.body, replyTo: body.replyTo, replyName: body.replyName, replyText: body.replyText, authorToken: body.authorToken, attachment: body.attachment });
           return jp(r.ok ? 200 : (r.status || 400), r);
         } catch { return jp(500, { ok: false }); }
       }
@@ -2979,6 +3039,10 @@ async function handler(req, res) {
           file_name: pres.file_name || null,
           doc_title: pres.doc_title || null,
           updated_at: pres.updated_at || null,
+          // Qui porte le titre, d'après le serveur. La liste des participants le tirait de la charge
+          // de présence, que chacun compose : il suffisait de s'annoncer présentateur pour l'être aux
+          // yeux de tous. Une clé, pas un booléen — l'audience compare, elle ne croit pas.
+          presenter_key: await presenterKey(String(q.present || "")),
         } }));
         return;
       }
