@@ -415,7 +415,13 @@ var Live=(function(){
     var pb=document.getElementById('presBtn');if(pb)pb.style.display='inline-flex';
     var cb=document.getElementById('chatBtn');if(cb)cb.style.display='inline-flex';var _fb=document.getElementById('chatFab');if(_fb)_fb.classList.add('on');
     wire();history();
-    try{sb=window.supabase.createClient(LIVECFG.supaUrl,LIVECFG.supaKey,{realtime:{params:{eventsPerSecond:10}}});
+    try{sb=window.supabase.createClient(LIVECFG.supaUrl,LIVECFG.supaKey,{realtime:{params:{eventsPerSecond:10}},
+      // ⚠️ UNE CLÉ DÉCLARÉE, PAS CELLE PAR DÉFAUT. Ce client vivra un jour une session anonyme
+      // (canal Realtime prive). S'il ecrit sous la cle par defaut et que l'application de l'hote
+      // l'utilise aussi sur la meme origine, la session anonyme ECRASE celle du membre connecte.
+      // Chez nous les deux cles different deja, mais par heureux hasard : le declarer rend
+      // intentionnel ce qui n'etait qu'une consequence, et une topologie peut changer.
+      auth:{storageKey:LIVECFG.liveAuthKey||'dmp-live-auth',persistSession:true,autoRefreshToken:true}});
       ch=sb.channel('plive-'+slug,{config:{presence:{key:(me.email||me.name||'x')+':'+MYID}}});
       ch.on('presence',{event:'sync'},function(){renderPres(ch.presenceState());});
       // Plus d'abonnement à la table des messages : elle n'est plus publiée ni lisible
@@ -503,9 +509,9 @@ var Live=(function(){
   // Membre de l'équipe reconnu via la session app (MÊME ORIGINE, localStorage) → avatar + nom auto.
   // Le jeton d'acces de la session locale, quand il y en a une. C'est la SEULE chose qui prouve au
   // serveur qu'on est un membre ; 'member:true' dans la page ne prouve rien, il ne sert qu'a l'affichage.
-  function accessToken(){try{var raw=localStorage.getItem('3dd-supabase-auth');if(!raw)return '';var s=JSON.parse(raw);
+  function accessToken(){try{var raw=localStorage.getItem(LIVECFG.hostAuthKey||'');if(!raw)return '';var s=JSON.parse(raw);
     return String((s&&(s.access_token||(s.currentSession&&s.currentSession.access_token)||(s.session&&s.session.access_token)))||'');}catch(e){return '';}}
-  function detectMember(){try{var raw=localStorage.getItem('3dd-supabase-auth');if(!raw)return null;var s=JSON.parse(raw);var u=s&&(s.user||(s.currentSession&&s.currentSession.user)||(s.session&&s.session.user));if(u&&u.email){var m=u.user_metadata||{};return{name:m.name||u.email,email:u.email,avatar:m.avatarUrl||'',member:true,role:'viewer'};}}catch(e){}return null;}
+  function detectMember(){try{var raw=localStorage.getItem(LIVECFG.hostAuthKey||'');if(!raw)return null;var s=JSON.parse(raw);var u=s&&(s.user||(s.currentSession&&s.currentSession.user)||(s.session&&s.session.user));if(u&&u.email){var m=u.user_metadata||{};return{name:m.name||u.email,email:u.email,avatar:m.avatarUrl||'',member:true,role:'viewer'};}}catch(e){}return null;}
   return {connect:connect,disconnect:disconnect,detectMember:detectMember,sendMap:sendMap,onMap:onMap,sendState:sendState,onState:onState};
 })();`;
 
@@ -1243,6 +1249,34 @@ function adresseAppelant(req) {
  * Le jeton d'accès, lui, est vérifié par l'hôte. Absent ou invalide : pas membre. Jamais de repli
  * sur ce que l'appelant affirme, sinon la vérification ne sert qu'aux honnêtes.
  */
+// ── Clés de `localStorage`, et pourquoi ce ne sont plus des constantes ─────────────────────────
+//
+// ⚠️ `3dd-supabase-auth` — la clé de session du studio 3D Discovery — était écrite EN DUR à cinq
+// endroits de ce paquet open source. Conséquence pour tout autre hôte : `detectMember()` et
+// `accessToken()` ne trouvent jamais rien, donc AUCUN de ses membres n'est reconnu comme tel. La
+// séparation des populations interne/externe, que ce produit vend, ne fonctionnait que chez nous.
+//
+// ⚠️ Et depuis 0.1.25 cette clé porte une propriété de sécurité : c'est par elle que l'appartenance
+// se prouve. Une constante d'un hôte devenue porteuse pour tous les autres.
+//
+// Défaut VIDE, et c'est délibéré : sans clé déclarée, la détection est simplement inactive — aucun
+// membre, donc aucune usurpation. Un défaut à `3dd-supabase-auth` aurait gardé notre instance en
+// marche en laissant le défaut de conception intact, et le prochain hôte l'aurait découvert comme
+// ADV : en constatant que ses statistiques ne séparent rien.
+//
+// ⚠️ CE N'EST QU'UNE TRANSITION. Lire le `localStorage` d'une autre application ne peut PAS marcher
+// quand les origines diffèrent — l'instance ADV est sur `doc.adnfamily.com` et son application sur
+// `app.adnfamily.com` : deux `localStorage`, aucune configuration n'y changera rien. Le bon
+// mécanisme est que l'hôte INJECTE son membre au rendu de la page, comme il injecte déjà sa marque.
+// Tracé dans docs/AUDIT-2026-08-14-SUIVI.md.
+function cleSessionHote() {
+  return String((PLAYER.config && PLAYER.config.hostAuthStorageKey) || "");
+}
+// La session du client Realtime du player, et l'identité d'un invité : à lui, sous son nom. Elles
+// ne dépendent d'aucun hôte, donc elles restent des constantes — mais plus des constantes d'AUTRUI.
+const CLE_SESSION_PLAYER = "dmp-live-auth";
+const CLE_INVITE = "dmp-present-me";
+
 async function membreVerifie(req) {
   try {
     const u = await PLAYER.identity.verifyToken((req.headers && req.headers.authorization) || "");
@@ -1796,7 +1830,7 @@ ${LEGAL_CSS}
   <script nonce="${nonce}">${PLAYER_BROWSER_JS}</script>
   <script nonce="${nonce}" src="${PDFJS}/pdf.min.js"></script>
   ${preview ? `<script nonce="${nonce}" src="${SUPAJS}"></script>
-  <script nonce="${nonce}">var LIVECFG={supaUrl:${JSON.stringify(share.supa_url || "")},supaKey:${JSON.stringify(share.supa_key || "")}};var GMAPS_KEY=${JSON.stringify((PLAYER.config && PLAYER.config.mapsKey) || "" || "")};${LIVE_JS}
+  <script nonce="${nonce}">var LIVECFG={supaUrl:${JSON.stringify(share.supa_url || "")},supaKey:${JSON.stringify(share.supa_key || "")},hostAuthKey:${JSON.stringify(cleSessionHote())},liveAuthKey:${JSON.stringify(CLE_SESSION_PLAYER)},guestKey:${JSON.stringify(CLE_INVITE)}};var GMAPS_KEY=${JSON.stringify((PLAYER.config && PLAYER.config.mapsKey) || "" || "")};${LIVE_JS}
   ${MAP_JS}</script>` : ""}
   <script nonce="${nonce}">
   (function(){
@@ -1871,7 +1905,7 @@ ${LEGAL_CSS}
     var PRES=null, _pushT=null, _hbIv=0;
     // JWT de la session app (MÊME ORIGINE, localStorage) → autorise le rattachement de la présentation au membre
     // (reprise / liste / transfert) et les actions authentifiées (reclaim).
-    function appToken(){ try{ var raw=localStorage.getItem('3dd-supabase-auth'); if(!raw)return''; var s=JSON.parse(raw); var t=(s&&(s.access_token||(s.currentSession&&s.currentSession.access_token)||(s.session&&s.session.access_token)))||''; return t; }catch(e){ return ''; } }
+    function appToken(){ try{ var raw=localStorage.getItem(LIVECFG.hostAuthKey||''); if(!raw)return''; var s=JSON.parse(raw); var t=(s&&(s.access_token||(s.currentSession&&s.currentSession.access_token)||(s.session&&s.session.access_token)))||''; return t; }catch(e){ return ''; } }
     function ctlKey(slug){ return '3dd-pres-ctl-'+slug; }
     function saveCtl(slug,control){ try{ localStorage.setItem(ctlKey(slug),control); }catch(e){} }
     function clearCtl(slug){ try{ localStorage.removeItem(ctlKey(slug)); }catch(e){} }
@@ -2314,7 +2348,7 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
   })();
   </script>
   <script nonce="${nonce}">
-  var LIVECFG={supaUrl:${JSON.stringify(supaUrl || "")},supaKey:${JSON.stringify(supaKey || "")}};var GMAPS_KEY=${JSON.stringify((PLAYER.config && PLAYER.config.mapsKey) || "" || "")};
+  var LIVECFG={supaUrl:${JSON.stringify(supaUrl || "")},supaKey:${JSON.stringify(supaKey || "")},hostAuthKey:${JSON.stringify(cleSessionHote())},liveAuthKey:${JSON.stringify(CLE_SESSION_PLAYER)},guestKey:${JSON.stringify(CLE_INVITE)}};var GMAPS_KEY=${JSON.stringify((PLAYER.config && PLAYER.config.mapsKey) || "" || "")};
   ${LIVE_JS}
   ${MAP_JS}
   (function(){
@@ -2337,19 +2371,19 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
     // « Reprendre la main » : si le membre connecté (même origine) devient propriétaire de CETTE présentation
     // (après un transfert), on affiche un bouton pour ouvrir la visionneuse en pilotage — sinon on ne peut pas
     // piloter depuis la page audience.
-    function appTok(){ try{ var raw=localStorage.getItem('3dd-supabase-auth'); if(!raw)return''; var s=JSON.parse(raw); return (s&&(s.access_token||(s.currentSession&&s.currentSession.access_token)||(s.session&&s.session.access_token)))||''; }catch(e){return'';} }
+    function appTok(){ try{ var raw=localStorage.getItem(LIVECFG.hostAuthKey||''); if(!raw)return''; var s=JSON.parse(raw); return (s&&(s.access_token||(s.currentSession&&s.currentSession.access_token)||(s.session&&s.session.access_token)))||''; }catch(e){return'';} }
     function checkOwner(){ var tk=appTok(); if(!tk)return; fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tk},body:JSON.stringify({action:'present-list'})}).then(function(r){return r.json();}).then(function(d){ var mine=false; if(d&&d.presentations){ for(var i=0;i<d.presentations.length;i++){ if(d.presentations[i].slug===slug&&d.presentations[i].mine){mine=true;break;} } } var b=document.getElementById('takeOver'); if(b)b.style.display=mine?'inline-flex':'none'; }).catch(function(){}); }
     function startOwnerWatch(){ var b=document.getElementById('takeOver'); if(b&&!b._w){b._w=1;b.addEventListener('click',function(){ location.href='/app/documents?resume='+encodeURIComponent(slug); });} checkOwner(); setInterval(checkOwner,12000); }
     var me=Live.detectMember();
     if(me){ Live.connect(slug, me); startOwnerWatch(); return; }
-    var saved=null; try{ saved=JSON.parse(localStorage.getItem('3dd-present-me')||'null'); }catch(e){}
+    var saved=null; try{ saved=JSON.parse(localStorage.getItem(LIVECFG.guestKey||'dmp-present-me')||'null'); }catch(e){}
     if(saved&&saved.name){ Live.connect(slug, saved); return; }
     // Externe : on demande le nom pour participer.
     var o=document.createElement('div'); o.className='join';
     o.innerHTML='<div class=join-card><h4>Rejoindre la présentation</h4><p>Votre nom pour participer à la discussion.</p><input id=jName placeholder="Votre nom" maxlength=60 autocomplete=name><input id=jMail placeholder="Email (facultatif)" maxlength=120 autocomplete=email><button id=jGo>Rejoindre</button></div>';
     document.body.appendChild(o);
     var n=o.querySelector('#jName'); try{ n.focus(); }catch(e){}
-    function go(){ var name=(n.value||'').trim()||'Invité'; var email=(o.querySelector('#jMail').value||'').trim(); var me2={name:name,email:email,avatar:'',member:false,role:'viewer'}; try{ localStorage.setItem('3dd-present-me',JSON.stringify(me2)); }catch(e){} o.parentNode&&o.parentNode.removeChild(o); Live.connect(slug, me2); }
+    function go(){ var name=(n.value||'').trim()||'Invité'; var email=(o.querySelector('#jMail').value||'').trim(); var me2={name:name,email:email,avatar:'',member:false,role:'viewer'}; try{ localStorage.setItem(LIVECFG.guestKey||'dmp-present-me',JSON.stringify(me2)); }catch(e){} o.parentNode&&o.parentNode.removeChild(o); Live.connect(slug, me2); }
     o.querySelector('#jGo').addEventListener('click',go);
     n.addEventListener('keydown',function(e){ if(e.key==='Enter') go(); });
   })();

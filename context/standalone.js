@@ -457,6 +457,20 @@ function createStandaloneContext(env = process.env) {
       supabasePublishableKey: env.SUPABASE_PUBLISHABLE_KEY || "",
       mapsKey: env.GOOGLE_MAPS_API_KEY || "",
       extraFrameAncestors: String(env.DOC_FRAME_ANCESTORS || "").split(/\s+/).filter(Boolean),
+
+      /**
+       * Clé de `localStorage` sous laquelle VOTRE application range la session de ses membres.
+       *
+       * ⚠️ Vide par défaut, donc la détection des membres est inactive : aucun membre reconnu,
+       * aucune usurpation possible. Ce paquet portait `3dd-supabase-auth` en dur — la clé d'un seul
+       * hôte, qui ne trouvait rien chez tous les autres, et qui depuis 0.1.25 porte une propriété
+       * de sécurité : c'est par elle que l'appartenance se prouve.
+       *
+       * ⚠️ Et ça ne marche QUE si votre application et le player partagent la même origine. Deux
+       * sous-domaines, ce sont deux `localStorage` : aucune valeur ici n'y changera rien. C'est une
+       * transition — le bon mécanisme est que l'hôte injecte son membre au rendu de la page.
+       */
+      hostAuthStorageKey: String(env.PLAYER_HOST_AUTH_STORAGE_KEY || "").trim(),
       // ⚠️ Un BOOLÉEN, jamais l'URL. La carte d'identité doit pouvoir dire « un émetteur distinct
       // est configuré » sans dire lequel : c'est le dernier endroit où un hôte devait deviner.
       // `host-auth` dit que le code SAIT faire la séparation ; ceci dit qu'elle est POSÉE. Sans

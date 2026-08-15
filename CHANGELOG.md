@@ -10,6 +10,43 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.27] — 2026-08-15
+
+### Security
+- **One host's `localStorage` key was hard-coded for every other host.** `3dd-supabase-auth` — the
+  3D Discovery studio's session key — appeared in five places in this package. On any other host,
+  `detectMember()` and `accessToken()` therefore found nothing: **none of its members were
+  recognised as members**, and the separation of internal from external populations that this
+  product sells worked only on ours.
+
+  ⚠️ Since 0.1.25 that key also carries a **security** property — it is how membership is proven.
+  One host's constant had become load-bearing for all of them.
+
+  It is now `config.hostAuthStorageKey` (`PLAYER_HOST_AUTH_STORAGE_KEY`), and the default is
+  **empty**: no key declared, no member detected, therefore nothing to impersonate. Defaulting to
+  `3dd-supabase-auth` would have kept *our* instance running while leaving the design flaw intact,
+  and the next host would have discovered it the way the second one did — by noticing that its
+  statistics separate nothing.
+
+  ⚠️ **This is a transition, not a solution.** Reading another application's `localStorage` cannot
+  work across origins: the second instance lives on `doc.…` and its application on `app.…` — two
+  storages, and no configuration value will bridge them. The right mechanism is for the host to
+  *inject* its member when the page is rendered, the way it already injects its brand. Tracked in
+  [`docs/AUDIT-2026-08-14-SUIVI.md`](docs/AUDIT-2026-08-14-SUIVI.md).
+
+  *Found by the second host, from its own instance.*
+
+### Changed
+- **The player's Realtime client now declares its own `storageKey`** (`dmp-live-auth`) instead of
+  taking the default. That client will one day hold an anonymous session (private channel); if it
+  wrote under the default key and the host's application used it too on the same origin, the
+  anonymous session would **overwrite the signed-in member's**. The two already differ on our
+  instance — by happy accident. Declaring it makes intentional what was only a consequence, and a
+  topology can change.
+- The guest identity moves from `3dd-present-me` to `dmp-present-me`. It belongs to the player, so
+  it now carries the player's name rather than someone else's. A guest who had entered their name
+  will be asked once more.
+
 ## [0.1.26] — 2026-08-15
 
 ### Fixed
@@ -716,7 +753,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.26...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.27...HEAD
+[0.1.27]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.26...v0.1.27
 [0.1.26]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.25...v0.1.26
 [0.1.25]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.23...v0.1.24
