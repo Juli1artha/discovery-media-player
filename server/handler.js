@@ -356,8 +356,8 @@ var Live=(function(){
         var i=document.getElementById('chatText'),cap=(i&&i.value||'').trim();if(i)i.value='';
         var o={action:'present-chat',slug:SLUG,name:ME.name,email:ME.email,avatar:ME.avatar,body:cap,authorToken:authToken(),attachment:{url:d.publicUrl,name:file.name,type:file.type,kind:d.kind}};
         if(CONTROL)o.control=CONTROL;
-        return var h2={'Content-Type':'application/json'};var j2=accessToken();if(j2)h2.Authorization='Bearer '+j2;
-        fetch('/api/doc',{method:'POST',headers:h2,body:JSON.stringify(o)});
+        var h2={'Content-Type':'application/json'};var j2=accessToken();if(j2)h2.Authorization='Bearer '+j2;
+        return fetch('/api/doc',{method:'POST',headers:h2,body:JSON.stringify(o)});
       });
     }).then(done).catch(function(){done();});}
   function applyLock(v){LOCKED=!!v;var t=document.getElementById('chatText'),s=document.getElementById('chatSend');var can=!LOCKED||canMod();if(t){t.disabled=!can;t.placeholder=can?'Écrire un message…':'Chat en lecture seule';}if(s)s.disabled=!can;var lk=document.getElementById('chatLockBtn');if(lk)lk.classList.toggle('on',LOCKED);var no=document.getElementById('chatLocked');if(no)no.style.display=(LOCKED&&!canMod())?'block':'none';toggleSend();}
@@ -455,7 +455,7 @@ var Live=(function(){
       var _relEtat=null,_relChat=null;
       // Groupé : dix diffusions d'affilée ne doivent pas produire dix requêtes.
       function relireEtat(){clearTimeout(_relEtat);_relEtat=setTimeout(function(){
-        relire('&state=1',function(d){if(d.state)appliquerEtat(d.state);});
+        relire('&state=1',function(d){if(d.state)etatDuServeur(d.state);});
       },120);}
       function relireChat(){clearTimeout(_relChat);_relChat=setTimeout(function(){
         relire('&chat=1',function(d){
@@ -477,12 +477,12 @@ var Live=(function(){
       //
       // Le serveur renvoie la CLÉ de celui qui a prouvé le control_token ; l'audience compare. Pas
       // de clé, pas de titre : mieux vaut aucun titre qu'un titre usurpé.
-      function appliquerEtat(st){
+      function etatDuServeur(st){
         if(typeof st.presenter_key!=='undefined'){var k=st.presenter_key||'';
           if(k!==PRESKEY){PRESKEY=k;try{if(ch)renderPres(ch.presenceState());}catch(e){}}}
         if(_onState)_onState(st);
       }
-      relire('&state=1',function(d){if(d.state)appliquerEtat(d.state);});
+      relire('&state=1',function(d){if(d.state)etatDuServeur(d.state);});
 
       // Le message reçu sert à savoir QU'IL SE PASSE quelque chose, et à notifier ; son CONTENU
       // vient de la relecture. Sans ça, une notification pourrait afficher un texte forgé.

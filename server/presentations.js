@@ -294,8 +294,14 @@ async function toggleReaction(slug, msgId, emoji, reactor) {
  */
 async function presenterKey(slug) {
   if (!slug) return null;
-  const rows = await PLAYER.db.request(`doc_presentation_attendees?slug=eq.${enc(slug)}&is_presenter=is.true&select=attendee_key&order=last_seen.desc&limit=1`);
-  return (Array.isArray(rows) && rows[0] && rows[0].attendee_key) || null;
+  // ⚠️ NE JAMAIS FAIRE ÉCHOUER LA RELECTURE D'ÉTAT. Cette recherche est un ajout à une route dont
+  // l'audience dépend pour savoir quelle page est affichée. Une requête de plus, c'est une raison
+  // de plus de renvoyer 500 — et perdre TOUT l'état parce qu'on n'a pas su dire qui porte un badge
+  // serait un très mauvais échange. Sans réponse : pas de clé, donc pas de titre, et le reste passe.
+  try {
+    const rows = await PLAYER.db.request(`doc_presentation_attendees?slug=eq.${enc(slug)}&is_presenter=is.true&select=attendee_key&order=last_seen.desc&limit=1`);
+    return (Array.isArray(rows) && rows[0] && rows[0].attendee_key) || null;
+  } catch { return null; }
 }
 
 // ── Statistiques de présentation (assistance) ────────────────────────────────────────────────────────────
