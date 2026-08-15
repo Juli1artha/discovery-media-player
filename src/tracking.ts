@@ -20,7 +20,14 @@ export interface TrackerOptions {
   /** Lien tracé public. Absent en aperçu interne. */
   slug?: string | null;
   /** Aperçu interne équipe. Exclusif du `slug`. */
-  internal?: { docId?: string; email?: string; name?: string } | null;
+  /**
+   * Aperçu interne : qui lit, et la PREUVE que l'hôte en donne.
+   *
+   * ⚠️ `it` est le jeton signé par l'hôte (0.1.22). Sans lui, le serveur retombe sur ce que le
+   * navigateur affirme et le signale — et `PLAYER_INTERNAL_STRICT=1` refuse la session. Le verrou
+   * existait depuis 0.1.22 ; ce champ est la serrure, qui manquait.
+   */
+  internal?: { docId?: string; email?: string; name?: string; it?: string } | null;
   /** Route d'ingestion des événements. */
   endpoint?: string;
   /** Sans interaction pendant ce délai, le chrono se met en pause. */
@@ -203,6 +210,9 @@ export function createTracker(options: TrackerOptions = {}): Tracker {
       payload.docId = internal.docId;
       payload.email = internal.email;
       payload.name = internal.name;
+      // La preuve voyage dans le CORPS : `sendBeacon` ne porte pas d'en-tête, et c'est lui qui
+      // survit à la fermeture d'un onglet — donc à l'instant où la mesure compte le plus.
+      if (internal.it) payload.it = internal.it;
     } else {
       payload.slug = slug;
     }

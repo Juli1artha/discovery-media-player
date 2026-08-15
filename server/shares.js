@@ -348,7 +348,28 @@ async function upsertInternalSession(p, { ip, ua }) {
   const num = (v) => (Number.isFinite(+v) ? Math.trunc(+v) : null);
   const borne = (v, max) => { const n = num(v); return n == null ? null : Math.max(0, Math.min(n, max)); };
   const sessionId = String(p.sessionId || "").slice(0, 64);
-  if (!sessionId || !p.docId) return;
+  // ⚠️ UN REJET MUET A COÛTÉ DES SEMAINES À UN HÔTE.
+  //
+  // Cette garde est juste — une session sans document ne mesure rien — mais elle ne DISAIT rien.
+  // Le second hôte a monté son suivi interne, l'a cru en service, et a découvert bien plus tard que
+  // la table était vide : son `docId` ne partait pas, et chaque battement était jeté ici en silence.
+  //
+  // ⚠️ Ce n'est pas la garde qui était en cause, c'est son mutisme. Une mesure qui ne remonte rien
+  // est indistinguable d'une mesure qui n'a rien à remonter : personne ne va chercher une panne
+  // qu'aucun signal n'annonce. La même leçon que le trou de session interne signalé une fois par
+  // heure en 0.1.22 — un état anormal qu'on ne dit pas devient l'état normal.
+  //
+  // Une fois par heure suffit : le but est qu'un exploitant qui ouvre ses journaux tombe dessus,
+  // pas de compter les rejets. Demandé par le second hôte, à qui ça aurait fait gagner des semaines.
+  if (!sessionId || !p.docId) {
+    try {
+      if (await PLAYER.limits.allow("intsess:jetee", 1, 3600)) {
+        const manque = !sessionId ? "sessionId" : "docId";
+        PLAYER.errors.capture(new Error(`session interne jetée : ${manque} absent — rien ne sera mesuré tant qu'il manque`), { route: "internal-session" });
+      }
+    } catch { /* un journal ne doit jamais empêcher une lecture */ }
+    return;
+  }
   const { device, os, browser } = parseUa(ua);
   const row = {
     session_id: sessionId, doc_id: String(p.docId).slice(0, 200), user_email: low(p.userEmail).slice(0, 160) || null,
