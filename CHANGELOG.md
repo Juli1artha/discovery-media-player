@@ -10,6 +10,34 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.35] — 2026-08-15
+
+### Fixed
+- ⚠️ **The lock had no keyhole.** 0.1.22 added `verifyInternalToken`, which reads `body.it`, and
+  announced that `PLAYER_INTERNAL_STRICT=1` "closes the door entirely". That was true of the
+  **check** and false of the **system**: no path allowed a host to *supply* that token. The preview
+  route read `uemail`, `docId`, `name`, `title`, `by`, `av`, `resume`, `autopresent` — no token —
+  and `CFG.internal` carried only `{email, name, docId}`.
+
+  Setting the variable would therefore have refused **100% of internal sessions on every
+  instance**, ours included. And that is why "strict analytics by default" — the next item on the
+  audit's list — could not be shipped: it would not have hardened hosts, it would have cut them off.
+  A lock nobody can close is not a transition, it is an announcement.
+
+  A host can now pass `it` on the preview route; it travels through `CFG.internal` and comes back
+  in the body, where the check has been waiting since 0.1.22.
+
+  *Found by the second host, while preparing the very token we had asked them to sign.*
+- **A silent rejection cost a host weeks.** An internal session without a `docId` is dropped — the
+  guard is right, a session with no document measures nothing — but it said nothing. That host
+  brought up their internal tracking, believed it live, and found out much later that the table was
+  empty: their `docId` never left, and every heartbeat was discarded in silence.
+
+  ⚠️ The guard was not the problem; its muteness was. **A measurement that reports nothing is
+  indistinguishable from a measurement with nothing to report** — nobody goes looking for a failure
+  no signal announces. It is now reported once an hour, naming the missing field, exactly like the
+  unsigned-session gap of 0.1.22. An abnormal state left unsaid becomes the normal state.
+
 ## [0.1.34] — 2026-08-15
 
 ### Security
@@ -972,7 +1000,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.34...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.35...HEAD
+[0.1.35]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.34...v0.1.35
 [0.1.34]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.33...v0.1.34
 [0.1.33]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.32...v0.1.33
 [0.1.32]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.31...v0.1.32
