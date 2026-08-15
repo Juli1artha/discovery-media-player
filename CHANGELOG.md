@@ -10,6 +10,44 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.29] — 2026-08-15
+
+### Security
+- ⚠️ **The re-read could be starved indefinitely.** Since 0.1.19 the whole defence of the public
+  Realtime channel rests on one move: stop believing the transport, re-read the source of truth.
+  That re-read was a debounce — `clearTimeout` then `setTimeout(…, 120)` — so **every signal pushed
+  the deadline back**. A participant broadcasting every 100 ms postponed it forever.
+
+  Starving the re-read falsifies nothing; it simply stops the audience learning anything. Pages
+  stop turning, the chat freezes, and **no error says so** — the hardest kind of failure, because
+  everything looks like it is working. The comment above it read "grouped: ten broadcasts in a row
+  must not produce ten requests". The intent was right; the shape inverted it.
+
+  The opposite direction was open too: signals spaced slightly wider than the delay produced one
+  HTTP request each, **per connected viewer**. The public channel became an amplifier aimed at the
+  API.
+
+  It is now a bounded scheduler with four properties, each exercised on running code: a pending
+  deadline is never pushed back, one request in flight at a time, never more than one run per
+  interval, and **the last signal is always served** — bounding without that would drop the signal
+  that mattered.
+
+  ⚠️ The fix is in how the delay is computed, not in removing `clearTimeout`: the wait is measured
+  from the last *run*, not from the incoming signal, so the deadline is **absolute** and
+  rescheduling cannot postpone it. Established by mutation — reintroducing the original shape fails
+  five tests.
+
+  A slow resynchronisation (25 s) now catches a lost signal. Bounding the rate makes losing one
+  possible; the safety net is the price of the bound, not an optimisation.
+
+  *Reported by the second audit pass (P0-2).*
+
+### Fixed
+- **A test was pinning the defect as a feature.** It asserted that `clearTimeout(_relEtat)` appeared
+  in the source — the exact line that allowed the starvation — believing it checked "re-reads are
+  grouped". It checked a *shape* and would have rejected the fix. The properties are now exercised
+  on executed code; the source-level test only confirms the page uses that scheduler.
+
 ## [0.1.28] — 2026-08-15
 
 ### Security
@@ -780,7 +818,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.28...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.29...HEAD
+[0.1.29]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.28...v0.1.29
 [0.1.28]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.27...v0.1.28
 [0.1.27]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.26...v0.1.27
 [0.1.26]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.25...v0.1.26

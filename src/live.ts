@@ -248,3 +248,98 @@ export function unreadLabel(count: number): string {
   if (!count || count <= 0) return "";
   return count > 9 ? "9+" : String(count);
 }
+
+// ── Ordonnanceur borné pour les relectures ────────────────────────────────────────────────────
+//
+// ⚠️ CE QUI ÉTAIT ÉCRIT AVANT, ET POURQUOI C'ÉTAIT FAUX.
+//
+//     function relireEtat(){ clearTimeout(t); t = setTimeout(relire, 120); }
+//
+// Le commentaire disait « groupé : dix diffusions d'affilée ne doivent pas produire dix requêtes ».
+// L'intention est bonne, la forme la retourne : `clearTimeout` REPOUSSE l'échéance. Un participant
+// qui diffuse toutes les 100 ms repousse donc la relecture indéfiniment — elle n'arrive JAMAIS.
+//
+// Or depuis 0.1.19 toute la défense du canal public repose sur cette relecture : on cesse de croire
+// le transport, on relit la source de vérité. Affamer la relecture ne falsifie rien — ça empêche
+// simplement l'audience d'apprendre quoi que ce soit. Les pages ne tournent plus, le chat se fige,
+// et aucune erreur ne le dit.
+//
+// ⚠️ Et l'inverse est vrai aussi : des signaux espacés d'un peu plus que le délai déclenchent une
+// requête par signal, POUR CHAQUE SPECTATEUR. Le canal public devient un amplificateur vers l'API.
+//
+// Signalé par la seconde passe d'audit (P0-2). Quatre propriétés, chacune testée :
+//
+//   1. un signal en attente ne se repousse pas — la première échéance tient ;
+//   2. une seule requête en vol à la fois ;
+//   3. jamais plus d'une exécution par `minMs`, quelle que soit la cadence des signaux ;
+//   4. le DERNIER signal est toujours servi : ce qui arrive pendant une exécution en déclenche
+//      une autre. Sans ça, borner reviendrait à perdre le signal qui comptait.
+
+export interface Ordonnanceur {
+  /** Un événement est arrivé : il faut relire, tôt ou tard, mais une seule fois de trop jamais. */
+  signaler(): void;
+  /** Relit maintenant si la cadence le permet — pour le filet périodique. */
+  maintenant(): void;
+  /** Arrête tout (démontage de la page). */
+  arreter(): void;
+}
+
+export function createScheduler(
+  executer: (fini: () => void) => void,
+  options: {
+    minMs?: number;
+    now?: () => number;
+    // ⚠️ Les minuteurs sont injectables pour que les tests puissent avancer le temps eux-mêmes :
+    // une propriété de cadence ne se vérifie pas en attendant vraiment 300 ms.
+    setTimer?: (f: () => void, d: number) => unknown;
+    clearTimer?: (h: unknown) => void;
+  } = {},
+): Ordonnanceur {
+  const minMs = options.minMs ?? 300;
+  const now = options.now || (() => Date.now());
+  const poser: (f: () => void, d: number) => unknown = options.setTimer || ((f, d) => setTimeout(f, d));
+  const retirer: (h: unknown) => void = options.clearTimer || ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
+
+  let enVol = false;
+  let sale = false;
+  let dernier = -Infinity;
+  let minuteur: unknown = null;
+  let arrete = false;
+
+  function lancer(): void {
+    if (arrete || enVol) { sale = true; return; }
+    const attente = minMs - (now() - dernier);
+    if (attente > 0) { programmer(attente); return; }
+    enVol = true;
+    sale = false;
+    dernier = now();
+    let repris = false;
+    executer(() => {
+      // ⚠️ Idempotent : un `fini()` appelé deux fois ne doit pas ouvrir deux exécutions.
+      if (repris) return;
+      repris = true;
+      enVol = false;
+      if (sale && !arrete) lancer();
+    });
+  }
+
+  // ⚠️ LE CORRECTIF EST DANS LE CALCUL DE `delai`, PAS ICI.
+  //
+  // `attente` se calcule depuis `dernier` — l'instant de la dernière exécution — et non depuis
+  // maintenant. L'échéance est donc ABSOLUE : reprogrammer retombe au même instant, et repousser
+  // devient impossible par construction. C'est exactement ce que le debounce d'origine ne faisait
+  // pas : son délai repartait de l'instant du signal, donc chaque signal décalait l'échéance.
+  //
+  // Le garde `minuteur !== null` évite de jeter et reposer un minuteur à chaque signal. C'est de
+  // l'économie, pas la sûreté — vérifié par mutation : le retirer ne change aucun comportement.
+  function programmer(delai: number): void {
+    if (arrete || minuteur !== null) return;
+    minuteur = poser(() => { minuteur = null; lancer(); }, Math.max(0, delai));
+  }
+
+  return {
+    signaler() { if (!arrete) lancer(); },
+    maintenant() { if (!arrete) { dernier = -Infinity; lancer(); } },
+    arreter() { arrete = true; if (minuteur !== null) { retirer(minuteur); minuteur = null; } },
+  };
+}

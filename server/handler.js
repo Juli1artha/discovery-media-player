@@ -459,13 +459,26 @@ var Live=(function(){
           .then(function(d){if(d&&d.ok)applique(d);})
           .catch(function(){});
       }
-      var _relEtat=null,_relChat=null;
-      // Groupé : dix diffusions d'affilée ne doivent pas produire dix requêtes.
-      function relireEtat(){clearTimeout(_relEtat);_relEtat=setTimeout(function(){
-        relire('&state=1',function(d){if(d.state)etatDuServeur(d.state);});
-      },120);}
-      function relireChat(){clearTimeout(_relChat);_relChat=setTimeout(function(){
-        relire('&chat=1',function(d){
+      // ⚠️ ORDONNANCEUR BORNÉ, PAS UN DEBOUNCE. Ce qui était écrit ici repoussait l'échéance à
+      // chaque signal : un participant diffusant toutes les 100 ms empêchait la relecture
+      // INDÉFINIMENT. Toute la défense de 0.1.19 repose sur cette relecture — l'affamer ne
+      // falsifie rien, ça fige simplement l'audience, sans qu'aucune erreur ne le dise.
+      // Et à l'inverse, des signaux un peu plus espacés produisaient une requête chacun, POUR
+      // CHAQUE SPECTATEUR : le canal public devenait un amplificateur vers l'API.
+      // Détail et propriétés : src/live.ts + src/__tests__/ordonnanceur.test.ts. (audit P0-2)
+      function relireAvec(url,applique){
+        return Player.live.createScheduler(function(fini){
+          fetch('/api/doc?present='+encodeURIComponent(SLUG)+url)
+            .then(function(r){return r.json();})
+            .then(function(d){if(d&&d.ok)applique(d);})
+            .catch(function(){})
+            .then(fini,fini);
+        },{minMs:400});
+      }
+      var _ordEtat=relireAvec('&state=1',function(d){if(d.state)etatDuServeur(d.state);});
+      function relireEtat(){_ordEtat.signaler();}
+      function relireChat(){_ordChat.signaler();}
+      var _ordChat=relireAvec('&chat=1',function(d){
           // ⚠️ NOTIFIER CE QUI VIENT D'ARRIVER, ET SEULEMENT ÇA. 'addMsg' rend faux pour un
           // message déjà connu — la relecture ramène tout l'historique, donc sans cette condition
           // la pastille de non-lus compterait chaque message à chaque relecture. Et sans l'appel,
@@ -473,8 +486,14 @@ var Live=(function(){
           // lisant le source de ce paquet, à travers la frontière de deux dépôts.
           if(d.messages)d.messages.forEach(function(m){if(addMsg(m))notifyMsg(m);else updateMsg(m);});
           if(typeof d.locked!=='undefined')applyLock(d.locked);
-        });
-      },120);}
+      });
+
+      // ⚠️ LE FILET. Borner la cadence ouvre la possibilité qu'un signal se perde — un WebSocket
+      // qui tombe, un onglet endormi, un message jamais délivré. Une resynchronisation lente
+      // rattrape ce cas : elle ne coûte presque rien et évite qu'une audience reste figée sur un
+      // état périmé en croyant être à jour. C'est l'inverse d'une optimisation : c'est le prix de
+      // la borne.
+      var _filet=setInterval(function(){_ordEtat.maintenant();_ordChat.maintenant();},25000);
 
       // ⚠️ LE TITRE VIENT D'ICI, PAS DE LA PRÉSENCE. La liste des participants tirait
       // « présentateur » de la charge de présence, que chacun compose lui-même : un
@@ -504,7 +523,7 @@ var Live=(function(){
       _atIv=setInterval(sendAttend,25000);
       // Filet de sécurité : au déchargement de la page/iframe (fermeture, reload, switch), on retire la présence
       // → évite les fantômes (« je me vois deux fois » au retour). Une seule fois.
-      if(!_phWired){_phWired=true;window.addEventListener('pagehide',function(){try{if(ch){ch.untrack();ch.unsubscribe();ch=null;}}catch(e){}});}
+      if(!_phWired){_phWired=true;window.addEventListener('pagehide',function(){try{clearInterval(_filet);_ordEtat.arreter();_ordChat.arreter();}catch(e){}try{if(ch){ch.untrack();ch.unsubscribe();ch=null;}}catch(e){}});}
     }catch(e){}}
   function disconnect(){try{clearInterval(_tyIv);}catch(e){}try{clearInterval(_atIv);}catch(e){}try{sendAttend();}catch(e){}try{if(ch){ch.untrack();ch.unsubscribe();ch=null;}}catch(e){}var pb=document.getElementById('presBtn');if(pb)pb.style.display='none';var cb=document.getElementById('chatBtn');if(cb)cb.style.display='none';var _fb=document.getElementById('chatFab');if(_fb)_fb.classList.remove('on');var pn=document.getElementById('chatPanel');if(pn)pn.classList.add('hidden');}
   // Membre de l'équipe reconnu via la session app (MÊME ORIGINE, localStorage) → avatar + nom auto.

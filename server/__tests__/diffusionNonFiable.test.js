@@ -59,10 +59,21 @@ describe("ce qui fait autorité est relu auprès du serveur", () => {
     expect(SRC).toContain("'&chat=1'");
   });
 
-  // Dix diffusions d'affilée ne doivent pas produire dix requêtes.
-  it("les relectures sont groupées", () => {
-    expect(SRC).toContain("clearTimeout(_relEtat)");
-    expect(SRC).toContain("clearTimeout(_relChat)");
+  // ⚠️ CE TEST ÉPINGLAIT LE DÉFAUT COMME UNE FONCTIONNALITÉ.
+  //
+  // Il exigeait `clearTimeout(_relEtat)` — c'est-à-dire exactement la ligne qui permettait
+  // d'affamer la relecture indéfiniment. Il vérifiait une FORME (« un debounce est écrit ») en
+  // croyant vérifier une PROPRIÉTÉ (« les relectures sont groupées »), et il aurait refusé le
+  // correctif. C'est la démonstration du reproche « tests trop proches du source » : une chaîne
+  // trouvée dans un fichier ne dit rien de ce que le code fait.
+  //
+  // Les vraies propriétés — pas d'affamement, une requête en vol, cadence bornée, dernier signal
+  // toujours servi — sont exercées sur du code exécuté, dans src/__tests__/ordonnanceur.test.ts.
+  // Ici on se contente de vérifier que la page utilise bien cet ordonnanceur-là.
+  it("les relectures passent par l'ordonnanceur borné, pas par un debounce", () => {
+    expect(SRC, "un debounce sur la relecture est affamable : c'est le P0-2").not.toMatch(/clearTimeout\(_rel/);
+    expect(SRC).toContain("Player.live.createScheduler");
+    expect(SRC, "et le filet qui rattrape un signal perdu").toMatch(/_ordEtat\.maintenant\(\)/);
   });
 });
 
