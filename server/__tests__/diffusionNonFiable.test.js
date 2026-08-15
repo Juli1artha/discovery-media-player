@@ -78,19 +78,47 @@ describe("ce qui fait autorité est relu auprès du serveur", () => {
 });
 
 describe("ce qui reste un signal, et c'est un choix", () => {
-  it.each(["typing", "map"])("%s applique encore la charge utile — éphémère, sans vérité serveur", (ev) => {
-    const g = gestionnaire(ev);
-    expect(g, ev).toBeTruthy();
-    expect(g, "ce sont les seuls qui gardent ce droit").toMatch(/p\.payload|p&&p\.payload/);
+  // ⚠️ `map` A PERDU CETTE EXCEPTION EN 0.1.30, ET CE TEST L'AVAIT ENTÉRINÉE.
+  //
+  // Il affirmait que `map` « applique encore la charge utile — éphémère, sans vérité serveur ».
+  // L'argument ne tenait pas : PENDANT UN MODE CARTE, CE SIGNAL EST L'IMAGE QUE VOIT L'AUDIENCE.
+  // N'importe quel participant déplaçait donc l'écran de tout le monde. (audit P0-1)
+  //
+  // ⚠️ Et le test serait resté vert après le correctif : il lisait le gestionnaire de la couche
+  // Live, qui transmettait toujours `p.payload` — ignoré en aval. Une défense par accident. Le
+  // chemin lui-même est coupé, et c'est ça qu'on vérifie.
+  it("typing reste cosmétique — pas de vérité serveur à confronter, et une fréquence élevée", () => {
+    const g = gestionnaire("typing");
+    expect(g).toBeTruthy();
+    expect(g, "c'est le seul qui garde ce droit").toMatch(/p\.payload|p&&p\.payload/);
+  });
+
+  it("map ne transporte plus rien : ni charge émise, ni charge reçue", () => {
+    const g = gestionnaire("map");
+    expect(g, "le gestionnaire existe").toBeTruthy();
+    expect(g, "aucune charge ne doit atteindre l'aval").not.toMatch(/payload/);
+    expect(SRC, "et l'émission ne compose plus de position")
+      .toMatch(/function sendMap\(\)/);
+  });
+
+  it("l'audience relit au lieu d'appliquer", () => {
+    const i = SRC.indexOf("Live.onMap(");
+    expect(i).toBeGreaterThan(0);
+    const appel = SRC.slice(i, i + 160);
+    expect(appel, "Map3DD.apply sur une charge publique, c'était le défaut").not.toContain("Map3DD.apply");
+    expect(appel).toContain("__presRelireEtat");
   });
 
   // ⚠️ Si un événement AUTORITAIRE réapparaît un jour en appliquant sa charge utile, ce test
   // tombe. C'est la garde qui survit à ce correctif : elle ne surveille pas les quatre événements
   // d'aujourd'hui, elle surveille la RÈGLE.
-  it("aucun autre événement n'applique une charge utile", () => {
+  // ⚠️ LA LISTE EXHAUSTIVE, ET ELLE SE RÉDUIT. Ce balayage vaut mieux qu'un test par événement :
+  // il attrape le PROCHAIN gestionnaire qu'on ajoutera sans y penser. `map` en est sorti en 0.1.30 ;
+  // `typing` est le dernier, et il devra le justifier à chaque relecture de ce fichier.
+  it("un seul événement croit encore son émetteur, et c'est typing", () => {
     const tous = [...SRC.matchAll(/on\('broadcast',\{event:'([a-z-]+)'\},([^\n]*?)\);\s*$/gm)];
     const croient = tous.filter(([, , corps]) => /p\.payload/.test(corps)).map(([, ev]) => ev).sort();
-    expect(croient, "seuls typing et map ont le droit de croire l'émetteur").toEqual(["map", "typing"]);
+    expect(croient, "tout ce qui est ici pilote l'écran de l'audience sans preuve").toEqual(["typing"]);
   });
 });
 

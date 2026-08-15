@@ -13,7 +13,7 @@ perde entre une lecture et la suivante.
 | | Constat | État |
 |---|---|---|
 | P0-1 | Le relais suivait les redirections ; le secret de l'hôte suivait avec | ✅ **0.1.18** |
-| P0-2 | Canal Realtime public : tout participant peut émettre un état autoritatif | ✅ relecture **0.1.19** · titre **0.1.28** (0.1.25 était une fausse preuve) · relecture non affamable **0.1.29** · reste : `map`, ordre écriture→signal, canal privé |
+| P0-2 | Canal Realtime public : tout participant peut émettre un état autoritatif | ✅ relecture **0.1.19** · titre **0.1.28** (0.1.25 était une fausse preuve) · relecture non affamable **0.1.29** · `map` ne transporte plus rien **0.1.30** · reste : ordre écriture→signal, canal privé |
 
 ### P0-1 — redirections du relais ✅
 
