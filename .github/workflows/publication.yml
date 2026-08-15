@@ -43,9 +43,20 @@ jobs:
           # ⚠️ Registre injoignable ⇒ on ne conclut rien. Une alarme fondée sur une absence de
           # réponse crie au loup à la première coupure, et c'est comme ça qu'on cesse de l'écouter.
           if [ -z "$publiee" ]; then echo "ecart=indetermine" >> "$GITHUB_OUTPUT"; exit 0; fi
-          # Depuis quand `main` porte-t-elle cette version ? C'est la date du dernier commit qui a
-          # touché `package.json`, pas celle du dernier commit tout court.
-          pose=$(git log -1 --format=%ct -- package.json)
+          # ⚠️ DEPUIS QUAND `main` PORTE-T-ELLE CETTE VERSION-LÀ ?
+          #
+          # Première version : la date du dernier commit touchant `package.json`. Le second hôte a
+          # montré la porte que ça laisse — une montée de dépendance, un `description` corrigé, un
+          # script ajouté, et le compteur repart alors que la version non publiée, elle, n'a pas
+          # bougé. L'alarme se tairait pour une raison qui n'a rien à voir avec elle.
+          #
+          # Dependabot est actif ici : ce cas n'est pas hypothétique, il est programmé.
+          #
+          # `git log -L` sur la ligne `version` date exactement ce dont on parle, et rien de ce qui
+          # l'accompagne d'habitude. Repli sur le fichier entier si `-L` ne rend rien : mieux vaut
+          # une alarme un peu trop tardive qu'une alarme muette.
+          pose=$(git log -L '/"version":/,+1:package.json' --format=%ct -s 2>/dev/null | head -1)
+          [ -n "$pose" ] || pose=$(git log -1 --format=%ct -- package.json)
           age=$(( $(date +%s) - pose ))
           echo "main=$locale registre=$publiee age=${age}s"
           echo "locale=$locale" >> "$GITHUB_OUTPUT"
