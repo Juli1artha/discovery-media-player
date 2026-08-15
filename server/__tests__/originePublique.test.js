@@ -64,7 +64,8 @@ async function repartager({ publicUrl = "", host = "doc.exemple.fr" } = {}) {
       body: { action: "reshare", slug: PARENT.slug, email: "cible@exemple.fr", send: true } },
     res,
   );
-  return { origine: envois[0] ? envois[0].origin : null, alertes };
+  let corps = {}; try { corps = JSON.parse(res.body || "{}"); } catch { /* réponse non JSON */ }
+  return { origine: envois[0] ? envois[0].origin : null, alertes, envois, corps };
 }
 
 describe("d'où vient le lien qui part par email", () => {
@@ -81,10 +82,28 @@ describe("d'où vient le lien qui part par email", () => {
   // ⚠️ Le repli existe pour ne casser aucune instance déjà en service. Mais une instance qui
   // envoie des emails sans URL publique doit l'apprendre AVANT de le découvrir dans un rapport
   // d'hameçonnage — un défaut silencieux est un défaut qui dure.
-  it("sans URL publique : repli sur Host, mais signalé", async () => {
+  // ⚠️ CE TEST ENCODAIT LE REPLI, DONC IL PROTÉGEAIT LE TROU.
+  //
+  // Il vérifiait « sans URL publique : repli sur Host, mais signalé » — c'est-à-dire qu'il exigeait
+  // que l'email parte quand même. Une alerte n'est pas une interdiction : le journal ne bloque pas
+  // un hameçonnage, et l'exploitant l'apprend dans un rapport d'abus. (audit P1-1)
+  //
+  // Quatrième test de la journée qui épinglait un défaut en croyant décrire une propriété.
+  it("sans URL publique : RIEN NE PART, et le refus est nommé", async () => {
     const r = await repartager({ publicUrl: "", host: "doc.exemple.fr" });
-    expect(r.origine).toBe("https://doc.exemple.fr");
-    expect(r.alertes.join(" ")).toMatch(/PLAYER_PUBLIC_URL/);
+    expect(r.envois, "aucun courrier ne doit sortir").toHaveLength(0);
+    expect(r.corps.sent).toBe(false);
+    expect(r.corps.sendRefused).toBe("public-url-unconfigured");
+    expect(r.alertes.join(" "), "et l'exploitant l'apprend par ses journaux, pas par un tiers")
+      .toMatch(/PLAYER_PUBLIC_URL/);
+  });
+
+  // ⚠️ Ce qu'on refuse est l'ENVOI, pas le lien. Le lien est la fonction principale de cette
+  // route : le retenir casserait le re-partage entier pour fermer un chemin de courrier.
+  it("mais le lien est bien créé — c'est l'envoi qu'on retient, pas le partage", async () => {
+    const r = await repartager({ publicUrl: "", host: "doc.exemple.fr" });
+    expect(r.corps.ok).toBe(true);
+    expect(r.corps.slug, "l'appelant peut transmettre le lien lui-même").toBeTruthy();
   });
 
   it("l'alerte ne se déclenche pas quand tout est configuré", async () => {

@@ -127,7 +127,7 @@ marque et son jeton interne signé (0.1.22). À faire.
 
 | | Constat | Décision |
 |---|---|---|
-| P1-1 | Les emails de re-partage font confiance à l'en-tête `Host` | ✅ **0.1.21** — `PLAYER_PUBLIC_URL` |
+| P1-1 | Les emails de re-partage font confiance à l'en-tête `Host` | ✅ **0.1.21** puis **0.1.33** — l'envoi est REFUSÉ sans URL publique (une alerte ne bloque rien) |
 | P1-2 | Écritures d'analytics : le client choisit `internal`, `isMember`, `isPresenter` | ✅ **interne 0.1.22** · **présence 0.1.25/0.1.28** · **dictionnaires à prototype 0.1.32** |
 | P1-3 | PDF.js 3.11.174 concerné par CVE-2024-4367 | 🟡 **atténué en 0.1.21** — migration ESM à part |
 | P1-4 | Fichiers entièrement tamponnés, pas de délai maximal | partiellement fait |

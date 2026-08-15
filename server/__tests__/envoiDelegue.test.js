@@ -60,7 +60,7 @@ function contexte() {
     limits: { async allow() { return true; } },
     branding: { async logo() { return ""; }, name: "", poweredBy: "", loaderName: "", async forKey() { return null; }, title: (b) => b },
     errors: { async capture() {} },
-    legal: { sourceUrl: "", legalUrl: "", privacyUrl: "", trackingNotice: "", trackingNoticeAnonymous: "" },
+    legal: { publicUrl: "https://doc.exemple.fr", sourceUrl: "", legalUrl: "", privacyUrl: "", trackingNotice: "", trackingNoticeAnonymous: "" },
     config: { supabaseUrl: "https://exemple.supabase.co", supabasePublishableKey: "k", mapsKey: "", extraFrameAncestors: [], hostMail: true },
   };
 }

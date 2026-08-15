@@ -2996,15 +2996,30 @@ async function handler(req, res) {
             // légitime dont le bouton pointe vers SON domaine. L'email part de l'hôte, avec sa
             // marque et sa réputation, vers le destinataire choisi par l'attaquant.
             //
-            // `PLAYER_PUBLIC_URL` d'abord — une valeur que l'exploitant a écrite. Le repli sur
-            // `Host` reste pour ne casser aucune instance existante, mais il est SIGNALÉ : une
-            // instance qui envoie des emails sans URL publique configurée doit le savoir avant de
-            // le découvrir dans un rapport d'hameçonnage.
+            // ⚠️ UNE ALERTE N'EST PAS UNE INTERDICTION.
+            //
+            // 0.1.21 posait `PLAYER_PUBLIC_URL`, retombait sur `Host` quand elle manquait, et
+            // SIGNALAIT le repli. C'était le bon réflexe de compatibilité et la mauvaise
+            // conclusion : le journal ne bloque pas un email d'hameçonnage. Une instance mal
+            // configurée continuait d'envoyer, signée de sa marque, avec un bouton pointant où le
+            // lecteur voulait — et l'exploitant l'apprenait dans un rapport d'abus.
+            //
+            // ⚠️ CE QU'ON REFUSE, C'EST L'ENVOI — PAS LE LIEN. Le lien enfant est créé, tracé, et
+            // rendu à l'appelant : il peut le transmettre lui-même. Ce qui est retenu est la seule
+            // chose qu'on ne peut pas rattraper — un courrier parti de nos serveurs, avec notre
+            // domaine dans l'en-tête et notre réputation d'expéditeur derrière.
+            //
+            // La compatibilité invoquée en 0.1.21 ne tenait donc pas : refuser l'envoi ne casse
+            // pas la création du lien, qui est la fonction principale de cette route.
+            //
+            // Signalé par la seconde passe d'audit (P1-1).
             const publique = String(PLAYER.legal.publicUrl || "").trim();
             if (!publique) {
-              try { PLAYER.errors.capture(new Error("PLAYER_PUBLIC_URL non configurée : le lien de l'email est construit depuis l'en-tête Host, que le client choisit"), { route: "reshare" }); } catch { /* jamais bloquant */ }
+              try { PLAYER.errors.capture(new Error("PLAYER_PUBLIC_URL non configurée : envoi refusé (le lien de l'email serait construit depuis l'en-tête Host, que le client choisit)"), { route: "reshare" }); } catch { /* jamais bloquant */ }
+              refusEnvoi = "public-url-unconfigured";
+              throw new Error("URL publique non configurée");
             }
-            const origin = publique || `https://${req.headers.host}`;
+            const origin = publique;
             const r = await sendReshareEmail({ parent, childSlug: out.slug, origin, toEmail: mail, toName: body.name });
             sent = !!(r && r.sent);
           } catch { /* best-effort : le lien existe quand même */ }
