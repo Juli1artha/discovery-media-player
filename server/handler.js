@@ -1344,11 +1344,38 @@ function cleSessionHote() {
 const CLE_SESSION_PLAYER = "dmp-live-auth";
 const CLE_INVITE = "dmp-present-me";
 
-async function membreVerifie(req) {
+/**
+ * Le profil PROUVÉ de l'appelant : ce que son jeton dit de lui, jamais ce qu'il affirme.
+ *
+ * ⚠️ `isPresenter` et `isMember` étaient vérifiés depuis 0.1.25/0.1.28, mais `name`, `email` et
+ * `avatar` venaient toujours du corps de la requête — même quand un jeton valide accompagnait
+ * l'appel. Un membre authentifié pouvait donc publier un message portant le nom et l'adresse d'un
+ * collègue, AVEC le badge membre : l'attribution visuelle disait quelqu'un d'autre.
+ *
+ * ⚠️ Ça ne donnait aucun droit — modifier et supprimer s'autorisent par `author_hash`, pas par
+ * l'e-mail (cf. `editMessage`). Le dommage est l'attribution, pas la prise de contrôle. C'est déjà
+ * assez : dans une discussion, un message signé du nom d'un autre est le problème.
+ *
+ * L'hôte peut fournir `identity.profileOf` pour dire comment lire SON utilisateur. Sans ce
+ * crochet, on lit les formes courantes — et l'e-mail, lui, est universel.
+ *
+ * Signalé par la seconde passe d'audit (P1-6).
+ */
+async function profilDuJeton(req) {
   try {
     const u = await PLAYER.identity.verifyToken((req.headers && req.headers.authorization) || "");
-    return !!(u && u.email);
-  } catch { return false; }
+    if (!u || !u.email) return null;
+    if (typeof PLAYER.identity.profileOf === "function") {
+      const p = PLAYER.identity.profileOf(u) || {};
+      return { email: String(p.email || u.email), name: String(p.name || ""), avatar: String(p.avatar || "") };
+    }
+    const meta = (u && u.user_metadata) || {};
+    return {
+      email: String(u.email),
+      name: String(u.name || meta.name || meta.full_name || ""),
+      avatar: String(u.avatar || meta.avatarUrl || meta.avatar_url || ""),
+    };
+  } catch { return null; }
 }
 
 async function relayerFichier(res, r, disposition) {
@@ -2738,8 +2765,16 @@ async function handler(req, res) {
           const pres = await getPresentation(String(body.slug || ""));
           if (!pres) return jp(404, { ok: false });
           const estPresentateur = !!(body.control && require("crypto").createHash("sha256").update(String(body.control)).digest("hex") === pres.control_hash);
-          const estMembre = await membreVerifie(req);
-          const r = await recordAttendance(String(body.slug || ""), { key: body.key, name: body.name, email: body.email, avatar: body.avatar, isMember: estMembre, isPresenter: estPresentateur });
+          // ⚠️ Une identité prouvée REMPLACE celle qu'on affirme — elle ne s'y ajoute pas. Sinon la
+          // vérification ne servirait qu'à décorer une affirmation qu'on croit toujours.
+          const profil = await profilDuJeton(req);
+          const r = await recordAttendance(String(body.slug || ""), {
+            key: body.key,
+            name: (profil && profil.name) || body.name,
+            email: profil ? profil.email : body.email,
+            avatar: (profil && profil.avatar) || body.avatar,
+            isMember: !!profil, isPresenter: estPresentateur,
+          });
           return jp(r.ok ? 200 : (r.status || 400), r);
         } catch { return jp(500, { ok: false }); }
       }
@@ -2782,7 +2817,12 @@ async function handler(req, res) {
           // `isMember` restait l'affirmation du client, alors que `isPresenter` était vérifié juste
           // au-dessus. Deux poids sur la même ligne : le badge « présentateur » se méritait, celui
           // de collègue se réclamait.
-          const r = await addMessage(String(body.slug || ""), { name: body.name, email: body.email, avatar: body.avatar, isPresenter: validControl, isMember: await membreVerifie(req), body: body.body, replyTo: body.replyTo, replyName: body.replyName, replyText: body.replyText, authorToken: body.authorToken, attachment: body.attachment });
+          const profil = await profilDuJeton(req);
+          const r = await addMessage(String(body.slug || ""), {
+            name: (profil && profil.name) || body.name,
+            email: profil ? profil.email : body.email,
+            avatar: (profil && profil.avatar) || body.avatar,
+            isPresenter: validControl, isMember: !!profil, body: body.body, replyTo: body.replyTo, replyName: body.replyName, replyText: body.replyText, authorToken: body.authorToken, attachment: body.attachment });
           return jp(r.ok ? 200 : (r.status || 400), r);
         } catch { return jp(500, { ok: false }); }
       }

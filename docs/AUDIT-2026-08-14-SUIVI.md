@@ -149,6 +149,16 @@ flux avec backpressure et une taille maximale configurable.
 pas dans un dépôt. Ce qui nous revient : le job de purge, les suppressions en cascade, la voie
 d'export/effacement.
 
+### Reste du P1-6 : l'identifiant d'auteur opaque (15/08/2026)
+
+L'identité d'un membre vient du jeton depuis **0.1.34**. Ce qui reste du constat : `author_email`
+part à toute l'audience alors que l'interface ne l'affiche jamais.
+
+⚠️ Il n'est pas décoratif — `isMine()` s'en sert pour décider si les commandes « modifier » et
+« supprimer » apparaissent. Le remplacer par un identifiant opaque demande une colonne, une
+migration pour les messages existants, et un repli pour les hôtes qui ne l'ont pas encore. À faire
+avec le lot des migrations (P1-5), pas avant.
+
 ## P2 — à traiter, sans urgence
 
 | | Constat | Décision |
