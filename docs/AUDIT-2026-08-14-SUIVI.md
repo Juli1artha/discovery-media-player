@@ -67,6 +67,62 @@ donc la règle est exprimable — audience en lecture plus sa propre présence, 
 écriture. Ça reste souhaitable ; ce n'est plus un P0, et ça demande une authentification que le
 projet n'a pas aujourd'hui (clés Supabase asymétriques : on ne peut pas signer soi-même un jeton).
 
+### Le canal privé : la voie est trouvée (15/08/2026, proposée par Julien, précisée avec ADV)
+
+Le blocage annoncé plus haut — « clés asymétriques, on ne peut pas signer soi-même » — était une
+conclusion juste sur une question mal posée. Il ne faut pas signer, il faut **faire signer** :
+`signInAnonymously()` émet un vrai jeton signé par le projet, avec un `sub` distinct par visiteur,
+que Realtime vérifie nativement. Les politiques sur `realtime.messages` deviennent exprimables en
+joignant le `sub` à une table de participants portant le slug — audience en lecture plus sa propre
+présence, présentateur en écriture.
+
+**Sur le projet du PLAYER, pas sur celui de l'hôte.** Y créer un utilisateur par spectateur ferait
+grossir la table d'authentification de l'application avec des identités qui ne lui appartiennent
+pas. C'est la frontière qui a fait séparer `PLAYER_AUTH_URL` de `SUPABASE_URL` en 0.1.8, appliquée
+dans l'autre sens.
+
+⚠️ **Prérequis chez nous** : le player du studio tourne sur `env.SUPABASE_URL`, donc sur le projet
+du studio — nos tables de présentation et nos vrais utilisateurs partagent le même `auth.users`.
+ADV a un projet dédié dont l'`auth.users` est vide et le restera : leur purge peut être
+inconditionnelle, la nôtre devra impérativement porter `is_anonymous`, qui sera la seule chose
+protégeant nos comptes. **Séparer le projet d'abord.**
+
+Quatre points mesurés par ADV, à ne pas redécouvrir :
+
+1. **Supabase ne purge rien tout seul** — « Automatic cleanup of anonymous users is currently not
+   available ». La purge écrite est obligatoire, pas préférable.
+2. **30 connexions anonymes par heure et par IP** par défaut. Une audience derrière le NAT d'une
+   entreprise, c'est UNE adresse : le 31ᵉ spectateur échoue, pour lui seul, sans raison visible.
+   À relever au tableau de bord **avant** la première grande présentation, pas après.
+3. ⚠️ **`created_at` est le mauvais critère**, et c'est notre propre conseil qui le rend faux :
+   persister la session pour qu'un visiteur qui recharge réutilise son identité donne à un visiteur
+   fidèle une date de création ancienne et une session vivante. Purger dessus couperait un
+   spectateur **pendant** une présentation — il perdrait présence et badge sans qu'aucune erreur ne
+   le dise. Le critère est la dernière activité (`last_sign_in_at`, ou le `last_seen` de la table
+   des participants).
+4. **La purge appartient au player, exposée comme une action** ; l'exploitant branche son
+   ordonnanceur. Une purge écrite chez l'hôte deviendrait fausse à chaque colonne ajoutée — le
+   défaut exact du re-partage par liste (0.1.14). Ne pas imposer `pg_cron` : c'est une décision
+   d'exploitation, pas une dépendance.
+
+Ce que ça fermerait : l'audience ne pourrait plus **physiquement** émettre `map` ni aucun événement
+autoritaire ajouté demain sans y penser. Ce que ça ne ferme pas, et il ne faut pas s'y attendre :
+le participant qui détient le slug reste légitime — c'est ce que 0.1.25/0.1.26 corrigent autrement.
+**Les deux sont complémentaires : l'un exclut le dehors, l'autre discipline le dedans.**
+
+### L'identité du membre ne peut pas venir du `localStorage` (15/08/2026)
+
+Corrigé à moitié en **0.1.27** : la clé est devenue un réglage (`PLAYER_HOST_AUTH_STORAGE_KEY`,
+défaut vide) au lieu d'être `3dd-supabase-auth` en dur pour tous les hôtes.
+
+⚠️ **Mais le mécanisme lui-même est faux.** Lire le `localStorage` d'une autre application ne peut
+pas marcher quand les origines diffèrent : ADV sert le player sur `doc.adnfamily.com` et son
+application sur `app.adnfamily.com` — deux `localStorage`, aucune valeur de configuration n'y
+changera rien. Leurs membres ne sont donc reconnus par aucun réglage.
+
+Le bon mécanisme : l'hôte **injecte** son membre au rendu de la page, comme il injecte déjà sa
+marque et son jeton interne signé (0.1.22). À faire.
+
 ## P1 — important
 
 | | Constat | Décision |
