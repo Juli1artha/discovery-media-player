@@ -1,0 +1,95 @@
+# LE CONTRÔLE QUI N'A BESOIN DE PERSONNE.
+#
+# ⚠️ La garde ajoutée dans `ci.yml` écrit un avertissement dans le résumé de la course. Le second
+# hôte a fait la remarque qui la disqualifie comme garde principale : un avertissement dans un
+# résumé ne se voit QUE SI QUELQU'UN OUVRE LA COURSE. Or les trois fois où la publication a échoué
+# — 0.1.15 publiée sans son correctif, 0.1.25 publiée cassée, 0.1.35 jamais publiée — c'est un HÔTE
+# qui a trouvé, en comparant le registre à l'annonce. Personne n'avait ouvert la course.
+#
+# Celui-ci ne demande à personne de regarder : il compare périodiquement ce que le registre sert à
+# ce que `main` déclare, et OUVRE UNE ISSUE quand les deux divergent depuis plus d'une heure. Une
+# issue notifie ; un résumé attend.
+#
+# ⚠️ Le délai d'une heure n'est pas de la prudence, c'est la condition pour que l'alarme veuille
+# dire quelque chose : entre une fusion et la fin d'une publication il s'écoule légitimement
+# quelques minutes. Une alarme qui se déclenche à chaque fusion serait ignorée en une semaine —
+# exactement le mécanisme du badge qu'on regarde sans le lire.
+#
+# Et il se TAIT tout seul : l'issue se referme quand le registre rattrape. Une alarme qu'il faut
+# éteindre à la main finit par rester allumée.
+name: publication
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  ecart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0 }
+
+      - id: mesure
+        name: What main declares vs what the registry serves
+        run: |
+          locale=$(node -p "require('./package.json').version")
+          publiee=$(npm view discovery-media-player version 2>/dev/null || echo "")
+          # ⚠️ Registre injoignable ⇒ on ne conclut rien. Une alarme fondée sur une absence de
+          # réponse crie au loup à la première coupure, et c'est comme ça qu'on cesse de l'écouter.
+          if [ -z "$publiee" ]; then echo "ecart=indetermine" >> "$GITHUB_OUTPUT"; exit 0; fi
+          # Depuis quand `main` porte-t-elle cette version ? C'est la date du dernier commit qui a
+          # touché `package.json`, pas celle du dernier commit tout court.
+          pose=$(git log -1 --format=%ct -- package.json)
+          age=$(( $(date +%s) - pose ))
+          echo "main=$locale registre=$publiee age=${age}s"
+          echo "locale=$locale" >> "$GITHUB_OUTPUT"
+          echo "publiee=$publiee" >> "$GITHUB_OUTPUT"
+          if [ "$locale" = "$publiee" ]; then echo "ecart=non" >> "$GITHUB_OUTPUT"
+          elif [ "$age" -lt 3600 ]; then echo "ecart=recent" >> "$GITHUB_OUTPUT"
+          else echo "ecart=oui" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Speak up, or shut up
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ECART: ${{ steps.mesure.outputs.ecart }}
+          LOCALE: ${{ steps.mesure.outputs.locale }}
+          PUBLIEE: ${{ steps.mesure.outputs.publiee }}
+        run: |
+          TITRE="Version non publiée : main déclare une version que le registre ne sert pas"
+          existante=$(gh issue list --state open --search "$TITRE in:title" --json number --jq '.[0].number // empty')
+
+          if [ "$ECART" != "oui" ]; then
+            # ⚠️ Se taire fait partie du travail : une alarme qu'il faut éteindre à la main reste allumée.
+            if [ -n "$existante" ] && [ "$ECART" = "non" ]; then
+              gh issue close "$existante" --comment "Le registre sert $PUBLIEE. Rien à faire."
+            fi
+            exit 0
+          fi
+
+          corps=$(printf '%s\n' \
+            "\`main\` déclare **$LOCALE**, le registre sert **$PUBLIEE**, et c'est le cas depuis plus d'une heure." \
+            "" \
+            "Le code est fusionné, le CHANGELOG l'annonce, et l'artefact n'existe pas. Rien n'a échoué :" \
+            "c'est ce qui rend ce cas difficile à voir." \
+            "" \
+            "Il manque probablement le tag :" \
+            "" \
+            '```bash' \
+            "git checkout main && git pull && git tag -a v$LOCALE -m \"$LOCALE\" && git push origin v$LOCALE" \
+            '```' \
+            "" \
+            "Puis vérifier dans le TARBALL publié, pas dans l'intention." \
+            "" \
+            "_Cette issue se referme seule quand le registre rattrape._")
+
+          if [ -n "$existante" ]; then
+            gh issue comment "$existante" --body "$corps"
+          else
+            gh issue create --title "$TITRE" --body "$corps"
+          fi

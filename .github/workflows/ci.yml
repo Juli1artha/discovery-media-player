@@ -152,6 +152,12 @@ jobs:
   # légitimement quelques minutes, et un échec rouge à chaque fusion apprendrait à ignorer la
   # couleur — le défaut même qu'on corrige. Il écrit un avertissement dans le résumé de la course :
   # visible pour qui vient de fusionner, silencieux quand tout est en ordre.
+  #
+  # ⚠️ ET IL NE SUFFIT PAS. Le second hôte a fait la remarque qui le disqualifie comme garde
+  # principale : un avertissement dans un résumé ne se voit QUE SI QUELQU'UN OUVRE LA COURSE. Les
+  # trois fois, personne ne l'avait ouverte — c'est un hôte qui a trouvé, en comparant le registre à
+  # l'annonce. La garde qui n'a besoin de personne est dans `publication.yml` : elle tourne toute
+  # seule et ouvre une issue. Celle-ci reste pour l'immédiateté ; l'autre pour la certitude.
   publication:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
