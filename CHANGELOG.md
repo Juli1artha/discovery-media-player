@@ -10,6 +10,34 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.34] — 2026-08-15
+
+### Security
+- **A proven identity now replaces the claimed one instead of sitting beside it.** `isPresenter` and
+  `isMember` have been verified since 0.1.25/0.1.28, but `name`, `email` and `avatar` still came
+  from the request body — **even when a valid token accompanied the call**. An authenticated member
+  could therefore post under a colleague's name and address, *with the member badge*: the visible
+  attribution said someone else.
+
+  ⚠️ It granted no rights — editing and deleting are authorised by `author_hash`, not by the email
+  (`editMessage`), so a spoofed address never took control of anyone's message. The damage is
+  attribution, not takeover. That is enough: in a conversation, a message signed with someone
+  else's name **is** the problem.
+
+  A host can supply `identity.profileOf(user)` to say how to read *its* user; without it the core
+  reads the usual shapes, and the email — which is universal — is always taken from the token.
+
+  A visitor with no token keeps the name they typed. That is the intended mode: they are announcing
+  themselves, not proving anything, and the badges stay off.
+
+  *Reported by the second audit pass (P1-6).*
+
+### Note
+- The opaque author id the report also suggests — so that author emails stop being broadcast to the
+  whole audience when the interface never displays them — needs a column and a migration path for
+  existing messages. Tracked, not done here: `author_email` currently carries `isMine()`, which
+  decides whether the edit and delete controls appear.
+
 ## [0.1.33] — 2026-08-15
 
 ### Security
@@ -944,7 +972,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.33...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.34...HEAD
+[0.1.34]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.33...v0.1.34
 [0.1.33]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.32...v0.1.33
 [0.1.32]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.31...v0.1.32
 [0.1.31]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.30...v0.1.31

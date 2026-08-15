@@ -46,7 +46,12 @@ require.cache[require.resolve("../shares.js")] = {
 
 const player = require("../handler.js");
 
-const MEMBRES = { "jeton-de-session-valide": { email: "collegue@3d-discovery.fr" } };
+const MEMBRES = {
+  "jeton-de-session-valide": {
+    email: "collegue@3d-discovery.fr",
+    user_metadata: { name: "Camille Réelle", avatarUrl: "https://exemple.fr/camille.png" },
+  },
+};
 
 function contexte() {
   return {
@@ -117,6 +122,33 @@ describe("qui décide qu'un participant est un membre", () => {
     await assister({ isMember: true }, "jeton-forge");
     expect(recu.isMember, "pas de repli sur l'affirmation, sinon la vérification ne sert qu'aux honnêtes")
       .toBe(false);
+  });
+
+  // ⚠️ ET L'IDENTITÉ AVEC. `isPresenter` et `isMember` étaient vérifiés depuis 0.1.25/0.1.28, mais
+  // `name`, `email` et `avatar` venaient toujours du CORPS — même quand un jeton valide accompagnait
+  // l'appel. Un membre authentifié pouvait donc publier sous le nom et l'adresse d'un collègue, AVEC
+  // le badge membre. Ça ne donnait aucun droit (modifier/supprimer s'autorisent par `author_hash`),
+  // mais dans une discussion, un message signé du nom d'un autre EST le problème. (audit P1-6)
+  it("une identité prouvée remplace celle qu'on affirme, elle ne s'y ajoute pas", async () => {
+    await poster({
+      action: "present-chat", slug: "s1", body: "coucou",
+      name: "Quelqu'un d'autre", email: "victime@3d-discovery.fr", avatar: "https://exemple.fr/faux.png",
+    }, "jeton-de-session-valide");
+    expect(messageRecu.email, "l'adresse vient du jeton").toBe("collegue@3d-discovery.fr");
+    expect(messageRecu.name, "le nom aussi").toBe("Camille Réelle");
+    expect(messageRecu.avatar).toBe("https://exemple.fr/camille.png");
+  });
+
+  it("sans jeton, l'invité garde le nom qu'il s'est donné — c'est le mode prévu", async () => {
+    await poster({ action: "present-chat", slug: "s1", body: "salut", name: "Invitée", email: "" });
+    expect(messageRecu.name).toBe("Invitée");
+    expect(messageRecu.isMember).toBe(false);
+  });
+
+  it("la ligne d'assistance suit la même règle", async () => {
+    await assister({ name: "Quelqu'un d'autre", email: "victime@3d-discovery.fr" }, "jeton-de-session-valide");
+    expect(recu.email).toBe("collegue@3d-discovery.fr");
+    expect(recu.name).toBe("Camille Réelle");
   });
 
   // La même règle sur le chat : `isPresenter` y était vérifié, `isMember` non.

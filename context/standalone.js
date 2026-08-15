@@ -318,6 +318,19 @@ function createStandaloneContext(env = process.env) {
        *
        * Non configuré ⇒ l'en-tête est ignoré. Un hôte sans proxy est protégé sans rien faire.
        */
+      /**
+       * Comment LIRE votre utilisateur — nom, e-mail, avatar — à partir de ce que `verifyToken`
+       * a rendu. Le cœur s'en sert pour signer les messages et les lignes d'assistance : ce qui est
+       * prouvé remplace ce que l'appelant affirme.
+       *
+       * Défaut : les formes usuelles d'un utilisateur Supabase. Redéfinissez-le si le vôtre range
+       * son nom ailleurs — sans quoi le message d'un membre porterait le nom qu'il a tapé.
+       */
+      profileOf(u) {
+        const meta = (u && u.user_metadata) || {};
+        return { email: (u && u.email) || "", name: meta.name || meta.full_name || "", avatar: meta.avatarUrl || meta.avatar_url || "" };
+      },
+
       clientIp(req) {
         const sauts = Math.max(0, Math.min(10, Number(env.PLAYER_TRUSTED_PROXY_HOPS || 0) || 0));
         const socket = String((req && req.socket && req.socket.remoteAddress) || "");
