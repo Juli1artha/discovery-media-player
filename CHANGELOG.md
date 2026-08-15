@@ -10,6 +10,30 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.33] — 2026-08-15
+
+### Security
+- ⚠️ **An alert is not a prohibition.** 0.1.21 introduced `PLAYER_PUBLIC_URL`, fell back to the
+  `Host` header when it was missing, and *logged* the fallback. That was the right compatibility
+  reflex and the wrong conclusion: a log entry does not stop a phishing email. A misconfigured
+  instance kept sending — signed with its brand, with a button pointing wherever the reader chose —
+  and the operator found out from an abuse report.
+
+  The send is now **refused**: `sent: false`, `sendRefused: "public-url-unconfigured"`.
+
+  ⚠️ **What is refused is the send, not the link.** The child link is still created, tracked and
+  returned, so the caller can forward it themselves. What is withheld is the only part that cannot
+  be taken back — mail leaving our servers with our domain in the header and our sender reputation
+  behind it. The compatibility argument from 0.1.21 therefore did not hold: refusing the send does
+  not break link creation, which is this route's main function.
+
+  *Reported by the second audit pass (P1-1).*
+
+### Fixed
+- **The test had encoded the fallback**, and so protected the hole: it required "no public URL:
+  falls back to Host, but logged" — that is, it required the email to go out anyway. It is the
+  fourth test today found pinning a defect while believing it described a property.
+
 ## [0.1.32] — 2026-08-15
 
 ### Security
@@ -920,7 +944,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.32...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.33...HEAD
+[0.1.33]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.32...v0.1.33
 [0.1.32]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.31...v0.1.32
 [0.1.31]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.30...v0.1.31
 [0.1.30]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.29...v0.1.30
