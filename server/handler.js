@@ -246,7 +246,9 @@ var Live=(function(){
   function onMap(fn){_onMap=fn;}
   // État de la présentation diffusé par le présentateur — même canal que la carte. Sert à se
   // passer de la lecture anonyme des tables : l'audience n'a plus besoin de lire la ligne.
-  function sendState(p){try{if(ch)ch.send({type:'broadcast',event:'state',payload:p});}catch(e){}}
+  // Un SIGNAL, pas un état. L'audience relit depuis 0.1.19 et ignore déjà cette charge ; la laisser
+  // partir donnait l'illusion qu'elle sert, et invitait le prochain à s'en resservir.
+  function sendState(){try{if(ch)ch.send({type:'broadcast',event:'state',payload:{}});}catch(e){}}
   // CHAT EN DIFFUSION. Les messages arrivaient jusqu'ici par la lecture de TABLE en temps réel,
   // qui exige que cette table soit lisible publiquement — donc, avec la clé publiable, les
   // conversations de TOUTES les présentations, pas seulement la sienne. C'était le dernier
@@ -1975,9 +1977,36 @@ ${LEGAL_CSS}
     function showBar(slug){ var lk=document.getElementById('pbarLink'); if(lk) lk.value=location.origin+'/present/'+slug; var pb=document.getElementById('pbar'); if(pb) pb.style.display='flex'; }
     // Le présentateur DIFFUSE l'état qu'il vient de persister. La base reste la vérité (les
     // arrivants tardifs la relisent) ; la diffusion évite à l'audience de lire la table.
-    function diffuserEtat(extra){ if(!PRES||!window.Live)return; try{ Live.sendState(Object.assign({active:true,current_page:cur||1,file_url:CFG.present&&CFG.present.url||null,updated_at:new Date().toISOString()},extra||{})); }catch(e){} }
-    function pushPage(){ if(!PRES)return; clearTimeout(_pushT); _pushT=setTimeout(function(){ if(!PRES)return; diffuserEtat({current_page:cur||1}); fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-page',slug:PRES.slug,control:PRES.control,page:cur||1})}).catch(function(){}); },250); }
-    function endPresent(){ if(!PRES)return; diffuserEtat({active:false}); var p=PRES; PRES=null; clearInterval(_hbIv); clearCtl(p.slug); var pb=document.getElementById('pbar'); if(pb)pb.style.display='none'; try{ if(window.Live) Live.disconnect(); }catch(e){} try{ var b=JSON.stringify({action:'present-end',slug:p.slug,control:p.control}); if(navigator.sendBeacon){navigator.sendBeacon('/api/doc',new Blob([b],{type:'application/json'}));} else {fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:b,keepalive:true});} }catch(e){} }
+    // ⚠️ ÉCRIRE, PUIS SIGNALER — ET PAS L'INVERSE.
+    //
+    // Le signal partait AVANT l'écriture. L'audience relisait donc l'état pendant que la base
+    // portait encore l'ancien, et aucun second signal n'était garanti : la page tournée se perdait
+    // jusqu'au filet de resynchronisation. Le commentaire d'origine affirmait pourtant l'ordre
+    // inverse — il décrivait l'intention, pas le code.
+    //
+    // Depuis 0.1.19 le signal ne sert qu'à dire « relis » : le retarder d'un aller-retour ne coûte
+    // rien, alors que l'émettre trop tôt fait relire pour rien ET perdre le changement.
+    // (audit P0-3)
+    function diffuserEtat(){ if(!PRES||!window.Live)return; try{ Live.sendState(); }catch(e){} }
+    function pushPage(){ if(!PRES)return; clearTimeout(_pushT); _pushT=setTimeout(function(){ if(!PRES)return;
+      fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-page',slug:PRES.slug,control:PRES.control,page:cur||1})})
+        .then(function(r){ if(r&&r.ok)diffuserEtat(); })
+        .catch(function(){});
+    },250); }
+    // ⚠️ TROIS GESTES, ET L'ORDRE ÉTAIT LE PIRE DES SIX. On signalait la fin, puis on COUPAIT LE
+    // CANAL, puis on envoyait l'avis de fin. Le signal partait donc avant l'écriture (relecture sur
+    // un état périmé), et la coupure avant l'envoi. L'audience pouvait ne jamais apprendre que la
+    // présentation était terminée — jusqu'au filet, 25 s plus tard, ou jamais si elle s'était
+    // rechargée entre-temps.
+    //
+    // sendBeacon ne s'attend pas, mais il rend la main une fois la requête MISE EN FILE : signaler
+    // juste après, puis couper, respecte l'ordre autant que ce transport le permet.
+    function endPresent(){ if(!PRES)return; var p=PRES; PRES=null; clearInterval(_hbIv); clearCtl(p.slug);
+      var pb=document.getElementById('pbar'); if(pb)pb.style.display='none';
+      try{ var b=JSON.stringify({action:'present-end',slug:p.slug,control:p.control});
+        if(navigator.sendBeacon){navigator.sendBeacon('/api/doc',new Blob([b],{type:'application/json'}));}
+        else {fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:b,keepalive:true});} }catch(e){}
+      try{ if(window.Live){ Live.sendState(); Live.disconnect(); } }catch(e){} }
     // Transfert : je passe la main → je cesse de piloter SANS clôturer la présentation (le nouvel owner reprendra).
     function stopPilotingLocally(){ if(!PRES)return; var s=PRES.slug; PRES=null; clearInterval(_hbIv); clearCtl(s); var pb=document.getElementById('pbar'); if(pb)pb.style.display='none'; try{ if(window.Live) Live.disconnect(); }catch(e){} }
     function liveConnect(slug,control){ try{ if(window.Live){ var P=CFG.present||{}; Live.connect(slug,{name:P.by||'Présentateur',email:P.email||'',avatar:P.av||'',role:'presenter',member:true},control); } }catch(e){} }
@@ -2008,7 +2037,10 @@ ${LEGAL_CSS}
         }).catch(function(){});
     }
     // Carte live : persiste le contenu (present-content, JWT) → l'audience bascule/suit via Realtime.
-    function presentContent(content){ if(!PRES)return; diffuserEtat({content:content||null}); var h={'Content-Type':'application/json'}; var tk=appToken(); if(tk) h['Authorization']='Bearer '+tk; fetch('/api/doc',{method:'POST',headers:h,body:JSON.stringify({action:'present-content',slug:PRES.slug,content:content})}).catch(function(){}); }
+    function presentContent(content){ if(!PRES)return; var h={'Content-Type':'application/json'}; var tk=appToken(); if(tk) h['Authorization']='Bearer '+tk;
+      fetch('/api/doc',{method:'POST',headers:h,body:JSON.stringify({action:'present-content',slug:PRES.slug,content:content})})
+        .then(function(r){ if(r&&r.ok)diffuserEtat(); })
+        .catch(function(){}); }
     function showMap(){ if(!PRES||!window.Map3DD)return; var wrap=document.getElementById('mapWrap'); if(wrap&&wrap.classList.contains('on')){ Map3DD.enter(null,true,presentContent); return; } var init=Player.presentation.initialMapContent(); presentContent(init); Map3DD.enter(init,true,presentContent); }
     function hideMap(){ if(!window.Map3DD)return; Map3DD.exit(); presentContent(null); }
     // Mode INTÉGRÉ : la page hôte délègue sa barre de titre à celle-ci. On lui dit

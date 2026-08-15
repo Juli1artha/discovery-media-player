@@ -10,6 +10,37 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.31] — 2026-08-15
+
+### Fixed
+- ⚠️ **The signal went out before the write, and the comment claimed the opposite.** `pushPage`,
+  `presentContent` and `endPresent` broadcast first, then started the write. Since 0.1.19 that
+  signal says only one thing — "re-read" — so the audience re-read while the database still held
+  the old state, and **no second signal was guaranteed**: the page turn was lost until the 25 s
+  resynchronisation.
+
+  `endPresent` was the worst of the three: it signalled, then **cut the channel**, then sent the
+  end notice. The signal left on a stale state and the disconnect preceded the send — an audience
+  could simply never learn the presentation had ended. `sendBeacon` cannot be awaited, but it
+  returns once the request is *queued*; signalling right after it, then disconnecting, respects the
+  order as far as that transport allows.
+
+  Delaying the signal by one round-trip costs nothing, since it only ever meant "re-read". Sending
+  it too early cost both a pointless re-read **and** the change itself.
+
+  *Reported by the second audit pass (P0-3).*
+
+### Changed
+- **The state signal no longer carries a state.** The audience ignored it already (it re-reads), but
+  a payload that travels without serving gives the impression that it serves, and invites the next
+  person to use it. Same reasoning as `map` in 0.1.30: cut the path, not just the use.
+
+### Note
+- The tests here compare **positions** — where the write sits relative to the signal in each
+  function — rather than searching for a string. Three tests today had pinned a defect while
+  believing they described a property; this one fails when the original order is restored, which is
+  the only thing that makes it worth writing.
+
 ## [0.1.30] — 2026-08-15
 
 ### Security
@@ -853,7 +884,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.30...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.31...HEAD
+[0.1.31]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.30...v0.1.31
 [0.1.30]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.29...v0.1.30
 [0.1.29]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.28...v0.1.29
 [0.1.28]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.27...v0.1.28
