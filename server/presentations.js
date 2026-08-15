@@ -281,29 +281,6 @@ async function toggleReaction(slug, msgId, emoji, reactor) {
   return { ok: true, message: premierPublic(maj) };
 }
 
-/**
- * La clé du participant qui porte le titre de présentateur, telle que le SERVEUR la connaît.
- *
- * ⚠️ Elle existe parce que la liste des participants affichait le titre d'après la charge de
- * PRÉSENCE, que chacun compose lui-même : `track({role:'presenter'})` suffisait à apparaître comme
- * présentateur devant toute l'audience, avec le nom et l'avatar de son choix. Le canal ne peut pas
- * arbitrer ça — un participant légitime a le droit d'y écrire sa présence.
- *
- * Le titre est désormais accordé ici, à partir de `is_presenter`, lui-même dérivé du `control_token`.
- * Null quand personne ne l'a prouvé : mieux vaut aucun titre qu'un titre usurpé.
- */
-async function presenterKey(slug) {
-  if (!slug) return null;
-  // ⚠️ NE JAMAIS FAIRE ÉCHOUER LA RELECTURE D'ÉTAT. Cette recherche est un ajout à une route dont
-  // l'audience dépend pour savoir quelle page est affichée. Une requête de plus, c'est une raison
-  // de plus de renvoyer 500 — et perdre TOUT l'état parce qu'on n'a pas su dire qui porte un badge
-  // serait un très mauvais échange. Sans réponse : pas de clé, donc pas de titre, et le reste passe.
-  try {
-    const rows = await PLAYER.db.request(`doc_presentation_attendees?slug=eq.${enc(slug)}&is_presenter=is.true&select=attendee_key&order=last_seen.desc&limit=1`);
-    return (Array.isArray(rows) && rows[0] && rows[0].attendee_key) || null;
-  } catch { return null; }
-}
-
 // ── Statistiques de présentation (assistance) ────────────────────────────────────────────────────────────
 // Heartbeat d'un participant : upsert de sa ligne d'assistance. On accumule le temps de présence (intervalles
 // < 60 s → un aller-retour ne gonfle pas total_ms) et l'ensemble des pages vues (page courante de la présentation).
@@ -410,4 +387,4 @@ async function listPresentationsForDoc(docId) {
 }
 
 module.exports = {
-  messagePublic, CHAMPS_PUBLICS, init, createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presenterKey, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent };
+  messagePublic, CHAMPS_PUBLICS, init, createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent };

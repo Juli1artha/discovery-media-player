@@ -6,7 +6,7 @@
 const crypto = require("crypto");
 const { getShareBySlug, logView, upsertSession, createReshare, sendReshareEmail, upsertInternalSession,
   createShare, revokeShare, setShareAuth, overview: docOverview, listSharesForDoc, listSessionsForDoc, internalStatsForDoc } = require("./shares");
-const { createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presenterKey, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent } = require("./presentations");
+const { createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent } = require("./presentations");
 // CONTEXTE INJECTÉ : tout ce que le player emprunte à l'application hôte passe par ici — stockage,
 // base, identité, limites, marque, journalisation — et rien d'autre. C'est la frontière qui permettra
 // de brancher un second projet, puis d'ouvrir le cœur. Cf. api/_player-context.js.
@@ -119,6 +119,7 @@ const LIVE_CSS = `
   .pres-item{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:8px}
   .pres-item .a,.cm .a{width:28px;height:28px;border-radius:50%;flex:none;background:#e6e2db;color:#555;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;overflow:hidden}
   .pres-item .a img,.cm .a img{width:100%;height:100%;object-fit:cover}
+  .pres-by{font-size:12px;opacity:.72;margin:0 0 8px;padding:0 2px}
   .pres-item .n{font-size:13px;font-weight:600}
   .pres-item .e{font-size:11px;color:#888}
   .tag{font-size:9.5px;font-weight:800;color:#e5384d;text-transform:uppercase;letter-spacing:.02em}
@@ -233,7 +234,7 @@ const LIVE_PANEL = `<div class="chat hidden" id=chatPanel><div class=chat-grip i
 // JS partagé : présence + chat via Supabase Realtime. Live.connect(slug, me) / Live.disconnect().
 const LIVE_JS = `
 var Live=(function(){
-  var sb=null,ch=null,ME=null,SLUG=null,CONTROL=null,LOCKED=false,AUTHTOK=null,PRESENT=[],PRESKEY='',seen={},msgEls={},msgData={},replyCtx=null,typers={},pdfCache={},_tyT=0,_tyIv=0,_atIv=0,unread=0,autoOpened=false,_histDone=false,_phWired=false,_onMap=null,_onState=null,_peekT=0,MUTED=false;
+  var sb=null,ch=null,ME=null,SLUG=null,CONTROL=null,LOCKED=false,AUTHTOK=null,PRESENT=[],PRESNAME='',seen={},msgEls={},msgData={},replyCtx=null,typers={},pdfCache={},_tyT=0,_tyIv=0,_atIv=0,unread=0,autoOpened=false,_histDone=false,_phWired=false,_onMap=null,_onState=null,_peekT=0,MUTED=false;
   try{ MUTED=localStorage.getItem('3dd-present-mute')==='1'; }catch(e){}
   // Couper/rétablir les notifications du chat (cloche) : coupé = plus de ticker ni de pulse (badge silencieux gardé).
   function applyMute(){ var b=document.getElementById('chatMute'); if(b){b.classList.toggle('muted',MUTED);b.title=MUTED?'Réactiver les notifications du chat':'Couper les notifications du chat';} setBadge(); }
@@ -298,7 +299,7 @@ var Live=(function(){
   function isMentioned(m){return Player.live.isMentioned(m,ME);}
   function renderPres(st){var l=flat(st),c=l.length;PRESENT=l;var e=document.getElementById('presCount');if(e)e.textContent=c;
     var a=document.getElementById('presAvs');if(a)a.innerHTML=l.slice(0,4).map(function(m){return '<span class=pres-av>'+av(m.avatar,m.name)+'</span>';}).join('');
-    var p=document.getElementById('presList');if(p)p.innerHTML='<h5>'+c+' en ligne</h5>'+l.map(function(m){return '<div class=pres-item><span class=a>'+av(m.avatar,m.name)+'</span><span class=b><div class=n>'+esc(m.name||'Invité')+(m.uid&&m.uid===PRESKEY?' <span class=tag>présentateur</span>':'')+'</div>'+(m.email?'<div class=e>'+esc(m.email)+'</div>':'')+'</span></div>';}).join('');}
+    var p=document.getElementById('presList');if(p)p.innerHTML='<h5>'+c+' en ligne</h5>'+(PRESNAME?'<div class=pres-by>Présenté par '+esc(PRESNAME)+'</div>':'')+l.map(function(m){return '<div class=pres-item><span class=a>'+av(m.avatar,m.name)+'</span><span class=b><div class=n>'+esc(m.name||'Invité')+'</div>'+(m.email?'<div class=e>'+esc(m.email)+'</div>':'')+'</span></div>';}).join('');}
   // Rendu d'un message → player/src/chat.ts (échappement testé sous jsdom : on y vérifie ce que
   // le NAVIGATEUR fabrique, pas seulement la chaîne produite).
   function renderRe(m){return Player.chat.renderReactions(m,ME);}
@@ -484,8 +485,8 @@ var Live=(function(){
       // Le serveur renvoie la CLÉ de celui qui a prouvé le control_token ; l'audience compare. Pas
       // de clé, pas de titre : mieux vaut aucun titre qu'un titre usurpé.
       function etatDuServeur(st){
-        if(typeof st.presenter_key!=='undefined'){var k=st.presenter_key||'';
-          if(k!==PRESKEY){PRESKEY=k;try{if(ch)renderPres(ch.presenceState());}catch(e){}}}
+        if(typeof st.presenter_name!=='undefined'){var n2=st.presenter_name||'';
+          if(n2!==PRESNAME){PRESNAME=n2;try{if(ch)renderPres(ch.presenceState());}catch(e){}}}
         if(_onState)_onState(st);
       }
       relire('&state=1',function(d){if(d.state)etatDuServeur(d.state);});
@@ -3073,10 +3074,26 @@ async function handler(req, res) {
           file_name: pres.file_name || null,
           doc_title: pres.doc_title || null,
           updated_at: pres.updated_at || null,
-          // Qui porte le titre, d'après le serveur. La liste des participants le tirait de la charge
-          // de présence, que chacun compose : il suffisait de s'annoncer présentateur pour l'être aux
-          // yeux de tous. Une clé, pas un booléen — l'audience compare, elle ne croit pas.
-          presenter_key: await presenterKey(String(q.present || "")),
+          // ⚠️ CE CHAMP A PORTÉ `presenter_key` PENDANT UNE JOURNÉE, ET C'ÉTAIT DEUX FAUTES.
+          //
+          // 1. FUITE. `attendeeKey()` renvoie l'ADRESSE E-MAIL quand le participant en a une. La clé
+          //    du présentateur était donc son e-mail, servi à tout visiteur anonyme du lien — sur la
+          //    route même dont le commentaire ci-dessus promet « rien que ce que l'audience doit
+          //    savoir ». Le champ portait un nom technique, et personne (moi compris) n'est allé
+          //    voir ce qu'il contenait.
+          //
+          // 2. CE N'ÉTAIT PAS UNE PREUVE. Le badge comparait cette clé à l'`uid` de la charge de
+          //    présence — que le client COMPOSE. Lire la clé publique puis s'annoncer avec elle
+          //    suffisait à porter le titre. On avait remplacé « le client déclare son rôle » par
+          //    « le client déclare une valeur que le serveur lui a donnée » : plus laborieux à
+          //    exploiter, pas plus vrai.
+          //
+          // ⚠️ Comparer deux valeurs que le client choisit ou connaît n'est pas une preuve. Le nom
+          // du présentateur vient de l'hôte, il ne se compare à rien, et il s'affiche à part de la
+          // liste des participants — laquelle ne porte plus aucun titre.
+          //
+          // Signalé par la seconde passe d'audit (P0-4) ; la fuite n'y était pas.
+          presenter_name: String(pres.presenter_name || "") || null,
         } }));
         return;
       }
