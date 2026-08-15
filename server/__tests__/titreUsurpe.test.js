@@ -33,11 +33,10 @@ require.cache[require.resolve("../presentations.js")] = {
   id: require.resolve("../presentations.js"), filename: require.resolve("../presentations.js"), loaded: true,
   exports: {
     ...vraies,
-    getPresentation: async () => ({ slug: "s1", control_hash: HASH, current_page: 1, chat_locked: false, active: true }),
+    getPresentation: async () => ({ slug: "s1", control_hash: HASH, current_page: 1, chat_locked: false, active: true, presenter_name: "Camille" }),
     recordAttendance: async (_slug, p) => { recu = p; return { ok: true }; },
     addMessage: async (_slug, p) => { messageRecu = p; return { ok: true, message: { id: 1 } }; },
     listMessages: async () => [],
-    presenterKey: async () => "cle-du-vrai-presentateur",
   },
 };
 require.cache[require.resolve("../shares.js")] = {
@@ -131,56 +130,52 @@ describe("qui décide qu'un participant est un membre", () => {
   });
 });
 
-// ⚠️ UNE RECHERCHE DE BADGE NE DOIT PAS EMPORTER L'ÉTAT.
+// ⚠️ COMPARER DEUX VALEURS QUE LE CLIENT CHOISIT OU CONNAÎT N'EST PAS UNE PREUVE.
 //
-// `presenterKey` ajoute une requête à une route dont l'audience dépend pour savoir quelle page est
-// affichée. Une requête de plus, c'est une raison de plus de renvoyer 500 — et perdre TOUT l'état
-// parce qu'on n'a pas su dire qui porte un badge serait un très mauvais échange.
+// 0.1.25 avait remplacé « le participant déclare `role:"presenter"` » par « le participant déclare
+// un `uid` égal à la clé que le serveur publie ». Plus laborieux à exploiter, pas plus vrai : la
+// clé sortait sur `state=1`, route publique, et l'`uid` de la charge de présence est COMPOSÉ par
+// le client. Lire, puis s'annoncer avec.
 //
-// Trouvé par un test du STUDIO, en rendant la page depuis le paquet installé : la route passait de
-// 200 à 500. Le player ne le voyait pas, parce que ses propres tests remplacent `presenterKey`.
-describe("le titre inconnu dégrade, il ne casse pas", () => {
-  const { presenterKey } = vraies;
-
-  it("une base indisponible rend null, elle ne lève pas", async () => {
-    vraies.init({ db: { async request() { throw new Error("base indisponible"); } } });
-    await expect(presenterKey("s1")).resolves.toBeNull();
-  });
-
-  it("une réponse inattendue rend null aussi", async () => {
-    for (const reponse of [null, "", 42, {}, [], [{}]]) {
-      vraies.init({ db: { async request() { return reponse; } } });
-      await expect(presenterKey("s1"), JSON.stringify(reponse)).resolves.toBeNull();
-    }
-  });
-
-  it("et la vraie clé passe quand elle est là", async () => {
-    vraies.init({ db: { async request() { return [{ attendee_key: "k-presentateur" }]; } } });
-    await expect(presenterKey("s1")).resolves.toBe("k-presentateur");
-  });
-});
-
-describe("la liste des participants ne croit plus la présence", () => {
+// ⚠️ Et la clé était pire qu'inutile : `attendeeKey()` renvoie l'ADRESSE E-MAIL quand le
+// participant en a une. La route publiait donc l'e-mail du présentateur à tout visiteur anonyme —
+// sur la route même dont le commentaire promet « rien que ce que l'audience doit savoir ». Un nom
+// de champ technique, et personne n'est allé voir ce qu'il contenait.
+//
+// Le titre ne se compare plus : il vient de l'hôte (`presenter_name`), et il s'affiche À PART de
+// la liste des participants, qui ne porte plus aucun badge.
+describe("le titre ne se compare plus à rien", () => {
   const SRC = fs.readFileSync(path.join(__dirname, "..", "handler.js"), "utf8");
 
-  it("le badge se compare à la clé du serveur, il ne lit plus le rôle annoncé", () => {
-    const ligne = SRC.split("\n").find((l) => l.includes("présentateur</span>"));
-    expect(ligne, "la ligne du badge existe").toBeTruthy();
-    expect(ligne, "un rôle annoncé par le participant ne doit plus décider")
-      .not.toMatch(/role\s*===\s*'presenter'/);
-    expect(ligne).toMatch(/PRESKEY/);
+  it("la liste des participants ne porte plus de badge", () => {
+    expect(SRC, "un badge dans la liste se fonde forcément sur la présence, donc sur le client")
+      .not.toContain("présentateur</span>");
   });
 
-  it("la clé est servie par la route d'état", async () => {
+  it("aucune comparaison à une valeur venue de la présence", () => {
+    expect(SRC).not.toMatch(/m\.uid\s*===/);
+    expect(SRC).not.toContain("PRESKEY");
+  });
+
+  // ⚠️ LA FUITE. Ce que la route d'état ne doit pas dire, elle est lue par toute l'audience.
+  it("la route d'état ne publie plus de clé de participant", async () => {
     player.init(contexte());
     const res = { statusCode: 0, body: "", setHeader() {}, end(b) { this.body = String(b || ""); } };
     await player.handler({ method: "GET", headers: {}, socket: {}, query: { present: "s1", state: "1" } }, res);
-    const d = JSON.parse(res.body);
-    expect(d.state.presenter_key).toBe("cle-du-vrai-presentateur");
+    const st = JSON.parse(res.body).state;
+    expect(Object.keys(st)).not.toContain("presenter_key");
+    expect(JSON.stringify(st), "aucune adresse e-mail dans une réponse publique").not.toMatch(/@/);
   });
 
-  // ⚠️ Ce que la route d'état ne doit toujours PAS dire : elle est lue par l'audience entière.
-  it("et rien d'autre ne fuit avec elle", async () => {
+  it("elle publie le nom, qui vient de l'hôte et ne se compare à rien", async () => {
+    player.init(contexte());
+    const res = { statusCode: 0, body: "", setHeader() {}, end(b) { this.body = String(b || ""); } };
+    await player.handler({ method: "GET", headers: {}, socket: {}, query: { present: "s1", state: "1" } }, res);
+    expect(JSON.parse(res.body).state.presenter_name).toBe("Camille");
+  });
+
+  // ⚠️ Ce que la route ne doit toujours pas dire.
+  it("et rien d'autre ne fuit avec lui", async () => {
     player.init(contexte());
     const res = { statusCode: 0, body: "", setHeader() {}, end(b) { this.body = String(b || ""); } };
     await player.handler({ method: "GET", headers: {}, socket: {}, query: { present: "s1", state: "1" } }, res);

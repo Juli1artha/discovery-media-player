@@ -10,6 +10,32 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.28] — 2026-08-15
+
+### Security
+- ⚠️ **The state route published the presenter's email address.** 0.1.25 added `presenter_key` to
+  `GET ?state=1` — a public route, read by every anonymous viewer of a share link. That key comes
+  from `attendeeKey()`, which returns **the email address** whenever the participant has one. The
+  field had a technical name and nobody, myself included, went to look at what it contained — on
+  the very route whose comment promises "only what the audience must know".
+
+  ⚠️ **And it was not a proof either.** The badge compared that key to the `uid` in the *presence*
+  payload, which the client composes. Read the public key, announce yourself with it, wear the
+  title. 0.1.25 had replaced "the client declares its role" with "the client declares a value the
+  server handed it" — more laborious to exploit, no more true.
+
+  The participant list now carries **no badge at all**. The presenter is displayed separately, from
+  `presenter_name` — set by the host, compared to nothing.
+
+  *The false proof was reported by the second audit pass (P0-4). The leak was not in it: it was
+  found by following the value rather than the name.*
+
+### Note
+- The methodological line this version pays for, in the auditor's words: **a value coming from the
+  server is not automatically a proof if the client can choose what it will be compared against.**
+- The `vm.Script` guard added in 0.1.26 caught the removal itself — deleting the badge expression
+  left a `++` in the template. Second catch in a day, on the day it was written.
+
 ## [0.1.27] — 2026-08-15
 
 ### Security
@@ -69,7 +95,8 @@ the notes there are this file's section for that version.
 
 ## [0.1.25] — 2026-08-15
 
-> ⚠️ **Ne pas utiliser cette version.** Son script en ligne ne se parse pas : la couche live
+> ⚠️ **Ne pas utiliser cette version.** Elle publie aussi l'e-mail du présentateur sur une route
+> publique (corrigé en 0.1.28). Son script en ligne ne se parse pas : la couche live
 > (chat, présence, relecture d'état) est morte. Corrigé en 0.1.26.
 
 ### Security
@@ -753,7 +780,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.27...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.28...HEAD
+[0.1.28]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.27...v0.1.28
 [0.1.27]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.26...v0.1.27
 [0.1.26]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.25...v0.1.26
 [0.1.25]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.24...v0.1.25
