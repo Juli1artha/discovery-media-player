@@ -131,6 +131,35 @@ describe("qui décide qu'un participant est un membre", () => {
   });
 });
 
+// ⚠️ UNE RECHERCHE DE BADGE NE DOIT PAS EMPORTER L'ÉTAT.
+//
+// `presenterKey` ajoute une requête à une route dont l'audience dépend pour savoir quelle page est
+// affichée. Une requête de plus, c'est une raison de plus de renvoyer 500 — et perdre TOUT l'état
+// parce qu'on n'a pas su dire qui porte un badge serait un très mauvais échange.
+//
+// Trouvé par un test du STUDIO, en rendant la page depuis le paquet installé : la route passait de
+// 200 à 500. Le player ne le voyait pas, parce que ses propres tests remplacent `presenterKey`.
+describe("le titre inconnu dégrade, il ne casse pas", () => {
+  const { presenterKey } = vraies;
+
+  it("une base indisponible rend null, elle ne lève pas", async () => {
+    vraies.init({ db: { async request() { throw new Error("base indisponible"); } } });
+    await expect(presenterKey("s1")).resolves.toBeNull();
+  });
+
+  it("une réponse inattendue rend null aussi", async () => {
+    for (const reponse of [null, "", 42, {}, [], [{}]]) {
+      vraies.init({ db: { async request() { return reponse; } } });
+      await expect(presenterKey("s1"), JSON.stringify(reponse)).resolves.toBeNull();
+    }
+  });
+
+  it("et la vraie clé passe quand elle est là", async () => {
+    vraies.init({ db: { async request() { return [{ attendee_key: "k-presentateur" }]; } } });
+    await expect(presenterKey("s1")).resolves.toBe("k-presentateur");
+  });
+});
+
 describe("la liste des participants ne croit plus la présence", () => {
   const SRC = fs.readFileSync(path.join(__dirname, "..", "handler.js"), "utf8");
 

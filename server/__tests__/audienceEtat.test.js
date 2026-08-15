@@ -53,6 +53,37 @@ async function pageAudience() {
   return res.body;
 }
 
+// ⚠️ LA GARDE QUI MANQUAIT, ET QUI A COÛTÉ UNE VERSION.
+//
+// En 0.1.25, une insertion a produit `return var h2={…}` dans le script en ligne. Le bloc entier ne
+// se parsait plus — la couche live était morte : ni chat, ni présence, ni relecture d'état. La
+// version est partie sur npm avec ce défaut.
+//
+// Ce fichier avait pourtant un test qui EXÉCUTE la page… et qui avale l'erreur, parce que son
+// `catch` est là pour les scripts dont les dépendances (pdf.js) manquent hors navigateur. Une
+// SyntaxError passait par la même porte que la dépendance absente.
+//
+// D'où la séparation : ANALYSER ne doit jamais échouer, EXÉCUTER a le droit. `new vm.Script` ne
+// fait que compiler — pas besoin de dépendances pour dire qu'un fichier est du JavaScript valide.
+//
+// ⚠️ C'est un test du STUDIO qui l'a trouvé, en rendant la page depuis le paquet installé. Le
+// player, lui, ne l'avait pas — le même déséquilibre qu'en 0.1.20, où un hôte avait rattrapé une
+// régression que ce dépôt ne voyait pas. On rapatrie la garde ici, à la source.
+describe("le script en ligne est du JavaScript valide", () => {
+  const vm = require("node:vm");
+
+  it("chaque bloc se compile — la question est posée AVANT toute dépendance", async () => {
+    const html = await pageAudience();
+    const blocs = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)]
+      .map((m) => m[1]).filter((c) => c.trim());
+    expect(blocs.length, "il doit bien y avoir du script à vérifier").toBeGreaterThan(0);
+    for (const code of blocs) {
+      expect(() => new vm.Script(code), "un bloc ne se parse pas : toute la couche live tombe avec")
+        .not.toThrow();
+    }
+  });
+});
+
 describe("page audience", () => {
   it("expose vraiment le gestionnaire que la couche live doit brancher", async () => {
     const html = await pageAudience();

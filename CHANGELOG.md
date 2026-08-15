@@ -10,7 +10,30 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.26] — 2026-08-15
+
+### Fixed
+- ⚠️ **0.1.25 shipped an inline script that does not parse.** An edit produced `return var h2={…}`,
+  and the whole block stopped compiling — no chat, no presence, no state re-read. The live layer was
+  dead in that version. **Upgrade past it.**
+
+  This repository already had a test that *executes* the rendered page, and it swallowed the error:
+  its `catch` exists for scripts whose dependencies (pdf.js) are missing outside a browser, and a
+  `SyntaxError` came through the same door. Parsing and executing are now separate questions —
+  **compiling must never throw**, executing is allowed to. `new vm.Script` answers "is this valid
+  JavaScript" without needing a single dependency.
+- **A missing presenter key no longer costs the whole state.** `presenterKey` added a query to a
+  route the audience depends on to know which page is displayed. One more query is one more reason
+  to answer 500 — and losing the entire state because we could not say who wears a badge is a bad
+  trade. No answer now means no key, therefore no title, and everything else still goes through.
+
+  *Both found by the **host's** tests, rendering the page from the installed package — not by this
+  repository. The same imbalance as 0.1.20. Both guards have been brought back here, at the source.*
+
 ## [0.1.25] — 2026-08-15
+
+> ⚠️ **Ne pas utiliser cette version.** Son script en ligne ne se parse pas : la couche live
+> (chat, présence, relecture d'état) est morte. Corrigé en 0.1.26.
 
 ### Security
 - **The presenter title was claimed, not proven.** The audit names the attacker precisely: *any
@@ -693,7 +716,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.25...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.26...HEAD
+[0.1.26]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.25...v0.1.26
 [0.1.25]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.23...v0.1.24
 [0.1.23]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.22...v0.1.23
