@@ -241,7 +241,8 @@ var Live=(function(){
   function toggleMute(){ MUTED=!MUTED; try{ localStorage.setItem('3dd-present-mute',MUTED?'1':'0'); }catch(e){} if(MUTED)hidePeek(); applyMute(); }
   // Flèche « envoyer » : visible seulement si le champ contient du texte et qu'on peut poster.
   function toggleSend(){ var s=document.getElementById('chatSend'),t=document.getElementById('chatText'); if(!s||!t)return; var can=!(LOCKED&&!canMod()); s.classList.toggle('on', can && (t.value||'').trim().length>0); }
-  function sendMap(p){try{if(ch)ch.send({type:'broadcast',event:'map',payload:p});}catch(e){}}
+  // Un SIGNAL, plus une position : la charge utile était crue par l'audience sur un canal public.
+  function sendMap(){try{if(ch)ch.send({type:'broadcast',event:'map',payload:{}});}catch(e){}}
   function onMap(fn){_onMap=fn;}
   // État de la présentation diffusé par le présentateur — même canal que la carte. Sert à se
   // passer de la lecture anonyme des tables : l'audience n'a plus besoin de lire la ligne.
@@ -476,6 +477,10 @@ var Live=(function(){
         },{minMs:400});
       }
       var _ordEtat=relireAvec('&state=1',function(d){if(d.state)etatDuServeur(d.state);});
+      // ⚠️ Exposé hors de cette fermeture : la carte vit dans un AUTRE bloc de script et doit
+      // pouvoir déclencher la relecture. Même raison que window.__presAppliquerEtat — un nom
+      // référencé depuis la mauvaise portée part dans un catch muet, et l'audience se fige.
+      window.__presRelireEtat=function(){_ordEtat.signaler();};
       function relireEtat(){_ordEtat.signaler();}
       function relireChat(){_ordChat.signaler();}
       var _ordChat=relireAvec('&chat=1',function(d){
@@ -517,7 +522,10 @@ var Live=(function(){
       ch.on('broadcast',{event:'lock'},function(){relireChat();});
       ch.on('broadcast',{event:'state'},function(){relireEtat();});
       ch.on('broadcast',{event:'typing'},function(p){onTyping(p&&p.payload);});
-      ch.on('broadcast',{event:'map'},function(p){if(_onMap&&p&&p.payload)_onMap(p.payload);});
+      // ⚠️ AUCUNE CHARGE NE PASSE. Elle est ignorée plus loin, mais s'arrêter là serait une défense
+      // par accident : le jour où quelqu'un rebranche un paramètre, la charge d'un canal public
+      // redeviendrait crue sans que rien ne le signale. On coupe le chemin, pas seulement l'usage.
+      ch.on('broadcast',{event:'map'},function(){if(_onMap)_onMap();});
       ch.subscribe(function(st){if(st==='SUBSCRIBED'){ch.track({name:me.name,email:me.email,avatar:me.avatar,role:me.role,member:!!me.member,uid:attKey(me)});sendAttend();}});
       _tyIv=setInterval(renderTyping,1500);
       _atIv=setInterval(sendAttend,25000);
@@ -592,8 +600,34 @@ var Map3DD=(function(){
   function state(){ if(!map)return null; if(useG){ var c=map.getCenter(); return {kind:'map',center:[c.lat(),c.lng()],zoom:map.getZoom(),marker:marker?[marker.getPosition().lat(),marker.getPosition().lng()]:null,mapType:map.getMapTypeId()}; }
     var c2=map.getCenter(); return {kind:'map',center:[c2.lat,c2.lng],zoom:map.getZoom(),marker:marker?[marker.getLatLng().lat,marker.getLatLng().lng]:null}; }
   function setCenterZoom(ll,z){ if(useG){ map.setCenter({lat:ll[0],lng:ll[1]}); map.setZoom(z); } else { map.setView(ll,z); } }
-  function broadcast(){ var n=Date.now(); if(n-_bcT<100||!map)return; _bcT=n; var s=state(); if(s){try{ if(window.Live) Live.sendMap(s); }catch(e){}} }
-  function schedPersist(){ clearTimeout(_psT); _psT=setTimeout(function(){ if(map&&persist)persist(state()); },700); }
+  // ⚠️ LA POSITION NE VOYAGE PLUS DANS LA DIFFUSION.
+  //
+  // Elle y voyageait, et l'audience l'appliquait telle quelle. Le canal étant public, n'importe quel
+  // participant déplaçait donc la carte de tout le monde, avec les coordonnées de son choix. C'était
+  // assumé en 0.1.19 au motif que le signal est « éphémère et sans vérité serveur » — l'argument ne
+  // tient pas : PENDANT UN MODE CARTE, CE SIGNAL EST L'IMAGE QUE VOIT L'AUDIENCE. 'typing' peut
+  // rester cosmétique, 'map' non. (audit P0-1)
+  //
+  // Le présentateur persiste sa position (route gatée par JWT), puis émet un signal VIDE. L'audience
+  // relit l'état et applique ce que le serveur lui donne. Un participant hostile peut toujours
+  // émettre le signal : il provoque une relecture, et n'obtient rien.
+  //
+  // ⚠️ ORDONNANCEUR ET NON DEBOUNCE, et c'est le cœur du problème. schedPersist repoussait
+  // l'écriture de 700 ms à chaque mouvement : pendant un déplacement CONTINU, elle ne partait
+  // jamais. C'est précisément pour ça que la position voyageait dans la diffusion. Un ordonnanceur
+  // écrit au plus une fois par 500 ms ET sert toujours la dernière position — donc l'audience suit
+  // pendant le mouvement, pas seulement à l'arrêt.
+  //
+  // Le suivi devient PAR PALIERS au lieu d'être continu (environ deux fois par seconde). C'est le
+  // prix pour que personne d'autre que le présentateur ne pilote l'écran de l'audience.
+  var _ordPersist=null;
+  function persistOrd(){ if(!_ordPersist&&window.Player&&Player.live&&Player.live.createScheduler){
+      _ordPersist=Player.live.createScheduler(function(fini){ try{ if(map&&persist)persist(state()); }catch(e){} fini(); },{minMs:500}); }
+    return _ordPersist; }
+  function broadcast(){ if(!map)return; var n=Date.now(); if(n-_bcT<200)return; _bcT=n;
+    var o=persistOrd(); if(o)o.signaler();
+    try{ if(window.Live) Live.sendMap(); }catch(e){} }
+  function schedPersist(){ var o=persistOrd(); if(o)o.signaler(); else { clearTimeout(_psT); _psT=setTimeout(function(){ if(map&&persist)persist(state()); },700); } }
   function enter(content,presenter,persistFn){ isPres=!!presenter; if(persistFn)persist=persistFn;
     if(content&&content.mapType)mapType=content.mapType;
     var wrap=document.getElementById('mapWrap'); var on=wrap&&wrap.classList.contains('on');
@@ -632,7 +666,14 @@ var Map3DD=(function(){
   function goSV(center){ if(!GMAPS_KEY){tempHint('Street View indisponible.');return;} tempHint('Recherche Street View…');
     loadGoogle(function(){ try{ new google.maps.StreetViewService().getPanorama({location:{lat:center[0],lng:center[1]},radius:80},function(data,status){ if(status==='OK'&&data&&data.location){ var ll=data.location.latLng; var content={kind:'streetview',position:[ll.lat(),ll.lng()],pov:{heading:0,pitch:0},zoom:1}; if(persist)persist(content); enterSV(content,true,persist); } else { tempHint('Pas de Street View à cet endroit.'); } }); }catch(e){ tempHint('Street View indisponible.'); } }); }
   function svState(){ if(!pano)return null; var p=pano.getPosition(),v=pano.getPov(); if(!p)return null; return {kind:'streetview',position:[p.lat(),p.lng()],pov:{heading:v.heading,pitch:v.pitch},zoom:pano.getZoom()}; }
-  function svBcast(){ var n=Date.now(); if(n-_svBcT<120)return; _svBcT=n; var s=svState(); if(!s)return; try{ if(window.Live)Live.sendMap(s); }catch(e){} clearTimeout(_psT); _psT=setTimeout(function(){ if(persist&&pano)persist(svState()); },800); }
+  // Même règle qu'au-dessus : on persiste, on signale, on ne transporte pas la position.
+  var _ordSv=null;
+  function svOrd(){ if(!_ordSv&&window.Player&&Player.live&&Player.live.createScheduler){
+      _ordSv=Player.live.createScheduler(function(fini){ try{ if(persist&&pano)persist(svState()); }catch(e){} fini(); },{minMs:500}); }
+    return _ordSv; }
+  function svBcast(){ var n=Date.now(); if(n-_svBcT<200)return; _svBcT=n; if(!svState())return;
+    var o=svOrd(); if(o)o.signaler();
+    try{ if(window.Live)Live.sendMap(); }catch(e){} }
   function svApply(p){ if(!pano||!p)return; try{ if(p.position)pano.setPosition({lat:p.position[0],lng:p.position[1]}); if(p.pov)pano.setPov({heading:p.pov.heading||0,pitch:p.pov.pitch||0}); if(typeof p.zoom!=='undefined')pano.setZoom(p.zoom); }catch(e){} }
   function ensurePano(content){ var el=document.getElementById('svPano'); if(!el||!window.google||!window.google.maps)return;
     var pos=content&&content.position?{lat:content.position[0],lng:content.position[1]}:{lat:48.8584,lng:2.2945};
@@ -2374,7 +2415,10 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
   (function(){
     var slug=${JSON.stringify(pres.slug)};
     // Carte live : suivre en direct les mouvements du présentateur (broadcast).
-    try{ if(window.Live&&window.Map3DD) Live.onMap(function(p){ Map3DD.apply(p); }); }catch(e){}
+    // ⚠️ ON NE CROIT PLUS LA CHARGE. Le signal dit « quelque chose a bougé » ; ce qui a bougé vient
+    // de la relecture d'état, gatée par l'écriture du présentateur. Un participant hostile peut
+    // émettre : il déclenche une relecture bornée, et n'obtient rien.
+    try{ if(window.Live&&window.Map3DD) Live.onMap(function(){ if(window.__presRelireEtat)window.__presRelireEtat(); }); }catch(e){}
     // L'état arrive maintenant par DEUX voies : la table (historique) et la diffusion du
     // présentateur (nouvelle). Les deux passent par le même filtre, qui ignore un état déjà
     // appliqué — recevoir deux fois la même chose ne doit pas re-rendre la page.

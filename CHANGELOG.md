@@ -10,6 +10,41 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.30] — 2026-08-15
+
+### Security
+- ⚠️ **The map position no longer travels in the broadcast.** It did, and the audience applied it
+  as-is. The channel being public, **any participant could move everyone's map**, with coordinates
+  of their choosing. 0.1.19 granted that exception on the grounds that the signal is "ephemeral,
+  with no server truth to check against". The argument does not hold: **during map mode, that
+  signal is the image the audience sees.** `typing` can stay cosmetic; `map` cannot.
+
+  The presenter now persists its position through the JWT-gated route and emits an **empty**
+  signal. The audience re-reads the state and applies what the server gives it. A hostile
+  participant can still emit: they trigger a bounded re-read and obtain nothing.
+
+  ⚠️ **The obstacle was that persistence was a debounce**, not the broadcast. `schedPersist` pushed
+  the write back 700 ms on every movement, so during *continuous* panning it never fired — which is
+  precisely why the position had to travel in the broadcast. It now uses the same bounded scheduler
+  as the re-read: at most one write per 500 ms, and **always the last position**, so the audience
+  follows during the movement and not only once it stops.
+
+  **Live map following becomes stepped rather than continuous** — about twice a second. That is the
+  price of nobody but the presenter driving the audience's screen, and it is the right price.
+
+  The payload path is removed rather than merely ignored: leaving it would be defence by accident,
+  and the day someone reconnects a parameter the public payload would be trusted again with nothing
+  to say so.
+
+  *Reported by the second audit pass (P0-1).*
+
+### Fixed
+- **A test had endorsed the exception.** It asserted that `map` "still applies the payload —
+  ephemeral, no server truth", and it would have stayed green after the fix: it read the Live
+  layer's handler, which forwarded `p.payload` regardless. The sweep now names the events that
+  trust their sender, and `typing` is the only one left — it will have to justify itself on every
+  reading of that file.
+
 ## [0.1.29] — 2026-08-15
 
 ### Security
@@ -818,7 +853,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.29...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.30...HEAD
+[0.1.30]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.29...v0.1.30
 [0.1.29]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.28...v0.1.29
 [0.1.28]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.27...v0.1.28
 [0.1.27]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.26...v0.1.27
