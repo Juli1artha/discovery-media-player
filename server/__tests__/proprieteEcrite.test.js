@@ -65,9 +65,21 @@ describe("une clé écrite ne peut pas atteindre le prototype", () => {
 
 // ⚠️ LA GARDE QUI MANQUAIT. Celle de 0.1.2 balaye les LECTURES ; celle-ci balaye les ÉCRITURES.
 // Sans elle, la prochaine `obj[valeurDuDehors] = …` passera exactement comme celle-ci est passée.
+// ⚠️ CETTE GARDE A LAISSÉ PASSER LE DÉFAUT QU'ELLE DEVAIT ATTRAPER.
+//
+// Elle filtrait sur une LISTE DE NOMS DE VARIABLES — `body`, `q`, `emoji`, `name`… — et `id`, `k`,
+// `sid` n'y étaient pas. Les agrégateurs de `shares.js` sont donc passés entiers : `byDoc[id]`,
+// `byUser[k]`, `sessMax[sid]`, tous indexés par des données du dehors, tous en clair.
+//
+// Le rapport le dit mieux que je ne l'aurais fait : une expression régulière sur des noms de
+// variables ne peut servir que d'alarme complémentaire. Elle est donc élargie — toute clé qui n'est
+// ni un littéral ni un compteur de boucle est suspecte — et surtout, elle n'est plus seule : les
+// propriétés sont exercées sur du code exécuté dans `clefsHeritees.test.js`, avec les cinq clés
+// héritées. C'est ce test-là qui protège ; celui-ci ne fait que signaler la forme. (audit P1-2)
 describe("aucune écriture indexée par une donnée du dehors", () => {
   const RACINE = path.join(__dirname, "..", "..");
-  const VENANT_DU_DEHORS = /\b(body|q|req|query|params|payload|emoji|input|nom|name|key|type)\b/;
+  // Élargi : on ne liste plus ce qui vient du dehors, on exclut ce qui n'en vient certainement pas.
+  const SUREMENT_INTERNE = /^(i|j|n|k2|idx|index|len|pos|ligne|col)$/;
 
   function fichiersDuCoeur() {
     return fs.readdirSync(path.join(RACINE, "server"))
@@ -86,11 +98,16 @@ describe("aucune écriture indexée par une donnée du dehors", () => {
         // `quelquechose[cle] = …` où `cle` n'est ni un littéral ni un nombre.
         for (const m of ligne.matchAll(/(\w+)\[([A-Za-z_$][\w$.]*)\]\s*=[^=]/g)) {
           const [, objet, cle] = m;
-          if (/^(i|j|n|k|idx|index)$/.test(cle)) continue;                 // compteurs de boucle
-          if (!VENANT_DU_DEHORS.test(cle)) continue;
-          // Gardé si l'objet est construit sans prototype, ou la clé validée juste avant.
+          if (SUREMENT_INTERNE.test(cle)) continue;                        // compteurs de boucle
+          // ⚠️ ON CHERCHE LA DÉCLARATION DE L'OBJET, PAS UN VOISINAGE. La première version regardait
+          // 25 lignes en arrière : elle ratait tout dictionnaire déclaré en tête de module et
+          // utilisé cent lignes plus bas — c'est-à-dire tous ceux du gabarit navigateur. Une
+          // fenêtre est une approximation de portée ; le nom, lui, est exact.
+          const declare = new RegExp(objet + "\\s*[=:]\\s*(Object\\.create\\(null\\)|new Map\\()");
+          if (declare.test(src)) continue;
+          // Ou la clé validée juste avant l'écriture.
           const contexte = lignes.slice(Math.max(0, i - 25), i + 1).join("\n");
-          if (/Object\.create\(null\)|Object\.hasOwn|\bMap\b|test\(\s*e\s*\)|allowlist/.test(contexte)) continue;
+          if (/Object\.hasOwn|test\(\s*e\s*\)|allowlist/.test(contexte)) continue;
           suspects.push(`${path.basename(f)}:${i + 1}  ${objet}[${cle}] = …`);
         }
       });

@@ -171,7 +171,9 @@ const CHAMPS_PUBLICS = [
 ];
 function messagePublic(row) {
   if (!row || typeof row !== "object") return null;
-  const out = {};
+  // Les clés viennent d'une liste blanche interne, mais l'objet est nu quand même : la règle se
+  // relit sans avoir à vérifier d'où vient chaque clé.
+  const out = Object.create(null);
   for (const c of CHAMPS_PUBLICS) if (c in row) out[c] = row[c];
   return out;
 }
@@ -321,12 +323,14 @@ async function presentationStats(slug) {
     PLAYER.db.request(`doc_presentation_messages?slug=eq.${enc(slug)}&deleted=eq.false&select=author_email,author_name&limit=1000`),
   ]);
   const msgs = Array.isArray(msgRows) ? msgRows : [];
-  const msgByKey = {};
-  msgs.forEach((m) => { const k = lc(m.author_email) || ("name:" + (m.author_name || "")); msgByKey[k] = (msgByKey[k] || 0) + 1; });
+  // ⚠️ Une `Map` : la clé est l'e-mail ou le nom d'un participant, donc une donnée du dehors.
+  // Avec un objet, `msgByKey["__proto__"]` traverse le prototype au lieu de compter. (audit P1-2)
+  const msgByKey = new Map();
+  msgs.forEach((m) => { const k = lc(m.author_email) || ("name:" + (m.author_name || "")); msgByKey.set(k, (msgByKey.get(k) || 0) + 1); });
   const attendees = (Array.isArray(attRows) ? attRows : []).map((a) => {
     const k = lc(a.email) || ("name:" + (a.name || ""));
     const pages = Array.isArray(a.pages) ? a.pages : [];
-    return { name: a.name, email: a.email, avatar: a.avatar, isMember: !!a.is_member, isPresenter: !!a.is_presenter, firstSeen: a.first_seen, lastSeen: a.last_seen, totalMs: Number(a.total_ms || 0), pages, pagesCount: pages.length, msgCount: msgByKey[k] || 0 };
+    return { name: a.name, email: a.email, avatar: a.avatar, isMember: !!a.is_member, isPresenter: !!a.is_presenter, firstSeen: a.first_seen, lastSeen: a.last_seen, totalMs: Number(a.total_ms || 0), pages, pagesCount: pages.length, msgCount: msgByKey.get(k) || 0 };
   });
   const viewers = attendees.filter((a) => !a.isPresenter);
   const start = new Date(pres.created_at || 0).getTime();
@@ -375,15 +379,15 @@ async function listPresentationsForDoc(docId) {
   const rows = await PLAYER.db.request(`doc_presentations?doc_id=eq.${enc(String(docId))}&select=slug,presenter_name,owner_name,current_page,active,created_at,updated_at&order=created_at.desc&limit=50`);
   const list = Array.isArray(rows) ? rows : [];
   // UNE requête groupée (in.(…)) au lieu d'une par présentation (N+1, jusqu'à 50) ; agrégation en mémoire.
-  const counts = {};
+  const counts = new Map();
   if (list.length) {
     try {
       const slugs = list.map((p) => enc(p.slug)).join(",");
       const att = await PLAYER.db.request(`doc_presentation_attendees?slug=in.(${slugs})&is_presenter=eq.false&select=slug&limit=5000`);
-      for (const a of Array.isArray(att) ? att : []) counts[a.slug] = (counts[a.slug] || 0) + 1;
+      for (const a of Array.isArray(att) ? att : []) counts.set(a.slug, (counts.get(a.slug) || 0) + 1);
     } catch { /* best-effort : compteurs à 0 */ }
   }
-  return list.map((p) => ({ slug: p.slug, presenterName: p.presenter_name, ownerName: p.owner_name, currentPage: p.current_page || 1, active: !!p.active, createdAt: p.created_at, endedAt: p.active ? null : p.updated_at, attendees: counts[p.slug] || 0 }));
+  return list.map((p) => ({ slug: p.slug, presenterName: p.presenter_name, ownerName: p.owner_name, currentPage: p.current_page || 1, active: !!p.active, createdAt: p.created_at, endedAt: p.active ? null : p.updated_at, attendees: counts.get(p.slug) || 0 }));
 }
 
 module.exports = {

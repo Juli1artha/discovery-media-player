@@ -10,6 +10,42 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.32] — 2026-08-15
+
+### Security
+- ⚠️ **One table row could poison a whole process.** The aggregators were plain objects indexed by
+  data from outside — document ids, emails, session ids — and the shape `X[k] = X[k] || {…}` is
+  enough:
+
+  `byDoc["__proto__"]` does not return `undefined`, it returns `Object.prototype`, which is
+  **truthy**. The `|| {…}` therefore never fires, `a` *becomes* the prototype, `a.opens++` writes
+  `Object.prototype.opens = NaN`, and `a.readers.add(…)` throws on `undefined`.
+
+  The `TypeError` is visible. **The property left on the prototype is not**, and it survives the
+  request: on a warm serverless instance every object in the process then carries an `opens`, and
+  any `if (x.opens)` elsewhere silently changes meaning.
+
+  ⚠️ `user_email` is reachable **without authentication** as long as `PLAYER_INTERNAL_STRICT` is
+  unset (0.1.22), and `session_id` is written by the reader. Not theoretical.
+
+  Every aggregator is now a `Map` — keys are data, not property names — and every browser-side
+  dictionary is built with `Object.create(null)`, including `typers`, which is fed by `typing`, the
+  one event that still trusts its sender. Uniformly, including the sites that were not reachable:
+  an aggregator that has to justify itself case by case eventually gets a case wrong.
+
+  *Reproduced and reported by the second audit pass (P1-2).*
+
+### Fixed
+- **The static guard that missed it.** It filtered on a **list of variable names** — `body`, `q`,
+  `emoji`, `name` — and `id`, `k`, `sid` were not in it, so all of `shares.js` went through. It now
+  excludes only what is certainly internal (loop counters) rather than listing what comes from
+  outside, and it looks for the object's **declaration** instead of scanning 25 lines back: a window
+  approximates scope, a name is exact. It found nine further sites, all fixed here.
+
+  ⚠️ It remains an alarm. The barrier is `clefsHeritees.test.js`, which exercises the five inherited
+  keys against running code — as the report put it, a regular expression over variable names can
+  only ever be a complementary alarm.
+
 ## [0.1.31] — 2026-08-15
 
 ### Fixed
@@ -884,7 +920,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.31...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.32...HEAD
+[0.1.32]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.31...v0.1.32
 [0.1.31]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.30...v0.1.31
 [0.1.30]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.29...v0.1.30
 [0.1.29]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.28...v0.1.29

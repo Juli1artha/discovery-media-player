@@ -123,9 +123,13 @@ async function listSharesForDoc(docId, owner) {
   ]);
   const shareList = Array.isArray(shares) ? shares : [];
   const viewList = Array.isArray(views) ? views : [];
-  const bySlug = {};
+  // Le slug est engendré par le serveur, donc celui-ci n'était pas atteignable — on le convertit
+  // quand même. Un agrégateur qui doit se justifier au cas par cas finit par se tromper de cas :
+  // la règle « toute clé venue d'une ligne va dans une Map » se relit sans réfléchir.
+  const bySlug = new Map();
   for (const v of viewList) {
-    const s = (bySlug[v.slug] = bySlug[v.slug] || { opens: 0, maxPage: 0, seconds: 0, sessions: new Set(), lastAt: null });
+    let s = bySlug.get(v.slug);
+    if (!s) { s = { opens: 0, maxPage: 0, seconds: 0, sessions: new Set(), lastAt: null }; bySlug.set(v.slug, s); }
     if (v.event === "open") s.opens++;
     const mp = Math.max(Number(v.page) || 0, Number(v.max_page) || 0);
     if (mp > s.maxPage) s.maxPage = mp;
@@ -134,17 +138,18 @@ async function listSharesForDoc(docId, owner) {
     s.lastAt = v.at;
   }
   const enriched = shareList.map((sh) => {
-    const a = bySlug[sh.slug] || { opens: 0, maxPage: 0, seconds: 0, sessions: new Set(), lastAt: null };
+    const a = bySlug.get(sh.slug) || { opens: 0, maxPage: 0, seconds: 0, sessions: new Set(), lastAt: null };
     return { slug: sh.slug, parent_slug: sh.parent_slug || null, recipient_email: sh.recipient_email, recipient_name: sh.recipient_name, created_by: sh.created_by, created_at: sh.created_at, revoked: sh.revoked, opens: a.opens, sessions: a.sessions.size, maxPage: a.maxPage, seconds: a.seconds, lastAt: a.lastAt };
   });
   // Entonnoir de lecture : page max atteinte PAR SESSION → combien de lecteurs ont atteint AU MOINS la page p.
-  const sessMax = {};
+  // ⚠️ UNE `Map`, PAS UN OBJET — la clé vient du dehors. Voir l'explication complète sur `byDoc`.
+  const sessMax = new Map();
   for (const v of viewList) {
     const sid = v.session_id || v.slug;
     const mp = Math.max(Number(v.page) || 0, Number(v.max_page) || 0);
-    if (mp > 0) sessMax[sid] = Math.max(sessMax[sid] || 0, mp);
+    if (mp > 0) sessMax.set(sid, Math.max(sessMax.get(sid) || 0, mp));
   }
-  const reached = Object.values(sessMax);
+  const reached = [...sessMax.values()];
   const maxReached = reached.reduce((m, x) => Math.max(m, x), 0);
   const funnel = [];
   for (let p = 1; p <= maxReached; p++) funnel.push(reached.filter((x) => x >= p).length);
@@ -176,29 +181,55 @@ async function overview() {
     PLAYER.db.selectAll(`commercial_doc_internal_sessions?select=doc_id,user_email,last_at&last_at=gte.${since}&order=last_at.asc`).catch(() => []),
   ]);
   const list = Array.isArray(views) ? views : [];
-  const byDoc = {};
+  // ⚠️ POURQUOI DES `Map` DANS TOUT CE FICHIER, ET PAS DES OBJETS.
+  //
+  // Ces agrégateurs étaient des `{}` indexés par des identifiants, des e-mails, des sessions —
+  // tous venus du dehors. Une clé héritée y a une sémantique spéciale, et `X[k] = X[k] || {…}`
+  // suffit à tout casser :
+  //
+  //   `byDoc["__proto__"]` ne rend pas `undefined`, il rend `Object.prototype` — qui est VRAI.
+  //   Le `|| {…}` ne se déclenche donc pas, et `a` DEVIENT le prototype. Ensuite `a.opens++`
+  //   écrit `Object.prototype.opens = NaN`, et `a.readers.add(…)` lève sur `undefined`.
+  //
+  // ⚠️ Reproduit avec une seule ligne : `TypeError` immédiate, ET la propriété reste sur le
+  // prototype POUR TOUT LE PROCESSUS. Sur une instance serverless tiède, la pollution survit aux
+  // requêtes suivantes : chaque objet du processus porte alors un `opens`, et n'importe quel
+  // `if (x.opens)` ailleurs devient faux. Une ligne de table pour empoisonner un processus.
+  //
+  // `user_email` est atteignable sans authentification tant que `PLAYER_INTERNAL_STRICT` n'est pas
+  // posé (cf. 0.1.22), donc ce n'est pas théorique.
+  //
+  // Une `Map` n'a pas de prototype à traverser : ses clés sont des données, pas des noms de
+  // propriétés. C'est la seule forme qui n'a rien à se rappeler. La garde statique, elle, filtrait
+  // sur des NOMS DE VARIABLES (`id`, `k`, `sid` en étaient absents) — une alarme, jamais une
+  // barrière. (audit P1-2)
+  const byDoc = new Map();
   for (const v of list) {
     const id = v.doc_id || "";
     if (!id) continue;
-    const a = (byDoc[id] = byDoc[id] || { opens: 0, readers: new Set(), maxPage: 0, lastAt: null });
+    let a = byDoc.get(id);
+    if (!a) { a = { opens: 0, readers: new Set(), maxPage: 0, lastAt: null }; byDoc.set(id, a); }
     if (v.event === "open") a.opens++;
     if (v.session_id) a.readers.add(v.session_id);
     a.maxPage = Math.max(a.maxPage, Number(v.page) || 0, Number(v.max_page) || 0);
     a.lastAt = v.at;
   }
-  const intByDoc = {};
+  const intByDoc = new Map();
   for (const s of Array.isArray(internal) ? internal : []) {
     const id = s.doc_id || "";
     if (!id) continue;
-    const b = (intByDoc[id] = intByDoc[id] || { opens: 0, users: new Set(), lastAt: null });
+    let b = intByDoc.get(id);
+    if (!b) { b = { opens: 0, users: new Set(), lastAt: null }; intByDoc.set(id, b); }
     b.opens++;
     if (s.user_email) b.users.add(String(s.user_email).toLowerCase());
     b.lastAt = s.last_at;
   }
-  const out = {};
-  for (const id of new Set([...Object.keys(byDoc), ...Object.keys(intByDoc)])) {
-    const a = byDoc[id] || { opens: 0, readers: new Set(), maxPage: 0, lastAt: null };
-    const b = intByDoc[id] || { opens: 0, users: new Set(), lastAt: null };
+  // La sortie est rendue en JSON : un objet SANS prototype, pour qu'une clé héritée y reste une
+  // clé ordinaire jusqu'au bout de la chaîne.
+  const out = Object.create(null);
+  for (const id of new Set([...byDoc.keys(), ...intByDoc.keys()])) {
+    const a = byDoc.get(id) || { opens: 0, readers: new Set(), maxPage: 0, lastAt: null };
+    const b = intByDoc.get(id) || { opens: 0, users: new Set(), lastAt: null };
     out[id] = { opens: a.opens, readers: a.readers.size, maxPage: a.maxPage, lastAt: a.lastAt, internalOpens: b.opens, internalReaders: b.users.size, internalLastAt: b.lastAt };
   }
   return out;
@@ -242,9 +273,9 @@ async function listSessionsForDoc(docId) {
     PLAYER.db.request(`commercial_doc_sessions?doc_id=eq.${id}&select=*&order=last_at.desc&limit=500`),
     PLAYER.db.request(`commercial_doc_shares?doc_id=eq.${id}&is_test=not.is.true&select=slug,recipient_email,recipient_name`),
   ]);
-  const nameBySlug = {};
-  for (const sh of (Array.isArray(shares) ? shares : [])) nameBySlug[sh.slug] = sh.recipient_name || null;
-  return (Array.isArray(sessions) ? sessions : []).map((s) => ({ ...s, recipient_name: nameBySlug[s.slug] || null }));
+  const nameBySlug = new Map();
+  for (const sh of (Array.isArray(shares) ? shares : [])) nameBySlug.set(sh.slug, sh.recipient_name || null);
+  return (Array.isArray(sessions) ? sessions : []).map((s) => ({ ...s, recipient_name: nameBySlug.get(s.slug) || null }));
 }
 
 // Envoi AUTO du re-partage via 3D Discovery (Resend). Contenu 100% templé (pas de texte libre → anti-spam),
@@ -347,17 +378,19 @@ async function upsertInternalSession(p, { ip, ua }) {
 async function internalStatsForDoc(docId) {
   const rows = await PLAYER.db.request(`commercial_doc_internal_sessions?doc_id=eq.${enc(String(docId || ""))}&select=user_email,user_name,max_page,total_seconds,last_at&order=last_at.desc&limit=500`);
   const list = Array.isArray(rows) ? rows : [];
-  const byUser = {};
+  // ⚠️ La clé est un e-mail que l'appelant choisit — c'est le cas atteignable sans authentification.
+  const byUser = new Map();
   for (const r of list) {
     const k = low(r.user_email) || (r.user_name || "?");
-    const u = (byUser[k] = byUser[k] || { email: r.user_email || null, name: r.user_name || null, opens: 0, maxPage: 0, seconds: 0, lastAt: null });
+    let u = byUser.get(k);
+    if (!u) { u = { email: r.user_email || null, name: r.user_name || null, opens: 0, maxPage: 0, seconds: 0, lastAt: null }; byUser.set(k, u); }
     u.opens++;
     u.maxPage = Math.max(u.maxPage, Number(r.max_page) || 0);
     u.seconds += Number(r.total_seconds) || 0;
     if (!u.lastAt || r.last_at > u.lastAt) u.lastAt = r.last_at;
     if (!u.name && r.user_name) u.name = r.user_name;
   }
-  const users = Object.values(byUser).sort((a, b) => (b.lastAt || "").localeCompare(a.lastAt || ""));
+  const users = [...byUser.values()].sort((a, b) => (b.lastAt || "").localeCompare(a.lastAt || ""));
   return { opens: list.length, readers: users.length, lastAt: list[0]?.last_at || null, users };
 }
 
