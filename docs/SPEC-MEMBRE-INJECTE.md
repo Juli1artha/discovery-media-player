@@ -101,8 +101,10 @@ Charge utile :
 { "email": "…", "name": "…", "avatar": "…", "origin": "https://doc.exemple.fr", "exp": 1786830489 }
 ```
 
-- **`exp` est obligatoire.** Un jeton sans expiration survit au membre. Quelques minutes suffisent :
-  il n'est utilisé qu'une fois, immédiatement, au retour de la redirection.
+- **`exp` est obligatoire, et court.** ⚠️ Il se borne par l'**échange**, pas par la lecture : le
+  jeton est consommé immédiatement au retour de la redirection, donc quelques dizaines de secondes
+  suffisent. Le dimensionner sur la durée d'une lecture reviendrait à le laisser vivre des minutes
+  après qu'il a servi. *(précision ADV)*
 - **`origin` est l'origine de l'instance** qui a demandé. Un jeton obtenu pour une instance ne vaut
   pas pour une autre.
 - ⚠️ **Pas de `slug`.** Lier au document obligerait à refaire l'aller-retour à chaque présentation
@@ -127,9 +129,9 @@ document* », voyage dans un corps de requête, et part du navigateur vers le pl
 
 *Proposés par la session ADV, retenus tels quels.*
 
-1. **Un seul aller-retour.** Le paramètre `essai=1` marque la tentative ; au retour, le player ne
-   redemande jamais. ⚠️ Sans ça, un lecteur non connecté rebondit **en boucle entre deux domaines** —
-   la panne la plus facile à créer ici, et la plus pénible à diagnostiquer.
+1. **Un seul aller-retour**, marqué par `essai=1`. ⚠️ Voir la section dédiée ci-dessous : le
+   marqueur voyage dans le **fragment**, comme le jeton, et sa raison d'être n'est plus celle qu'on
+   croyait.
 2. **Échec ouvert.** Pas de session, route injoignable, jeton illisible ou expiré → visiteur
    anonyme, présentation normale. **Une identité qu'on ne sait pas établir n'empêche jamais de lire.**
 3. **`retour` borné côté hôte.** Il doit pointer une origine d'instance déclarée, sinon la route
@@ -140,6 +142,47 @@ document* », voyage dans un corps de requête, et part du navigateur vers le pl
 
 ---
 
+## Où vit `essai=1`, et pourquoi le fragment
+
+⚠️ **L'objection tombe pour une raison de rôle, pas de transport.** « Le fragment n'est pas envoyé au
+serveur, donc le marqueur ne peut pas y vivre seul » est vrai du transport — et **sans conséquence
+ici, parce que le serveur n'a pas besoin de le lire.**
+
+Regardez qui décide quoi :
+
+- **L'hôte** lit son cookie et répond. Il ne décide jamais « on a déjà essayé » : il n'a aucun état à
+  consulter pour ça, et il répondrait la même chose au deuxième passage qu'au premier.
+- **La page du player** est la seule qui ait besoin du marqueur — pour afficher « vous ne semblez pas
+  connecté » au lieu de rien, et pour ne pas reproposer un geste qui vient d'échouer. C'est un état
+  **d'affichage**, et il se lit côté navigateur.
+
+Donc l'hôte pose le marqueur, la page le lit, et **le fragment porte les deux issues** :
+
+```
+succès  →  Location: <retour>#membre=<jeton>
+échec   →  Location: <retour>#essai=1
+```
+
+Les navigateurs honorent un fragment dans un `Location`. **Un seul véhicule, une seule durée de vie,
+un seul nettoyage** par `history.replaceState`.
+
+⚠️ Deux véhicules finiraient par se désynchroniser — l'un retiré de l'URL, l'autre resté. Et c'est
+le **marqueur** qui survivrait au jeton : un membre légitime bloqué par la trace d'un échec passé.
+
+### La règle de fusion
+
+⚠️ **Si `retour` porte déjà un fragment, l'hôte le REMPLACE — il ne concatène pas.** Une URL de
+retour avec `#page=3` deviendrait `#page=3#essai=1`, que personne ne lit correctement, et l'échec
+serait silencieux. Comme d'habitude.
+
+### Ce que ce marqueur protège, en réalité
+
+Une conséquence de la décision de déclencher **au clic** : il ne protège plus d'une boucle
+automatique — il protège d'une **insistance**. Sa raison d'être est devenue l'explication au membre,
+pas la sûreté du mécanisme.
+
+*C'est plus modeste que ce qu'on écrivait au début, et c'est plus vrai.* (formulation ADV)
+
 ## La résolution par marque
 
 ⚠️ **Une URL par marque, pas une par instance.** Le second hôte sert `doc.adnfamily.com` et
@@ -149,6 +192,11 @@ VALONEUF s'authentifier chez ADN Family — ce qui est faux, et **visible**.
 L'URL se résout donc comme le logo (`branding.forKey`), avec repli sur l'URL d'instance quand la
 marque n'en déclare pas. Pas d'URL du tout ⇒ **le bouton n'apparaît pas** : une commande qui ne peut
 pas aboutir ne doit pas être offerte.
+
+⚠️ **Et le masquage se journalise, une fois par heure.** Sans ça, la conséquence est invisible du bon
+côté : le membre voit exactement ce que voit le prospect, sans indication qu'il manque quelque chose,
+et l'exploitant l'apprend par un collègue qui se plaint plutôt que par ses journaux. C'est la règle
+des gardes muettes, appliquée avant d'avoir été enfreinte. *(demandé par ADV)*
 
 ---
 

@@ -262,6 +262,32 @@ l'analyse du commit publié, pas sur le compteur de l'onglet.
 Le `node_modules` local portait `jsdom@25` alors que le lock demande `30`. Les tests passaient sur
 un arbre différent de celui de la CI. `npm ci` requis avant toute conclusion sur une suite verte.
 
+## ⚠️ Un motif qui revient : énumérer au lieu de reconnaître une forme
+
+Relevé par la session ADV le 16/08/2026, après le troisième cas de la semaine. Chaque fois, ce qui
+manque n'est pas **dans** la liste : c'est **la liste elle-même**.
+
+| où | ce qui était énuméré | ce qui a manqué |
+|---|---|---|
+| Re-partage (0.1.14) | les colonnes à hériter, une par une | `require_auth`, `allow_download`, `brand_key` — un lien enfant plus permissif que son parent |
+| Garde des écritures indexées (audit P1-2) | des **noms de variables** (`body`, `q`, `emoji`…) | `id`, `k`, `sid` — donc tous les agrégateurs de `shares.js` |
+| Garde de publication (0.1.36) | le fichier `package.json` | la ligne `version` : une montée de dépendance remettait le compteur à zéro |
+| Garde des écritures muettes (0.1.37) | des **noms de fonctions** d'écriture | `recordUnlock`, qui écrit directement par `db.request` |
+
+⚠️ Les deux derniers ont été écrits **le même jour**, l'un pour corriger la classe dont l'autre est
+un membre. Écrire la règle n'immunise pas contre elle.
+
+**Le remède, chaque fois le même** : décrire ce qu'on refuse par sa FORME, et faire de la liste
+l'exception documentée plutôt que la règle. Le re-partage hérite désormais par défaut et n'exclut
+que nommément ; la garde des écritures indexées exclut ce qui est *certainement interne* au lieu de
+lister ce qui vient du dehors ; la garde de publication date la ligne et non le fichier ; celle des
+écritures muettes vise `db.request` avec un verbe d'écriture.
+
+⚠️ **Et une forme trop large est le défaut symétrique** : la même garde a d'abord accusé les
+*lectures*, où un `catch` qui ramène un compteur à zéro est légitime. Une écriture perdue l'est pour
+toujours ; une lecture ratée sera refaite. La distinction est le contenu de la règle, pas un détail
+de mise au point.
+
 ## Ce que l'audit valide, et qu'il ne faut pas casser
 
 Frontière hôte/cœur avec test d'étanchéité, garde de traversée de chemin, slugs et jetons en
