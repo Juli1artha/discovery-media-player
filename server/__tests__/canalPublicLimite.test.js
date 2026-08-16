@@ -14,7 +14,7 @@
 //
 // Signalé par un audit externe (C-5), dernier constat critique de sa liste.
 
-const { PRESENT_QUOTA_PER_HOUR, PRESENT_READS_PER_HOUR, RESYNC_READS_PER_HOUR, READERS_PER_EGRESS, PRESENT_RESYNC_MS, PRESENTER_ACTIONS_PER_HOUR } = require("../shared.generated.js");
+const { PRESENT_QUOTA_PER_HOUR, PRESENT_READ_BURST, PRESENT_READS_PER_HOUR, RESYNC_READS_PER_HOUR, READERS_PER_EGRESS, PRESENT_RESYNC_MS, PRESENTER_ACTIONS_PER_HOUR } = require("../shared.generated.js");
 
 const ID = require.resolve("../presentations.js");
 const vraies = require("../presentations.js");
@@ -133,8 +133,13 @@ describe("le quota tient une audience réelle", () => {
       .toBeLessThan(PRESENT_QUOTA_PER_HOUR);
   });
 
-  it("et une salle entière derrière une sortie unique passe", () => {
-    expect(PRESENT_QUOTA_PER_HOUR).toBe(PRESENT_READS_PER_HOUR * READERS_PER_EGRESS);
+  // ⚠️ CETTE FORMULE A CHANGÉ, ET C'EST UN TEST QUI L'A EXIGÉ. Elle ne comptait que la part
+  // SOUTENUE d'un spectateur. Quand le client s'est donné un budget avec rafale — pour qu'une page
+  // tournée s'affiche tout de suite — une salle pleine dépassait le quota de 475 relectures,
+  // exactement la rafale de chacun. Le serveur doit couvrir ce que le client S'AUTORISE, pas sa
+  // moyenne, sinon la garde refuse un usage que le produit permet.
+  it("et une salle entière derrière une sortie unique passe, rafale comprise", () => {
+    expect(PRESENT_QUOTA_PER_HOUR).toBe((PRESENT_READS_PER_HOUR + PRESENT_READ_BURST) * READERS_PER_EGRESS);
     expect(READERS_PER_EGRESS, "dimensionner pour un spectateur revient à refuser le second")
       .toBeGreaterThan(1);
   });

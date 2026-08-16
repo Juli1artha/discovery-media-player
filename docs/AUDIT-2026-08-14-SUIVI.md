@@ -299,7 +299,7 @@ du jour même** — elle ne relit pas un état, elle relit un mouvement.
 | V-1 | Une présentation terminée peut être réactivée | ✅ **0.1.44** |
 | V-2 | Écritures de présentation pas toutes séquentielles (`toMap`, `hideMap`, `pushPage`) | à faire — file unique |
 | V-3 | Une requête bloquée fige l'ordonnanceur (né de 0.1.41) | ✅ **0.1.44** |
-| V-4 | Le canal public reste amplifiable — et la limite de 0.1.42 en fait un déni de service | à faire — prioritaire |
+| V-4 | Le canal public reste amplifiable — et la limite de 0.1.42 en fait un déni de service | ✅ **0.1.45** |
 | V-5 | Clé anonyme rejouable, exposée dans la présence (née de 0.1.42) | à faire |
 | V-6 | `present-stats` / `present-doc-list` : possession non vérifiée | recoupe P2-1 / C-8 |
 
@@ -350,6 +350,39 @@ choisit pas non plus**.
 
 Correctif propre : canal privé. Intermédiaire, meilleur que baisser le quota : découpler la cadence
 de relecture du rythme des diffusions (rafale courte, puis repli sur le filet).
+
+### V-4 — le budget de relecture, et le plancher qu'il ne doit pas toucher
+
+On borne la **cause**, pas l'effet : baisser le quota aurait puni davantage la victime. Le spectateur
+se donne son propre budget et ne relit jamais plus que ce que les actions d'un présentateur
+justifient. Sous martèlement, sa cadence passe de ~9 000/h à 720/h.
+
+⚠️ **Le budget ne gate que ce qui vient du canal.** `signaler()` est déclenché par une diffusion,
+donc par n'importe quel participant : c'est la porte à rationner. `maintenant()` est le filet
+périodique, déclenché par nous toutes les 25 s : le rationner rendrait une audience à budget épuisé
+**définitivement muette** — on aurait fermé une porte en en ouvrant une plus petite et plus sûre.
+
+**Les deux nombres sont un seul contrat** : budget signalé + filet = la part d'un spectateur, et le
+quota serveur = cette part × `READERS_PER_EGRESS`. Un test a d'ailleurs exigé de corriger la
+dérivation : elle ne comptait que la part soutenue, et une salle pleine dépassait le quota de
+475 relectures — exactement la rafale de chacun. **Le serveur doit couvrir ce que le client
+s'autorise, pas sa moyenne.**
+
+> ⚠️ **Le test de cette propriété n'a pas mordu du premier coup, et c'est instructif.** Il martelait
+> puis observait une accalmie : un filet rationné y passait quand même, le budget se rechargeant
+> (1 jeton / 5 s) plus vite que le filet ne tourne (25 s). La condition qui sépare les deux mondes
+> est le martèlement **continu**. Le seuil a ensuite été **mesuré** — 884 relectures avec le filet
+> libre, 740 s'il est rationné — et l'assertion se compare au budget signalé, frontière réelle entre
+> les deux, plutôt qu'à un nombre écrit à la main.
+
+Deux traces de méthode, toutes deux de mon fait :
+
+- une **copie morte de `fetchBorne`** est partie en 0.1.44 : mon déplacement de l'aide vers le paquet
+  n'avait rien retiré, et l'audience utilisait la copie locale — donc un chemin non couvert par les
+  tests écrits pour l'autre. Deux implémentations d'un même contrat, exactement ce que ce dépôt
+  répète. Retirée ici, un seul point d'entrée pour les quatre chemins ;
+- `git checkout src/cadence.ts` pour annuler une mutation a effacé **tout** le travail non commité de
+  ce fichier. Deuxième fois dans la même semaine ; à ne plus jamais employer sur un fichier en cours.
 
 ### Inexactitudes relevées
 
