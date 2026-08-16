@@ -10,6 +10,42 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.36] — 2026-08-16
+
+### Fixed
+- ⚠️ **The internal-session quota could not hold a single reader.** The browser writes one session
+  every 12 s — **300 per hour for one person** — and the server allowed **120 per hour per address**.
+  The limit therefore sat *below* what one legitimate reader consumes: after 24 minutes of
+  continuous reading, everything was refused. And since the key is the address, a team behind a
+  single internet egress — the *ordinary* case for a company, not the edge case — shared a quota
+  that one person alone exceeds.
+
+  ⚠️ **The guard was right in its shape and wrong in its number**, which is exactly why nobody
+  re-read it: we re-read what looks doubtful, not what looks reasonable.
+
+  ⚠️ **And the refusal was silent.** The 429 appears only in the reader's console; the hourly log
+  named the missing field, never the quota. An operator saw a table that would not fill, with no
+  cause attached — the very symptom we had just fixed elsewhere. It is now reported once an hour,
+  naming the quota, **before** the `return` rather than after it (the linter caught that one:
+  `Unreachable code`).
+
+  The cadence and the quota were two halves of one contract written in two places. They now live in
+  `src/cadence.ts`, inside the **shared** module whose own generated header already said why: *"two
+  implementations of one contract always end up diverging in silence."* The quota is **derived**
+  from the cadence — changing one moves the other.
+
+  ⚠️ **The key stays the address**, and that is not an oversight. A session id is chosen by the
+  browser; a quota keyed on it is bypassed by rotating it — the `X-Forwarded-For` lesson of 0.1.22,
+  where the limit existed and limited nothing. **A limit can only rest on what the caller does not
+  choose.** It was the number that was wrong, not the key.
+
+  *Found by the second host, on their instance, while looking for why their table stayed empty.*
+
+### Changed
+- The shared bundle takes an explicit entry point. `SHARED_SOURCES` and the esbuild entry were the
+  same list, so adding a file made it count toward the cache-busting hash **without being bundled**:
+  the file would exist, the hash would change, and the import would fail only at runtime.
+
 ## [0.1.35] — 2026-08-15
 
 ### Fixed
@@ -1000,7 +1036,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.35...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.36...HEAD
+[0.1.36]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.35...v0.1.36
 [0.1.35]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.34...v0.1.35
 [0.1.34]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.33...v0.1.34
 [0.1.33]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.32...v0.1.33

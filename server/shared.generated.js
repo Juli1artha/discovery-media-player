@@ -1,5 +1,5 @@
 // GÉNÉRÉ par `npm run build:player` — NE PAS ÉDITER À LA MAIN.
-// Sources : src/presentation-content.ts
+// Sources : src/shared.ts, src/presentation-content.ts, src/cadence.ts
 //
 // Contrats partagés entre le navigateur et les fonctions serverless. Un seul exemplaire :
 // deux implémentations d'un même contrat finissent toujours par diverger en silence.
@@ -22,18 +22,24 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// src/presentation-content.ts
-var presentation_content_exports = {};
-__export(presentation_content_exports, {
+// src/shared.ts
+var shared_exports = {};
+__export(shared_exports, {
   DEFAULT_CENTER: () => DEFAULT_CENTER,
   DEFAULT_ZOOM: () => DEFAULT_ZOOM,
   MAP_TYPES: () => MAP_TYPES,
+  READERS_PER_EGRESS: () => READERS_PER_EGRESS,
+  SESSION_INTERVAL_MS: () => SESSION_INTERVAL_MS,
+  SESSION_QUOTA_PER_HOUR: () => SESSION_QUOTA_PER_HOUR,
+  SESSION_WRITES_PER_HOUR: () => SESSION_WRITES_PER_HOUR,
   cycleMapType: () => cycleMapType,
   initialMapContent: () => initialMapContent,
   mapTypeLabel: () => mapTypeLabel,
   sanitizeContent: () => sanitizeContent
 });
-module.exports = __toCommonJS(presentation_content_exports);
+module.exports = __toCommonJS(shared_exports);
+
+// src/presentation-content.ts
 var MAP_TYPES = ["roadmap", "satellite", "hybrid"];
 var DEFAULT_CENTER = [46.6, 2.5];
 var DEFAULT_ZOOM = 6;
@@ -81,11 +87,21 @@ function mapTypeLabel(current) {
 function initialMapContent() {
   return { kind: "map", center: [...DEFAULT_CENTER], zoom: DEFAULT_ZOOM, marker: null, mapType: null, label: null };
 }
+
+// src/cadence.ts
+var SESSION_INTERVAL_MS = 12e3;
+var SESSION_WRITES_PER_HOUR = Math.ceil(36e5 / SESSION_INTERVAL_MS);
+var READERS_PER_EGRESS = 25;
+var SESSION_QUOTA_PER_HOUR = SESSION_WRITES_PER_HOUR * READERS_PER_EGRESS;
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   DEFAULT_CENTER,
   DEFAULT_ZOOM,
   MAP_TYPES,
+  READERS_PER_EGRESS,
+  SESSION_INTERVAL_MS,
+  SESSION_QUOTA_PER_HOUR,
+  SESSION_WRITES_PER_HOUR,
   cycleMapType,
   initialMapContent,
   mapTypeLabel,

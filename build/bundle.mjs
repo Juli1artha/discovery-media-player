@@ -26,7 +26,16 @@ const OUT_SHARED = resolve(ROOT, "server/shared.generated.js");
 // Modules SANS DOM, utiles aux DEUX côtés : le navigateur les reçoit dans le bundle, les fonctions
 // serverless les requièrent en CommonJS. C'est ce qui permet à un contrat (celui du contenu d'une
 // présentation, par exemple) de n'exister qu'en UN exemplaire au lieu de deux qui divergent.
-export const SHARED_SOURCES = ["src/presentation-content.ts"];
+// ⚠️ DEUX LISTES, PARCE QU'ELLES RÉPONDENT À DEUX QUESTIONS.
+//
+// `SHARED_SOURCES` sert au HACHAGE : toute source dont le contenu doit invalider le bundle y figure.
+// `SHARED_ENTRY` est le point d'entrée d'esbuild, qui n'en prend qu'un.
+//
+// Elles étaient confondues — `entryPoints: [SHARED_SOURCES[0]]` — donc ajouter un fichier à la liste
+// le faisait compter dans le hachage SANS l'embarquer. Le module partagé aurait grandi sans que rien
+// ne le dise : le fichier existe, le hachage change, et l'import échoue à l'exécution seulement.
+export const SHARED_SOURCES = ["src/shared.ts", "src/presentation-content.ts", "src/cadence.ts"];
+export const SHARED_ENTRY = "src/shared.ts";
 
 /** Sources embarquées dans le bundle navigateur. Toute nouvelle brique s'ajoute ici ET dans index.ts. */
 export const SOURCES = [
@@ -78,7 +87,7 @@ export async function bundle() {
 /** Build CommonJS des modules partagés, requis tel quel par les fonctions serverless. */
 export async function bundleShared() {
   const result = await build({
-    entryPoints: [resolve(ROOT, SHARED_SOURCES[0])],
+    entryPoints: [resolve(ROOT, SHARED_ENTRY)],
     absWorkingDir: ROOT, // cf. bundle() : la sortie ne doit pas dépendre du dossier d'exécution
     bundle: true,
     write: false,

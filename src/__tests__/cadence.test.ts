@@ -1,0 +1,98 @@
+// LE QUOTA NE TENAIT PAS UN SEUL LECTEUR.
+//
+// Le navigateur écrivait une session interne toutes les 12 s — 300 par heure pour UNE personne — et
+// le serveur en autorisait 120 par heure et par adresse. La limite était donc SOUS ce qu'un lecteur
+// légitime consomme : après 24 minutes de lecture continue, tout était refusé. Et la clé étant
+// l'adresse, une équipe derrière une sortie internet unique — le cas ordinaire d'une entreprise —
+// se partageait un quota qu'une seule personne dépasse.
+//
+// ⚠️ La garde était juste dans sa FORME et fausse dans son CHIFFRE. C'est pour ça que personne ne
+// l'a relue : on relit ce qui a l'air douteux, pas ce qui a l'air raisonnable.
+//
+// ⚠️ Et le refus était MUET. Le 429 n'apparaît que dans la console du lecteur ; le journal horaire
+// ne parlait que du champ manquant, pas du quota. L'exploitant voyait une table qui ne se remplit
+// pas, sans cause nommée — exactement le symptôme qu'on venait de corriger ailleurs.
+//
+// Trouvé par le second hôte, sur son instance, en cherchant pourquoi sa table restait vide.
+//
+// Ces tests ne vérifient pas des VALEURS — elles peuvent changer — mais la RELATION entre elles :
+// un quota écrit à la main peut passer sous la cadence, un quota déduit ne le peut pas.
+
+import { describe, expect, it } from "vitest";
+
+import {
+  READERS_PER_EGRESS,
+  SESSION_INTERVAL_MS,
+  SESSION_QUOTA_PER_HOUR,
+  SESSION_WRITES_PER_HOUR,
+} from "../cadence";
+
+describe("le quota se déduit de la cadence", () => {
+  it("ce qu'un lecteur émet correspond bien à l'intervalle", () => {
+    expect(SESSION_WRITES_PER_HOUR).toBe(Math.ceil(3_600_000 / SESSION_INTERVAL_MS));
+  });
+
+  // ⚠️ LE TEST QUI MANQUAIT. Il tombe pour toute valeur inférieure à 300, c'est-à-dire pour la
+  // valeur qui était en production.
+  it("il tient au moins un lecteur entier", () => {
+    expect(SESSION_QUOTA_PER_HOUR,
+      "un quota sous la cadence refuse un lecteur qui lit normalement — c'était le cas à 120/h")
+      .toBeGreaterThanOrEqual(SESSION_WRITES_PER_HOUR);
+  });
+
+  it("et il en tient plusieurs, parce que l'adresse identifie un bâtiment", () => {
+    expect(SESSION_QUOTA_PER_HOUR).toBe(SESSION_WRITES_PER_HOUR * READERS_PER_EGRESS);
+    expect(READERS_PER_EGRESS, "dimensionner pour un seul lecteur revient à refuser le second")
+      .toBeGreaterThan(1);
+  });
+
+  it("une lecture continue d'une journée de travail passe", () => {
+    const heures = 8;
+    const emis = SESSION_WRITES_PER_HOUR * heures;
+    // Le quota est HORAIRE : ce qui compte est qu'une heure de lecture ne le remplisse pas.
+    expect(SESSION_WRITES_PER_HOUR).toBeLessThan(SESSION_QUOTA_PER_HOUR);
+    expect(emis / heures, "par heure, une personne reste loin du plafond")
+      .toBeLessThan(SESSION_QUOTA_PER_HOUR);
+  });
+
+  // ⚠️ La clé reste l'ADRESSE, et ce n'est pas un oubli. L'identifiant de session est choisi par le
+  // navigateur : un quota fondé dessus se contourne en le changeant — la leçon de
+  // `X-Forwarded-For` en 0.1.22, où la limite existait et ne limitait rien. C'est le chiffre qui
+  // était faux, pas la clé.
+  it("le quota reste borné : ce n'est pas une porte ouverte", () => {
+    expect(SESSION_QUOTA_PER_HOUR,
+      "un plafond qu'aucun usage réel n'atteint ne protège plus de rien")
+      .toBeLessThanOrEqual(50_000);
+  });
+});
+
+describe("les deux côtés lisent le même contrat", () => {
+  it("le navigateur ne redéclare pas la cadence", async () => {
+    const fs = await import("node:fs");
+    const src = fs.readFileSync(new URL("../tracking.ts", import.meta.url), "utf8");
+    expect(src, "une constante recopiée est une constante qui divergera")
+      .toContain("SESSION_INTERVAL_MS");
+    expect(src, "l'ancienne valeur en dur ne doit plus être là").not.toMatch(/\?\?\s*12000/);
+  });
+
+  it("le serveur non plus, et il déduit son quota", async () => {
+    const fs = await import("node:fs");
+    const src = fs.readFileSync(new URL("../../server/handler.js", import.meta.url), "utf8");
+    expect(src).toContain("SESSION_QUOTA_PER_HOUR");
+    expect(src, "le quota écrit à la main est ce qui a produit le défaut")
+      .not.toMatch(/intsess:\$\{ipInt\}`,\s*\d+/);
+  });
+
+  it("le refus de quota se dit, il ne se devine pas", async () => {
+    const fs = await import("node:fs");
+    const src = fs.readFileSync(new URL("../../server/handler.js", import.meta.url), "utf8");
+    expect(src).toContain("intsess:quota-avert");
+    // ⚠️ Le signalement doit précéder le `return`, sinon il ne s'exécute jamais — c'est
+    // exactement l'erreur que le lint a attrapée en l'écrivant (`Unreachable code`).
+    const i = src.indexOf("intsess:quota-avert");
+    const j = src.indexOf("statusCode = 429", i);   // le PREMIER 429 qui SUIT le journal
+    expect(j, "un 429 doit suivre le journal").toBeGreaterThan(i);
+    expect(j - i, "et il doit être dans le même bloc, pas ailleurs dans le fichier")
+      .toBeLessThan(900);
+  });
+});

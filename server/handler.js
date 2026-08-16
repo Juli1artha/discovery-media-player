@@ -6,6 +6,7 @@
 const crypto = require("crypto");
 const { getShareBySlug, logView, upsertSession, createReshare, sendReshareEmail, upsertInternalSession,
   createShare, revokeShare, setShareAuth, overview: docOverview, listSharesForDoc, listSessionsForDoc, internalStatsForDoc } = require("./shares");
+const { SESSION_QUOTA_PER_HOUR } = require("./shared.generated.js");
 const { createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent } = require("./presentations");
 // CONTEXTE INJECTÉ : tout ce que le player emprunte à l'application hôte passe par ici — stockage,
 // base, identité, limites, marque, journalisation — et rien d'autre. C'est la frontière qui permettra
@@ -3090,7 +3091,27 @@ async function handler(req, res) {
       // disant, avec le verrou fourni, est une transition.
       if (body.internal && body.event === "session") {
         const ipInt = ip0 || "anon";
-        if (!(await PLAYER.limits.allow(`intsess:${ipInt}`, 120, 3600))) {
+        // ⚠️ LE QUOTA SE DÉDUIT DE LA CADENCE, IL NE S'ÉCRIT PLUS À LA MAIN.
+        //
+        // Il valait 120/h alors que le navigateur émet 300/h POUR UN SEUL LECTEUR : la limite ne
+        // tenait pas 0,4 lecteur, et refusait tout après 24 minutes de lecture continue. La clé
+        // étant l'adresse, une équipe derrière une sortie unique — le cas ordinaire d'une
+        // entreprise — se partageait ce que même une personne dépasse.
+        //
+        // ⚠️ La garde était juste dans sa forme et fausse dans son chiffre : c'est pour ça que
+        // personne ne l'a relue. On relit ce qui a l'air douteux, pas ce qui a l'air raisonnable.
+        //
+        // Détail et arithmétique : src/cadence.ts. Trouvé par le second hôte.
+        if (!(await PLAYER.limits.allow(`intsess:${ipInt}`, SESSION_QUOTA_PER_HOUR, 3600))) {
+          // ⚠️ UN REFUS MUET EST UNE TABLE VIDE SANS CAUSE NOMMÉE. Le 429 n'apparaît que dans la
+          // console du lecteur ; l'exploitant, lui, voyait sa mesure ne pas monter et n'avait rien
+          // à quoi le rattacher. C'est la règle des gardes muettes appliquée au quota lui-même —
+          // et le signalement passe AVANT le `return`, sans quoi il ne s'exécuterait jamais.
+          try {
+            if (await PLAYER.limits.allow("intsess:quota-avert", 1, 3600)) {
+              PLAYER.errors.capture(new Error(`session interne refusée : quota horaire atteint (${SESSION_QUOTA_PER_HOUR}/h par adresse) — la mesure s'arrête tant qu'il l'est`), { route: "internal-session" });
+            }
+          } catch { /* un journal ne doit jamais empêcher une lecture */ }
           res.statusCode = 429; res.setHeader("Content-Type", "application/json"); res.end('{"ok":false,"error":"rate"}');
           return;
         }
