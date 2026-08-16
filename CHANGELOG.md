@@ -10,6 +10,50 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.39] — 2026-08-16
+
+### Fixed
+- ⚠️ **A document displayed on a second screen was counted as an absence.** `viewable()` required
+  `doc.hasFocus()` — and `hasFocus()` answers *"the user is typing here"*, not *"the user is
+  looking"*. A reader with the document visible for forty seconds while working on the other screen
+  was credited **two seconds**.
+
+  ⚠️ This never was an internal-population problem. A prospect keeping a brochure open while it is
+  discussed over the phone is the **central** use of a shared link, and it measured as absence. The
+  function promised *reading time* and returned *typing time*.
+
+  `visibilityState` read `visible` throughout: the right signal was available, overridden by a
+  stricter condition answering a different question.
+
+  ⚠️ **What remains is deliberate.** The idle threshold is now the *sole* thing separating a reader
+  from a forgotten tab, so a document read with no interaction at all counts at most `idleMs` — 60 s
+  by default. Better than zero, less than a real ten-minute reading. Raising it would measure
+  passive reading better *and* credit an abandoned tab for longer: that is a decision about what
+  "reading" means, and it is written next to the option rather than taken alone.
+
+  *Found by the second host on a real reading — 26 s of presence, 2 s counted — after a first
+  diagnosis ("the frame had no focus") that the reader themselves corrected.*
+
+- **`start()` began counting without checking visibility.** A document opened in a background tab —
+  a link clicked with Cmd, a session restore — started counting before ever being seen, and the
+  idle cap still credited it `idleMs`. One minute of reading for a tab nobody looked at. `commit()`
+  already made that check; `start()` did not.
+
+  *Found by the test written for the second-screen case, which was looking for something else.*
+
+### Note
+- ⚠️ **`main` had been failing CI since 0.1.36**, and three versions shipped on top of it: a test
+  in the browser suite read files through `node:fs`, which vitest runs happily and `tsc` refuses.
+
+  I did not see it because **I was counting passes instead of looking for failures** — `gh pr checks
+  | grep -c pass` returns 6 whether or not something else failed beside it. A count of successes
+  says nothing about failures. It is the same mistake this repository has been documenting in its
+  own guards for two days, made on the tool meant to watch them.
+
+  Disk-reading assertions now live in the server suite, where they belong. I put one back in the
+  browser suite ten minutes after fixing the first — the rule is simple, and writing it down did not
+  stop me breaking it twice.
+
 ## [0.1.38] — 2026-08-16
 
 ### Fixed
@@ -1106,7 +1150,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.38...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.39...HEAD
+[0.1.39]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.38...v0.1.39
 [0.1.38]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.37...v0.1.38
 [0.1.37]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.36...v0.1.37
 [0.1.36]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.35...v0.1.36

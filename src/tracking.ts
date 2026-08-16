@@ -33,6 +33,17 @@ export interface TrackerOptions {
   /** Route d'ingestion des événements. */
   endpoint?: string;
   /** Sans interaction pendant ce délai, le chrono se met en pause. */
+  /**
+   * Au bout de combien de temps sans la moindre interaction cesse-t-on de compter ?
+   *
+   * ⚠️ DEPUIS LE RETRAIT DE `hasFocus()`, CE SEUIL EST SEUL À DISTINGUER un lecteur d'un onglet
+   * oublié. Il porte donc plus qu'avant : un document lu passivement — affiché pendant qu'on en
+   * parle au téléphone — compte au plus `idleMs`, puisqu'il ne produit aucun événement.
+   *
+   * 60 s par défaut. Le relever mesurerait mieux la lecture passive et compterait aussi plus
+   * longtemps un document simplement laissé ouvert : c'est un arbitrage sur ce que « lire » veut
+   * dire, pas un réglage de confort. À décider entre hôtes, pas seul.
+   */
   idleMs?: number;
   /** Cadence de persistance de la session (filet si l'onglet meurt sans prévenir). */
   sessionEveryMs?: number;
@@ -135,11 +146,30 @@ export function createTracker(options: TrackerOptions = {}): Tracker {
     try { send(payload); } catch { /* best-effort */ }
   };
 
-  const viewable = () =>
-    !!doc &&
-    doc.visibilityState === "visible" &&
-    (typeof doc.hasFocus === "function" ? doc.hasFocus() : true) &&
-    !idle;
+  /**
+   * Le document est-il en train d'être LU ?
+   *
+   * ⚠️ `hasFocus()` A ÉTÉ RETIRÉ, ET C'EST LE FOND. Il mesure « l'utilisateur tape ici », pas
+   * « l'utilisateur regarde ». Un lecteur sur double écran — document visible pendant quarante
+   * secondes, mains sur l'autre écran — était compté DEUX SECONDES : la fenêtre n'était pas au
+   * premier plan, donc `hasFocus()` faux, cadre ou pas cadre.
+   *
+   * ⚠️ Et ça ne touchait pas que la population interne : un prospect qui garde une plaquette
+   * ouverte pendant qu'on lui en parle au téléphone est le cas d'usage CENTRAL d'un lien de
+   * présentation, et il se mesurait comme une absence.
+   *
+   * `visibilityState` valait `visible` pendant tout ce temps. Le signal juste était disponible,
+   * écrasé par une condition plus stricte qui répondait à une autre question.
+   *
+   * ⚠️ CE QUI RESTE, ET QUI EST VOULU : le seuil d'inactivité. C'est lui qui distingue un lecteur
+   * d'un onglet oublié, et il est maintenant SEUL à le faire. Un document affiché sans aucune
+   * interaction compte donc `idleMs` au plus — 60 s par défaut. Mieux que zéro, moins qu'une
+   * lecture réelle de dix minutes : voir la note d'`idleMs`, c'est une décision de mesure et pas
+   * un défaut.
+   *
+   * Signalé par le second hôte, sur une lecture réelle : 26 s de présence pour 2 s comptées.
+   */
+  const viewable = () => !!doc && doc.visibilityState === "visible" && !idle;
 
   /**
    * Durée réellement lue depuis `activeSince`, PLAFONNÉE.
@@ -247,8 +277,16 @@ export function createTracker(options: TrackerOptions = {}): Tracker {
       started = true;
       track("open", 1);
       activePage = 1;
-      activeSince = now();
       lastActivity = now();
+      // ⚠️ ON N'AMORCE QUE SI C'EST VISIBLE. `start()` posait `activeSince` sans condition : un
+      // document ouvert dans un onglet d'ARRIÈRE-PLAN — un lien cliqué avec Cmd, une restauration
+      // de session — commençait à compter avant d'avoir été vu une seule fois, et le plafond
+      // d'inactivité lui accordait quand même `idleMs`. Une minute de lecture pour un onglet
+      // jamais regardé.
+      //
+      // `commit()` faisait déjà ce test ; `start()` ne le faisait pas. Trouvé par le test écrit
+      // pour le cas du second écran — il cherchait autre chose.
+      activeSince = viewable() ? now() : null;
 
       // Onglet caché → on met en pause ET on persiste : un onglet caché peut ne jamais revenir.
       on(doc, "visibilitychange", () => {
