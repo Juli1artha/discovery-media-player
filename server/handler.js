@@ -6,7 +6,7 @@
 const crypto = require("crypto");
 const { getShareBySlug, logView, upsertSession, createReshare, sendReshareEmail, upsertInternalSession,
   createShare, revokeShare, setShareAuth, overview: docOverview, listSharesForDoc, listSessionsForDoc, internalStatsForDoc } = require("./shares");
-const { SESSION_QUOTA_PER_HOUR } = require("./shared.generated.js");
+const { SESSION_QUOTA_PER_HOUR, PRESENT_QUOTA_PER_HOUR } = require("./shared.generated.js");
 const { createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent } = require("./presentations");
 // CONTEXTE INJECTÉ : tout ce que le player emprunte à l'application hôte passe par ici — stockage,
 // base, identité, limites, marque, journalisation — et rien d'autre. C'est la frontière qui permettra
@@ -3377,6 +3377,36 @@ async function handler(req, res) {
     // Mode « Présenter » côté AUDIENCE : `?present=<slug>` → page live (suit le présentateur via Realtime) ;
     // `&file=1` → stream le PDF de la présentation (Range, même origine pour pdf.js).
     if (q.present) {
+      // ⚠️ LA GARDE PASSE DEVANT L'INTERROGATION DE BASE, PAS DERRIÈRE.
+      //
+      // `state=1` et `chat=1` sont servis sans session, sur un lien public, et chaque appel coûte
+      // une requête base. Une boucle sur une URL connue faisait donc d'un lien de présentation un
+      // amplificateur : une requête HTTP triviale contre une requête base, autant de fois qu'on
+      // veut. Douze actions d'écriture étaient limitées ; ces deux LECTURES ne l'étaient pas.
+      //
+      // ⚠️ Et c'est la ressource PARTAGÉE qui paie : la base est la même pour tous les documents de
+      // l'instance. Le coût d'un abus ne retombe pas sur celui qui le commet.
+      //
+      // Placée AVANT `getPresentation` — écrite après, elle aurait laissé passer très exactement la
+      // requête qu'elle est censée épargner. Le quota se déduit de la cadence de l'audience
+      // (`src/cadence.ts`), il n'est pas choisi à la main.
+      const sondage = String(q.state || "") === "1" || String(q.chat || "") === "1";
+      if (sondage) {
+        const ipSondage = adresseAppelant(req) || "anon";
+        if (!(await PLAYER.limits.allow(`pread:${ipSondage}`, PRESENT_QUOTA_PER_HOUR, 3600))) {
+          // ⚠️ UN REFUS MUET FAIT UNE AUDIENCE QUI DÉCROCHE SANS CAUSE NOMMÉE. Le 429 n'apparaît
+          // que dans la console du spectateur ; l'exploitant, lui, verrait des pages qui ne tournent
+          // plus chez tout un bâtiment. Une fois par heure suffit à nommer la cause sans inonder.
+          if (await PLAYER.limits.allow("pread:quota-avert", 1, 3600)) {
+            try {
+              console.warn(`[player] relectures de présentation refusées : quota horaire par adresse atteint (${PRESENT_QUOTA_PER_HOUR}/h). Une audience nombreuse derrière une sortie unique verra ses pages cesser de tourner.`);
+            } catch { /* sans console */ }
+          }
+          res.statusCode = 429; res.setHeader("Content-Type", "application/json"); res.setHeader("Cache-Control", "no-store");
+          res.end(JSON.stringify({ ok: false, error: "rate" }));
+          return;
+        }
+      }
       const pres = await getPresentation(String(q.present));
       if (!pres) return sendRefusal(res, "ended", embed);
       // Historique du chat (chargé au join par présentateur ET audience).

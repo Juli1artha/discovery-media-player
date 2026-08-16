@@ -300,7 +300,7 @@ du code écrit **le jour même** — c'est le signe qu'il fallait entendre.
 | C-2 | `on(win,"blur",pause)` annulait le correctif du double écran | ✅ **0.1.41** |
 | C-3 | `presentContent()` ne rendait pas sa promesse : l'ordonnanceur n'attendait rien | ✅ **0.1.41** |
 | C-4 | Comportement du présentateur anonyme ambigu (carte refusée, page acceptée) | ✅ **0.1.42** |
-| C-5 | Canal public : amplificateur de trafic, pas de limite sur `state=1` / `chat=1` | à faire — le prochain |
+| C-5 | Canal public : amplificateur de trafic, pas de limite sur `state=1` / `chat=1` | ✅ **0.1.42** |
 | C-6 | `flattenPresence()` indexe un `{}` par des identités réseau | à faire (pollution de prototype) |
 | C-7 | `present-attend` accepte une `key` choisie par le client | ✅ **0.1.42** |
 | C-8 | `present-stats` / `present-doc-list` : session exigée, propriété non vérifiée | recoupe P2-1 |
@@ -348,6 +348,30 @@ tout quand la valeur est la seule chose qui sépare deux participants — la cor
 > recherche de `.email` ; une mutation remettant le défaut sous un autre nom passait au travers. Elle
 > **exécute** maintenant le paquet livré et lui tend l'identité de cinq façons — ancienne signature
 > comprise. Avec la fonction d'origine restaurée, elle échoue sur les deux moitiés.
+
+### C-5 — le canal public borné
+
+`state=1` et `chat=1` sont servis **sans session**, sur un lien public, et chaque appel coûte une
+interrogation de base. Douze actions d'écriture passaient par une limite ; ces deux **lectures**,
+non. Une boucle sur une URL connue faisait donc d'un lien de présentation un amplificateur : une
+requête HTTP triviale contre une requête base, autant de fois qu'on veut. Et c'est la ressource
+**partagée** qui paie — la base est la même pour tous les documents de l'instance — donc le coût
+d'un abus ne retombe pas sur celui qui le commet.
+
+⚠️ **La place de la garde est le correctif.** `getPresentation()` s'exécutait AVANT les branches
+`state`/`chat` : une limite écrite là où le refus se formule aurait refusé correctement, avec le bon
+code HTTP, **après avoir dépensé exactement ce qu'elle protège**. Les tests comptent donc les
+interrogations de base, pas les codes de retour.
+
+Le quota se **déduit** de la cadence de l'audience (`src/cadence.ts`) : filet de resynchronisation à
+25 s + une action de présentateur toutes les 5 s, le tout multiplié par `READERS_PER_EGRESS` — la
+même constante que pour les sessions, réutilisée plutôt que réinventée. Refus journalisé une fois
+par heure : sans cela, une salle entière décrocherait sans cause nommée.
+
+> ⚠️ Un test de cette série a échoué en affirmant mal. Je vérifiais la clé en posant un
+> `X-Forwarded-For` et en l'attendant dans la clé : la garde de 0.1.22 a répondu `pread:anon`. Un
+> en-tête que l'appelant écrit lui-même ne fonde aucune limite. Le test dit maintenant la propriété —
+> la clé vient de la connexion, et l'en-tête ne la déplace pas.
 
 ### C-10 — le premier vrai bout-en-bout
 
