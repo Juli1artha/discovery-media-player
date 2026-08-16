@@ -364,11 +364,32 @@ async function switchPresentationDoc(slug, email, isAdmin, { fileUrl, fileName, 
 // finissaient par diverger, et une audience qui ne voit pas la bonne carte n'émet aucune erreur.
 const { sanitizeContent } = require("./shared.generated.js");
 
-async function setPresentationContent(slug, email, isAdmin, content) {
+/**
+ * Ce que la présentation AFFICHE : carte, Street View, ou rien.
+ *
+ * ⚠️ DEUX AUTORITÉS, ET C'EST LE CORRECTIF. Cette fonction n'acceptait que le PROPRIÉTAIRE, alors
+ * que `setPage` — qui pilote exactement de la même façon — accepte le `control_token`. Conséquence :
+ * une présentation démarrée SANS session (c'est permis, `present-start` ne l'exige pas) pouvait
+ * tourner les pages mais pas déplacer sa carte. L'appel repartait en 401, avalé côté navigateur, et
+ * le présentateur voyait sa carte ne pas suivre sans qu'aucun message ne le dise.
+ *
+ * Piloter ce qui s'affiche et tourner une page sont le même acte : le `control_token` suffit aux
+ * deux. Le propriétaire garde son chemin — il pilote sa présentation depuis l'application sans
+ * détenir le jeton de contrôle du navigateur qui la présente.
+ *
+ * ⚠️ Ce qui reste réservé au propriétaire est `switchPresentationDoc` : changer le DOCUMENT n'est
+ * pas piloter l'affichage, c'est décider ce qui est montré. Les deux étaient groupés par voisinage
+ * dans la route, pas par autorité.
+ *
+ * Signalé par un audit externe : « le comportement actuel est ambigu ».
+ */
+async function setPresentationContent(slug, email, isAdmin, content, control) {
   if (!slug) return { ok: false, status: 400 };
   const row = await getPresentation(slug);
   if (!row) return { ok: false, status: 404 };
-  if (!isAdmin && (!row.owner_email || row.owner_email !== lc(email))) return { ok: false, status: 403 };
+  const pilote = control && tokenMatches(control, row.control_hash);
+  const proprietaire = isAdmin || (row.owner_email && row.owner_email === lc(email));
+  if (!pilote && !proprietaire) return { ok: false, status: 403 };
   await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { content: sanitizeContent(content), active: true, last_seen: new Date().toISOString(), updated_at: new Date().toISOString() } });
   return { ok: true };
 }

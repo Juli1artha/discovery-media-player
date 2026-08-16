@@ -289,6 +289,54 @@ qu'on a pour une population qui ne prouve rien — par construction, puisque c'e
 
 *Précision demandée par la session ADV, avant que la version ne parte.*
 
+## Audit CODEX 5.6 (16 août 2026, sur `0.1.40`)
+
+Troisième regard externe, reçu après la série de correctifs ci-dessus. Deux de ses constats visaient
+du code écrit **le jour même** — c'est le signe qu'il fallait entendre.
+
+| | Constat | État |
+|---|---|---|
+| C-1 | `endPresent()` annonce la fin sans attendre de confirmation HTTP | ✅ **0.1.42** |
+| C-2 | `on(win,"blur",pause)` annulait le correctif du double écran | ✅ **0.1.41** |
+| C-3 | `presentContent()` ne rendait pas sa promesse : l'ordonnanceur n'attendait rien | ✅ **0.1.41** |
+| C-4 | Comportement du présentateur anonyme ambigu (carte refusée, page acceptée) | ✅ **0.1.42** |
+| C-5 | Canal public : amplificateur de trafic, pas de limite sur `state=1` / `chat=1` | à faire — le prochain |
+| C-6 | `flattenPresence()` indexe un `{}` par des identités réseau | à faire (pollution de prototype) |
+| C-7 | `present-attend` accepte une `key` choisie par le client | à faire — un participant peut écraser la ligne d'un autre |
+| C-8 | `present-stats` / `present-doc-list` : session exigée, propriété non vérifiée | recoupe P2-1 |
+| C-9 | Pas de délai maximal sur PostgREST / signUpload / verifyToken | recoupe P1-4 |
+| C-10 | E2E navigateur absent | 🔧 **entamé en 0.1.42** — cf. ci-dessous |
+
+### C-1 et C-4 — corrigés en `0.1.42`
+
+**C-1.** `endPresent` partait en `sendBeacon`, qui ne rend **aucune** réponse, puis nettoyait
+l'interface, effaçait le jeton de contrôle et coupait le canal. Un échec laissait donc la
+présentation **vivante pour l'audience** pendant que le présentateur la croyait close — sans même de
+quoi la refermer, son jeton ayant déjà été jeté. Et le beacon n'achetait rien : son seul appelant
+était un **bouton**. Il est désormais sur `pagehide`, et là seulement ; le bouton attend un 2xx
+avant de diffuser, de couper et d'effacer quoi que ce soit.
+
+**C-4.** `present-start` n'exige aucune session — c'est voulu. `present-page` se contente donc du
+`control_token`. Mais `present-content` — ce que la présentation **affiche** — avait été rangé avec
+les actions à session : une présentation anonyme tournait ses pages sans pouvoir déplacer sa carte,
+l'appel repartant en 401 avalé côté navigateur. Les deux actions sont le même acte de pilotage ;
+elles avaient été groupées par **voisinage dans la route, pas par autorité**. Ce qui reste réservé
+au propriétaire est `present-switch` : changer le document montré n'est pas piloter l'affichage.
+
+### C-10 — le premier vrai bout-en-bout
+
+`server/__tests__/finDePresentation.test.js` **exécute la page du présentateur** dans jsdom : il rend
+le HTML, l'installe, joue les scripts, clique « Présenter », puis clique « Terminer » avec une
+réponse serveur qu'on dénoue à la main.
+
+> ⚠️ C'est ce qui distingue ce test d'une sonde textuelle. On aurait pu vérifier que le signal est
+> écrit **après** l'appel dans le texte du gabarit — c'est ce que fait `ecrirePuisSignaler`. Mais
+> « après la réponse » et « dans la branche d'échec » ont tous deux le signal après l'appel. Seul un
+> échec provoqué les sépare. Les trois mutations qui remettent le défaut sont refusées, dont celle
+> qui diffuse dès le départ de la requête.
+
+Reste à étendre : audience normale, audience hostile.
+
 ## ⚠️ La règle à garder de toute la semaine
 
 Formulée par ADV, le 16/08/2026, après trois occurrences chez chacun :
