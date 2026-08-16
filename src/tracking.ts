@@ -14,6 +14,8 @@
 // croire à une lecture qui n'a pas eu lieu. Cette séparation est testée.
 
 /** Transport d'un événement. Injectable pour les tests ; par défaut `sendBeacon`, repli `fetch`. */
+import { SESSION_INTERVAL_MS } from "./cadence";
+
 export type TrackerTransport = (payload: Record<string, unknown>) => void;
 
 export interface TrackerOptions {
@@ -104,7 +106,7 @@ export function createTracker(options: TrackerOptions = {}): Tracker {
   const now = options.now || (() => Date.now());
   const endpoint = options.endpoint || "/api/doc";
   const idleMs = options.idleMs ?? 60000;
-  const sessionEveryMs = options.sessionEveryMs ?? 12000;
+  const sessionEveryMs = options.sessionEveryMs ?? SESSION_INTERVAL_MS;
   const slug = options.slug || "";
   const internal = options.internal || null;
   const sessionId = options.sessionId || defaultSessionId();
