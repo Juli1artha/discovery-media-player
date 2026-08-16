@@ -12,3 +12,6 @@ export * as chat from "./chat";
 export * as presentation from "./presentation-content";
 export * as viewer from "./viewer";
 export * as presentationState from "./presentation-state";
+// Les constantes de cadence sont déjà dans le paquet (tracking les importe) : les exposer ne coûte
+// rien et évite que le gabarit navigateur réécrive un nombre que le serveur connaît déjà.
+export * as cadence from "./cadence";

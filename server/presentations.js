@@ -77,6 +77,33 @@ async function listActivePresentations(email) {
   return live.map((r) => ({ slug: r.slug, docId: r.doc_id, fileUrl: r.file_url, fileName: r.file_name, docTitle: r.doc_title, presenterName: r.presenter_name, ownerName: r.owner_name, ownerAvatar: r.owner_avatar, currentPage: r.current_page || 1, mine: !!(me && r.owner_email && r.owner_email === me), updatedAt: r.updated_at }));
 }
 
+/**
+ * Terminer une présentation RÉVOQUE son jeton de contrôle.
+ *
+ * ⚠️ SANS ÇA, « terminer » ne terminait rien de définitif. Les fonctions de pilotage écrivent
+ * « active: true » — c'est voulu, on y revient — et le jeton de contrôle survivait à la clôture. Un
+ * second onglet resté ouvert, ou une écriture encore en vol, remettait donc la présentation en ligne
+ * pour l'audience alors que le présentateur la croyait close. Le jeton est persisté en localStorage :
+ * ce n'était pas une course étroite, c'était une porte ouverte à volonté.
+ *
+ * ⚠️ POURQUOI RÉVOQUER LE JETON PLUTÔT QUE REFUSER TOUTE ÉCRITURE SUR « active=false » — la règle
+ * générale que l'audit proposait. Parce que « active:false » recouvre DEUX situations qui n'ont rien
+ * à voir :
+ *
+ *   1. une fin DÉCIDÉE (ces deux chemins) — plus rien ne doit piloter ;
+ *   2. une péremption CONSTATÉE (listActivePresentations, 3 min sans battement) — le portable du
+ *      présentateur a dormi, et sa page suivante doit le remettre en ligne. La « résurrection » EST
+ *      la reprise.
+ *
+ * Une règle qui refuse les deux condamnerait un présentateur ANONYME à ne jamais revenir : la
+ * reprise exige la propriété, et « present-start » n'exige aucune session. On distingue donc les
+ * deux cas par ce qui les sépare vraiment — la décision — plutôt que par l'état qu'ils partagent.
+ *
+ * Le propriétaire garde « present-reclaim » : reprendre une présentation close est une décision, et
+ * elle regénère un jeton frais.
+ */
+const CLOTURE = { active: false, control_hash: null };
+
 // Clôture sans control_token → utilisée par le panneau « Présentations en direct » pour terminer à distance
 // une présentation dont on a perdu l'onglet. Autorisée au PROPRIÉTAIRE (email du JWT) OU à un ADMIN (modération).
 async function endPresentationByOwner(slug, email, isAdmin) {
@@ -84,7 +111,7 @@ async function endPresentationByOwner(slug, email, isAdmin) {
   const row = await getPresentation(slug);
   if (!row) return { ok: false, status: 404 };
   if (!isAdmin && (!row.owner_email || row.owner_email !== lc(email))) return { ok: false, status: 403 };
-  await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { active: false, updated_at: new Date().toISOString() } });
+  await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { ...CLOTURE, updated_at: new Date().toISOString() } });
   return { ok: true };
 }
 
@@ -121,7 +148,7 @@ async function endPresentation(slug, control) {
   const row = await getPresentation(slug);
   if (!row) return { ok: false, status: 404 };
   if (!tokenMatches(control, row.control_hash)) return { ok: false, status: 403 };
-  await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { active: false, updated_at: new Date().toISOString() } });
+  await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { ...CLOTURE, updated_at: new Date().toISOString() } });
   return { ok: true };
 }
 
@@ -349,6 +376,7 @@ async function switchPresentationDoc(slug, email, isAdmin, { fileUrl, fileName, 
   if (!slug || !fileUrl) return { ok: false, status: 400 };
   const row = await getPresentation(slug);
   if (!row) return { ok: false, status: 404 };
+  if (estClose(row)) return { ok: false, status: 409, error: "ended" };
   if (!isAdmin && (!row.owner_email || row.owner_email !== lc(email))) return { ok: false, status: 403 };
   await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: {
     file_url: String(fileUrl), file_name: fileName || null, doc_title: docTitle || null, doc_id: docId ? String(docId) : null,
@@ -363,6 +391,22 @@ async function switchPresentationDoc(slug, email, isAdmin, { fileUrl, fileName, 
 // Il traverse trois frontières (présentateur → serveur → audience) : deux implémentations
 // finissaient par diverger, et une audience qui ne voit pas la bonne carte n'émet aucune erreur.
 const { sanitizeContent } = require("./shared.generated.js");
+
+/**
+ * Une présentation close ne se pilote plus par le chemin PROPRIÉTAIRE.
+ *
+ * ⚠️ La révocation du jeton ferme le pilotage de qui détient un « control_token ». Elle ne ferme pas
+ * les deux actions qu'un propriétaire exerce avec sa seule session — changer le contenu affiché, et
+ * changer le document montré. Sans cette garde, celui qui vient de terminer sa présentation la
+ * remettrait en ligne en déplaçant une carte.
+ *
+ * ⚠️ Ici, et pas sur les chemins à jeton : un propriétaire dispose de « present-reclaim » pour
+ * rouvrir délibérément, ce qui n'est pas le cas d'un présentateur anonyme dont la présentation a
+ * simplement été marquée périmée.
+ */
+function estClose(row) {
+  return row && row.active === false;
+}
 
 /**
  * Ce que la présentation AFFICHE : carte, Street View, ou rien.
@@ -390,6 +434,8 @@ async function setPresentationContent(slug, email, isAdmin, content, control) {
   const pilote = control && tokenMatches(control, row.control_hash);
   const proprietaire = isAdmin || (row.owner_email && row.owner_email === lc(email));
   if (!pilote && !proprietaire) return { ok: false, status: 403 };
+  // Le pilote a déjà été filtré par la révocation du jeton ; c'est le propriétaire qu'on arrête ici.
+  if (!pilote && estClose(row)) return { ok: false, status: 409, error: "ended" };
   await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { content: sanitizeContent(content), active: true, last_seen: new Date().toISOString(), updated_at: new Date().toISOString() } });
   return { ok: true };
 }

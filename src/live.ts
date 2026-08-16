@@ -14,6 +14,8 @@
 //     d'un visiteur anonyme d'une session à l'autre.
 
 /** Stockage persistant minimal. `localStorage` lève en navigation privée → tout est en `try`. */
+import { PRESENT_WRITE_TIMEOUT_MS } from "./cadence";
+
 export interface KeyValueStore {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
@@ -354,4 +356,60 @@ export function createScheduler(
     maintenant() { if (!arrete) { dernier = -Infinity; lancer(); } },
     arreter() { arrete = true; if (minuteur !== null) { retirer(minuteur); minuteur = null; } },
   };
+}
+
+/**
+ * Un `fetch` dont on est sûr de reprendre la main.
+ *
+ * ⚠️ CE RISQUE EST NÉ D'UN CORRECTIF, et cette fonction vit à côté de `createScheduler` parce
+ * qu'elle en est la contrepartie. Avant 0.1.41 l'ordonnanceur appelait `fini()` immédiatement : les
+ * écritures partaient dans le désordre, mais rien ne pouvait se bloquer. En les rendant
+ * séquentielles — la requête est attendue — on a échangé un défaut de correction contre un risque de
+ * DISPONIBILITÉ : une requête qui reste suspendue ne règle jamais sa promesse, `fini()` n'est jamais
+ * appelé, et plus aucune écriture ne part. Le présentateur pilote alors dans le vide, en silence.
+ *
+ * Un navigateur ne garantit aucun délai de son côté : sur un réseau qui bascule, une requête peut
+ * rester en vol indéfiniment. C'est donc à l'appelant de se donner une limite.
+ *
+ * ⚠️ CE QUE ÇA RESTAURE, ET CE QUE ÇA NE RESTAURE PAS. La **vivacité** : la file repart. Pas
+ * l'**ordre** — une requête abandonnée peut très bien être arrivée au serveur et y atterrir après
+ * celle qui l'a remplacée. Garantir l'ordre malgré un abandon demande un numéro de version porté par
+ * l'écriture ; c'est le chantier de la file unique, pas celui-ci. Mieux vaut le dire que laisser
+ * croire que ce délai règle les deux.
+ *
+ * L'abandon est BEST-EFFORT : sans `AbortController`, on laisse la requête vivre et on cesse
+ * seulement de l'attendre. Rendre la main compte plus que couper le fil.
+ */
+export function fetchBorne(
+  url: string,
+  options?: RequestInit,
+  ms: number = PRESENT_WRITE_TIMEOUT_MS,
+  deps: {
+    fetch?: typeof fetch;
+    setTimer?: (f: () => void, d: number) => unknown;
+    clearTimer?: (id: unknown) => void;
+  } = {},
+): Promise<Response> {
+  const appel = deps.fetch || (typeof fetch === "function" ? fetch : undefined);
+  if (!appel) return Promise.reject(new Error("fetch indisponible"));
+  const poser = deps.setTimer || ((f, d) => setTimeout(f, d));
+  const retirer = deps.clearTimer || ((id) => clearTimeout(id as ReturnType<typeof setTimeout>));
+
+  let ctl: AbortController | null = null;
+  try { ctl = new AbortController(); } catch { /* environnement sans AbortController */ }
+  const o: RequestInit = ctl ? { ...(options || {}), signal: ctl.signal } : { ...(options || {}) };
+
+  let minuteur: unknown = null;
+  const expiration = new Promise<never>((_, ko) => {
+    minuteur = poser(() => {
+      try { ctl?.abort(); } catch { /* déjà partie */ }
+      ko(new Error("delai"));
+    }, ms);
+  });
+
+  const rendre = () => { try { retirer(minuteur); } catch { /* déjà retirée */ } };
+  return Promise.race([appel(url, o), expiration]).then(
+    (r) => { rendre(); return r as Response; },
+    (e) => { rendre(); throw e; },
+  );
 }

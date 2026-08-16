@@ -97,3 +97,22 @@ export const PRESENT_READS_PER_HOUR = RESYNC_READS_PER_HOUR + PRESENTER_ACTIONS_
  * une présentation à vingt-cinq derrière une sortie unique est le cas ordinaire.
  */
 export const PRESENT_QUOTA_PER_HOUR = PRESENT_READS_PER_HOUR * READERS_PER_EGRESS;
+
+// ── Le délai au bout duquel on rend la main ──────────────────────────────────────────────────────
+//
+// ⚠️ CE RISQUE EST NÉ D'UN CORRECTIF. Avant 0.1.41, l'ordonnanceur d'écritures appelait `fini()`
+// immédiatement : les écritures partaient dans le désordre, mais rien ne pouvait se bloquer. En les
+// rendant séquentielles — `presentContent()` rend sa promesse, l'ordonnanceur l'attend — on a
+// échangé un défaut de correction contre un risque de DISPONIBILITÉ : une requête qui reste
+// suspendue ne règle jamais sa promesse, `fini()` n'est jamais appelé, et plus aucune écriture ne
+// part. Le présentateur pilote alors dans le vide, en silence.
+//
+// Un navigateur ne garantit aucun délai : une requête peut rester en vol indéfiniment sur un réseau
+// qui bascule. C'est donc à l'appelant de rendre la main.
+//
+// ⚠️ CE QUE LE DÉLAI RESTAURE, ET CE QU'IL NE RESTAURE PAS. Il rend la VIVACITÉ : la file repart. Il
+// ne rend pas l'ORDRE — une requête abandonnée peut très bien être arrivée au serveur, et atterrir
+// après celle qui l'a remplacée. Garantir l'ordre malgré un abandon demande un numéro de version
+// porté par l'écriture ; c'est le chantier de la file unique, pas celui-ci. Mieux vaut le dire que
+// laisser croire que ce délai règle les deux.
+export const PRESENT_WRITE_TIMEOUT_MS = 10_000;

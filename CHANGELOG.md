@@ -10,6 +10,51 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.44] — 2026-08-16
+
+Two findings from the audit re-review that followed 0.1.43. ⚠️ **One of them was created by our own
+0.1.41 fix** — the review is reading a movement, not a state.
+
+### Fixed
+
+- ⚠️ **"End" did not end anything final.** Piloting functions write `active: true`, and the control
+  token **survived the closure**. A second tab left open therefore put the presentation back online
+  for the audience while the presenter believed it closed. The token is persisted in localStorage:
+  this was not a narrow race, it was a door left open at will.
+
+  ⚠️ **The rule the audit proposed — "refuse every write when `active=false`" — would have broken a
+  real recovery.** `active:false` covers two unrelated situations: a **decided** end, and an
+  **observed** staleness (3 minutes without a heartbeat), where "resurrection" *is* how a presenter
+  whose laptop slept comes back. Refusing both would strand an **anonymous** presenter forever —
+  `present-reclaim` requires ownership, and `present-start` requires no session at all.
+
+  The two are therefore separated by what actually distinguishes them — the decision. **Ending
+  revokes the control token**; staleness leaves it intact. Owner paths, which need no token, are
+  closed separately on `active=false`. No schema change. A mutation that makes the staleness sweep
+  revoke — i.e. that applies the general rule — is rejected by the bench.
+
+- ⚠️ **A hung request froze the write queue, and that risk came from our own fix.** Before 0.1.41 the
+  scheduler called `fini()` immediately: writes could land out of order, but nothing could block. By
+  making them sequential we traded a correctness defect for an **availability** risk — a suspended
+  request never settles its promise, the queue never resumes, and the presenter drives into the void,
+  silently. A browser guarantees no timeout of its own.
+
+  `fetchBorne` lives next to `createScheduler` because it is its counterpart. It bounds the four
+  paths that can wedge: audience re-reads, `pushPage`, `presentContent`, `endPresent`. The `pagehide`
+  beacon stays deliberately unbounded — it is never awaited.
+
+  ⚠️ **What the timeout restores, and what it does not.** **Liveness**: the queue resumes. Not
+  **order** — an abandoned request may well have reached the server and land after the one that
+  replaced it. Order despite abandonment needs a version number carried by the write; that belongs to
+  the single-queue work, not here. Better said than left implied.
+
+### Testing
+
+- ⚠️ **A textual probe fell over, and the property had not moved.** A test looked literally for
+  `fetch('/api/doc'` and failed once the call went through the bounded wrapper — while what it
+  asserts (write *before* broadcasting) was unchanged. It now recognises the **act**, not the name of
+  the call. Same lesson as the tag-filter patterns two versions earlier.
+
 ## [0.1.43] — 2026-08-16
 
 ### Fixed

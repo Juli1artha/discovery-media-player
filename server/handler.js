@@ -474,9 +474,36 @@ var Live=(function(){
       // Et à l'inverse, des signaux un peu plus espacés produisaient une requête chacun, POUR
       // CHAQUE SPECTATEUR : le canal public devenait un amplificateur vers l'API.
       // Détail et propriétés : src/live.ts + src/__tests__/ordonnanceur.test.ts. (audit P0-2)
+  // UNE REQUÊTE QUI NE REVIENT PAS BLOQUE TOUT CE QUI L'ATTEND.
+      //
+      // ⚠️ Ce risque est né d'un correctif. Avant 0.1.41 l'ordonnanceur appelait « fini() » tout de
+      // suite : le désordre était possible, le blocage non. En rendant les écritures séquentielles on a
+      // échangé un défaut de correction contre un risque de disponibilité — une requête suspendue ne
+      // règle jamais sa promesse, la file ne repart pas, et le présentateur pilote dans le vide sans
+      // qu'aucun message ne le dise. Un navigateur ne garantit aucun délai de son côté.
+      //
+      // ⚠️ Ce que ça restaure : la VIVACITÉ. Pas l'ORDRE — une requête abandonnée peut être arrivée au
+      // serveur et atterrir après celle qui l'a remplacée. L'ordre malgré un abandon demande un numéro
+      // de version porté par l'écriture, et c'est le chantier de la file unique.
+      //
+      // L'abandon est BEST-EFFORT : sans AbortController on laisse la requête vivre, on cesse seulement
+      // de l'attendre. Rendre la main compte plus que couper le fil.
+      function fetchBorne(url,opts,ms){
+        var limite=ms||(window.Player&&Player.cadence&&Player.cadence.PRESENT_WRITE_TIMEOUT_MS)||10000;
+        var ctl=null; try{ ctl=new AbortController(); }catch(e){}
+        var o=opts||{};
+        if(ctl){ o=Object.assign({},o); o.signal=ctl.signal; }
+        var minuteur=null;
+        var expiration=new Promise(function(_,ko){
+          minuteur=setTimeout(function(){ try{ if(ctl)ctl.abort(); }catch(e){} ko(new Error('delai')); },limite);
+        });
+        function rendreLaMain(v,echec){ try{ clearTimeout(minuteur); }catch(e){} if(echec)throw v; return v; }
+        return Promise.race([fetch(url,o),expiration])
+          .then(function(r){return rendreLaMain(r,false);},function(e){return rendreLaMain(e,true);});
+      }
       function relireAvec(url,applique){
         return Player.live.createScheduler(function(fini){
-          fetch('/api/doc?present='+encodeURIComponent(SLUG)+url)
+          fetchBorne('/api/doc?present='+encodeURIComponent(SLUG)+url)
             .then(function(r){return r.json();})
             .then(function(d){if(d&&d.ok)applique(d);})
             .catch(function(){})
@@ -2054,7 +2081,7 @@ ${LEGAL_CSS}
     // (audit P0-3)
     function diffuserEtat(){ if(!PRES||!window.Live)return; try{ Live.sendState(); }catch(e){} }
     function pushPage(){ if(!PRES)return; clearTimeout(_pushT); _pushT=setTimeout(function(){ if(!PRES)return;
-      fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-page',slug:PRES.slug,control:PRES.control,page:cur||1})})
+      Player.live.fetchBorne('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-page',slug:PRES.slug,control:PRES.control,page:cur||1})})
         .then(function(r){ if(r&&r.ok)diffuserEtat(); })
         .catch(function(){});
     },250); }
@@ -2090,7 +2117,7 @@ ${LEGAL_CSS}
       if(!PRES) return Promise.resolve();
       var p=PRES, btn=document.getElementById('pbarEnd'), libelle=btn?btn.textContent:'';
       if(btn){ btn.disabled=true; btn.textContent='…'; }
-      return fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},keepalive:true,
+      return Player.live.fetchBorne('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},keepalive:true,
           body:JSON.stringify({action:'present-end',slug:p.slug,control:p.control})})
         .then(function(r){ if(!r||!r.ok) throw new Error('present-end'); })
         .then(function(){
@@ -2151,7 +2178,7 @@ ${LEGAL_CSS}
     // s'appliquait qu'à l'ordre des APPELS, pas à celui des écritures — plusieurs PATCH pouvaient
     // voler ensemble, et une position ancienne atterrir après une récente.
     function presentContent(content){ if(!PRES)return Promise.resolve(); var h={'Content-Type':'application/json'}; var tk=appToken(); if(tk) h['Authorization']='Bearer '+tk;
-      return fetch('/api/doc',{method:'POST',headers:h,body:JSON.stringify({action:'present-content',slug:PRES.slug,control:PRES.control,content:content})})
+      return Player.live.fetchBorne('/api/doc',{method:'POST',headers:h,body:JSON.stringify({action:'present-content',slug:PRES.slug,control:PRES.control,content:content})})
         .then(function(r){ if(r&&r.ok)diffuserEtat(); })
         .catch(function(){}); }
     function showMap(){ if(!PRES||!window.Map3DD)return; var wrap=document.getElementById('mapWrap'); if(wrap&&wrap.classList.contains('on')){ Map3DD.enter(null,true,presentContent); return; } var init=Player.presentation.initialMapContent(); presentContent(init); Map3DD.enter(init,true,presentContent); }

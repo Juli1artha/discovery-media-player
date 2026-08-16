@@ -33,7 +33,12 @@ describe("l'écriture précède le signal", () => {
   it.each(["pushPage", "presentContent"])("%s écrit d'abord, signale ensuite", (nom) => {
     const c = corps(nom);
     expect(c, nom).toBeTruthy();
-    const ecriture = c.indexOf("fetch('/api/doc'");
+    // ⚠️ ON CHERCHE L'ACTE, PAS LE NOM DE L'APPEL. Cette ligne cherchait littéralement
+    // « fetch('/api/doc' » — et elle est tombée le jour où l'appel est passé par une enveloppe
+    // bornée, alors que la propriété testée (écrire AVANT de signaler) n'avait pas bougé d'un
+    // caractère. Une sonde qui épingle une écriture interdit de réécrire ; une sonde qui reconnaît
+    // un acte laisse le code vivre. Même leçon que pour les motifs de balises.
+    const ecriture = c.search(/(?:fetch|fetchBorne)\('\/api\/doc'/);
     const signal = c.indexOf("diffuserEtat()");
     expect(ecriture, "l'appel d'écriture existe").toBeGreaterThan(0);
     expect(signal, "le signal existe").toBeGreaterThan(0);
