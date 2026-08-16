@@ -73,7 +73,13 @@ let bancsCrees = 0;
 async function banc() {
   bancsCrees++;
   const html = await htmlPresentateur();
-  document.documentElement.innerHTML = html.replace(/<script[\s\S]*?<\/script>/g, "");
+  // ⚠️ ON NE RETIRE PAS LES BALISES DE SCRIPT, ET C'EST PLUS SÛR QUE DE LES RETIRER. Un script
+  // posé par « innerHTML » ne s'exécute jamais — la spec HTML l'interdit — donc le filtrage
+  // n'apportait rien. Il avait en revanche la FORME d'un assainissement maison, que l'analyse
+  // statique signale à juste titre : un filtre par expression régulière sur du HTML rate ce
+  // qu'il ne prévoit pas (ici les majuscules). La bonne réponse à « votre filtre est incomplet »
+  // est souvent « ce filtre n'a pas lieu d'être », pas « rendons-le plus malin ».
+  document.documentElement.innerHTML = html;
   window.localStorage.clear();
 
   const appels = [];
@@ -96,7 +102,7 @@ async function banc() {
   // ⚠️ Le paquet est en « use strict » : un eval strict garde ses déclarations pour lui. On le
   // réexpose — artefact du banc, pas du produit : dans un navigateur c'est une balise script, et
   // « var Player » y est bien global.
-  for (const m of html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)) {
+  for (const m of html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)) {
     try { window.eval(m[1] + "\n;try{globalThis.Player=Player;}catch(e){}"); } catch { /* pdf.js n'est pas là, et on n'en a pas besoin */ }
   }
 
