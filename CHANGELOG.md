@@ -10,6 +10,48 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.40] — 2026-08-16
+
+### Fixed
+- ⚠️ **Turning a page did not count as reading.** Idleness was measured from *input* events — mouse,
+  keyboard, wheel, touch. But someone following a live presentation touches nothing: the pages turn
+  in front of them, pushed by the presenter. They went idle after a minute, while **the one thing
+  that proves they are watching was happening**.
+
+  A page turn now counts as activity. It also puts the threshold back in its place: it arbitrates
+  **silences** only. A real reader turns pages; a forgotten tab turns none.
+
+  *Seen by the second host: "what really separates a reading from a forgotten tab is not duration,
+  it is turning a page."*
+
+### Changed
+- **The idle threshold goes from 60 s to 3 minutes**, and the number comes from an asymmetry rather
+  than a preference. A dense page — a spec sheet, a contract — takes one to three minutes to read
+  without a single mouse movement, so 60 s counted an attentive reader as absent.
+
+  The two errors do not cost the same:
+
+  - *under-counting a real reading* → you call back a client who had read. Unpleasant, no consequence.
+  - *over-counting an abandoned tab* → you tell a salesperson "they read their contract for twenty
+    minutes", and they use it to push on price. **A decision taken on a fiction.**
+
+  Hence the low end of the range the second host proposed (3–5 minutes).
+
+  ⚠️ **The two measures stay separate**, and that is the point: `last_at − started_at` is *presence*,
+  `total_seconds` is *activity*. A contract skimmed for thirty seconds and a contract left open for
+  twenty minutes on a second screen are two different facts; collapsing them into one number loses
+  one. Whoever reads the statistics chooses.
+
+### Note
+- ⚠️ **Three of our own tests pinned `70` instead of the threshold**, so they broke when the value
+  moved although the property had not. They now derive from `SESSION_IDLE_MS`, which joins the
+  shared contract: *a test that fixes a number forbids changing the number; a test that fixes the
+  relation lets the number live.*
+- ⚠️ **And the bench neutralised the very mechanism under test.** It returned `setInterval: () => 0`,
+  so the idle loop never ran, `idle` stayed false forever, and removing the page-turn rule left the
+  tests **green**. The mutation revealed it, not a re-reading. *A bench that disables what it tests
+  is a test that cannot say no.*
+
 ## [0.1.39] — 2026-08-16
 
 ### Fixed
@@ -1150,7 +1192,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.39...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.40...HEAD
+[0.1.40]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.39...v0.1.40
 [0.1.39]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.38...v0.1.39
 [0.1.38]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.37...v0.1.38
 [0.1.37]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.36...v0.1.37

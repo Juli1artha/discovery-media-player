@@ -14,7 +14,7 @@
 // croire à une lecture qui n'a pas eu lieu. Cette séparation est testée.
 
 /** Transport d'un événement. Injectable pour les tests ; par défaut `sendBeacon`, repli `fetch`. */
-import { SESSION_INTERVAL_MS } from "./cadence";
+import { SESSION_IDLE_MS, SESSION_INTERVAL_MS } from "./cadence";
 
 export type TrackerTransport = (payload: Record<string, unknown>) => void;
 
@@ -40,9 +40,25 @@ export interface TrackerOptions {
    * oublié. Il porte donc plus qu'avant : un document lu passivement — affiché pendant qu'on en
    * parle au téléphone — compte au plus `idleMs`, puisqu'il ne produit aucun événement.
    *
-   * 60 s par défaut. Le relever mesurerait mieux la lecture passive et compterait aussi plus
-   * longtemps un document simplement laissé ouvert : c'est un arbitrage sur ce que « lire » veut
-   * dire, pas un réglage de confort. À décider entre hôtes, pas seul.
+   * ⚠️ TROIS MINUTES, ET LE CHIFFRE VIENT D'UNE ASYMÉTRIE, PAS D'UN CONFORT.
+   *
+   * 60 s comptait un lecteur attentif comme absent : une page dense — notice, contrat — se lit une
+   * à trois minutes sans un mouvement de souris. Le second hôte proposait trois à cinq.
+   *
+   * On prend le BAS de la fourchette, parce que les deux erreurs ne coûtent pas la même chose :
+   *
+   *   sous-compter une vraie lecture ⇒ on rappelle un client qui avait lu. Désagréable, sans suite.
+   *   sur-compter un onglet abandonné ⇒ on dit « il a lu son contrat vingt minutes » à un
+   *   commercial qui s'en servira pour relancer sur le prix. Une décision prise sur une fiction.
+   *
+   * ⚠️ Et ce seuil n'arbitre plus seul : depuis que tourner une page compte comme une activité,
+   * il ne tranche que les SILENCES. Un lecteur réel tourne des pages ; un onglet oublié n'en tourne
+   * aucune.
+   *
+   * ⚠️ NE PAS FONDRE LES DEUX MESURES. La table porte déjà `last_at − started_at` (la PRÉSENCE) et
+   * `total_seconds` (l'ACTIVITÉ). Un contrat parcouru trente secondes et un contrat ouvert vingt
+   * minutes sur un second écran sont deux faits différents : les ramener à un seul nombre en perd
+   * un. Que celui qui lit les statistiques choisisse. (formulation du second hôte)
    */
   idleMs?: number;
   /** Cadence de persistance de la session (filet si l'onglet meurt sans prévenir). */
@@ -116,7 +132,7 @@ export function createTracker(options: TrackerOptions = {}): Tracker {
   const doc = options.doc || (win && win.document);
   const now = options.now || (() => Date.now());
   const endpoint = options.endpoint || "/api/doc";
-  const idleMs = options.idleMs ?? 60000;
+  const idleMs = options.idleMs ?? SESSION_IDLE_MS;
   const sessionEveryMs = options.sessionEveryMs ?? SESSION_INTERVAL_MS;
   const slug = options.slug || "";
   const internal = options.internal || null;
@@ -308,6 +324,19 @@ export function createTracker(options: TrackerOptions = {}): Tracker {
 
     setPage(page: number) {
       if (!page || page === current) return;
+      // ⚠️ TOURNER UNE PAGE EST LA MEILLEURE PREUVE DE LECTURE QUI SOIT, et elle ne comptait pas.
+      //
+      // L'inactivité se mesurait sur des événements d'ENTRÉE — souris, clavier, molette, tactile.
+      // Or un spectateur qui suit une présentation en direct ne touche rien : les pages tournent
+      // devant lui, poussées par le présentateur. Il devenait inactif au bout d'une minute, alors
+      // que la seule chose qui prouve qu'il regarde était en train de se produire.
+      //
+      // C'est aussi ce qui rend le seuil moins critique : un lecteur réel tourne des pages, un
+      // onglet oublié n'en tourne aucune. Le seuil arbitre les silences, la page tranche le reste.
+      //
+      // Vu par le second hôte : « ce qui distingue vraiment une lecture d'un onglet oublié n'est
+      // pas la durée, mais le fait de tourner une page ».
+      lastActivity = now();
       commit();
       activePage = page;
       current = page;

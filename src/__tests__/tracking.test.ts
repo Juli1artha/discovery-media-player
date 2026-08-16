@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createTracker, type TrackerOptions } from "../tracking";
+import { SESSION_IDLE_MS } from "../cadence";
 
 // Environnement navigateur minimal et PILOTABLE : c'est tout l'intérêt d'avoir sorti ce code des
 // template literals — le temps, la visibilité et le focus deviennent des variables du test.
@@ -241,7 +242,7 @@ describe("tracking — le temps qui saute", () => {
     h.tickTimers();             // réveil
     // Jusqu'à la dernière activité, plus le délai de grâce — ce que la boucle d'inactivité aurait
     // décompté si elle avait pu tourner.
-    expect(h.tracker.totalSeconds()).toBeLessThanOrEqual(70);
+    expect(h.tracker.totalSeconds()).toBeLessThanOrEqual(SESSION_IDLE_MS / 1000 + 10);
     expect(h.tracker.totalSeconds()).toBeGreaterThanOrEqual(60);
   });
 
@@ -252,7 +253,7 @@ describe("tracking — le temps qui saute", () => {
     h.advance(3000);
     h.fire("scroll");
     h.advance(4 * 3600_000);    // veille, SANS réveil des minuteries
-    expect(h.tracker.totalSeconds()).toBeLessThanOrEqual(70);
+    expect(h.tracker.totalSeconds()).toBeLessThanOrEqual(SESSION_IDLE_MS / 1000 + 10);
   });
 
   // ⚠️ Le plafond ne doit pas rogner une lecture NORMALE : quelqu'un qui lit produit des
