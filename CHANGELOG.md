@@ -10,6 +10,86 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.42] — 2026-08-16
+
+Four findings from a third external audit (CODEX 5.6), and the first browser end-to-end test.
+
+⚠️ **All four defects were already half-fixed.** In each case the right rule was written next to the
+place where it was missing — a comment three lines above, a sibling action, twelve guarded writes
+beside two unguarded reads. That is the pattern worth keeping from this release: *a rule stated in
+one branch does not travel to the branch beside it.*
+
+### Fixed
+
+- ⚠️ **Ending a presentation announced the end before obtaining it.** `endPresent()` sent
+  `sendBeacon` — which returns **no response at all**, neither "recorded" nor "refused" — then
+  cleared the UI, erased the control token and closed the channel. If the call failed, the
+  presentation stayed **live for the audience** while the presenter believed it closed; and with
+  `clearCtl` having already discarded the token, they no longer had the means to close it. Only the
+  3-minute staleness sweep remained.
+
+  ⚠️ **The beacon bought nothing here.** It exists to get a request out while the page is *dying* —
+  and the only caller was a **button**, which can afford to wait. It now lives on `pagehide`, and
+  only there. The button waits for a 2xx before broadcasting, disconnecting, or erasing anything;
+  on failure the presenter keeps everything needed to retry, and the button says so.
+
+- ⚠️ **The anonymous presenter could turn pages but not move the map.** `present-start` requires no
+  session — deliberately — and `present-page` therefore accepts the `control_token`. But
+  `present-content`, which drives what the presentation *displays*, had been filed with the
+  session-only actions. The call returned 401, swallowed by a browser-side `catch`, and the map
+  simply did not follow. The two are the same act of piloting; they had been grouped by **proximity
+  in the route, not by authority**. What stays owner-only is `present-switch`: changing the
+  *document* shown is not driving the display.
+
+- ⚠️ **A participant could overwrite a colleague's attendance row — using their email address.**
+  `present-attend` identifies its row by a client-chosen `key`, and for a member `attendeeKey()`
+  returned their **email**. Any anonymous visitor to the public link could post
+  `key: "colleague@company.com"` and rewrite that row: the name and avatar shown in the participant
+  list, and the accumulated reading time.
+
+  ⚠️ Three lines above, the same route already said *"a proven identity **replaces** a claimed one"*.
+  Name, email and avatar had indeed been replaced by the token's. The **key** slipped through —
+  though it is the one value that decides *which row is written*. A member's key is now derived from
+  the verified token; an anonymous keeps theirs, confined to an `anon-…` namespace it cannot leave.
+  It is also drawn with `valeurImprevisible` instead of `Math.random()`: acceptable for an analytics
+  id, not for the only thing separating two anonymous participants — the same fix made in 0.1.23 for
+  the chat author token, twenty lines below in the same file, never carried up.
+
+- ⚠️ **The public channel was an unbounded amplifier.** `state=1` and `chat=1` are served without a
+  session, on a public link, and each call costs a database query. Twelve write actions passed
+  through a limit; these two **reads** did not. And the **shared** resource pays — the database is
+  the same for every document on the instance — so the cost of abuse does not fall on whoever causes
+  it.
+
+  ⚠️ **Where the guard sits *is* the fix.** `getPresentation()` ran *before* the `state`/`chat`
+  branches: a limit written where the refusal is phrased would have refused correctly, with the
+  right status code, **after spending exactly what it protects**. The tests therefore count database
+  queries, not response codes. The quota is *derived* from the audience's cadence (25 s resync net
+  + one presenter action every 5 s, times `READERS_PER_EGRESS` — the sessions constant reused, not
+  reinvented), and a refusal is logged hourly: otherwise a whole meeting room would drop off with no
+  named cause.
+
+### Testing
+
+- **First real browser end-to-end.** `finDePresentation.test.js` renders the presenter page, installs
+  it in jsdom, runs its scripts, clicks *Present*, then clicks *End* with a server response held open
+  by hand.
+
+  ⚠️ This is what separates it from a textual probe. *"After the response"* and *"in the failure
+  branch"* both place the broadcast after the call — only a provoked failure tells them apart. Four
+  mutations restoring the defect are refused.
+
+- ⚠️ **Two benches were fixed rather than worked around.** Static analysis was right three times
+  about a hand-rolled `<script>` filter (it missed `<SCRIPT>`, then `</script >`, then
+  `</script\t\n bar>`): the regex was **removed** — the benches run in jsdom, and `DOMParser` sees
+  what the browser sees by construction. And a test that passed on Node 22 while failing on Node 24
+  was not flaky: benches share one window, therefore share its timers, and a previous bench's
+  500 ms-deferred write landed on the current bench's spy.
+
+- ⚠️ **An artifact guard that read instead of running.** Its first version scanned the minified
+  bundle for `.email`; a mutation reintroducing the defect under another name walked straight past.
+  It now **executes** the shipped bundle and offers it identity five ways, old signature included.
+
 ## [0.1.41] — 2026-08-16
 
 ### Fixed

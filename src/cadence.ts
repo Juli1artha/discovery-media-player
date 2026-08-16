@@ -54,3 +54,46 @@ export const SESSION_QUOTA_PER_HOUR = SESSION_WRITES_PER_HOUR * READERS_PER_EGRE
  * Le raisonnement derrière le chiffre vit dans `tracking.ts`, à côté de l'option.
  */
 export const SESSION_IDLE_MS = 180_000;
+
+// ── Le canal public : ce qu'une audience relit, et ce qu'un robot peut en faire ──────────────────
+//
+// ⚠️ DOUZE ACTIONS D'ÉCRITURE ÉTAIENT LIMITÉES, LES DEUX LECTURES NE L'ÉTAIENT PAS. `state=1` et
+// `chat=1` sont servis sans session, sur un lien public, et chaque appel coûte une interrogation de
+// base. Une boucle sur une URL connue transformait donc un lien de présentation en amplificateur :
+// une requête HTTP triviale contre une requête base, autant de fois qu'on veut.
+//
+// ⚠️ Et c'est la ressource PARTAGÉE qui paie, pas l'appelant : la base est la même pour tous les
+// documents de l'instance. Le coût d'un abus ne retombe pas sur celui qui le commet.
+//
+// Signalé par un audit externe (C-5), dernier constat critique de sa liste.
+
+/** Le filet de resynchronisation de l'audience : il relit l'état ET le chat. */
+export const PRESENT_RESYNC_MS = 25_000;
+
+/** Ce que le filet consomme à lui seul, pour un spectateur, sur chacun des deux points. */
+export const RESYNC_READS_PER_HOUR = Math.ceil(3_600_000 / PRESENT_RESYNC_MS);
+
+/**
+ * Ce que le pilotage du présentateur provoque en plus, par heure.
+ *
+ * ⚠️ Ce n'est PAS le plafond mécanique. L'ordonnanceur de relecture regroupe à 400 ms : un
+ * spectateur pourrait en théorie relire 9 000 fois par heure si le présentateur agissait sans
+ * relâche. Dimensionner là-dessus reviendrait à ne rien limiter du tout — un plafond qu'aucun usage
+ * réel n'atteint ne protège de rien, c'est la borne qu'on s'est déjà donnée pour les sessions.
+ *
+ * On dimensionne donc sur une présentation VIVANTE : une action du présentateur toutes les cinq
+ * secondes, pendant une heure entière. Au-delà, on n'est plus dans une présentation.
+ */
+export const PRESENTER_ACTIONS_PER_HOUR = 720;
+
+/** Ce qu'un spectateur légitime relit en une heure, par construction. */
+export const PRESENT_READS_PER_HOUR = RESYNC_READS_PER_HOUR + PRESENTER_ACTIONS_PER_HOUR;
+
+/**
+ * Le quota horaire par adresse, déduit — jamais écrit à la main.
+ *
+ * ⚠️ Même clé et même raison que pour les sessions : l'adresse identifie un bâtiment, pas un
+ * spectateur, et c'est la seule chose que l'appelant ne choisit pas. Une salle de réunion qui suit
+ * une présentation à vingt-cinq derrière une sortie unique est le cas ordinaire.
+ */
+export const PRESENT_QUOTA_PER_HOUR = PRESENT_READS_PER_HOUR * READERS_PER_EGRESS;
