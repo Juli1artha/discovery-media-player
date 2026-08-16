@@ -344,7 +344,11 @@ async function setShareAuth(slug, requireAuth) {
 // signalé au point d'entrée plutôt qu'ici.
 const BORNES = { pages: 10_000, secondes: 24 * 3600, entreesPagesTime: 2_000 };
 
-async function upsertInternalSession(p, { ip, ua }) {
+// ⚠️ `ip` N'EST PLUS LU, ET LA SIGNATURE LE DIT. L'appelant continue de le passer — il ne sait pas
+// ce que chaque table conserve, et ce n'est pas à lui de le savoir. Mais le garder en paramètre
+// nommé laisserait croire qu'il sert : c'est comme ça qu'une donnée revient dans une ligne où elle
+// n'a rien à faire. Une lecture interne, c'est un collègue ; on ne conserve pas son adresse.
+async function upsertInternalSession(p, { ip: _ip, ua }) {
   const num = (v) => (Number.isFinite(+v) ? Math.trunc(+v) : null);
   const borne = (v, max) => { const n = num(v); return n == null ? null : Math.max(0, Math.min(n, max)); };
   const sessionId = String(p.sessionId || "").slice(0, 64);
@@ -390,7 +394,24 @@ async function upsertInternalSession(p, { ip, ua }) {
       }
       return out;
     })(),
-    ua: String(ua || "").slice(0, 300), ip: String(ip || "").slice(0, 60), device, os, browser, last_at: new Date().toISOString(),
+    // ⚠️ NI `ua` NI `ip` ICI, ET C'EST LE CORRECTIF — PAS UNE COLONNE À AJOUTER.
+    //
+    // Ces deux champs partaient vers une table qui ne les a pas. PostgREST refusait l'insertion
+    // (« column "ua" ... does not exist »), le `catch` de l'appelant avalait le refus, et la route
+    // répondait `{"ok":true}`. Le suivi interne n'a donc JAMAIS rien écrit — ni chez le second
+    // hôte, ni chez nous : notre table de production comptait zéro ligne.
+    //
+    // ⚠️ Le schéma avait raison, c'est le code qui mentait. Une lecture INTERNE, c'est un collègue :
+    // `device`, `os` et `browser` — dérivés — suffisent, et on ne conserve pas l'agent complet ni
+    // l'adresse de ses propres équipes. La table des sessions EXTERNES les porte, elle, parce que
+    // ce n'est ni la même population ni la même promesse.
+    //
+    // Corriger en AJOUTANT les colonnes aurait fait l'inverse : mettre le schéma au niveau du code
+    // au lieu du code au niveau de l'intention. Ce qu'on garde sur ses propres équipes ne se décide
+    // pas par un message d'erreur PostgREST.
+    //
+    // Trouvé par le second hôte, vérifié en rejouant l'insertion.
+    device, os, browser, last_at: new Date().toISOString(),
   };
   await PLAYER.db.request("commercial_doc_internal_sessions?on_conflict=session_id", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: [row] });
 }

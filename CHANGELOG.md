@@ -10,6 +10,46 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.37] — 2026-08-16
+
+### Fixed
+- ⚠️ **Internal reading tracking had never written a single row — on either instance.** The row
+  carried `ua` and `ip`; the internal-sessions table has neither. PostgREST refused
+  (`column "ua" ... does not exist`), the caller's `catch { /* best-effort */ }` swallowed the
+  refusal, and the route answered `{"ok":true}`. **Our own production table held zero rows.**
+
+  ⚠️ **The schema was right and the code was lying.** An *internal* reading is a colleague:
+  `device`, `os` and `browser` — derived — describe it well enough, and one does not keep the full
+  user-agent or the address of one's own team. The *external* sessions table carries them, because
+  that is neither the same population nor the same promise.
+
+  Fixing it by **adding the columns** would have done the opposite: raising the schema to the level
+  of the code instead of the code to the level of the intent. What you keep about your own teams is
+  not decided by a PostgREST error message.
+
+- ⚠️ **A rule written in a comment does not protect the code that follows it.** In 0.1.35 we wrote,
+  inside `upsertInternalSession`: *"the guard was not the problem; its muteness was."* Three lines
+  below, in the calling function, `catch { /* best-effort */ }` swallowed the failure of the write
+  itself.
+
+  "Best-effort" is a sound intention — a measurement must never stop someone reading a document.
+  But best-effort does not mean **mute**: what is caught there is the right to *continue*, never the
+  right to *say nothing*. Both catches now report, once an hour, naming the cause.
+
+  The rule became a **test** rather than a comment: `ecritureMuette.test.js` refuses any silent
+  catch around a measurement write. It immediately found the twin on the external path — harmless
+  so far, since that table does have the columns, but it would have swallowed the next mismatch the
+  same way. **What makes the class dangerous is not the instance.**
+
+  *Found by the second host, reproduced by replaying the insert.*
+
+### Note
+- The guard's own probe was wrong twice before it bit: it bounded the catch body by characters
+  (a long comment pushed the `capture(` out of view, and it accused the corrected code), then by a
+  fixed number of lines (it spilled into the *next* block and found a `capture(` that was not its
+  own). A guard that reads beside the point guards nothing — established by mutation, not by
+  reading.
+
 ## [0.1.36] — 2026-08-16
 
 ### Fixed
@@ -1036,7 +1076,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.36...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.37...HEAD
+[0.1.37]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.36...v0.1.37
 [0.1.36]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.35...v0.1.36
 [0.1.35]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.34...v0.1.35
 [0.1.34]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.33...v0.1.34
