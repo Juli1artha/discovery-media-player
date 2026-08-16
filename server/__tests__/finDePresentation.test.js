@@ -102,7 +102,7 @@ async function banc() {
   // ⚠️ Le paquet est en « use strict » : un eval strict garde ses déclarations pour lui. On le
   // réexpose — artefact du banc, pas du produit : dans un navigateur c'est une balise script, et
   // « var Player » y est bien global.
-  for (const m of html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)) {
+  for (const m of html.matchAll(/<script[^>]*>([\s\S]*?)<\/script\s*>/gi)) {
     try { window.eval(m[1] + "\n;try{globalThis.Player=Player;}catch(e){}"); } catch { /* pdf.js n'est pas là, et on n'en a pas besoin */ }
   }
 
