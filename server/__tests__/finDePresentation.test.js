@@ -83,11 +83,44 @@ function scriptsDe(html) {
 }
 
 /** Laisse les chaînes de promesses se dérouler. */
-const respirer = () => new Promise((r) => setTimeout(r, 0));
+// ⚠️ Passe par la minuterie D'ORIGINE, capturée avant l'enveloppe ci-dessous. En jsdom
+// « globalThis » EST la fenêtre : s'en remettre à lui reviendrait à utiliser l'enveloppe, et le
+// nettoyage du banc suivant pourrait couper l'attente du test en cours, qui ne se réglerait jamais.
+const minuterieDOrigine = globalThis.setTimeout.bind(globalThis);
+const respirer = () => new Promise((r) => minuterieDOrigine(r, 0));
+
+// ⚠️ UN BANC QUI PARTAGE SA FENÊTRE PARTAGE SES MINUTERIES.
+//
+// Chaque banc ré-évalue les scripts de la page dans la MÊME fenêtre jsdom : les intervalles du banc
+// précédent — battement de cœur, filet de resynchronisation à 25 s — continuent de tourner et
+// appellent « Live.sendState() » sur le « window.Live » COURANT, c'est-à-dire l'espion du test en
+// cours. Un « sendState » parasite apparaissait alors dans le cas d'échec, où il ne doit rien y
+// avoir : le test échouait sur Node 24 et passait sur Node 22, à la milliseconde près.
+//
+// ⚠️ C'est la même cause que les beacons empilés, traitée cette fois à la racine plutôt que
+// contournée : on coupe les minuteries des bancs précédents avant d'en ouvrir un nouveau. Un test
+// dont le verdict dépend de la vitesse de la machine ne dit rien.
+const minuteriesOuvertes = [];
+function couperLesMinuteriesPrecedentes() {
+  for (const id of minuteriesOuvertes.splice(0)) {
+    try { window.clearInterval(id); } catch { /* déjà partie */ }
+    try { window.clearTimeout(id); } catch { /* déjà partie */ }
+  }
+}
+// ⚠️ LES DEUX, ET C'EST « setTimeout » QUI COMPTAIT. L'indice était dans l'échec lui-même : le
+// tableau contenait « sendState » SANS « disconnect », alors que « endPresent » appelle toujours les
+// deux à la suite. Ce n'était donc pas une fin de présentation, mais « diffuserEtat() » — déclenché
+// par l'ordonnanceur d'écriture, qui DIFFÈRE de 500 ms. Les tests durent une dizaine de
+// millisecondes : l'écriture d'un banc retombait plusieurs tests plus loin.
+const vraiSetInterval = window.setInterval.bind(window);
+const vraiSetTimeout = window.setTimeout.bind(window);
+window.setInterval = (f, ms, ...r) => { const id = vraiSetInterval(f, ms, ...r); minuteriesOuvertes.push(id); return id; };
+window.setTimeout = (f, ms, ...r) => { const id = vraiSetTimeout(f, ms, ...r); minuteriesOuvertes.push(id); return id; };
 
 let bancsCrees = 0;
 async function banc() {
   bancsCrees++;
+  couperLesMinuteriesPrecedentes();
   const html = await htmlPresentateur();
   // ⚠️ ON NE RETIRE PAS LES BALISES DE SCRIPT, ET C'EST PLUS SÛR QUE DE LES RETIRER. Un script
   // posé par « innerHTML » ne s'exécute jamais — la spec HTML l'interdit — donc le filtrage
