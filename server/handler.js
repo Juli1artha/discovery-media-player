@@ -1385,6 +1385,11 @@ const CLE_INVITE = "dmp-present-me";
  * Une clé absente ou hors forme n'est pas une erreur : elle vaut « inconnu ». Un participant mal
  * compté vaut mieux qu'une audience refusée.
  */
+/** La clé d'un membre : son adresse, normalisée — la recherche de ligne est exacte. */
+function lcMembre(email) {
+  return String(email || "").trim().toLowerCase();
+}
+
 function cleAnonyme(brut) {
   const v = String(brut == null ? "" : brut).trim().slice(0, 120);
   return /^anon-[A-Za-z0-9_-]{4,}$/.test(v) ? v : "anon-inconnu";
@@ -2871,7 +2876,17 @@ async function handler(req, res) {
           // lui, ne peut rien prouver : sa clé reste la sienne, mais enfermée dans un espace de noms
           // dont elle ne peut pas sortir — elle ne pourra jamais ressembler à l'e-mail d'un membre.
           const r = await recordAttendance(String(body.slug || ""), {
-            key: profil ? profil.email : cleAnonyme(body.key),
+            // ⚠️ MINUSCULÉE, ET CE DÉTAIL EST UNE LIGNE DE PRÉSENCE. La clé cliente que 0.1.42 a
+            // remplacée l'était (`me.email.toLowerCase()`) ; la clé dérivée ne l'était pas, et la
+            // ligne se retrouve par `attendee_key=eq.` — une correspondance EXACTE. Un hôte dont
+            // l'identité rend l'adresse telle qu'elle a été saisie aurait donc vu, pour un même
+            // membre, une SECONDE ligne apparaître : temps cumulé reparti de zéro, et le collègue
+            // affiché deux fois dans la liste des participants.
+            //
+            // Sans effet là où les adresses sont déjà normalisées — c'est le cas des deux hôtes
+            // actuels, et c'est pour ça que rien ne l'aurait signalé. Un contrat ouvert ne se
+            // repose pas sur ce que ses deux premiers hôtes font.
+            key: profil ? lcMembre(profil.email) : cleAnonyme(body.key),
             name: (profil && profil.name) || body.name,
             email: profil ? profil.email : body.email,
             avatar: (profil && profil.avatar) || body.avatar,

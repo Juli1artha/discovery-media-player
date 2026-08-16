@@ -10,6 +10,20 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.43] — 2026-08-16
+
+### Fixed
+
+- ⚠️ **A case detail is an attendance row.** 0.1.42 moved the member attendance key from the client
+  to the verified token — but the client key was lowercased (`me.email.toLowerCase()`) and the
+  derived one was not. Rows are found by `attendee_key=eq.` — an **exact** match. On a host whose
+  identity returns the address as typed, the same member would therefore get a **second row**:
+  accumulated time back to zero, and the colleague listed twice among participants.
+
+  No effect where addresses are already normalised — which is the case for both current hosts, and
+  exactly why nothing would have reported it. *An open contract does not rest on what its first two
+  hosts happen to do.* Found while re-reading 0.1.42 before announcing it.
+
 ## [0.1.42] — 2026-08-16
 
 Four findings from a third external audit (CODEX 5.6), and the first browser end-to-end test.
