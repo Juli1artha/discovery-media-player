@@ -27,8 +27,26 @@ function fichiersServeur() {
     .map((f) => path.join(RACINE, "server", f));
 }
 
-// Ce qui, rattrapé en silence, fait disparaître une mesure sans laisser de trace.
-const ECRITURES_DE_MESURE = /\b(upsertInternalSession|upsertSession|logView|logShareEvent|recordAttendance)\s*\(/;
+// ⚠️ LA FORME, PAS UNE LISTE DE NOMS.
+//
+// La première version listait `upsertInternalSession|upsertSession|logView|…`. Elle a manqué
+// `recordUnlock`, qui écrit directement par `PLAYER.db.request` — trouvé en vérifiant le tarball de
+// 0.1.37, pas par la garde. C'est exactement le reproche que l'audit faisait à la garde des
+// prototypes (« elle filtrait sur des NOMS DE VARIABLES »), reproduit le jour même dans une garde
+// écrite pour éviter ce genre de chose.
+//
+// Une liste ne voit que ce qu'on y a mis. Une forme voit aussi le prochain.
+//
+// ⚠️ MAIS SEULEMENT LES ÉCRITURES, et la distinction n'est pas cosmétique : une ÉCRITURE perdue
+// l'est pour toujours, une LECTURE ratée sera refaite au prochain appel. Un `catch` qui ramène un
+// compteur d'affichage à zéro est un choix légitime ; un `catch` qui perd une mesure ne l'est
+// jamais. La première version de cette forme accusait les deux — trop large dans un sens après
+// avoir été trop étroite dans l'autre.
+const APPEL_BASE = /(PLAYER\.)?db\.request\(/;
+const VERBE_ECRITURE = /method:\s*"(POST|PATCH|PUT|DELETE)"/;
+const HELPERS_ECRITURE = /\b(upsertInternalSession|upsertSession|logView|logShareEvent|recordAttendance)\s*\(/;
+const estEcriture = (ligne, suite) =>
+  HELPERS_ECRITURE.test(ligne) || (APPEL_BASE.test(ligne) && VERBE_ECRITURE.test(suite));
 
 describe("aucune écriture de mesure n'est rattrapée en silence", () => {
   it("chaque try qui enveloppe une écriture a un catch qui parle", () => {
@@ -36,15 +54,24 @@ describe("aucune écriture de mesure n'est rattrapée en silence", () => {
     for (const f of fichiersServeur()) {
       const lignes = fs.readFileSync(f, "utf8").split("\n");
       lignes.forEach((ligne, i) => {
-        if (!ECRITURES_DE_MESURE.test(ligne)) return;
         if (/^\s*(\/\/|\*)/.test(ligne)) return;                       // un commentaire la cite
         if (/^\s*(async\s+)?function\s/.test(ligne)) return;           // sa déclaration
+        // Le verbe peut être sur la ligne suivante quand l'appel est réparti.
+        if (!estEcriture(ligne, lignes.slice(i, i + 3).join("\n"))) return;
         // ⚠️ ON COMPTE EN LIGNES, PAS EN CARACTÈRES. La première version bornait la fenêtre à
         // 400 caractères : un `catch` dont le corps commence par un long commentaire — c'est-à-dire
         // exactement celui qu'on venait d'écrire pour expliquer la règle — sortait de la fenêtre
         // avant son `capture(`, et la garde accusait le code corrigé. Une sonde qui se trompe de
         // fenêtre invente des coupables et masque les vrais.
-        const fenetre = lignes.slice(i, i + 40);
+        // ⚠️ ET ON S'ARRÊTE À LA FRONTIÈRE DE FONCTION. Sans ça, une écriture qui n'est PAS dans
+        // un try/catch — l'erreur remonte, c'est correct — se voyait attribuer le `catch` de la
+        // fonction SUIVANTE. La garde accusait alors du code irréprochable.
+        //
+        // Troisième correction de cette sonde, et c'est le sujet : une garde vaut ce que vaut sa
+        // lecture. Les trois erreurs ont été trouvées en la faisant tourner, jamais en la relisant.
+        const brut = lignes.slice(i, i + 40);
+        const finFonction = brut.findIndex((l, n) => n > 0 && /^(async\s+)?function\s/.test(l));
+        const fenetre = finFonction > 0 ? brut.slice(0, finFonction) : brut;
         const iCatch = fenetre.findIndex((l) => /}\s*catch\s*(\([^)]*\))?\s*\{/.test(l));
         if (iCatch < 0) return;                                        // pas de try/catch : rien à dire
 

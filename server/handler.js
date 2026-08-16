@@ -2577,7 +2577,22 @@ async function handler(req, res) {
           try {
             if (!body.slug || !visitor || !visitor.email) return;
             await PLAYER.db.request("xp_visitor_unlocks", { method: "POST", headers: { Prefer: "return=minimal" }, body: [{ doc_slug: String(body.slug), email: visitor.email, name: visitor.name || null, method }] });
-          } catch { /* best-effort */ }
+          } catch (e) {
+      // ⚠️ TROUVÉ EN VÉRIFIANT LE TARBALL DE 0.1.37, PAS PAR LA GARDE QUI VENAIT DE NAÎTRE.
+      //
+      // Celle-ci filtrait sur une LISTE DE NOMS de fonctions d'écriture. `recordUnlock` écrit
+      // directement par `PLAYER.db.request`, donc elle ne l'a pas vu — exactement le défaut que
+      // l'audit reprochait à la garde des prototypes, reproduit dans une garde écrite le même jour
+      // pour éviter ce genre de chose.
+      //
+      // La garde vise désormais la FORME (toute écriture en base rattrapée en silence), pas des
+      // noms. Une liste ne voit que ce qu'on y a mis ; une forme voit aussi le prochain.
+      try {
+        if (await PLAYER.limits.allow("unlock:echec", 1, 3600)) {
+          PLAYER.errors.capture(new Error(`déverrouillage visiteur non journalisé : ${e && e.message ? e.message : "cause inconnue"}`), { route: "visitor-unlock" });
+        }
+      } catch { /* un journal ne doit jamais empêcher une lecture */ }
+    }
         };
         if (body.action === "visitor-google") {
           const r = await V.verifyGoogle(body.credential);

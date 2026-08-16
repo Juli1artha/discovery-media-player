@@ -10,6 +10,36 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.38] — 2026-08-16
+
+### Fixed
+- ⚠️ **The guard written in 0.1.37 missed a case, and it missed it the same way the guard it
+  replaced did.** It filtered on a **list of names** of write helpers; `recordUnlock` writes
+  straight through `PLAYER.db.request`, so it went unseen — a silent catch swallowing a visitor
+  unlock journal entry. That is exactly what the audit held against the prototype guard (*"it
+  filtered on variable names"*), reproduced the same day in a guard written to prevent this class
+  of thing.
+
+  Found by checking the **published tarball** of 0.1.37, not by the guard.
+
+  The rule now targets the **form** — any database write caught in silence — rather than names. A
+  list only sees what was put in it; a form also sees the next one.
+
+  ⚠️ **Writes only.** A lost write is lost forever; a failed read is retried on the next call. A
+  catch that drops a display counter to zero is a legitimate choice; a catch that loses a
+  measurement never is. The first version of the form accused both — too broad in one direction
+  after being too narrow in the other.
+
+### Note
+- **This probe was wrong three times before it bit**, and every error was found by running it, never
+  by re-reading it: bounded by characters (a long comment pushed `capture(` out of view, and it
+  accused the corrected code); by a fixed number of lines (it spilled into the *next* block and
+  found a `capture(` that was not its own); and without a function boundary (a write that is
+  correctly *not* wrapped had the following function's catch attributed to it).
+
+  A guard is worth exactly what its reading is worth. That is the whole lesson of this version, and
+  it applies to the guard as much as to the code it watches.
+
 ## [0.1.37] — 2026-08-16
 
 ### Fixed
@@ -1076,7 +1106,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.37...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.38...HEAD
+[0.1.38]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.37...v0.1.38
 [0.1.37]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.36...v0.1.37
 [0.1.36]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.35...v0.1.36
 [0.1.35]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.34...v0.1.35
