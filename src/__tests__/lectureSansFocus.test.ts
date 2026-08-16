@@ -17,6 +17,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import { SESSION_IDLE_MS } from "../cadence";
 import { createTracker } from "../tracking";
 
 /** Un document et une fenêtre qu'on pilote : la visibilité et le focus se règlent à la main. */
@@ -36,11 +37,20 @@ function banc({ visible = true, focus = false } = {}) {
     hasFocus: () => focus,
     documentElement: { scrollTop: 0, scrollHeight: 100, clientHeight: 100 },
   };
+  // ⚠️ LES MINUTERIES DOIVENT TOURNER, SINON LE BANC NE PEUT RIEN PROUVER.
+  //
+  // La première version rendait `setInterval: () => 0` — un leurre. Or c'est la boucle périodique
+  // qui déclare l'inactivité (`if (now - lastActivity > idleMs) idle = true`). Sans elle, `idle`
+  // restait faux pour toujours, et une mutation retirant la règle « tourner une page compte »
+  // laissait les tests VERTS : ils n'exerçaient pas la propriété qu'ils décrivaient.
+  //
+  // Un banc qui neutralise le mécanisme testé est un test qui ne peut pas dire non.
+  const minuteries: { periode: number; f: () => void; prochain: number }[] = [];
   const win = {
     ...cible,
     document: doc,
     navigator: { sendBeacon: () => true },
-    setInterval: () => 0,
+    setInterval: (f: () => void, ms: number) => { minuteries.push({ periode: ms, f, prochain: t + ms }); return minuteries.length; },
     clearInterval: () => {},
     fetch: () => Promise.resolve(),
   };
@@ -49,7 +59,18 @@ function banc({ visible = true, focus = false } = {}) {
   // les envois — un harnais qui n'en produit aucun aurait rendu 0, et un test qui affirme
   // « ≤ 70 » aurait été VERT sur zéro. Mesurer la sortie réelle plutôt que le tuyau.
   return {
-    avancer: (ms: number) => { t += ms; },
+    // Le temps avance PAR PAS, en déclenchant les minuteries dues — comme un vrai navigateur.
+    avancer: (ms: number) => {
+      const fin = t + ms;
+      for (;;) {
+        const due = minuteries.filter((m) => m.prochain <= fin).sort((a, b) => a.prochain - b.prochain)[0];
+        if (!due) break;
+        t = due.prochain;
+        due.prochain += due.periode;
+        due.f();
+      }
+      t = fin;
+    },
     envois,
     tracker: createTracker({
       slug: "s1",
@@ -87,8 +108,46 @@ describe("ce qui compte comme une lecture", () => {
     b.tracker.start();
     b.avancer(600_000);            // dix minutes, aucun événement
     const secondes = b.tracker.totalSeconds();
+    // ⚠️ ON DÉRIVE DU SEUIL, ON NE RÉÉCRIT PAS SA VALEUR. Ce test disait « ≤ 70 » : il épinglait
+    // 60 s + marge, donc il est tombé le jour où le seuil est passé à trois minutes — alors que la
+    // propriété, elle, n'avait pas bougé. Un test qui fixe un nombre interdit de changer le nombre ;
+    // un test qui fixe la relation laisse le nombre vivre.
+    const seuil = SESSION_IDLE_MS / 1000;
     expect(secondes, "le plafond est le seuil d'inactivité, pas la durée d'horloge")
-      .toBeLessThanOrEqual(70);
+      .toBeLessThanOrEqual(seuil + 10);
     expect(secondes, "mais on ne retombe pas à zéro pour autant").toBeGreaterThan(30);
   });
 });
+// TOURNER UNE PAGE EST LA MEILLEURE PREUVE DE LECTURE, ET ELLE NE COMPTAIT PAS.
+//
+// L'inactivité se mesurait sur des événements d'ENTRÉE — souris, clavier, molette, tactile. Or un
+// spectateur qui suit une présentation en direct ne touche rien : les pages tournent devant lui,
+// poussées par le présentateur. Il devenait inactif alors que la seule chose qui prouve qu'il
+// regarde était en train de se produire.
+//
+// ⚠️ C'est aussi ce qui remet le seuil à sa place : il n'arbitre plus que les SILENCES. Un lecteur
+// réel tourne des pages ; un onglet oublié n'en tourne aucune.
+//
+// Vu par le second hôte : « ce qui distingue vraiment une lecture d'un onglet oublié n'est pas la
+// durée, mais le fait de tourner une page ».
+describe("tourner une page compte comme une lecture", () => {
+  it("un spectateur qui ne touche rien reste compté tant que les pages tournent", () => {
+    const b = banc({ visible: true, focus: false });
+    b.tracker.start();
+    // Dix minutes, une page toutes les deux minutes, AUCUN événement d'entrée.
+    for (let p = 2; p <= 6; p++) { b.avancer(120_000); b.tracker.setPage(p); }
+    const secondes = b.tracker.totalSeconds();
+    expect(secondes, "sans cette règle, le comptage s'arrêtait au premier silence")
+      .toBeGreaterThan(500);
+  });
+
+  it("mais un onglet oublié ne tourne aucune page, et reste borné", () => {
+    const b = banc({ visible: true, focus: false });
+    b.tracker.start();
+    b.avancer(600_000);          // dix minutes, rien du tout
+    expect(b.tracker.totalSeconds(), "le seuil arbitre les silences, et lui seul")
+      .toBeLessThanOrEqual(SESSION_IDLE_MS / 1000 + 10);
+  });
+});
+
+

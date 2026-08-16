@@ -262,6 +262,25 @@ l'analyse du commit publié, pas sur le compteur de l'onglet.
 Le `node_modules` local portait `jsdom@25` alors que le lock demande `30`. Les tests passaient sur
 un arbre différent de celui de la CI. `npm ci` requis avant toute conclusion sur une suite verte.
 
+## ⚠️ La règle à garder de toute la semaine
+
+Formulée par ADV, le 16/08/2026, après trois occurrences chez chacun :
+
+> **Un indicateur qui ne peut pas dire non ne dit rien.**
+> Pour chaque contrôle, demander sous quelles conditions il crie. Sans réponse, il n'existe pas.
+
+Trois formes du même défaut, une par instance et une partagée :
+
+| forme | pourquoi c'est toujours vrai |
+|---|---|
+| leur badge « suivi indisponible » | il couvrait cinq causes et restait éteint dans celle qui comptait |
+| leur test de clé stable | `f(x) === f(x)` est vrai de n'importe quelle fonction |
+| notre lecture de la CI | un compte de réussites est toujours positif, quels que soient les échecs |
+| notre banc de mesure (0.1.40) | `setInterval: () => 0` neutralisait le mécanisme testé |
+
+⚠️ La dernière est la plus instructive : le test décrivait la bonne propriété, et le banc l'empêchait
+d'être exercée. Une mutation l'a montré ; aucune relecture ne l'aurait fait.
+
 ## ⚠️ Un motif qui revient : énumérer au lieu de reconnaître une forme
 
 Relevé par la session ADV le 16/08/2026, après le troisième cas de la semaine. Chaque fois, ce qui

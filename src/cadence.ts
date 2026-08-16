@@ -43,3 +43,14 @@ export const READERS_PER_EGRESS = 25;
 
 /** Le quota horaire, déduit — jamais écrit à la main. */
 export const SESSION_QUOTA_PER_HOUR = SESSION_WRITES_PER_HOUR * READERS_PER_EGRESS;
+
+/**
+ * Au bout de combien de temps sans le moindre signe cesse-t-on de compter ?
+ *
+ * ⚠️ Ici aussi, une seule déclaration : le traceur l'applique, les tests s'y réfèrent, et personne
+ * ne réécrit « 60 » ou « 180 » ailleurs. Les tests qui épinglaient la valeur sont tombés le jour où
+ * elle a changé — alors que la propriété qu'ils décrivaient n'avait pas bougé.
+ *
+ * Le raisonnement derrière le chiffre vit dans `tracking.ts`, à côté de l'option.
+ */
+export const SESSION_IDLE_MS = 180_000;
