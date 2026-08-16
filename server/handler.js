@@ -2042,12 +2042,52 @@ ${LEGAL_CSS}
     //
     // sendBeacon ne s'attend pas, mais il rend la main une fois la requête MISE EN FILE : signaler
     // juste après, puis couper, respecte l'ordre autant que ce transport le permet.
-    function endPresent(){ if(!PRES)return; var p=PRES; PRES=null; clearInterval(_hbIv); clearCtl(p.slug);
-      var pb=document.getElementById('pbar'); if(pb)pb.style.display='none';
-      try{ var b=JSON.stringify({action:'present-end',slug:p.slug,control:p.control});
-        if(navigator.sendBeacon){navigator.sendBeacon('/api/doc',new Blob([b],{type:'application/json'}));}
-        else {fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:b,keepalive:true});} }catch(e){}
-      try{ if(window.Live){ Live.sendState(); Live.disconnect(); } }catch(e){} }
+    // FERMER UNE PRÉSENTATION EST UN ACTE, PAS UNE INTENTION.
+    //
+    // ⚠️ Cette fonction annonçait la fin avant de l'obtenir. « sendBeacon » ne rend AUCUNE réponse —
+    // ni « enregistré » ni « refusé » — et pourtant l'interface se nettoyait, le jeton de contrôle
+    // était effacé et le canal fermé dans la foulée. Si l'appel échouait, la présentation restait
+    // VIVANTE pour l'audience pendant que le présentateur la croyait close ; et il n'avait même plus
+    // de quoi la refermer, « clearCtl » ayant déjà jeté son jeton.
+    //
+    // ⚠️ Le beacon n'achetait rien ici : il sert à faire partir une requête pendant que la page
+    // MEURT. Or le seul appelant était un bouton — on a tout le temps d'attendre. Il est désormais à
+    // sa place, sur « pagehide », et là seulement.
+    //
+    // ⚠️ ET L'ORDRE COMPTE : l'audience ne relit l'état qu'APRÈS le 2xx. Diffuser avant, c'était lui
+    // faire relire une présentation encore marquée active — elle rejouait donc l'ancien état.
+    //
+    // On n'efface donc rien tant que le serveur n'a pas confirmé : en cas d'échec le pilotage reste
+    // entier et le présentateur peut réessayer. Une présentation vraiment abandonnée est rattrapée
+    // par la péremption (STALE_MS, 3 min), qui existe exactement pour ce cas.
+    //
+    // Signalé par un audit externe.
+    function endPresent(){
+      if(!PRES) return Promise.resolve();
+      var p=PRES, btn=document.getElementById('pbarEnd'), libelle=btn?btn.textContent:'';
+      if(btn){ btn.disabled=true; btn.textContent='…'; }
+      return fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},keepalive:true,
+          body:JSON.stringify({action:'present-end',slug:p.slug,control:p.control})})
+        .then(function(r){ if(!r||!r.ok) throw new Error('present-end'); })
+        .then(function(){
+          PRES=null; clearInterval(_hbIv); clearCtl(p.slug);
+          var pb=document.getElementById('pbar'); if(pb)pb.style.display='none';
+          try{ if(window.Live){ Live.sendState(); Live.disconnect(); } }catch(e){}
+        }, function(){
+          if(btn){ btn.disabled=false; btn.textContent=libelle||'Terminer'; btn.title='La fin n’a pas été enregistrée — réessayez.'; }
+        });
+    }
+    // ⚠️ LE SEUL ENDROIT OÙ « sendBeacon » A UN SENS : la page s'en va, aucune réponse ne pourra être
+    // lue, et une présentation laissée ouverte ferait suivre l'audience dans le vide jusqu'à la
+    // péremption. On ne nettoie rien ici — la page disparaît de toute façon.
+    window.addEventListener('pagehide',function(){
+      if(!PRES) return;
+      try{
+        var b=JSON.stringify({action:'present-end',slug:PRES.slug,control:PRES.control});
+        if(navigator.sendBeacon) navigator.sendBeacon('/api/doc',new Blob([b],{type:'application/json'}));
+        else fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:b,keepalive:true});
+      }catch(e){}
+    });
     // Transfert : je passe la main → je cesse de piloter SANS clôturer la présentation (le nouvel owner reprendra).
     function stopPilotingLocally(){ if(!PRES)return; var s=PRES.slug; PRES=null; clearInterval(_hbIv); clearCtl(s); var pb=document.getElementById('pbar'); if(pb)pb.style.display='none'; try{ if(window.Live) Live.disconnect(); }catch(e){} }
     function liveConnect(slug,control){ try{ if(window.Live){ var P=CFG.present||{}; Live.connect(slug,{name:P.by||'Présentateur',email:P.email||'',avatar:P.av||'',role:'presenter',member:true},control); } }catch(e){} }
@@ -2077,14 +2117,17 @@ ${LEGAL_CSS}
           var tries=0; (function jump(){ var el=(document.getElementById('pages')||document).querySelector('.page[data-p="'+target+'"]'); if(el){ el.scrollIntoView({block:'start'}); } else if(tries++<40){ setTimeout(jump,150); } })();
         }).catch(function(){});
     }
-    // Carte live : persiste le contenu (present-content, JWT) → l'audience bascule/suit via Realtime.
+    // Carte live : persiste le contenu (present-content) → l'audience bascule/suit via Realtime.
+    // On envoie le jeton de contrôle EN PLUS de la session : une présentation démarrée sans
+    // session pilote sa carte comme elle tourne ses pages. Sans lui, l'appel repartait en 401,
+    // avale par le .catch ci-dessous, et la carte ne suivait pas sans que rien ne le dise.
     // ⚠️ REND SA PROMESSE, ET CE N'EST PAS DÉCORATIF. L'ordonnanceur des écritures de carte
     // appelait fini() juste après l'appel, sans attendre : il croyait donc l'écriture terminée
     // alors qu'elle venait de PARTIR. Sa garantie « une seule en vol, la dernière gagne » ne
     // s'appliquait qu'à l'ordre des APPELS, pas à celui des écritures — plusieurs PATCH pouvaient
     // voler ensemble, et une position ancienne atterrir après une récente.
     function presentContent(content){ if(!PRES)return Promise.resolve(); var h={'Content-Type':'application/json'}; var tk=appToken(); if(tk) h['Authorization']='Bearer '+tk;
-      return fetch('/api/doc',{method:'POST',headers:h,body:JSON.stringify({action:'present-content',slug:PRES.slug,content:content})})
+      return fetch('/api/doc',{method:'POST',headers:h,body:JSON.stringify({action:'present-content',slug:PRES.slug,control:PRES.control,content:content})})
         .then(function(r){ if(r&&r.ok)diffuserEtat(); })
         .catch(function(){}); }
     function showMap(){ if(!PRES||!window.Map3DD)return; var wrap=document.getElementById('mapWrap'); if(wrap&&wrap.classList.contains('on')){ Map3DD.enter(null,true,presentContent); return; } var init=Player.presentation.initialMapContent(); presentContent(init); Map3DD.enter(init,true,presentContent); }
@@ -2813,8 +2856,18 @@ async function handler(req, res) {
         const jp = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
         try {
           const u = await PLAYER.identity.verifyToken(req.headers.authorization);
-          if (!u || !u.email) return jp(401, { ok: false, error: "auth" });
-          const isAdmin = PLAYER.identity.isAdmin(u);
+          // ⚠️ UNE EXCEPTION, ET UNE SEULE. `present-content` pilote ce que la présentation AFFICHE,
+          // exactement comme `present-page` tourne les pages — et `present-page` se contente du
+          // `control_token`, sans session. Exiger un JWT ici cassait les présentations démarrées
+          // sans session, que `present-start` autorise pourtant : la carte ne suivait pas, en
+          // silence. Le jeton de contrôle est vérifié plus bas, contre la ligne de la présentation.
+          //
+          // ⚠️ Les autres actions de ce groupe restent réservées à une session, et `present-switch`
+          // — changer le DOCUMENT montré — au propriétaire : décider ce qu'on montre n'est pas
+          // piloter l'affichage.
+          const pilotage = body.action === "present-content" && !!body.control;
+          if ((!u || !u.email) && !pilotage) return jp(401, { ok: false, error: "auth" });
+          const isAdmin = !!u && PLAYER.identity.isAdmin(u);
           let r;
           if (body.action === "present-list") r = { ok: true, presentations: await listActivePresentations(u.email) };
           else if (body.action === "present-reclaim") r = await reclaimPresentation(String(body.slug || ""), u.email);
@@ -2825,7 +2878,7 @@ async function handler(req, res) {
             if (!isAllowedStorageUrl(String(body.fileUrl || ""))) return jp(400, { ok: false, error: "url" });
             r = await switchPresentationDoc(String(body.slug || ""), u.email, isAdmin, { fileUrl: body.fileUrl, fileName: body.fileName, docTitle: body.docTitle, docId: body.docId });
           }
-          else if (body.action === "present-content") r = await setPresentationContent(String(body.slug || ""), u.email, isAdmin, body.content);
+          else if (body.action === "present-content") r = await setPresentationContent(String(body.slug || ""), (u && u.email) || "", isAdmin, body.content, String(body.control || ""));
           else r = await handoverPresentation(String(body.slug || ""), u.email, body.newOwner);
           return jp(r.ok ? 200 : (r.status || 400), r);
         } catch { return jp(500, { ok: false }); }
