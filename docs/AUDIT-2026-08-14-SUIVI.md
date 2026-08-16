@@ -289,6 +289,78 @@ qu'on a pour une population qui ne prouve rien — par construction, puisque c'e
 
 *Précision demandée par la session ADV, avant que la version ne parte.*
 
+## Vérification CODEX du 16 août (sur `0.1.43`)
+
+Relecture après la série de correctifs. ⚠️ **Trois de ses six P1 sont des conséquences des correctifs
+du jour même** — elle ne relit pas un état, elle relit un mouvement.
+
+| | Constat | État |
+|---|---|---|
+| V-1 | Une présentation terminée peut être réactivée | ✅ **0.1.44** |
+| V-2 | Écritures de présentation pas toutes séquentielles (`toMap`, `hideMap`, `pushPage`) | à faire — file unique |
+| V-3 | Une requête bloquée fige l'ordonnanceur (né de 0.1.41) | ✅ **0.1.44** |
+| V-4 | Le canal public reste amplifiable — et la limite de 0.1.42 en fait un déni de service | à faire — prioritaire |
+| V-5 | Clé anonyme rejouable, exposée dans la présence (née de 0.1.42) | à faire |
+| V-6 | `present-stats` / `present-doc-list` : possession non vérifiée | recoupe P2-1 / C-8 |
+
+### V-1 — terminer révoque le jeton, la péremption ne le révoque pas
+
+⚠️ **La règle proposée par l'audit — « refuser toute écriture si `active=false` » — aurait cassé une
+reprise réelle.** `active:false` recouvre deux situations sans rapport :
+
+1. une fin **décidée** — plus rien ne doit piloter ;
+2. une péremption **constatée** (3 min sans battement) — le portable du présentateur a dormi, et sa
+   page suivante doit le remettre en ligne. La « résurrection » **est** la reprise.
+
+Refuser les deux condamnerait un présentateur **anonyme** à ne jamais revenir : `present-reclaim`
+exige la propriété, et `present-start` n'exige aucune session. On distingue donc les deux cas par ce
+qui les sépare vraiment — la décision — plutôt que par l'état qu'ils partagent : **terminer révoque
+le jeton de contrôle**, la péremption le laisse intact. Les chemins propriétaire, qui n'ont pas
+besoin de jeton, sont fermés séparément sur `active=false` (le propriétaire a `reclaim`).
+
+Une mutation qui fait révoquer la péremption — c'est-à-dire qui applique la règle générale — est
+refusée par le banc.
+
+### V-3 — le délai né du correctif
+
+Avant 0.1.41, l'ordonnanceur appelait `fini()` immédiatement : les écritures partaient dans le
+désordre, mais rien ne pouvait se bloquer. En les rendant séquentielles, **on a échangé un défaut de
+correction contre un risque de disponibilité** — une requête suspendue ne règle jamais sa promesse,
+la file ne repart pas, et le présentateur pilote dans le vide, en silence.
+
+`fetchBorne` vit à côté de `createScheduler` parce qu'elle en est la contrepartie.
+
+> ⚠️ **Ce que le délai restaure, et ce qu'il ne restaure pas.** La **vivacité** : la file repart. Pas
+> l'**ordre** — une requête abandonnée peut être arrivée au serveur et y atterrir après celle qui l'a
+> remplacée. L'ordre malgré un abandon demande un numéro de version porté par l'écriture : c'est le
+> chantier de la file unique (V-2), pas celui-ci.
+
+### V-4 — ce que l'audit sous-estime
+
+Il parle de charge base. En réalité **la limite de 0.1.42 transforme l'amplification en déni de
+service sur l'audience** : le quota est de 21 600/h par adresse, un spectateur peut relire ~9 000/h
+(ordonnanceur à 400 ms), donc trois spectateurs derrière une sortie unique dépassent le quota. Un
+participant hostile n'a qu'à diffuser vite pour que toute une salle prenne des 429 et que ses pages
+cessent de tourner.
+
+J'ai calibré le quota sur ce qu'un usage légitime consomme, sans voir que **la cadence de relecture
+n'est pas choisie par le spectateur** mais par qui diffuse. La leçon de `X-Forwarded-For` retournée :
+la limite ne repose pas sur ce que l'appelant choisit, mais elle est **payée par quelqu'un qui ne
+choisit pas non plus**.
+
+Correctif propre : canal privé. Intermédiaire, meilleur que baisser le quota : découpler la cadence
+de relecture du rythme des diffusions (rafale courte, puis repli sur le filet).
+
+### Inexactitudes relevées
+
+- `goSV()` passe bien par l'ordonnanceur (`svOrd`) — l'audit le cite parmi les écritures directes.
+  `toMap()`, `hideMap()` et `pushPage()`, eux, sont bien directs.
+- « J'ai reproduit le comportement » pour V-1 décrit une reproduction au niveau de la **fonction**.
+  La course de bout en bout est étroite (`PRES=null` filtre les nouveaux appels) ; la vraie porte est
+  le **jeton persisté en localStorage**, pas la requête en vol.
+- Les limites de débit en mémoire concernent le **contexte autonome** (`Map` par processus). Chez les
+  deux hôtes actuels elles sont adossées à une table. La nuance change qui est protégé.
+
 ## Audit CODEX 5.6 (16 août 2026, sur `0.1.40`)
 
 Troisième regard externe, reçu après la série de correctifs ci-dessus. Deux de ses constats visaient
