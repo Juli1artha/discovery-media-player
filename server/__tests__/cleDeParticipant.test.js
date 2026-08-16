@@ -83,6 +83,28 @@ describe("la clé d'un membre vient du jeton, jamais du corps", () => {
   });
 });
 
+// ⚠️ UN DÉTAIL DE CASSE EST UNE LIGNE DE PRÉSENCE.
+//
+// La clé cliente que 0.1.42 a remplacée était minusculée ; la clé dérivée ne l'était pas. Or la
+// ligne se retrouve par `attendee_key=eq.` — une correspondance EXACTE. Un hôte dont l'identité rend
+// l'adresse telle qu'elle a été saisie aurait vu, pour un même membre, une SECONDE ligne apparaître :
+// temps cumulé reparti de zéro, et le collègue affiché deux fois dans la liste des participants.
+//
+// ⚠️ Sans effet là où les adresses sont déjà normalisées — c'est le cas des deux hôtes actuels, et
+// c'est précisément pourquoi rien ne l'aurait signalé. Un contrat ouvert ne se repose pas sur ce que
+// ses deux premiers hôtes font. Trouvé en relisant 0.1.42 avant d'en annoncer la mise à jour.
+describe("la clé d'un membre est normalisée, quelle que soit la casse du jeton", () => {
+  it.each([
+    ["Lea@Entreprise.FR"],
+    ["  lea@entreprise.fr  "],
+    ["LEA@ENTREPRISE.FR"],
+  ])("%s donne la même clé", async (adresse) => {
+    const r = await attendre({ key: "peu-importe" }, { session: { ...MEMBRE, email: adresse } });
+    expect(r.cle, "une casse différente ferait repartir le temps de présence de zéro")
+      .toBe("lea@entreprise.fr");
+  });
+});
+
 describe("un anonyme garde sa clé, mais ne sort pas de son espace de noms", () => {
   it("une clé de navigateur bien formée est conservée", async () => {
     const r = await attendre({ key: "anon-3f9c2a1b7d" });
