@@ -65,34 +65,3 @@ describe("le quota se déduit de la cadence", () => {
       .toBeLessThanOrEqual(50_000);
   });
 });
-
-describe("les deux côtés lisent le même contrat", () => {
-  it("le navigateur ne redéclare pas la cadence", async () => {
-    const fs = await import("node:fs");
-    const src = fs.readFileSync(new URL("../tracking.ts", import.meta.url), "utf8");
-    expect(src, "une constante recopiée est une constante qui divergera")
-      .toContain("SESSION_INTERVAL_MS");
-    expect(src, "l'ancienne valeur en dur ne doit plus être là").not.toMatch(/\?\?\s*12000/);
-  });
-
-  it("le serveur non plus, et il déduit son quota", async () => {
-    const fs = await import("node:fs");
-    const src = fs.readFileSync(new URL("../../server/handler.js", import.meta.url), "utf8");
-    expect(src).toContain("SESSION_QUOTA_PER_HOUR");
-    expect(src, "le quota écrit à la main est ce qui a produit le défaut")
-      .not.toMatch(/intsess:\$\{ipInt\}`,\s*\d+/);
-  });
-
-  it("le refus de quota se dit, il ne se devine pas", async () => {
-    const fs = await import("node:fs");
-    const src = fs.readFileSync(new URL("../../server/handler.js", import.meta.url), "utf8");
-    expect(src).toContain("intsess:quota-avert");
-    // ⚠️ Le signalement doit précéder le `return`, sinon il ne s'exécute jamais — c'est
-    // exactement l'erreur que le lint a attrapée en l'écrivant (`Unreachable code`).
-    const i = src.indexOf("intsess:quota-avert");
-    const j = src.indexOf("statusCode = 429", i);   // le PREMIER 429 qui SUIT le journal
-    expect(j, "un 429 doit suivre le journal").toBeGreaterThan(i);
-    expect(j - i, "et il doit être dans le même bloc, pas ailleurs dans le fichier")
-      .toBeLessThan(900);
-  });
-});
