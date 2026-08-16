@@ -121,21 +121,26 @@ describe("live — échappement et mise en forme", () => {
 
 describe("live — identité persistante", () => {
   it("un membre est identifié par son email, en minuscules", () => {
-    expect(attendeeKey({ email: "Lea@Example.FR" }, memoryStore())).toBe("lea@example.fr");
+    // ⚠️ CE TEST DISAIT L'INVERSE, ET C'ÉTAIT LE DÉFAUT. La clé d'un membre était son adresse, et
+    // le serveur l'acceptait telle quelle : n'importe quel anonyme pouvait poster celle d'un
+    // collègue pour écraser sa ligne de présence. La clé d'un membre se dérive maintenant du jeton
+    // d'accès, côté serveur ; le navigateur ne doit plus jamais envoyer d'adresse ici.
+    expect(attendeeKey(memoryStore(), "session", () => "abc123"))
+      .toBe("anon-abc123");
   });
 
   it("un anonyme reçoit une clé persistante, réutilisée ensuite", () => {
     const store = memoryStore();
-    const first = attendeeKey(null, store, "session", () => "abc123");
+    const first = attendeeKey(store, "session", () => "abc123");
     expect(first).toBe("anon-abc123");
     expect(store.data[STORAGE_KEYS.attendeeKey]).toBe("anon-abc123");
-    expect(attendeeKey(null, store, "session", () => "autre")).toBe("anon-abc123");
+    expect(attendeeKey(store, "session", () => "autre")).toBe("anon-abc123");
   });
 
   // Sans persistance, le participant comptera pour deux visites : c'est dégradé, pas cassé.
   it("retombe sur l'identifiant de session si le stockage est indisponible", () => {
-    expect(attendeeKey(null, hostileStore, "session-42")).toBe("anon-session-42");
-    expect(attendeeKey(null, null, "session-42")).toBe("anon-session-42");
+    expect(attendeeKey(hostileStore, "session-42")).toBe("anon-session-42");
+    expect(attendeeKey(null, "session-42")).toBe("anon-session-42");
   });
 
   it("le jeton d'auteur est créé une fois puis réutilisé", () => {

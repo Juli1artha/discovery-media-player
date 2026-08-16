@@ -302,7 +302,7 @@ du code écrit **le jour même** — c'est le signe qu'il fallait entendre.
 | C-4 | Comportement du présentateur anonyme ambigu (carte refusée, page acceptée) | ✅ **0.1.42** |
 | C-5 | Canal public : amplificateur de trafic, pas de limite sur `state=1` / `chat=1` | à faire — le prochain |
 | C-6 | `flattenPresence()` indexe un `{}` par des identités réseau | à faire (pollution de prototype) |
-| C-7 | `present-attend` accepte une `key` choisie par le client | à faire — un participant peut écraser la ligne d'un autre |
+| C-7 | `present-attend` accepte une `key` choisie par le client | ✅ **0.1.42** |
 | C-8 | `present-stats` / `present-doc-list` : session exigée, propriété non vérifiée | recoupe P2-1 |
 | C-9 | Pas de délai maximal sur PostgREST / signUpload / verifyToken | recoupe P1-4 |
 | C-10 | E2E navigateur absent | 🔧 **entamé en 0.1.42** — cf. ci-dessous |
@@ -322,6 +322,32 @@ les actions à session : une présentation anonyme tournait ses pages sans pouvo
 l'appel repartant en 401 avalé côté navigateur. Les deux actions sont le même acte de pilotage ;
 elles avaient été groupées par **voisinage dans la route, pas par autorité**. Ce qui reste réservé
 au propriétaire est `present-switch` : changer le document montré n'est pas piloter l'affichage.
+
+### C-7 — la clé de participant
+
+`present-attend` identifie sa ligne par une `key` **choisie par le client**, et pour un membre
+`attendeeKey()` renvoyait son **adresse e-mail**. N'importe quel participant anonyme du lien public
+n'avait donc qu'à poster `key: "collegue@entreprise.fr"` pour écraser la ligne de ce collègue :
+changer le nom et l'avatar affichés, gonfler son temps de présence.
+
+⚠️ **Le correctif était déjà à moitié écrit.** Trois lignes plus haut, la même route dit :
+
+> « Une identité prouvée REMPLACE celle qu'on affirme — elle ne s'y ajoute pas. »
+
+Le nom, l'e-mail et l'avatar avaient bien été remplacés par ceux du jeton. La **clé** était passée
+entre les mailles — alors que c'est elle qui décide quelle ligne on écrit. On avait sécurisé le
+contenu du registre en laissant ouvert le choix de la page.
+
+La clé d'un membre se dérive désormais du jeton vérifié ; un anonyme garde la sienne, enfermée dans
+un espace de noms (`anon-…`) dont elle ne peut pas sortir. Et elle est tirée par
+`valeurImprevisible` : c'était `Math.random()`, acceptable pour un identifiant d'analyse, plus du
+tout quand la valeur est la seule chose qui sépare deux participants — la correction faite en
+0.1.23 pour le jeton d'auteur du chat, jamais rapportée vingt lignes plus haut dans le même fichier.
+
+> ⚠️ **La garde d'artefact a dû être réécrite.** Sa première version *lisait* le paquet minifié à la
+> recherche de `.email` ; une mutation remettant le défaut sous un autre nom passait au travers. Elle
+> **exécute** maintenant le paquet livré et lui tend l'identité de cinq façons — ancienne signature
+> comprise. Avec la fonction d'origine restaurée, elle échoue sur les deux moitiés.
 
 ### C-10 — le premier vrai bout-en-bout
 
