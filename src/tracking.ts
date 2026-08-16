@@ -309,7 +309,22 @@ export function createTracker(options: TrackerOptions = {}): Tracker {
         if (doc.visibilityState === "hidden") { pause(); flush(); }
         else { noteActivity(); resume(); }
       });
-      on(win, "blur", pause);
+      // ⚠️ PAS DE `blur` → `pause`, ET C'EST LA MOITIÉ MANQUANTE DE 0.1.39.
+      //
+      // 0.1.39 a retiré `hasFocus()` de `viewable()` pour qu'un document affiché sur un second
+      // écran compte. Mais cette ligne-ci est restée, 170 lignes plus loin : cliquer sur la fenêtre
+      // de l'autre écran déclenche `blur`, donc `pause()`, donc `activeSince = null`. Le correctif
+      // était donc largement INOPÉRANT dans le cas exact qu'il visait.
+      //
+      // ⚠️ Et le test ne l'a pas vu parce que le banc ne déclenche jamais `blur` — troisième fois
+      // dans la journée qu'un banc n'exerce pas la propriété qu'il décrit. Une garde vaut ce que
+      // vaut son environnement d'exécution.
+      //
+      // Perdre le focus veut dire « une autre fenêtre est au premier plan », pas « ce document
+      // n'est plus lu ». Ce qui dit qu'un document n'est plus regardé, c'est `visibilitychange` —
+      // il est câblé juste au-dessus, et lui seul a cette autorité.
+      //
+      // Retrouver le focus reste une ACTIVITÉ : c'est un signe de vie, pas une condition de lecture.
       on(win, "focus", () => { noteActivity(); resume(); });
       for (const ev of ACTIVITY_EVENTS) on(win, ev, noteActivity, { passive: true });
       on(options.scrollElement, "scroll", noteActivity, { passive: true });

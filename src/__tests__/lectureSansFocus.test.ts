@@ -59,6 +59,11 @@ function banc({ visible = true, focus = false } = {}) {
   // les envois — un harnais qui n'en produit aucun aurait rendu 0, et un test qui affirme
   // « ≤ 70 » aurait été VERT sur zéro. Mesurer la sortie réelle plutôt que le tuyau.
   return {
+    // ⚠️ CE QUI MANQUAIT AU BANC, ET QUI A LAISSÉ PASSER LA MOITIÉ DU DÉFAUT. `hasFocus()` avait été
+    // retiré de la condition de lecture, mais `on(win,"blur",pause)` était resté 170 lignes plus
+    // loin. Le banc ne déclenchait jamais `blur` : le test décrivait le bon monde et n'y touchait
+    // pas. Troisième banc de la journée à neutraliser ce qu'il teste.
+    declencher: (nom: string) => { for (const f of ecouteurs.get(nom) || []) f(); },
     // Le temps avance PAR PAS, en déclenchant les minuteries dues — comme un vrai navigateur.
     avancer: (ms: number) => {
       const fin = t + ms;
@@ -147,6 +152,48 @@ describe("tourner une page compte comme une lecture", () => {
     b.avancer(600_000);          // dix minutes, rien du tout
     expect(b.tracker.totalSeconds(), "le seuil arbitre les silences, et lui seul")
       .toBeLessThanOrEqual(SESSION_IDLE_MS / 1000 + 10);
+  });
+});
+
+
+// PERDRE LE FOCUS N'EST PAS CESSER DE LIRE.
+//
+// 0.1.39 a retiré `hasFocus()` de la condition de lecture — et laissé `on(win,"blur",pause)`. Sur
+// un second écran, cliquer sur l'autre fenêtre déclenche `blur`, donc `pause()`, donc le comptage
+// s'arrête quand même. Le correctif était largement inopérant dans le cas exact qu'il visait.
+//
+// ⚠️ Signalé par un audit externe, pas par nos tests : le banc ne déclenchait jamais `blur`.
+describe("perdre le focus n'arrête pas la lecture d'un document visible", () => {
+  it("le document reste compté pendant qu'on travaille sur l'autre écran", () => {
+    const b = banc({ visible: true, focus: false });
+    b.tracker.start();
+    b.avancer(5_000);
+    b.declencher("blur");        // l'utilisateur clique sur la fenêtre de l'autre écran
+    b.avancer(60_000);           // une minute, document toujours affiché
+    const secondes = b.tracker.totalSeconds();
+
+    // ⚠️ LE SEUIL EST SERRÉ EXPRÈS, ET LA PREMIÈRE VERSION NE MORDAIT PAS.
+    //
+    // Elle exigeait « > 50 » sur 65 s écoulées, et passait AUSSI avec le défaut : `blur` mettait
+    // bien en pause, mais le `flush` périodique (12 s) appelle `commit()`, qui se termine par
+    // `activeSince = viewable() ? now() : null` — donc le comptage repartait tout seul au flush
+    // suivant. Le défaut coûtait au plus UN intervalle, pas la session entière.
+    //
+    // Ça nuance le constat de l'audit — l'impact réel était borné — et ça ne l'annule pas : chaque
+    // aller-retour entre écrans rabotait jusqu'à douze secondes, en silence. Mais un test qui
+    // tolère douze secondes de perte ne peut pas voir douze secondes de perte.
+    expect(secondes, "aucune seconde ne doit se perdre : 65 s écoulées, 65 s lues")
+      .toBeGreaterThanOrEqual(63);
+  });
+
+  // ⚠️ Ce que `blur` ne doit PAS ouvrir : un onglet réellement caché reste non compté, et c'est
+  // `visibilitychange` qui le dit. Retirer une garde ne doit pas en desserrer une autre.
+  it("mais un document caché reste non compté", () => {
+    const b = banc({ visible: false, focus: false });
+    b.tracker.start();
+    b.declencher("visibilitychange");
+    b.avancer(60_000);
+    expect(b.tracker.totalSeconds(), "caché est caché, focus ou pas").toBeLessThan(3);
   });
 });
 

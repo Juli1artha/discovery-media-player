@@ -629,7 +629,13 @@ var Map3DD=(function(){
   // prix pour que personne d'autre que le présentateur ne pilote l'écran de l'audience.
   var _ordPersist=null;
   function persistOrd(){ if(!_ordPersist&&window.Player&&Player.live&&Player.live.createScheduler){
-      _ordPersist=Player.live.createScheduler(function(fini){ try{ if(map&&persist)persist(state()); }catch(e){} fini(); },{minMs:500}); }
+      _ordPersist=Player.live.createScheduler(function(fini){
+        // ⚠️ ON ATTEND L'ÉCRITURE. Appeler fini() tout de suite disait à l'ordonnanceur que le
+        // travail était fait alors qu'il commençait : sa garantie du « dernier état gagne »
+        // portait sur l'ordre des appels et non sur celui des arrivées.
+        var p=null; try{ if(map&&persist)p=persist(state()); }catch(e){}
+        if(p&&p.then)p.then(fini,fini); else fini();
+      },{minMs:500}); }
     return _ordPersist; }
   function broadcast(){ if(!map)return; var n=Date.now(); if(n-_bcT<200)return; _bcT=n;
     var o=persistOrd(); if(o)o.signaler();
@@ -676,7 +682,10 @@ var Map3DD=(function(){
   // Même règle qu'au-dessus : on persiste, on signale, on ne transporte pas la position.
   var _ordSv=null;
   function svOrd(){ if(!_ordSv&&window.Player&&Player.live&&Player.live.createScheduler){
-      _ordSv=Player.live.createScheduler(function(fini){ try{ if(persist&&pano)persist(svState()); }catch(e){} fini(); },{minMs:500}); }
+      _ordSv=Player.live.createScheduler(function(fini){
+        var p=null; try{ if(persist&&pano)p=persist(svState()); }catch(e){}
+        if(p&&p.then)p.then(fini,fini); else fini();
+      },{minMs:500}); }
     return _ordSv; }
   function svBcast(){ var n=Date.now(); if(n-_svBcT<200)return; _svBcT=n; if(!svState())return;
     var o=svOrd(); if(o)o.signaler();
@@ -2069,8 +2078,13 @@ ${LEGAL_CSS}
         }).catch(function(){});
     }
     // Carte live : persiste le contenu (present-content, JWT) → l'audience bascule/suit via Realtime.
-    function presentContent(content){ if(!PRES)return; var h={'Content-Type':'application/json'}; var tk=appToken(); if(tk) h['Authorization']='Bearer '+tk;
-      fetch('/api/doc',{method:'POST',headers:h,body:JSON.stringify({action:'present-content',slug:PRES.slug,content:content})})
+    // ⚠️ REND SA PROMESSE, ET CE N'EST PAS DÉCORATIF. L'ordonnanceur des écritures de carte
+    // appelait fini() juste après l'appel, sans attendre : il croyait donc l'écriture terminée
+    // alors qu'elle venait de PARTIR. Sa garantie « une seule en vol, la dernière gagne » ne
+    // s'appliquait qu'à l'ordre des APPELS, pas à celui des écritures — plusieurs PATCH pouvaient
+    // voler ensemble, et une position ancienne atterrir après une récente.
+    function presentContent(content){ if(!PRES)return Promise.resolve(); var h={'Content-Type':'application/json'}; var tk=appToken(); if(tk) h['Authorization']='Bearer '+tk;
+      return fetch('/api/doc',{method:'POST',headers:h,body:JSON.stringify({action:'present-content',slug:PRES.slug,content:content})})
         .then(function(r){ if(r&&r.ok)diffuserEtat(); })
         .catch(function(){}); }
     function showMap(){ if(!PRES||!window.Map3DD)return; var wrap=document.getElementById('mapWrap'); if(wrap&&wrap.classList.contains('on')){ Map3DD.enter(null,true,presentContent); return; } var init=Player.presentation.initialMapContent(); presentContent(init); Map3DD.enter(init,true,presentContent); }
