@@ -262,6 +262,33 @@ l'analyse du commit publié, pas sur le compteur de l'onglet.
 Le `node_modules` local portait `jsdom@25` alors que le lock demande `30`. Les tests passaient sur
 un arbre différent de celui de la CI. `npm ci` requis avant toute conclusion sur une suite verte.
 
+### ⚠️ La clé du quota change pour UNE limite, pas pour les douze (16/08/2026)
+
+Écrit avant 0.1.42 parce que « on change la clé du quota » se lit vite comme « partout », et que
+ce serait le défaut de 0.1.36 réintroduit à l'échelle du fichier.
+
+Le player porte **douze limites de débit, toutes clés sur l'adresse**. Une seule concerne les
+sessions internes :
+
+| clé | population | preuve d'identité disponible |
+|---|---|---|
+| `intsess:` | interne | ✅ jeton signé par l'hôte (0.1.22/0.1.35) |
+| `patt:` `pchat:` `pup:` `preact:` `pstart:` | audience d'une présentation | ❌ mixte — un prospect n'a aucun jeton |
+| `reshare:` `docbot:` `doctts:` `vcode:` `hshare:` | lecteur anonyme d'un lien | ❌ aucune |
+
+⚠️ **Une limite ne peut porter que sur ce que l'appelant ne choisit pas.** L'e-mail signé le
+remplit ; un e-mail *déclaré* ne le remplit pas — on le changerait pour repartir à zéro, ce qui est
+exactement ce que 0.1.36 vient de fermer sur l'autre bord.
+
+Donc : `intsess:` passe à l'e-mail **quand un jeton valide est présent**, et retombe sur l'adresse
+sinon. Une fois le mode strict par défaut, ce repli ne sert plus qu'aux instances en transition —
+sans jeton, la requête est refusée avant d'atteindre le compteur.
+
+Les onze autres gardent l'adresse. Elles identifient un bâtiment, c'est imparfait, et c'est tout ce
+qu'on a pour une population qui ne prouve rien — par construction, puisque c'est ce qui la définit.
+
+*Précision demandée par la session ADV, avant que la version ne parte.*
+
 ## ⚠️ La règle à garder de toute la semaine
 
 Formulée par ADV, le 16/08/2026, après trois occurrences chez chacun :
