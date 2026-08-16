@@ -66,6 +66,22 @@ function differee() {
   return { promesse: p, tenir, rompre };
 }
 
+/**
+ * Les scripts en ligne d'une page, lus par le PARSEUR DU NAVIGATEUR.
+ *
+ * ⚠️ C'était une expression régulière, et trois corrections successives n'ont pas suffi : elle
+ * ratait « <SCRIPT> », puis « </script > », puis « </script\t\n bar> ». Chaque rustine appelait la
+ * suivante, parce qu'on ne rattrape pas la grammaire du HTML à la main — c'est exactement le
+ * reproche que l'analyse statique nous faisait, et elle avait raison de le répéter.
+ *
+ * Le banc tourne dans jsdom : le parseur du navigateur est là, il voit par construction ce que le
+ * navigateur voit. Une garde qui lit la page autrement que le navigateur ne garde pas la page.
+ */
+function scriptsDe(html) {
+  const doc = new window.DOMParser().parseFromString(html, "text/html");
+  return [...doc.querySelectorAll("script")].map((s) => s.textContent || "");
+}
+
 /** Laisse les chaînes de promesses se dérouler. */
 const respirer = () => new Promise((r) => setTimeout(r, 0));
 
@@ -102,8 +118,8 @@ async function banc() {
   // ⚠️ Le paquet est en « use strict » : un eval strict garde ses déclarations pour lui. On le
   // réexpose — artefact du banc, pas du produit : dans un navigateur c'est une balise script, et
   // « var Player » y est bien global.
-  for (const m of html.matchAll(/<script[^>]*>([\s\S]*?)<\/script\s*>/gi)) {
-    try { window.eval(m[1] + "\n;try{globalThis.Player=Player;}catch(e){}"); } catch { /* pdf.js n'est pas là, et on n'en a pas besoin */ }
+  for (const code of scriptsDe(html)) {
+    try { window.eval(code + "\n;try{globalThis.Player=Player;}catch(e){}"); } catch { /* pdf.js n'est pas là, et on n'en a pas besoin */ }
   }
 
   // On démarre une vraie présentation, par le bouton.

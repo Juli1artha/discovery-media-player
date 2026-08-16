@@ -69,18 +69,28 @@ async function pageAudience() {
 // ⚠️ C'est un test du STUDIO qui l'a trouvé, en rendant la page depuis le paquet installé. Le
 // player, lui, ne l'avait pas — le même déséquilibre qu'en 0.1.20, où un hôte avait rattrapé une
 // régression que ce dépôt ne voyait pas. On rapatrie la garde ici, à la source.
-// ⚠️ L'EXTRACTION DOIT VOIR TOUT CE QUE LE NAVIGATEUR VOIT. Ces motifs ignoraient « <SCRIPT> » et
-// « </script > » — un bloc écrit ainsi échappait à la garde de compilation, qui aurait donc dit
-// « tout va bien » sur la page même où un bloc ne se parse pas. C'est précisément le défaut que
-// cette garde existe pour attraper. Relevé par l'analyse statique sur le banc voisin ; corrigé
-// ici aussi, parce qu'un motif fautif ne se corrige pas là où on l'a vu mais là où il est.
+/**
+ * Les scripts en ligne d'une page, lus par le PARSEUR DU NAVIGATEUR.
+ *
+ * ⚠️ C'était une expression régulière, et trois corrections successives n'ont pas suffi : elle
+ * ratait « <SCRIPT> », puis « </script > », puis « </script\t\n bar> ». Chaque rustine appelait la
+ * suivante, parce qu'on ne rattrape pas la grammaire du HTML à la main — c'est exactement le
+ * reproche que l'analyse statique nous faisait, et elle avait raison de le répéter.
+ *
+ * Le banc tourne dans jsdom : le parseur du navigateur est là, il voit par construction ce que le
+ * navigateur voit. Une garde qui lit la page autrement que le navigateur ne garde pas la page.
+ */
+function scriptsDe(html) {
+  const doc = new window.DOMParser().parseFromString(html, "text/html");
+  return [...doc.querySelectorAll("script")].map((s) => s.textContent || "");
+}
+
 describe("le script en ligne est du JavaScript valide", () => {
   const vm = require("node:vm");
 
   it("chaque bloc se compile — la question est posée AVANT toute dépendance", async () => {
     const html = await pageAudience();
-    const blocs = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script\s*>/gi)]
-      .map((m) => m[1]).filter((c) => c.trim());
+    const blocs = scriptsDe(html).filter((c) => c.trim());
     expect(blocs.length, "il doit bien y avoir du script à vérifier").toBeGreaterThan(0);
     for (const code of blocs) {
       expect(() => new vm.Script(code), "un bloc ne se parse pas : toute la couche live tombe avec")
@@ -97,11 +107,11 @@ describe("page audience", () => {
     // contenait bien l'appel à onState — il référençait simplement un nom absent de cette
     // portée-là. Seule l'exécution distingue « écrit » de « branché ».
     window.supabase = { createClient: () => ({ channel: () => { const c = { on: () => c, subscribe: () => c }; return c; } }) };
-    for (const m of html.matchAll(/<script[^>]*>([\s\S]*?)<\/script\s*>/gi)) {
+    for (const code of scriptsDe(html)) {
       // `window.eval` et pas `new Function` : les scripts déclarent des `var` au niveau global,
       // qu'une portée de fonction rendrait invisibles au bloc suivant — c'est exactement le
       // genre de nuance de portée qui a produit le bug.
-      try { window.eval(m[1]); } catch { /* les scripts qui dépendent de pdf.js ne nous intéressent pas */ }
+      try { window.eval(code); } catch { /* les scripts qui dépendent de pdf.js ne nous intéressent pas */ }
     }
 
     expect(typeof window.__presAppliquerEtat,
