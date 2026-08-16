@@ -3139,7 +3139,29 @@ async function handler(req, res) {
             userName: jeton ? (jeton.name || body.name) : body.name,
             numPages: body.numPages, maxPage: body.maxPage, totalSeconds: body.totalSeconds, pagesTime: body.pagesTime,
           }, { ip: ip0, ua: ua0 });
-        } catch { /* best-effort */ }
+        } catch (e) {
+          // ⚠️ CE `catch` A COÛTÉ UNE JOURNÉE À UN HÔTE, ET IL ÉTAIT À TROIS LIGNES DU COMMENTAIRE
+          // QUI DIT DE NE PAS FAIRE ÇA.
+          //
+          // La ligne écrite portait `ua` et `ip` ; la table des sessions internes ne les a pas.
+          // PostgREST refusait, ce `catch` avalait le refus, et la route répondait `{"ok":true}`.
+          // Ni le second hôte ni nous n'avions une seule ligne mesurée — notre table de production
+          // en comptait ZÉRO — et rien, nulle part, ne le disait.
+          //
+          // « best-effort » est une intention juste : une mesure ne doit jamais empêcher de lire un
+          // document. Mais best-effort ne veut pas dire MUET. Ce qu'on rattrape ici, c'est le droit
+          // de continuer — pas le droit de ne rien dire.
+          //
+          // ⚠️ La leçon dépasse ce bloc : une règle écrite dans un commentaire ne protège pas le
+          // code qui la suit. C'est pourquoi elle est aussi devenue un test —
+          // server/__tests__/ecritureMuette.test.js refuse tout `catch` vide autour d'une écriture
+          // de mesure.
+          try {
+            if (await PLAYER.limits.allow("intsess:echec", 1, 3600)) {
+              PLAYER.errors.capture(new Error(`écriture de session interne refusée : ${e && e.message ? e.message : "cause inconnue"} — la mesure ne s'enregistre pas`), { route: "internal-session" });
+            }
+          } catch { /* un journal ne doit jamais empêcher une lecture */ }
+        }
         res.statusCode = 200; res.setHeader("Content-Type", "application/json"); res.end('{"ok":true}');
         return;
       }
@@ -3149,7 +3171,19 @@ async function handler(req, res) {
           // 'session' = résumé riche (temps par page, appareil) → upsert ; open/page/heartbeat → journal léger (funnel/overview).
           if (body.event === "session") await upsertSession(share, { sessionId: body.sessionId, numPages: body.numPages, maxPage: body.maxPage, totalSeconds: body.totalSeconds, pagesTime: body.pagesTime }, { ip: ip0, ua: ua0 });
           else await logView(share, { event: body.event, page: body.page, maxPage: body.maxPage, seconds: body.seconds, sessionId: body.sessionId, ua: ua0 });
-        } catch { /* best-effort */ }
+        } catch (e) {
+          // ⚠️ LE MÊME `catch` MUET, SUR LE CHEMIN EXTERNE. Trouvé par la garde écrite pour
+          // l'interne : une fois la règle devenue un test, elle a désigné son jumeau.
+          //
+          // Celui-ci n'a rien cassé jusqu'ici — la table des sessions externes a bien les colonnes
+          // qu'on lui envoie. Mais il aurait avalé le prochain écart de la même façon, et personne
+          // n'aurait rien vu : c'est ce qui rend la classe dangereuse, pas l'instance.
+          try {
+            if (await PLAYER.limits.allow("sess:echec", 1, 3600)) {
+              PLAYER.errors.capture(new Error(`écriture de mesure refusée : ${e && e.message ? e.message : "cause inconnue"} — la lecture n'est pas comptée`), { route: "track" });
+            }
+          } catch { /* un journal ne doit jamais empêcher une lecture */ }
+        }
       }
       res.statusCode = 200; res.setHeader("Content-Type", "application/json"); res.end('{"ok":true}');
       return;
