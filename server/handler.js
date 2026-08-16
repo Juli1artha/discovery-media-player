@@ -282,14 +282,14 @@ var Live=(function(){
   var MYID=Math.random().toString(36).slice(2,9);
   function _store(){try{return window.localStorage;}catch(e){return null;}}
   // Clé d'assistance STABLE (analytics de présentation) : email si connu, sinon id persistant par navigateur.
-  function attKey(me){ return Player.live.attendeeKey(me,_store(),MYID); }
+  function attKey(){ return Player.live.attendeeKey(_store(),MYID); }
   // Heartbeat d'assistance → le serveur journalise qui suit, combien de temps, et les pages vues (via la page
   // courante de la présentation). Envoyé à la connexion puis toutes les 25 s. Best-effort (silencieux).
   // Le serveur ne croit plus 'isMember' ni 'isPresenter' sur parole : l'appartenance se prouve par
   // le jeton d'acces de la session, le titre de presentateur par le control_token. Ce qui part d'ici
   // n'est plus qu'une AFFIRMATION, et le serveur la remplace par ce qu'il a verifie.
   function sendAttend(){ if(!SLUG||!ME)return; try{ var h={'Content-Type':'application/json'};var jw=accessToken();if(jw)h.Authorization='Bearer '+jw;
-    fetch('/api/doc',{method:'POST',headers:h,body:JSON.stringify({action:'present-attend',slug:SLUG,control:CONTROL,key:attKey(ME),name:ME.name||'',email:ME.email||'',avatar:ME.avatar||''})}); }catch(e){} }
+    fetch('/api/doc',{method:'POST',headers:h,body:JSON.stringify({action:'present-attend',slug:SLUG,control:CONTROL,key:attKey(),name:ME.name||'',email:ME.email||'',avatar:ME.avatar||''})}); }catch(e){} }
   var EMOJIS=['👍','❤️','😂','😮','👏','🎉'];
   var RSVG='<svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2 stroke-linecap=round><circle cx=12 cy=12 r=9 /><path d="M8.5 14.5s1.4 1.7 3.5 1.7 3.5-1.7 3.5-1.7"/><line x1=9 y1=9.2 x2=9.01 y2=9.2 /><line x1=15 y1=9.2 x2=15.01 y2=9.2 /></svg>';
   function esc(s){return Player.live.escapeHtml(s);}
@@ -533,7 +533,7 @@ var Live=(function(){
       // par accident : le jour où quelqu'un rebranche un paramètre, la charge d'un canal public
       // redeviendrait crue sans que rien ne le signale. On coupe le chemin, pas seulement l'usage.
       ch.on('broadcast',{event:'map'},function(){if(_onMap)_onMap();});
-      ch.subscribe(function(st){if(st==='SUBSCRIBED'){ch.track({name:me.name,email:me.email,avatar:me.avatar,role:me.role,member:!!me.member,uid:attKey(me)});sendAttend();}});
+      ch.subscribe(function(st){if(st==='SUBSCRIBED'){ch.track({name:me.name,email:me.email,avatar:me.avatar,role:me.role,member:!!me.member,uid:attKey()});sendAttend();}});
       _tyIv=setInterval(renderTyping,1500);
       _atIv=setInterval(sendAttend,25000);
       // Filet de sécurité : au déchargement de la page/iframe (fermeture, reload, switch), on retire la présence
@@ -1371,6 +1371,25 @@ const CLE_INVITE = "dmp-present-me";
  *
  * Signalé par la seconde passe d'audit (P1-6).
  */
+/**
+ * La clé d'un participant qui ne peut RIEN prouver.
+ *
+ * Un anonyme n'a pas de jeton : sa clé vient forcément de son navigateur, et le serveur ne peut pas
+ * la lui contester. Ce qu'il peut faire, c'est l'empêcher de sortir de son espace de noms — donc de
+ * ressembler à la clé d'un membre, qui est une adresse e-mail.
+ *
+ * ⚠️ C'est la même logique que le quota fondé sur l'adresse : on ne fonde pas une garantie sur ce
+ * que l'appelant choisit. Ici on ne peut pas éviter qu'il choisisse ; on peut borner ce qu'il peut
+ * choisir. Deux anonymes restent séparés par une valeur imprévisible, comme deux sessions.
+ *
+ * Une clé absente ou hors forme n'est pas une erreur : elle vaut « inconnu ». Un participant mal
+ * compté vaut mieux qu'une audience refusée.
+ */
+function cleAnonyme(brut) {
+  const v = String(brut == null ? "" : brut).trim().slice(0, 120);
+  return /^anon-[A-Za-z0-9_-]{4,}$/.test(v) ? v : "anon-inconnu";
+}
+
 async function profilDuJeton(req) {
   try {
     const u = await PLAYER.identity.verifyToken((req.headers && req.headers.authorization) || "");
@@ -2841,8 +2860,18 @@ async function handler(req, res) {
           // ⚠️ Une identité prouvée REMPLACE celle qu'on affirme — elle ne s'y ajoute pas. Sinon la
           // vérification ne servirait qu'à décorer une affirmation qu'on croit toujours.
           const profil = await profilDuJeton(req);
+          // ⚠️ ET LA CLÉ EN FAIT PARTIE — C'EST MÊME LA SEULE QUI COMPTE. Le correctif ci-dessus a
+          // remplacé le nom, l'e-mail et l'avatar par ceux du jeton, et laissé passer `key`, qui est
+          // pourtant l'IDENTITÉ DE LA LIGNE. Or pour un membre cette clé EST son e-mail : un
+          // participant anonyme n'avait qu'à poster la vôtre pour écraser votre ligne — nom, avatar —
+          // et gonfler votre temps de présence. Ce sont les statistiques de présentation, c'est-à-dire
+          // ce que ce produit vend.
+          //
+          // On dérive donc la clé de ce qui est prouvé, et jamais de ce qui est affirmé. Un anonyme,
+          // lui, ne peut rien prouver : sa clé reste la sienne, mais enfermée dans un espace de noms
+          // dont elle ne peut pas sortir — elle ne pourra jamais ressembler à l'e-mail d'un membre.
           const r = await recordAttendance(String(body.slug || ""), {
-            key: body.key,
+            key: profil ? profil.email : cleAnonyme(body.key),
             name: (profil && profil.name) || body.name,
             email: profil ? profil.email : body.email,
             avatar: (profil && profil.avatar) || body.avatar,

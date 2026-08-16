@@ -130,17 +130,29 @@ function writeStore(store: KeyValueStore | null | undefined, key: string, value:
 }
 
 /**
- * Clé stable d'un participant pour les statistiques de présence : son email s'il est membre,
- * sinon un identifiant de navigateur persistant. Sans lui, chaque rechargement compterait
- * comme un nouveau participant.
+ * Clé stable de CE NAVIGATEUR pour les statistiques de présence. Sans elle, chaque rechargement
+ * compterait comme un nouveau participant.
+ *
+ * ⚠️ ELLE NE PORTE PLUS L'ADRESSE E-MAIL D'UN MEMBRE, ET C'EST LE CORRECTIF. Elle la renvoyait,
+ * et le serveur acceptait la clé telle quelle : n'importe quel participant anonyme pouvait poster
+ * la clé d'un collègue — c'est-à-dire son adresse — pour écraser sa ligne, changer le nom et
+ * l'avatar affichés, et gonfler son temps de présence. Ce sont les statistiques de présentation,
+ * c'est-à-dire ce que ce produit vend.
+ *
+ * La clé d'un membre se dérive désormais SERVEUR, depuis le jeton d'accès vérifié. Le navigateur
+ * n'a donc plus aucune raison d'envoyer une adresse ici, et cette fonction n'a plus besoin de
+ * savoir qui est le lecteur : elle répond « ce navigateur-ci », rien de plus.
+ *
+ * ⚠️ ET ELLE EST TIRÉE AU SORT SÉRIEUSEMENT. C'était `Math.random()` — acceptable tant que la clé
+ * n'était qu'un identifiant d'analyse. Elle est maintenant la seule chose qui sépare deux
+ * participants anonymes : la même correction qu'en 0.1.23 pour le jeton d'auteur du chat, dont
+ * l'aide vit vingt lignes plus bas et n'avait pas été rapportée ici.
  */
 export function attendeeKey(
-  me: Me | null | undefined,
   store?: KeyValueStore | null,
   fallbackId = "anon",
-  randomId: () => string = () => Math.random().toString(36).slice(2, 10),
+  randomId: () => string = valeurImprevisible,
 ): string {
-  if (me?.email) return String(me.email).toLowerCase();
   try {
     if (!store) return `anon-${fallbackId}`;
     const existing = store.getItem(STORAGE_KEYS.attendeeKey);
