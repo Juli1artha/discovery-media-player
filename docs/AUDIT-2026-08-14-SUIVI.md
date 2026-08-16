@@ -130,6 +130,26 @@ marque et son jeton interne signé (0.1.22). À faire.
 | P1-1 | Les emails de re-partage font confiance à l'en-tête `Host` | ✅ **0.1.21** puis **0.1.33** — l'envoi est REFUSÉ sans URL publique (une alerte ne bloque rien) |
 | P1-2 | Écritures d'analytics : le client choisit `internal`, `isMember`, `isPresenter` | ✅ **interne 0.1.22** · **présence 0.1.25/0.1.28** · **dictionnaires à prototype 0.1.32** |
 | P1-2bis | ⚠️ `PLAYER_INTERNAL_STRICT` était infermable : aucun chemin pour fournir le jeton | ✅ **0.1.35** — prérequis de l'analytics strict par défaut |
+
+### Une dépendance heureuse entre deux chantiers (16/08/2026, vue par ADV)
+
+Le quota des sessions internes porte sur l'**adresse** — parce qu'une limite ne peut porter que sur
+ce que l'appelant NE CHOISIT PAS, et que l'identifiant de session, lui, est choisi par le navigateur
+(la leçon de `X-Forwarded-For`, 0.1.22). Mais une adresse identifie un **bâtiment**, pas une lecture :
+c'est pour ça qu'il a fallu la dimensionner pour 25 lecteurs (0.1.36), et qu'elle punira toujours
+une équipe pour la lecture d'une seule personne.
+
+⚠️ **Le mode strict règle ça, et ce n'était pas son objet.** Dès que le jeton interne est
+obligatoire, on tient mieux que l'adresse : **l'e-mail signé par l'hôte**. Il n'est pas choisi par
+l'appelant, il identifie une personne et non un immeuble, et il est déjà présent au moment du
+contrôle.
+
+`PLAYER_INTERNAL_STRICT=1` ne ferme donc pas seulement une usurpation : il rend possible un quota
+juste. À faire **avec** la bascule du défaut, pas avant — sans jeton obligatoire, une clé fondée sur
+l'e-mail se contournerait en changeant l'e-mail, et on retomberait exactement dans le défaut qu'on
+vient de corriger.
+
+*Vu par la session ADV, en retirant sa propre proposition de clé.*
 | P1-3 | PDF.js 3.11.174 concerné par CVE-2024-4367 | 🟡 **atténué en 0.1.21** — migration ESM à part |
 | P1-4 | Fichiers entièrement tamponnés, pas de délai maximal | partiellement fait |
 | P1-5 | Idempotence des liens hôte non atomique (`SELECT` puis `INSERT`) | à faire — index unique partiel |
