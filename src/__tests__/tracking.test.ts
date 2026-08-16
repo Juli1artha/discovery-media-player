@@ -111,18 +111,46 @@ describe("tracking — le temps ne compte que si on regarde vraiment", () => {
     expect(last.totalSeconds).toBe(5); // 3 + 2, les dix minutes cachées ne comptent pas
   });
 
-  it("ne compte pas une fenêtre sans focus", () => {
+  // ⚠️ CE TEST DISAIT L'INVERSE, ET C'ÉTAIT LA VOIX QUI CONTREDISAIT 0.1.39.
+  //
+  // Il exigeait qu'une fenêtre sans focus cesse de compter. 0.1.39 a retiré `hasFocus()` de la
+  // condition de lecture pour qu'un document affiché sur un second écran compte — mais
+  // `on(win,"blur",pause)` était resté, et CE TEST l'exigeait. Le projet disait donc deux choses à
+  // la fois : « un document visible compte » et « une fenêtre sans focus ne compte pas ».
+  //
+  // ⚠️ Et il PASSAIT dans les deux mondes tant que le banc de l'autre fichier ne déclenchait pas
+  // `blur` : chaque suite décrivait un contrat différent sans jamais se croiser.
+  //
+  // Le contrat est tranché : perdre le focus signifie « une autre fenêtre est au premier plan »,
+  // pas « ce document n'est plus lu ». Seul `visibilitychange` a cette autorité.
+  it("une fenêtre qui perd le focus continue de compter si le document reste visible", () => {
     const h = harness({ slug: "s" });
     h.tracker.start();
     h.advance(3000);
     h.blur();
     h.fire("blur");
-    h.advance(120_000);
+    h.advance(60_000);          // une minute sur l'autre écran, document toujours affiché
     h.focus();
     h.fire("focus");
     h.advance(1000);
     h.tracker.flush();
-    expect(h.sent[h.sent.length - 1].totalSeconds).toBe(4);
+    const compte = h.sent[h.sent.length - 1].totalSeconds as number;
+    expect(compte, "c'est le cas du double écran : 4 s comptées pour 64 s de lecture")
+      .toBeGreaterThan(50);
+  });
+
+  // ⚠️ Ce qui n'a PAS changé, et qui doit rester vrai : un onglet CACHÉ ne compte pas. C'est
+  // `visibilitychange` qui le dit, et lui seul — sans quoi retirer `blur` ouvrirait la porte d'à
+  // côté en fermant celle-ci.
+  it("mais un onglet caché ne compte toujours pas", () => {
+    const h = harness({ slug: "s" });
+    h.tracker.start();
+    h.advance(3000);
+    h.hide();
+    h.fire("visibilitychange");
+    h.advance(120_000);
+    h.tracker.flush();
+    expect(h.sent[h.sent.length - 1].totalSeconds, "caché reste caché").toBeLessThan(6);
   });
 
   it("met en pause après inactivité, et repart à la première interaction", () => {

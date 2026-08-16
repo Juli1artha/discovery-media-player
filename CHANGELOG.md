@@ -10,6 +10,37 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.41] — 2026-08-16
+
+### Fixed
+- ⚠️ **0.1.39 removed `hasFocus()` from the reading condition — and left `on(win,"blur",pause)` 170
+  lines below.** The project therefore said two things at once: *"a visible document counts"* and
+  *"a window without focus does not"*. Clicking the other screen's window fired `blur`, which
+  paused counting.
+
+  ⚠️ **Measured rather than assumed, and the audit's framing was too dark**: the periodic flush
+  (12 s) calls `commit()`, which ends with `activeSince = viewable() ? now() : null` — so counting
+  restarted by itself at the next flush. The leftover handler cost **at most one interval**, not the
+  session: 58 s counted for 65 s elapsed in the bench. Real, bounded, and silent — every trip
+  between screens shaved a few seconds.
+
+  The contract is settled: losing focus means *another window is in front*, not *this document is
+  no longer read*. Only `visibilitychange` carries that authority. The old test that demanded the
+  opposite has been flipped, and a second one pins what must **not** change — a hidden tab still
+  does not count.
+
+  ⚠️ **Our bench never fired `blur`.** Third time in a day that a bench failed to exercise the
+  property its test described, and the assertion was loose enough (`> 50` on 65 s) to pass with the
+  defect anyway. *A test that tolerates twelve seconds of loss cannot see twelve seconds of loss.*
+
+- **Map writes were not actually sequential.** The scheduler called `fini()` immediately while
+  `presentContent()` was fire-and-forget, so its "one in flight, last one wins" guarantee applied to
+  the order of *calls*, never to the order of *writes*. Several `PATCH` could fly together and an
+  older position land after a newer one. `presentContent()` now returns its promise, and both
+  schedulers wait for it.
+
+  *Both reported by an external audit pass on 0.1.40.*
+
 ## [0.1.40] — 2026-08-16
 
 ### Fixed
@@ -1192,7 +1223,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.40...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.41...HEAD
+[0.1.41]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.40...v0.1.41
 [0.1.40]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.39...v0.1.40
 [0.1.39]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.38...v0.1.39
 [0.1.38]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.37...v0.1.38
