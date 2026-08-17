@@ -300,7 +300,7 @@ du jour même** — elle ne relit pas un état, elle relit un mouvement.
 | V-2 | Écritures de présentation pas toutes séquentielles (`toMap`, `hideMap`, `pushPage`) | ✅ **file unique** — reste le numéro de version |
 | V-3 | Une requête bloquée fige l'ordonnanceur (né de 0.1.41) | ✅ **0.1.44** |
 | V-4 | Le canal public reste amplifiable — et la limite de 0.1.42 en fait un déni de service | ✅ **0.1.45** |
-| V-5 | Clé anonyme rejouable, exposée dans la présence (née de 0.1.42) | à faire |
+| V-5 | Clé anonyme rejouable, exposée dans la présence (née de 0.1.42) | ✅ **divulgation fermée** — le rejeu par devinette reste hors de portée |
 | V-6 | `present-stats` / `present-doc-list` : possession non vérifiée | recoupe P2-1 / C-8 |
 
 ### V-1 — terminer révoque le jeton, la péremption ne le révoque pas
@@ -478,6 +478,33 @@ sur `doc_presentations`, or PostgREST rejette un `PATCH` portant une colonne inc
 ne migre pas verrait **toutes** ses écritures de présentation échouer. Le projet n'a pas encore de
 chemin de migration pour les instances existantes (P2-6, ouvert). Le livrer d'abord, c'était livrer
 une casse.
+
+### V-5 — deux besoins, deux valeurs
+
+La présence Realtime transporte un `uid` pour dédoublonner l'affichage (« je me vois deux fois »
+après une reconnexion). En 0.1.42 nous y avons mis `attendeeKey()` — **l'identité de la ligne de
+présence** d'un participant anonyme. N'importe quel participant pouvait donc lire la clé d'un voisin
+dans le canal, la reposter, et écraser son temps de présence. *Le canal distribuait lui-même de quoi
+falsifier les mesures qu'il servait.*
+
+À décharge, l'état d'avant était pire : `uid` valait l'**adresse e-mail** des membres, servie à tout
+visiteur anonyme du lien public. On avait fermé une fuite et laissé un rejeu.
+
+⚠️ **Dédoublonner un affichage** demande une valeur stable et **publique** ; **identifier une ligne
+de mesure** demande une valeur stable et **non divulguée**. Une seule valeur pour les deux finit
+toujours par trahir l'un des deux usages — la formule du second hôte s'applique telle quelle.
+
+> ⚠️ **ET LE PREMIER CORRECTIF ÉTAIT COSMÉTIQUE LÀ OÙ ÇA COMPTE.** Sans stockage — navigation privée,
+> quota, stockage bloqué — les deux fonctions retombaient sur le **même identifiant de session** :
+> `p-MYID42` et `anon-MYID42`. Lire l'identifiant de présence d'un voisin donnait donc sa clé, dans
+> le cas précis où le lecteur est le plus dégradé. **Les tests passaient**, parce qu'ils
+> fournissaient toujours un stockage : un banc qui n'exerce pas le chemin dégradé décrit un monde où
+> le défaut n'existe pas. Trouvé en exécutant le paquet livré à la main, pas en relisant.
+
+**Ce que ça ne ferme pas** : la clé d'un anonyme reste **choisie** par son navigateur — le serveur
+n'a rien à vérifier. Ce correctif retire la *divulgation*, pas la propriété. Deviner une valeur tirée
+par `crypto` reste hors de portée ; le dernier cas demanderait un billet de participant signé par le
+serveur.
 
 ### Inexactitudes relevées
 

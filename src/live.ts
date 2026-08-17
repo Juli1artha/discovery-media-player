@@ -28,6 +28,7 @@ export const STORAGE_KEYS = {
   attendeeKey: "3dd-present-attkey",
   authorToken: "3dd-present-authtoken",
   chatMuted: "3dd-present-mute",
+  presenceId: "3dd-present-uid",
 } as const;
 
 export interface Participant {
@@ -538,4 +539,57 @@ export function createFileEcritures(options: {
     },
     enAttente: () => attente.size,
   };
+}
+
+
+/**
+ * L'identifiant de PRÉSENCE : celui qu'on diffuse, et lui seul.
+ *
+ * ⚠️ IL ÉTAIT LA CLÉ DES STATISTIQUES, ET CETTE CLÉ EST DIFFUSÉE À TOUTE L'AUDIENCE. La présence
+ * Realtime transporte un `uid` pour dédoublonner l'affichage (« je me vois deux fois » après une
+ * reconnexion). En 0.1.42 nous y avons mis `attendeeKey()` — c'est-à-dire l'identité de la LIGNE DE
+ * PRÉSENCE d'un participant anonyme. N'importe quel participant pouvait donc lire celle d'un voisin
+ * dans le canal, la reposter, et écraser son temps de présence.
+ *
+ * À décharge, l'état d'avant était pire : `uid` valait l'ADRESSE E-MAIL des membres, servie à tout
+ * visiteur du lien public. On a fermé une fuite et laissé un rejeu.
+ *
+ * ⚠️ DEUX BESOINS, DEUX VALEURS. Dédoublonner un affichage demande une valeur STABLE et PUBLIQUE ;
+ * identifier une ligne de mesure demande une valeur stable et NON DIVULGUÉE. Une seule valeur pour
+ * les deux finit toujours par trahir l'un des deux usages — c'est le motif que le second hôte
+ * résume ainsi : « une valeur qui recouvre deux faits finit toujours par en trahir un ».
+ *
+ * ⚠️ CE QUE ÇA NE FERME PAS. La clé d'un participant anonyme reste CHOISIE par son navigateur : le
+ * serveur ne peut pas la lui contester, faute de quoi que ce soit à vérifier. Ce correctif retire la
+ * DIVULGATION, pas la propriété. Deviner une valeur tirée par `crypto` reste hors de portée ; fermer
+ * le dernier cas demanderait un billet de participant signé par le serveur.
+ */
+export function presenceId(
+  store?: KeyValueStore | null,
+  randomId: () => string = valeurImprevisible,
+): string {
+  try {
+    if (store) {
+      const existant = store.getItem(STORAGE_KEYS.presenceId);
+      if (existant) return existant;
+      const cree = `p-${randomId()}`;
+      store.setItem(STORAGE_KEYS.presenceId, cree);
+      return cree;
+    }
+  } catch { /* stockage indisponible : on continue en dessous */ }
+  // ⚠️ PAS DE GRAINE PARTAGÉE AVEC LA CLÉ DE MESURE, ET C'EST LE PIÈGE QUI A ÉTÉ ÉVITÉ DE JUSTESSE.
+  //
+  // La première version rendait ici `p-${fallbackId}` — le même `fallbackId` que `attendeeKey`
+  // utilise pour son repli `anon-${fallbackId}`. Sans stockage (navigation privée, quota, stockage
+  // bloqué), lire l'identifiant de présence d'un voisin donnait donc sa clé de participation : la
+  // séparation était COSMÉTIQUE exactement là où le lecteur est le plus dégradé.
+  //
+  // ⚠️ Et le test qui affirme « l'un ne contient pas l'autre » passait quand même : il fournissait
+  // toujours un stockage. Un banc qui n'exerce pas le chemin dégradé décrit un monde où le défaut
+  // n'existe pas.
+  //
+  // Sans stockage, l'identifiant n'est donc plus stable d'un appel à l'autre : c'est à l'appelant de
+  // le mémoriser pour la durée de sa page. La liste des participants peut alors montrer un doublon
+  // après une reconnexion — dégradation d'AFFICHAGE, jamais une clé divulguée.
+  return `p-${randomId()}`;
 }
