@@ -85,6 +85,13 @@ const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174";
 // abonnement à ce que décide un tiers.
 const SUPAJS = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.js";
 const LEAFLET = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+// ⚠️ `weekly` EST UN CANAL, PAS UNE VERSION — le même défaut que l'étiquette `@2` de jsdelivr :
+// le code de cartographie exécuté chez le visiteur changeait chaque semaine sans qu'aucun
+// déploiement le décide. Google ne publie pas d'empreinte et son chargeur injecte d'autres
+// scripts, donc l'intégrité restera hors de portée ici ; épingler la version trimestrielle rend
+// au moins le changement DÉCIDÉ, et daté. À relever à chaque montée — Google retire les versions
+// après environ un an.
+const MAPS_VERSION = "3.58";
 
 /**
  * Empreintes des dépendances tierces (constat P2-4).
@@ -117,6 +124,10 @@ const TIERS = {
   pdfWorker: { url: PDFJS + "/pdf.worker.min.js", sri: "sha384-SnzOobpRMLXZ52iJvZm/C0fYw0OQemTXzTjIsdsfMcrCtCEe9qgzxTd3RSklO5x2" },
   supa: { url: SUPAJS, sri: "sha384-qafw21c/iciq0VXsi9FzkfoQv5I/V0iqE4lSNcKXPnW9/UTJLnv5CcN4FHxVLnKg" },
   leaflet: { url: LEAFLET, sri: "sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" },
+  // ⚠️ UNE FEUILLE DE STYLE TIERCE N'EST PAS INOFFENSIVE, et celle-ci n'était comptée nulle part.
+  // Du CSS peut déplacer, agrandir et rendre transparent n'importe quel élément : un bouton qu'on
+  // croit cliquer n'est pas forcément celui qu'on clique. Même origine, même empreinte, même règle.
+  leafletCss: { url: "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css", sri: "sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" },
 };
 
 // ⚠️ `crossorigin` EST OBLIGATOIRE avec `integrity` sur une ressource d'une autre origine : sans
@@ -692,12 +703,12 @@ var Map3DD=(function(){
   var useG=!!GMAPS_KEY; // carte de base = Google Maps si une clé est fournie, sinon repli OpenStreetMap (Leaflet)
   function loadLeaflet(cb){ if(window.L){cb();return;} var iv=setInterval(function(){if(window.L){clearInterval(iv);cb();}},80);
     if(leafletLoading)return; leafletLoading=true;
-    var css=document.createElement('link');css.rel='stylesheet';css.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';document.head.appendChild(css);
+    var css=document.createElement('link');css.rel='stylesheet';css.href='${TIERS.leafletCss.url}';css.integrity='${TIERS.leafletCss.sri}';css.crossOrigin='anonymous';document.head.appendChild(css);
     var s=document.createElement('script');s.src='${TIERS.leaflet.url}';s.integrity='${TIERS.leaflet.sri}';s.crossOrigin='anonymous';document.body.appendChild(s); }
   // Google Maps JS chargé à la demande, seulement si une clé est fournie (GMAPS_KEY).
   function loadGoogle(cb){ if(window.google&&window.google.maps){cb();return;} if(!GMAPS_KEY)return; var iv=setInterval(function(){if(window.google&&window.google.maps){clearInterval(iv);cb();}},120);
     if(gLoading)return; gLoading=true;
-    var s=document.createElement('script');s.async=true;s.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(GMAPS_KEY)+'&v=weekly&loading=async';document.body.appendChild(s); }
+    var s=document.createElement('script');s.async=true;s.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(GMAPS_KEY)+'&v=${MAPS_VERSION}&loading=async';document.body.appendChild(s); }
   function loadBase(cb){ if(useG)loadGoogle(cb); else loadLeaflet(cb); }
   function ensureMap(center,zoom){ if(map)return;
     if(useG){ var el=document.getElementById('map3dd'); if(!el||!window.google)return;
