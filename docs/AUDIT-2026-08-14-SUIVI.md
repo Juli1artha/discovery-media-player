@@ -186,7 +186,7 @@ avec le lot des migrations (P1-5), pas avant.
 |---|---|---|
 | P2-1 | Autorisation des statistiques de présentation trop large | ✅ tranché : le player accorde le manifeste, l'hôte décide le reste |
 | P2-2 | `handler.js` : 2 988 lignes, non typé | découpage progressif, contrat public inchangé |
-| P2-3 | Pas d'E2E navigateur, pas de Supabase de test, pas de couverture | 🔧 E2E navigateur **fait** (C-10) ; Supabase de test : à venir |
+| P2-3 | Pas d'E2E navigateur, pas de Supabase de test, pas de couverture | ✅ **base d'essai en mémoire** — 3 pages sur 4 (cf. ci-dessous) |
 | P2-4 | Dépendances navigateur hors lockfile, sans SRI (`@2` mouvant) | ✅ **versions exactes + empreintes** (cf. ci-dessous) |
 | P2-5 | Actions GitHub épinglées sur des tags, pas des SHA | oui — priorité au workflow CLA |
 | P2-6 | Pas de migrations de schéma pour une instance existante | ✅ chemin ouvert — l'hôte applique, le player détecte |
@@ -645,6 +645,50 @@ réponse serveur qu'on dénoue à la main.
 > qui diffuse dès le départ de la requête.
 
 Reste à étendre : audience normale, audience hostile.
+
+### P2-3 — la base d'essai, et ce qu'une contrainte ancienne a fini par offrir
+
+Le banc navigateur ne couvrait que l'aperçu local : la visionneuse tracée et la page d'audience
+exigent une base, répondaient donc 404, et **leurs politiques n'étaient exercées par rien**. Ce sont
+pourtant les deux pages qu'un client et un spectateur ouvrent réellement.
+
+`tools/postgrest-en-memoire.cjs` les débloque — environ 150 lignes, aucune dépendance, aucun compte
+à créer. Ce qui rend cette doublure possible n'est pas une prouesse : c'est **la garde de
+portabilité de la forge**, qui interdit depuis longtemps la syntaxe exotique et maintient toute la
+surface en `table?colonne=eq.valeur`. Une contrainte prise pour rendre un portage possible a fini
+par rendre une base d'essai possible. Les disciplines se paient en retard, et pas toujours là où on
+les avait posées.
+
+⚠️ **Elle refuse plutôt qu'elle n'invente.** Tout filtre inconnu renvoie un 400 qui le NOMME. Une
+doublure qui répondrait « aucun résultat » à une requête mal comprise rendrait tous ces essais verts
+en ne mesurant rien — et le resterait le jour où le player poserait une requête qu'elle ignore. Ses
+propres essais vérifient donc **le refus en premier**, le reste ensuite.
+
+⚠️ **Ce n'est pas une base**, et s'en servir comme telle serait la pire façon de l'employer : ni
+transactions, ni contraintes, ni types, ni RLS. Elle ne dit rien d'un verrou optimiste concurrent ni
+d'une unicité — ce qui relève du SGBD se vérifie sur un vrai SGBD. Ce qu'elle couvre, c'est le
+chemin de la requête HTTP à la page rendue.
+
+**Ce que le banc gagne :**
+
+| | |
+|---|---|
+| visionneuse tracée `/doc/:slug` | démarre, politique plus stricte vérifiée, **et la lecture est comptée en base** |
+| page d'audience `/present/:slug` | démarre, avec de quoi tenir la présence et le chat |
+| mur d'accès visiteur | **toujours pas couvert** — il dépend d'un greffon que le contexte autonome n'a pas, et ferme donc (404) au lieu de dégrader. Trois pages sur quatre. |
+
+La ligne qui compte le plus est celle de la lecture : la boucle **navigateur → serveur → base**
+n'était refermée nulle part. Une page qui s'affiche sans rien journaliser est invisible à l'œil, et
+c'est précisément ce que ce produit vend.
+
+⚠️ **Et le premier essai a corrigé un commentaire, pas le code.** L'assertion sur `frame-ancestors`
+recopiait ce que `sendHtml` annonçait — « page publique : `'none'` » — et elle est tombée : un lien
+tracé sans `embed` est servi en `'self'`. Le comportement est sain (encadrement de même origine
+seulement ; un détournement de clic suppose une page étrangère), c'est **la phrase** qui était
+périmée. Elle a été corrigée, et le comportement est maintenant vérifié plutôt que décrit.
+
+Vérifié par mutation : journalisation coupée → l'essai tombe ; origine étrangère ajoutée aux
+encadrants d'un lien tracé → l'essai tombe.
 
 ### P2-4 — quatre scripts tiers, dont un que personne n'avait compté
 
