@@ -16,6 +16,19 @@ npm run build     # regenerates the browser bundle (committed — see below)
 Node ≥ 22. There is nothing else to install: the tests spin the player up in-process against a
 temporary folder, so they run offline and finish in seconds.
 
+### The browser bench
+
+```bash
+npm run test:e2e  # opens the viewer in a real Chrome
+```
+
+`jsdom` does not enforce CSP, and the server tests use a fake `res` that only records headers. A
+policy that forbids our own scripts passes all of `npm test` and still gives the visitor a blank
+page — only an engine that actually refuses can tell us. This bench uses the Chrome **already on
+your machine** (`playwright-core`, no browser download); set `PLAYER_E2E_CHROME` if it lives
+somewhere unusual. Without a Chrome it skips locally, and **fails in CI** — where skipping would
+leave open exactly the hole it exists to close.
+
 ## The hooks install themselves
 
 `npm install` puts a `pre-push` hook in place: it refuses a push to a branch whose pull request is
