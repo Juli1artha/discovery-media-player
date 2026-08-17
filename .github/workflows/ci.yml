@@ -121,8 +121,20 @@ jobs:
           sans_commentaires=$(grep -vE '^[[:space:]]*//' server/*.js --with-filename --line-number || true)
           exotique=$(printf '%s\n' "$sans_commentaires" | grep -E 'select=[^&`"]*\(|[?&]or=\(|[?&]and=\(|offset=' || true)
           [ -z "$exotique" ] || { echo "::error::PostgREST-specific syntax raises the porting cost:"; echo "$exotique"; exit 1; }
+          # ⚠️ ON COMPARE, ON N'AFFICHE PAS. Cette étape se contentait d'imprimer le compte en
+          # renvoyant le lecteur vers docs/API.md — deux exemplaires du même fait, et personne pour
+          # les mettre côte à côte. Le document annonçait 49 appels « dans trois fichiers » quand il
+          # y en avait 51 dans quatre : l'écart s'était installé sans qu'aucune étape ne mente,
+          # puisque aucune ne comparait.
+          #
+          # Un chiffre affiché est une invitation à vérifier ; un chiffre comparé est une garde.
+          # Trouvé en appliquant la formule du second hôte : à chaque fois qu'un fait existe en deux
+          # exemplaires, quelqu'un doit les confronter au moins une fois — et ici « quelqu'un » peut
+          # être cette étape.
           n=$(grep -ho 'PLAYER\.db\.\(request\|selectAll\)' server/*.js | wc -l | tr -d ' ')
-          echo "surface base : $n appels — chiffre annoncé dans docs/API.md"
+          annonce=$(grep -oE '\| Call sites \| \*\*[0-9]+\*\*' docs/API.md | grep -oE '[0-9]+')
+          echo "surface base : $n appels — docs/API.md annonce $annonce"
+          [ "$n" = "$annonce" ] || { echo "::error::docs/API.md annonce $annonce appels, le code en compte $n. Mettez le document à jour."; exit 1; }
 
       - name: Examples pin an exact version
         if: matrix.node == '22'
