@@ -10,6 +10,41 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.50] — 2026-08-17
+
+### Fixed
+
+- **A participant could make their neighbours vanish from the attendee list.** The presence
+  de-duplication table was a plain object indexed by identities **each participant composes
+  themselves**, `uid` included.
+
+  Measured before the fix: a participant whose identity is `constructor` **disappears** — the object
+  answered "already seen" before anything had been written. And writing to `__proto__` does not
+  create an entry, it **changes the prototype of the table**: an intruder announcing
+  `uid: "__proto__"`, the presenter role, and their neighbours' addresses as extra keys made those
+  neighbours disappear **from everyone's list**. Four participants, two erased.
+
+  `Object.prototype` was never reached — the pollution stayed inside that table. But *local* does not
+  mean *harmless*: the table **is** the attendee list.
+
+  ⚠️ Why it lasted: `toString`, `valueOf` and `hasOwnProperty` were never a problem, because the
+  identity is lowercased and `tostring` is inherited from nobody. **Two keys only** got through —
+  `constructor` and `__proto__`. A defect that fires only there is never met by accident.
+
+  A `Map` inherits no key, and it preserves insertion order even when an existing key is rewritten —
+  exactly the "the presenter wins, at its position" rule, so the order array kept alongside became
+  unnecessary. Audit finding **C-6**, the last one open.
+
+### Internal
+
+- **The viewer is now exercised in a real browser.** `jsdom` does not enforce CSP, and the server
+  tests use a fake `res` that only records headers: a policy forbidding our own scripts passed every
+  test and still gave the visitor a blank page. `npm run test:e2e` opens the local preview in the
+  Chrome **already installed** (`playwright-core`, no browser download) and requires both that the
+  page starts *and* that the policy **refuses** — an unnonced script, a foreign origin. Separate
+  command and separate CI step: `npm test` must stay runnable in a bare container. Audit finding
+  **C-10**.
+
 ## [0.1.49] — 2026-08-17
 
 ### ⚠️ Three migrations to apply — the player degrades without them, it does not break
