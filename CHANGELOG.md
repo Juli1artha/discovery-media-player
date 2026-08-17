@@ -10,6 +10,47 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.55] — 2026-08-17
+
+### Fixed
+
+- **When the URL says nothing, the file name decides.** The audience view decided whether a document
+  was an image from the URL alone. A storage URL carrying no extension therefore answered "not an
+  image", and the audience got "Document unavailable" again — the defect 0.1.54 had just closed,
+  coming back through the side door.
+
+  ⚠️ **0.1.54 had kept the derived field and thrown away the authoritative one.** Two fixes had been
+  written for one symptom; since either sufficed, **no mutation could turn the bench red**. Removing
+  one left the other working — so I removed the one that decides, and kept the one the bench already
+  knew how to see. **The bench chose the fix instead of verifying it.**
+
+  The rule "a fix made of two changes cannot be proven" does not say *which* one to keep — and the
+  answer is never "the one the bench can see". Keep the field that decides, then make the bench able
+  to tell them apart.
+
+  Measured by the second host on their own instance: **4,287** presentable documents, **23** whose
+  URL carries no extension, **none of them images**. Reachable, unpopulated. The bench now populates
+  the case.
+
+### ⚠️ Evidence, by strength — and a correction to 0.1.54
+
+Counting "734 tests" reads as if all 734 weighed the same. They do not, and the difference is the one
+a hurried reader makes on our behalf, in whichever direction suits them. Three groups, borrowed from
+the second host:
+
+| | this release |
+|---|---|
+| **Seen refusing** — a guard replayed inverted, red observed | the mutation deciding on the URL alone: the new bench test falls, and it alone |
+| **Seen falling** — a behaviour replayed, red observed | the audience page displaying an image whose URL has no extension |
+| **Never failed in front of anyone** — typing, build, tests that already passed | everything else: 734 unit tests, 8 browser tests, lint, typecheck, build |
+
+The third group is not worthless — it attests that **nothing was broken**, never that something was
+repaired.
+
+⚠️ **Which makes one line of 0.1.54 false.** It announced the image fix as "verified by mutation".
+The mutation did *not* turn red — I found that out afterwards, and it was the second host who
+explained why. That claim belonged to the third group, dressed as the first.
+
 ## [0.1.54] — 2026-08-17
 
 ### Fixed
