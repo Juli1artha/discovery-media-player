@@ -3614,7 +3614,18 @@ async function handler(req, res) {
       }
       const supaUrl = (PLAYER.config && PLAYER.config.supabaseUrl) || "";
       const supaKey = (PLAYER.config && PLAYER.config.supabasePublishableKey) || "";
-      const pseudo = { preview: true, embed, slug: "", file_name: String(q.name || "document.pdf"), doc_title: String(q.title || q.name || "Document"), raw_url: url, doc_id: String(q.docId || ""), presenter_name: String(q.by || ""), presenter_avatar: String(q.av || ""), internal_email: String(q.uemail || ""), internal_token: String(q.it || ""), supa_url: supaUrl, supa_key: supaKey, auto_present: String(q.autopresent || "") === "1", resume_slug: String(q.resume || ""), stream_url: `/api/doc?preview=1&stream=1&url=${encodeURIComponent(url)}&name=${encodeURIComponent(String(q.name || ""))}` };
+      const pseudo = { preview: true, embed, slug: "", file_name: String(q.name || "document.pdf"), doc_title: String(q.title || q.name || "Document"), raw_url: url, doc_id: String(q.docId || ""), presenter_name: String(q.by || ""), presenter_avatar: String(q.av || ""), internal_email: String(q.uemail || ""), internal_token: String(q.it || ""), supa_url: supaUrl, supa_key: supaKey, auto_present: String(q.autopresent || "") === "1", resume_slug: String(q.resume || ""), brand_key: String(q.brand || "") || null, stream_url: `/api/doc?preview=1&stream=1&url=${encodeURIComponent(url)}&name=${encodeURIComponent(String(q.name || ""))}` };
+      // ⚠️ LA MARQUE MANQUAIT ICI, ET SEULEMENT ICI. Toute la machinerie existe — l'hôte répond à
+      // `PLAYER_HOST_BRAND_URL`, `branding.forKey` résout, les liens tracés affichent la bonne
+      // marque. Ce chemin-ci ne l'appelait simplement pas, et aucun paramètre ne transportait la
+      // clé. Un hôte à plusieurs marques servait donc, sur le domaine d'un client, le loader d'un
+      // autre — le visiteur voyant l'enseigne d'une entreprise qu'il ne connaît pas.
+      //
+      // Signalé par le second hôte, sur une notice ouverte chez son client.
+      try {
+        const marque = await brands.brandForShare(pseudo);
+        if (marque) { pseudo.brand_logo = marque.logo; pseudo.brand_name = marque.name; pseudo.brand_dark = marque.dark; }
+      } catch { /* le loader dégrade, il n'empêche pas de lire */ }
       let plogo = ""; try { plogo = await PLAYER.branding.logo(); } catch { /* sans logo */ }
       const pnonce = crypto.randomBytes(16).toString("base64");
       // Aperçu interne : CSP relâchée (supabase-js jsdelivr + Realtime wss) pour la présence + le chat live,
