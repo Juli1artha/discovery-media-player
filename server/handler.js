@@ -2363,14 +2363,28 @@ ${LEGAL_CSS}
       render();
     }
     function setZoom(z){ zoom=Player.viewer.clampZoom(z); document.getElementById('zlbl').textContent=Math.round(zoom*100)+'%'; if(pdfDoc) build(); }
-    // Vrai worker SAME-ORIGIN via blob (un Worker cross-origin est bloqué par le navigateur → "fake worker").
+    // ⚠️ UN REFUS ARRÊTE LE LECTEUR, et les deux replis plus doux ont été MESURÉS avant d'être
+    // écartés — pas jugés sur leur mine :
+    //
+    //   • rendre l'URL distante : pdf.js l'enveloppe LUI-MÊME dans un blob de même origine, et le
+    //     code non vérifié s'exécute. C'était le comportement livré : l'empreinte ne servait à rien ;
+    //   • laisser la valeur vide : pdf.js DÉDUIT une adresse par défaut depuis sa propre position
+    //     sur le CDN, et le charge quand même.
+    //
+    // Les deux annulaient la vérification EN SILENCE, et aucun raisonnement ne l'aurait dit : il a
+    // fallu regarder les workers réellement créés. Il ne reste qu'une sortie honnête — ne pas
+    // afficher, et le dire. Un document qu'on ne rend pas se voit ; un document rendu par du code
+    // qu'on n'a pas vérifié, non.
+    //
+    // Le drapeau posé sur la fenêtre permet au banc d'EXIGER le refus, au lieu de constater une
+    // absence de rendu qui aurait dix causes.
     var wsrc=CFG.pdfjs+'/pdf.worker.min.js';
     try{
       Player.viewer.workerBlobUrl(wsrc,'${TIERS.pdfWorker.sri}').then(function(u){
-        try{ pdfjsLib.GlobalWorkerOptions.workerSrc = u || wsrc; }catch(e){ pdfjsLib.GlobalWorkerOptions.workerSrc=wsrc; }
-        start();
-      }).catch(function(){ pdfjsLib.GlobalWorkerOptions.workerSrc=wsrc; start(); });
-    }catch(e){ pdfjsLib.GlobalWorkerOptions.workerSrc=wsrc; start(); }
+        if(!u){ window.__workerRefuse=1; loadError("Document non affiche : une dependance n a pas pu etre verifiee."); return; }
+        pdfjsLib.GlobalWorkerOptions.workerSrc=u; start();
+      }).catch(function(){ window.__workerRefuse=1; loadError("Document non affiche : une dependance n a pas pu etre verifiee."); });
+    }catch(e){ window.__workerRefuse=1; loadError("Document non affiche : une dependance n a pas pu etre verifiee."); }
     // Bord à bord en une-page mobile : chaque millimètre compte, surtout pour un PDF paysage.
     function baseWidth(){ var pad=(onePage&&window.innerWidth<=820)?0:30; return (scrollEl.clientWidth||900)-pad; }
     // Hauteur du document OCCULTÉE par la bottom sheet du bot (mobile, état compagnon) : la page une-page se
@@ -2680,9 +2694,9 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
     var wsrc=CFG.pdfjs+'/pdf.worker.min.js';
     function boot(){
       Player.viewer.workerBlobUrl(wsrc,'${TIERS.pdfWorker.sri}').then(function(u){
-        try{ pdfjsLib.GlobalWorkerOptions.workerSrc = u || wsrc; }catch(e){ pdfjsLib.GlobalWorkerOptions.workerSrc=wsrc; }
-        load();
-      }).catch(function(){ pdfjsLib.GlobalWorkerOptions.workerSrc=wsrc; load(); });
+        if(!u){ window.__workerRefuse=1; var _e=document.getElementById('pg'); if(_e)_e.textContent="Document non affiche : une dependance n a pas pu etre verifiee."; return; }
+        pdfjsLib.GlobalWorkerOptions.workerSrc=u; load();
+      }).catch(function(){ window.__workerRefuse=1; var _e=document.getElementById('pg'); if(_e)_e.textContent="Document non affiche : une dependance n a pas pu etre verifiee."; });
     }
     function load(){
       pdfjsLib.getDocument({url:CFG.fileUrl,isEvalSupported:false}).promise.then(function(pdf){

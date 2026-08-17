@@ -298,6 +298,39 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     await page.close();
   }, 60_000);
 
+  /**
+   * LE WORKER DE pdf.js, QUAND LE CDN NE SERT PAS CE QU'ON ATTEND.
+   *
+   * ⚠️ CE N'EST PAS UNE EMPREINTE MUTÉE, C'EST LE CDN QUI CHANGE — la menace réelle. On rejoue le
+   * worker avec des octets altérés : l'empreinte du code reste juste, c'est la réponse qui ment.
+   *
+   * ⚠️ ET LES DEUX REPLIS PLUS DOUX ONT ÉTÉ MESURÉS AVANT D'ÊTRE ÉCARTÉS. Rendre l'URL distante :
+   * pdf.js l'enveloppe lui-même dans un blob de même origine et exécute le code non vérifié —
+   * c'était le comportement livré. Laisser la valeur vide : pdf.js déduit une adresse par défaut
+   * depuis sa propre position sur le CDN et le charge quand même. Les deux annulaient l'empreinte
+   * en silence, et aucun raisonnement ne l'aurait dit : il a fallu regarder les workers créés.
+   */
+  it("un worker que le CDN a modifié n'est jamais exécuté", async () => {
+    const page = await navigateur.newPage();
+    const distant = [];
+    // Tout chargement du worker AUTRE qu'une récupération pour vérification est un échec : c'est
+    // exactement ce que pdf.js faisait dans notre dos.
+    page.on("requestfinished", (r) => {
+      if (r.url().includes("pdf.worker") && r.resourceType() !== "fetch") distant.push(r.resourceType());
+    });
+    for (const [cle, tiers] of Object.entries(TIERS)) {
+      await page.route(tiers.url, (route) => route.fulfill({
+        status: 200, contentType: "application/javascript",
+        // Un octet de plus sur le worker : l'empreinte ne correspond plus.
+        body: cle === "pdfWorker" ? Buffer.concat([octets[cle], Buffer.from(" ")]) : octets[cle],
+      }));
+    }
+    await page.goto(`http://127.0.0.1:${port}/doc/${SLUG_TRACE}`, { waitUntil: "load" });
+    await page.waitForFunction(() => window.__workerRefuse === 1, null, { timeout: 15_000 });
+    expect(distant).toEqual([]);
+    await page.close();
+  }, 60_000);
+
   // ── Les deux pages que la base d'essai débloque ───────────────────────────────────────────────
 
   /**
