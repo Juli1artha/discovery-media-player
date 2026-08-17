@@ -3162,21 +3162,62 @@ async function handler(req, res) {
             if (body.action !== "docshare.create") {
               return jd(403, { ok: false, error: "L'appel serveur à serveur ne crée que des liens sans destinataire." });
             }
-            if (body.recipientEmail) {
-              return jd(400, { ok: false, error: "Un lien avec destinataire appartient à un membre : il exige son jeton." });
-            }
+            // ⚠️ LE DESTINATAIRE ATTESTÉ : L'HÔTE SE PORTE GARANT, IL N'AFFIRME PAS.
+            //
+            // Cette route refusait tout destinataire, au motif qu'un lien nommé appartient à un
+            // membre. Le second hôte a montré la limite : il IDENTIFIE lui-même son visiteur — code
+            // à usage unique, espace projet — et veut ses lectures comptées, attribuées, révocables.
+            // Le lien anonyme est exclu (il serait transmissible à qui n'y a pas droit) et le lien
+            // nominatif exige un jeton de membre que ce visiteur n'aura jamais.
+            //
+            // Ce qui change tout est QUI FOURNIT L'ADRESSE. Dans le cas refusé, elle venait d'un
+            // formulaire rempli par un inconnu. Ici elle vient de la base de l'hôte, après
+            // vérification, et le visiteur ne la saisit jamais. C'est la forme du jeton interne :
+            // l'hôte atteste, le player n'a plus à croire l'appelant.
+            //
+            // ⚠️ ET ELLE NE VA PAS DANS `recipient_email`, PARCE QUE CE CHAMP PORTE DEUX FAITS.
+            // « À qui ce lien est destiné » et « qui a le droit d'expédier en son nom au repartage »
+            // y vivaient ensemble. Un visiteur attesté doit avoir le premier sans le second — il n'a
+            // jamais engagé sa responsabilité chez nous, et `sendReshareEmail` fait du destinataire
+            // du parent l'EXPÉDITEUR (`from`, `replyTo`) d'un message vers une adresse choisie par
+            // qui détient le lien. Lui donner ce champ ferait de nos serveurs un relais de courrier
+            // signé d'un visiteur.
+            //
+            // En le rangeant ailleurs, `recipient_email` reste vide sur toute la chaîne : la garde
+            // d'envoi refuse, et l'héritage du repartage (`created_by: parent.recipient_email || …`)
+            // ne transmet rien. Les deux refusent SANS SAVOIR POURQUOI on les protège — la règle est
+            // devenue une conséquence de la donnée, pas une consigne à retenir en deux endroits.
+            const atteste = String(body.recipientEmail || "").trim().toLowerCase();
             const docId = String(body.docId || "").trim();
             if (!docId || !body.fileUrl) return jd(400, { ok: false, error: "docId/fileUrl requis" });
 
             const ipH = adresseAppelant(req) || "hote";
             if (!(await PLAYER.limits.allow(`hshare:${ipH}`, 120, 3600))) return jd(429, { ok: false, error: "rate" });
 
-            // ⚠️ La clé d'idempotence n'a PAS demandé de colonne : « le lien de l'hôte pour ce
-            // document » est exactement la ligne sans créateur ET sans destinataire. Seul ce
-            // chemin en produit, donc elle est sans ambiguïté — et une instance déjà en service
-            // n'a aucune migration à passer.
+            // ⚠️ SANS LA COLONNE, ON REFUSE — ON N'ÉCRIT PAS AILLEURS. Un hôte qui n'a pas appliqué
+            // la migration verrait sinon son visiteur rangé dans `recipient_email` par défaut, donc
+            // capable d'expédier en son nom : le repli silencieux ouvrirait exactement la porte que
+            // la séparation ferme. On nomme le fichier à appliquer et on s'arrête.
+            if (atteste) {
+              const pret = await require("./schema").aLaColonne(
+                "commercial_doc_shares", "attested_recipient_email",
+                "supabase/migrations/0001-destinataire-atteste.sql",
+              );
+              if (!pret) {
+                return jd(409, { ok: false, error: "migration", message: "Destinataire attesté indisponible : appliquez supabase/migrations/0001-destinataire-atteste.sql." });
+              }
+            }
+
+            // ⚠️ LA CLÉ D'IDEMPOTENCE COMPTE MAINTENANT LE DESTINATAIRE ATTESTÉ. « Le lien de l'hôte
+            // pour ce document » ne suffit plus : un lien anonyme et un lien attesté ont tous deux
+            // ni créateur ni destinataire au sens de `recipient_email`. Sans cette distinction, le
+            // premier visiteur attesté récupérerait le lien anonyme du document — et tous les
+            // suivants le même, donc des lectures attribuées à la mauvaise personne.
+            const filtreAtteste = atteste
+              ? `&attested_recipient_email=eq.${encodeURIComponent(atteste)}`
+              : "&attested_recipient_email=is.null";
             const dejaLa = await PLAYER.db.request(
-              `commercial_doc_shares?doc_id=eq.${encodeURIComponent(docId)}&created_by=is.null&recipient_email=is.null&select=slug&limit=1`,
+              `commercial_doc_shares?doc_id=eq.${encodeURIComponent(docId)}&created_by=is.null&recipient_email=is.null${filtreAtteste}&select=slug&limit=1`,
             );
             if (Array.isArray(dejaLa) && dejaLa[0]) {
               await PLAYER.db.request(`commercial_doc_shares?slug=eq.${encodeURIComponent(dejaLa[0].slug)}`, {
@@ -3190,7 +3231,8 @@ async function handler(req, res) {
             // de personne, et reste visible en administration (`list.all`, qui ne filtre pas).
             const neuf = await createShare({
               brandKey: body.brandKey, docId, docTitle: body.docTitle, fileUrl: body.fileUrl,
-              fileName: body.fileName, createdBy: null, bot: body.bot, botScript: body.botScript,
+              fileName: body.fileName, createdBy: null, attestedRecipientEmail: atteste || null,
+              bot: body.bot, botScript: body.botScript,
               guided: body.guided, profileId: body.profileId, allowDownload: body.allowDownload,
               videoLayout: body.videoLayout, logo: body.logo, logoDark: body.logoDark,
             });
