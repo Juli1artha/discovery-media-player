@@ -1595,7 +1595,15 @@ function sendHtml(res, status, html, scriptSrc, imgExtra, frameAncestors) {
     // personne n'a franchie serait un mauvais échange. `'self'` ferme l'exfiltration, qui est le
     // risque réel.
     "form-action 'self'",
-    // Aperçu interne : framing MÊME ORIGINE autorisé (iframe DocViewer). Page publique : 'none' (anti-clickjacking).
+    // ⚠️ CE COMMENTAIRE ANNONÇAIT `'none'` POUR LA PAGE PUBLIQUE, ET C'ÉTAIT FAUX. Un lien tracé
+    // sans `embed` est servi en `frame-ancestors 'self'` (cf. la route `doc`) : encadrement de
+    // MÊME ORIGINE uniquement, ce qui reste sain — un détournement de clic suppose une page
+    // étrangère, et une page hostile sur notre propre origine serait déjà une compromission bien
+    // pire. Mais la phrase, elle, faisait croire à un refus total.
+    //
+    // Trouvé en écrivant l'essai de bout en bout : l'assertion recopiait ce commentaire, et c'est
+    // elle qui est tombée. Le comportement est désormais VÉRIFIÉ par ce banc, donc ce que vous
+    // lisez ici ne peut plus dériver seul.
     `frame-ancestors ${frameAncestors || "'none'"}`,
   ].join("; "));
   res.end(html);

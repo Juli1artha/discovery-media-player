@@ -1,0 +1,168 @@
+// UN POSTGREST EN MÉMOIRE — la base d'essai qui manquait (constat P2-3).
+//
+// Le player ne parle à sa base que par HTTP, et la garde de portabilité de la forge interdit
+// depuis longtemps la syntaxe exotique : toutes ses requêtes sont de la forme
+// `table?colonne=eq.valeur`. Cette discipline, prise pour rendre un portage possible, rend aussi
+// possible ce fichier — la surface est assez petite pour être réimplémentée honnêtement.
+//
+// Ce qu'il débloque : la visionneuse tracée et la page d'audience, qui exigent une base et
+// n'étaient donc exercées par AUCUN essai de bout en bout. Elles portent chacune leur propre
+// politique de sécurité, leur propre chemin d'authentification, et c'est là que vit le risque.
+//
+// ⚠️ IL REFUSE PLUTÔT QUE D'INVENTER. Une doublure qui répond « aucun résultat » à une requête
+// qu'elle n'a pas comprise transforme un essai en fiction : tout passe, et ce qui est mesuré n'a
+// aucun rapport avec la production. Chaque filtre inconnu, chaque opérateur non implémenté renvoie
+// donc un 400 qui NOMME ce qu'il n'a pas su faire. Le jour où le player apprend une nouvelle forme
+// de requête, ce fichier le dit au lieu de mentir en silence.
+//
+// ⚠️ CE N'EST PAS UNE BASE. Pas de transactions, pas de contraintes, pas de types, pas de RLS —
+// et surtout PAS un substitut pour vérifier ce qui relève du SGBD (un verrou optimiste concurrent,
+// une contrainte d'unicité). Ce qu'il permet de vérifier, c'est le chemin qui va de la requête HTTP
+// à la page rendue. Confondre les deux serait la pire façon de s'en servir.
+
+const http = require("node:http");
+
+const OPERATEURS = {
+  eq: (valeur, attendu) => String(valeur ?? "") === attendu,
+  gte: (valeur, attendu) => String(valeur ?? "") >= attendu,
+  lte: (valeur, attendu) => String(valeur ?? "") <= attendu,
+  in: (valeur, attendu) => decouperListe(attendu).includes(String(valeur ?? "")),
+  // `not.is.true` : « pas vrai », ce qui inclut `null` — la nuance qui distingue un partage
+  // d'essai d'un partage ordinaire dont la colonne n'a jamais été renseignée.
+  "not.is": (valeur, attendu) => (attendu === "true" ? valeur !== true : valeur !== null),
+  is: (valeur, attendu) => (attendu === "null" ? valeur == null : String(valeur) === attendu),
+};
+
+function decouperListe(brut) {
+  return String(brut).replace(/^\(|\)$/g, "").split(",").map((v) => v.replace(/^"|"$/g, ""));
+}
+
+/** `colonne=eq.valeur` → prédicat. Tout ce qui n'est pas reconnu fait échouer la requête. */
+function versPredicat(colonne, brut) {
+  const texte = String(brut);
+  for (const nom of ["not.is", "eq", "gte", "lte", "in", "is"]) {
+    if (texte.startsWith(nom + ".")) {
+      const attendu = texte.slice(nom.length + 1);
+      return (ligne) => OPERATEURS[nom](ligne[colonne], attendu);
+    }
+  }
+  throw new Error(`filtre non implémenté : ${colonne}=${texte}`);
+}
+
+/**
+ * Serveur d'essai. `tables` est un objet { nom: [lignes] } — mutable, et c'est voulu : un essai
+ * doit pouvoir constater ce que le player a ÉCRIT, pas seulement ce qu'il a lu.
+ */
+function creerPostgrestEnMemoire(tables = {}) {
+  let sequence = 1;
+
+  const serveur = http.createServer(async (req, res) => {
+    const repondre = (code, corps) => {
+      res.writeHead(code, { "Content-Type": "application/json" });
+      res.end(corps === undefined ? "" : JSON.stringify(corps));
+    };
+
+    try {
+      const url = new URL(req.url, "http://interne");
+      if (!url.pathname.startsWith("/rest/v1/")) return repondre(404, { message: "hors /rest/v1" });
+      const nom = url.pathname.slice("/rest/v1/".length);
+      if (!nom) return repondre(400, { message: "table absente" });
+      const lignes = (tables[nom] = tables[nom] || []);
+
+      const parametres = url.searchParams;
+      const prefer = String(req.headers.prefer || "");
+      const filtres = [];
+      let colonnes = null, tri = null, limite = null, conflit = null;
+
+      for (const [cle, valeur] of parametres) {
+        if (cle === "select") { colonnes = valeur === "*" ? null : valeur.split(","); continue; }
+        if (cle === "order") { const [c, sens] = valeur.split("."); tri = { c, desc: sens === "desc" }; continue; }
+        if (cle === "limit") { limite = Number(valeur); continue; }
+        if (cle === "on_conflict") { conflit = valeur; continue; }
+        if (cle === "offset") throw new Error("offset non implémenté (et interdit par la garde de portabilité)");
+        filtres.push(versPredicat(cle, valeur));
+      }
+
+      const projeter = (ligne) => {
+        if (!colonnes) return { ...ligne };
+        const out = {};
+        for (const c of colonnes) out[c] = ligne[c] === undefined ? null : ligne[c];
+        return out;
+      };
+      const retenues = () => lignes.filter((l) => filtres.every((f) => f(l)));
+
+      if (req.method === "GET") {
+        let resultat = retenues();
+        if (tri) {
+          resultat = [...resultat].sort((a, b) => {
+            const x = String(a[tri.c] ?? ""), y = String(b[tri.c] ?? "");
+            return (x < y ? -1 : x > y ? 1 : 0) * (tri.desc ? -1 : 1);
+          });
+        }
+        // `Range` : la pagination que `selectAll` utilise pour lire au-delà du lot par défaut.
+        const plage = /^(\d+)-(\d+)$/.exec(String(req.headers.range || ""));
+        if (plage) resultat = resultat.slice(Number(plage[1]), Number(plage[2]) + 1);
+        if (limite != null) resultat = resultat.slice(0, limite);
+        return repondre(200, resultat.map(projeter));
+      }
+
+      const corps = await lireCorps(req);
+
+      if (req.method === "POST") {
+        const entrantes = Array.isArray(corps) ? corps : [corps];
+        const ecrites = [];
+        for (const brute of entrantes) {
+          const ligne = { id: sequence++, ...brute };
+          // `on_conflict` + `resolution=merge-duplicates` : le remplacement par clé, tel que le
+          // player s'en sert pour les sessions de lecture.
+          const existante = conflit && prefer.includes("merge-duplicates")
+            ? lignes.find((l) => String(l[conflit] ?? "") === String(brute[conflit] ?? ""))
+            : null;
+          if (existante) { Object.assign(existante, brute); ecrites.push(existante); }
+          else { lignes.push(ligne); ecrites.push(ligne); }
+        }
+        return prefer.includes("return=representation")
+          ? repondre(201, ecrites.map(projeter))
+          : repondre(201, undefined);
+      }
+
+      if (req.method === "PATCH") {
+        const touchees = retenues();
+        for (const ligne of touchees) Object.assign(ligne, corps);
+        return prefer.includes("return=representation")
+          ? repondre(200, touchees.map(projeter))
+          : repondre(204, undefined);
+      }
+
+      if (req.method === "DELETE") {
+        const touchees = new Set(retenues());
+        for (let i = lignes.length - 1; i >= 0; i--) if (touchees.has(lignes[i])) lignes.splice(i, 1);
+        return repondre(204, undefined);
+      }
+
+      return repondre(405, { message: `méthode non implémentée : ${req.method}` });
+    } catch (erreur) {
+      // ⚠️ 400 EXPLICITE, jamais un tableau vide. Le message part dans la réponse ET dans la
+      // console : un essai qui échoue doit dire ce que la doublure n'a pas su faire, sinon on
+      // cherche le défaut dans le player alors qu'il est ici.
+      console.error("[postgrest-en-mémoire] " + erreur.message + " — " + req.method + " " + req.url);
+      repondre(400, { message: erreur.message });
+    }
+  });
+
+  return { serveur, tables };
+}
+
+function lireCorps(req) {
+  return new Promise((resolve) => {
+    const morceaux = [];
+    req.on("data", (c) => morceaux.push(c));
+    req.on("end", () => {
+      const texte = Buffer.concat(morceaux).toString("utf8");
+      try { resolve(texte ? JSON.parse(texte) : {}); } catch { resolve({}); }
+    });
+    req.on("error", () => resolve({}));
+  });
+}
+
+module.exports = { creerPostgrestEnMemoire };

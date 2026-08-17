@@ -31,19 +31,37 @@
 // toucher l'aperçu : elle ne mesurait rien. Une mutation dont on ne vérifie pas qu'elle a atterri
 // raconte n'importe quoi — dans les deux sens.
 //
-// ── CE QUE CE BANC NE COUVRE PAS ────────────────────────────────────────────────────────────────
-// L'aperçu local est la seule page qu'on sait servir SANS base : la visionneuse tracée
-// (`/doc/:slug`), le mur d'accès et la page d'audience ont chacun leur propre politique, et
-// aucune n'est exercée ici. Ce banc couvre une page sur quatre — le dire est plus utile que de
-// laisser croire qu'il les couvre toutes.
+// ── LA BASE D'ESSAI (constat P2-3) ──────────────────────────────────────────────────────────────
+// Ce banc ne couvrait d'abord QUE l'aperçu local — la seule page servie sans base. La visionneuse
+// tracée et la page d'audience, qui portent chacune leur propre politique et leur propre chemin
+// d'authentification, répondaient 404 et n'étaient donc exercées par rien.
+//
+// `tools/postgrest-en-memoire.cjs` les débloque. Ce qui rend cette doublure honnête, c'est la
+// discipline prise ailleurs : la garde de portabilité de la forge interdit depuis longtemps la
+// syntaxe exotique, donc toute la surface tient en `table?colonne=eq.valeur`. Une contrainte posée
+// pour rendre un portage possible finit par rendre une base d'essai possible.
+//
+// ⚠️ ET ELLE REFUSE PLUTÔT QUE D'INVENTER : un filtre qu'elle ne comprend pas renvoie un 400 qui
+// le NOMME. Une doublure qui répondrait « aucun résultat » à une requête mal comprise ferait passer
+// tous les essais en ne mesurant rien.
+//
+// ── CE QUE CE BANC NE COUVRE TOUJOURS PAS ───────────────────────────────────────────────────────
+// Le mur d'accès visiteur : il dépend d'un greffon que le contexte autonome n'a pas, et un document
+// « compte requis » y est donc fermé (404) plutôt que dégradé — c'est le bon comportement, mais il
+// rend la page inatteignable ici. Trois pages sur quatre.
 
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { pathToFileURL } = require("node:url");
+const { creerPostgrestEnMemoire } = require("../tools/postgrest-en-memoire.cjs");
 // ⚠️ L'inventaire des tiers vient du CODE, jamais d'une copie tenue ici : une URL recopiée dans un
 // banc reste juste jusqu'au jour où on monte une version, et ce jour-là le banc mesure l'ancienne.
 const { TIERS } = require("../server/handler.js");
+
+const SLUG_TRACE = "essai-trace";
+const SLUG_DIRECT = "essai-direct";
 
 /** Octets réels de chaque dépendance, récupérés une fois et rejoués ensuite. */
 const octets = {};
@@ -83,14 +101,37 @@ if (!chrome && !process.env.CI) {
 }
 
 describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navigateur", () => {
-  let serveur, port, navigateur, racine;
+  let serveur, port, navigateur, racine, base, tables;
 
   beforeAll(async () => {
     racine = fs.mkdtempSync(path.join(os.tmpdir(), "player-e2e-"));
     fs.writeFileSync(path.join(racine, "essai.png"), Buffer.from(PNG_4x4, "base64"));
+    const fichier = pathToFileURL(path.join(racine, "essai.png")).href;
+
+    // La base d'essai (constat P2-3) : sans elle, la visionneuse tracée et la page d'audience
+    // répondent 404, et deux des trois politiques de sécurité du produit restent inexercées.
+    tables = {
+      commercial_doc_shares: [{
+        id: 1, slug: SLUG_TRACE, doc_id: "doc-1", revoked: false, require_auth: false,
+        file_url: fichier, file_name: "essai.png", doc_title: "Document d'essai",
+        allow_download: true, created_by: "moi@exemple.fr", recipient_email: "client@exemple.fr",
+        created_at: "2026-08-17T00:00:00Z",
+      }],
+      doc_presentations: [{
+        id: 1, slug: SLUG_DIRECT, doc_id: "doc-1", active: true, current_page: 1, write_seq: 0,
+        file_url: fichier, file_name: "essai.png", doc_title: "Document d'essai",
+        presenter_name: "Léa", owner_email: "moi@exemple.fr",
+        last_seen: new Date(0).toISOString(),
+        created_at: "2026-08-17T00:00:00Z", updated_at: "2026-08-17T00:00:00Z",
+      }],
+    };
+    ({ serveur: base } = creerPostgrestEnMemoire(tables));
+    await new Promise((resolve) => base.listen(0, "127.0.0.1", resolve));
 
     // ⚠️ AVANT le `require` : le serveur autonome fabrique son contexte à l'import, à partir de
-    // l'environnement. Régler la racine après ne servirait à rien.
+    // l'environnement. Régler quoi que ce soit après ne servirait à rien.
+    process.env.SUPABASE_URL = `http://127.0.0.1:${base.address().port}`;
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "cle-d-essai-sans-valeur";
     process.env.PLAYER_LOCAL_ROOT = racine;
     ({ serveur } = require("../bin/serve.js"));
     await new Promise((resolve) => serveur.listen(0, "127.0.0.1", resolve));
@@ -123,6 +164,7 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
   afterAll(async () => {
     if (navigateur) await navigateur.close();
     if (serveur) await new Promise((resolve) => serveur.close(resolve));
+    if (base) await new Promise((resolve) => base.close(resolve));
     if (racine) fs.rmSync(racine, { recursive: true, force: true });
   });
 
@@ -243,6 +285,83 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     expect(violations.every((v) => v.directive.startsWith("script-src"))).toBe(true);
     expect(violations.some((v) => v.bloque === "inline")).toBe(true);
     expect(violations.some((v) => v.bloque.includes("exemple-non-autorise.invalid"))).toBe(true);
+    await page.close();
+  }, 60_000);
+
+  // ── Les deux pages que la base d'essai débloque ───────────────────────────────────────────────
+
+  /**
+   * LA VISIONNEUSE TRACÉE — celle qu'un client reçoit par courriel.
+   *
+   * ⚠️ SA POLITIQUE N'EST PAS CELLE DE L'APERÇU, et c'est tout l'intérêt : elle est PLUS stricte
+   * (pas de framing, pas de jsdelivr, pas de Realtime). Une page peut donc parfaitement démarrer en
+   * aperçu et rester blanche ici — c'est même le scénario le plus probable, puisque l'aperçu est ce
+   * qu'on regarde en développant et la page tracée ce que voit le client.
+   */
+  it("la visionneuse tracée démarre, et sa politique plus stricte ne refuse rien d'utile", async () => {
+    const { page, violations, erreurs, reponse } = await ouvrirPageSurveillee(`/doc/${SLUG_TRACE}`);
+    expect(reponse.status()).toBe(200);
+    const csp = reponse.headers()["content-security-policy"];
+    // ⚠️ `'self'`, PAS `'none'` — et ce banc a servi à corriger un commentaire qui prétendait
+    // l'inverse. Un lien tracé sans `embed` n'accepte l'encadrement que par une page de MÊME
+    // ORIGINE : un détournement de clic suppose une page étrangère, et une page hostile sur notre
+    // propre origine serait déjà une compromission plus grave. Ce qui serait un vrai défaut, c'est
+    // une origine tierce ici sans que le partage l'ait demandé — c'est ce que la seconde ligne
+    // vérifie, en constatant qu'aucun hôte n'y figure.
+    expect(csp).toContain("frame-ancestors 'self'");
+    expect(csp).not.toMatch(/frame-ancestors[^;]*https?:/);
+    expect(csp).not.toContain("jsdelivr");             // le direct n'a rien à faire sur un lien tracé
+
+    await page.waitForFunction(() => window.__n === 1, null, { timeout: 15_000 });
+    await page.waitForFunction(
+      () => { const i = document.querySelector("#pages .page img"); return !!i && i.naturalWidth > 0; },
+      null, { timeout: 15_000 });
+
+    expect(await page.evaluate(() => typeof window.pdfjsLib)).toBe("object");
+    expect(violations).toEqual([]);
+    expect(erreurs).toEqual([]);
+
+    // ⚠️ ET LA LECTURE EST COMPTÉE. C'est ce que ce produit vend : une page qui s'affiche sans rien
+    // journaliser est une régression invisible à l'œil, et aucun essai ne la voyait — la boucle
+    // navigateur → serveur → base n'était refermée nulle part. On la referme ici, sur la base
+    // d'essai, en constatant la ligne écrite plutôt que l'appel émis.
+    await expect.poll(
+      () => (tables.commercial_doc_views || []).filter((v) => v.slug === SLUG_TRACE).length,
+      { timeout: 15_000 },
+    ).toBeGreaterThan(0);
+    const ouverture = tables.commercial_doc_views.find((v) => v.event === "open");
+    expect(ouverture).toBeTruthy();
+    expect(ouverture.session_id).toBeTruthy();
+
+    await page.close();
+  }, 60_000);
+
+  /**
+   * LA PAGE D'AUDIENCE — celle qu'un spectateur ouvre pendant une présentation.
+   *
+   * Sa politique est la plus large des trois (Realtime, cartes, supabase-js) : c'est donc celle où
+   * une origine oubliée coûte le plus cher, et la seule où l'on peut vérifier que la présence et le
+   * chat ont de quoi fonctionner.
+   *
+   * ⚠️ Le canal Realtime ne se connecte PAS ici — la base d'essai n'en sert pas. C'est voulu : ce
+   * qu'on mesure, c'est que la page se construit et que ses dépendances arrivent, pas que Supabase
+   * fonctionne. Une page qui exigerait le canal pour s'afficher serait d'ailleurs un défaut : un
+   * spectateur au réseau capricieux doit voir le document.
+   */
+  it("la page d'audience démarre, avec de quoi tenir la présence et le chat", async () => {
+    const { page, violations, reponse } = await ouvrirPageSurveillee(`/present/${SLUG_DIRECT}`);
+    expect(reponse.status()).toBe(200);
+
+    await page.waitForFunction(
+      () => document.body && document.body.innerHTML.length > 0, null, { timeout: 15_000 });
+    await page.waitForFunction(
+      () => typeof window.Player === "object" && typeof window.supabase === "object",
+      null, { timeout: 15_000 });
+
+    expect(await page.evaluate(() => typeof window.pdfjsLib)).toBe("object");
+    expect(await page.evaluate(() => document.title)).toContain("Document d'essai");
+    expect(violations).toEqual([]);
+
     await page.close();
   }, 60_000);
 });
