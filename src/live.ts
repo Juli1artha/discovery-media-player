@@ -413,3 +413,40 @@ export function fetchBorne(
     (e) => { rendre(); throw e; },
   );
 }
+
+/**
+ * Un budget qui se recharge : ce qu'on s'autorise à faire, quoi qu'on nous demande.
+ *
+ * ⚠️ IL EXISTE PARCE QUE LA DEMANDE VIENT D'AILLEURS. L'ordonnanceur regroupe les relectures, donc
+ * il borne leur FRÉQUENCE INSTANTANÉE — pas leur total. Or ce qui déclenche une relecture est un
+ * signal émis par le canal, c'est-à-dire par n'importe quel participant. Un ordonnanceur seul
+ * transforme donc une diffusion soutenue en relectures soutenues, et c'est ce qui a permis de faire
+ * dépasser à toute une salle le quota calculé pour elle.
+ *
+ * Le seau se vide à l'usage et se remplit au temps. Refuser ici ne perd rien : la relecture suivante
+ * lira l'état le plus récent, et le filet périodique — qui ne passe pas par ce budget — garantit la
+ * resynchronisation de toute façon. On arrive en retard, jamais à côté.
+ */
+export function createBudget(options: {
+  parHeure: number;
+  rafale: number;
+  now?: () => number;
+}): { prendre: () => boolean; restants: () => number } {
+  const now = options.now || (() => Date.now());
+  const rafale = Math.max(1, options.rafale);
+  let jetons = rafale;
+  let dernier = now();
+  return {
+    prendre() {
+      const t = now();
+      // Recharge continue plutôt que par paliers : un palier ferait passer d'un coup une salve que
+      // le budget est justement là pour étaler.
+      jetons = Math.min(rafale, jetons + ((t - dernier) * options.parHeure) / 3_600_000);
+      dernier = t;
+      if (jetons < 1) return false;
+      jetons -= 1;
+      return true;
+    },
+    restants: () => jetons,
+  };
+}

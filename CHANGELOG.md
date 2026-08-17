@@ -10,6 +10,56 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.45] — 2026-08-16
+
+⚠️ **The limit shipped in 0.1.42 turned an amplification into a denial of service against the
+audience — and we opened that door ourselves.**
+
+### Fixed
+
+- ⚠️ **A hostile broadcaster could silence a whole meeting room.** The public-channel quota is keyed
+  on the **address**, and it was sized on what legitimate use consumes. But the re-read cadence is
+  not chosen by the spectator — **it is chosen by whoever broadcasts.** The scheduler coalesces at
+  400 ms, so a spectator can be made to re-read ~9 000 times an hour; three spectators behind one
+  office egress therefore blow past the 21 600/h quota, collect 429s, and **their pages stop
+  turning**.
+
+  Before the limit, such a participant was expensive. After it, they could **silence**. That is the
+  `X-Forwarded-For` lesson inverted: the limit does not rest on what the *caller* chooses — but it
+  was *paid for* by someone who does not choose either.
+
+  **The cause is bounded, not the effect** — lowering the quota would have punished the victim
+  further. A spectator now gives itself a budget and never re-reads more than a presenter's actions
+  justify: under hammering, ~9 000/h drops to 720/h.
+
+  ⚠️ **The budget gates the signal, never the net.** `signaler()` is triggered by a broadcast, so by
+  any participant — that is the door to ration. `maintenant()` is our own 25 s resynchronisation net:
+  rationing it would leave an audience with an empty budget **permanently mute**, which would have
+  closed one door by opening a smaller, more reliable one. The net is the floor.
+
+  **The two numbers are one contract**: signal budget + net = a spectator's share, and the server
+  quota = that share × `READERS_PER_EGRESS`. ⚠️ A test forced the quota derivation to be corrected: it
+  counted only the *sustained* share, so a full room exceeded the quota by 475 re-reads — exactly
+  everyone's burst. **The server must cover what the client allows itself, not its average.**
+
+- **A dead copy of `fetchBorne` shipped in 0.1.44.** Moving the helper into the bundle removed
+  nothing: a second implementation still lived in the template, and it was *that one* the audience
+  used — a path covered by none of the tests written for the other. Two implementations of one
+  contract, exactly what this repository keeps warning about. Removed; one entry point for all four
+  paths.
+
+### Testing
+
+- ⚠️ **The test for the central property did not bite on the first try.** It hammered, then watched a
+  lull — and a rationed net passed anyway, because the budget refills a token every 5 s while the net
+  only runs every 25 s, so it always finds one after a pause. The condition that separates the two
+  worlds is **continuous** hammering. The threshold was then **measured, not guessed**: 884 re-reads
+  with the net free (720 budget + 20 burst + 144 net), exactly 740 when it is rationed. The assertion
+  compares against the signal budget — the real boundary — rather than a hand-written number.
+
+- **First end-to-end on the audience side**: the test renders the audience page, runs it, connects the
+  live layer, and drives broadcasts through it.
+
 ## [0.1.44] — 2026-08-16
 
 Two findings from the audit re-review that followed 0.1.43. ⚠️ **One of them was created by our own

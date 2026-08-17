@@ -89,14 +89,56 @@ export const PRESENTER_ACTIONS_PER_HOUR = 720;
 /** Ce qu'un spectateur légitime relit en une heure, par construction. */
 export const PRESENT_READS_PER_HOUR = RESYNC_READS_PER_HOUR + PRESENTER_ACTIONS_PER_HOUR;
 
+// ── Ce qu'un spectateur peut relire, quoi qu'on lui demande ──────────────────────────────────────
+//
+// ⚠️ LA LIMITE DE 0.1.42 A CRÉÉ UN DÉNI DE SERVICE SUR L'AUDIENCE, ET C'EST NOUS QUI L'AVONS OUVERT.
+//
+// Le quota ci-dessous est par ADRESSE, et il est calibré sur ce qu'un usage légitime consomme. Mais
+// la cadence de relecture n'est pas choisie par le spectateur : elle est choisie par QUI DIFFUSE. Un
+// participant hostile qui émet à haute fréquence fait relire chaque spectateur jusqu'à ~9 000 fois
+// par heure — l'ordonnanceur regroupe à 400 ms, c'est le plafond mécanique. Trois spectateurs
+// derrière la sortie internet d'un bureau dépassent alors le quota, prennent des 429, et LEURS PAGES
+// CESSENT DE TOURNER.
+//
+// Avant la limite, un tel participant coûtait cher. Après, il pouvait faire taire. C'est la leçon de
+// `X-Forwarded-For` retournée : la limite ne repose pas sur ce que l'appelant choisit — mais elle
+// était PAYÉE par quelqu'un qui ne choisit pas non plus.
+//
+// ⚠️ ON BORNE DONC LA CAUSE, PAS L'EFFET. Baisser le quota punirait davantage la victime. Le
+// spectateur se donne son propre budget : quoi qu'on lui demande, il ne relit jamais plus que ce que
+// les actions d'un présentateur justifient. Le correctif propre reste le canal privé — celui-ci
+// ferme la porte en attendant, sans rien attendre du serveur.
+//
+// Le budget couvre la part SIGNALÉE. Le filet périodique s'y ajoute et n'est jamais rationné : c'est
+// le plancher qui garantit qu'une audience finit toujours par se resynchroniser, budget épuisé ou
+// non. Signalé + filet = exactement la part d'un spectateur.
+export const PRESENT_SIGNAL_BUDGET_PER_HOUR = PRESENTER_ACTIONS_PER_HOUR;
+
+/**
+ * La rafale autorisée d'emblée.
+ *
+ * ⚠️ Sans elle, le budget serait juste et l'usage insupportable : une page tournée doit s'afficher
+ * TOUT DE SUITE, pas au rythme moyen. On autorise donc une salve courte — un enchaînement rapide de
+ * quelques pages, ce qu'un présentateur fait réellement — puis on retombe sur le rythme soutenu.
+ *
+ * Une rafale qui vaudrait le plafond mécanique ne bornerait rien ; une rafale d'une seule relecture
+ * rendrait la présentation poussive. Le test fixe cette relation, pas ce nombre.
+ */
+export const PRESENT_READ_BURST = 20;
+
 /**
  * Le quota horaire par adresse, déduit — jamais écrit à la main.
  *
  * ⚠️ Même clé et même raison que pour les sessions : l'adresse identifie un bâtiment, pas un
  * spectateur, et c'est la seule chose que l'appelant ne choisit pas. Une salle de réunion qui suit
  * une présentation à vingt-cinq derrière une sortie unique est le cas ordinaire.
+ *
+ * ⚠️ LA RAFALE EN FAIT PARTIE, ET C'EST UN TEST QUI L'A DIT. La première version multipliait la
+ * seule part soutenue : une salle pleine dépassait alors le quota de 475 relectures — exactement la
+ * rafale de chacun. Le serveur doit couvrir ce que le client S'AUTORISE, pas ce qu'il consomme en
+ * moyenne, sinon la garde refuse un usage que le produit permet.
  */
-export const PRESENT_QUOTA_PER_HOUR = PRESENT_READS_PER_HOUR * READERS_PER_EGRESS;
+export const PRESENT_QUOTA_PER_HOUR = (PRESENT_READS_PER_HOUR + PRESENT_READ_BURST) * READERS_PER_EGRESS;
 
 // ── Le délai au bout duquel on rend la main ──────────────────────────────────────────────────────
 //
