@@ -10,6 +10,71 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.49] — 2026-08-17
+
+### ⚠️ Three migrations to apply — the player degrades without them, it does not break
+
+| file | what it unlocks | until applied |
+|---|---|---|
+| `0001-destinataire-atteste.sql` | counting the reads of a visitor **you** vouch for | attested creation is refused, by name |
+| `0002-ordre-des-ecritures.sql` | a stale write can no longer overwrite a fresher one | no order control — last arrival wins, as before |
+| `0003-limites-partagees.sql` | rate limits count for the **instance**, not the process | counting falls back to memory, as before |
+
+None is required for the version to run. Each is **additive** and safe to apply while the previous
+code is running, so the deployment order never matters: migrate first and nobody writes the column
+yet; deploy first and the player detects its absence, degrades, and names the file to apply.
+
+The player will never apply them itself — it speaks to the database through PostgREST, which does not
+execute DDL. See `docs/MIGRATIONS.md`.
+
+### Added
+
+- **A host can now vouch for a visitor it identified itself.** Pass `recipientEmail` on the
+  server-to-server `docshare.create`: reads are counted, attributed and revocable, without an
+  anonymous link or a member's token. What makes it safe is **who supplies the address** — the host's
+  database after verification, never a form.
+
+  ⚠️ It is stored **apart from `recipient_email`**, because that field carried two facts. At re-share
+  time the parent's recipient becomes the **sender** (`from`, `replyTo`) of a message to an address
+  chosen by whoever holds the link. Filing a vouched visitor there would have made our servers a
+  relay signed by them — the second host's own objection, one step further along, which they had not
+  seen. Left empty, the send guard *and* the re-share inheritance both refuse **without knowing why**.
+
+  ⚠️ **An attested link is named, not closed.** It remains forwardable; a host whose documents are
+  confidential must not rely on it.
+
+- **Write order now survives an abandoned request.** The browser queue guarantees one write in
+  flight — it removes the disorder we *cause*. But a request abandoned by the timeout may have
+  reached the server and land after the one that replaced it: that disorder we *suffer*. Each write
+  now carries a rank, and the server refuses a rank it has already passed.
+
+  A rank, not a timestamp: a clock says *when*, and two tabs disagree; a counter says *after what*.
+
+### Changed
+
+- ⚠️ **`limits.allow` promises something different, and it is written in the contract.** It used to
+  count per **process** — so on serverless a limit of 120/hour allowed 120 *per instance*. It
+  existed, it reassured, and it bounded a fraction of what it claimed. The standalone context now
+  counts in a shared table.
+
+  The local counter stays in front as a **fast refusal**: it only ever under-counts, so if *it* is
+  over the ceiling the shared one is too. Abuse is refused for free. The public read path stays local
+  — its answers already come from a per-slug cache, and backing that guard with a shared counter
+  would make the guard pay the price we had just spared the thing it guards.
+
+  ⚠️ The shared count is **not atomic** (PostgREST cannot express "increment"): it under-estimates
+  under heavy concurrency — letting a little more through, never refusing wrongly.
+
+### Testing
+
+- **A column belonging to a migration can no longer be written unconditionally.** `docs/MIGRATIONS.md`
+  says PostgREST rejects the *whole* PATCH on an unknown column; two hours after writing that, I put
+  `write_seq: 0` in the reclaim path without a condition — which would have broken **reclaiming**, not
+  the new guarantee, on every un-migrated host. The probe existed; I had not called it there.
+
+  ⚠️ What was missing was not the knowledge, it was the guard. A rule you remember is a rule you will
+  forget.
+
 ## [0.1.48] — 2026-08-17
 
 ### Fixed
