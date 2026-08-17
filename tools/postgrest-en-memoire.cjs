@@ -63,7 +63,22 @@ function creerPostgrestEnMemoire(graine = {}) {
   // ⚠️ Conséquence pour l'appelant : c'est l'objet RENDU qu'il faut inspecter, pas celui qu'il a
   // passé. Une doublure qui écrirait ailleurs que là où l'essai regarde serait une façon très
   // efficace de rendre tous les essais verts.
-  const tables = Object.assign(Object.create(null), graine);
+  // ⚠️ LE JEU DE TABLES EST FIXÉ À LA CONSTRUCTION, et c'est la troisième version de cette
+  // ligne. Elle a d'abord indexé un objet par le nom venu de l'URL — le constat C-6, réintroduit
+  // deux heures après l'avoir corrigé ailleurs, et repéré par CodeQL, pas par moi. Filtrer le nom
+  // par sa forme ne suffisait pas : `__proto__` s'écrit en minuscules et underscore. Supprimer le
+  // prototype rendait la chose inoffensive, mais laissait une écriture par clé venue du dehors.
+  //
+  // La sortie est aussi la plus FIDÈLE : un vrai PostgREST ne crée pas une table parce qu'on l'a
+  // nommée, il répond que la relation n'existe pas. Le registre est donc une `Map` close, et un
+  // essai doit DÉCLARER les tables où le player écrira — ce qui a le mérite de rendre ce schéma
+  // visible, au lieu de le laisser apparaître au fil des requêtes.
+  const registre = new Map(Object.entries(graine));
+  // Vue sans prototype pour l'appelant : mêmes tableaux, donc un essai constate bien ce qui a été
+  // écrit. Sans prototype parce qu'un essai peut, lui aussi, nommer une table `constructor`.
+  const tables = Object.create(null);
+  for (const [nom, lignes] of registre) tables[nom] = lignes;
+
   let sequence = 1;
 
   const serveur = http.createServer(async (req, res) => {
@@ -88,8 +103,10 @@ function creerPostgrestEnMemoire(graine = {}) {
       //
       // Un nom de table est un identifiant : on le reconnaît par sa FORME plutôt que d'énumérer
       // ce qu'on refuse, et la doublure refuse le reste comme elle refuse un filtre inconnu.
-      if (!/^[a-z_][a-z0-9_]*$/.test(nom)) return repondre(400, { message: `nom de table refusé : ${nom.slice(0, 40)}` });
-      const lignes = (tables[nom] = tables[nom] || []);
+      // Comme PostgREST : une relation qu'on n'a pas déclarée n'existe pas. Le message la nomme —
+      // un essai à qui il manque une table doit le lire, pas déduire d'un tableau vide.
+      if (!registre.has(nom)) return repondre(404, { message: `relation inexistante : ${nom.slice(0, 60)}` });
+      const lignes = registre.get(nom);
 
       const parametres = url.searchParams;
       const prefer = String(req.headers.prefer || "");

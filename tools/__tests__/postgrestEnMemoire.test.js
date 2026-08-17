@@ -56,7 +56,13 @@ describe("la base d'essai refuse plutôt que d'inventer", () => {
   // Le prototype de TOUT le processus d'essai, player compris : une doublure qui corrompt le vrai
   // code qu'elle teste. Un nom de table est un identifiant — on le reconnaît par sa forme.
   it("un nom de table venu du réseau ne peut pas atteindre le prototype", async () => {
-    await avecServeur({ t: [] }, async (base, tables) => {
+    // ⚠️ LA GRAINE NE PEUT PAS ÊTRE UN LITTÉRAL ORDINAIRE, et je m'y suis pris à deux fois :
+    // dans un littéral, `__proto__:` DÉFINIT LE PROTOTYPE au lieu de créer une clé. La table que
+    // je croyais déclarer n'existait donc pas, et l'essai échouait en accusant la doublure. Le
+    // piège du jour, rencontré une troisième fois — ici en écrivant sa propre vérification.
+    const graine = Object.assign(Object.create(null), { t: [], constructor: [] });
+    graine.__proto__ = []; // clé ordinaire : l'objet n'a pas de prototype à définir
+    await avecServeur(graine, async (base, tables) => {
       // ⚠️ CE QUI PROTÈGE N'EST PAS LE NOM, C'EST L'ABSENCE DE PROTOTYPE — et cet essai disait
       // d'abord le contraire : il exigeait un refus sur `__proto__`, ce qui aurait fait passer
       // pour une garde ce qui n'était qu'un filtre. Sur une table sans prototype, ces deux noms
@@ -76,10 +82,10 @@ describe("la base d'essai refuse plutôt que d'inventer", () => {
       expect(Object.getPrototypeOf(tables)).toBeNull();
       expect(Object.keys(tables)).toContain("__proto__");
 
-      // Et un nom qui n'est pas un identifiant reste refusé — deuxième ligne de défense, celle
-      // qui garde la doublure honnête plutôt que celle qui protège le processus.
-      for (const nom of ["Table-Bizarre", "t.autre"]) {
-        expect((await lire(base, encodeURIComponent(nom) + "?select=*")).code).toBe(400);
+      // Et une table jamais déclarée n'existe pas — comme chez PostgREST. C'est la garde qui
+      // protège vraiment : rien n'est plus écrit par un nom venu du dehors.
+      for (const nom of ["jamais_declaree", "Table-Bizarre"]) {
+        expect((await lire(base, encodeURIComponent(nom) + "?select=*")).code).toBe(404);
       }
     });
   });
@@ -115,7 +121,7 @@ describe("la base d'essai répond comme PostgREST sur ce qu'elle couvre", () => 
   });
 
   it("écrit, fusionne sur conflit, et rend ce qu'on lui demande de rendre", async () => {
-    await avecServeur({}, async (base, tables) => {
+    await avecServeur({ s: [] }, async (base, tables) => {
       // `return=minimal` : rien dans le corps, la ligne en table.
       await fetch(base + "s", { method: "POST", headers: { Prefer: "return=minimal", "Content-Type": "application/json" }, body: JSON.stringify([{ session_id: "s1", vues: 1 }]) });
       expect(tables.s).toHaveLength(1);

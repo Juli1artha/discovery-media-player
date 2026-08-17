@@ -124,6 +124,14 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
         last_seen: new Date(0).toISOString(),
         created_at: "2026-08-17T00:00:00Z", updated_at: "2026-08-17T00:00:00Z",
       }],
+      // ⚠️ DÉCLARÉES VIDES, ET C'EST LE SUJET. La doublure répond « relation inexistante » sur une
+      // table non déclarée, comme un vrai PostgREST : ce que le player ÉCRIT doit donc figurer ici.
+      // Le schéma que ces pages touchent cesse d'être implicite — et une écriture vers une table
+      // oubliée se voit tout de suite, au lieu de disparaître dans un tableau vide.
+      commercial_doc_views: [],
+      commercial_doc_sessions: [],
+      doc_presentation_attendees: [],
+      doc_presentation_messages: [],
     };
     // ⚠️ On garde l'objet RENDU : la doublure travaille sur une table sans prototype, distincte
     // de la graine. Inspecter la graine reviendrait à regarder là où personne n'écrit.
