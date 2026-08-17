@@ -67,6 +67,33 @@ inheritance both refuse — without either of them knowing why.
 Requires `supabase/migrations/0001-destinataire-atteste.sql`. Until it is applied the player refuses
 the attested creation and names the file; it never falls back to the other column.
 
+## ⚠️ What `limits.allow` promises changed
+
+It used to promise *best effort, per process*. The standalone context now counts in a **shared
+table**, so a limit means what it says for the **instance** rather than for one execution.
+
+This matters because nothing announced the difference: on serverless, several executions serve in
+parallel and start cold, so a limit of 120/hour allowed 120 **per instance**. It existed, it
+reassured, and it bounded a fraction of what it claimed.
+
+Requires `supabase/migrations/0003-limites-partagees.sql`. **Until it is applied, nothing breaks**:
+counting falls back to memory — the previous behaviour — and the host is told once, by name.
+
+Two deliberate exceptions, both written next to the code:
+
+- **The local counter stays in front, as a fast refusal.** It only ever sees what one process served,
+  so it under-counts: if *it* is already over the ceiling, the shared one is too. A local refusal is
+  therefore always right, and costs no round trip. Abuse is refused for free; legitimate traffic pays.
+- **The public read path (`pread:`) is counted locally only.** Those responses already come from a
+  per-slug memory cache, put there precisely so they cost the database nothing. Backing their guard
+  with a shared counter would make the guard pay the price we had just spared the thing it guards.
+  On that path the real protection is the cache, not the counter.
+
+⚠️ **The shared count is not atomic.** PostgREST cannot express "increment": it is a read then a
+write. Two instances can read the same value and write one. The counter therefore **under**-estimates
+under heavy concurrency — it lets a little more through, never refuses wrongly. Said plainly rather
+than implying a precision we do not have.
+
 ## The three things a host implements
 
 Everything the player borrows arrives through one injected object. Two of its entries carry
