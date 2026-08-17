@@ -341,10 +341,36 @@ async function recordAttendance(slug, { key, name, email, avatar, isMember, isPr
 }
 
 // Détail d'une présentation : entête + participants + nombre de messages par participant.
-async function presentationStats(slug) {
+/**
+ * Les statistiques d'une présentation : qui a suivi, combien de temps, quelles pages.
+ *
+ * ⚠️ UNE SESSION NE SUFFIT PAS, ET C'EST LE CORRECTIF. Cette route exigeait un jeton et rien de plus :
+ * tout membre connaissant un slug lisait donc les participants d'une présentation qui n'était pas la
+ * sienne — leurs NOMS, leurs ADRESSES, leur temps de présence et les pages qu'ils ont vues. Ces
+ * participants sont souvent des prospects : ce sont des données commerciales sur des clients, pas un
+ * compteur d'usage.
+ *
+ * ⚠️ QUI Y A DROIT AU-DELÀ DU PROPRIÉTAIRE EST UNE RÈGLE DE L'HÔTE, PAS DU PLAYER. Une petite équipe
+ * où chacun voit tout est un choix parfaitement défendable ; une instance à plusieurs populations ne
+ * peut pas se le permettre. Le player ne tranche donc pas : il accorde ce qui est manifeste — le
+ * propriétaire, l'administrateur — et demande le reste à l'hôte, par le même crochet qui décide déjà
+ * qui peut diffuser un document.
+ *
+ * `autoriseLarge` est une FONCTION, pas un booléen : sans elle on paierait un aller-retour
+ * d'autorisation pour un propriétaire qui n'en a pas besoin.
+ *
+ * Signalé par deux audits (C-8, V-6).
+ */
+async function presentationStats(slug, email, isAdmin, autoriseLarge) {
   if (!slug) return { ok: false, status: 400 };
   const pres = await getPresentation(slug);
   if (!pres) return { ok: false, status: 404 };
+  const proprietaire = !!isAdmin || !!(pres.owner_email && pres.owner_email === lc(email));
+  if (!proprietaire) {
+    let large = false;
+    try { large = typeof autoriseLarge === "function" ? !!(await autoriseLarge()) : !!autoriseLarge; } catch { large = false; }
+    if (!large) return { ok: false, status: 403 };
+  }
   const [attRows, msgRows] = await Promise.all([
     PLAYER.db.request(`doc_presentation_attendees?slug=eq.${enc(slug)}&select=*&order=first_seen.asc&limit=500`),
     PLAYER.db.request(`doc_presentation_messages?slug=eq.${enc(slug)}&deleted=eq.false&select=author_email,author_name&limit=1000`),
@@ -441,10 +467,25 @@ async function setPresentationContent(slug, email, isAdmin, content, control) {
 }
 
 // Historique des présentations d'un document (pour l'onglet Suivi) : la plus récente d'abord, avec le nb de participants.
-async function listPresentationsForDoc(docId) {
+/**
+ * L'historique des présentations d'un document.
+ *
+ * ⚠️ ON FILTRE, ON NE REFUSE PAS — et la nuance est un choix. Refuser en bloc priverait un membre de
+ * SA propre liste dès qu'il n'a pas le droit élargi ; filtrer lui rend exactement ce qui lui revient.
+ * Une liste qui montre moins n'est pas une panne, une liste qui refuse tout en est une.
+ *
+ * Même règle que pour les statistiques : le propriétaire et l'administrateur toujours, le reste sur
+ * décision de l'hôte.
+ */
+async function listPresentationsForDoc(docId, email, isAdmin, autoriseLarge) {
   if (!docId) return [];
-  const rows = await PLAYER.db.request(`doc_presentations?doc_id=eq.${enc(String(docId))}&select=slug,presenter_name,owner_name,current_page,active,created_at,updated_at&order=created_at.desc&limit=50`);
-  const list = Array.isArray(rows) ? rows : [];
+  const rows = await PLAYER.db.request(`doc_presentations?doc_id=eq.${enc(String(docId))}&select=slug,presenter_name,owner_name,owner_email,current_page,active,created_at,updated_at&order=created_at.desc&limit=50`);
+  let list = Array.isArray(rows) ? rows : [];
+  if (!isAdmin) {
+    let large = false;
+    try { large = typeof autoriseLarge === "function" ? !!(await autoriseLarge()) : !!autoriseLarge; } catch { large = false; }
+    if (!large) list = list.filter((p) => p.owner_email && p.owner_email === lc(email));
+  }
   // UNE requête groupée (in.(…)) au lieu d'une par présentation (N+1, jusqu'à 50) ; agrégation en mémoire.
   const counts = new Map();
   if (list.length) {

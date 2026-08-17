@@ -107,7 +107,9 @@ describe("le compte de messages d'une présentation survit à une clé héritée
       if (c.startsWith("doc_presentation_messages")) return [{ author_email: cle, author_name: "X", body: "hi" }];
       return [];
     } } });
-    const r = await presentations.presentationStats("s1");
+    // ⚠️ Administrateur : le sujet de ce test est le COMPTAGE, pas la possession. Passer l'identité
+    // évite qu'une garde d'autorisation — légitime, ajoutée depuis — masque ce qu'on vérifie ici.
+    const r = await presentations.presentationStats("s1", "peu@importe.fr", true);
     expect(r && r.ok, cle).toBeTruthy();
   });
 });

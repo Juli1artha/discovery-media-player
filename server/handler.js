@@ -2982,8 +2982,16 @@ async function handler(req, res) {
           if (body.action === "present-list") r = { ok: true, presentations: await listActivePresentations(u.email) };
           else if (body.action === "present-reclaim") r = await reclaimPresentation(String(body.slug || ""), u.email);
           else if (body.action === "present-owner-end") r = await endPresentationByOwner(String(body.slug || ""), u.email, isAdmin);
-          else if (body.action === "present-stats") r = await presentationStats(String(body.slug || ""));
-          else if (body.action === "present-doc-list") r = { ok: true, presentations: await listPresentationsForDoc(String(body.docId || "")) };
+          // ⚠️ Le droit ÉLARGI est demandé paresseusement : un propriétaire n'a pas à payer un
+          // aller-retour d'autorisation pour lire ce qui lui appartient déjà.
+          else if (body.action === "present-stats") {
+            r = await presentationStats(String(body.slug || ""), u.email, isAdmin,
+              () => PLAYER.identity.canManageShares(u, "presentations.stats"));
+          }
+          else if (body.action === "present-doc-list") {
+            r = { ok: true, presentations: await listPresentationsForDoc(String(body.docId || ""), u.email, isAdmin,
+              () => PLAYER.identity.canManageShares(u, "presentations.stats")) };
+          }
           else if (body.action === "present-switch") {
             if (!isAllowedStorageUrl(String(body.fileUrl || ""))) return jp(400, { ok: false, error: "url" });
             r = await switchPresentationDoc(String(body.slug || ""), u.email, isAdmin, { fileUrl: body.fileUrl, fileName: body.fileName, docTitle: body.docTitle, docId: body.docId });

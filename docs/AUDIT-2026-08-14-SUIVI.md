@@ -184,7 +184,7 @@ avec le lot des migrations (P1-5), pas avant.
 
 | | Constat | Décision |
 |---|---|---|
-| P2-1 | Autorisation des statistiques de présentation trop large | à trancher : égalité entre membres, ou périmètre |
+| P2-1 | Autorisation des statistiques de présentation trop large | ✅ tranché : le player accorde le manifeste, l'hôte décide le reste |
 | P2-2 | `handler.js` : 2 988 lignes, non typé | découpage progressif, contrat public inchangé |
 | P2-3 | Pas d'E2E navigateur, pas de Supabase de test, pas de couverture | oui — c'est là que vivent les deux P0 |
 | P2-4 | Dépendances navigateur hors lockfile, sans SRI (`@2` mouvant) | embarquer, ou SRI + versions exactes |
@@ -301,7 +301,7 @@ du jour même** — elle ne relit pas un état, elle relit un mouvement.
 | V-3 | Une requête bloquée fige l'ordonnanceur (né de 0.1.41) | ✅ **0.1.44** |
 | V-4 | Le canal public reste amplifiable — et la limite de 0.1.42 en fait un déni de service | ✅ **0.1.45** |
 | V-5 | Clé anonyme rejouable, exposée dans la présence (née de 0.1.42) | ✅ **divulgation fermée** — le rejeu par devinette reste hors de portée |
-| V-6 | `present-stats` / `present-doc-list` : possession non vérifiée | recoupe P2-1 / C-8 |
+| V-6 | `present-stats` / `present-doc-list` : possession non vérifiée | ✅ **fait** |
 
 ### V-1 — terminer révoque le jeton, la péremption ne le révoque pas
 
@@ -506,6 +506,38 @@ n'a rien à vérifier. Ce correctif retire la *divulgation*, pas la propriété.
 par `crypto` reste hors de portée ; le dernier cas demanderait un billet de participant signé par le
 serveur.
 
+### C-8 / V-6 / P2-1 — la possession, et qui décide du reste
+
+Un jeton et un slug suffisaient pour lire les **noms, adresses, temps de présence et pages vues** des
+participants d'une présentation étrangère. Ces participants sont souvent des prospects : ce sont des
+données commerciales sur des clients, pas des compteurs d'usage.
+
+⚠️ **Mais « qui y a droit au-delà du propriétaire » est une règle de l'HÔTE, pas du player.** Une
+petite équipe où chacun voit tout est un choix parfaitement défendable ; une instance à plusieurs
+populations ne peut pas se le permettre. Le player accorde donc ce qui est **manifeste** —
+propriétaire, administrateur — et demande le reste par `identity.canManageShares`, le crochet qui
+décide déjà qui peut diffuser un document. **Aucune nouvelle surface de contrat.**
+
+Deux nuances de conception :
+
+- **On filtre l'historique, on ne le refuse pas.** Refuser en bloc priverait un membre de *sa* propre
+  liste. Une liste qui montre moins n'est pas une panne ; une liste qui refuse tout en est une.
+- **L'autorisation est demandée paresseusement.** Un propriétaire n'a pas à provoquer un aller-retour
+  vers l'hôte pour lire ce qui lui appartient déjà.
+
+> ⚠️ **UNE MUTATION A SURVÉCU, ET ELLE A RÉVÉLÉ UNE MOITIÉ DE BANC.** Les premiers tests exerçaient la
+> **fonction** : ils passaient l'identité eux-mêmes. Une route transmettant `isAdmin: true` à tout le
+> monde rendait donc la garde inatteignable sans qu'aucun ne bronche — le motif « vérifier sans
+> émettre » du jeton interne, où une moitié correcte ne ferme rien. Le banc joue désormais la route
+> entière. Et la mutation **symétrique** (sur la seconde route) a survécu à son tour, parce qu'une
+> seule des deux était couverte : *une garde vérifiée sur un seul de ses deux appelants n'est
+> vérifiée qu'à moitié.*
+
+**Effet chez les hôtes** : notre studio ne perd rien — son `canManage` accorde la même capacité que
+le CRM, donc commercial et business developer gardent la vue complète, tandis qu'un partenaire ou un
+lecteur la perd, ce qui est le but. Une instance sans route d'autorisation verra en revanche ses
+membres non propriétaires perdre l'accès : **à annoncer**, et c'est la bonne direction.
+
 ### Inexactitudes relevées
 
 - `goSV()` passe bien par l'ordonnanceur (`svOrd`) — l'audit le cite parmi les écritures directes.
@@ -530,7 +562,7 @@ du code écrit **le jour même** — c'est le signe qu'il fallait entendre.
 | C-5 | Canal public : amplificateur de trafic, pas de limite sur `state=1` / `chat=1` | ✅ **0.1.42** |
 | C-6 | `flattenPresence()` indexe un `{}` par des identités réseau | à faire (pollution de prototype) |
 | C-7 | `present-attend` accepte une `key` choisie par le client | ✅ **0.1.42** |
-| C-8 | `present-stats` / `present-doc-list` : session exigée, propriété non vérifiée | recoupe P2-1 |
+| C-8 | `present-stats` / `present-doc-list` : session exigée, propriété non vérifiée | ✅ propriétaire/admin, élargissement décidé par l'hôte |
 | C-9 | Pas de délai maximal sur PostgREST / signUpload / verifyToken | recoupe P1-4 |
 | C-10 | E2E navigateur absent | 🔧 **entamé en 0.1.42** — cf. ci-dessous |
 
