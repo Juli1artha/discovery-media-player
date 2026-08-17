@@ -50,10 +50,20 @@ function versPredicat(colonne, brut) {
 }
 
 /**
- * Serveur d'essai. `tables` est un objet { nom: [lignes] } — mutable, et c'est voulu : un essai
- * doit pouvoir constater ce que le player a ÉCRIT, pas seulement ce qu'il a lu.
+ * Serveur d'essai. Rend `{ serveur, tables }` — `tables` étant { nom: [lignes] }, mutable, et
+ * c'est voulu : un essai doit pouvoir constater ce que le player a ÉCRIT, pas seulement ce qu'il
+ * a lu. C'est bien l'objet RENDU qu'il faut inspecter (cf. ci-dessous).
  */
-function creerPostgrestEnMemoire(tables = {}) {
+function creerPostgrestEnMemoire(graine = {}) {
+  // ⚠️ UN OBJET SANS PROTOTYPE, et pas seulement un nom de table filtré. Le filtre par la forme
+  // (ci-dessous) refuse déjà `__proto__`, mais il protège par ce qu'il RECONNAÎT ; celui-ci
+  // protège par ce qui n'existe pas. Sur une table indexée par le réseau, la seconde garantie est
+  // la seule qui tienne encore le jour où quelqu'un assouplit la première.
+  //
+  // ⚠️ Conséquence pour l'appelant : c'est l'objet RENDU qu'il faut inspecter, pas celui qu'il a
+  // passé. Une doublure qui écrirait ailleurs que là où l'essai regarde serait une façon très
+  // efficace de rendre tous les essais verts.
+  const tables = Object.assign(Object.create(null), graine);
   let sequence = 1;
 
   const serveur = http.createServer(async (req, res) => {
@@ -162,8 +172,7 @@ function creerPostgrestEnMemoire(tables = {}) {
       // fabriquerait une SECONDE ligne de journal, d'apparence parfaitement normale. On lit un
       // journal pour comprendre ce qui s'est passé — y laisser écrire une ligne inventée en fait
       // le contraire d'un journal.
-      const propre = (t) => String(t).replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 200);
-      console.error("[postgrest-en-mémoire] " + propre(erreur.message) + " — " + propre(req.method) + " " + propre(req.url));
+      console.error("[postgrest-en-mémoire] " + JSON.stringify(erreur.message) + " — " + JSON.stringify(req.method + " " + req.url));
       repondre(400, { message: erreur.message });
     }
   });

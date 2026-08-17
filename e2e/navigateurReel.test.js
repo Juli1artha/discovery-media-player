@@ -110,7 +110,7 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
 
     // La base d'essai (constat P2-3) : sans elle, la visionneuse tracée et la page d'audience
     // répondent 404, et deux des trois politiques de sécurité du produit restent inexercées.
-    tables = {
+    const graine = {
       commercial_doc_shares: [{
         id: 1, slug: SLUG_TRACE, doc_id: "doc-1", revoked: false, require_auth: false,
         file_url: fichier, file_name: "essai.png", doc_title: "Document d'essai",
@@ -125,7 +125,9 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
         created_at: "2026-08-17T00:00:00Z", updated_at: "2026-08-17T00:00:00Z",
       }],
     };
-    ({ serveur: base } = creerPostgrestEnMemoire(tables));
+    // ⚠️ On garde l'objet RENDU : la doublure travaille sur une table sans prototype, distincte
+    // de la graine. Inspecter la graine reviendrait à regarder là où personne n'écrit.
+    ({ serveur: base, tables } = creerPostgrestEnMemoire(graine));
     await new Promise((resolve) => base.listen(0, "127.0.0.1", resolve));
 
     // ⚠️ AVANT le `require` : le serveur autonome fabrique son contexte à l'import, à partir de

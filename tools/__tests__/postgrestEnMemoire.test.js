@@ -10,8 +10,10 @@
 
 const { creerPostgrestEnMemoire } = require("../postgrest-en-memoire.cjs");
 
-async function avecServeur(tables, essai) {
-  const { serveur } = creerPostgrestEnMemoire(tables);
+// ⚠️ On travaille sur les tables RENDUES : la doublure recopie la graine dans un objet sans
+// prototype, donc inspecter la graine reviendrait à regarder là où personne n'écrit.
+async function avecServeur(graine, essai) {
+  const { serveur, tables } = creerPostgrestEnMemoire(graine);
   await new Promise((r) => serveur.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${serveur.address().port}/rest/v1/`;
   try { return await essai(base, tables); } finally { serveur.close(); }
@@ -54,13 +56,31 @@ describe("la base d'essai refuse plutôt que d'inventer", () => {
   // Le prototype de TOUT le processus d'essai, player compris : une doublure qui corrompt le vrai
   // code qu'elle teste. Un nom de table est un identifiant — on le reconnaît par sa forme.
   it("un nom de table venu du réseau ne peut pas atteindre le prototype", async () => {
-    await avecServeur({ t: [] }, async (base) => {
-      for (const nom of ["__proto__", "constructor", "Table-Bizarre", "t.autre"]) {
-        expect((await lire(base, encodeURIComponent(nom) + "?select=*")).code).toBe(400);
+    await avecServeur({ t: [] }, async (base, tables) => {
+      // ⚠️ CE QUI PROTÈGE N'EST PAS LE NOM, C'EST L'ABSENCE DE PROTOTYPE — et cet essai disait
+      // d'abord le contraire : il exigeait un refus sur `__proto__`, ce qui aurait fait passer
+      // pour une garde ce qui n'était qu'un filtre. Sur une table sans prototype, ces deux noms
+      // sont des clés ordinaires : on les ACCEPTE, et rien ne fuit.
+      for (const nom of ["__proto__", "constructor"]) {
+        const r = await fetch(base + encodeURIComponent(nom), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+          body: JSON.stringify([{ id: 1 }]),
+        });
+        expect(r.status).toBe(201);
       }
-      // Et la preuve que rien n'a fui : le prototype n'a pas pris de longueur au passage.
+      // La preuve : les lignes sont dans des clés ordinaires, et le prototype du processus n'a
+      // rien pris au passage — ni longueur, ni index, ni `id`.
       expect(Object.prototype.hasOwnProperty.call(Object.prototype, "length")).toBe(false);
       expect(({}).length).toBeUndefined();
+      expect(Object.getPrototypeOf(tables)).toBeNull();
+      expect(Object.keys(tables)).toContain("__proto__");
+
+      // Et un nom qui n'est pas un identifiant reste refusé — deuxième ligne de défense, celle
+      // qui garde la doublure honnête plutôt que celle qui protège le processus.
+      for (const nom of ["Table-Bizarre", "t.autre"]) {
+        expect((await lire(base, encodeURIComponent(nom) + "?select=*")).code).toBe(400);
+      }
     });
   });
 });
