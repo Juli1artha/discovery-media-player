@@ -10,6 +10,39 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.47] — 2026-08-17
+
+### Fixed
+
+- ⚠️ **A multi-brand host served one client's loader on another client's domain.** In preview mode —
+  the mode a host uses for its *own* documents, with no tracked link — nothing carried the brand key,
+  and `brandForShare` was never called on that path. A visitor opening a document therefore saw the
+  name of a company they had never heard of, on the domain of the one they were dealing with.
+
+  The machinery was already complete: the host answers `PLAYER_HOST_BRAND_URL`, `branding.forKey`
+  resolves, tracked links display correctly. **What was missing was a transport, on one route.**
+  `&brand=<key>` now feeds `brand_key`, and the same resolution runs.
+
+  Reported by the second host, on a document opened at one of their clients.
+
+### Testing
+
+- ⚠️ **The family the bug belonged to is now closed — but not the way it was proposed.** Preview mode
+  was built as *"a share without a share"*, so every field has to be rewired one at a time:
+  `internal_token` was missing, `brand_key` was missing, **a third one would be**. The second host
+  suggested letting preview accept the same fields as a share.
+
+  Measured, that would open too far. The page reads **34** fields; **20** are absent from the preview
+  object and **17 of those are deliberate** — the whole assistant plugin (which does not run in
+  preview, and whose 116 KB a test already checks are not even embedded), `is_test`,
+  `recipient_email`, `created_by`. Importing them wholesale would switch on features preview does not
+  have.
+
+  The closure is therefore *no field by accident*: everything the page reads must be **provided**, or
+  **declared absent with its reason**. Adding a line to that table is a decision; forgetting one fails
+  the build. The table is itself guarded against **relics** — a reason left for a field the page no
+  longer reads would make it look current while describing a world that is gone.
+
 ## [0.1.46] — 2026-08-17
 
 One thread runs through all of it: **what used to be protected by discipline is now protected by
