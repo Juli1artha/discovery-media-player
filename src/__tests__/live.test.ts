@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import type { Participant } from "../live";
 import {
   escapeHtml,
   initials,
@@ -67,6 +68,49 @@ describe("live — présence dédoublonnée", () => {
     expect(flattenPresence(undefined)).toEqual([]);
     expect(flattenPresence({})).toEqual([]);
     expect(flattenPresence({ a: [] })).toEqual([]);
+  });
+
+  // ── C-6 : ces identités viennent du réseau ────────────────────────────────────────────────────
+  // Chaque participant COMPOSE sa charge de présence, `uid` compris. Indexer un objet ordinaire
+  // avec ça donnait des réponses avant qu'on ait rien écrit.
+
+  it("un participant dont l'identité est un nom de propriété héritée reste visible", () => {
+    // `constructor` répond « vrai » sur un objet vide — le participant était donc pris pour son
+    // propre doublon et disparaissait. ⚠️ `toString` NE passait PAS : l'identité est mise en
+    // minuscules, et `tostring` n'est hérité de personne. Seuls `constructor` et `__proto__`
+    // franchissaient ce filtre, et c'est pour ça que le défaut a pu vivre si longtemps.
+    for (const identite of ["constructor", "__proto__"]) {
+      const list = flattenPresence({ a: [{ name: identite }], b: [{ name: "Léa" }] });
+      expect(list.map((p) => p.name)).toEqual([identite, "Léa"]);
+    }
+  });
+
+  // LE cas qui fait de C-6 autre chose qu'une curiosité : écrire sur `__proto__` ne crée pas une
+  // entrée, ça CHANGE LE PROTOTYPE de la table. Les identités suivantes étaient alors cherchées
+  // dans l'objet de l'intrus — et toute clé qu'il y avait mise répondait « déjà vu ».
+  it("un intrus ne peut pas faire disparaître ses voisins de la liste", () => {
+    const intrus = {
+      uid: "__proto__", name: "Intrus", role: "presenter",
+      // Les adresses des voisins, glissées comme clés supplémentaires. Rien ne les interdit :
+      // c'est sa charge de présence, il y met ce qu'il veut.
+      "lea@exemple.fr": 1, "marc@exemple.fr": 1,
+    } as unknown as Participant;
+
+    const list = flattenPresence({
+      a: [intrus],
+      b: [{ email: "lea@exemple.fr", name: "Léa" }],
+      c: [{ email: "marc@exemple.fr", name: "Marc" }],
+      d: [{ name: "Sonia" }],
+    });
+    expect(list.map((p) => p.name)).toEqual(["Intrus", "Léa", "Marc", "Sonia"]);
+  });
+
+  // La pollution restait locale à la table — mais « local » ne veut pas dire « sans effet », la
+  // table EST la liste. On vérifie quand même que rien n'a jamais fui plus loin.
+  it("ne touche pas le prototype global", () => {
+    flattenPresence({ a: [{ uid: "__proto__", name: "Intrus", role: "presenter" }] });
+    expect(({} as Record<string, unknown>).name).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(Object.prototype, "name")).toBe(false);
   });
 });
 
