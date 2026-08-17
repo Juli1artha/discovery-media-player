@@ -2708,6 +2708,18 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
       if(!PDF) return;
       n=Math.max(1,Math.min(total||1, n||1)); cur=n;
       var c=document.getElementById('cur'); if(c)c.textContent=n;
+      // Une image tient sur une page : on la pose, ajustée au cadre, et le reste de la vue —
+      // synchronisation, présence, chat — continue de fonctionner à l identique.
+      if(PDF.image){
+        var pgi=document.getElementById('page'); if(!pgi) return;
+        var dispoW=Math.max(120, stage.clientWidth-40), dispoH=Math.max(120, stage.clientHeight-40);
+        var ech=Math.min(dispoW/(PDF.image.naturalWidth||1), dispoH/(PDF.image.naturalHeight||1), 1);
+        var el=PDF.image.cloneNode(false);
+        el.style.width=Math.round((PDF.image.naturalWidth||1)*ech)+'px';
+        el.style.height='auto'; el.style.display='block';
+        pgi.innerHTML=''; pgi.appendChild(el);
+        return;
+      }
       PDF.getPage(n).then(function(page){
         var availW=Math.max(120, stage.clientWidth-40), availH=Math.max(120, stage.clientHeight-40);
         var v1=page.getViewport({scale:1});
@@ -2726,7 +2738,48 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
         pdfjsLib.GlobalWorkerOptions.workerSrc=u; load();
       }).catch(function(){ window.__workerRefuse=1; var _e=document.getElementById('pg'); if(_e)_e.textContent="Document non affiche : une dependance n a pas pu etre verifiee."; });
     }
+    // ⚠️ UNE PRÉSENTATION PEUT PORTER UNE IMAGE, ET CETTE VUE NE LE SAVAIT PAS. Le bouton
+    // Présenter s apparait sans condition sur le type de document : un présentateur qui regarde un
+    // PNG peut donc le présenter, et son audience recevait une page qui appelait pdf.js sur une
+    // image — « Document indisponible ». Un bouton qui mène à une page morte est pire qu un bouton
+    // absent.
+    //
+    // Ce n est PAS une régression du refus de worker : ce chemin était muet bien avant, et
+    // personne ne l avait vu parce qu on ne présente pas souvent une image. Trouvé par le second
+    // hôte, en POSANT LA QUESTION là où nous aurions affirmé — sa vue à lui sert des images, il a
+    // demandé si la nôtre pouvait en recevoir.
+    // ⚠️ Évalué AU CHARGEMENT, pas à l analyse du script : posé en constante de haut niveau, il
+    // s exécutait avant que tout soit en place et emportait le reste du bloc avec lui — le
+    // gestionnaire d état n était plus exposé, et la couche live ne pouvait plus se brancher. Un
+    // essai l a dit tout de suite. Une question posée au bon moment ne coûte rien ; posée trop tôt,
+    // elle emporte ce qui vient après.
+    // ⚠️ SUR L URL D ORIGINE, JAMAIS SUR L URL DE PROXY. Premier jet : je passais
+    // CFG.fileUrl, qui vaut /api/doc?present=...&file=1 — aucune extension, donc la réponse était
+    // toujours « ce n est pas une image », et la page repartait sur pdf.js avec un PNG. Pire, un
+    // try/catch posé par prudence avalait tout : la sonde n a rien vu jusqu à ce qu on lise le
+    // sous-titre du loader, qui disait « Document indisponible ».
+    //
+    // Une garde défensive qui rend faux sur erreur ne protège pas, elle CACHE. Retirée.
+    //
+    // ⚠️ ET IL N Y A QU UNE SEULE CORRECTION ICI, alors que j en avais écrit deux. J avais aussi
+    // ajouté le nom du fichier au cfg — chacune suffisait, donc aucune mutation ne pouvait faire
+    // rougir le banc : retirer l une laissait l autre agir. Deux correctifs pour un symptôme
+    // rendent un essai ininterprétable. Celle-ci est conservée parce qu elle ne change rien à ce
+    // que la page reçoit ; retirer l URL d origine fait bien tomber le banc.
+    function estImage(){ return Player.viewer.isImageDocument("", CFG.docUrl); }
+    function chargerImage(){
+      var im=new Image();
+      im.onload=function(){
+        total=1; ready=true; PDF={image:im};
+        var tot=document.getElementById('tot'); if(tot)tot.textContent=1;
+        show(1); hideLoader();
+        if(!CFG.active) ended();
+      };
+      im.onerror=function(){ var l=document.getElementById('load'); if(l)l.querySelector('.lsub').textContent="Document indisponible."; };
+      im.src=CFG.fileUrl;
+    }
     function load(){
+      if(estImage()){ chargerImage(); return; }
       pdfjsLib.getDocument({url:CFG.fileUrl,isEvalSupported:false}).promise.then(function(pdf){
         PDF=pdf; total=pdf.numPages; ready=true;
         var tot=document.getElementById('tot'); if(tot)tot.textContent=total;

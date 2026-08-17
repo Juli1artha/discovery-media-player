@@ -399,6 +399,37 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
    * fonctionne. Une page qui exigerait le canal pour s'afficher serait d'ailleurs un défaut : un
    * spectateur au réseau capricieux doit voir le document.
    */
+  /**
+   * ⚠️ UNE PRÉSENTATION PEUT PORTER UNE IMAGE, ET CETTE VUE NE LE SAVAIT PAS.
+   *
+   * Le bouton « Présenter » apparaît sans condition sur le type de document : un présentateur qui
+   * regarde un PNG pouvait le présenter, et son audience recevait « Document indisponible » —
+   * pdf.js appelé sur une image. Ce chemin était muet DEPUIS TOUJOURS ; ce n'est pas une régression.
+   *
+   * Trouvé par le second hôte, en POSANT LA QUESTION là où nous aurions affirmé : sa vue à lui sert
+   * des images, il a demandé si la nôtre pouvait en recevoir.
+   *
+   * ⚠️ ET LE PREMIER CORRECTIF NE MARCHAIT PAS, sans que rien ne le dise : il décidait sur
+   * `CFG.fileUrl`, qui vaut `/api/doc?present=…&file=1` — aucune extension, donc « ce n'est pas une
+   * image », toujours. Un `try/catch` posé par prudence avalait le reste. Il a fallu lire le
+   * sous-titre du loader pour voir la cause. Cet essai existe pour que ça ne se reproduise pas.
+   */
+  it("une présentation qui porte une image l'affiche à l'audience", async () => {
+    const { page, violations } = await ouvrirPageSurveillee(`/present/${SLUG_DIRECT}`);
+    await page.waitForFunction(
+      () => { const i = document.querySelector("#page img"); return !!i && i.naturalWidth > 0; },
+      null, { timeout: 15_000 });
+    // Une image tient sur une page, et le compteur doit le dire — sinon la barre de navigation
+    // proposerait des pages qui n'existent pas.
+    expect(await page.evaluate(() => document.getElementById("tot").textContent)).toBe("1");
+    // ⚠️ ET LE LOADER S'EFFACE — mais on l'ATTEND au lieu de le constater : il disparaît une frame
+    // après que l'image est décodée, et l'assertion tombait sur cette poignée de millisecondes.
+    // C'est lui qui portait « Document indisponible » ; qu'il parte est la moitié qui compte.
+    await page.waitForFunction(() => !document.getElementById("load"), null, { timeout: 10_000 });
+    expect(violations).toEqual([]);
+    await page.close();
+  }, 60_000);
+
   it("la page d'audience démarre, avec de quoi tenir la présence et le chat", async () => {
     const { page, violations, reponse } = await ouvrirPageSurveillee(`/present/${SLUG_DIRECT}`);
     expect(reponse.status()).toBe(200);
