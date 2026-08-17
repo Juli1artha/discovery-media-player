@@ -257,7 +257,42 @@ async function endPresentation(slug, control) {
 // Pièce jointe : URL d'upload SIGNÉE (service role) → le client PUT directement dans le bucket. Type/taille
 // validés par le bucket (image/*+pdf, ≤10 Mo). L'URL publique finale est renvoyée pour attacher au message.
 const ATT_KINDS = { "image/png": "image", "image/jpeg": "image", "image/webp": "image", "image/gif": "image", "application/pdf": "pdf" };
+/**
+ * UNE PRÉSENTATION TERMINÉE DEVIENT UNE ARCHIVE : on la relit, on ne l'écrit plus.
+ *
+ * ⚠️ « TERMINÉE » VEUT DIRE DÉCIDÉE, PAS PÉRIMÉE — la distinction qui traverse tout ce module.
+ * Une présentation devient inactive après trois minutes sans battement, et son présentateur doit
+ * pouvoir revenir ; refuser le chat dans ce cas couperait la parole à une salle pendant que
+ * l'orateur rebranche son portable. Terminer, en revanche, ANNULE le jeton de contrôle : c'est
+ * cette trace-là qui distingue une fin d'une somnolence, et c'est elle qu'on lit.
+ *
+ * ⚠️ LA LECTURE RESTE OUVERTE, et c'est un choix de produit, pas un oubli. Ce qui s'est dit
+ * pendant une présentation a de la valeur après : on relit une question, on retrouve un lien.
+ * Le risque n'est pas dans la lecture, il est dans l'écriture — un message ajouté après coup dans
+ * un fil que plus personne ne surveille, une pièce jointe déposée dans le bucket d'une session
+ * close. On ferme donc les sept portes qui ÉCRIVENT, et aucune de celles qui lisent.
+ */
+async function estArchive(slug) {
+  const row = await getPresentation(slug);
+  // Pas de présentation du tout : ce n'est pas une archive, et l'appelant a ses propres 404.
+  if (!row) return false;
+  // ⚠️ LES DEUX FAITS, PAS UN SEUL — et le premier jet ne prenait que le jeton annulé. Une ligne
+  // dont la colonne n'est simplement pas remontée aurait alors été prise pour une session close :
+  // un champ ABSENT et un champ NUL sont la même chose une fois passés par JSON, et cette
+  // confusion aurait fermé le chat de présentations parfaitement vivantes. Six essais l'ont dit
+  // tout de suite, ce qui est exactement leur métier.
+  //
+  // Terminer écrit les deux ensemble (active: false ET jeton annulé) ; une péremption n'écrit que
+  // le premier. Exiger les deux distingue donc la fin décidée de la somnolence, sans dépendre
+  // d'une absence.
+  return row.active === false && row.control_hash == null;
+}
+
+/** Refus commun, pour que les sept routes répondent la même chose. */
+const REFUS_ARCHIVE = { ok: false, status: 409, error: "ended" };
+
 async function createUploadUrl(slug, name, type) {
+  if (await estArchive(slug)) return REFUS_ARCHIVE;
 
   // ⚠️ `Object.hasOwn` et pas une simple lecture : un objet littéral hérite de `constructor`,
   // `toString`, `valueOf`, `__proto__`… `ATT_KINDS["constructor"]` rend une FONCTION, donc une
@@ -356,6 +391,7 @@ function premierPublic(reponse) {
 }
 
 async function addMessage(slug, { name, email, avatar, isPresenter, isMember, body, replyTo, replyName, replyText, authorToken, attachment }) {
+  if (await estArchive(slug)) return REFUS_ARCHIVE;
   const b = String(body || "").trim().slice(0, 2000);
   // ⚠️ Pas de normalisation ici : `config.supabaseUrl` arrive SANS barre finale, c'est le
   // contrat de l'adaptateur. En rajouter une deuxième couche, c'est deux endroits qui décident —
@@ -398,6 +434,7 @@ async function listMessages(slug) {
 
 // Éditer son message (jeton d'auteur requis). Ne touche pas aux messages supprimés.
 async function editMessage(slug, msgId, authorToken, body) {
+  if (await estArchive(slug)) return REFUS_ARCHIVE;
   const id = Math.trunc(+msgId); const b = String(body || "").trim().slice(0, 2000);
   if (!id || !b || !authorToken) return { ok: false, status: 400 };
   const rows = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&slug=eq.${enc(String(slug || ""))}&select=author_hash,deleted&limit=1`);
@@ -409,6 +446,7 @@ async function editMessage(slug, msgId, authorToken, body) {
 
 // Supprimer (soft) : l'auteur (jeton) OU le présentateur (control_token de la présentation).
 async function deleteMessage(slug, msgId, { authorToken, control }) {
+  if (await estArchive(slug)) return REFUS_ARCHIVE;
   const id = Math.trunc(+msgId);
   if (!id) return { ok: false, status: 400 };
   const rows = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&slug=eq.${enc(String(slug || ""))}&select=author_hash&limit=1`);
@@ -423,6 +461,7 @@ async function deleteMessage(slug, msgId, { authorToken, control }) {
 
 // Verrouiller / déverrouiller le chat (présentateur uniquement).
 async function setChatLock(slug, control, locked) {
+  if (await estArchive(slug)) return REFUS_ARCHIVE;
   const pres = await getPresentation(slug);
   if (!pres) return { ok: false, status: 404 };
   if (!tokenMatches(control, pres.control_hash)) return { ok: false, status: 403 };
@@ -432,6 +471,7 @@ async function setChatLock(slug, control, locked) {
 
 // Réaction emoji (toggle) : le participant (identifié par email ou nom) ajoute/retire un emoji sur un message.
 async function toggleReaction(slug, msgId, emoji, reactor) {
+  if (await estArchive(slug)) return REFUS_ARCHIVE;
   const id = Math.trunc(+msgId); const e = String(emoji || "").slice(0, 8); const who = String(reactor || "").slice(0, 160).toLowerCase();
   if (!id || !e || !who) return { ok: false, status: 400 };
   // ⚠️ Une réaction est un EMOJI. Refuser tout ce qui ressemble à un identifiant ferme la porte à
@@ -472,6 +512,10 @@ async function recordAttendance(slug, { key, name, email, avatar, isMember, isPr
   if (!slug || !key) return { ok: false, status: 400 };
   const pres = await getPresentation(slug);
   if (!pres) return { ok: false, status: 404 };
+  // ⚠️ La lecture est DÉJÀ faite ici : on s'en sert plutôt que d'en refaire une. Un battement de
+  // présence sur une session close n'a rien à mettre à jour — et il en arrive à chaque onglet
+  // resté ouvert, longtemps après la fin.
+  if (pres.active === false && pres.control_hash == null) return REFUS_ARCHIVE;
   const page = Math.max(1, Math.trunc(Number(pres.current_page) || 1));
   const now = Date.now();
   const rows = await PLAYER.db.request(`doc_presentation_attendees?slug=eq.${enc(slug)}&attendee_key=eq.${enc(String(key))}&select=*&limit=1`);
