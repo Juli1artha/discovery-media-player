@@ -176,7 +176,12 @@ async function rangAccepte(row, seq) {
   );
   if (!dispo) return { controle: false };
   if (rang <= Number(row.write_seq || 0)) return { controle: true, perime: true };
-  return { controle: true, perime: false, champ: { write_seq: rang } };
+  // ⚠️ ON REND LE RANG, PAS UN OBJET TOUT FAIT. La première version rendait « { write_seq: rang } »,
+  // répandu plus loin par « ...(rang.champ || {}) » : c'était sûr, et illisible — le lecteur du PATCH
+  // ne voyait pas que ce champ est conditionnel. La garde des colonnes migrées l'a signalé, et elle
+  // avait raison sur le fond même si le code était correct : une condition qui ne se voit pas au
+  // point d'écriture finit par être recopiée sans elle.
+  return { controle: true, perime: false, rang };
 }
 
 async function setPage(slug, control, page, seq) {
@@ -188,7 +193,7 @@ async function setPage(slug, control, page, seq) {
   // navigateur n'affiche rien — la page qu'il voulait écrire est déjà dépassée par une plus récente.
   if (rang.perime) return { ok: true, perime: true };
   const p = Math.max(1, Math.trunc(Number(page) || 1));
-  await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { current_page: p, active: true, last_seen: new Date().toISOString(), updated_at: new Date().toISOString(), ...(rang.champ || {}) } });
+  await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { current_page: p, active: true, last_seen: new Date().toISOString(), updated_at: new Date().toISOString(), ...(rang.controle ? { write_seq: rang.rang } : {}) } });
   return { ok: true };
 }
 
