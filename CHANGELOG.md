@@ -10,6 +10,63 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.51] — 2026-08-17
+
+### Security
+
+- **Third-party scripts are pinned to an exact version and carry an integrity fingerprint.** The
+  serious part was not the missing fingerprint, it was `@2`: that jsdelivr tag follows the latest
+  2.x, so the page served visitors whatever Supabase had published that morning — no deployment, no
+  review, no way back. On the day of the fix it resolved to `2.112.3`, now pinned.
+
+  The two go together: a fingerprint on a moving URL would break the page at the third party's next
+  release. **Pinning makes the fingerprint possible; the fingerprint makes the pinning useful** — an
+  exact version says which file you *ask for*, never which one you *receive*.
+
+  | | before | after |
+  |---|---|---|
+  | `pdf.min.js` | exact version, no fingerprint | fingerprint |
+  | `pdf.worker.min.js` (1 MB) | exact version, **out of reach of `integrity`** | verified in code |
+  | `supabase-js` | **moving `@2`**, no fingerprint | `2.112.3` + fingerprint |
+  | `leaflet` | exact version, no fingerprint | fingerprint on the injected tag |
+
+  ⚠️ **The worker has no tag** — pdf.js loads it, so no `integrity` attribute can apply. It weighs
+  three times the main script and sees every page of the document: protecting the tag and letting
+  the worker through would be locking the door and leaving the window open. Its bytes already passed
+  through our code (a cross-origin worker is refused by the browser, so it is fetched as text and
+  turned into a same-origin blob), and that detour is now the checkpoint. Any doubt refuses, and
+  refusing falls back on pdf.js's own backup worker — the path a broken network already took.
+
+  ⚠️ A CI guard now refuses a third-party script that is unpinned, unfingerprinted, or absent from
+  the inventory. It found a fourth dependency on its first run — the Google identity loader on the
+  access wall, which a hand-written inventory had missed. Loaders that cannot carry a fingerprint
+  are named **with their reason**, so adding one tomorrow is a visible choice.
+
+  Audit finding **P2-4**.
+
+### Internal
+
+- **A test database, so the pages that matter are finally exercised.** The browser bench only
+  covered the local preview: the tracked viewer and the audience page need a database, answered 404,
+  and **their policies were exercised by nothing** — yet those are the pages a client and a viewer
+  actually open. `tools/postgrest-en-memoire.cjs` unlocks them in ~150 lines, with no dependency and
+  no account to create.
+
+  What makes the double honest is a discipline taken elsewhere: the CI portability guard has long
+  banned exotic query syntax, keeping the whole surface at `table?column=eq.value`. A constraint
+  taken to make *porting* possible ended up making a *test database* possible.
+
+  ⚠️ It refuses rather than invents: an unknown filter returns a 400 that names it, and an undeclared
+  relation returns 404 like real PostgREST. A double answering "no rows" to a query it misunderstood
+  would turn every test into fiction. It is **not** a database — no transactions, constraints, types
+  or RLS; what belongs to the DBMS is verified on a real DBMS.
+
+  The bench now covers three pages of four (the visitor access wall needs a plugin the standalone
+  context does not have) and, on the tracked page, **asserts the read is recorded in the database**:
+  the browser → server → database loop was closed nowhere.
+
+  Audit finding **P2-3**.
+
 ## [0.1.50] — 2026-08-17
 
 ### Fixed
