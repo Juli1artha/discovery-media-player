@@ -122,10 +122,20 @@ function creerPostgrestEnMemoire(graine = {}) {
         filtres.push(versPredicat(cle, valeur));
       }
 
+      // ⚠️ ON PARCOURT LA LIGNE, PAS LA LISTE DEMANDÉE — troisième fois aujourd'hui qu'un nom venu
+      // du réseau allait servir de clé d'écriture, et la même correction que pour le nom de table :
+      // écrire sous des clés qu'on possède déjà, et se servir de ce qui vient du dehors seulement
+      // pour FILTRER. Le sens de la boucle est toute la différence entre les deux.
+      //
+      // Conséquence assumée : une colonne demandée mais absente de la ligne ne figure pas dans la
+      // réponse, là où PostgREST rendrait `null` si la colonne existe au schéma. La doublure n'a
+      // pas de schéma — elle ne peut donc pas distinguer « colonne vide » de « colonne inexistante »
+      // et ne prétend plus le faire.
       const projeter = (ligne) => {
         if (!colonnes) return { ...ligne };
+        const demandees = new Set(colonnes);
         const out = {};
-        for (const c of colonnes) out[c] = ligne[c] === undefined ? null : ligne[c];
+        for (const [cle, valeur] of Object.entries(ligne)) if (demandees.has(cle)) out[cle] = valeur;
         return out;
       };
       const retenues = () => lignes.filter((l) => filtres.every((f) => f(l)));
