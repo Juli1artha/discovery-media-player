@@ -246,16 +246,59 @@ async function createUploadUrl(slug, name, type) {
  * ailleurs. C'est le même jeu de champs que celui servi à l'historique.
  */
 const CHAMPS_PUBLICS = [
-  "id", "author_name", "author_email", "author_avatar", "is_presenter", "is_member",
+  "id", "author_name", "author_avatar", "is_presenter", "is_member",
   "body", "attachment", "reactions", "reply_to", "reply_name", "reply_text",
   "deleted", "edited", "created_at",
 ];
+
+/**
+ * IDENTITÉ PUBLIQUE D'UN AUTEUR — opaque, stable, et dérivée de ce qui AUTORISE déjà.
+ *
+ * ⚠️ `author_email` ÉTAIT DANS CETTE LISTE. Chaque message rendu à n'importe quel participant
+ * portait donc l'adresse de son auteur, et nos audiences sont des visiteurs anonymes externes :
+ * il suffisait d'ouvrir l'historique du chat pour repartir avec les adresses de toute l'équipe.
+ *
+ * ⚠️ CE QUI REMPLACE N'EST PAS UN PSEUDONYME TIRÉ AU SORT, mais l'empreinte du JETON D'AUTEUR —
+ * celui-là même qui autorise à modifier et supprimer. Deux conséquences, toutes deux voulues :
+ *
+ *   • aucun secret d'instance n'est nécessaire. Hacher une adresse sans sel ne protège rien (le
+ *     domaine est connu, les prénoms se devinent) ; ici l'entrée est un jeton tiré au sort ;
+ *   • « c'est mon message » DIT ENFIN LA MÊME CHOSE QUE « j'ai le droit d'y toucher ». L'ancien
+ *     `isMine` comparait les adresses alors que l'édition n'a jamais regardé que le jeton : un
+ *     membre sur un second navigateur voyait un bouton « Modifier » qui lui répondait 403.
+ *
+ * Un tour de hachage de plus que la valeur stockée : ce qui sort n'est jamais le matériel gardé
+ * en base, même si le connaître ne suffirait pas à usurper.
+ */
+const refAuteur = (hash) => (hash ? sha("ref:" + hash).slice(0, 16) : null);
+
+/**
+ * ⚠️ LES ANCIENNES RÉACTIONS PORTENT DES ADRESSES, et aucune migration ne les réécrira : le
+ * client stockait `email || nom` comme identité de réacteur. On garde le COMPTE — la pastille
+ * affiche toujours « 👍 3 » — en remplaçant chaque identité illisible par un jeton de place qui
+ * ne correspond à personne. Un participant ne se reconnaît plus dans ses vieilles réactions ;
+ * personne ne lit celles des autres. Le stockage n'est pas touché : les valeurs héritées
+ * disparaissent d'elles-mêmes au premier basculement.
+ */
+function reactionsPubliques(brut) {
+  if (!brut || typeof brut !== "object" || Array.isArray(brut)) return brut;
+  const out = Object.create(null);
+  for (const [emoji, liste] of Object.entries(brut)) {
+    if (!Array.isArray(liste)) continue;
+    out[emoji] = liste.map((v, i) => (/^[0-9a-f]{16}$/.test(String(v)) ? String(v) : `ancien-${i}`));
+  }
+  return out;
+}
+
 function messagePublic(row) {
   if (!row || typeof row !== "object") return null;
   // Les clés viennent d'une liste blanche interne, mais l'objet est nu quand même : la règle se
   // relit sans avoir à vérifier d'où vient chaque clé.
   const out = Object.create(null);
   for (const c of CHAMPS_PUBLICS) if (c in row) out[c] = row[c];
+  if ("reactions" in out) out.reactions = reactionsPubliques(out.reactions);
+  // Dérivé, jamais recopié : `author_hash` est lu pour ça et ne sort jamais tel quel.
+  if ("author_hash" in row) out.author_ref = refAuteur(row.author_hash);
   return out;
 }
 
@@ -291,9 +334,19 @@ async function addMessage(slug, { name, email, avatar, isPresenter, isMember, bo
   return { ok: true, message: premierPublic(cree) };
 }
 
+/**
+ * ⚠️ L'HISTORIQUE PASSE MAINTENANT PAR LA PROJECTION, et il ne le faisait pas. Il rendait les
+ * lignes TELLES QUELLES, en comptant sur la seule liste du `select` pour ne rien laisser filer.
+ * Ça tenait tant que la liste ne contenait que du public — puis la référence d'auteur a exigé de
+ * lire `author_hash`, et cette lecture serait ressortie intacte vers toute l'audience.
+ *
+ * Trouvé par l'essai écrit pour le correctif, avant le premier envoi : deux protections pour la
+ * même chose — un `select` étroit et une projection — dont une seule était appliquée ici. Une
+ * garde qui dépend de ce qu'on n'a pas demandé cède au premier champ qu'on demande.
+ */
 async function listMessages(slug) {
-  const rows = await PLAYER.db.request(`doc_presentation_messages?slug=eq.${enc(String(slug || ""))}&select=id,author_name,author_email,author_avatar,is_presenter,is_member,body,attachment,reactions,reply_to,reply_name,reply_text,deleted,edited,created_at&order=created_at.asc&limit=300`);
-  return Array.isArray(rows) ? rows : [];
+  const rows = await PLAYER.db.request(`doc_presentation_messages?slug=eq.${enc(String(slug || ""))}&select=id,author_name,author_avatar,author_hash,is_presenter,is_member,body,attachment,reactions,reply_to,reply_name,reply_text,deleted,edited,created_at&order=created_at.asc&limit=300`);
+  return Array.isArray(rows) ? rows.map(messagePublic) : [];
 }
 
 // Éditer son message (jeton d'auteur requis). Ne touche pas aux messages supprimés.

@@ -7,8 +7,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { renderMessage, renderReactions, renderAttachment, renderActions, messageClassName, type ChatMessageFull } from "../chat";
 
-const ME = { email: "moi@b.fr", name: "Moi" };
-const AUTRE = { author_email: "autre@b.fr", author_name: "Léa" };
+// ⚠️ L'identité n'est plus une adresse : c'est la référence opaque dérivée du jeton d'auteur,
+// celle-là même qui autorise à modifier et supprimer.
+const ME = { ref: "0123456789abcdef", name: "Moi" };
+const AUTRE = { author_ref: "fedcba9876543210", author_name: "Léa" };
 
 /** Insère le fragment comme le fait la visionneuse, et rend l'élément réel. */
 function mount(html: string): HTMLElement {
@@ -104,7 +106,7 @@ describe("chat — contenu et droits", () => {
   });
 
   it("« Modifier » n'existe que sur mes messages", () => {
-    const mien = mount(renderActions({ author_email: "moi@b.fr" } as ChatMessageFull, { me: ME }));
+    const mien = mount(renderActions({ author_ref: ME.ref } as ChatMessageFull, { me: ME }));
     const autre = mount(renderActions(AUTRE as ChatMessageFull, { me: ME }));
     expect(mien.querySelector(".cm-edit")).not.toBeNull();
     expect(autre.querySelector(".cm-edit")).toBeNull();
@@ -113,12 +115,15 @@ describe("chat — contenu et droits", () => {
   it("« Supprimer » existe sur les miens, et sur tous pour le présentateur", () => {
     const q = (html: string) => mount(html).querySelector(".cm-del-btn");
     expect(q(renderActions(AUTRE as ChatMessageFull, { me: ME }))).toBeNull();
-    expect(q(renderActions({ author_email: "moi@b.fr" } as ChatMessageFull, { me: ME }))).not.toBeNull();
+    expect(q(renderActions({ author_ref: ME.ref } as ChatMessageFull, { me: ME }))).not.toBeNull();
     expect(q(renderActions(AUTRE as ChatMessageFull, { me: { ...ME, role: "presenter" } }))).not.toBeNull();
   });
 
   it("marque mes réactions comme miennes", () => {
-    const el = mount(renderReactions({ reactions: { "👍": ["moi@b.fr", "x@y.fr"], "🎉": ["x@y.fr"] } } as ChatMessageFull, ME));
+    // ⚠️ DES RÉFÉRENCES OPAQUES, PLUS DES ADRESSES : cette carte est stockée en base et rendue
+    // publique à toute l'audience. Elle portait les adresses des réacteurs, sur un chemin que
+    // l'audit n'avait pas relevé.
+    const el = mount(renderReactions({ reactions: { "👍": [ME.ref, "fedcba9876543210"], "🎉": ["fedcba9876543210"] } } as ChatMessageFull, ME));
     const chips = [...el.querySelectorAll(".re-chip")];
     expect(chips).toHaveLength(2);
     expect(chips[0].classList.contains("on")).toBe(true);
@@ -132,7 +137,7 @@ describe("chat — contenu et droits", () => {
   });
 
   it("dérive les classes d'état du conteneur", () => {
-    expect(messageClassName({ author_email: "moi@b.fr" } as ChatMessageFull, ME, false)).toBe("cm me");
+    expect(messageClassName({ author_ref: ME.ref } as ChatMessageFull, ME, false)).toBe("cm me");
     expect(messageClassName({ ...AUTRE, deleted: true } as ChatMessageFull, ME, true)).toBe("cm isdel mentioned");
   });
 });

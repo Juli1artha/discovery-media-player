@@ -198,25 +198,35 @@ describe("live — identité persistante", () => {
     expect(authorToken(hostileStore, () => "ephemere")).toBe("ephemere");
   });
 
-  it("l'identifiant de réaction retombe sur le nom pour un anonyme", () => {
-    expect(reactorId({ email: "A@B.fr" })).toBe("a@b.fr");
-    expect(reactorId({ name: "Léa" })).toBe("léa");
+  // ⚠️ C'ÉTAIT `email || nom`, ET C'EST STOCKÉ EN BASE, dans un champ public : la carte des
+  // réactions d'un message partait à toute l'audience avec les adresses dedans. Un chemin que
+  // l'audit n'avait pas relevé, trouvé en cherchant tout ce qui portait une identité.
+  it("l'identifiant de réaction est la référence opaque, jamais une adresse ni un nom", () => {
+    expect(reactorId({ ref: "0123456789abcdef", email: "a@b.fr", name: "Léa" })).toBe("0123456789abcdef");
+    expect(reactorId({ email: "A@B.fr", name: "Léa" })).toBe("");
     expect(reactorId(null)).toBe("");
   });
 });
 
 describe("live — prédicats", () => {
-  it("reconnaît mes messages par email, et par nom entre anonymes", () => {
-    expect(isMine({ author_email: "a@b.fr" }, { email: "a@b.fr" })).toBe(true);
-    expect(isMine({ author_email: "a@b.fr" }, { email: "z@b.fr" })).toBe(false);
-    expect(isMine({ author_name: "Léa" }, { name: "Léa" })).toBe(true);
-    expect(isMine({ author_name: "Léa" }, { name: "Autre" })).toBe(false);
+  // ⚠️ RECONNAISSAIT PAR ADRESSE, ET PAR NOM ENTRE ANONYMES. Les deux étaient faux d'une manière
+  // que personne ne voyait : modifier et supprimer n'ont jamais regardé que le JETON d'auteur.
+  // Deux anonymes homonymes se voyaient donc proposer les messages l'un de l'autre, et un membre
+  // sur un second navigateur recevait un 403 en cliquant sur son propre message.
+  it("reconnaît mes messages par la référence, celle-là même qui autorise", () => {
+    const moi = "0123456789abcdef", autre = "fedcba9876543210";
+    expect(isMine({ author_ref: moi }, { ref: moi })).toBe(true);
+    expect(isMine({ author_ref: autre }, { ref: moi })).toBe(false);
+    // Un homonyme n'est plus une identité : le nom ne suffit plus, et c'est le correctif.
+    expect(isMine({ author_name: "Léa" }, { name: "Léa" })).toBe(false);
   });
 
-  // Un membre identifié ne doit pas s'approprier le message d'un anonyme homonyme.
-  it("ne mélange pas un auteur identifié et un lecteur anonyme", () => {
-    expect(isMine({ author_email: "a@b.fr", author_name: "Léa" }, { name: "Léa" })).toBe(false);
-    expect(isMine({ author_name: "Léa" }, { email: "a@b.fr", name: "Léa" })).toBe(false);
+  // Sans référence des deux côtés, on répond non : mieux vaut un bouton absent qu'un bouton qui
+  // ment. C'est aussi le cas d'un contexte non sécurisé, où le navigateur ne sait pas hacher.
+  it("répond non quand une référence manque", () => {
+    expect(isMine({ author_ref: "0123456789abcdef" }, { ref: "" })).toBe(false);
+    expect(isMine({}, { ref: "0123456789abcdef" })).toBe(false);
+    expect(isMine(null, { ref: "0123456789abcdef" })).toBe(false);
   });
 
   it("seul le présentateur modère", () => {
@@ -226,32 +236,32 @@ describe("live — prédicats", () => {
   });
 
   it("détecte une citation par le prénom, sauf la sienne", () => {
-    const me = { name: "Léa Martin", email: "lea@b.fr" };
+    const me = { name: "Léa Martin", ref: "0123456789abcdef" };
     expect(isMentioned({ body: "merci @léa" }, me)).toBe(true);
     expect(isMentioned({ body: "MERCI @LÉA" }, me)).toBe(true);
     expect(isMentioned({ body: "merci @thomas" }, me)).toBe(false);
-    expect(isMentioned({ body: "@léa je me cite", author_email: "lea@b.fr" }, me)).toBe(false);
+    expect(isMentioned({ body: "@léa je me cite", author_ref: me.ref }, me)).toBe(false);
     expect(isMentioned({ body: "@léa" }, null)).toBe(false);
   });
 });
 
 describe("live — badge de non-lus", () => {
-  const me = { email: "moi@b.fr", name: "Moi" };
+  const me = { ref: "0123456789abcdef", name: "Moi" };
   const base = { me, historyLoaded: true, chatHidden: true };
 
   it("compte un message reçu quand le panneau est fermé", () => {
-    expect(shouldNotify({ ...base, msg: { author_email: "autre@b.fr", body: "coucou" } })).toBe(true);
+    expect(shouldNotify({ ...base, msg: { author_ref: "aaaaaaaaaaaaaaaa", body: "coucou" } })).toBe(true);
   });
 
   // Sans cette garde, l'historique rechargé au join afficherait un badge de dizaines de messages vus.
   it("ne compte jamais l'historique rejoué", () => {
-    expect(shouldNotify({ ...base, historyLoaded: false, msg: { author_email: "autre@b.fr" } })).toBe(false);
+    expect(shouldNotify({ ...base, historyLoaded: false, msg: { author_ref: "aaaaaaaaaaaaaaaa" } })).toBe(false);
   });
 
   it("ne compte ni mes messages, ni les supprimés, ni panneau ouvert", () => {
-    expect(shouldNotify({ ...base, msg: { author_email: "moi@b.fr" } })).toBe(false);
-    expect(shouldNotify({ ...base, msg: { author_email: "autre@b.fr", deleted: true } })).toBe(false);
-    expect(shouldNotify({ ...base, chatHidden: false, msg: { author_email: "autre@b.fr" } })).toBe(false);
+    expect(shouldNotify({ ...base, msg: { author_ref: me.ref } })).toBe(false);
+    expect(shouldNotify({ ...base, msg: { author_ref: "aaaaaaaaaaaaaaaa", deleted: true } })).toBe(false);
+    expect(shouldNotify({ ...base, chatHidden: false, msg: { author_ref: "aaaaaaaaaaaaaaaa" } })).toBe(false);
   });
 
   it("plafonne le libellé à 9+", () => {
