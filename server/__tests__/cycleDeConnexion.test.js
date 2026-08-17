@@ -16,7 +16,10 @@ const fs = require("node:fs");
 const SOURCE = fs.readFileSync(require.resolve("../handler.js"), "utf8")
   .split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
 
-const disconnect = /function disconnect\(\)\{[\s\S]*?\n  \}/.exec(SOURCE);
+// ⚠️ `{2}` plutôt que deux espaces littéraux : eslint refuse — et il a raison, deux espaces dans
+// une expression régulière ne se comptent pas à l’œil. Ici ils délimitent la fin du corps de la
+// fonction, donc s’en tromper d’un ferait mesurer autre chose.
+const disconnect = /function disconnect\(\)\{[\s\S]*?\n {2}\}/.exec(SOURCE);
 
 describe("une déconnexion arrête tout ce que la connexion a créé", () => {
   it("le corps de disconnect() reste repérable", () => {
