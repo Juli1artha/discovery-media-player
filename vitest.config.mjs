@@ -10,6 +10,8 @@ export default defineConfig({
     // Cœur navigateur (TypeScript) + serveur et contexte (CommonJS). Les tests qui ont besoin
     // du DOM le déclarent en tête de fichier (`@vitest-environment jsdom`).
     include: ["**/*.{test,spec}.{ts,js}"],
-    exclude: ["node_modules/**", "examples/**"],
+    // ⚠️ `e2e/**` est EXCLU ICI : ce banc demande un vrai navigateur et vit sous `npm run test:e2e`.
+    // Le laisser entrer ferait dépendre la commande de base d'un Chrome installé.
+    exclude: ["node_modules/**", "examples/**", "e2e/**"],
   },
 });

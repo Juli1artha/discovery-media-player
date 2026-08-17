@@ -564,7 +564,7 @@ du code écrit **le jour même** — c'est le signe qu'il fallait entendre.
 | C-7 | `present-attend` accepte une `key` choisie par le client | ✅ **0.1.42** |
 | C-8 | `present-stats` / `present-doc-list` : session exigée, propriété non vérifiée | ✅ propriétaire/admin, élargissement décidé par l'hôte |
 | C-9 | Pas de délai maximal sur PostgREST / signUpload / verifyToken | recoupe P1-4 |
-| C-10 | E2E navigateur absent | 🔧 **entamé en 0.1.42** — cf. ci-dessous |
+| C-10 | E2E navigateur absent | ✅ jsdom en **0.1.42**, vrai navigateur **fusionné, pas encore publié** |
 
 ### C-1 et C-4 — corrigés en `0.1.42`
 
@@ -645,6 +645,38 @@ réponse serveur qu'on dénoue à la main.
 > qui diffuse dès le départ de la requête.
 
 Reste à étendre : audience normale, audience hostile.
+
+### C-10 (suite) — un vrai navigateur, parce que `jsdom` n'applique pas la CSP
+
+Le banc jsdom ci-dessus exécute la page, mais il **exécute tout** : nonce ou pas, allowlist ou pas.
+Et le `res` postiche des essais serveur ne fait qu'**enregistrer** les en-têtes. Les deux moitiés
+restent vertes quand la politique servie interdit exactement le script dont la page a besoin —
+c'est-à-dire quand la visionneuse est un écran blanc chez le visiteur. Un en-tête qu'on relit n'est
+pas un en-tête qu'on applique.
+
+`e2e/navigateurReel.test.js` ouvre l'aperçu local dans un **Chrome du système** (`playwright-core`,
+sans navigateur téléchargé), et exige deux choses : que la page démarre — script embarqué exécuté,
+document lu, image décodée à travers le serveur — **et** que la politique refuse pour de vrai, sur
+un script sans nonce et une origine étrangère. Sans ce second essai, le premier serait vert sur une
+page que personne ne surveille.
+
+Commande séparée (`npm run test:e2e`) et étape séparée : `npm test` doit rester exécutable dans un
+conteneur nu. En local le banc s'esquive faute de Chrome, **jamais sur la forge** — `CI` étant posé,
+il échoue au lieu de s'esquiver.
+
+⚠️ **Ce que les mutations ont appris, y compris contre moi.** Retirer le nonce de la balise du
+paquet navigateur passe les deux essais au rouge : c'est le défaut qu'aucun des 690 autres ne voit.
+Mais retirer une **origine** de `script-src` laissait le banc vert, et j'en ai d'abord accusé
+l'interception de requêtes du pilote. C'était faux : la balise concernée **porte le nonce**, et un
+nonce autorise aussi un script *externe* — il n'y avait rien à refuser. Les entrées d'hôte ne
+servent qu'aux scripts injectés par d'autres scripts, qui n'héritent d'aucun nonce.
+
+Et la mutation qui devait le prouver avait d'abord été posée sur la balise de la page d'**audience**
+en croyant toucher l'aperçu. Une mutation dont on ne vérifie pas qu'elle a atterri raconte n'importe
+quoi — ici, elle a failli faire condamner un outil innocent et compliquer le banc pour rien.
+
+**Ce que ce banc ne couvre pas** : une page sur quatre. La visionneuse tracée, le mur d'accès et la
+page d'audience ont chacun leur politique, et aucune n'est exercée — elles demandent une base.
 
 ## ⚠️ La règle à garder de toute la semaine
 

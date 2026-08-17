@@ -143,6 +143,29 @@ jobs:
           [ -z "$bad" ] || { echo "::error::a version range in: $bad"; exit 1; }
           grep -q '">=22"' examples/demo/package.json || { echo "::error::examples must declare node >=22"; exit 1; }
 
+  # ⚠️ CE QUE `npm test` NE PEUT PAS VOIR. `jsdom` n'applique pas la CSP, et le `res` postiche des
+  # essais serveur se contente d'ENREGISTRER les en-têtes. Une politique qui interdit nos propres
+  # scripts passe donc les 690 essais et donne un écran blanc chez le visiteur. Il faut un moteur
+  # qui refuse pour de vrai — d'où cette étape, et son navigateur.
+  #
+  # Séparée de `check` : un banc navigateur qui s'invite dans la commande de base la rendrait
+  # inexécutable dans un conteneur nu, et personne ne la lancerait plus en boucle.
+  navigateur:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      # ⚠️ ON NOMME LE NAVIGATEUR AVANT DE S'EN SERVIR. Le banc s'esquive en local quand il n'y a pas
+      # de Chrome — c'est confortable, et ce serait un trou béant ici : le jour où l'image de la
+      # forge cesse d'en embarquer un, l'étape passerait au vert sans avoir rien exercé. `CI` étant
+      # posé, le banc échoue au lieu de s'esquiver ; cette ligne dit juste lequel, et depuis quand.
+      - run: google-chrome --version
+      - run: npm run test:e2e
+
   docker:
     runs-on: ubuntu-latest
     steps:
