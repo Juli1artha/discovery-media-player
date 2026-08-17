@@ -44,6 +44,29 @@ viewer: the browser blocks the iframe **before any script runs**, so no message 
 the host sees a silence indistinguishable from an unreachable instance. Check that your domain is
 there before you open a document.
 
+## Counting the reads of a visitor you vouch for
+
+A host that identifies its own visitors — one-time code, project area — can have their reads counted,
+attributed and revocable, without either an anonymous link or a member's token. Pass
+`recipientEmail` on the server-to-server `docshare.create`: **the host vouches, the player stops
+believing the caller.**
+
+⚠️ **The address must never come from a browser request.** Read it server-side, from the visitor's
+session, at the same place that already decides whether they may see the document. A path that
+cannot phrase the request will never phrase it by accident.
+
+⚠️ **An attested link is named, not closed.** It remains forwardable: the reader is attributed, not
+verified. A host whose documents are confidential must not rely on it — that closes with an attested
+*reader*, which does not exist yet.
+
+The address is stored apart from `recipient_email`, and that separation is the whole point:
+`recipient_email` says *who may send in the link's name* when a recipient forwards it, and a vouched
+visitor never gained that right. Leaving it empty is what makes the send guard and the re-share
+inheritance both refuse — without either of them knowing why.
+
+Requires `supabase/migrations/0001-destinataire-atteste.sql`. Until it is applied the player refuses
+the attested creation and names the file; it never falls back to the other column.
+
 ## The three things a host implements
 
 Everything the player borrows arrives through one injected object. Two of its entries carry

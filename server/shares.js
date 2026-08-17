@@ -15,12 +15,21 @@ function newSlug() { return crypto.randomBytes(9).toString("base64url"); } // ~1
 
 // Crée un lien de partage (un par destinataire). Dénormalise titre/URL/nom pour résilience (le doc vit dans
 // un snapshot). Renvoie le slug.
-async function createShare({ docId, docTitle, fileUrl, fileName, recipientEmail, recipientName, createdBy, bot, botScript, guided, profileId, allowDownload, isTest, videoLayout, logo, logoDark, brandKey}) {
+async function createShare({ docId, docTitle, fileUrl, fileName, recipientEmail, recipientName, attestedRecipientEmail, createdBy, bot, botScript, guided, profileId, allowDownload, isTest, videoLayout, logo, logoDark, brandKey}) {
   if (!docId || !fileUrl) throw Object.assign(new Error("doc invalide"), { statusCode: 400 });
   const slug = newSlug();
   const row = {
     slug, doc_id: String(docId), doc_title: docTitle || null, file_url: String(fileUrl), file_name: fileName || null,
     recipient_email: low(recipientEmail) || null, recipient_name: (recipientName || "").trim() || null, created_by: low(createdBy) || null,
+    // ⚠️ DEUX CHAMPS, DEUX FAITS. `recipient_email` dit qui a le droit d'EXPÉDIER en son nom au
+    // repartage — vide quand personne ne l'a. Celui-ci dit seulement à qui le lien est destiné,
+    // pour attribuer une lecture et pouvoir la révoquer.
+    //
+    // Les confondre revenait à donner à un visiteur attesté par un hôte le pouvoir de faire partir
+    // un courrier de nos serveurs, signé de son adresse, vers une adresse choisie par quiconque
+    // détient le lien. La garde d'envoi et l'héritage du repartage lisent tous deux
+    // `recipient_email` : en le laissant vide, ils refusent sans avoir à connaître cette histoire.
+    ...(attestedRecipientEmail ? { attested_recipient_email: low(attestedRecipientEmail) } : {}),
     bot_enabled: !!bot, bot_script: (botScript || "").trim() ? String(botScript).slice(0, 2000) : null, bot_guided: guided !== false,
     bot_profile_id: (profileId || "").trim() ? String(profileId).slice(0, 40) : null,
     allow_download: allowDownload !== false, // défaut : autorisé (rétro-compatible)

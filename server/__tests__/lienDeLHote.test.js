@@ -20,6 +20,7 @@ const SECRET = "un-secret-de-serveur-suffisamment-long-0123456789";
 const URL_OK = "https://exemple.supabase.co/storage/v1/object/public/resources/plaquette.pdf";
 
 let requetes = [];
+let colonneAbsente = false;
 let lignesExistantes = [];
 
 function contexte({ secretConfigure = SECRET } = {}) {
@@ -32,6 +33,10 @@ function contexte({ secretConfigure = SECRET } = {}) {
     db: {
       async request(chemin, options = {}) {
         requetes.push({ chemin, methode: (options.method || "GET").toUpperCase(), body: options.body });
+        // La sonde de schéma : PostgREST refuse une colonne inconnue, donc l'échec EST la réponse.
+        if (colonneAbsente && String(chemin).includes("select=attested_recipient_email")) {
+          throw new Error('column "attested_recipient_email" does not exist');
+        }
         if (!options.method || options.method === "GET") return lignesExistantes;
         return [{ slug: "Nouveau-_xYz12" }];
       },
@@ -128,10 +133,67 @@ describe("ce que ce chemin ne peut PAS faire", () => {
   );
 
   // Le nominatif a un membre : l'admettre ici rouvrirait par la bande ce que le jeton protège.
-  it("refuse un lien avec destinataire", async () => {
-    const r = await appeler({ ...CREATION, recipientEmail: "prospect@exemple.fr" });
-    expect(r.statut).toBe(400);
-    expect(requetes.some((q) => q.methode === "POST")).toBe(false);
+  // ⚠️ CETTE ROUTE REFUSAIT TOUT DESTINATAIRE, ET LA DÉCISION A CHANGÉ — PAS LA RAISON.
+  //
+  // Le refus protégeait d'un relais de courrier : sur une carte publique, un lecteur anonyme qui
+  // peut nommer le destinataire fait de nos serveurs un expéditeur pour n'importe qui.
+  //
+  // Le second hôte a montré la limite : il IDENTIFIE son visiteur avant l'accès, et l'adresse vient
+  // de sa base — le visiteur ne la saisit jamais. Une attestation n'est pas une affirmation.
+  //
+  // ⚠️ Mais l'objection tenait quand même, un cran plus loin : `recipient_email` sert d'identité
+  // d'EXPÉDITEUR au repartage. Le danger n'était donc pas dans la création, il était dans ce que le
+  // champ devient ensuite. C'est pour ça que le destinataire attesté va dans SA colonne — et que ces
+  // tests vérifient d'abord ce qui reste fermé.
+  describe("le destinataire attesté par l'hôte", () => {
+    it("est accepté, et rangé dans sa propre colonne", async () => {
+      const r = await appeler({ ...CREATION, recipientEmail: "Visiteur@Exemple.FR" });
+      expect(r.statut).toBe(200);
+      const creation = requetes.find((q) => q.methode === "POST");
+      expect(creation, "le lien doit être créé").toBeTruthy();
+      expect(creation.body[0].attested_recipient_email, "minusculée, comme toute adresse chez nous")
+        .toBe("visiteur@exemple.fr");
+    });
+
+    // ⚠️ LA PROPRIÉTÉ QUI FERME LE RELAIS DE COURRIER, et elle est passive : la garde d'envoi exige
+    // `recipient_email`, l'héritage du repartage le recopie. En le laissant vide, les deux refusent
+    // sans rien savoir de cette histoire.
+    it("ne remplit PAS le champ qui donne le droit d'expédier", async () => {
+      await appeler({ ...CREATION, recipientEmail: "visiteur@exemple.fr" });
+      const creation = requetes.find((q) => q.methode === "POST");
+      expect(creation.body[0].recipient_email,
+        "sinon un porteur du lien ferait partir un courrier signé de ce visiteur")
+        .toBeFalsy();
+      expect(creation.body[0].created_by, "et personne ne s'est authentifié derrière ce lien")
+        .toBeFalsy();
+    });
+
+    // ⚠️ SANS CETTE DISTINCTION, LE PREMIER VISITEUR ATTESTÉ RÉCUPÈRE LE LIEN ANONYME. Les deux ont
+    // ni créateur ni destinataire au sens de `recipient_email` : la clé d'idempotence les
+    // confondrait, et toutes les lectures seraient attribuées à la même personne.
+    it("l'idempotence distingue un lien attesté du lien anonyme", async () => {
+      await appeler({ ...CREATION, recipientEmail: "visiteur@exemple.fr" });
+      const lecture = requetes.find((q) => q.methode === "GET" && q.chemin.includes("doc_id="));
+      expect(lecture.chemin).toContain("attested_recipient_email=eq.visiteur%40exemple.fr");
+    });
+
+    it("et un lien sans destinataire cherche bien l'absence de destinataire attesté", async () => {
+      await appeler({ ...CREATION });
+      const lecture = requetes.find((q) => q.methode === "GET" && q.chemin.includes("doc_id="));
+      expect(lecture.chemin).toContain("attested_recipient_email=is.null");
+    });
+
+    // ⚠️ SANS LA COLONNE, ON REFUSE — ON N'ÉCRIT PAS AILLEURS. Un repli sur `recipient_email`
+    // rouvrirait très exactement la porte que la séparation ferme, et le ferait en silence.
+    it("sans la migration, il refuse en nommant le fichier à appliquer", async () => {
+      colonneAbsente = true;
+      const r = await appeler({ ...CREATION, recipientEmail: "visiteur@exemple.fr" });
+      colonneAbsente = false;
+      expect(r.statut).toBe(409);
+      expect(String(r.corps.message), "un refus qui ne dit pas quoi faire coûte des heures")
+        .toContain("0001-destinataire-atteste.sql");
+      expect(requetes.some((q) => q.methode === "POST"), "et rien n'est écrit").toBe(false);
+    });
   });
 
   it("exige un identifiant de document — sans lui, pas d'idempotence possible", async () => {
