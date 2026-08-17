@@ -687,6 +687,36 @@ tracé sans `embed` est servi en `'self'`. Le comportement est sain (encadrement
 seulement ; un détournement de clic suppose une page étrangère), c'est **la phrase** qui était
 périmée. Elle a été corrigée, et le comportement est maintenant vérifié plutôt que décrit.
 
+⚠️ **Et C-6 a été réintroduit dans la doublure, deux heures après avoir été corrigé.** Le nom de
+table venait de l'URL et indexait un objet — la forme exacte que `flattenPresence` venait de perdre.
+**C'est CodeQL qui l'a vu**, pas moi, sur la PR. La conséquence dépassait la doublure :
+`tables["__proto__"]` rend `Object.prototype`, et le `push` suivant y aurait écrit des index et une
+longueur — le prototype de tout le processus d'essai, player compris. Un faux serveur qui corrompt
+le vrai code qu'il teste.
+
+Il a fallu **trois versions** de cette ligne, et les deux premières enseignent autant que la
+dernière :
+
+| | |
+|---|---|
+| objet indexé par le nom de l'URL | le défaut |
+| filtre sur la **forme** du nom | insuffisant — `__proto__` s'écrit en minuscules et underscore, il passe |
+| **registre clos** + vue sans prototype | ferme la question : rien n'est plus écrit par un nom venu du dehors |
+
+La troisième est aussi la plus **fidèle** : un vrai PostgREST ne crée pas une table parce qu'on l'a
+nommée, il répond que la relation n'existe pas. Effet de bord bienvenu — un essai doit désormais
+déclarer les tables où le player écrira, donc le schéma que ces pages touchent cesse d'être
+implicite. La même correction a dû être passée sur la projection : parcourir la ligne et filtrer
+par la liste demandée, au lieu d'écrire sous les noms de colonnes reçus. **Le sens de la boucle est
+toute la différence.**
+
+⚠️ **Et le piège s'est refermé sur l'essai lui-même** : dans un littéral, `__proto__:` *définit le
+prototype* au lieu de créer une clé — la table que je croyais déclarer n'existait pas, et l'essai
+accusait la doublure. Troisième rencontre avec la même mécanique dans la journée, la dernière en
+écrivant sa propre vérification. **Écrire la règle, la corriger ailleurs, la documenter le matin
+même : rien de tout cela n'immunise contre le geste.** Ce qui a tenu, c'est une machine qui relit
+chaque ligne sans se souvenir de rien.
+
 Vérifié par mutation : journalisation coupée → l'essai tombe ; origine étrangère ajoutée aux
 encadrants d'un lien tracé → l'essai tombe.
 
