@@ -22,6 +22,25 @@ const CONTROL = "jeton-de-controle-du-presentateur";
 const LIGNE = { slug: "Ab3-_xYz9012", control_hash: sha(CONTROL), owner_email: "proprio@ex.fr", active: true };
 
 // ── La fonction elle-même ────────────────────────────────────────────────────────────────────────
+// ⚠️ MODÉLISE LA CONDITION, PAS SEULEMENT LE SUCCÈS. Le pilotage écrit désormais sous condition
+// (`&control_hash=eq.…`, `&active=eq.true`, `&write_seq=lt.…`) et PostgREST répond par les lignes
+// TOUCHÉES : zéro ligne = refus. Une doublure qui rendrait toujours une ligne ferait passer les
+// essais même si la condition disparaissait du code.
+function lignesTouchees(chemin, etat) {
+  const cond = String(chemin).split("&").slice(1);
+  for (const c of cond) {
+    const [champ, valeur] = c.split("=");
+    if (champ === "control_hash" && valeur !== "eq." + require("crypto").createHash("sha256").update(String(etat.control_hash_source || "")).digest("hex")) {
+      if (valeur !== "eq." + String(etat.control_hash || "")) return [];
+    } else if (champ === "active" && valeur === "eq.true" && etat.active === false) {
+      return [];
+    } else if (champ === "write_seq" && valeur.startsWith("lt.") && Number(etat.write_seq || 0) >= Number(valeur.slice(3))) {
+      return [];
+    }
+  }
+  return [{ ...etat }];
+}
+
 describe("qui a le droit de changer ce que la présentation affiche", () => {
   const presentations = require("../presentations.js");
   let ecrit = null;
@@ -30,7 +49,7 @@ describe("qui a le droit de changer ce que la présentation affiche", () => {
     ecrit = null;
     presentations.init({
       db: { async request(chemin, o) {
-        if (o && o.method === "PATCH") { ecrit = o.body; return []; }
+        if (o && o.method === "PATCH") { const t = lignesTouchees(chemin, ligne || {}); if (!t.length) return []; ecrit = o.body; return [{ ...(ligne || {}), ...o.body }]; }
         return ligne ? [{ ...ligne }] : [];
       } },
       limits: { async allow() { return true; } }, errors: { capture() {} },
