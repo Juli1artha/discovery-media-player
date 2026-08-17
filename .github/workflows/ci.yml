@@ -136,6 +136,51 @@ jobs:
           echo "surface base : $n appels — docs/API.md annonce $annonce"
           [ "$n" = "$annonce" ] || { echo "::error::docs/API.md annonce $annonce appels, le code en compte $n. Mettez le document à jour."; exit 1; }
 
+      # ⚠️ UN SCRIPT TIERS ENTRE DANS LA PAGE AVEC NOS DROITS. Version exacte + empreinte, sinon
+      # ce qui s'exécute chez le visiteur est décidé par quelqu'un d'autre, sans déploiement.
+      # Cette garde ne relit PAS une liste écrite à la main : elle part de l'inventaire exporté par
+      # le code, puis vérifie qu'aucune URL de script du gabarit ne lui échappe — c'est ce second
+      # temps qui compte, le premier ne prouverait que sa propre cohérence.
+      - name: Third-party scripts are pinned and fingerprinted
+        if: matrix.node == '22'
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const { TIERS } = require("./server/handler.js");
+            const echecs = [];
+
+            for (const [cle, t] of Object.entries(TIERS)) {
+              if (!/^sha384-[A-Za-z0-9+/]{60,}={0,2}$/.test(t.sri || "")) echecs.push(cle + " : empreinte absente ou mal formée");
+              // Une étiquette majeure (@2) ou « latest » suit la dernière publication du tiers :
+              // le code servi change alors sans déploiement, et aucune empreinte ne peut tenir.
+              if (/@\d+\/|@latest|\/latest\//.test(t.url)) echecs.push(cle + " : version mouvante — " + t.url);
+              if (!/\d+\.\d+\.\d+/.test(t.url)) echecs.push(cle + " : pas de version exacte — " + t.url);
+            }
+
+            // Toute URL de script du gabarit doit venir de linventaire. Deux CHARGEURS ny entrent
+            // pas, et cest structurel : leur réponse change à chaque appel et ils injectent
+            // eux-mêmes dautres scripts, donc aucune empreinte nest possible dessus. On les nomme
+            // ici AVEC leur raison — une exception écrite se relit, une exception fondue dans le
+            // décor devient la règle. Ajouter un tiers demain force donc un choix visible : épinglé
+            // et empreinté, ou inscrit ici avec ce quon accepte en connaissance de cause.
+            const SANS_EMPREINTE = {
+              "maps.googleapis.com": "chargeur de cartes : URL versionnée par un paramètre, réponse variable",
+              "accounts.google.com/gsi/client": "chargeur didentité Google : aucune version publiée",
+            };
+            const src = fs.readFileSync("server/handler.js", "utf8")
+              .split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+            const connues = new Set(Object.values(TIERS).map((t) => t.url));
+            const urls = [...src.matchAll(/(?:src=["'"'"']|s\.src=["'"'"'])(https:\/\/[^"'"'"'`]+)/g)].map((m) => m[1]);
+            for (const u of new Set(urls)) {
+              if (connues.has(u)) continue;
+              if (Object.keys(SANS_EMPREINTE).some((motif) => u.includes(motif))) continue;
+              echecs.push("script hors inventaire : " + u);
+            }
+
+            if (echecs.length) { console.error("::error::" + echecs.join(" | ")); process.exit(1); }
+            console.log("tiers : " + Object.keys(TIERS).length + " dépendances épinglées et empreintées, aucune hors inventaire");
+          '
+
       - name: Examples pin an exact version
         if: matrix.node == '22'
         run: |

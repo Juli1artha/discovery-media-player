@@ -40,6 +40,13 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const crypto = require("node:crypto");
+// ⚠️ L'inventaire des tiers vient du CODE, jamais d'une copie tenue ici : une URL recopiée dans un
+// banc reste juste jusqu'au jour où on monte une version, et ce jour-là le banc mesure l'ancienne.
+const { TIERS } = require("../server/handler.js");
+
+/** Octets réels de chaque dépendance, récupérés une fois et rejoués ensuite. */
+const octets = {};
 
 // PNG 4×4 valide. Une IMAGE et pas un PDF : le chemin image ne demande pas pdf.js, donc le banc
 // prouve le démarrage de la page sans dépendre du rendu d'une bibliothèque tierce.
@@ -89,10 +96,29 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     await new Promise((resolve) => serveur.listen(0, "127.0.0.1", resolve));
     port = serveur.address().port;
 
+    // ⚠️ LES VRAIS OCTETS, DÉSORMAIS — les empreintes l'exigent (P2-4). Une doublure inventée est
+    // refusée par le navigateur avant d'être exécutée, ce qui est exactement le comportement
+    // recherché en production : le banc ne peut donc plus servir n'importe quoi sous ces URL. On
+    // les récupère UNE fois, ici, et on les rejoue ensuite depuis la mémoire.
+    //
+    // Ce que ça achète en plus : ces octets sont ceux que les CDN servent AUJOURD'HUI. Les hacher
+    // et comparer aux empreintes du code confronte les deux exemplaires du même fait — sans quoi
+    // une empreinte périmée ne se verrait que chez un visiteur, sous la forme d'une page morte.
+    for (const [cle, tiers] of Object.entries(TIERS)) {
+      let reponse;
+      try { reponse = await fetch(tiers.url); } catch (erreur) {
+        throw new Error(`CDN injoignable pour ${cle} (${tiers.url}) : ${erreur.message}\n`
+          + "Ce banc a besoin des octets réels depuis que les empreintes sont posées. "
+          + "Si le réseau est en cause, ce n'est PAS une régression du player.");
+      }
+      if (!reponse.ok) throw new Error(`${cle} : le CDN répond ${reponse.status} sur ${tiers.url}`);
+      octets[cle] = Buffer.from(await reponse.arrayBuffer());
+    }
+
     if (!chrome) throw new Error("aucun navigateur : installez Chrome ou renseignez PLAYER_E2E_CHROME");
     const { chromium } = require("playwright-core");
     navigateur = await chromium.launch({ executablePath: chrome });
-  }, 60_000);
+  }, 120_000);
 
   afterAll(async () => {
     if (navigateur) await navigateur.close();
@@ -106,9 +132,10 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
    * ⚠️ `addInitScript` et pas un script d'après-chargement : l'écoute doit être en place AVANT le
    * premier script de la page, sinon on rate précisément les refus du démarrage.
    *
-   * ⚠️ LES DEUX CDN SONT SUBSTITUÉS. Pas pour éviter le réseau — pour que le banc mesure NOTRE
-   * politique et pas la disponibilité de cdnjs. Un CDN en panne rendrait la forge rouge pour une
-   * raison qui ne nous regarde pas, et c'est ainsi qu'on apprend à ignorer le rouge.
+   * ⚠️ LES CDN SONT REJOUÉS DEPUIS LA MÉMOIRE, avec leurs octets réels récupérés une fois plus
+   * haut. Une seule requête par fichier et par exécution, quel que soit le nombre de pages
+   * ouvertes — et surtout des octets qui satisfont les empreintes, condition sans laquelle le
+   * navigateur refuserait les scripts avant de les exécuter.
    *
    * La substitution ne dispense de rien, et ça a été VÉRIFIÉ plutôt que supposé : en retirant à la
    * fois le nonce de la balise et l'origine de la politique, le script est refusé — la doublure
@@ -124,17 +151,34 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
         window.__violation({ directive: e.violatedDirective, bloque: String(e.blockedURI).slice(0, 120) });
       });
     });
-    const stub = (corps) => (route) => route.fulfill({ status: 200, contentType: "application/javascript", body: corps });
-    // ⚠️ `GlobalWorkerOptions` fait partie du contrat : la page l'écrit avant tout rendu, et un
-    // doublure qui l'oublie fait tomber le démarrage — pour une raison qui n'a rien à voir avec ce
-    // qu'on mesure. Une doublure trop maigre invente une panne.
-    await page.route("https://cdnjs.cloudflare.com/**", stub("window.pdfjsLib={GlobalWorkerOptions:{},getDocument:function(){return{promise:Promise.reject(new Error('banc'))}}};"));
-    await page.route("https://cdn.jsdelivr.net/**", stub("window.supabase={createClient:function(){return{channel:function(){return{on:function(){return this},subscribe:function(){return this},unsubscribe:function(){}}},removeChannel:function(){},from:function(){return this}}}};"));
+    // Chaque URL de l'inventaire est rejouée avec SES octets. On route par URL exacte plutôt que
+    // par joker : deux fichiers vivent sous cdnjs, et servir l'un pour l'autre ferait échouer une
+    // empreinte parfaitement juste.
+    for (const [cle, tiers] of Object.entries(TIERS)) {
+      await page.route(tiers.url, (route) => route.fulfill({
+        status: 200, contentType: "application/javascript", body: octets[cle],
+      }));
+    }
     const erreurs = [];
     page.on("pageerror", (e) => erreurs.push(String(e)));
     const reponse = await page.goto(`http://127.0.0.1:${port}${chemin}`, { waitUntil: "load" });
     return { page, violations, erreurs, reponse };
   }
+
+  // ⚠️ DEUX EXEMPLAIRES DU MÊME FAIT, CONFRONTÉS UNE FOIS. L'empreinte écrite dans le code dit ce
+  // qu'on CROIT que le CDN sert ; les octets récupérés plus haut disent ce qu'il sert. Tant que
+  // personne ne les met côte à côte, une empreinte périmée ne se manifeste que chez un visiteur,
+  // sous la forme d'une page morte — et rien, dans nos essais, ne l'aurait annoncée.
+  //
+  // Ce n'est pas un contrôle de sécurité : quiconque intercepterait le CDN nous tromperait ici
+  // comme ailleurs. C'est un contrôle d'ENTRETIEN — il attrape la montée de version dont on a
+  // oublié de recalculer l'empreinte, qui est le seul scénario réaliste.
+  it("les empreintes du code sont celles des octets que les CDN servent", () => {
+    for (const [cle, tiers] of Object.entries(TIERS)) {
+      const reelle = "sha384-" + crypto.createHash("sha384").update(octets[cle]).digest("base64");
+      expect(`${cle} → ${reelle}`).toBe(`${cle} → ${tiers.sri}`);
+    }
+  });
 
   it("la visionneuse s'exécute et affiche le document, sans qu'une seule règle la refuse", async () => {
     const { page, violations, erreurs, reponse } = await ouvrirPageSurveillee("/preview/essai.png");
@@ -154,11 +198,21 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
       player: typeof window.Player,
       pages: document.getElementById("pg") && document.getElementById("pg").textContent,
       image: (() => { const i = document.querySelector("#pages .page img"); return i ? [i.naturalWidth, i.naturalHeight] : null; })(),
+      pdfjs: typeof window.pdfjsLib,
+      supabase: typeof window.supabase,
     }));
 
     expect(etat.player).toBe("object");          // le paquet navigateur est là
     expect(etat.pages).toBe("Page 1 / 1");       // il a lu le document
     expect(etat.image).toEqual([4, 4]);          // et le fichier a traversé le serveur, décodé
+
+    // ⚠️ ET LES DÉPENDANCES TIERCES SONT ARRIVÉES. Sans ces deux lignes, une empreinte fausse
+    // passait inaperçue ici : un refus d'intégrité ne déclenche AUCUN événement de violation —
+    // il n'écrit qu'une ligne dans la console. Un document image se serait affiché sans supabase,
+    // donc sans présence, sans chat et sans présentation en direct, et le banc aurait dit « vert ».
+    // Mesuré : la mutation d'une empreinte ne rougissait qu'un seul essai avant cet ajout.
+    expect(etat.pdfjs).toBe("object");
+    expect(etat.supabase).toBe("object");
 
     expect(violations).toEqual([]);
     expect(erreurs).toEqual([]);

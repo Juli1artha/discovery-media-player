@@ -186,8 +186,8 @@ avec le lot des migrations (P1-5), pas avant.
 |---|---|---|
 | P2-1 | Autorisation des statistiques de présentation trop large | ✅ tranché : le player accorde le manifeste, l'hôte décide le reste |
 | P2-2 | `handler.js` : 2 988 lignes, non typé | découpage progressif, contrat public inchangé |
-| P2-3 | Pas d'E2E navigateur, pas de Supabase de test, pas de couverture | oui — c'est là que vivent les deux P0 |
-| P2-4 | Dépendances navigateur hors lockfile, sans SRI (`@2` mouvant) | embarquer, ou SRI + versions exactes |
+| P2-3 | Pas d'E2E navigateur, pas de Supabase de test, pas de couverture | 🔧 E2E navigateur **fait** (C-10) ; Supabase de test : à venir |
+| P2-4 | Dépendances navigateur hors lockfile, sans SRI (`@2` mouvant) | ✅ **versions exactes + empreintes** (cf. ci-dessous) |
 | P2-5 | Actions GitHub épinglées sur des tags, pas des SHA | oui — priorité au workflow CLA |
 | P2-6 | Pas de migrations de schéma pour une instance existante | ✅ chemin ouvert — l'hôte applique, le player détecte |
 | P2-7 | Accessibilité : dialogues, labels, `aria-live` | oui |
@@ -645,6 +645,63 @@ réponse serveur qu'on dénoue à la main.
 > qui diffuse dès le départ de la requête.
 
 Reste à étendre : audience normale, audience hostile.
+
+### P2-4 — quatre scripts tiers, dont un que personne n'avait compté
+
+**Le pire n'était pas l'absence d'empreinte, c'était `@2`.** Cette étiquette de jsdelivr suit la
+dernière 2.x publiée : la page servait aux visiteurs le code que Supabase avait mis en ligne le
+matin même — sans déploiement, sans relecture, sans retour arrière possible. Le jour du correctif,
+elle résolvait vers **2.112.3**. Une dépendance mouvante n'est pas une dépendance, c'est un
+abonnement à ce que décide un tiers.
+
+Et l'un ne va pas sans l'autre : une empreinte sur une URL mouvante casserait la page à la première
+publication du tiers. **Épingler rend l'empreinte possible ; l'empreinte rend l'épinglage utile** —
+une version exacte dit quel fichier on *demande*, jamais lequel on *reçoit*.
+
+| | avant | après |
+|---|---|---|
+| `pdf.min.js` | version exacte, aucune empreinte | empreinte |
+| `pdf.worker.min.js` (1 Mo) | version exacte, **hors de portée de `integrity`** | vérifié à la main, cf. plus bas |
+| `supabase-js` | **`@2` mouvant**, aucune empreinte | `2.112.3` + empreinte |
+| `leaflet` | version exacte, aucune empreinte | empreinte (balise injectée : `s.integrity`) |
+
+⚠️ **Le worker n'a pas de balise**, donc pas d'attribut `integrity` : c'est pdf.js qui le charge.
+Il pèse pourtant trois fois le script principal et voit tout le contenu du document — protéger la
+balise et le laisser passer, ce serait verrouiller la porte en laissant la fenêtre. Ce qui rend le
+contrôle possible : **ses octets passaient déjà par notre code**, puisqu'un worker d'une autre
+origine est refusé par le navigateur et qu'on le récupérait donc en texte pour en faire un blob de
+même origine. Un détour né d'une contrainte est devenu le point de contrôle. Tout doute vaut refus,
+et le refus retombe sur le worker de secours de pdf.js — le chemin qu'empruntait déjà un réseau en
+panne, donc un mode de défaillance éprouvé plutôt qu'un nouveau.
+
+⚠️ **La garde de la forge a trouvé un quatrième tiers à son premier passage** : le chargeur
+d'identité Google du mur d'accès, que mon inventaire manuel avait oublié. Lui et le chargeur de
+cartes ne peuvent pas porter d'empreinte — leur réponse change à chaque appel et ils injectent
+eux-mêmes d'autres scripts. Ils sont donc **nommés avec leur raison** dans la garde : ajouter un
+tiers demain force un choix visible, épinglé-et-empreinté ou inscrit là en connaissance de cause.
+
+Deux exemplaires du même fait, confrontés : le banc navigateur **rehache les octets réellement
+servis** et les compare aux empreintes du code. Ce n'est pas une garde de sécurité — qui
+intercepterait le CDN nous tromperait là comme ailleurs — c'est une garde d'**entretien**, contre la
+montée de version dont on oublie de recalculer l'empreinte, seul scénario réaliste.
+
+⚠️ **Et le banc a dû changer pour ça** : ses doublures inventées sont désormais refusées par le
+navigateur, comme elles doivent l'être. Il rejoue maintenant les octets réels. Une mutation l'a
+montré ensuite : une empreinte fausse ne déclenche **aucune** violation CSP — l'événement n'existe
+pas pour l'intégrité, seule la console en parle. Le banc ne rougissait donc que sur la
+confrontation, et un document image se serait affiché « vert » sans présence, sans chat et sans
+direct. Il constate désormais que les tiers sont **arrivés**, pas seulement que rien n'a été refusé.
+
+Vérifié par mutation, trois fois : `@2` remis, une empreinte retirée, un script tiers ajouté hors
+inventaire — la garde refuse les trois. Et `integrity` sans `crossorigin` casse la page entière,
+mesuré aussi : sur une ressource d'une autre origine, le navigateur ne peut pas lire la réponse
+pour la hacher, donc il refuse le script. Les deux attributs ne se séparent jamais — d'où une
+fonction unique qui les écrit ensemble, plutôt que quatre balises dont l'une finirait par en perdre un.
+
+**Ce que ça ne fait pas** : embarquer les bibliothèques, l'autre option de l'audit. Elle reste
+préférable à terme (plus de tiers du tout, CSP resserrée sur `'self'`, et l'adresse IP du visiteur
+qui cesse d'être communiquée à trois CDN), mais elle demande une route d'actifs statiques et touche
+au contrat d'hôte. Cette étape-ci ferme le risque d'exécution ; l'autre fermera la dépendance.
 
 ### C-6 — la table de présence était indexée par ce que les participants composent
 

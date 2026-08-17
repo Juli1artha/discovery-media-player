@@ -107,3 +107,60 @@ export function averageColor(pixels: ArrayLike<number>): string {
 export function isImageDocument(fileName?: string | null, fileUrl?: string | null): boolean {
   return /[.](png|jpe?g|webp|gif|avif)($|[?])/i.test(String(fileName || fileUrl || ""));
 }
+
+export interface DependancesWorker {
+  fetch?: (url: string) => Promise<{ ok: boolean; arrayBuffer(): Promise<ArrayBuffer> }>;
+  subtle?: { digest(algo: string, data: ArrayBuffer): Promise<ArrayBuffer> } | null;
+  creerUrl?: (blob: Blob) => string;
+}
+
+/**
+ * URL de blob du worker pdf.js — **seulement si ses octets sont ceux qu'on attend**.
+ *
+ * ⚠️ LE SEUL SCRIPT TIERS QU'UN ATTRIBUT `integrity` NE PEUT PAS COUVRIR. Il n'entre pas par une
+ * balise : c'est pdf.js qui le charge. Or il pèse trois fois le script principal et voit tout le
+ * contenu du document — protéger la balise et laisser passer le worker reviendrait à verrouiller
+ * la porte en laissant la fenêtre.
+ *
+ * Ce qui rend la vérification possible ici : ses octets passaient DÉJÀ par notre code. Un worker
+ * d'une autre origine est refusé par le navigateur, donc on le récupère en texte pour en faire un
+ * blob de même origine — c'était fait pour contourner cette règle, ça sert maintenant à contrôler.
+ *
+ * ⚠️ TOUT DOUTE VAUT REFUS, et le refus ne casse rien : l'appelant retombe sur l'URL distante, que
+ * le navigateur bloque à son tour, et pdf.js finit par son worker de secours sur le fil principal.
+ * Plus lent, jamais muet-mais-faux. C'est déjà, exactement, le chemin que suivait un réseau en
+ * panne — on ne crée donc pas un mode de défaillance, on en réutilise un déjà éprouvé.
+ *
+ * ⚠️ `crypto.subtle` n'existe QUE dans un contexte sécurisé. Sur une instance servie en clair, on
+ * refuse aussi — non par sévérité, mais parce qu'il n'y aurait rien à protéger : une page servie
+ * en HTTP est modifiable en entier avant d'arriver, empreinte comprise.
+ */
+export async function workerBlobUrl(
+  src: string,
+  empreinte: string,
+  deps: DependancesWorker = {},
+): Promise<string | null> {
+  const recuperer = deps.fetch
+    || (typeof fetch === "function" ? ((url: string) => fetch(url)) : null);
+  const subtle = deps.subtle !== undefined
+    ? deps.subtle
+    : (typeof globalThis !== "undefined" && globalThis.crypto ? globalThis.crypto.subtle : null);
+  const creerUrl = deps.creerUrl || ((blob: Blob) => URL.createObjectURL(blob));
+  if (!recuperer || !subtle || !empreinte) return null;
+  try {
+    const reponse = await recuperer(src);
+    if (!reponse.ok) return null;
+    const octets = await reponse.arrayBuffer();
+    const condense = await subtle.digest("SHA-384", octets);
+    if (`sha384-${base64(new Uint8Array(condense))}` !== empreinte) return null;
+    return creerUrl(new Blob([octets], { type: "application/javascript" }));
+  } catch {
+    return null;
+  }
+}
+
+function base64(octets: Uint8Array): string {
+  let binaire = "";
+  for (const octet of octets) binaire += String.fromCharCode(octet);
+  return btoa(binaire);
+}
