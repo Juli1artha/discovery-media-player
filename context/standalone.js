@@ -121,18 +121,100 @@ async function appelHote(url, secret, corps, errors) {
  * limite réelle est donc N fois celle annoncée. C'est suffisant pour freiner une boucle, pas pour
  * contenir un attaquant déterminé. Un hôte sérieux branche un compteur partagé dans son câblage.
  */
-function creerLimites() {
+/**
+ * Les limites de débit, comptées pour l'INSTANCE et non pour le processus.
+ *
+ * ⚠️ UN COMPTEUR EN MÉMOIRE EST DIVISÉ PAR LE NOMBRE D'INSTANCES, ET RIEN NE LE DIT. En serverless,
+ * plusieurs exécutions servent en parallèle et démarrent à froid : une limite de 120 par heure en
+ * autorise 120 PAR INSTANCE. Elle existe, elle rassure, et elle ne limite qu'une fraction de ce
+ * qu'elle annonce. C'est le second hôte qui l'a relevé chez lui — il tourne sur ce contexte, et ne
+ * s'en était pas aperçu avant qu'on lui pose la question.
+ *
+ * ⚠️ DEUX ÉTAGES, ET LE PREMIER NE PEUT PAS SE TROMPER. Le compteur local ne voit que ce que CE
+ * processus a servi : il sous-compte toujours par rapport au partagé. Donc s'il dépasse déjà le
+ * plafond, le partagé le dépasse aussi — un refus local est toujours juste, et il ne coûte aucun
+ * aller-retour. C'est l'abus qui se refuse gratuitement, pas le trafic légitime.
+ *
+ * ⚠️ LE CHEMIN DE LECTURE RESTE LOCAL, ET C'EST UN ARBITRAGE ASSUMÉ. Les relectures publiques
+ * (`pread:`) sont servies depuis un cache mémoire par slug, précisément pour ne rien coûter à la
+ * base. Y adosser un compteur partagé ferait payer à la garde le prix qu'on venait d'épargner à ce
+ * qu'elle garde. Sur ce chemin, la protection réelle est le cache, pas le compteur.
+ *
+ * ⚠️ LE COMPTE PARTAGÉ N'EST PAS ATOMIQUE. PostgREST ne sait pas exprimer « incrémente » : c'est une
+ * lecture puis une écriture. Deux instances peuvent donc lire la même valeur et n'en écrire qu'une —
+ * le compteur SOUS-estime sous forte concurrence. Pour une limite de débit, sous-estimer signifie
+ * laisser passer un peu plus, jamais refuser à tort. Le dire vaut mieux que laisser croire à une
+ * exactitude qu'on n'a pas.
+ */
+function creerLimites(db, journal) {
   const seaux = new Map();
+  const PREFIXES_LOCAUX = ["pread:"];
+  let partageDisponible = null;   // null = pas encore demandé
+  let signale = false;
+
+  /** Le compteur local : sert de refus rapide, et de repli complet quand la table manque. */
+  function localAutorise(cle, max, fenetreSecondes) {
+    const maintenant = Date.now();
+    const debut = maintenant - fenetreSecondes * 1000;
+    const vus = (seaux.get(cle) || []).filter((t) => t > debut);
+    if (vus.length >= max) { seaux.set(cle, vus); return false; }
+    vus.push(maintenant);
+    seaux.set(cle, vus);
+    if (seaux.size > 5000) for (const [k, v] of seaux) if (!v.some((t) => t > debut)) seaux.delete(k);
+    return true;
+  }
+
+  async function tablePresente() {
+    if (partageDisponible !== null) return partageDisponible;
+    try {
+      await db.request("player_rate_limits?select=key&limit=0");
+      partageDisponible = true;
+    } catch {
+      partageDisponible = false;
+      if (!signale) {
+        signale = true;
+        try {
+          journal.capture(new Error(
+            "compteurs de débit non partagés : appliquez supabase/migrations/0003-limites-partagees.sql. "
+            + "Sans elle, chaque instance compte pour elle seule et les limites sont plus lâches qu'annoncé.",
+          ), { route: "limits" });
+        } catch { /* jamais bloquant */ }
+      }
+    }
+    return partageDisponible;
+  }
+
   return {
     async allow(cle, max, fenetreSecondes) {
-      const maintenant = Date.now();
-      const debut = maintenant - fenetreSecondes * 1000;
-      const vus = (seaux.get(cle) || []).filter((t) => t > debut);
-      if (vus.length >= max) { seaux.set(cle, vus); return false; }
-      vus.push(maintenant);
-      seaux.set(cle, vus);
-      if (seaux.size > 5000) for (const [k, v] of seaux) if (!v.some((t) => t > debut)) seaux.delete(k);
-      return true;
+      // Étage 1 : le refus local est toujours juste, et gratuit.
+      if (!localAutorise(cle, max, fenetreSecondes)) return false;
+      if (PREFIXES_LOCAUX.some((p) => String(cle).startsWith(p))) return true;
+      if (!(await tablePresente())) return true;
+
+      // Étage 2 : le compte partagé. ⚠️ Échec ouvert — une limite injoignable ne doit pas empêcher
+      // de lire un document. Un 429 raté coûte moins cher qu'une visionneuse morte.
+      try {
+        const fin = new Date(Date.now() + fenetreSecondes * 1000).toISOString();
+        const lignes = await db.request(`player_rate_limits?key=eq.${encodeURIComponent(cle)}&select=count,expires_at&limit=1`);
+        const ligne = Array.isArray(lignes) && lignes[0];
+        const vivante = ligne && new Date(ligne.expires_at).getTime() > Date.now();
+        if (!vivante) {
+          await db.request("player_rate_limits", {
+            method: "POST",
+            headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+            body: [{ key: String(cle), count: 1, expires_at: fin }],
+          });
+          return true;
+        }
+        if (Number(ligne.count || 0) >= max) return false;
+        await db.request(`player_rate_limits?key=eq.${encodeURIComponent(cle)}`, {
+          method: "PATCH", headers: { Prefer: "return=minimal" },
+          body: { count: Number(ligne.count || 0) + 1 },
+        });
+        return true;
+      } catch {
+        return true;
+      }
     },
   };
 }
@@ -401,7 +483,7 @@ function createStandaloneContext(env = process.env) {
       },
     },
 
-    limits: creerLimites(),
+    limits: creerLimites(db, journal),
 
     branding: {
       async logo() { return String(env.PLAYER_BRAND_LOGO || "").trim(); },
