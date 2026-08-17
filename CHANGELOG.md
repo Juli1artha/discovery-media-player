@@ -10,6 +10,28 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.54] — 2026-08-17
+
+### Fixed
+
+- **A presentation carrying an image now displays for the audience.** The *Present* button appears
+  with no condition on the document type: a presenter looking at a PNG could present it, and the
+  audience got "Document unavailable" — pdf.js called on an image.
+
+  ⚠️ **This path had always been silent.** Not a regression from the worker refusal: nobody had seen
+  it because images are rarely presented. Found by the **second host, by asking** where we would have
+  asserted — their own view serves images, so they asked whether ours could receive one.
+
+  ⚠️ The first attempt at the fix **did not work, and nothing said so**: it decided on `CFG.fileUrl`,
+  which is `/api/doc?present=…&file=1` — no extension, so "not an image", always. A `try/catch`
+  added out of caution swallowed the cause; reading the loader's subtitle was what exposed it. A
+  defensive guard that returns false on error does not protect, it **hides**.
+
+  ⚠️ And there had been **two fixes for one symptom** — the file name added to the config as well.
+  Either one sufficed, so **no mutation could turn the bench red**: removing one left the other
+  working. A test never seen refusing guards nothing. One remains, and putting the proxy URL back
+  does make the bench fail.
+
 ## [0.1.53] — 2026-08-17
 
 ### Fixed
