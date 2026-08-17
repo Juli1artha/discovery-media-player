@@ -10,6 +10,66 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.52] — 2026-08-17
+
+### ⚠️ One migration to apply — the player degrades without it, it does not break
+
+`0004-limites-atomiques.sql` makes the shared rate limit count in **one atomic step**. Until it is
+applied, counting stays as before — read, compute, write — so several simultaneous requests can
+cross the cap together, and the player says so once, naming the file. Nothing closes: a missed 429
+costs less than a dead viewer.
+
+The atomic increment is **not expressible in REST** (`on conflict do update set count = count + 1`
+has to name the column on both sides). This is the one operation in the product that needs a
+database function; the portability guard still holds, an `rpc/` adding neither join nor boolean tree.
+
+### Security
+
+- **No email leaves the presentation any more — and four paths carried one, not two.** The audit
+  reported `author_email` in the chat's public fields and `email` in the presence payload. Two more
+  carried the same data: the **reactions map**, stored in the database with `email || name` as the
+  reactor's identity, and the **presence channel key** itself, readable by every participant
+  regardless of what `track()` sends. Our audiences are anonymous external visitors: opening the
+  chat history was enough to walk away with the team's addresses.
+
+  ⚠️ What replaces it is not a random pseudonym but the fingerprint of the **author token** — the one
+  that already authorises editing and deleting. No instance secret is needed (hashing an address
+  without salt protects nothing: the domain is known, first names are guessable), and **"this is my
+  message" now says the same thing as "I am allowed to touch it"**: `isMine` compared addresses while
+  editing has only ever checked the token, so a member on a second browser was offered an *Edit*
+  button that answered 403.
+
+- **A delayed write can no longer reopen a presentation that was ended.** Steering did: read the row,
+  check the token, PATCH. Between the check and the PATCH the presentation may have been **ended** —
+  and since steering writes `active: true`, the late request **reopened it for the whole audience**.
+  The presenter had clicked *End*, seen the closing screen, and viewers kept following the pages.
+
+  ⚠️ The condition is **not** `active = true`: a presentation goes inactive after three minutes
+  without a heartbeat, and the next page must bring it back — an anonymous presenter has no other way
+  to return. What separates a *decided* end from an *observed* expiry already exists: ending revokes
+  the control token. So the token travels in the write's own condition, and each path carries the
+  criterion it was already checking. Zero rows touched means refused.
+
+- **An ended presentation becomes a read-only archive.** Seven routes still wrote after closing —
+  messages, reactions, chat lock, attendance, and even a **signed upload URL** into the bucket of a
+  closed session. The thread was no longer watched by anyone, which is exactly when something gets
+  dropped into it. Reading stays open: what was said during a presentation has value afterwards.
+
+- **An unverified pdf.js worker is never executed — the reader stops instead.** The previous
+  behaviour fell back to the remote URL when the fingerprint refused, and **pdf.js wraps that URL in
+  a same-origin blob itself**, so the unverified code ran: the worker's fingerprint bought nothing.
+  Leaving the value empty does not close it either — pdf.js then derives a default address from its
+  own position on the CDN. Both cancelled the check **in silence**; measuring the workers actually
+  created was the only way to see it. A document that is not rendered is visible; a document rendered
+  by unverified code is not.
+
+- **Third-party supply chain, pinned where it decided for us.** 18 GitHub actions referenced by
+  **tag** — which the author, or whoever takes their account, can move to another tree — are now
+  pinned to a commit, with the tag kept as a comment. Leaflet's **stylesheet** had never been
+  counted: third-party CSS moves, resizes and hides any element, so the button you think you are
+  clicking may not be the one you click. Google Maps moves from `v=weekly` — a *channel* — to a
+  version. A CI guard fails on any unpinned action.
+
 ## [0.1.51] — 2026-08-17
 
 ### Security
