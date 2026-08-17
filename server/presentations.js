@@ -74,6 +74,35 @@ async function touchPresentation(slug, control) {
 // Liste des présentations en cours (membre authentifié). Auto-purge : une présentation active dont le
 // dernier heartbeat remonte à > STALE_MS (présentateur parti sans clôturer) est marquée inactive.
 const STALE_MS = 3 * 60 * 1000;
+
+/**
+ * ÉCRIRE SEULEMENT SI LA CONDITION TIENT ENCORE — au moment de l'écriture, pas au moment du contrôle.
+ *
+ * ⚠️ LE DÉFAUT QUE ÇA FERME. Toutes les écritures de pilotage faisaient : lire la ligne, vérifier le
+ * jeton, PATCHER. Entre la vérification et le PATCH, la présentation peut avoir été TERMINÉE — et
+ * comme le pilotage écrit « active: true », la requête retardée la ROUVRAIT pour toute l'audience.
+ * Le présentateur avait cliqué « Terminer », vu l'écran de fin, et l'audience continuait de suivre.
+ * Un second SELECT juste avant le PATCH ne changerait rien : la fenêtre se déplace, elle ne ferme pas.
+ *
+ * ⚠️ ET LA CONDITION N'EST PAS « active = true », que l'audit prescrivait. Elle casserait un
+ * comportement voulu : une présentation devient inactive au bout de trois minutes sans battement
+ * (le portable du présentateur a dormi), et sa page suivante DOIT la remettre en ligne — un
+ * présentateur anonyme n'a aucun autre moyen de revenir. La bonne condition est celle qui sépare
+ * la fin DÉCIDÉE de la péremption CONSTATÉE : terminer ANNULE le jeton de contrôle. On filtre donc
+ * sur le jeton, et chaque chemin porte dans sa condition le critère qu'il vérifiait déjà.
+ *
+ * Zéro ligne touchée = refus. PostgREST le dit en rendant un tableau vide, à condition de demander
+ * la représentation — sans quoi on ne saurait pas distinguer « rien à faire » de « rien fait ».
+ */
+async function ecrireSiEncoreVrai(condition, corps) {
+  const lignes = await PLAYER.db.request(condition, {
+    method: "PATCH", headers: { Prefer: "return=representation" }, body: corps,
+  });
+  return Array.isArray(lignes) && lignes.length > 0;
+}
+
+/** Le rang, seulement là où la colonne existe — sinon PostgREST rejette le PATCH ENTIER. */
+const filtreRang = (rang) => (rang && rang.controle ? `&write_seq=lt.${rang.rang}` : "");
 async function listActivePresentations(email) {
   const me = lc(email);
   const rows = await PLAYER.db.request("doc_presentations?active=eq.true&select=slug,doc_id,file_url,file_name,doc_title,presenter_name,owner_email,owner_name,owner_avatar,current_page,last_seen,created_at,updated_at&order=updated_at.desc&limit=100");
@@ -193,8 +222,16 @@ async function setPage(slug, control, page, seq) {
   // navigateur n'affiche rien — la page qu'il voulait écrire est déjà dépassée par une plus récente.
   if (rang.perime) return { ok: true, perime: true };
   const p = Math.max(1, Math.trunc(Number(page) || 1));
-  await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { current_page: p, active: true, last_seen: new Date().toISOString(), updated_at: new Date().toISOString(), ...(rang.controle ? { write_seq: rang.rang } : {}) } });
-  return { ok: true };
+  // Le jeton DANS la condition : si la présentation a été terminée entre-temps, il a été annulé
+  // et cette écriture ne trouve plus sa ligne. Le rang aussi, pour que deux écritures concurrentes
+  // ne puissent pas s'inverser — la comparaison et l'écriture deviennent le même geste.
+  const ecrit = await ecrireSiEncoreVrai(
+    `doc_presentations?slug=eq.${enc(slug)}&control_hash=eq.${sha(control)}${filtreRang(rang)}`,
+    { current_page: p, active: true, last_seen: new Date().toISOString(), updated_at: new Date().toISOString(), ...(rang.controle ? { write_seq: rang.rang } : {}) },
+  );
+  // Refus SILENCIEUX, comme un rang périmé : le navigateur n'a rien à afficher, la page qu'il
+  // voulait écrire n'a simplement plus de présentation où aller.
+  return ecrit ? { ok: true } : { ok: true, perime: true };
 }
 
 // Fin de présentation → l'audience voit « terminée ».
@@ -202,7 +239,17 @@ async function endPresentation(slug, control) {
   const row = await getPresentation(slug);
   if (!row) return { ok: false, status: 404 };
   if (!tokenMatches(control, row.control_hash)) return { ok: false, status: 403 };
-  await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { ...CLOTURE, updated_at: new Date().toISOString() } });
+  // ⚠️ CONDITIONNÉ AU JETON LUI AUSSI, et pas seulement par symétrie : entre la vérification et
+  // l'écriture, le propriétaire a pu REPRENDRE la main depuis un autre appareil, ce qui régénère
+  // le jeton. Une fin retardée émise avec l'ancien fermerait alors la session neuve — le contraire
+  // de ce que la reprise vient d'obtenir.
+  await ecrireSiEncoreVrai(
+    `doc_presentations?slug=eq.${enc(slug)}&control_hash=eq.${sha(control)}`,
+    { ...CLOTURE, updated_at: new Date().toISOString() },
+  );
+  // Terminer est IDEMPOTENT : ne pas trouver de ligne veut dire « déjà terminée, ou reprise
+  // ailleurs ». Dans les deux cas l'appelant n'a plus rien à faire, et un échec l'inviterait à
+  // réessayer une action qui n'a plus d'objet.
   return { ok: true };
 }
 
@@ -512,10 +559,13 @@ async function switchPresentationDoc(slug, email, isAdmin, { fileUrl, fileName, 
   if (!row) return { ok: false, status: 404 };
   if (estClose(row)) return { ok: false, status: 409, error: "ended" };
   if (!isAdmin && (!row.owner_email || row.owner_email !== lc(email))) return { ok: false, status: 403 };
-  await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: {
+  const ecrit = await ecrireSiEncoreVrai(`doc_presentations?slug=eq.${enc(slug)}&active=eq.true`, {
     file_url: String(fileUrl), file_name: fileName || null, doc_title: docTitle || null, doc_id: docId ? String(docId) : null,
     content: null, current_page: 1, active: true, last_seen: new Date().toISOString(), updated_at: new Date().toISOString(),
-  } });
+  });
+  // Une présentation terminée entre le contrôle et l'écriture n'est pas rouverte par un
+  // changement de document : le refus arrive tard, mais il arrive.
+  if (!ecrit) return { ok: false, status: 409, error: "ended" };
   return { ok: true };
 }
 
@@ -570,7 +620,17 @@ async function setPresentationContent(slug, email, isAdmin, content, control) {
   if (!pilote && !proprietaire) return { ok: false, status: 403 };
   // Le pilote a déjà été filtré par la révocation du jeton ; c'est le propriétaire qu'on arrête ici.
   if (!pilote && estClose(row)) return { ok: false, status: 409, error: "ended" };
-  await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { content: sanitizeContent(content), active: true, last_seen: new Date().toISOString(), updated_at: new Date().toISOString() } });
+  // ⚠️ DEUX AUTORISATIONS, DONC DEUX CONDITIONS — et c'est la seule façon de ne pas retirer un
+  // droit en fermant une porte. Le PILOTE écrit tant que son jeton vaut : une carte affichée
+  // pendant que le portable dormait doit encore partir, comme une page. Le PROPRIÉTAIRE, lui,
+  // n'écrit que sur une présentation vivante : c'est déjà ce que le contrôle au-dessus exige.
+  const ecrit = await ecrireSiEncoreVrai(
+    pilote
+      ? `doc_presentations?slug=eq.${enc(slug)}&control_hash=eq.${sha(control)}`
+      : `doc_presentations?slug=eq.${enc(slug)}&active=eq.true`,
+    { content: sanitizeContent(content), active: true, last_seen: new Date().toISOString(), updated_at: new Date().toISOString() },
+  );
+  if (!ecrit) return { ok: false, status: 409, error: "ended" };
   return { ok: true };
 }
 

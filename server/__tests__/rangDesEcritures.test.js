@@ -29,7 +29,7 @@ function base({ ligne = LIGNE, colonne = true } = {}) {
       if (!colonne && String(chemin).includes("select=write_seq")) {
         throw new Error('column "write_seq" does not exist');
       }
-      if (o && o.method === "PATCH") { ecritures.push(o.body); Object.assign(etat, o.body); return []; }
+      if (o && o.method === "PATCH") { const t = lignesTouchees(chemin, etat); if (!t.length) return []; ecritures.push(o.body); Object.assign(etat, o.body); return [{ ...etat }]; }
       return [{ ...etat }];
     } },
     limits: { async allow() { return true; } }, errors: { capture() {} },
@@ -37,6 +37,25 @@ function base({ ligne = LIGNE, colonne = true } = {}) {
   presentations.init(ctx);
   require("../schema.js").init(ctx);
   return { etat, ecritures };
+}
+
+// ⚠️ MODÉLISE LA CONDITION, PAS SEULEMENT LE SUCCÈS. Le pilotage écrit désormais sous condition
+// (`&control_hash=eq.…`, `&active=eq.true`, `&write_seq=lt.…`) et PostgREST répond par les lignes
+// TOUCHÉES : zéro ligne = refus. Une doublure qui rendrait toujours une ligne ferait passer les
+// essais même si la condition disparaissait du code.
+function lignesTouchees(chemin, etat) {
+  const cond = String(chemin).split("&").slice(1);
+  for (const c of cond) {
+    const [champ, valeur] = c.split("=");
+    if (champ === "control_hash" && valeur !== "eq." + require("crypto").createHash("sha256").update(String(etat.control_hash_source || "")).digest("hex")) {
+      if (valeur !== "eq." + String(etat.control_hash || "")) return [];
+    } else if (champ === "active" && valeur === "eq.true" && etat.active === false) {
+      return [];
+    } else if (champ === "write_seq" && valeur.startsWith("lt.") && Number(etat.write_seq || 0) >= Number(valeur.slice(3))) {
+      return [];
+    }
+  }
+  return [{ ...etat }];
 }
 
 describe("une écriture périmée n'écrase pas une plus récente", () => {

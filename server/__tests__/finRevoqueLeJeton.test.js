@@ -35,7 +35,7 @@ function base(ligne) {
   const ecritures = [];
   presentations.init({
     db: { async request(chemin, o) {
-      if (o && o.method === "PATCH") { ecritures.push(o.body); Object.assign(etat, o.body); return []; }
+      if (o && o.method === "PATCH") { const t = lignesTouchees(chemin, etat); if (!t.length) return []; ecritures.push(o.body); Object.assign(etat, o.body); return [{ ...etat }]; }
       if (o && o.method === "POST") { ecritures.push(o.body); return []; }
       return etat.__absente ? [] : [{ ...etat }];
     } },
@@ -49,6 +49,25 @@ const LIGNE = {
   active: true, current_page: 1, last_seen: new Date().toISOString(),
 };
 const CARTE = { kind: "map", lat: 43.5, lon: -1.5, zoom: 14 };
+
+// ⚠️ MODÉLISE LA CONDITION, PAS SEULEMENT LE SUCCÈS. Le pilotage écrit désormais sous condition
+// (`&control_hash=eq.…`, `&active=eq.true`, `&write_seq=lt.…`) et PostgREST répond par les lignes
+// TOUCHÉES : zéro ligne = refus. Une doublure qui rendrait toujours une ligne ferait passer les
+// essais même si la condition disparaissait du code.
+function lignesTouchees(chemin, etat) {
+  const cond = String(chemin).split("&").slice(1);
+  for (const c of cond) {
+    const [champ, valeur] = c.split("=");
+    if (champ === "control_hash" && valeur !== "eq." + require("crypto").createHash("sha256").update(String(etat.control_hash_source || "")).digest("hex")) {
+      if (valeur !== "eq." + String(etat.control_hash || "")) return [];
+    } else if (champ === "active" && valeur === "eq.true" && etat.active === false) {
+      return [];
+    } else if (champ === "write_seq" && valeur.startsWith("lt.") && Number(etat.write_seq || 0) >= Number(valeur.slice(3))) {
+      return [];
+    }
+  }
+  return [{ ...etat }];
+}
 
 describe("terminer révoque le jeton de contrôle", () => {
   it.each([
