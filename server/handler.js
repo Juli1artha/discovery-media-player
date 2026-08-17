@@ -291,6 +291,13 @@ var Live=(function(){
   function _store(){try{return window.localStorage;}catch(e){return null;}}
   // Clé d'assistance STABLE (analytics de présentation) : email si connu, sinon id persistant par navigateur.
   function attKey(){ return Player.live.attendeeKey(_store(),MYID); }
+  // ⚠️ CE QUI PART DANS LA PRÉSENCE N'EST PAS CE QUI IDENTIFIE UNE LIGNE DE MESURE. La présence est
+  // diffusée à toute l'audience ; y mettre la clé de participation revenait à donner à chacun de
+  // quoi écraser la ligne de son voisin. Deux besoins, deux valeurs.
+  // Mémorisé pour la durée de la page : sans stockage, la fonction rend une valeur neuve à chaque
+  // appel — c'est ce qui garantit qu'elle ne partage aucune graine avec la clé de mesure.
+  var _presId=null;
+  function presId(){ if(!_presId)_presId=Player.live.presenceId(_store()); return _presId; }
   // Heartbeat d'assistance → le serveur journalise qui suit, combien de temps, et les pages vues (via la page
   // courante de la présentation). Envoyé à la connexion puis toutes les 25 s. Best-effort (silencieux).
   // Le serveur ne croit plus 'isMember' ni 'isPresenter' sur parole : l'appartenance se prouve par
@@ -566,7 +573,7 @@ var Live=(function(){
       // par accident : le jour où quelqu'un rebranche un paramètre, la charge d'un canal public
       // redeviendrait crue sans que rien ne le signale. On coupe le chemin, pas seulement l'usage.
       ch.on('broadcast',{event:'map'},function(){if(_onMap)_onMap();});
-      ch.subscribe(function(st){if(st==='SUBSCRIBED'){ch.track({name:me.name,email:me.email,avatar:me.avatar,role:me.role,member:!!me.member,uid:attKey()});sendAttend();}});
+      ch.subscribe(function(st){if(st==='SUBSCRIBED'){ch.track({name:me.name,email:me.email,avatar:me.avatar,role:me.role,member:!!me.member,uid:presId()});sendAttend();}});
       _tyIv=setInterval(renderTyping,1500);
       _atIv=setInterval(sendAttend,25000);
       // Filet de sécurité : au déchargement de la page/iframe (fermeture, reload, switch), on retire la présence
