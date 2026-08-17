@@ -164,6 +164,13 @@ function creerLimites(db, journal) {
     return true;
   }
 
+  let deja = "";
+  function prevenirUneFois(message) {
+    if (deja === message) return;
+    deja = message;
+    try { journal.capture(new Error(message), { route: "limits" }); } catch { /* jamais bloquant */ }
+  }
+
   async function tablePresente() {
     if (partageDisponible !== null) return partageDisponible;
     try {
@@ -191,28 +198,36 @@ function creerLimites(db, journal) {
       if (PREFIXES_LOCAUX.some((p) => String(cle).startsWith(p))) return true;
       if (!(await tablePresente())) return true;
 
-      // Étage 2 : le compte partagé. ⚠️ Échec ouvert — une limite injoignable ne doit pas empêcher
-      // de lire un document. Un 429 raté coûte moins cher qu'une visionneuse morte.
+      // Étage 2 : le compte partagé, en UN SEUL GESTE.
+      //
+      // ⚠️ IL EN FAISAIT TROIS — lire, calculer, écrire — et sous charge, c'est-à-dire exactement
+      // quand une limite sert à quelque chose, plusieurs requêtes lisaient le même compte et
+      // écrivaient chacune « ce compte + 1 ». Vingt requêtes simultanées sur une limite de dix
+      // passaient toutes. Une limite qui ne tient que lorsque personne ne pousse ne limite rien.
+      //
+      // ⚠️ Échec OUVERT, et c'est délibéré : une limite injoignable ne doit pas empêcher de lire un
+      // document. Un 429 raté coûte moins cher qu'une visionneuse morte. Mais l'ouverture se DIT,
+      // une fois — un compteur qui ne compte plus en silence est pire qu'un compteur absent.
       try {
-        const fin = new Date(Date.now() + fenetreSecondes * 1000).toISOString();
-        const lignes = await db.request(`player_rate_limits?key=eq.${encodeURIComponent(cle)}&select=count,expires_at&limit=1`);
-        const ligne = Array.isArray(lignes) && lignes[0];
-        const vivante = ligne && new Date(ligne.expires_at).getTime() > Date.now();
-        if (!vivante) {
-          await db.request("player_rate_limits", {
-            method: "POST",
-            headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-            body: [{ key: String(cle), count: 1, expires_at: fin }],
-          });
-          return true;
-        }
-        if (Number(ligne.count || 0) >= max) return false;
-        await db.request(`player_rate_limits?key=eq.${encodeURIComponent(cle)}`, {
-          method: "PATCH", headers: { Prefer: "return=minimal" },
-          body: { count: Number(ligne.count || 0) + 1 },
+        const r = await db.request("rpc/player_rate_limit_bump", {
+          method: "POST",
+          body: { p_key: String(cle), p_max: max, p_window_seconds: fenetreSecondes },
         });
+        const ligne = Array.isArray(r) ? r[0] : r;
+        if (ligne && typeof ligne.autorise === "boolean") return ligne.autorise;
+        // Réponse d'une forme qu'on ne comprend pas : on n'invente pas un verdict.
+        prevenirUneFois("compteurs de débit : réponse inattendue de player_rate_limit_bump");
         return true;
-      } catch {
+      } catch (erreur) {
+        // ⚠️ LA FONCTION PEUT SIMPLEMENT NE PAS ÊTRE LÀ — un hôte qui n'a pas appliqué la migration
+        // reçoit un 404 de PostgREST, indiscernable ici d'une panne. Dans les deux cas on laisse
+        // passer ; dans les deux cas on le dit, en NOMMANT le fichier à appliquer. C'est la règle
+        // du chemin de migration : dégrader, jamais casser, et ne jamais dégrader en silence.
+        prevenirUneFois(
+          "compteurs de débit non atomiques : appliquez supabase/migrations/0004-limites-atomiques.sql. "
+          + "Sans elle, plusieurs requêtes simultanées peuvent dépasser la limite ensemble. "
+          + "(" + ((erreur && erreur.message) || erreur) + ")",
+        );
         return true;
       }
     },

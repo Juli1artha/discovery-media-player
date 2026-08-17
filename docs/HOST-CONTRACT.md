@@ -76,8 +76,17 @@ This matters because nothing announced the difference: on serverless, several ex
 parallel and start cold, so a limit of 120/hour allowed 120 **per instance**. It existed, it
 reassured, and it bounded a fraction of what it claimed.
 
-Requires `supabase/migrations/0003-limites-partagees.sql`. **Until it is applied, nothing breaks**:
-counting falls back to memory — the previous behaviour — and the host is told once, by name.
+Requires `supabase/migrations/0003-limites-partagees.sql` **and**
+`0004-limites-atomiques.sql`. **Until they are applied, nothing breaks**: counting falls back —
+to memory without the first, to a non-atomic read-modify-write without the second — and the host is
+told once, by name.
+
+⚠️ **The second one is what makes the counter hold under load.** Reading, computing and writing as
+three steps means that several simultaneous requests read the same count and each write "that count
+plus one" — so they cross the ceiling together, precisely when a limit is supposed to matter. The
+atomic increment is **not expressible in REST** (`on conflict do update set count = count + 1` has
+to name the column on both sides), which is why this one operation, and only this one, goes through
+a database function.
 
 Two deliberate exceptions, both written next to the code:
 
