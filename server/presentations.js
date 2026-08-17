@@ -381,6 +381,19 @@ function messagePublic(row) {
   if ("reactions" in out) out.reactions = reactionsPubliques(out.reactions);
   // Dérivé, jamais recopié : `author_hash` est lu pour ça et ne sort jamais tel quel.
   if ("author_hash" in row) out.author_ref = refAuteur(row.author_hash);
+  // ⚠️ LA GARDE CATÉGORIELLE N'EST PAS ICI, ET LA RAISON EST STRUCTURELLE.
+  //
+  // La liste blanche s'exécute AVANT : elle a déjà retiré tout champ inconnu. `publier()` n'y
+  // verrait donc qu'un jeu de champs connus, et aucune mutation ne peut la faire tomber à cet
+  // endroit — la redondance n'est pas une ceinture, c'est une garde qu'on ne peut pas éprouver.
+  //
+  // ⚠️ Et le cas qu'on écrirait pour forcer le rouge serait faux : `author_name` est CHOISI par le
+  // participant. Quelqu'un qui se nomme « lea@exemple.fr » verrait le chat tomber — le piège de
+  // `body`, rencontré une seconde fois au même endroit.
+  //
+  // Sa place est aux sorties SANS liste blanche : charge de présence, statistiques, aperçu d'un
+  // partage — là où un champ ajouté demain sort sans que personne ne l'ait décidé. C'est là qu'une
+  // mutation pourra rougir, et donc là qu'elle sera branchée.
   return out;
 }
 
