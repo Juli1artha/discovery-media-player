@@ -29,6 +29,9 @@ function init(ctx) {
   require("./shares").init(ctx);
   require("./presentations").init(ctx);
   require("./brands").init(ctx);
+  // ⚠️ Réinitialisé avec le contexte : les réponses de la sonde valent pour UNE base. Un hôte qui
+  // rebranche son contexte sur un autre projet doit reposer la question, pas hériter des réponses.
+  require("./schema").init(ctx);
   docbot = ctx.plugins.bot;
   brandIntroRuntime = ctx.plugins.brandIntro && ctx.plugins.brandIntro.brandIntroRuntime;
   botBrowser = ctx.plugins.botBrowser;

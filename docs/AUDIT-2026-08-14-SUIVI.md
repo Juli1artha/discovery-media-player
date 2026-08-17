@@ -189,7 +189,7 @@ avec le lot des migrations (P1-5), pas avant.
 | P2-3 | Pas d'E2E navigateur, pas de Supabase de test, pas de couverture | oui — c'est là que vivent les deux P0 |
 | P2-4 | Dépendances navigateur hors lockfile, sans SRI (`@2` mouvant) | embarquer, ou SRI + versions exactes |
 | P2-5 | Actions GitHub épinglées sur des tags, pas des SHA | oui — priorité au workflow CLA |
-| P2-6 | Pas de migrations de schéma pour une instance existante | oui — `init.sql` reste pour le neuf |
+| P2-6 | Pas de migrations de schéma pour une instance existante | ✅ chemin ouvert — l'hôte applique, le player détecte |
 | P2-7 | Accessibilité : dialogues, labels, `aria-live` | oui |
 | P2-8 | Schéma sans clés étrangères ni contraintes de domaine | oui, progressivement |
 
