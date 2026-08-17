@@ -2106,6 +2106,15 @@ ${LEGAL_CSS}
     //
     // Le rythme minimum remplace les deux ordonnanceurs qu'elle absorbe — un déplacement de carte à
     // la souris produirait sinon une écriture par image.
+    // ⚠️ LE RANG D'ÉCRITURE, ET POURQUOI IL VIT ICI. La file garantit une seule écriture en vol,
+    // donc l'ordre des DÉPARTS. Elle ne peut rien sur une requête abandonnée par le délai maximal :
+    // le navigateur cesse de l'attendre, il ne l'annule pas chez le serveur, et elle peut atterrir
+    // après celle qui l'a remplacée. Le rang ferme ce dernier cas.
+    //
+    // Remis à zéro à chaque prise de pilotage — démarrage ou reprise — parce qu'un jeton de contrôle
+    // neuf ouvre un nouveau domaine d'ordre côté serveur.
+    var _seq=0;
+    function prochainRang(){ return ++_seq; }
     var _file=null;
     function fileEcritures(){
       if(!_file&&window.Player&&Player.live&&Player.live.createFileEcritures){
@@ -2121,7 +2130,7 @@ ${LEGAL_CSS}
       if(!f) return envoyerPage(page);
       return f.poser('page',function(){ return envoyerPage(cur||page); }); }
     function envoyerPage(page){ if(!PRES)return Promise.resolve();
-      return Player.live.fetchBorne('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-page',slug:PRES.slug,control:PRES.control,page:page})})
+      return Player.live.fetchBorne('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-page',slug:PRES.slug,control:PRES.control,page:page,seq:prochainRang()})})
         .then(function(r){ if(r&&r.ok)diffuserEtat(); })
         .catch(function(){}); }
     // ⚠️ TROIS GESTES, ET L'ORDRE ÉTAIT LE PIRE DES SIX. On signalait la fin, puis on COUPAIT LE
@@ -2189,7 +2198,7 @@ ${LEGAL_CSS}
         .then(function(r){return r.json();}).then(function(d){
           if(btn){ btn.disabled=false; btn.textContent='Présenter'; }
           if(!d||!d.ok||!d.slug) return;
-          PRES={slug:d.slug,control:d.control}; saveCtl(d.slug,d.control);
+          PRES={slug:d.slug,control:d.control}; saveCtl(d.slug,d.control); _seq=0;
           showBar(d.slug); liveConnect(d.slug,d.control); startHb(); pushPage();
         }).catch(function(){ if(btn){ btn.disabled=false; btn.textContent='Présenter'; } });
     }
@@ -2201,7 +2210,7 @@ ${LEGAL_CSS}
       fetch('/api/doc',{method:'POST',headers:h,body:JSON.stringify({action:'present-reclaim',slug:slug})})
         .then(function(r){return r.json();}).then(function(d){
           if(!d||!d.ok||!d.control){ if(d&&d.status===403){ Player.bridge.sendToHost({type:'present-denied'}); } return; }
-          PRES={slug:slug,control:d.control}; saveCtl(slug,d.control);
+          PRES={slug:slug,control:d.control}; saveCtl(slug,d.control); _seq=0;
           showBar(slug); liveConnect(slug,d.control); startHb();
           var target=Math.max(1,d.page||1);
           var tries=0; (function jump(){ var el=(document.getElementById('pages')||document).querySelector('.page[data-p="'+target+'"]'); if(el){ el.scrollIntoView({block:'start'}); } else if(tries++<40){ setTimeout(jump,150); } })();
@@ -2819,7 +2828,7 @@ async function handler(req, res) {
             return jp(200, { ok: true, slug: out.slug, control: out.control });
           }
           const r = body.action === "present-page"
-            ? await setPage(String(body.slug || ""), String(body.control || ""), body.page)
+            ? await setPage(String(body.slug || ""), String(body.control || ""), body.page, body.seq)
             : body.action === "present-touch"
             ? await touchPresentation(String(body.slug || ""), String(body.control || ""))
             : await endPresentation(String(body.slug || ""), String(body.control || ""));
