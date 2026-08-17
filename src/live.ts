@@ -40,6 +40,9 @@ export interface Participant {
 }
 
 export interface Me {
+  /** Référence opaque de CE navigateur — cf. `referenceAuteur`. Remplace l'adresse partout où
+   *  une identité devait sortir : réactions, présence, appartenance d'un message. */
+  ref?: string;
   email?: string;
   name?: string;
   role?: string;
@@ -49,7 +52,8 @@ export interface Me {
 
 export interface ChatMessage {
   id?: number | string;
-  author_email?: string;
+  /** Identité publique de l'auteur, dérivée serveur de son jeton. Jamais une adresse. */
+  author_ref?: string;
   author_name?: string;
   author_avatar?: string;
   body?: string;
@@ -234,18 +238,61 @@ export function authorToken(
 }
 
 /** Identifiant utilisé pour marquer ses propres réactions emoji. */
+/**
+ * Référence opaque de CE navigateur, dérivée de son jeton d'auteur.
+ *
+ * ⚠️ ELLE DOIT DONNER EXACTEMENT CE QUE LE SERVEUR DÉRIVE, sinon rien ne se reconnaît : ni ses
+ * propres messages, ni ses propres réactions. Deux exemplaires d'une même règle de calcul, dans
+ * deux langages — un essai les confronte plutôt que de faire confiance à la relecture.
+ *
+ * Le calcul : sha256(jeton) — ce que la base stocke déjà — puis sha256("ref:" + ce hachage),
+ * tronqué à 16. Le tour de plus évite de publier le matériel gardé en base.
+ *
+ * ⚠️ `crypto.subtle` n'existe QUE dans un contexte sécurisé. Sans lui, on rend une chaîne vide :
+ * les boutons « Modifier » disparaissent et les réactions ne partent plus, mais rien ne s'affiche
+ * faussement comme sien. Une page servie en clair n'a de toute façon aucune identité à protéger.
+ */
+export async function referenceAuteur(
+  jeton: string,
+  subtle?: { digest(algo: string, data: ArrayBuffer): Promise<ArrayBuffer> } | null,
+): Promise<string> {
+  const moteur = subtle !== undefined
+    ? subtle
+    : (typeof globalThis !== "undefined" && globalThis.crypto ? globalThis.crypto.subtle : null);
+  if (!moteur || !jeton) return "";
+  try {
+    const hex = async (texte: string) => {
+      const condense = await moteur.digest("SHA-256", new TextEncoder().encode(texte) as unknown as ArrayBuffer);
+      return Array.from(new Uint8Array(condense), (o) => o.toString(16).padStart(2, "0")).join("");
+    };
+    return (await hex("ref:" + (await hex(jeton)))).slice(0, 16);
+  } catch {
+    return "";
+  }
+}
+
 export function reactorId(me: Me | null | undefined): string {
-  return String((me && (me.email || me.name)) || "").toLowerCase();
+  // ⚠️ C'ÉTAIT `email || nom`, ET C'EST STOCKÉ EN BASE. La carte des réactions d'un message est
+  // publique : `{ "👍": ["lea@exemple.fr", …] }` partait donc à toute l'audience, sur un chemin
+  // que l'audit n'avait pas relevé. La référence opaque le remplace, et sans elle on ne réagit
+  // pas — une réaction anonyme non identifiable ne pourrait plus être retirée par son auteur.
+  return String((me && me.ref) || "");
 }
 
 // ── Prédicats ──────────────────────────────────────────────────────────────────────────────────
 
 /** Ce message est-il de moi ? Par email si connu, sinon par nom entre anonymes. */
 export function isMine(msg: ChatMessage | null | undefined, me: Me | null | undefined): boolean {
-  if (!msg || !me) return false;
-  if (msg.author_email && me.email) return msg.author_email === me.email;
-  if (!msg.author_email && !me.email) return msg.author_name === me.name;
-  return false;
+  // ⚠️ COMPARAIT DES ADRESSES, alors que modifier et supprimer n'ont JAMAIS regardé que le jeton
+  // d'auteur. Un membre sur un second navigateur se voyait donc proposer « Modifier » sur ses
+  // propres messages, et recevait un 403 en cliquant. La référence opaque fait coïncider ce qu'on
+  // AFFICHE avec ce qui est AUTORISÉ — et c'est le même changement qui retire l'adresse du public.
+  //
+  // Sans référence des deux côtés, on répond non : mieux vaut un bouton absent qu'un bouton qui
+  // ment, et c'est aussi ce qui se produit dans un contexte non sécurisé, où le navigateur ne sait
+  // pas hacher.
+  if (!msg || !me || !msg.author_ref || !me.ref) return false;
+  return msg.author_ref === me.ref;
 }
 
 /** Seul le présentateur modère. Le rôle vient du serveur (control_token valide), pas du client. */

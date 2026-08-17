@@ -408,7 +408,7 @@ var Live=(function(){
     if(y)y.onclick=function(){close();if(onOk)onOk();};if(n)n.onclick=close;m.onclick=function(e){if(e.target===m)close();};
     document.addEventListener('keydown',key);m.classList.add('open');if(y)try{y.focus();}catch(e){}}
   function history(){fetch('/api/doc?present='+encodeURIComponent(SLUG)+'&chat=1').then(function(r){return r.json();}).then(function(d){var box=document.getElementById('chatMsgs');if(d&&d.messages&&d.messages.length){d.messages.forEach(function(m){addMsg(m);});}else if(box&&!box.children.length){box.innerHTML='<div class=chat-empty>Aucun message. Lancez la discussion.</div>';}if(d&&typeof d.locked!=='undefined')applyLock(d.locked);_histDone=true;}).catch(function(){_histDone=true;});}
-  function react(id,e){if(!ME||!id||!e)return;fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-react',slug:SLUG,msgId:+id,emoji:e,reactor:reactorId()})}).then(majDiffusee).catch(function(){});}
+  function react(id,e){if(!ME||!id||!e)return;fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-react',slug:SLUG,msgId:+id,emoji:e,reactor:MOIREF})}).then(majDiffusee).catch(function(){});}
   function setReply(id){var m=msgData[id];if(!m||m.deleted)return;var nm=m.author_name||'Invité';replyCtx={id:+id,name:nm,text:(m.body||'').slice(0,120)};var el=document.getElementById('chatReply');if(el){el.style.display='flex';el.innerHTML='<span class=cq><b>'+esc(nm)+'</b> '+esc((m.body||'').slice(0,80))+'</span><button id=chatReplyX title=Annuler>×</button>';var x=document.getElementById('chatReplyX');if(x)x.addEventListener('click',clearReply);}var t=document.getElementById('chatText');if(t)t.focus();}
   function clearReply(){replyCtx=null;var el=document.getElementById('chatReply');if(el){el.style.display='none';el.innerHTML='';}}
   function send(){var i=document.getElementById('chatText');var t=(i.value||'').trim();if(!t||!ME)return;if(LOCKED&&!canMod())return;i.value='';toggleSend();
@@ -486,7 +486,27 @@ var Live=(function(){
     if(pick&&!pick._w){pick._w=1;pick.innerHTML=EMOJIS.map(function(e){return '<button data-e="'+e+'">'+e+'</button>';}).join('');
       pick.addEventListener('click',function(e){e.stopPropagation();var b=e.target.closest?e.target.closest('button'):null;if(b){react(pick.__id,b.getAttribute('data-e'));pick.classList.remove('open');}});
       document.addEventListener('click',function(){pick.classList.remove('open');});}}
-  function connect(slug,me,control){if(!window.supabase||!LIVECFG.supaUrl||!LIVECFG.supaKey||!slug)return;SLUG=slug;ME=me;CONTROL=control||null;
+  // ⚠️ NOTRE IDENTITÉ PUBLIQUE, ET LA SEULE. Elle remplace l'adresse partout où une identité
+  // devait sortir : clé du canal de présence, charge de présence, identité d'un réacteur,
+  // appartenance d'un message. Dérivée du jeton d'auteur — celui qui autorise déjà à modifier et
+  // supprimer — donc « c'est moi » dit enfin la même chose que « j'ai le droit ».
+  //
+  // ⚠️ PRÉPARÉE AU CHARGEMENT, PAS DANS LA CONNEXION. Premier jet : la connexion attendait le
+  // hachage avant de faire quoi que ce soit — tout retardé pour un calcul local, et deux essais
+  // tombés qui pilotent la page de façon synchrone. Le hachage ne dépend que du jeton d'auteur :
+  // il n'a aucune raison d'attendre un appel, et la souscription réseau lui laisse tout le temps.
+  //
+  // La CLÉ de présence, elle, n'en a jamais eu besoin : MYID est déjà tiré au sort par navigateur.
+  // Y mettre l'adresse ne servait qu'au confort de lecture, au prix d'une identité publiée à tous.
+  //
+  // ⚠️ ET PAS D'ACCENT GRAVE DANS CE COMMENTAIRE : il vit DANS le gabarit de la page, donc un
+  // accent grave y ferme la chaîne. Ce bloc l'a appris à ses dépens il y a trois minutes.
+  //
+  // Vide dans un contexte non sécurisé (pas de crypto.subtle) : on s'annonce alors sans identité
+  // plutôt qu'avec une fausse, et les boutons qui supposent la propriété disparaissent.
+  var MOIREF='';
+  var REFPRETE=(function(){ try{ return Player.live.referenceAuteur(authToken()).then(function(r){ MOIREF=r||''; }).catch(function(){ MOIREF=''; }); }catch(e){ return Promise.resolve(); } })();
+  function connect(slug,me,control){if(!window.supabase||!LIVECFG.supaUrl||!LIVECFG.supaKey||!slug)return;SLUG=slug;ME=me;CONTROL=control||null;try{ME.ref=MOIREF;}catch(e){}
     var pb=document.getElementById('presBtn');if(pb)pb.style.display='inline-flex';
     var cb=document.getElementById('chatBtn');if(cb)cb.style.display='inline-flex';var _fb=document.getElementById('chatFab');if(_fb)_fb.classList.add('on');
     wire();history();
@@ -497,7 +517,7 @@ var Live=(function(){
       // Chez nous les deux cles different deja, mais par heureux hasard : le declarer rend
       // intentionnel ce qui n'etait qu'une consequence, et une topologie peut changer.
       auth:{storageKey:LIVECFG.liveAuthKey||'dmp-live-auth',persistSession:true,autoRefreshToken:true}});
-      ch=sb.channel('plive-'+slug,{config:{presence:{key:(me.email||me.name||'x')+':'+MYID}}});
+      ch=sb.channel('plive-'+slug,{config:{presence:{key:MYID}}});
       ch.on('presence',{event:'sync'},function(){renderPres(ch.presenceState());});
       // Plus d'abonnement à la table des messages : elle n'est plus publiée ni lisible
       // publiquement. Tout passe par la diffusion, et l'historique par la route de chat.
@@ -624,7 +644,7 @@ var Live=(function(){
       // par accident : le jour où quelqu'un rebranche un paramètre, la charge d'un canal public
       // redeviendrait crue sans que rien ne le signale. On coupe le chemin, pas seulement l'usage.
       ch.on('broadcast',{event:'map'},function(){if(_onMap)_onMap();});
-      ch.subscribe(function(st){if(st==='SUBSCRIBED'){ch.track({name:me.name,email:me.email,avatar:me.avatar,role:me.role,member:!!me.member,uid:presId()});sendAttend();}});
+      ch.subscribe(function(st){if(st==='SUBSCRIBED'){REFPRETE.then(function(){ME.ref=MOIREF;ch.track({name:me.name,ref:MOIREF,avatar:me.avatar,role:me.role,member:!!me.member,uid:presId()});sendAttend();});}});
       _tyIv=setInterval(renderTyping,1500);
       _atIv=setInterval(sendAttend,25000);
       // Filet de sécurité : au déchargement de la page/iframe (fermeture, reload, switch), on retire la présence
