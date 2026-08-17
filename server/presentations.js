@@ -381,7 +381,11 @@ function messagePublic(row) {
   if ("reactions" in out) out.reactions = reactionsPubliques(out.reactions);
   // Dérivé, jamais recopié : `author_hash` est lu pour ça et ne sort jamais tel quel.
   if ("author_hash" in row) out.author_ref = refAuteur(row.author_hash);
-  return out;
+  // ⚠️ LA CATÉGORIE, PAS LES QUATRE CHEMINS CONNUS. La liste blanche au-dessus protège de ce qu'on
+  // a su nommer ; celle-ci refuse toute chaîne en FORME d'adresse, où qu'elle se trouve — y compris
+  // dans une colonne ajoutée demain, ou en clé d'une carte de réactions. Elle lève au lieu de
+  // nettoyer : une adresse à la sortie est un défaut de conception, pas une impureté à filtrer.
+  return publier(out);
 }
 
 /** Renvoie la ligne telle qu'elle est après écriture — sans jamais renvoyer plus que le public. */
@@ -619,6 +623,7 @@ async function switchPresentationDoc(slug, email, isAdmin, { fileUrl, fileName, 
 // Il traverse trois frontières (présentateur → serveur → audience) : deux implémentations
 // finissaient par diverger, et une audience qui ne voit pas la bonne carte n'émet aucune erreur.
 const { sanitizeContent } = require("./shared.generated.js");
+const { publier } = require("./publier.js");
 
 /**
  * Une présentation close ne se pilote plus par le chemin PROPRIÉTAIRE.
