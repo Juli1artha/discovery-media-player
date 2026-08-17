@@ -450,3 +450,92 @@ export function createBudget(options: {
     restants: () => jetons,
   };
 }
+
+/**
+ * Une file unique pour toutes les écritures d'une présentation.
+ *
+ * ⚠️ ELLE EXISTE PARCE QUE LA DISCIPLINE D'APPEL NE TIENT PAS. Deux ordonnanceurs couvraient une
+ * partie des écritures de carte ; `pushPage`, `showMap`, `hideMap`, `toMap` et la recherche Street
+ * View écrivaient directement. Six appelants, deux protégés — et le correctif de 0.1.41, qui
+ * séquençait « les écritures de carte », n'en séquençait qu'un chemin sur trois.
+ *
+ * Demander à chaque appelant de passer par la bonne porte, c'est une liste : le prochain l'oubliera,
+ * et rien ne le dira. On rend donc les FONCTIONS D'ÉCRITURE elles-mêmes ordonnées — il n'existe plus
+ * de chemin direct, donc plus rien à oublier.
+ *
+ * Trois propriétés, et elles répondent à trois défauts distincts :
+ *
+ *  • UNE SEULE ÉCRITURE EN VOL. Sans ça, deux `PATCH` partent ensemble et c'est le réseau qui décide
+ *    laquelle arrive en dernier — une page ancienne peut écraser une plus récente.
+ *
+ *  • REGROUPEMENT PAR GENRE. Tourner trois pages pendant qu'une écriture est en vol ne doit produire
+ *    qu'une écriture : la dernière. Mais une page et une carte sont deux faits différents — les
+ *    regrouper ensemble en perdrait un. Le genre est donc la clé, et la position dans la file reste
+ *    celle de la PREMIÈRE demande de ce genre : l'ordre entre genres est conservé.
+ *
+ *  • UN RYTHME MINIMUM. Un déplacement de carte à la souris produirait sinon une écriture par
+ *    image. Ce rythme remplace les deux ordonnanceurs qu'elle absorbe.
+ *
+ * ⚠️ CE QU'ELLE NE FAIT TOUJOURS PAS, ET IL FAUT LE DIRE. Une requête ABANDONNÉE par le délai maximal
+ * peut être arrivée au serveur et y atterrir après celle qui l'a remplacée. La file supprime le
+ * désordre qu'on cause ; elle ne peut rien contre celui qu'on subit. Fermer ce dernier cas demande
+ * un numéro de version porté par l'écriture et refusé côté serveur — donc une colonne de plus, donc
+ * un chemin de migration pour les instances existantes, qui n'existe pas encore.
+ */
+export function createFileEcritures(options: {
+  minMs?: number;
+  now?: () => number;
+  setTimer?: (f: () => void, d: number) => unknown;
+  clearTimer?: (id: unknown) => void;
+} = {}): {
+  poser: (genre: string, tache: () => Promise<unknown>) => Promise<unknown>;
+  enAttente: () => number;
+} {
+  const minMs = options.minMs ?? 0;
+  const now = options.now || (() => Date.now());
+  const poser_ = options.setTimer || ((f, d) => setTimeout(f, d));
+
+  /** ⚠️ Une Map : elle conserve l'ordre d'INSERTION, et réécrire une clé ne la déplace pas. */
+  const attente = new Map<string, { tache: () => Promise<unknown>; regler: (v: unknown) => void }>();
+  let enVol = false;
+  let dernier = -Infinity;
+  let programme = false;
+
+  function pomper() {
+    if (enVol || attente.size === 0) return;
+    const reste = minMs - (now() - dernier);
+    if (reste > 0) {
+      if (programme) return;
+      programme = true;
+      poser_(() => { programme = false; pomper(); }, reste);
+      return;
+    }
+    const genre = attente.keys().next().value as string;
+    const entree = attente.get(genre)!;
+    attente.delete(genre);
+    enVol = true;
+    dernier = now();
+    Promise.resolve()
+      .then(entree.tache)
+      .then((v) => entree.regler(v), () => entree.regler(null))
+      .then(() => { enVol = false; pomper(); });
+  }
+
+  return {
+    /**
+     * Range une écriture. Une écriture du même genre déjà en attente est REMPLACÉE — sa promesse se
+     * règle avec le résultat de celle qui la remplace, parce qu'elle a été superposée, pas perdue.
+     */
+    poser(genre, tache) {
+      return new Promise((resolve) => {
+        const precedente = attente.get(genre);
+        attente.set(genre, {
+          tache,
+          regler: (v) => { if (precedente) precedente.regler(v); resolve(v); },
+        });
+        pomper();
+      });
+    },
+    enAttente: () => attente.size,
+  };
+}

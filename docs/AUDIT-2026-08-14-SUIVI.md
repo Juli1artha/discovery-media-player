@@ -297,7 +297,7 @@ du jour même** — elle ne relit pas un état, elle relit un mouvement.
 | | Constat | État |
 |---|---|---|
 | V-1 | Une présentation terminée peut être réactivée | ✅ **0.1.44** |
-| V-2 | Écritures de présentation pas toutes séquentielles (`toMap`, `hideMap`, `pushPage`) | à faire — file unique |
+| V-2 | Écritures de présentation pas toutes séquentielles (`toMap`, `hideMap`, `pushPage`) | ✅ **file unique** — reste le numéro de version |
 | V-3 | Une requête bloquée fige l'ordonnanceur (né de 0.1.41) | ✅ **0.1.44** |
 | V-4 | Le canal public reste amplifiable — et la limite de 0.1.42 en fait un déni de service | ✅ **0.1.45** |
 | V-5 | Clé anonyme rejouable, exposée dans la présence (née de 0.1.42) | à faire |
@@ -448,6 +448,36 @@ de nous signaler pour `limits.allow`.
 > lecture de la ligne **avant** les branches : les deux chemins mis en cache la relisaient donc quand
 > même, et le cache ajoutait une seconde interrogation au lieu d'en retirer une. Vu au banc — 26
 > lectures pour 25 appels — pas à la relecture.
+
+### V-2 — la file unique, et ce qu'elle ne ferme pas
+
+**Six chemins écrivaient, deux étaient protégés.** 0.1.41 annonçait « les écritures de carte sont
+séquentielles » : c'était vrai d'un chemin sur trois.
+
+⚠️ **La correction n'est pas d'allonger la liste des appelants disciplinés.** Ce sont les *fonctions
+d'écriture* — `pushPage`, `presentContent` — qui rangent désormais leur envoi dans une file unique.
+Il n'existe plus de chemin direct, donc plus rien à oublier ; les six appelants n'ont pas été
+touchés. Les deux anciens ordonnanceurs deviennent de simples adaptateurs : deux mécaniques pour un
+même rôle sont la forme exacte qui finit par diverger.
+
+Trois propriétés, pour trois défauts distincts : **une seule écriture en vol** (sinon le réseau
+décide qui arrive en dernier), **regroupement par genre** (trois pages tournées pendant un envoi n'en
+écrivent qu'une, mais une page et une carte restent deux faits), **rythme minimum** (un déplacement
+de souris produirait sinon une écriture par image).
+
+Au passage, l'anti-rebond de 250 ms de `pushPage` disparaît : il **repoussait** l'échéance à chaque
+appel, donc un défilement continu pouvait ne jamais écrire. La file regroupe sans jamais repousser.
+
+> ⚠️ **Ce qu'elle ne ferme pas, et je l'ai écrit dans le code plutôt qu'omis.** Une requête
+> *abandonnée* par le délai maximal peut être arrivée au serveur et y atterrir après celle qui l'a
+> remplacée. La file supprime le désordre qu'on **cause** ; elle ne peut rien contre celui qu'on
+> **subit**.
+
+**Le numéro de version reste donc à faire — et j'ai inversé l'ordre annoncé.** Il demande une colonne
+sur `doc_presentations`, or PostgREST rejette un `PATCH` portant une colonne inconnue : un hôte qui
+ne migre pas verrait **toutes** ses écritures de présentation échouer. Le projet n'a pas encore de
+chemin de migration pour les instances existantes (P2-6, ouvert). Le livrer d'abord, c'était livrer
+une casse.
 
 ### Inexactitudes relevées
 

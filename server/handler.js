@@ -660,16 +660,18 @@ var Map3DD=(function(){
   //
   // Le suivi devient PAR PALIERS au lieu d'être continu (environ deux fois par seconde). C'est le
   // prix pour que personne d'autre que le présentateur ne pilote l'écran de l'audience.
-  var _ordPersist=null;
-  function persistOrd(){ if(!_ordPersist&&window.Player&&Player.live&&Player.live.createScheduler){
-      _ordPersist=Player.live.createScheduler(function(fini){
-        // ⚠️ ON ATTEND L'ÉCRITURE. Appeler fini() tout de suite disait à l'ordonnanceur que le
-        // travail était fait alors qu'il commençait : sa garantie du « dernier état gagne »
-        // portait sur l'ordre des appels et non sur celui des arrivées.
-        var p=null; try{ if(map&&persist)p=persist(state()); }catch(e){}
-        if(p&&p.then)p.then(fini,fini); else fini();
-      },{minMs:500}); }
-    return _ordPersist; }
+  // ⚠️ CET ORDONNANCEUR N'EN EST PLUS UN, ET C'EST LE CORRECTIF. Il en existait DEUX ici — un pour la
+  // carte, un pour Street View — pendant que quatre autres chemins écrivaient sans passer par eux.
+  // Deux mécaniques pour un même rôle, et une couverture d'un chemin sur trois.
+  //
+  // L'ordonnancement vit désormais dans « presentContent » elle-même : ce qu'on appelle ici finit dans
+  // la file unique, avec son regroupement par genre, son écriture unique en vol et son rythme
+  // minimum. Il ne reste de cette fonction qu'un adaptateur, pour ne pas réécrire ses appelants.
+  //
+  // Ce qu'elle garantissait — lire l'état le plus frais — reste vrai autrement : la file conserve la
+  // DERNIÈRE demande de ce genre, donc l'état du dernier mouvement.
+  function persistOrd(){
+    return { signaler: function(){ try{ if(map&&persist)persist(state()); }catch(e){} } }; }
   function broadcast(){ if(!map)return; var n=Date.now(); if(n-_bcT<200)return; _bcT=n;
     var o=persistOrd(); if(o)o.signaler();
     try{ if(window.Live) Live.sendMap(); }catch(e){} }
@@ -713,13 +715,9 @@ var Map3DD=(function(){
     loadGoogle(function(){ try{ new google.maps.StreetViewService().getPanorama({location:{lat:center[0],lng:center[1]},radius:80},function(data,status){ if(status==='OK'&&data&&data.location){ var ll=data.location.latLng; var content={kind:'streetview',position:[ll.lat(),ll.lng()],pov:{heading:0,pitch:0},zoom:1}; if(persist)persist(content); enterSV(content,true,persist); } else { tempHint('Pas de Street View à cet endroit.'); } }); }catch(e){ tempHint('Street View indisponible.'); } }); }
   function svState(){ if(!pano)return null; var p=pano.getPosition(),v=pano.getPov(); if(!p)return null; return {kind:'streetview',position:[p.lat(),p.lng()],pov:{heading:v.heading,pitch:v.pitch},zoom:pano.getZoom()}; }
   // Même règle qu'au-dessus : on persiste, on signale, on ne transporte pas la position.
-  var _ordSv=null;
-  function svOrd(){ if(!_ordSv&&window.Player&&Player.live&&Player.live.createScheduler){
-      _ordSv=Player.live.createScheduler(function(fini){
-        var p=null; try{ if(persist&&pano)p=persist(svState()); }catch(e){}
-        if(p&&p.then)p.then(fini,fini); else fini();
-      },{minMs:500}); }
-    return _ordSv; }
+  // Même chose pour Street View : la file s'en charge, il ne reste qu'un adaptateur.
+  function svOrd(){
+    return { signaler: function(){ try{ if(persist&&pano)persist(svState()); }catch(e){} } }; }
   function svBcast(){ var n=Date.now(); if(n-_svBcT<200)return; _svBcT=n; if(!svState())return;
     var o=svOrd(); if(o)o.signaler();
     try{ if(window.Live)Live.sendMap(); }catch(e){} }
@@ -2063,7 +2061,7 @@ ${LEGAL_CSS}
     // Présentation live — GÉRÉE DANS L'IFRAME (toujours servie fraîche, en-tête no-store) → robuste même si le
     // bundle React de l'app est en cache. Bandeau fixe persistant en bas : lien + copier + inviter + terminer.
     // Seul l'envoi par chat (Inviter) est délégué à l'app (postMessage) car il exige le JWT.
-    var PRES=null, _pushT=null, _hbIv=0;
+    var PRES=null, _hbIv=0;
     // JWT de la session app (MÊME ORIGINE, localStorage) → autorise le rattachement de la présentation au membre
     // (reprise / liste / transfert) et les actions authentifiées (reclaim).
     function appToken(){ try{ var raw=localStorage.getItem(LIVECFG.hostAuthKey||''); if(!raw)return''; var s=JSON.parse(raw); var t=(s&&(s.access_token||(s.currentSession&&s.currentSession.access_token)||(s.session&&s.session.access_token)))||''; return t; }catch(e){ return ''; } }
@@ -2086,11 +2084,36 @@ ${LEGAL_CSS}
     // rien, alors que l'émettre trop tôt fait relire pour rien ET perdre le changement.
     // (audit P0-3)
     function diffuserEtat(){ if(!PRES||!window.Live)return; try{ Live.sendState(); }catch(e){} }
-    function pushPage(){ if(!PRES)return; clearTimeout(_pushT); _pushT=setTimeout(function(){ if(!PRES)return;
-      Player.live.fetchBorne('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-page',slug:PRES.slug,control:PRES.control,page:cur||1})})
+    // ⚠️ UNE SEULE FILE, ET CE SONT LES FONCTIONS D'ÉCRITURE QUI L'EMPRUNTENT — PAS LEURS APPELANTS.
+    //
+    // Six chemins écrivaient : « pushPage », « showMap », « hideMap », « toMap », la recherche Street
+    // View, et les deux ordonnanceurs de carte. Deux étaient protégés. Le correctif de 0.1.41, qui
+    // annonçait des écritures de carte séquentielles, n'en couvrait qu'un chemin sur trois.
+    //
+    // Demander à chaque appelant de passer par la bonne porte serait une LISTE : le prochain
+    // l'oubliera, et rien ne le dira. On range donc la file DANS « pushPage » et « presentContent » :
+    // il n'existe plus de chemin direct, donc plus rien à oublier.
+    //
+    // Le rythme minimum remplace les deux ordonnanceurs qu'elle absorbe — un déplacement de carte à
+    // la souris produirait sinon une écriture par image.
+    var _file=null;
+    function fileEcritures(){
+      if(!_file&&window.Player&&Player.live&&Player.live.createFileEcritures){
+        _file=Player.live.createFileEcritures({minMs:500});
+      }
+      return _file;
+    }
+    // ⚠️ L'ANTI-REBOND DE 250 ms A DISPARU, ET C'EST VOULU. Il repoussait l'échéance à chaque appel —
+    // un défilement continu pouvait donc ne JAMAIS écrire. La file regroupe par genre sans jamais
+    // repousser : la dernière page demandée part au prochain tour, et elle part.
+    function pushPage(){ if(!PRES)return;
+      var f=fileEcritures(); var page=cur||1;
+      if(!f) return envoyerPage(page);
+      return f.poser('page',function(){ return envoyerPage(cur||page); }); }
+    function envoyerPage(page){ if(!PRES)return Promise.resolve();
+      return Player.live.fetchBorne('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-page',slug:PRES.slug,control:PRES.control,page:page})})
         .then(function(r){ if(r&&r.ok)diffuserEtat(); })
-        .catch(function(){});
-    },250); }
+        .catch(function(){}); }
     // ⚠️ TROIS GESTES, ET L'ORDRE ÉTAIT LE PIRE DES SIX. On signalait la fin, puis on COUPAIT LE
     // CANAL, puis on envoyait l'avis de fin. Le signal partait donc avant l'écriture (relecture sur
     // un état périmé), et la coupure avant l'envoi. L'audience pouvait ne jamais apprendre que la
@@ -2183,7 +2206,10 @@ ${LEGAL_CSS}
     // alors qu'elle venait de PARTIR. Sa garantie « une seule en vol, la dernière gagne » ne
     // s'appliquait qu'à l'ordre des APPELS, pas à celui des écritures — plusieurs PATCH pouvaient
     // voler ensemble, et une position ancienne atterrir après une récente.
-    function presentContent(content){ if(!PRES)return Promise.resolve(); var h={'Content-Type':'application/json'}; var tk=appToken(); if(tk) h['Authorization']='Bearer '+tk;
+    function presentContent(content){ if(!PRES)return Promise.resolve();
+      var f=fileEcritures(); if(!f) return envoyerContenu(content);
+      return f.poser('content',function(){ return envoyerContenu(content); }); }
+    function envoyerContenu(content){ if(!PRES)return Promise.resolve(); var h={'Content-Type':'application/json'}; var tk=appToken(); if(tk) h['Authorization']='Bearer '+tk;
       return Player.live.fetchBorne('/api/doc',{method:'POST',headers:h,body:JSON.stringify({action:'present-content',slug:PRES.slug,control:PRES.control,content:content})})
         .then(function(r){ if(r&&r.ok)diffuserEtat(); })
         .catch(function(){}); }
