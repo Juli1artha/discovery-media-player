@@ -186,8 +186,8 @@ avec le lot des migrations (P1-5), pas avant.
 |---|---|---|
 | P2-1 | Autorisation des statistiques de présentation trop large | ✅ tranché : le player accorde le manifeste, l'hôte décide le reste |
 | P2-2 | `handler.js` : 2 988 lignes, non typé | découpage progressif, contrat public inchangé |
-| P2-3 | Pas d'E2E navigateur, pas de Supabase de test, pas de couverture | oui — c'est là que vivent les deux P0 |
-| P2-4 | Dépendances navigateur hors lockfile, sans SRI (`@2` mouvant) | embarquer, ou SRI + versions exactes |
+| P2-3 | Pas d'E2E navigateur, pas de Supabase de test, pas de couverture | ✅ **base d'essai en mémoire** — 3 pages sur 4 (cf. ci-dessous) |
+| P2-4 | Dépendances navigateur hors lockfile, sans SRI (`@2` mouvant) | ✅ **versions exactes + empreintes** (cf. ci-dessous) |
 | P2-5 | Actions GitHub épinglées sur des tags, pas des SHA | oui — priorité au workflow CLA |
 | P2-6 | Pas de migrations de schéma pour une instance existante | ✅ chemin ouvert — l'hôte applique, le player détecte |
 | P2-7 | Accessibilité : dialogues, labels, `aria-live` | oui |
@@ -645,6 +645,137 @@ réponse serveur qu'on dénoue à la main.
 > qui diffuse dès le départ de la requête.
 
 Reste à étendre : audience normale, audience hostile.
+
+### P2-3 — la base d'essai, et ce qu'une contrainte ancienne a fini par offrir
+
+Le banc navigateur ne couvrait que l'aperçu local : la visionneuse tracée et la page d'audience
+exigent une base, répondaient donc 404, et **leurs politiques n'étaient exercées par rien**. Ce sont
+pourtant les deux pages qu'un client et un spectateur ouvrent réellement.
+
+`tools/postgrest-en-memoire.cjs` les débloque — environ 150 lignes, aucune dépendance, aucun compte
+à créer. Ce qui rend cette doublure possible n'est pas une prouesse : c'est **la garde de
+portabilité de la forge**, qui interdit depuis longtemps la syntaxe exotique et maintient toute la
+surface en `table?colonne=eq.valeur`. Une contrainte prise pour rendre un portage possible a fini
+par rendre une base d'essai possible. Les disciplines se paient en retard, et pas toujours là où on
+les avait posées.
+
+⚠️ **Elle refuse plutôt qu'elle n'invente.** Tout filtre inconnu renvoie un 400 qui le NOMME. Une
+doublure qui répondrait « aucun résultat » à une requête mal comprise rendrait tous ces essais verts
+en ne mesurant rien — et le resterait le jour où le player poserait une requête qu'elle ignore. Ses
+propres essais vérifient donc **le refus en premier**, le reste ensuite.
+
+⚠️ **Ce n'est pas une base**, et s'en servir comme telle serait la pire façon de l'employer : ni
+transactions, ni contraintes, ni types, ni RLS. Elle ne dit rien d'un verrou optimiste concurrent ni
+d'une unicité — ce qui relève du SGBD se vérifie sur un vrai SGBD. Ce qu'elle couvre, c'est le
+chemin de la requête HTTP à la page rendue.
+
+**Ce que le banc gagne :**
+
+| | |
+|---|---|
+| visionneuse tracée `/doc/:slug` | démarre, politique plus stricte vérifiée, **et la lecture est comptée en base** |
+| page d'audience `/present/:slug` | démarre, avec de quoi tenir la présence et le chat |
+| mur d'accès visiteur | **toujours pas couvert** — il dépend d'un greffon que le contexte autonome n'a pas, et ferme donc (404) au lieu de dégrader. Trois pages sur quatre. |
+
+La ligne qui compte le plus est celle de la lecture : la boucle **navigateur → serveur → base**
+n'était refermée nulle part. Une page qui s'affiche sans rien journaliser est invisible à l'œil, et
+c'est précisément ce que ce produit vend.
+
+⚠️ **Et le premier essai a corrigé un commentaire, pas le code.** L'assertion sur `frame-ancestors`
+recopiait ce que `sendHtml` annonçait — « page publique : `'none'` » — et elle est tombée : un lien
+tracé sans `embed` est servi en `'self'`. Le comportement est sain (encadrement de même origine
+seulement ; un détournement de clic suppose une page étrangère), c'est **la phrase** qui était
+périmée. Elle a été corrigée, et le comportement est maintenant vérifié plutôt que décrit.
+
+⚠️ **Et C-6 a été réintroduit dans la doublure, deux heures après avoir été corrigé.** Le nom de
+table venait de l'URL et indexait un objet — la forme exacte que `flattenPresence` venait de perdre.
+**C'est CodeQL qui l'a vu**, pas moi, sur la PR. La conséquence dépassait la doublure :
+`tables["__proto__"]` rend `Object.prototype`, et le `push` suivant y aurait écrit des index et une
+longueur — le prototype de tout le processus d'essai, player compris. Un faux serveur qui corrompt
+le vrai code qu'il teste.
+
+Il a fallu **trois versions** de cette ligne, et les deux premières enseignent autant que la
+dernière :
+
+| | |
+|---|---|
+| objet indexé par le nom de l'URL | le défaut |
+| filtre sur la **forme** du nom | insuffisant — `__proto__` s'écrit en minuscules et underscore, il passe |
+| **registre clos** + vue sans prototype | ferme la question : rien n'est plus écrit par un nom venu du dehors |
+
+La troisième est aussi la plus **fidèle** : un vrai PostgREST ne crée pas une table parce qu'on l'a
+nommée, il répond que la relation n'existe pas. Effet de bord bienvenu — un essai doit désormais
+déclarer les tables où le player écrira, donc le schéma que ces pages touchent cesse d'être
+implicite. La même correction a dû être passée sur la projection : parcourir la ligne et filtrer
+par la liste demandée, au lieu d'écrire sous les noms de colonnes reçus. **Le sens de la boucle est
+toute la différence.**
+
+⚠️ **Et le piège s'est refermé sur l'essai lui-même** : dans un littéral, `__proto__:` *définit le
+prototype* au lieu de créer une clé — la table que je croyais déclarer n'existait pas, et l'essai
+accusait la doublure. Troisième rencontre avec la même mécanique dans la journée, la dernière en
+écrivant sa propre vérification. **Écrire la règle, la corriger ailleurs, la documenter le matin
+même : rien de tout cela n'immunise contre le geste.** Ce qui a tenu, c'est une machine qui relit
+chaque ligne sans se souvenir de rien.
+
+Vérifié par mutation : journalisation coupée → l'essai tombe ; origine étrangère ajoutée aux
+encadrants d'un lien tracé → l'essai tombe.
+
+### P2-4 — quatre scripts tiers, dont un que personne n'avait compté
+
+**Le pire n'était pas l'absence d'empreinte, c'était `@2`.** Cette étiquette de jsdelivr suit la
+dernière 2.x publiée : la page servait aux visiteurs le code que Supabase avait mis en ligne le
+matin même — sans déploiement, sans relecture, sans retour arrière possible. Le jour du correctif,
+elle résolvait vers **2.112.3**. Une dépendance mouvante n'est pas une dépendance, c'est un
+abonnement à ce que décide un tiers.
+
+Et l'un ne va pas sans l'autre : une empreinte sur une URL mouvante casserait la page à la première
+publication du tiers. **Épingler rend l'empreinte possible ; l'empreinte rend l'épinglage utile** —
+une version exacte dit quel fichier on *demande*, jamais lequel on *reçoit*.
+
+| | avant | après |
+|---|---|---|
+| `pdf.min.js` | version exacte, aucune empreinte | empreinte |
+| `pdf.worker.min.js` (1 Mo) | version exacte, **hors de portée de `integrity`** | vérifié à la main, cf. plus bas |
+| `supabase-js` | **`@2` mouvant**, aucune empreinte | `2.112.3` + empreinte |
+| `leaflet` | version exacte, aucune empreinte | empreinte (balise injectée : `s.integrity`) |
+
+⚠️ **Le worker n'a pas de balise**, donc pas d'attribut `integrity` : c'est pdf.js qui le charge.
+Il pèse pourtant trois fois le script principal et voit tout le contenu du document — protéger la
+balise et le laisser passer, ce serait verrouiller la porte en laissant la fenêtre. Ce qui rend le
+contrôle possible : **ses octets passaient déjà par notre code**, puisqu'un worker d'une autre
+origine est refusé par le navigateur et qu'on le récupérait donc en texte pour en faire un blob de
+même origine. Un détour né d'une contrainte est devenu le point de contrôle. Tout doute vaut refus,
+et le refus retombe sur le worker de secours de pdf.js — le chemin qu'empruntait déjà un réseau en
+panne, donc un mode de défaillance éprouvé plutôt qu'un nouveau.
+
+⚠️ **La garde de la forge a trouvé un quatrième tiers à son premier passage** : le chargeur
+d'identité Google du mur d'accès, que mon inventaire manuel avait oublié. Lui et le chargeur de
+cartes ne peuvent pas porter d'empreinte — leur réponse change à chaque appel et ils injectent
+eux-mêmes d'autres scripts. Ils sont donc **nommés avec leur raison** dans la garde : ajouter un
+tiers demain force un choix visible, épinglé-et-empreinté ou inscrit là en connaissance de cause.
+
+Deux exemplaires du même fait, confrontés : le banc navigateur **rehache les octets réellement
+servis** et les compare aux empreintes du code. Ce n'est pas une garde de sécurité — qui
+intercepterait le CDN nous tromperait là comme ailleurs — c'est une garde d'**entretien**, contre la
+montée de version dont on oublie de recalculer l'empreinte, seul scénario réaliste.
+
+⚠️ **Et le banc a dû changer pour ça** : ses doublures inventées sont désormais refusées par le
+navigateur, comme elles doivent l'être. Il rejoue maintenant les octets réels. Une mutation l'a
+montré ensuite : une empreinte fausse ne déclenche **aucune** violation CSP — l'événement n'existe
+pas pour l'intégrité, seule la console en parle. Le banc ne rougissait donc que sur la
+confrontation, et un document image se serait affiché « vert » sans présence, sans chat et sans
+direct. Il constate désormais que les tiers sont **arrivés**, pas seulement que rien n'a été refusé.
+
+Vérifié par mutation, trois fois : `@2` remis, une empreinte retirée, un script tiers ajouté hors
+inventaire — la garde refuse les trois. Et `integrity` sans `crossorigin` casse la page entière,
+mesuré aussi : sur une ressource d'une autre origine, le navigateur ne peut pas lire la réponse
+pour la hacher, donc il refuse le script. Les deux attributs ne se séparent jamais — d'où une
+fonction unique qui les écrit ensemble, plutôt que quatre balises dont l'une finirait par en perdre un.
+
+**Ce que ça ne fait pas** : embarquer les bibliothèques, l'autre option de l'audit. Elle reste
+préférable à terme (plus de tiers du tout, CSP resserrée sur `'self'`, et l'adresse IP du visiteur
+qui cesse d'être communiquée à trois CDN), mais elle demande une route d'actifs statiques et touche
+au contrat d'hôte. Cette étape-ci ferme le risque d'exécution ; l'autre fermera la dépendance.
 
 ### C-6 — la table de présence était indexée par ce que les participants composent
 

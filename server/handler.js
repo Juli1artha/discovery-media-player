@@ -77,7 +77,55 @@ const originOf = (u) => { try { return new URL(u).origin; } catch { return ""; }
 //
 // Signalé par un audit externe. Fermer le chemin d'abord, migrer ensuite — dans cet ordre.
 const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174";
-const SUPAJS = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js";
+// ⚠️ VERSION EXACTE, PAS `@2` (constat P2-4). L'étiquette `@2` de jsdelivr suit la dernière 2.x :
+// la page servait donc, aux visiteurs, le code que Supabase avait publié le matin même — sans que
+// personne n'ait rien déployé, ni relu, ni pu revenir en arrière. Le jour où elle résolvait vers
+// 2.112.3, un correctif de la veille aurait changé ce qui tourne dans le navigateur d'un client
+// pendant une présentation en cours. Une dépendance mouvante n'est pas une dépendance, c'est un
+// abonnement à ce que décide un tiers.
+const SUPAJS = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.js";
+const LEAFLET = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+
+/**
+ * Empreintes des dépendances tierces (constat P2-4).
+ *
+ * ⚠️ CE QUI EST EN JEU : un script tiers entre dans la page avec EXACTEMENT les droits de notre
+ * code — même origine, même session, même accès au document affiché. Une version épinglée dit
+ * seulement quel fichier on demande ; elle ne dit rien de ce qu'on reçoit. L'empreinte, elle, fait
+ * refuser le navigateur si un octet a changé, quelle que soit la raison : CDN compromis, compte de
+ * publication détourné, ou intermédiaire.
+ *
+ * ⚠️ ET ELLE OBLIGE À ÉPINGLER. `integrity` sur une URL mouvante casserait la page à la première
+ * publication du tiers : les deux vont ensemble, l'un n'a pas de sens sans l'autre.
+ *
+ * Relevées sur les octets réellement servis, pas recopiées d'une documentation. Pour les vérifier
+ * ou les mettre à jour après une montée de version :
+ *
+ *   curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A
+ *
+ * Le banc navigateur les reconfronte à ce que les CDN servent — deux exemplaires d'un même fait
+ * doivent être comparés par quelqu'un au moins une fois.
+ */
+const TIERS = {
+  pdf: { url: PDFJS + "/pdf.min.js", sri: "sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" },
+  // ⚠️ Le worker N'A PAS DE BALISE, donc pas d'attribut `integrity` : il est chargé par pdf.js,
+  // pas par le document. Mais ses octets passent déjà par notre code (ils sont récupérés en texte
+  // puis transformés en blob de même origine, sans quoi le navigateur refuserait un worker
+  // distant) — on les vérifie donc à la main, là où ils passent. Sans ça, l'empreinte de
+  // `pdf.min.js` protégerait la petite moitié et laisserait la grande (1 Mo contre 300 ko) entrer
+  // sans contrôle, alors même qu'elle voit tout le contenu du document.
+  pdfWorker: { url: PDFJS + "/pdf.worker.min.js", sri: "sha384-SnzOobpRMLXZ52iJvZm/C0fYw0OQemTXzTjIsdsfMcrCtCEe9qgzxTd3RSklO5x2" },
+  supa: { url: SUPAJS, sri: "sha384-qafw21c/iciq0VXsi9FzkfoQv5I/V0iqE4lSNcKXPnW9/UTJLnv5CcN4FHxVLnKg" },
+  leaflet: { url: LEAFLET, sri: "sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" },
+};
+
+// ⚠️ `crossorigin` EST OBLIGATOIRE avec `integrity` sur une ressource d'une autre origine : sans
+// lui, la réponse est opaque, le navigateur ne peut pas la lire pour la hacher, et il refuse le
+// script — silencieusement du point de vue de la page. L'oublier ne dégrade pas la protection,
+// ça casse la page. Les deux ne se séparent jamais : d'où cette fonction, plutôt que trois
+// balises écrites à la main dont l'une finirait par en perdre un.
+const balise = (nonce, tiers) =>
+  `<script nonce="${nonce}" src="${tiers.url}" integrity="${tiers.sri}" crossorigin="anonymous"></script>`;
 
 // ————— Couche LIVE partagée (présence + chat historisé) — présentateur ET audience —————
 // CSS injecté dans les deux vues.
@@ -625,7 +673,7 @@ var Map3DD=(function(){
   function loadLeaflet(cb){ if(window.L){cb();return;} var iv=setInterval(function(){if(window.L){clearInterval(iv);cb();}},80);
     if(leafletLoading)return; leafletLoading=true;
     var css=document.createElement('link');css.rel='stylesheet';css.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';document.head.appendChild(css);
-    var s=document.createElement('script');s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';document.body.appendChild(s); }
+    var s=document.createElement('script');s.src='${TIERS.leaflet.url}';s.integrity='${TIERS.leaflet.sri}';s.crossOrigin='anonymous';document.body.appendChild(s); }
   // Google Maps JS chargé à la demande, seulement si une clé est fournie (GMAPS_KEY).
   function loadGoogle(cb){ if(window.google&&window.google.maps){cb();return;} if(!GMAPS_KEY)return; var iv=setInterval(function(){if(window.google&&window.google.maps){clearInterval(iv);cb();}},120);
     if(gLoading)return; gLoading=true;
@@ -1547,7 +1595,15 @@ function sendHtml(res, status, html, scriptSrc, imgExtra, frameAncestors) {
     // personne n'a franchie serait un mauvais échange. `'self'` ferme l'exfiltration, qui est le
     // risque réel.
     "form-action 'self'",
-    // Aperçu interne : framing MÊME ORIGINE autorisé (iframe DocViewer). Page publique : 'none' (anti-clickjacking).
+    // ⚠️ CE COMMENTAIRE ANNONÇAIT `'none'` POUR LA PAGE PUBLIQUE, ET C'ÉTAIT FAUX. Un lien tracé
+    // sans `embed` est servi en `frame-ancestors 'self'` (cf. la route `doc`) : encadrement de
+    // MÊME ORIGINE uniquement, ce qui reste sain — un détournement de clic suppose une page
+    // étrangère, et une page hostile sur notre propre origine serait déjà une compromission bien
+    // pire. Mais la phrase, elle, faisait croire à un refus total.
+    //
+    // Trouvé en écrivant l'essai de bout en bout : l'assertion recopiait ce commentaire, et c'est
+    // elle qui est tombée. Le comportement est désormais VÉRIFIÉ par ce banc, donc ce que vous
+    // lisez ici ne peut plus dériver seul.
     `frame-ancestors ${frameAncestors || "'none'"}`,
   ].join("; "));
   res.end(html);
@@ -1997,8 +2053,8 @@ ${LEGAL_CSS}
   ${legalFooter({ tracked: !preview && !!share.slug, sansExpediteur: !share.recipient_email && !share.created_by })}
   ${brandLogo || !brandIntroRuntime ? "" : `<script nonce="${nonce}">(${brandIntroRuntime.toString()})();</script>`}
   <script nonce="${nonce}">${PLAYER_BROWSER_JS}</script>
-  <script nonce="${nonce}" src="${PDFJS}/pdf.min.js"></script>
-  ${preview ? `<script nonce="${nonce}" src="${SUPAJS}"></script>
+  ${balise(nonce, TIERS.pdf)}
+  ${preview ? `${balise(nonce, TIERS.supa)}
   <script nonce="${nonce}">var LIVECFG={supaUrl:${JSON.stringify(share.supa_url || "")},supaKey:${JSON.stringify(share.supa_key || "")},hostAuthKey:${JSON.stringify(cleSessionHote())},liveAuthKey:${JSON.stringify(CLE_SESSION_PLAYER)},guestKey:${JSON.stringify(CLE_INVITE)}};var GMAPS_KEY=${JSON.stringify((PLAYER.config && PLAYER.config.mapsKey) || "" || "")};${LIVE_JS}
   ${MAP_JS}</script>` : ""}
   <script nonce="${nonce}">
@@ -2290,8 +2346,8 @@ ${LEGAL_CSS}
     // Vrai worker SAME-ORIGIN via blob (un Worker cross-origin est bloqué par le navigateur → "fake worker").
     var wsrc=CFG.pdfjs+'/pdf.worker.min.js';
     try{
-      fetch(wsrc).then(function(r){return r.ok?r.text():null;}).then(function(t){
-        try{ pdfjsLib.GlobalWorkerOptions.workerSrc = t ? URL.createObjectURL(new Blob([t],{type:'application/javascript'})) : wsrc; }catch(e){ pdfjsLib.GlobalWorkerOptions.workerSrc=wsrc; }
+      Player.viewer.workerBlobUrl(wsrc,'${TIERS.pdfWorker.sri}').then(function(u){
+        try{ pdfjsLib.GlobalWorkerOptions.workerSrc = u || wsrc; }catch(e){ pdfjsLib.GlobalWorkerOptions.workerSrc=wsrc; }
         start();
       }).catch(function(){ pdfjsLib.GlobalWorkerOptions.workerSrc=wsrc; start(); });
     }catch(e){ pdfjsLib.GlobalWorkerOptions.workerSrc=wsrc; start(); }
@@ -2577,8 +2633,8 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
   ${PLAYER.branding.poweredBy ? `<div class=brand>Propulsé par ${esc(PLAYER.branding.poweredBy)}</div>` : ""}
   ${legalFooter({ tracked: true })}
   <script nonce="${nonce}">${PLAYER_BROWSER_JS}</script>
-  <script nonce="${nonce}" src="${PDFJS}/pdf.min.js"></script>
-  <script nonce="${nonce}" src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  ${balise(nonce, TIERS.pdf)}
+  ${balise(nonce, TIERS.supa)}
   <script nonce="${nonce}">
   (function(){
     var CFG=${cfg.replace(/</g, "\\u003c")};
@@ -2603,8 +2659,8 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
     }
     var wsrc=CFG.pdfjs+'/pdf.worker.min.js';
     function boot(){
-      fetch(wsrc).then(function(r){return r.ok?r.text():null;}).then(function(t){
-        try{ pdfjsLib.GlobalWorkerOptions.workerSrc=t?URL.createObjectURL(new Blob([t],{type:'application/javascript'})):wsrc; }catch(e){ pdfjsLib.GlobalWorkerOptions.workerSrc=wsrc; }
+      Player.viewer.workerBlobUrl(wsrc,'${TIERS.pdfWorker.sri}').then(function(u){
+        try{ pdfjsLib.GlobalWorkerOptions.workerSrc = u || wsrc; }catch(e){ pdfjsLib.GlobalWorkerOptions.workerSrc=wsrc; }
         load();
       }).catch(function(){ pdfjsLib.GlobalWorkerOptions.workerSrc=wsrc; load(); });
     }
@@ -3847,6 +3903,9 @@ async function handler(req, res) {
   }
 }
 
-module.exports = { handler, init };
+// ⚠️ `TIERS` est exporté pour être CONFRONTÉ, pas pour être utilisé. Le banc navigateur et la
+// forge doivent pouvoir demander « quelles dépendances tierces, à quelles empreintes » sans en
+// tenir une seconde liste — c'est la seule façon qu'une empreinte périmée finisse par se voir.
+module.exports = { handler, init, TIERS };
 
 // redeploy: forcer le build production (Vercel a sauté la prod du merge #463 — wording re-partage).
