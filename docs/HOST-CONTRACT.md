@@ -53,9 +53,37 @@ therefore write **no wiring code at all**, only environment variables.
 ### 1. Who may manage tracked links
 
 ```
-POST  →  { "email": "…", "role": "…", "action": "create|list|list.all|revoke|setauth|overview|sessions|test" }
+POST  →  { "email": "…", "role": "…", "action": "<one of the names below>" }
       ←  { "allowed": true }
 ```
+
+| action | what it grants |
+|---|---|
+| `create` | create a tracked link |
+| `list` | list one's own links |
+| `list.all` | list everyone's links |
+| `revoke` | revoke a link |
+| `setauth` | change a link's access wall |
+| `overview` | read a document's aggregate figures |
+| `sessions` | read individual reading sessions |
+| `test` | create a rehearsal link |
+| `presentations.list.all` | list presentations **one does not own** (slugs, presenter names, counts) |
+| `presentations.stats` | read the **attendees** of a presentation one does not own — names, addresses, dwell time, pages |
+
+⚠️ **This list grows, and a closed table refuses what it has not heard of.** Both
+`presentations.*` names arrived in `0.1.46`; a host whose table predates them answers *no* to
+everyone, administrators included — not because the right is missing, but because the table is older
+than the player. That failure reads exactly like a permission problem, which is what makes it
+expensive. **Compare this table against your own at each upgrade**, and prefer a refusal that names
+the unknown action over one that looks like a role issue.
+
+⚠️ **`presentations.list.all` and `presentations.stats` are deliberately separate.** Seeing *that* a
+presentation happened and seeing *who attended it* are different sensitivities: the first returns
+metadata, the second returns people — often prospects. Merging them would take from you the choice of
+opening one to the whole team while reserving the other.
+
+Neither is needed to read one's **own** presentations: an owner, and an administrator, are always
+served without the player asking you anything.
 
 - **The player verifies the token; you decide the rights.** No answer, or a failing rule, means
   refusal. A right that cannot be granted is not granted.

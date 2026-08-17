@@ -2982,15 +2982,28 @@ async function handler(req, res) {
           if (body.action === "present-list") r = { ok: true, presentations: await listActivePresentations(u.email) };
           else if (body.action === "present-reclaim") r = await reclaimPresentation(String(body.slug || ""), u.email);
           else if (body.action === "present-owner-end") r = await endPresentationByOwner(String(body.slug || ""), u.email, isAdmin);
-          // ⚠️ Le droit ÉLARGI est demandé paresseusement : un propriétaire n'a pas à payer un
-          // aller-retour d'autorisation pour lire ce qui lui appartient déjà.
+          // ⚠️ DEUX DROITS, PAS UN — ET LEUR NOM EST UN ÉLÉMENT DE CONTRAT.
+          //
+          // Voir qu'une présentation a eu lieu et voir QUI y était sont deux sensibilités
+          // différentes : l'historique rend des slugs, des noms de présentateurs et des compteurs ;
+          // les statistiques rendent les NOMS, les ADRESSES et le temps de présence de participants
+          // qui sont souvent des prospects. Un hôte peut vouloir ouvrir le premier à toute l'équipe
+          // et réserver le second — les fondre en un seul droit lui retirerait ce choix.
+          //
+          // ⚠️ Les noms suivent la convention existante : `list` / `list.all`, où le suffixe dit
+          // « au-delà des miennes ». Ils sont documentés dans docs/HOST-CONTRACT.md, et une garde
+          // vérifie que tout nom demandé ici y figure — une action inconnue vaut refus chez un hôte
+          // prudent, donc l'introduire en silence casserait son instance sans rien dire.
+          //
+          // Le droit est demandé PARESSEUSEMENT : un propriétaire n'a pas à payer un aller-retour
+          // pour lire ce qui lui appartient déjà.
           else if (body.action === "present-stats") {
             r = await presentationStats(String(body.slug || ""), u.email, isAdmin,
               () => PLAYER.identity.canManageShares(u, "presentations.stats"));
           }
           else if (body.action === "present-doc-list") {
             r = { ok: true, presentations: await listPresentationsForDoc(String(body.docId || ""), u.email, isAdmin,
-              () => PLAYER.identity.canManageShares(u, "presentations.stats")) };
+              () => PLAYER.identity.canManageShares(u, "presentations.list.all")) };
           }
           else if (body.action === "present-switch") {
             if (!isAllowedStorageUrl(String(body.fileUrl || ""))) return jp(400, { ok: false, error: "url" });
