@@ -368,7 +368,8 @@ async function presentationStats(slug, email, isAdmin, autoriseLarge) {
   const proprietaire = !!isAdmin || !!(pres.owner_email && pres.owner_email === lc(email));
   if (!proprietaire) {
     let large = false;
-    try { large = typeof autoriseLarge === "function" ? !!(await autoriseLarge()) : !!autoriseLarge; } catch { large = false; }
+    // Une autorisation qui LÈVE vaut refus : « large » garde sa valeur initiale, et c'est la bonne.
+    try { large = typeof autoriseLarge === "function" ? !!(await autoriseLarge()) : !!autoriseLarge; } catch { /* hôte injoignable : refus */ }
     if (!large) return { ok: false, status: 403 };
   }
   const [attRows, msgRows] = await Promise.all([
@@ -483,7 +484,8 @@ async function listPresentationsForDoc(docId, email, isAdmin, autoriseLarge) {
   let list = Array.isArray(rows) ? rows : [];
   if (!isAdmin) {
     let large = false;
-    try { large = typeof autoriseLarge === "function" ? !!(await autoriseLarge()) : !!autoriseLarge; } catch { large = false; }
+    // Une autorisation qui LÈVE vaut refus : « large » garde sa valeur initiale, et c'est la bonne.
+    try { large = typeof autoriseLarge === "function" ? !!(await autoriseLarge()) : !!autoriseLarge; } catch { /* hôte injoignable : refus */ }
     if (!large) list = list.filter((p) => p.owner_email && p.owner_email === lc(email));
   }
   // UNE requête groupée (in.(…)) au lieu d'une par présentation (N+1, jusqu'à 50) ; agrégation en mémoire.
