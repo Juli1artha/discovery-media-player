@@ -47,7 +47,17 @@ async function reclaimPresentation(slug, email) {
   if (!row) return { ok: false, status: 404 };
   if (!row.owner_email || row.owner_email !== lc(email)) return { ok: false, status: 403 };
   const control = newToken(18);
-  await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { control_hash: sha(control), active: true, last_seen: new Date().toISOString(), updated_at: new Date().toISOString() } });
+  // ⚠️ REMETTRE LE RANG À ZÉRO — MAIS SEULEMENT SI LA COLONNE EXISTE. Un jeton de contrôle neuf ouvre
+  // un nouveau domaine d'ordre : le compteur du navigateur repart de 1, et sans remise à zéro toutes
+  // ses écritures seraient réputées périmées.
+  //
+  // ⚠️ Et j'ai écrit ce champ sans condition en premier jet, ce qui est exactement le piège que
+  // docs/MIGRATIONS.md décrit : PostgREST rejette le PATCH ENTIER si la colonne manque. La reprise
+  // aurait cessé de fonctionner chez tout hôte non migré — pas la nouvelle garantie, la reprise.
+  const rangDispo = await require("./schema").aLaColonne(
+    "doc_presentations", "write_seq", "supabase/migrations/0002-ordre-des-ecritures.sql",
+  );
+  await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { control_hash: sha(control), active: true, ...(rangDispo ? { write_seq: 0 } : {}), last_seen: new Date().toISOString(), updated_at: new Date().toISOString() } });
   return { ok: true, slug, control, page: row.current_page || 1, fileUrl: row.file_url, fileName: row.file_name, docTitle: row.doc_title, docId: row.doc_id };
 }
 
@@ -134,12 +144,51 @@ async function getPresentation(slug) {
 }
 
 // Pilotage : change la page courante (présentateur uniquement, via control_token).
-async function setPage(slug, control, page) {
+/**
+ * Le rang d'écriture : ce qui fait qu'une écriture périmée n'écrase pas une plus récente.
+ *
+ * ⚠️ LA FILE DU NAVIGATEUR NE SUFFIT PAS, ET ON L'A ÉCRIT EN LA LIVRANT. Elle garantit UNE seule
+ * écriture en vol : elle supprime le désordre qu'on CAUSE. Mais une requête abandonnée par le délai
+ * maximal peut très bien être arrivée au serveur — le navigateur cesse de l'attendre, il ne
+ * l'annule pas chez nous — et y atterrir APRÈS celle qui l'a remplacée. Ce désordre-là, on le SUBIT.
+ *
+ * Le rang le ferme : chaque écriture porte le sien, et le serveur refuse un rang qu'il a déjà
+ * dépassé. L'ordre ne dépend plus de l'ordre d'arrivée.
+ *
+ * ⚠️ UN RANG, PAS UN HORODATAGE. Une heure vient d'une horloge, et deux onglets n'ont pas la même.
+ * Un rang vient d'un compteur : il ne dit pas QUAND, il dit APRÈS QUOI — la question réellement
+ * posée.
+ *
+ * ⚠️ CE QU'IL COÛTE, ET QUI EST ASSUMÉ. Deux onglets du même présentateur partagent le jeton de
+ * contrôle (il est persisté) mais pas le compteur : celui qui a le rang le plus haut gagne, l'autre
+ * est refusé en silence. Deux onglets pilotant la même présentation sont déjà incohérents — ils se
+ * disputeraient la page de toute façon — mais le refus est désormais net plutôt qu'aléatoire.
+ *
+ * ⚠️ SANS LA COLONNE, ON NE CONTRÔLE PLUS RIEN — ET C'EST LE BON REPLI. Refuser toutes les écritures
+ * ferait d'une migration non appliquée une panne totale de pilotage. On revient au comportement
+ * d'avant (dernier arrivé gagne), en le signalant une fois.
+ */
+async function rangAccepte(row, seq) {
+  const rang = Number(seq);
+  if (!Number.isFinite(rang) || rang <= 0) return { controle: false };   // client plus ancien : pas de rang
+  const dispo = await require("./schema").aLaColonne(
+    "doc_presentations", "write_seq", "supabase/migrations/0002-ordre-des-ecritures.sql",
+  );
+  if (!dispo) return { controle: false };
+  if (rang <= Number(row.write_seq || 0)) return { controle: true, perime: true };
+  return { controle: true, perime: false, champ: { write_seq: rang } };
+}
+
+async function setPage(slug, control, page, seq) {
   const row = await getPresentation(slug);
   if (!row) return { ok: false, status: 404 };
   if (!tokenMatches(control, row.control_hash)) return { ok: false, status: 403 };
+  const rang = await rangAccepte(row, seq);
+  // ⚠️ « Périmé » n'est pas une erreur : c'est le système qui fonctionne. On répond ok pour que le
+  // navigateur n'affiche rien — la page qu'il voulait écrire est déjà dépassée par une plus récente.
+  if (rang.perime) return { ok: true, perime: true };
   const p = Math.max(1, Math.trunc(Number(page) || 1));
-  await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { current_page: p, active: true, last_seen: new Date().toISOString(), updated_at: new Date().toISOString() } });
+  await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { current_page: p, active: true, last_seen: new Date().toISOString(), updated_at: new Date().toISOString(), ...(rang.champ || {}) } });
   return { ok: true };
 }
 
