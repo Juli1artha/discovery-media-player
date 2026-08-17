@@ -22,17 +22,42 @@ describe("le coût du motif d'adresse", () => {
   // On mesure le motif lui-même : c'est lui l'objet du test, et sa forme n'a pas changé — seule
   // la longueur qu'on lui donne a changé.
   const MOTIF = /.+@.+\..+/;
-  const cout = (n) => {
-    const t = process.hrtime.bigint();
-    MOTIF.test("a".repeat(n));
-    return Number(process.hrtime.bigint() - t) / 1e6;
+
+  /**
+   * Le coût du motif, estimé par le MINIMUM de plusieurs prises.
+   *
+   * ⚠️ CE TEST A ÉTÉ INSTABLE, ET SA MÉTHODE ÉTAIT EN CAUSE. Il prenait UNE mesure par taille : le
+   * jour où l'ordonnanceur préempte le processus pendant la petite, le rapport s'effondre. Vu en
+   * vrai — 5,7 au lieu de ~16 dans la suite complète, puis quatre passages sur quatre en isolation.
+   * Autrement dit son verdict dépendait de la charge de la machine.
+   *
+   * ⚠️ Et un test instable a un danger propre, pire que l'échec : on apprend à l'ignorer, puis on
+   * l'ignore le jour où il a raison.
+   *
+   * Le minimum est l'estimateur juste ici, et ce n'est pas « réessayer jusqu'au vert » : le bruit
+   * d'ordonnancement ne fait qu'AJOUTER du temps, jamais en retirer. La plus petite prise est donc
+   * la plus proche du coût intrinsèque — une moyenne, elle, intègre le bruit qu'on cherche à écarter.
+   *
+   * L'allocation de la chaîne sort de la zone mesurée : elle croît elle aussi avec la longueur, et
+   * la compter fausserait précisément le rapport qu'on veut établir.
+   */
+  const cout = (n, prises = 7) => {
+    const sujet = "a".repeat(n);
+    let mini = Infinity;
+    for (let i = 0; i < prises; i++) {
+      const t = process.hrtime.bigint();
+      MOTIF.test(sujet);
+      const ms = Number(process.hrtime.bigint() - t) / 1e6;
+      if (ms < mini) mini = ms;
+    }
+    return mini;
   };
 
   it("croît avec le carré de la longueur — c'est bien un piège, pas une intuition", () => {
-    const petit = Math.max(cout(4000), 0.5);
+    const petit = Math.max(cout(4000), 0.01);
     const grand = cout(16000);
     // ×4 en longueur devrait donner ×4 en temps si le coût était linéaire. Il donne ~×16.
-    expect(grand / petit, `4 000 → ${petit.toFixed(1)} ms, 16 000 → ${grand.toFixed(1)} ms`)
+    expect(grand / petit, `4 000 → ${petit.toFixed(2)} ms, 16 000 → ${grand.toFixed(2)} ms`)
       .toBeGreaterThan(6);
   });
 
