@@ -560,7 +560,7 @@ du code écrit **le jour même** — c'est le signe qu'il fallait entendre.
 | C-3 | `presentContent()` ne rendait pas sa promesse : l'ordonnanceur n'attendait rien | ✅ **0.1.41** |
 | C-4 | Comportement du présentateur anonyme ambigu (carte refusée, page acceptée) | ✅ **0.1.42** |
 | C-5 | Canal public : amplificateur de trafic, pas de limite sur `state=1` / `chat=1` | ✅ **0.1.42** |
-| C-6 | `flattenPresence()` indexe un `{}` par des identités réseau | à faire (pollution de prototype) |
+| C-6 | `flattenPresence()` indexe un `{}` par des identités réseau | ✅ **corrigé** — `Map` (cf. ci-dessous) |
 | C-7 | `present-attend` accepte une `key` choisie par le client | ✅ **0.1.42** |
 | C-8 | `present-stats` / `present-doc-list` : session exigée, propriété non vérifiée | ✅ propriétaire/admin, élargissement décidé par l'hôte |
 | C-9 | Pas de délai maximal sur PostgREST / signUpload / verifyToken | recoupe P1-4 |
@@ -645,6 +645,35 @@ réponse serveur qu'on dénoue à la main.
 > qui diffuse dès le départ de la requête.
 
 Reste à étendre : audience normale, audience hostile.
+
+### C-6 — la table de présence était indexée par ce que les participants composent
+
+Corrigé par une `Map`. Ce qui rend le constat plus lourd que « une clé bizarre casse un objet » :
+ce ne sont pas des données de configuration, ce sont des **identités que chaque participant
+compose lui-même**, `uid` compris.
+
+Mesuré avant correction, sur la fonction telle qu’elle tournait :
+
+| ce qu’un participant annonce | ce que la liste affichait |
+|---|---|
+| `name: "constructor"` | **il disparaît** — l’objet répondait « déjà vu » avant toute écriture |
+| `uid: "__proto__"` | idem |
+| `uid: "__proto__"`, rôle présentateur, **plus les adresses de ses voisins comme clés** | **ses voisins disparaissent**, chez tout le monde — quatre participants, deux effacés |
+
+Écrire sur `__proto__` ne crée pas une entrée : ça **change le prototype de la table**. Les
+identités suivantes étaient alors cherchées dans l’objet de l’intrus, où toute clé qu’il y avait
+mise répond « déjà vu ». `Object.prototype` n’était pas atteint — la pollution restait dans cette
+table — mais « local » ne veut pas dire « sans effet » : **la table EST la liste des participants**.
+
+⚠️ **Le détail qui explique la longévité du défaut** : `toString`, `valueOf` et `hasOwnProperty` ne
+posaient aucun problème, parce que l’identité est mise en minuscules et que `tostring` n’est hérité
+de personne. Deux clés seulement franchissaient ce filtre. Un défaut qui ne se déclenche que sur
+deux entrées sur des milliers ne se rencontre jamais par hasard — seulement par quelqu’un qui le
+cherche.
+
+**Le reste du dépôt tenait déjà la règle** (balayage fait avant de corriger) : `byDoc`/`intByDoc`
+sont des `Map`, la sortie des statistiques est un `Object.create(null)`, et `pages_time` re-dérive
+ses clés en nombres — `__proto__` n’y survit pas à `num()`. C’était la dernière.
 
 ### C-10 (suite) — un vrai navigateur, parce que `jsdom` n'applique pas la CSP
 
