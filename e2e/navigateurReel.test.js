@@ -328,6 +328,14 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     await page.goto(`http://127.0.0.1:${port}/doc/${SLUG_TRACE}`, { waitUntil: "load" });
     await page.waitForFunction(() => window.__workerRefuse === 1, null, { timeout: 15_000 });
     expect(distant).toEqual([]);
+
+    // ⚠️ ET LE DOCUMENT S'AFFICHE QUAND MÊME, parce que c'est une IMAGE. Le premier correctif gatait
+    // la mise en route du lecteur entier : un worker invérifiable empêchait d'afficher un PNG, qui
+    // n'appelle pdf.js à aucun moment. Une porte fermée sur une pièce que le code refusé ne pouvait
+    // pas atteindre — trouvé par le harnais de l'hôte, pas ici.
+    await page.waitForFunction(
+      () => { const i = document.querySelector("#pages .page img"); return !!i && i.naturalWidth > 0; },
+      null, { timeout: 15_000 });
     await page.close();
   }, 60_000);
 
