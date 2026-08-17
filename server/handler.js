@@ -2412,6 +2412,53 @@ ${botOn && botBrowser ? botBrowser.botViewerJs(ICONS) : ""}
 
 // CSP de la page audience (Présenter) : autorise pdf.js (cdnjs), supabase-js (jsdelivr) et la connexion
 // Realtime (https + wss vers le projet Supabase). Plus permissive que la visionneuse, limitée à cette page.
+/**
+ * Les origines d'images qu'une page a le droit de charger.
+ *
+ * ⚠️ FOURNIR UNE URL SANS AUTORISER SON ORIGINE REVIENT À NE PAS LA FOURNIR — avec l'apparence du
+ * contraire. Le HTML est parfait, le fichier répond 200, et le navigateur refuse quand même. C'est
+ * arrivé en 0.1.47 : la marque du client était résolue, écrite dans la page, et bloquée. Le chemin
+ * du lien tracé ajoutait bien son origine ; celui de l'aperçu, non. Deux politiques sur la même
+ * instance, à la même minute.
+ *
+ * ⚠️ ET AUCUNE SONDE SERVEUR NE PEUT LE VOIR. Le HTML rendu est correct, le script se compile, le
+ * paquet est conforme. Ni notre étape de fumée, ni la garde d'artefact, ni un test qui exécute la
+ * page ne mordent : seul un navigateur le montre. C'est le second hôte qui l'a vu, à l'œil, chez son
+ * client.
+ *
+ * D'où cette fonction : une seule liste, pour toutes les routes qui rendent la visionneuse. La
+ * remplir est une décision ; l'oublier n'est plus possible, parce qu'il n'y a plus qu'un endroit.
+ *
+ * ⚠️ CE QU'ELLE NE COUVRE PAS, ET QUI EST UN AUTRE PROBLÈME. La page d'AUDIENCE affiche les avatars
+ * des participants, qui arrivent par la présence — donc à l'exécution, et depuis autant d'origines
+ * qu'il y a de membres chez l'hôte. Aucune liste posée au rendu ne peut les prévoir. Les
+ * pré-autoriser demanderait d'élargir la politique à une origine d'hôte entière, ce qui est une
+ * décision à prendre séparément, pas un oubli à corriger ici.
+ *
+ * ⚠️ ON NE DÉRIVE PAS CETTE LISTE DU HTML RENDU, et c'est délibéré. Ce serait plus général et ça
+ * viderait la politique de son sens : autoriser tout ce que la page référence, c'est autoriser aussi
+ * ce qu'une valeur mal filtrée y aurait glissé. La liste porte des CHAMPS connus, pas des URL
+ * trouvées.
+ */
+function originesImages(logoInstance, share) {
+  const s = share || {};
+  return [
+    originOf(logoInstance),
+    originOf(s.brand_logo),
+    originOf(s.bot_avatar),
+    // ⚠️ Celui-ci ne cassait pas, et c'est pire qu'un défaut visible : il marchait PAR ACCIDENT,
+    // parce que la photo du présentateur et l'avatar de l'assistant sortent en général du même
+    // stockage, donc de la même origine. Le jour où un hôte range l'une ailleurs, elle disparaît
+    // sans que rien n'ait changé chez lui.
+    originOf(s.bot_vphoto),
+    // ⚠️ Trouvé par la garde à son premier passage, et il ne se voyait pas : cette adresse ne part
+    // pas dans le HTML mais dans la configuration, et c'est la couche live qui en fait une image à
+    // l'exécution — dans la liste des participants. Un défaut de politique sur une image construite
+    // par du script se lit encore moins qu'un autre : la page est déjà chargée quand il se produit.
+    originOf(s.presenter_avatar),
+  ].filter(Boolean).join(" ");
+}
+
 function sendPresentHtml(res, html, nonce, supaUrl, imgExtra, frameAncestors) {
   const wss = String(supaUrl || "").replace(/^https:/, "wss:");
   res.statusCode = 200;
@@ -3643,7 +3690,7 @@ async function handler(req, res) {
       // Conséquence absurde relevée par cet hôte : la page de REFUS, corrigée la veille, était
       // encadrable chez lui — pas la page de SUCCÈS. Le chemin d'erreur était plus portable que
       // le chemin nominal.
-      return sendPresentHtml(res, viewerHtml(pseudo, pnonce, plogo), pnonce, supaUrl, originOf(plogo),
+      return sendPresentHtml(res, viewerHtml(pseudo, pnonce, plogo), pnonce, supaUrl, originesImages(plogo, pseudo),
         embed ? embedFrameAncestors() : "'self'");
     }
 
@@ -3742,7 +3789,7 @@ async function handler(req, res) {
     const frameAncestors = share.embed
       ? embedFrameAncestors()
       : "'self'";
-    return sendHtml(res, 200, viewerHtml(share, nonce, logoUrl, pitch), `'nonce-${nonce}'`, [originOf(logoUrl), originOf(share.bot_avatar), originOf(share.brand_logo)].filter(Boolean).join(" "), frameAncestors);
+    return sendHtml(res, 200, viewerHtml(share, nonce, logoUrl, pitch), `'nonce-${nonce}'`, originesImages(logoUrl, share), frameAncestors);
   } catch (error) {
     try { await PLAYER.errors.capture(error, { route: "doc", method: req.method }); } catch { /* ignore */ }
     res.statusCode = 500; res.end("Erreur");
