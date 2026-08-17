@@ -43,8 +43,26 @@ describe("aucune adresse ne franchit la sortie publique", () => {
     expect(objet.author_email).toBe("lea@exemple.fr"); // rien n'a été modifié en douce
   });
 
+  // ⚠️ LA DISTINCTION QUI A MANQUÉ AU PREMIER BRANCHEMENT, et qui aurait cassé le chat.
+  //
+  // Une adresse DANS UN MESSAGE est du contenu : son auteur l'a écrite exprès, pour un
+  // destinataire qu'il a choisi. Une adresse dans un champ d'IDENTITÉ n'a été choisie par
+  // personne — elle vient de la base et sort vers toute l'audience.
+  it("laisse passer une adresse écrite dans un message, refuse la même dans une identité", () => {
+    expect(() => publier({ body: "écris-moi à lea@exemple.fr" })).not.toThrow();
+    expect(() => publier({ reply_text: "il disait marc@exemple.fr" })).not.toThrow();
+    // Le même texte, dans un champ qui désigne quelqu'un : refusé.
+    expect(() => publier({ author_name: "lea@exemple.fr" })).toThrow(/author_name/);
+  });
+
+  // ⚠️ ON ÉNUMÈRE CE QU'ON EXEMPTE, PAS CE QU'ON PROTÈGE. L'inversion EST la garde : un champ
+  // ajouté demain est protégé par défaut, et l'exempter demande d'écrire une décision.
+  it("protège par défaut un champ que personne n'a prévu", () => {
+    expect(() => publier({ champ_invente_demain: "quelqu-un@exemple.fr" })).toThrow(/champ_invente_demain/);
+  });
+
   it("ne confond pas une mention avec une adresse", () => {
     expect(() => publier({ body: "merci @lea, et @thomas aussi" })).not.toThrow();
-    expect(() => publier({ body: "écris à lea@exemple.fr" })).toThrow();
+    expect(() => publier({ author_name: "écris à lea@exemple.fr" })).toThrow();
   });
 });

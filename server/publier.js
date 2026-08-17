@@ -24,6 +24,26 @@ const ADRESSE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
  * Le chemin compte plus que la valeur : « reactions.👍[0] » dit où regarder, « une adresse a été
  * trouvée » envoie chercher.
  */
+/**
+ * ⚠️ LES CHAMPS QUE LES GENS RÉDIGENT, ET CEUX QUI DÉSIGNENT QUELQU'UN — la distinction que le
+ * premier branchement n'avait pas.
+ *
+ * Branchée sur tout, la garde levait sur `body` : un participant qui écrit « écris-moi à
+ * lea@exemple.fr » dans le chat voyait son message provoquer une exception. Elle transformait un
+ * usage normal en panne, et je l'ai mesuré plutôt que supposé.
+ *
+ * Une adresse DANS UN MESSAGE est du contenu : son auteur l'a écrite exprès, pour un destinataire
+ * qu'il a choisi. Une adresse dans un champ d'IDENTITÉ n'a été choisie par personne : elle vient
+ * de la base, et elle sort vers toute l'audience. Ce n'est pas la même donnée, et la garde ne doit
+ * pas les traiter pareil.
+ *
+ * ⚠️ LISTE DES CHAMPS DE CONTENU, PAS DES CHAMPS D'IDENTITÉ — et le sens de l'inversion est la
+ * garde elle-même. Énumérer ce qu'on protège laisse passer la colonne ajoutée demain ; énumérer
+ * ce qu'on EXEMPTE oblige à écrire une décision pour chaque exemption. Un champ inconnu est
+ * protégé par défaut.
+ */
+const CONTENU = new Set(["body", "reply_text", "text", "message", "content", "caption"]);
+
 function publier(valeur, ou = "") {
   if (typeof valeur === "string") {
     if (ADRESSE.test(valeur)) {
@@ -40,6 +60,8 @@ function publier(valeur, ou = "") {
     // et une garde qui ne regarde que les valeurs laisserait passer exactement ce cas.
     for (const [k, v] of Object.entries(valeur)) {
       publier(k, ou ? `${ou}.<clé>` : "<clé>");
+      // Le champ que quelqu'un a rédigé traverse ; tout le reste est inspecté.
+      if (CONTENU.has(k)) continue;
       publier(v, ou ? `${ou}.${k}` : k);
     }
     return valeur;
@@ -47,4 +69,4 @@ function publier(valeur, ou = "") {
   return valeur;
 }
 
-module.exports = { publier, ADRESSE };
+module.exports = { publier, ADRESSE, CONTENU };
