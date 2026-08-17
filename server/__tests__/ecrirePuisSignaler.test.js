@@ -29,10 +29,28 @@ function corps(nom) {
   return SRC.slice(debut, suite > 0 ? suite : debut + 1600);
 }
 
+// ⚠️ ON SUIT L'ACTE, PAS LE NOM DE LA FONCTION — TROISIÈME CORRECTION DE CETTE SONDE.
+//
+// Elle cherchait les corps de `pushPage` et `presentContent`. Le jour où l'envoi a été extrait dans
+// `envoyerPage` et `envoyerContenu` — pour que ces deux fonctions passent par la file unique — elle
+// a échoué, alors que la propriété qu'elle décrit (écrire AVANT de signaler) n'avait pas bougé d'un
+// caractère.
+//
+// Elle part donc maintenant de l'ACTION ÉCRITE DANS LA REQUÊTE, qui est ce dont on parle vraiment.
+// Une sonde qui épingle un nom interdit de renommer ; une sonde qui reconnaît un acte laisse le code
+// vivre. C'est la même leçon que pour les motifs de balises et pour la liste des espaces de noms.
+function corpsDeLAction(action) {
+  const i = SRC.indexOf(`action:'${action}'`);
+  if (i < 0) return null;
+  const debut = SRC.lastIndexOf("function ", i);
+  const suite = SRC.indexOf("\n    function ", i);
+  return SRC.slice(debut, suite > 0 ? suite : i + 900);
+}
+
 describe("l'écriture précède le signal", () => {
-  it.each(["pushPage", "presentContent"])("%s écrit d'abord, signale ensuite", (nom) => {
-    const c = corps(nom);
-    expect(c, nom).toBeTruthy();
+  it.each(["present-page", "present-content"])("%s écrit d'abord, signale ensuite", (action) => {
+    const c = corpsDeLAction(action);
+    expect(c, action).toBeTruthy();
     // ⚠️ ON CHERCHE L'ACTE, PAS LE NOM DE L'APPEL. Cette ligne cherchait littéralement
     // « fetch('/api/doc' » — et elle est tombée le jour où l'appel est passé par une enveloppe
     // bornée, alors que la propriété testée (écrire AVANT de signaler) n'avait pas bougé d'un
@@ -46,8 +64,8 @@ describe("l'écriture précède le signal", () => {
       .toBeGreaterThan(ecriture);
   });
 
-  it.each(["pushPage", "presentContent"])("%s ne signale pas si l'écriture a échoué", (nom) => {
-    const c = corps(nom);
+  it.each(["present-page", "present-content"])("%s ne signale pas si l'écriture a échoué", (action) => {
+    const c = corpsDeLAction(action);
     // Le signal doit être dans la branche de succès, pas au fil du code.
     expect(c, "sans cette garde, un refus serveur produirait quand même une relecture")
       .toMatch(/if\s*\(\s*r\s*&&\s*r\.ok\s*\)\s*diffuserEtat\(\)/);
