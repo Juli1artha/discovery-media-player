@@ -109,7 +109,17 @@ jobs:
           # `in.(…)` n'est PAS dans la liste : il se traduit par un `WHERE colonne IN (…)`, donc il
           # ne coûte rien à porter. Ce qui coûte, ce sont les JOINTURES imbriquées et les arbres
           # booléens — là, un portage cesse d'être une traduction et devient une réécriture.
-          exotique=$(grep -nE 'select=[^&`"]*\(|[?&]or=\(|[?&]and=\(|offset=' server/*.js || true)
+          #
+          # ⚠️ ON RETIRE LES COMMENTAIRES AVANT DE CHERCHER. Cette garde lisait tout le fichier, donc
+          # aussi les commentaires qui EXPLIQUENT ce qu'elle interdit : écrire « select=a(b) » pour
+          # dire « ceci est interdit » la déclenchait. Elle accusait alors du code parfaitement
+          # portable, et la seule issue était d'écrire autour d'elle — c'est-à-dire de dégrader
+          # l'explication pour satisfaire la garde.
+          #
+          # Une sonde qui lit du commentaire invente des coupables. Même correction que celle faite
+          # le même jour sur la sonde des colonnes de schéma, pour la même raison.
+          sans_commentaires=$(grep -vE '^[[:space:]]*//' server/*.js --with-filename --line-number || true)
+          exotique=$(printf '%s\n' "$sans_commentaires" | grep -E 'select=[^&`"]*\(|[?&]or=\(|[?&]and=\(|offset=' || true)
           [ -z "$exotique" ] || { echo "::error::PostgREST-specific syntax raises the porting cost:"; echo "$exotique"; exit 1; }
           n=$(grep -ho 'PLAYER\.db\.\(request\|selectAll\)' server/*.js | wc -l | tr -d ' ')
           echo "surface base : $n appels — chiffre annoncé dans docs/API.md"

@@ -55,7 +55,18 @@ async function sonder(table, colonne, migration, cle) {
   try {
     // `limit=0` : on ne veut aucune ligne, seulement savoir si la colonne se sélectionne. PostgREST
     // répond 400 « column … does not exist » quand elle manque — donc l'échec EST la réponse.
-    await PLAYER.db.request(`${table}?select=${encodeURIComponent(colonne)}&limit=0`);
+    //
+    // ⚠️ LA PART ENCODÉE EST CALCULÉE À PART, ET PAS POUR LA LISIBILITÉ. La garde de portabilité de
+    // la CI traque la syntaxe propre à PostgREST — les ressources imbriquées « select=a(b) », les
+    // arbres booléens — en cherchant une parenthèse après « select= ». Écrite dans le gabarit,
+    // l'appel à encodeURIComponent en produisait une : la garde accusait une requête parfaitement
+    // portable. On lève l'ambiguïté du côté du code, pas du côté de la garde.
+    //
+    // ⚠️ ET CETTE SONDE EST LE SEUL ENDROIT QUI DÉPEND DU COMPORTEMENT D'ERREUR DE PostgREST. Sur
+    // une autre base, « la colonne manque » se demanderait autrement. C'est isolé ici exprès : un
+    // portage a un fichier à réécrire, pas une habitude à retrouver partout.
+    const champ = encodeURIComponent(colonne);
+    await PLAYER.db.request(`${table}?select=${champ}&limit=0`);
     return true;
   } catch {
     // ⚠️ ON NE DISTINGUE PAS « COLONNE ABSENTE » DE « BASE INJOIGNABLE », ET C'EST VOULU. Les deux
