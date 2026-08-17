@@ -6,6 +6,15 @@ see in one place.
 
 Copy [`.env.example`](../.env.example) to start.
 
+
+### `PLAYER_MAX_RELAY_BYTES`
+
+Ceiling, in bytes, for a file relayed through the player (default **60 MB**). Above it the relay
+answers **413** *before reading the body* — refusing after allocation protects nothing, since the
+allocation is the cost. An upstream that announces no `Content-Length` passes anyway: one cannot
+refuse what one cannot measure, and closing by default would cut off perfectly legitimate storages.
+This bounds the **large**, not the **unknown**.
+
 ## The minimum
 
 | Variable | |
