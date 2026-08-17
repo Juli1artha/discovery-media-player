@@ -47,6 +47,22 @@ describe("la base d'essai refuse plutôt que d'inventer", () => {
       expect((await lire(base, "t?offset=10")).code).toBe(400);
     });
   });
+
+  // ⚠️ LE CONSTAT C-6, RÉINTRODUIT ICI DEUX HEURES APRÈS AVOIR ÉTÉ CORRIGÉ AILLEURS — et repéré
+  // par CodeQL, pas par moi. Le nom de table vient du réseau et indexait un objet : `__proto__`
+  // rendait `Object.prototype`, et le `push` qui suit y aurait écrit des index et une longueur.
+  // Le prototype de TOUT le processus d'essai, player compris : une doublure qui corrompt le vrai
+  // code qu'elle teste. Un nom de table est un identifiant — on le reconnaît par sa forme.
+  it("un nom de table venu du réseau ne peut pas atteindre le prototype", async () => {
+    await avecServeur({ t: [] }, async (base) => {
+      for (const nom of ["__proto__", "constructor", "Table-Bizarre", "t.autre"]) {
+        expect((await lire(base, encodeURIComponent(nom) + "?select=*")).code).toBe(400);
+      }
+      // Et la preuve que rien n'a fui : le prototype n'a pas pris de longueur au passage.
+      expect(Object.prototype.hasOwnProperty.call(Object.prototype, "length")).toBe(false);
+      expect(({}).length).toBeUndefined();
+    });
+  });
 });
 
 describe("la base d'essai répond comme PostgREST sur ce qu'elle couvre", () => {

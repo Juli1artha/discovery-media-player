@@ -67,6 +67,18 @@ function creerPostgrestEnMemoire(tables = {}) {
       if (!url.pathname.startsWith("/rest/v1/")) return repondre(404, { message: "hors /rest/v1" });
       const nom = url.pathname.slice("/rest/v1/".length);
       if (!nom) return repondre(400, { message: "table absente" });
+      // ⚠️ LE NOM DE TABLE VIENT DU RÉSEAU, ET IL INDEXE UN OBJET. C'est le constat C-6, corrigé
+      // dans `flattenPresence` deux heures plus tôt, réintroduit ici sans y penser — et c'est
+      // CodeQL qui l'a vu, pas moi. Une règle qu'on vient d'écrire ne protège pas du geste
+      // qu'elle interdit ; seule une machine qui relit chaque ligne le fait.
+      //
+      // Ici la conséquence dépasse la doublure : `tables["__proto__"]` rend `Object.prototype`,
+      // et le `push` qui suit y écrirait des index et une longueur — le prototype de TOUT le
+      // processus d'essai, player compris. Un faux serveur corromprait le vrai code qu'il teste.
+      //
+      // Un nom de table est un identifiant : on le reconnaît par sa FORME plutôt que d'énumérer
+      // ce qu'on refuse, et la doublure refuse le reste comme elle refuse un filtre inconnu.
+      if (!/^[a-z_][a-z0-9_]*$/.test(nom)) return repondre(400, { message: `nom de table refusé : ${nom.slice(0, 40)}` });
       const lignes = (tables[nom] = tables[nom] || []);
 
       const parametres = url.searchParams;
@@ -145,7 +157,13 @@ function creerPostgrestEnMemoire(tables = {}) {
       // ⚠️ 400 EXPLICITE, jamais un tableau vide. Le message part dans la réponse ET dans la
       // console : un essai qui échoue doit dire ce que la doublure n'a pas su faire, sinon on
       // cherche le défaut dans le player alors qu'il est ici.
-      console.error("[postgrest-en-mémoire] " + erreur.message + " — " + req.method + " " + req.url);
+      //
+      // ⚠️ Et ce qu'on journalise vient du réseau : sans nettoyage, un retour chariot dans une URL
+      // fabriquerait une SECONDE ligne de journal, d'apparence parfaitement normale. On lit un
+      // journal pour comprendre ce qui s'est passé — y laisser écrire une ligne inventée en fait
+      // le contraire d'un journal.
+      const propre = (t) => String(t).replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 200);
+      console.error("[postgrest-en-mémoire] " + propre(erreur.message) + " — " + propre(req.method) + " " + propre(req.url));
       repondre(400, { message: erreur.message });
     }
   });
