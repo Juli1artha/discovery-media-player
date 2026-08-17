@@ -53,3 +53,20 @@ $$;
 
 -- Le player parle à la base avec la clé de service ; personne d'autre n'a à appeler ceci.
 revoke all on function public.player_rate_limit_bump(text, integer, integer) from public, anon, authenticated;
+
+-- ⚠️ LE `revoke` CI-DESSUS NE SUFFIT PAS À RENDRE CE FICHIER VRAI TOUT SEUL — signalé par le
+-- second hôte, qui a interrogé `has_function_privilege` au lieu de relire la migration. Chez
+-- Supabase, `service_role` conserve l'exécution parce que les privilèges par défaut la lui
+-- accordent explicitement : le fichier marche par une propriété de la plateforme, pas par ce qu'il
+-- dit. Porté sur un Postgres nu, le `revoke ... from public` emporterait aussi le compte de
+-- service — et le player perdrait sa limite EN SILENCE, puisqu'un appel qui échoue laisse passer.
+--
+-- On accorde donc explicitement, et seulement si le rôle existe : sur une base sans `service_role`,
+-- l'exploitant accorde l'exécution au rôle que son instance utilise réellement.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    grant execute on function public.player_rate_limit_bump(text, integer, integer) to service_role;
+  end if;
+end
+$$;
