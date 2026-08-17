@@ -24,7 +24,12 @@ describe("aucune adresse ne franchit la sortie publique", () => {
       [{ colonne_ajoutee_demain: "quelqu-un@exemple.fr" }, "colonne_ajoutee_demain"],
     ];
     for (const [objet, chemin] of cas) {
-      expect(() => publier(objet)).toThrow(new RegExp(chemin.replace(/[.[\]]/g, "\\$&")));
+      // ⚠️ Une CHAÎNE, pas une expression régulière construite à la volée : `toThrow` traite une
+      // chaîne comme une sous-chaîne à trouver. Ma première version fabriquait une expression en
+      // échappant les points et les crochets — et pas les antislashs, ce que CodeQL a refusé. Un
+      // échappement incomplet dans un essai est le même défaut que partout ailleurs ; ici il ne
+      // servait à rien, puisque la comparaison littérale suffisait.
+      expect(() => publier(objet)).toThrow(chemin);
     }
   });
 
