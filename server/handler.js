@@ -3460,19 +3460,26 @@ async function handler(req, res) {
       // C'est la porte qui permettra de retirer la lecture anonyme des tables : l'audience n'a
       // plus besoin de lire `doc_presentations` pour connaître la page courante. On ne renvoie
       // QUE ce que l'audience doit savoir — ni propriétaire, ni jeton, ni horodatages internes.
-      // ⚠️ LA RÉPONSE EST MISE EN CACHE PAR SLUG, ET C'EST CE QUI RETIRE L'ARME.
+      // ⚠️ LA RÈGLE, PAS LA LISTE — ET C'EST LE SECOND HÔTE QUI A EU RAISON.
       //
-      // Cette charge est IDENTIQUE pour tous les spectateurs d'une même présentation à un instant
-      // donné : aucun champ n'y dépend de l'appelant. C'est la condition qui rend le cache légitime,
-      // et elle se revérifie à chaque champ ajouté — mettre en cache une réponse personnalisée
-      // servirait l'état d'un visiteur à un autre.
+      // La première version mettait en cache DEUX ROUTES ÉNUMÉRÉES. Leur remarque : « la troisième
+      // route de lecture arrivera sans cache, et ça ne se verra pas ». C'est le motif croisé six
+      // fois cette semaine — une liste se périme, une forme non.
+      //
+      // La règle est donc écrite ici, et le code la fait respecter par construction : TOUTE RÉPONSE
+      // IDENTIQUE POUR TOUS LES SPECTATEURS D'UN MÊME SLUG SE CACHE. Ajouter une lecture publique,
+      // c'est ajouter une entrée à cette table — elle sera mise en cache sans qu'on y pense, parce
+      // qu'il n'existe pas d'autre chemin pour la servir.
+      //
+      // ⚠️ LA CONDITION D'ADMISSION EST « IDENTIQUE POUR TOUS », PAS « EN LECTURE SEULE ». Une
+      // réponse qui dépendrait de l'appelant servirait l'état d'un visiteur à un autre — défaut
+      // d'une tout autre gravité que celui qu'on ferme. Elle se revérifie à chaque champ ajouté.
       //
       // Le cache englobe la LECTURE ET la sérialisation : sous rafale, une seule des deux se paie.
-      if (String(q.state || "") === "1") {
-        const corps = await cacheLecture.lire(`state:${String(q.present)}`, async () => {
-          const p = await getPresentation(String(q.present));
-          if (!p) return null;
-          return JSON.stringify({ ok: true, state: {
+      // `file=1` ne figure pas dans cette table, et c'est délibéré : il relaie des octets avec des
+      // en-têtes de plage propres à l'appelant — ce n'est pas une charge partagée.
+      const LECTURES_PARTAGEES = [
+        { param: "state", produire: async (p) => ({ ok: true, state: {
           active: p.active !== false,
           current_page: p.current_page || 1,
           content: p.content || null,
@@ -3500,21 +3507,15 @@ async function handler(req, res) {
           //
           // Signalé par la seconde passe d'audit (P0-4) ; la fuite n'y était pas.
           presenter_name: String(p.presenter_name || "") || null,
-        } });
-        });
-        if (!corps) return sendRefusal(res, "ended", embed);
-        res.statusCode = 200; res.setHeader("Content-Type", "application/json"); res.setHeader("Cache-Control", "no-store");
-        res.end(corps);
-        return;
-      }
-      // Même forme, même raison : l'historique d'un salon est identique pour tous ceux qui le
-      // suivent. Le second hôte ne parlait que de `state` ; ce chemin-ci a exactement le même défaut,
-      // et il coûte MÊME PLUS CHER — deux interrogations de base au lieu d'une.
-      if (String(q.chat || "") === "1") {
-        const corps = await cacheLecture.lire(`chat:${String(q.present)}`, async () => {
-          const p = await getPresentation(String(q.present));
-          if (!p) return null;
-          return JSON.stringify({ ok: true, messages: await listMessages(String(q.present)), locked: !!p.chat_locked });
+        } }) },
+        { param: "chat", produire: async (p, slug) => ({ ok: true, messages: await listMessages(slug), locked: !!p.chat_locked }) },
+      ];
+      for (const lecture of LECTURES_PARTAGEES) {
+        if (String(q[lecture.param] || "") !== "1") continue;
+        const slugLu = String(q.present);
+        const corps = await cacheLecture.lire(`${lecture.param}:${slugLu}`, async () => {
+          const p = await getPresentation(slugLu);
+          return p ? JSON.stringify(await lecture.produire(p, slugLu)) : null;
         });
         if (!corps) return sendRefusal(res, "ended", embed);
         res.statusCode = 200; res.setHeader("Content-Type", "application/json"); res.setHeader("Cache-Control", "no-store");

@@ -417,6 +417,22 @@ victime.
 `chat=1` reçoit le même traitement — ils ne parlaient que de `state`, et ce chemin coûte même plus
 cher (deux interrogations au lieu d'une).
 
+⚠️ **Et une troisième réserve, la leur, sur notre première version.** Nous avions mis en cache deux
+routes **énumérées**. Leur remarque : « la troisième route de lecture arrivera sans cache, et ça ne
+se verra pas ». C'est le motif de la semaine, et il est d'autant plus tenace qu'une énumération
+**passe** — elle couvre exactement ce qu'on lui a donné, et rien n'échoue le jour où le monde
+s'agrandit.
+
+La règle est donc écrite dans le code — *toute réponse identique pour tous les spectateurs d'un même
+slug se cache* — et le code la fait respecter **par construction** : une table de lectures partagées,
+servie par un seul chemin. Ajouter une lecture publique, c'est ajouter une entrée ; elle est mise en
+cache sans qu'on y pense, parce qu'il n'existe pas d'autre chemin pour la servir.
+
+La garde qui l'accompagne reconnaît une **forme**, pas des noms : le chemin mis en cache ne sérialise
+jamais au moment de répondre (`res.end(corps)`), donc toute branche qui écrit
+`res.end(JSON.stringify(…))` dans ce bloc est une route qui répond sans cache — quel que soit son
+nom. Vérifié en ajoutant une troisième route factice : la garde la refuse.
+
 **Ce que le cache ne fait pas**, écrit à côté de lui plutôt que découvert plus tard : il vit dans la
 mémoire du **processus**. L'effondrement est « une lecture par fenêtre **et par instance** ». C'est
 la même limite que celle d'un compteur de débit en mémoire — celle-là même que le second hôte venait
