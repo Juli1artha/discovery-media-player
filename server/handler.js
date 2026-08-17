@@ -2625,7 +2625,7 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
   const presenter = esc(pres.presenter_name || "");
   const logo = esc(logoUrl || "");
   const fileUrl = `/api/doc?present=${encodeURIComponent(pres.slug)}&file=1`;
-  const cfg = JSON.stringify({ fileUrl, docUrl: pres.file_url, pdfjs: PDFJS, slug: pres.slug, page: pres.current_page || 1, active: pres.active !== false, content: pres.content || null, supaUrl, supaKey, title: pres.doc_title || pres.file_name || "Document" });
+  const cfg = JSON.stringify({ fileUrl, docUrl: pres.file_url, pdfjs: PDFJS, slug: pres.slug, fileName: pres.file_name || "", page: pres.current_page || 1, active: pres.active !== false, content: pres.content || null, supaUrl, supaKey, title: pres.doc_title || pres.file_name || "Document" });
   return `<!doctype html><html lang=fr><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=3">
 <meta name=robots content="noindex,nofollow">
@@ -2761,12 +2761,19 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
     //
     // Une garde défensive qui rend faux sur erreur ne protège pas, elle CACHE. Retirée.
     //
-    // ⚠️ ET IL N Y A QU UNE SEULE CORRECTION ICI, alors que j en avais écrit deux. J avais aussi
-    // ajouté le nom du fichier au cfg — chacune suffisait, donc aucune mutation ne pouvait faire
-    // rougir le banc : retirer l une laissait l autre agir. Deux correctifs pour un symptôme
-    // rendent un essai ininterprétable. Celle-ci est conservée parce qu elle ne change rien à ce
-    // que la page reçoit ; retirer l URL d origine fait bien tomber le banc.
-    function estImage(){ return Player.viewer.isImageDocument("", CFG.docUrl); }
+    // ⚠️ LE NOM FAIT FOI, L URL COMPLÈTE — et j avais gardé l inverse. Deux correctifs avaient été
+    // écrits pour un symptôme ; comme chacun suffisait, aucune mutation ne pouvait faire rougir le
+    // banc. J en ai donc retiré un — et j ai retiré le champ AUTORITAIRE, en gardant celui que le
+    // banc savait déjà voir. Le banc a choisi le correctif au lieu de le vérifier.
+    //
+    // Signalé par le second hôte, qui a compté chez lui : 4 287 documents présentables, 23 dont l
+    // URL ne porte aucune extension, aucune image parmi ces 23. Atteignable, non peuplé. Le jour où
+    // l un de ces liens porte un PNG, décider sur l URL seule ramène « Document indisponible ».
+    //
+    // La règle « un correctif à deux changements ne se prouve pas » ne dit pas LEQUEL garder. La
+    // réponse n est jamais « celui que le banc sait voir » : on garde le champ qui fait foi, puis on
+    // rend le banc capable de le distinguer — un cas où l URL ment et où seul le nom dit vrai.
+    function estImage(){ return Player.viewer.isImageDocument(CFG.fileName, CFG.docUrl); }
     function chargerImage(){
       var im=new Image();
       im.onload=function(){

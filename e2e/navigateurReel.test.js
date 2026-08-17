@@ -62,6 +62,7 @@ const { TIERS } = require("../server/handler.js");
 
 const SLUG_TRACE = "essai-trace";
 const SLUG_DIRECT = "essai-direct";
+const SLUG_URL_MUETTE = "url-muette";
 
 /** Octets réels de chaque dépendance, récupérés une fois et rejoués ensuite. */
 const octets = {};
@@ -106,6 +107,9 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
   beforeAll(async () => {
     racine = fs.mkdtempSync(path.join(os.tmpdir(), "player-e2e-"));
     fs.writeFileSync(path.join(racine, "essai.png"), Buffer.from(PNG_4x4, "base64"));
+    // ⚠️ LE MÊME PNG, SOUS UN NOM SANS EXTENSION. C'est le cas que le second hôte a compté chez lui :
+    // 23 documents dont l'URL ne porte aucune extension. Seul le nom déclaré en base dit la vérité.
+    fs.writeFileSync(path.join(racine, "sans-extension"), Buffer.from(PNG_4x4, "base64"));
     const fichier = pathToFileURL(path.join(racine, "essai.png")).href;
 
     // La base d'essai (constat P2-3) : sans elle, la visionneuse tracée et la page d'audience
@@ -120,6 +124,14 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
       doc_presentations: [{
         id: 1, slug: SLUG_DIRECT, doc_id: "doc-1", active: true, current_page: 1, write_seq: 0,
         file_url: fichier, file_name: "essai.png", doc_title: "Document d'essai",
+        presenter_name: "Léa", owner_email: "moi@exemple.fr",
+        last_seen: new Date(0).toISOString(),
+        created_at: "2026-08-17T00:00:00Z", updated_at: "2026-08-17T00:00:00Z",
+      }, {
+        // ⚠️ L'URL MENT : elle ne porte aucune extension. Seul `file_name` dit que c'est une image.
+        id: 2, slug: SLUG_URL_MUETTE, doc_id: "doc-2", active: true, current_page: 1, write_seq: 0,
+        file_url: pathToFileURL(path.join(racine, "sans-extension")).href,
+        file_name: "plan.png", doc_title: "Plan",
         presenter_name: "Léa", owner_email: "moi@exemple.fr",
         last_seen: new Date(0).toISOString(),
         created_at: "2026-08-17T00:00:00Z", updated_at: "2026-08-17T00:00:00Z",
@@ -427,6 +439,28 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     // C'est lui qui portait « Document indisponible » ; qu'il parte est la moitié qui compte.
     await page.waitForFunction(() => !document.getElementById("load"), null, { timeout: 10_000 });
     expect(violations).toEqual([]);
+    await page.close();
+  }, 60_000);
+
+  /**
+   * ⚠️ QUAND L'URL MENT, C'EST LE NOM QUI FAIT FOI — et le banc ne savait pas le distinguer.
+   *
+   * Le correctif d'origine décidait sur l'URL seule, et l'essai précédent le laissait passer parce
+   * que son URL portait `.png`. Deux correctifs avaient été écrits pour un symptôme ; en n'en
+   * gardant qu'un, j'ai gardé le champ DÉRIVÉ et jeté le champ AUTORITAIRE — le banc a choisi le
+   * correctif au lieu de le vérifier.
+   *
+   * Le second hôte a compté chez lui : 4 287 documents présentables, 23 dont l'URL ne porte aucune
+   * extension, aucune image parmi ces 23. Atteignable, non peuplé. Cet essai peuple le cas.
+   *
+   * Il ne peut être satisfait QUE par la décision sur `file_name` : la mutation redevient
+   * discriminante, ce qu'elle avait cessé d'être.
+   */
+  it("une présentation dont l'URL ne dit rien s'affiche quand même, parce que le nom dit vrai", async () => {
+    const { page } = await ouvrirPageSurveillee(`/present/${SLUG_URL_MUETTE}`);
+    await page.waitForFunction(
+      () => { const i = document.querySelector("#page img"); return !!i && i.naturalWidth > 0; },
+      null, { timeout: 15_000 });
     await page.close();
   }, 60_000);
 
