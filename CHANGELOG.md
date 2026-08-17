@@ -10,6 +10,74 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.46] — 2026-08-17
+
+One thread runs through all of it: **what used to be protected by discipline is now protected by
+construction.** Every fix here replaces a rule someone had to remember with a mechanism nobody can
+bypass.
+
+### ⚠️ Host action required before upgrading
+
+Two new authorization action names are asked of `identity.canManageShares`:
+
+| action | what it grants |
+|---|---|
+| `presentations.list.all` | list presentations one does **not** own — slugs, presenter names, counts |
+| `presentations.stats` | read the **attendees** of a presentation one does not own — names, addresses, dwell time, pages |
+
+If your authorization table is a **closed list**, add them before upgrading: an unknown action means
+refusal, so every member — administrators included — loses access, and the refusal reads exactly like
+a role problem. The second host saw this coming from the release note rather than from us writing it;
+`docs/HOST-CONTRACT.md` now carries the full table, says the list grows, and a guard fails the build
+if the code ever asks for a name the contract does not document.
+
+Neither right is needed to read one's **own** presentations: an owner, and an administrator, are
+always served without the player asking the host anything.
+
+### Fixed
+
+- ⚠️ **A hostile broadcaster could silence a whole meeting room.** The public-channel quota is keyed
+  on the address, but the re-read cadence is chosen by **whoever broadcasts** — three spectators
+  behind one office egress could be pushed past the quota, collect 429s, and **their pages stopped
+  turning**. Before the limit such a participant was expensive; after it, they could silence. The
+  cause is now bounded rather than the effect: a spectator gives itself a budget and never re-reads
+  more than a presenter's actions justify. **The resynchronisation net is never rationed** — doing so
+  would have replaced an outside denial of service with a home-made one.
+
+- **Ending a presentation could be undone by a tab left open.** The control token survived the
+  closure, and it is persisted in localStorage — so a second tab put the presentation back online for
+  the audience. Ending now **revokes** the token. ⚠️ Staleness (three minutes without a heartbeat)
+  deliberately does **not** revoke: there, "resurrection" is how a presenter whose laptop slept comes
+  back, and an anonymous presenter has no other way in.
+
+- **Attendance rows could be overwritten by any participant.** The presence channel broadcast the
+  *measurement key* — so anyone could read a neighbour's and repost it. Presence now carries its own
+  public identifier; the measurement key never leaves the browser except toward the server.
+
+- **A member who knew a slug read the attendees of someone else's presentation** — names, addresses,
+  dwell time, pages. The player now grants what is obvious (owner, administrator) and asks the host
+  for the rest.
+
+### Changed
+
+- **Public reads are cached per slug** (`state=1`, `chat=1`), collapsing any cadence — legitimate or
+  hostile — to one database read per window per instance. The window is derived from the audience
+  scheduler's existing coalescing, so **no latency is added beyond what a spectator already accepts**.
+  ⚠️ The idea came from the second host; the window did not: they proposed one second, citing our
+  0.1.19 doctrine — which is about *authority*, not latency. Since that same doctrine emptied
+  broadcast payloads, the re-read is now **the only path the page number travels**, so a one-second
+  cache would delay every page turn.
+
+  The rule is structural, not a list: *any response identical for all spectators of one slug is
+  cached*, served by a single path. A guard rejects any branch that answers without it.
+
+- **All presentation writes go through one queue.** Six paths wrote, two were guarded — 0.1.41's
+  "map writes are sequential" was true of one path in three. The **write functions themselves** now
+  queue: there is no direct path left, so nothing to forget. ⚠️ What it does not close, and it is
+  written next to the code: a request **abandoned** by the timeout may have reached the server and
+  land after the one that replaced it. The queue removes the disorder we cause, not the disorder we
+  suffer.
+
 ## [0.1.45] — 2026-08-16
 
 ⚠️ **The limit shipped in 0.1.42 turned an amplification into a denial of service against the
