@@ -10,6 +10,45 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.48] — 2026-08-17
+
+### Fixed
+
+- ⚠️ **0.1.47 carried the brand key but not its consequence: the loader was blocked.** The key was
+  fed, `brandForShare` resolved it, the right `src` was written into the page — and the logo's origin
+  was **not** added to `img-src` on the preview route. The browser asked for the image and refused
+  it. The file answered 200.
+
+  The tracked-link path derived its three origins and had done so from the start. Two policies, on
+  the same instance, at the same minute.
+
+  ⚠️ **No server-side probe can see this.** The rendered HTML is perfect, the script compiles, the
+  package is conform. Neither the post-publish smoke step, nor the artifact guard, nor a test that
+  executes the page bites — **only a browser shows it**, and only to the eye. The second host found
+  it at one of their clients.
+
+  This is the fourth field of the same family and the first of a different nature: `internal_token`,
+  the brand and the action names were all missing **from** the page. This one is *in* the page —
+  what was missing is what the page is allowed to do next. The "no field by accident" guard therefore
+  could not catch it: the field was provided.
+
+  **The form, as they put it:** *any value that produces a URL destined for the browser must, by
+  construction, add its origin to the policy.* One list, every route, and a guard that recognises
+  image-bearing fields **by their nature** rather than from an inventory.
+
+- **Two more cases the new guard found on its first run.** `bot_vphoto` worked **by accident** — the
+  presenter's photo and the assistant's avatar usually come from the same storage, hence the same
+  origin; the day a host files one elsewhere it disappears with nothing having changed on their side.
+  And `presenter_avatar`, which does not travel in the HTML but in the configuration: the live layer
+  turns it into an image at runtime, in the participants list.
+
+### Known limit, written next to the code
+
+The **audience** page shows participants' avatars, which arrive through presence — from as many
+origins as the host has members. No list set at render time can anticipate them. Pre-authorising them
+would mean widening the policy to an entire host origin: **a decision to take, not an oversight to
+fix in passing.**
+
 ## [0.1.47] — 2026-08-17
 
 ### Fixed
