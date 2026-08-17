@@ -2389,13 +2389,30 @@ ${LEGAL_CSS}
     //
     // Le drapeau posé sur la fenêtre permet au banc d'EXIGER le refus, au lieu de constater une
     // absence de rendu qui aurait dix causes.
+    // ⚠️ ON NE FERME QUE CE QUI DÉPEND DU WORKER. Le premier correctif gatait la mise en route du
+    // lecteur ENTIER — or elle sert aussi au chemin IMAGE, qui n appelle pdf.js à aucun moment. Un
+    // worker invérifiable empêchait donc d afficher un PNG : une porte fermée sur une pièce que le
+    // code refusé ne pouvait pas atteindre.
+    //
+    // ⚠️ PAS D ACCENT GRAVE ICI : ce commentaire vit dans le gabarit de la page, un accent grave y
+    // ferme la chaîne. Troisième fois aujourd hui.
+    //
+    // Trouvé par le harnais de l hôte, pas ici : son essai d assistant a cessé de démarrer, et j ai
+    // d abord diagnostiqué un artefact de jsdom. Corriger le harnais aurait masqué le défaut.
+    //
+    // Le refus reste ENTIER pour un PDF, là où le worker s exécute.
+    function refuserWorker(){
+      window.__workerRefuse=1;
+      if(IS_IMG){ start(); return; }
+      loadError("Document non affiche : une dependance n a pas pu etre verifiee.");
+    }
     var wsrc=CFG.pdfjs+'/pdf.worker.min.js';
     try{
       Player.viewer.workerBlobUrl(wsrc,'${TIERS.pdfWorker.sri}').then(function(u){
-        if(!u){ window.__workerRefuse=1; loadError("Document non affiche : une dependance n a pas pu etre verifiee."); return; }
+        if(!u){ refuserWorker(); return; }
         pdfjsLib.GlobalWorkerOptions.workerSrc=u; start();
-      }).catch(function(){ window.__workerRefuse=1; loadError("Document non affiche : une dependance n a pas pu etre verifiee."); });
-    }catch(e){ window.__workerRefuse=1; loadError("Document non affiche : une dependance n a pas pu etre verifiee."); }
+      }).catch(refuserWorker);
+    }catch(e){ refuserWorker(); }
     // Bord à bord en une-page mobile : chaque millimètre compte, surtout pour un PDF paysage.
     function baseWidth(){ var pad=(onePage&&window.innerWidth<=820)?0:30; return (scrollEl.clientWidth||900)-pad; }
     // Hauteur du document OCCULTÉE par la bottom sheet du bot (mobile, état compagnon) : la page une-page se
