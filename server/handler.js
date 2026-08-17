@@ -419,7 +419,14 @@ var Live=(function(){
     if(y)y.onclick=function(){close();if(onOk)onOk();};if(n)n.onclick=close;m.onclick=function(e){if(e.target===m)close();};
     document.addEventListener('keydown',key);m.classList.add('open');if(y)try{y.focus();}catch(e){}}
   function history(){fetch('/api/doc?present='+encodeURIComponent(SLUG)+'&chat=1').then(function(r){return r.json();}).then(function(d){var box=document.getElementById('chatMsgs');if(d&&d.messages&&d.messages.length){d.messages.forEach(function(m){addMsg(m);});}else if(box&&!box.children.length){box.innerHTML='<div class=chat-empty>Aucun message. Lancez la discussion.</div>';}if(d&&typeof d.locked!=='undefined')applyLock(d.locked);_histDone=true;}).catch(function(){_histDone=true;});}
-  function react(id,e){if(!ME||!id||!e)return;fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-react',slug:SLUG,msgId:+id,emoji:e,reactor:MOIREF})}).then(majDiffusee).catch(function(){});}
+  function react(id,e){if(!ME||!id||!e)return;
+    // ⚠️ ON ENVOIE L'ÉTAT VOULU, PAS « INVERSE ». Basculer n'a de sens qu'une fois : un renvoi
+    // réseau, un double-clic, une reprise de requête, et la réaction que le participant vient
+    // d'ajouter disparaît — sans aucune erreur affichée. Il voit son émoji s'allumer puis
+    // s'éteindre, recommence, et rebascule encore. Rejouer la même intention deux fois donne le
+    // même résultat qu'une fois ; c'est ce que le réseau exige.
+    var _m=msgData[id]||{},_rs=(_m.reactions&&_m.reactions[e])||[],veut=_rs.indexOf(MOIREF)<0;
+    fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-react',slug:SLUG,msgId:+id,emoji:e,reactor:MOIREF,etat:veut})}).then(majDiffusee).catch(function(){});}
   function setReply(id){var m=msgData[id];if(!m||m.deleted)return;var nm=m.author_name||'Invité';replyCtx={id:+id,name:nm,text:(m.body||'').slice(0,120)};var el=document.getElementById('chatReply');if(el){el.style.display='flex';el.innerHTML='<span class=cq><b>'+esc(nm)+'</b> '+esc((m.body||'').slice(0,80))+'</span><button id=chatReplyX title=Annuler>×</button>';var x=document.getElementById('chatReplyX');if(x)x.addEventListener('click',clearReply);}var t=document.getElementById('chatText');if(t)t.focus();}
   function clearReply(){replyCtx=null;var el=document.getElementById('chatReply');if(el){el.style.display='none';el.innerHTML='';}}
   function send(){var i=document.getElementById('chatText');var t=(i.value||'').trim();if(!t||!ME)return;if(LOCKED&&!canMod())return;i.value='';toggleSend();
