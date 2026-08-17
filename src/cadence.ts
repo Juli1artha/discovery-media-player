@@ -138,7 +138,7 @@ export const PRESENT_READ_BURST = 20;
  * rafale de chacun. Le serveur doit couvrir ce que le client S'AUTORISE, pas ce qu'il consomme en
  * moyenne, sinon la garde refuse un usage que le produit permet.
  */
-export const PRESENT_QUOTA_PER_HOUR = (PRESENT_READS_PER_HOUR + PRESENT_READ_BURST) * READERS_PER_EGRESS;
+// Le quota est déduit plus bas, une fois la marge déclarée — cf. PRESENT_QUOTA_MARGIN.
 
 // ── Le délai au bout duquel on rend la main ──────────────────────────────────────────────────────
 //
@@ -158,3 +158,57 @@ export const PRESENT_QUOTA_PER_HOUR = (PRESENT_READS_PER_HOUR + PRESENT_READ_BUR
 // porté par l'écriture ; c'est le chantier de la file unique, pas celui-ci. Mieux vaut le dire que
 // laisser croire que ce délai règle les deux.
 export const PRESENT_WRITE_TIMEOUT_MS = 10_000;
+
+// ── Le cache court : supprimer le problème plutôt que le borner ──────────────────────────────────
+//
+// ⚠️ UN QUOTA SUR LE CHEMIN DE LECTURE EST UNE ARME RETOURNÉE, PAR CONSTRUCTION. Le second hôte l'a
+// formulé mieux que nous : la cadence de relecture est imposée par QUI DIFFUSE, donc tout quota par
+// appelant y punit la victime. Le budget client de 0.1.45 fait baisser le rythme ; il déplace le
+// seuil, il ne retire pas l'arme.
+//
+// Or `state=1` lit UNE SEULE LIGNE, identique pour tous les spectateurs d'une même présentation à un
+// instant donné. Une réponse mise en cache par slug fait s'effondrer n'importe quelle cadence —
+// légitime ou hostile — à un accès base par fenêtre. Ce n'est plus une limite : il n'y a plus de
+// ressource à saturer, donc plus de victime.
+//
+// ⚠️ ET LA FENÊTRE SE DÉDUIT, ELLE NE SE CHOISIT PAS. Le second hôte proposait une seconde, en
+// citant notre doctrine de 0.1.19 : « une diffusion est un signal, pas une vérité ». Cette doctrine
+// porte sur l'AUTORITÉ, pas sur la latence — et depuis qu'on a vidé les charges de diffusion,
+// précisément à cause d'elle, la relecture n'est plus un filet : c'est le SEUL chemin par lequel le
+// numéro de page arrive. Une seconde de cache retarderait donc CHAQUE page tournée d'autant, pour
+// toute l'audience.
+//
+// La bonne fenêtre est celle qu'on accepte déjà : l'ordonnanceur de relecture regroupe les signaux,
+// et un spectateur attend donc déjà jusqu'à ce délai. Un cache de la même durée effondre autant sans
+// coûter une milliseconde de plus. Le jour où une diffusion reportera de nouveau une charge, la
+// fenêtre pourra s'allonger — tant que la relecture porte l'état, elle ne doit pas.
+
+/** La fenêtre de regroupement de l'ordonnanceur de relecture, côté audience. */
+export const PRESENT_READ_COALESCE_MS = 400;
+
+/**
+ * La durée de vie du cache de lecture, côté serveur.
+ *
+ * ⚠️ Elle est ÉGALE à la fenêtre de regroupement, et ce n'est pas une coïncidence à maintenir à la
+ * main : au-delà, on ajoute au spectateur une attente qu'il n'a pas déjà consentie ; en deçà, on
+ * paie des accès base que personne ne perçoit. Les deux nombres sont un seul contrat.
+ */
+export const PRESENT_CACHE_MS = PRESENT_READ_COALESCE_MS;
+
+/**
+ * La marge du quota de lecture, une fois le cache en place.
+ *
+ * ⚠️ CE QUE LE QUOTA GARDE A CHANGÉ, DONC SON CHIFFRE DOIT CHANGER. Il protégeait la base : il
+ * devait donc coller au plus près de l'usage légitime, et c'est ce qui en faisait une arme — une
+ * salle pleine sous martèlement atteignait exactement le plafond, et tombait en 429.
+ *
+ * Le cache retire ce coût. Il reste le coût d'INVOCATION — sur serverless, les invocations sont
+ * elles-mêmes mesurées et saturables — donc le garde-fou ne disparaît pas : il remonte. Son seul
+ * rôle désormais est de borner une inondation brute, jamais d'arbitrer une cadence légitime.
+ *
+ * Couper une vraie audience coûte plus cher que de servir quelques milliers de réponses déjà en
+ * mémoire : la marge est donc large, et assumée comme telle.
+ */
+export const PRESENT_QUOTA_MARGIN = 4;
+
+export const PRESENT_QUOTA_PER_HOUR = (PRESENT_READS_PER_HOUR + PRESENT_READ_BURST) * READERS_PER_EGRESS * PRESENT_QUOTA_MARGIN;

@@ -384,6 +384,55 @@ Deux traces de méthode, toutes deux de mon fait :
 - `git checkout src/cadence.ts` pour annuler une mutation a effacé **tout** le travail non commité de
   ce fichier. Deuxième fois dans la même semaine ; à ne plus jamais employer sur un fichier en cours.
 
+### V-4 (suite) — le cache par slug, proposé par le second hôte
+
+Après 0.1.45, le second hôte a vu plus loin que notre budget : **un quota sur le chemin de lecture
+est une arme retournée par construction**, et découpler la cadence déplace le seuil sans retirer
+l'arme. `state=1` lit une ligne **identique pour tous les spectateurs** d'une même présentation ;
+la mettre en cache par slug fait s'effondrer n'importe quelle cadence — légitime ou hostile — à un
+accès base par fenêtre. Ce n'est plus une limite : il n'y a plus de ressource à saturer, donc plus de
+victime.
+
+⚠️ **Deux réserves ont modifié leur proposition.**
+
+1. **La fenêtre.** Ils proposaient une seconde, en citant notre doctrine de 0.1.19 (« une diffusion
+   est un signal, pas une vérité »). Cette doctrine porte sur l'**autorité**, pas sur la latence — et
+   depuis qu'on a vidé les charges de diffusion, précisément à cause d'elle, **la relecture n'est
+   plus un filet : c'est le seul chemin par lequel le numéro de page arrive**. Une seconde de cache
+   retarderait donc *chaque* page tournée d'autant. La fenêtre est calée sur le regroupement de
+   l'ordonnanceur (400 ms) : même effondrement, zéro latence ajoutée. La constante du gabarit a été
+   branchée sur la constante partagée — sinon les deux divergeraient en silence.
+
+2. **Le cache retire le coût BASE, pas le coût d'INVOCATION.** Sur serverless, les invocations sont
+   elles-mêmes mesurées et saturables. Le quota ne disparaît donc pas : il **remonte** au-dessus de
+   ce qu'un trafic piloté par diffusion peut atteindre. Il cesse d'être une arme (plus de victime) et
+   redevient un garde-fou contre l'inondation brute.
+
+   ⚠️ **Ce changement de rôle a changé la borne du test.** Il disait « un plafond qu'aucun usage réel
+   n'atteint ne protège plus de rien » et fixait 50 000 — motif valable quand le quota gardait la
+   base. Les deux côtés se déduisent désormais : **au-dessus** de ce qu'une salle pleine émet
+   légitimement (sinon c'est une arme), **au-dessous** de ce qu'un martèlement produit (sinon la
+   limite ne peut jamais dire non).
+
+`chat=1` reçoit le même traitement — ils ne parlaient que de `state`, et ce chemin coûte même plus
+cher (deux interrogations au lieu d'une).
+
+**Ce que le cache ne fait pas**, écrit à côté de lui plutôt que découvert plus tard : il vit dans la
+mémoire du **processus**. L'effondrement est « une lecture par fenêtre **et par instance** ». C'est
+la même limite que celle d'un compteur de débit en mémoire — celle-là même que le second hôte venait
+de nous signaler pour `limits.allow`.
+
+> ⚠️ **Trois pièges, et le banc les couvre un par un.** La *rafale froide* (mémoriser le résultat au
+> lieu de la promesse laisse passer 25 lectures — le cas exact que le cache existe pour couvrir) ;
+> la *clé choisie par l'appelant* (le slug est dans l'URL : une table sans borne serait une fuite
+> mémoire commandée du dehors) ; l'*échec mémorisé* (servir une erreur pendant toute la fenêtre
+> transforme un hoquet en panne).
+
+> ⚠️ **Et une mémoire posée derrière une dépense ne l'épargne pas.** La première version gardait la
+> lecture de la ligne **avant** les branches : les deux chemins mis en cache la relisaient donc quand
+> même, et le cache ajoutait une seconde interrogation au lieu d'en retirer une. Vu au banc — 26
+> lectures pour 25 appels — pas à la relecture.
+
 ### Inexactitudes relevées
 
 - `goSV()` passe bien par l'ordonnanceur (`svOrd`) — l'audit le cite parmi les écritures directes.

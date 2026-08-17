@@ -14,7 +14,7 @@
 //
 // Signalé par un audit externe (C-5), dernier constat critique de sa liste.
 
-const { PRESENT_QUOTA_PER_HOUR, PRESENT_READ_BURST, PRESENT_READS_PER_HOUR, RESYNC_READS_PER_HOUR, READERS_PER_EGRESS, PRESENT_RESYNC_MS, PRESENTER_ACTIONS_PER_HOUR } = require("../shared.generated.js");
+const { PRESENT_QUOTA_PER_HOUR, PRESENT_QUOTA_MARGIN, PRESENT_READ_COALESCE_MS, PRESENT_READ_BURST, PRESENT_READS_PER_HOUR, RESYNC_READS_PER_HOUR, READERS_PER_EGRESS, PRESENT_RESYNC_MS, PRESENTER_ACTIONS_PER_HOUR } = require("../shared.generated.js");
 
 const ID = require.resolve("../presentations.js");
 const vraies = require("../presentations.js");
@@ -43,13 +43,19 @@ function contexte(autorise) {
 }
 
 /** Joue un GET public et rend le statut, en comptant les interrogations de base qu'il a coûtées. */
-async function lire(query, { autorise = () => true, entetes = {}, socket = "198.51.100.7" } = {}) {
+// ⚠️ Un slug FRAIS par appel : le cache de lecture vit au niveau du module et traverse les tests,
+// qui s'exécutent en quelques millisecondes — bien en deçà de sa fenêtre. Sans ça, un test compte
+// des interrogations qu'un autre a déjà payées.
+let compteurSlug = 0;
+const slugFrais = () => `Slug-${(compteurSlug += 1).toString().padStart(6, "0")}`;
+
+async function lire(query, { autorise = () => true, entetes = {}, socket = "198.51.100.7", slug = slugFrais() } = {}) {
   interrogations = 0;
   const vues = [];
   player.init(contexte((cle, max, fenetre) => { vues.push({ cle, max, fenetre }); return autorise(cle, max, fenetre); }));
   const res = { statusCode: 0, headers: {}, body: "",
     setHeader(k, v) { this.headers[k.toLowerCase()] = v; }, end(b) { this.body = String(b == null ? "" : b); } };
-  await player.handler({ method: "GET", headers: entetes, socket: { remoteAddress: socket }, query: { present: PRES.slug, ...query } }, res);
+  await player.handler({ method: "GET", headers: entetes, socket: { remoteAddress: socket }, query: { present: slug, ...query } }, res);
   return { statut: res.statusCode, interrogations, vues, corps: (() => { try { return JSON.parse(res.body); } catch { return {}; } })() };
 }
 
@@ -74,11 +80,15 @@ describe("les relectures publiques sont bornées", () => {
         .toBe(0);
     });
 
+  // ⚠️ CE TEST MESURAIT LA BONNE PROPRIÉTÉ PAR LE MAUVAIS INDICE. Il vérifiait « interrogations > 0 »
+  // pour s'assurer que la requête faisait un vrai travail — indice devenu faux le jour où un cache
+  // de lecture a légitimement supprimé cette interrogation. On garde l'intention (rien n'est
+  // court-circuité à tort) en la mesurant sur un slug FRAIS, que le cache n'a pas encore vu.
   it("une relecture autorisée sert bien l'état", async () => {
     const r = await lire({ state: "1" });
     expect(r.statut).toBe(200);
     expect(r.corps.state.current_page, "la garde ne doit pas casser l'usage normal").toBe(3);
-    expect(r.interrogations).toBeGreaterThan(0);
+    expect(r.interrogations, "sur une clé froide, la ligne doit bien être lue").toBeGreaterThan(0);
   });
 
   // ⚠️ LA CLÉ EST CE QUE L'APPELANT NE CHOISIT PAS, ET CE TEST A ÉCHOUÉ EN L'AFFIRMANT MAL.
@@ -138,15 +148,35 @@ describe("le quota tient une audience réelle", () => {
   // tournée s'affiche tout de suite — une salle pleine dépassait le quota de 475 relectures,
   // exactement la rafale de chacun. Le serveur doit couvrir ce que le client S'AUTORISE, pas sa
   // moyenne, sinon la garde refuse un usage que le produit permet.
-  it("et une salle entière derrière une sortie unique passe, rafale comprise", () => {
-    expect(PRESENT_QUOTA_PER_HOUR).toBe((PRESENT_READS_PER_HOUR + PRESENT_READ_BURST) * READERS_PER_EGRESS);
+  it("et une salle entière derrière une sortie unique passe, rafale et marge comprises", () => {
+    expect(PRESENT_QUOTA_PER_HOUR)
+      .toBe((PRESENT_READS_PER_HOUR + PRESENT_READ_BURST) * READERS_PER_EGRESS * PRESENT_QUOTA_MARGIN);
     expect(READERS_PER_EGRESS, "dimensionner pour un spectateur revient à refuser le second")
       .toBeGreaterThan(1);
   });
 
-  // ⚠️ Et il reste une limite. Un plafond qu'aucun usage réel n'atteint ne protège plus de rien —
-  // c'est la borne qu'on s'est déjà donnée pour les sessions, reprise ici plutôt que réinventée.
-  it("il reste borné : ce n'est pas une porte ouverte", () => {
-    expect(PRESENT_QUOTA_PER_HOUR).toBeLessThanOrEqual(50_000);
+  // ⚠️ CETTE BORNE A CHANGÉ DE RAISON, DONC DE VALEUR — ET C'EST LE POINT DÉLICAT DU CACHE.
+  //
+  // Elle disait : « un plafond qu'aucun usage réel n'atteint ne protège plus de rien », et fixait
+  // 50 000. Ce motif valait quand le quota gardait LA BASE : il devait alors coller à l'usage
+  // légitime, et c'est précisément ce qui en faisait une arme retournée — une salle pleine sous
+  // martèlement atteignait le plafond et tombait en 429.
+  //
+  // Le cache par slug retire ce coût. Ce que le quota garde désormais, ce sont les INVOCATIONS, et
+  // sa seule mission est de borner une inondation brute. Il doit donc être :
+  //
+  //   • AU-DESSUS de ce qu'une salle pleine peut légitimement émettre — sinon il redevient une arme ;
+  //   • AU-DESSOUS de ce qu'un martèlement peut produire — sinon il ne se déclenche jamais, et une
+  //     limite qui ne peut pas dire non ne dit rien.
+  //
+  // On fixe donc les deux côtés par déduction, plus aucun nombre à la main.
+  it("il est au-dessus de l'usage légitime, et au-dessous de ce qu'une attaque produit", () => {
+    const salleLegitime = (PRESENT_READS_PER_HOUR + PRESENT_READ_BURST) * READERS_PER_EGRESS;
+    const plafondMecanique = (3_600_000 / PRESENT_READ_COALESCE_MS) * READERS_PER_EGRESS;
+
+    expect(PRESENT_QUOTA_PER_HOUR, "au ras de l'usage légitime, le quota redevient une arme retournée")
+      .toBeGreaterThan(salleLegitime);
+    expect(PRESENT_QUOTA_PER_HOUR, "au-dessus du martèlement, il ne se déclencherait jamais")
+      .toBeLessThan(plafondMecanique);
   });
 });

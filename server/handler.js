@@ -6,7 +6,15 @@
 const crypto = require("crypto");
 const { getShareBySlug, logView, upsertSession, createReshare, sendReshareEmail, upsertInternalSession,
   createShare, revokeShare, setShareAuth, overview: docOverview, listSharesForDoc, listSessionsForDoc, internalStatsForDoc } = require("./shares");
-const { SESSION_QUOTA_PER_HOUR, PRESENT_QUOTA_PER_HOUR } = require("./shared.generated.js");
+const { SESSION_QUOTA_PER_HOUR, PRESENT_QUOTA_PER_HOUR, PRESENT_CACHE_MS } = require("./shared.generated.js");
+const { creerCache } = require("./cache.js");
+
+// ⚠️ UN SEUL CACHE POUR TOUT LE PROCESSUS, ET C'EST LE POINT. Le créer par requête reviendrait à
+// n'en avoir aucun : chaque appelant repartirait d'une table vide, et l'effondrement qu'on
+// cherche — N spectateurs, une lecture — n'aurait jamais lieu. C'est aussi pourquoi il vit ici,
+// au chargement du module, et non dans `init()` : un hôte qui réinitialise son contexte ne doit
+// pas vider ce qui protège sa base.
+const cacheLecture = creerCache({ ttlMs: PRESENT_CACHE_MS });
 const { createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent } = require("./presentations");
 // CONTEXTE INJECTÉ : tout ce que le player emprunte à l'application hôte passe par ici — stockage,
 // base, identité, limites, marque, journalisation — et rien d'autre. C'est la frontière qui permettra
@@ -494,7 +502,10 @@ var Live=(function(){
             .then(function(d){if(d&&d.ok)applique(d);})
             .catch(function(){})
             .then(fini,fini);
-        },{minMs:400});
+        // ⚠️ La fenêtre vient de la constante partagée, pas d'un nombre écrit ici : le cache serveur
+        // se déduit d'elle, et deux nombres séparés finiraient par diverger — un cache plus long que
+        // le regroupement ajouterait une attente que le spectateur n'a pas consentie.
+        },{minMs:(window.Player&&Player.cadence&&Player.cadence.PRESENT_READ_COALESCE_MS)||400});
         var budget=Player.live.createBudget({
           parHeure:Player.cadence.PRESENT_SIGNAL_BUDGET_PER_HOUR,
           rafale:Player.cadence.PRESENT_READ_BURST,
@@ -3444,23 +3455,31 @@ async function handler(req, res) {
           return;
         }
       }
-      const pres = await getPresentation(String(q.present));
-      if (!pres) return sendRefusal(res, "ended", embed);
       // Historique du chat (chargé au join par présentateur ET audience).
       // ÉTAT de la présentation, relu par l'audience à la reconnexion ou au retour d'onglet.
       // C'est la porte qui permettra de retirer la lecture anonyme des tables : l'audience n'a
       // plus besoin de lire `doc_presentations` pour connaître la page courante. On ne renvoie
       // QUE ce que l'audience doit savoir — ni propriétaire, ni jeton, ni horodatages internes.
+      // ⚠️ LA RÉPONSE EST MISE EN CACHE PAR SLUG, ET C'EST CE QUI RETIRE L'ARME.
+      //
+      // Cette charge est IDENTIQUE pour tous les spectateurs d'une même présentation à un instant
+      // donné : aucun champ n'y dépend de l'appelant. C'est la condition qui rend le cache légitime,
+      // et elle se revérifie à chaque champ ajouté — mettre en cache une réponse personnalisée
+      // servirait l'état d'un visiteur à un autre.
+      //
+      // Le cache englobe la LECTURE ET la sérialisation : sous rafale, une seule des deux se paie.
       if (String(q.state || "") === "1") {
-        res.statusCode = 200; res.setHeader("Content-Type", "application/json"); res.setHeader("Cache-Control", "no-store");
-        res.end(JSON.stringify({ ok: true, state: {
-          active: pres.active !== false,
-          current_page: pres.current_page || 1,
-          content: pres.content || null,
-          file_url: pres.file_url || null,
-          file_name: pres.file_name || null,
-          doc_title: pres.doc_title || null,
-          updated_at: pres.updated_at || null,
+        const corps = await cacheLecture.lire(`state:${String(q.present)}`, async () => {
+          const p = await getPresentation(String(q.present));
+          if (!p) return null;
+          return JSON.stringify({ ok: true, state: {
+          active: p.active !== false,
+          current_page: p.current_page || 1,
+          content: p.content || null,
+          file_url: p.file_url || null,
+          file_name: p.file_name || null,
+          doc_title: p.doc_title || null,
+          updated_at: p.updated_at || null,
           // ⚠️ CE CHAMP A PORTÉ `presenter_key` PENDANT UNE JOURNÉE, ET C'ÉTAIT DEUX FAUTES.
           //
           // 1. FUITE. `attendeeKey()` renvoie l'ADRESSE E-MAIL quand le participant en a une. La clé
@@ -3480,15 +3499,34 @@ async function handler(req, res) {
           // liste des participants — laquelle ne porte plus aucun titre.
           //
           // Signalé par la seconde passe d'audit (P0-4) ; la fuite n'y était pas.
-          presenter_name: String(pres.presenter_name || "") || null,
-        } }));
-        return;
-      }
-      if (String(q.chat || "") === "1") {
+          presenter_name: String(p.presenter_name || "") || null,
+        } });
+        });
+        if (!corps) return sendRefusal(res, "ended", embed);
         res.statusCode = 200; res.setHeader("Content-Type", "application/json"); res.setHeader("Cache-Control", "no-store");
-        res.end(JSON.stringify({ ok: true, messages: await listMessages(String(q.present)), locked: !!pres.chat_locked }));
+        res.end(corps);
         return;
       }
+      // Même forme, même raison : l'historique d'un salon est identique pour tous ceux qui le
+      // suivent. Le second hôte ne parlait que de `state` ; ce chemin-ci a exactement le même défaut,
+      // et il coûte MÊME PLUS CHER — deux interrogations de base au lieu d'une.
+      if (String(q.chat || "") === "1") {
+        const corps = await cacheLecture.lire(`chat:${String(q.present)}`, async () => {
+          const p = await getPresentation(String(q.present));
+          if (!p) return null;
+          return JSON.stringify({ ok: true, messages: await listMessages(String(q.present)), locked: !!p.chat_locked });
+        });
+        if (!corps) return sendRefusal(res, "ended", embed);
+        res.statusCode = 200; res.setHeader("Content-Type", "application/json"); res.setHeader("Cache-Control", "no-store");
+        res.end(corps);
+        return;
+      }
+      // ⚠️ LA LIGNE N'EST LUE QU'ICI, ET C'EST CE QUI DONNE SON SENS AU CACHE. Elle était lue
+      // PLUS HAUT, avant toutes les branches : les deux chemins mis en cache la relisaient donc
+      // quand même — le cache ne retirait rien, et il ajoutait une seconde interrogation. Une
+      // mémoire posée derrière une dépense ne l'épargne pas.
+      const pres = await getPresentation(String(q.present));
+      if (!pres) return sendRefusal(res, "ended", embed);
       if (String(q.file || "") === "1") {
         if (!isAllowedStorageUrl(pres.file_url)) { res.statusCode = 404; res.end("Fichier indisponible"); return; }
         const range = req.headers["range"];
