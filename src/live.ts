@@ -105,21 +105,44 @@ export function formatMessageBody(body: unknown): string {
  * un participant qui se reconnecte y apparaît donc deux fois. On collapse sur une identité
  * STABLE (`uid`, sinon email, sinon nom) — c'est ce qui a corrigé « je me vois deux fois ».
  * En cas de collision, la métadonnée du présentateur l'emporte : c'est elle qui porte le rôle.
+ *
+ * ⚠️ UNE `Map`, PAS UN OBJET — ET CE N'EST PAS UNE PRÉFÉRENCE DE STYLE (constat C-6 de l'audit).
+ *
+ * Ces identités viennent du réseau : chaque participant COMPOSE sa charge de présence, `uid`
+ * compris. Sur un objet ordinaire, `byIdentity["constructor"]` répond déjà quelque chose de vrai
+ * avant qu'on ait rien écrit — le participant était donc traité comme un doublon de lui-même et
+ * disparaissait de la liste. Mesuré, avec le détail qui surprend : `toString` et `hasOwnProperty`
+ * ne posaient PAS de problème, parce que l'identité est mise en minuscules et que `tostring` n'est
+ * hérité de personne. Deux clés seulement franchissaient ce filtre : `constructor` et `__proto__`.
+ *
+ * ⚠️ Et le second faisait bien pire que se cacher. `byIdentity["__proto__"] = membre` ne crée pas
+ * une entrée : il CHANGE LE PROTOTYPE de la table. Les identités suivantes étaient alors cherchées
+ * dans l'objet de l'intrus, où toute clé qu'il y avait mise répond « déjà vu ». Un participant
+ * annonçant `uid: "__proto__"`, le rôle présentateur, et les adresses de ses voisins comme clés
+ * supplémentaires les faisait disparaître de la liste DE TOUT LE MONDE. Vérifié avant correction :
+ * quatre participants, deux effacés.
+ *
+ * `Object.prototype` n'était pas atteint — la pollution restait dans cette table — mais « local »
+ * ne veut pas dire « sans effet » : la table EST la liste des participants.
+ *
+ * Une `Map` n'hérite d'aucune clé, et ses clés sont des données et rien d'autre. Elle conserve
+ * aussi l'ordre d'insertion, y compris quand on réécrit une clé existante : le tableau d'ordre
+ * tenu à côté n'avait plus de raison d'être.
  */
 export function flattenPresence(state: Record<string, Participant[]> | null | undefined): Participant[] {
-  const byIdentity: Record<string, Participant> = {};
-  const order: string[] = [];
+  const parIdentite = new Map<string, Participant>();
   for (const key in state || {}) {
     for (const member of (state || {})[key] || []) {
       // Participant sans aucune identité : on ne peut pas le dédoublonner, on le garde tel quel
       // plutôt que de fondre des inconnus distincts en un seul.
       const identity = String(member.uid || member.email || member.name || "").toLowerCase()
-        || `_${key}_${order.length}`;
-      if (!byIdentity[identity]) { byIdentity[identity] = member; order.push(identity); }
-      else if (member.role === "presenter") byIdentity[identity] = member;
+        || `_${key}_${parIdentite.size}`;
+      // Première apparition, ou la métadonnée du présentateur qui prend la place — à la position
+      // qu'occupait déjà cette identité.
+      if (!parIdentite.get(identity) || member.role === "presenter") parIdentite.set(identity, member);
     }
   }
-  return order.map((id) => byIdentity[id]);
+  return [...parIdentite.values()];
 }
 
 // ── Identité ───────────────────────────────────────────────────────────────────────────────────
