@@ -381,15 +381,20 @@ function messagePublic(row) {
   if ("reactions" in out) out.reactions = reactionsPubliques(out.reactions);
   // Dérivé, jamais recopié : `author_hash` est lu pour ça et ne sort jamais tel quel.
   if ("author_hash" in row) out.author_ref = refAuteur(row.author_hash);
-  // ⚠️ LA CATÉGORIE, PAS LES QUATRE CHEMINS CONNUS. La liste blanche protège de ce qu'on a su
-  // nommer ; celle-ci refuse toute chaîne en forme d'adresse dans un champ d'IDENTITÉ — y compris
-  // une colonne ajoutée demain, ou une clé de carte de réactions. Elle lève au lieu de nettoyer :
-  // une adresse à la sortie est un défaut de conception, pas une impureté à filtrer.
+  // ⚠️ LA GARDE CATÉGORIELLE N'EST PAS ICI, ET LA RAISON EST STRUCTURELLE.
   //
-  // ⚠️ Les champs que les gens RÉDIGENT en sont exemptés, et cette exemption est le correctif du
-  // premier branchement : il levait sur `body`, donc un participant qui écrit une adresse dans un
-  // message aurait vu son message tomber. Mesuré, pas supposé.
-  return publier(out);
+  // La liste blanche s'exécute AVANT : elle a déjà retiré tout champ inconnu. `publier()` n'y
+  // verrait donc qu'un jeu de champs connus, et aucune mutation ne peut la faire tomber à cet
+  // endroit — la redondance n'est pas une ceinture, c'est une garde qu'on ne peut pas éprouver.
+  //
+  // ⚠️ Et le cas qu'on écrirait pour forcer le rouge serait faux : `author_name` est CHOISI par le
+  // participant. Quelqu'un qui se nomme « lea@exemple.fr » verrait le chat tomber — le piège de
+  // `body`, rencontré une seconde fois au même endroit.
+  //
+  // Sa place est aux sorties SANS liste blanche : charge de présence, statistiques, aperçu d'un
+  // partage — là où un champ ajouté demain sort sans que personne ne l'ait décidé. C'est là qu'une
+  // mutation pourra rougir, et donc là qu'elle sera branchée.
+  return out;
 }
 
 /** Renvoie la ligne telle qu'elle est après écriture — sans jamais renvoyer plus que le public. */
@@ -627,7 +632,6 @@ async function switchPresentationDoc(slug, email, isAdmin, { fileUrl, fileName, 
 // Il traverse trois frontières (présentateur → serveur → audience) : deux implémentations
 // finissaient par diverger, et une audience qui ne voit pas la bonne carte n'émet aucune erreur.
 const { sanitizeContent } = require("./shared.generated.js");
-const { publier } = require("./publier.js");
 
 /**
  * Une présentation close ne se pilote plus par le chemin PROPRIÉTAIRE.
