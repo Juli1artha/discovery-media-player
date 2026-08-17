@@ -10,6 +10,22 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.53] — 2026-08-17
+
+### Fixed
+
+- **An unverifiable pdf.js worker no longer stops an image from being displayed.** 0.1.52 gated
+  `start()` — the whole reader's boot — on the worker's fingerprint. But `start()` also serves the
+  **image** path, which never calls pdf.js: a worker that could not be verified therefore refused to
+  show a PNG. A door closed on a room the rejected code could not reach.
+
+  The refusal stays **whole for a PDF**, where the worker actually runs. Only the image path stops
+  being gated on something it never used.
+
+  ⚠️ Found by the **host's test harness**, not ours: its assistant stopped booting, and the first
+  diagnosis was "a jsdom artefact". Fixing the harness would have hidden the defect — the harness was
+  right and the diagnosis was incomplete.
+
 ## [0.1.52] — 2026-08-17
 
 ### ⚠️ One migration to apply — the player degrades without it, it does not break
