@@ -101,3 +101,25 @@ describe("une page rendue avec un titre hostile reste une page", () => {
     delete require.cache[require.resolve("../handler.js")];
   });
 });
+
+// ⚠️ « UN SIGNAL, JAMAIS UN CONTENU » ÉTAIT PLUS FORT QUE LE CODE. La charge des événements de
+// chat transportait la ligne projetée — que le récepteur ignorait (il relit par HTTP). Un contenu
+// que personne ne consomme n'est pas neutre : le jour où un récepteur nouveau l'aurait lu
+// « puisqu'il est là », la projection serait devenue optionnelle en silence. Le second hôte a levé
+// l'écart entre la description et le code ; cet essai rend la propriété STRUCTURELLE — elle ne
+// dépend plus de ce qu'on met dedans, il n'y a plus de dedans.
+describe("le broadcast du chat est un signal, structurellement", () => {
+  const src = require("node:fs").readFileSync(require.resolve("../handler.js"), "utf8")
+    .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
+
+  it("msg et msg-upd partent avec une charge VIDE", () => {
+    expect(src).toContain("event:'msg',payload:{}");
+    expect(src).toContain("event:'msg-upd',payload:{}");
+    expect(src.includes("event:'msg',payload:m"), "la ligne projetée voyage dans le canal — personne ne la lit, jusqu'au jour où quelqu'un la lit").toBe(false);
+  });
+
+  it("et les récepteurs relisent — le contenu vient de la route, jamais du canal", () => {
+    expect(src).toContain("ch.on('broadcast',{event:'msg'},function(){relireChat();});");
+    expect(src).toContain("ch.on('broadcast',{event:'msg-upd'},function(){relireChat();});");
+  });
+});
