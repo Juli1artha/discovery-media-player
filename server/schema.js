@@ -72,6 +72,25 @@ let PLAYER = null;
 const connues = new Map();
 
 /**
+ * ⚠️ UN « NON » N'A PAS LA MÊME DURÉE DE VIE QU'UN « OUI » — et les confondre a fait qu'une panne
+ * passagère ÉTEIGNAIT des fonctions pour la vie du processus.
+ *
+ * Un « oui » est stable : une colonne présente ne disparaît pas (les migrations sont additives, et
+ * personne ne supprime une colonne sous un processus qui tourne). Un « non », lui, recouvre deux
+ * réalités que la sonde ne distingue pas — colonne absente, base injoignable — dont la seconde se
+ * répare TOUTE SEULE. Retenir ce « non » pour toujours transformait un hoquet de base pendant un
+ * envoi de message en idempotence morte jusqu'au redémarrage, sans un mot.
+ *
+ * D'où : un « oui » est retenu pour le processus ; un « non » expire. Le délai borne le coût chez
+ * un hôte réellement non migré (une sonde ratée par minute et par attente, pas une par écriture)
+ * tout en rendant la guérison automatique — la seule direction où l'erreur se répare toute seule.
+ * Trouvé par le troisième audit, qui a aussi montré que notre essai de récupération appelait
+ * `init()` — lequel vide précisément ce cache : il prouvait une guérison qui n'existait pas.
+ */
+const TTL_NEGATIF_MS = 60 * 1000;
+const quandNegatif = new Map();      // cle → instant du « non », pour le faire expirer
+
+/**
  * Les réponses DÉJÀ OBTENUES, pour qui veut les lire — la carte d'identité, essentiellement.
  *
  * ⚠️ CE N'EST PAS UN DOUBLON DE `connues`. Celle-ci porte des promesses, dont on ne peut rien dire
@@ -84,6 +103,7 @@ function init(ctx) {
   PLAYER = ctx;
   connues.clear();
   reponses.clear();
+  quandNegatif.clear();
 }
 
 /** La sonde d'une attente déclarée. C'est la seule forme d'appel que les appelants utilisent. */
@@ -146,6 +166,12 @@ function etatDuSchema() {
  */
 function aLaColonne(table, colonne, migration) {
   const cle = `${table}.${colonne}`;
+  // Un « non » périmé n'est plus une réponse : on repose la question. Un « oui » ne périme pas.
+  const depuis = quandNegatif.get(cle);
+  if (depuis !== undefined && Date.now() - depuis > TTL_NEGATIF_MS) {
+    connues.delete(cle);
+    quandNegatif.delete(cle);
+  }
   if (!connues.has(cle)) connues.set(cle, sonder(table, colonne, migration, cle));
   return connues.get(cle);
 }
@@ -166,6 +192,7 @@ async function sonder(table, colonne, migration, cle) {
     // portage a un fichier à réécrire, pas une habitude à retrouver partout.
     const champ = encodeURIComponent(colonne);
     await PLAYER.db.request(`${table}?select=${champ}&limit=0`);
+    quandNegatif.delete(cle);
     noter(cle, true, migration);
     return true;
   } catch {
@@ -174,6 +201,7 @@ async function sonder(table, colonne, migration, cle) {
     // message d'erreur, c'est-à-dire de dépendre du texte d'un service tiers. Ce qui change entre
     // les deux, c'est la durée : une base injoignable le redevient, et le processus suivant reposera
     // la question.
+    quandNegatif.set(cle, Date.now());
     noter(cle, false, migration);
     signaler(cle, migration);
     return false;
@@ -215,6 +243,11 @@ async function sonderTout() {
     // dit que cette mesure-ci n'a pas eu lieu. Taire l'un ou l'autre serait mentir d'un côté.
     return { ...etatDuSchema(), verdict: "indetermine" };
   }
+  // ⚠️ LE TÉMOIN VIENT DE RÉPONDRE : tout « non » encore en cache est SUSPECT — il peut dater
+  // d'une panne guérie. On le jette et on repose la question, sinon ce diagnostic rendrait la
+  // valeur d'un incident passé en la datant d'aujourd'hui. Les « oui » restent : ils sont stables.
+  for (const [cle] of quandNegatif) { connues.delete(cle); reponses.delete(cle); }
+  quandNegatif.clear();
   for (const nom of Object.keys(ATTENDUES)) await attendue(nom);
   return etatDuSchema();
 }
@@ -238,6 +271,6 @@ function signaler(cle, migration) {
 }
 
 /** Pour les tests et l'exploitation : reposer la question. */
-function oublier() { connues.clear(); reponses.clear(); }
+function oublier() { connues.clear(); reponses.clear(); quandNegatif.clear(); }
 
 module.exports = { init, aLaColonne, attendue, etatDuSchema, sonderTout, oublier, ATTENDUES, TEMOIN };
