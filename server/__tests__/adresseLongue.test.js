@@ -53,13 +53,19 @@ describe("le coût du motif d'adresse", () => {
     return mini;
   };
 
+  // ⚠️ DEUXIÈME PASSE DE STABILISATION, ET LA CAUSE ÉTAIT AILLEURS CETTE FOIS. Le minimum de
+  // plusieurs prises avait réglé le RAPPORT ; c'est le TEMPS TOTAL qui a lâché — sept prises d'un
+  // motif quadratique sur 16 000 caractères frôlent le plafond de 5 s dès que la machine est
+  // chargée (vu trois fois en un après-midi, jamais deux fois de suite). Le carré étant le carré,
+  // il se démontre aussi bien sur 2 000 → 8 000 pour un seizième du coût — et un plafond explicite
+  // dit qu'on a PENSÉ au temps, plutôt que d'hériter du défaut global.
   it("croît avec le carré de la longueur — c'est bien un piège, pas une intuition", () => {
-    const petit = Math.max(cout(4000), 0.01);
-    const grand = cout(16000);
+    const petit = Math.max(cout(2000), 0.01);
+    const grand = cout(8000);
     // ×4 en longueur devrait donner ×4 en temps si le coût était linéaire. Il donne ~×16.
-    expect(grand / petit, `4 000 → ${petit.toFixed(2)} ms, 16 000 → ${grand.toFixed(2)} ms`)
+    expect(grand / petit, `2 000 → ${petit.toFixed(2)} ms, 8 000 → ${grand.toFixed(2)} ms`)
       .toBeGreaterThan(6);
-  });
+  }, 15000);
 
   it("borné à 254, il ne coûte plus rien", () => {
     expect(cout(254)).toBeLessThan(5);
