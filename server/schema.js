@@ -42,6 +42,11 @@ const ATTENDUES = {
     migration: "supabase/migrations/0005-envoi-unique.sql",
     fonction: "empêcher qu'un renvoi crée un second message",
   },
+  reactionsOrdonnees: {
+    table: "doc_presentation_messages", colonne: "reactions_seq",
+    migration: "supabase/migrations/0006-reactions-ordonnees.sql",
+    fonction: "empêcher deux réactions simultanées de s'écraser",
+  },
 };
 
 /**

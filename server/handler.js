@@ -434,7 +434,7 @@ var Live=(function(){
     // s'éteindre, recommence, et rebascule encore. Rejouer la même intention deux fois donne le
     // même résultat qu'une fois ; c'est ce que le réseau exige.
     var _m=msgData[id]||{},_rs=(_m.reactions&&_m.reactions[e])||[],veut=_rs.indexOf(MOIREF)<0;
-    fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-react',slug:SLUG,msgId:+id,emoji:e,reactor:MOIREF,etat:veut})}).then(majDiffusee).catch(function(){});}
+    fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-react',slug:SLUG,msgId:+id,emoji:e,authorToken:authToken(),etat:veut})}).then(majDiffusee).catch(function(){});}
   function setReply(id){var m=msgData[id];if(!m||m.deleted)return;var nm=m.author_name||'Invité';replyCtx={id:+id,name:nm,text:(m.body||'').slice(0,120)};var el=document.getElementById('chatReply');if(el){el.style.display='flex';el.innerHTML='<span class=cq><b>'+esc(nm)+'</b> '+esc((m.body||'').slice(0,80))+'</span><button id=chatReplyX title=Annuler>×</button>';var x=document.getElementById('chatReplyX');if(x)x.addEventListener('click',clearReply);}var t=document.getElementById('chatText');if(t)t.focus();}
   function clearReply(){replyCtx=null;var el=document.getElementById('chatReply');if(el){el.style.display='none';el.innerHTML='';}}
   function send(){var i=document.getElementById('chatText');var t=(i.value||'').trim();if(!t||!ME)return;if(LOCKED&&!canMod())return;i.value='';toggleSend();
@@ -3408,7 +3408,12 @@ async function handler(req, res) {
           // poser un état depuis 0.1.56, le client l'envoie depuis 0.1.56 — et cette ligne le
           // jetait. Les essais éprouvaient la FONCTION, jamais la route : le correctif était vu
           // refuser en mutation et inactif en production. Trouvé par le troisième audit.
-          const r = await toggleReaction(String(body.slug || ""), body.msgId, body.emoji, body.reactor, body.etat);
+          // ⚠️ `body.reactor` N'EST PLUS LU. C'est un champ que le client CHOISIT, et les refs des
+          // autres participants sont publics (le tableau des réactions les porte) : s'y fier
+          // laissait n'importe qui poser ou retirer les réactions d'un autre. L'identité se
+          // dérive du jeton d'auteur — le secret qui ne quitte pas le navigateur qui l'a tiré.
+          const reacteur = require("./presentations").reacteurDepuisJeton(body.authorToken);
+          const r = await toggleReaction(String(body.slug || ""), body.msgId, body.emoji, reacteur, body.etat);
           return jp(r.ok ? 200 : (r.status || 400), r);
         } catch { return jp(500, { ok: false }); }
       }

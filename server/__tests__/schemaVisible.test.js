@@ -254,9 +254,10 @@ describe("un « non » n'a pas la même durée de vie qu'un « oui »", () => {
 
     const avant = b.requetes;
     await schema.sonderTout();
-    // témoin (1) + re-sonde des DEUX négatifs possibles… mais le oui, lui, ne repart pas.
-    // Ce qu'on fixe : le nombre d'appels exclut la re-sonde d'envoiUnique déjà positive.
+    // Témoin (1) + toutes les attentes SAUF celle déjà positive. Dérivé de l'inventaire, pas
+    // figé : un compte en dur avait rougi à la simple arrivée d'une quatrième attente — la garde
+    // accusait alors l'inventaire d'avoir grandi, ce qui n'est pas un défaut.
     const couts = b.requetes - avant;
-    expect(couts, "un oui a été re-sondé, ou un non ne l'a pas été").toBe(1 + 2);
+    expect(couts, "un oui a été re-sondé, ou un non ne l'a pas été").toBe(1 + Object.keys(schema.ATTENDUES).length - 1);
   });
 });
