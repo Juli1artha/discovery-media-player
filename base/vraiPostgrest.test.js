@@ -117,11 +117,22 @@ decrire("les trois propriétés que le double ne sait pas simuler", () => {
     const p = await nouvellePresentation();
 
     expect((await presentations.setPage(p.slug, p.control, 7, 5)).ok).toBe(true);
-    const perimee = await presentations.setPage(p.slug, p.control, 2, 3);   // rang inférieur
-    expect(perimee.ok, "une écriture périmée a été acceptée").toBe(false);
 
-    const etat = await presentations.getPresentation(p.slug);
-    expect(etat.current_page, "la page a reculé : le verrou n'a pas tenu").toBe(7);
+    // ⚠️ UN REFUS NE SE LIT PAS DANS `ok`, ET C'EST VOULU. `setPage` documente que « périmé n'est
+    // pas une erreur : c'est le système qui fonctionne » — le navigateur n'a rien à afficher, sa
+    // page est déjà dépassée. Le refus se lit dans `perime`, et surtout DANS LA BASE.
+    const perimee = await presentations.setPage(p.slug, p.control, 2, 3);   // rang inférieur
+    expect(perimee.ok).toBe(true);
+    expect(perimee.perime, "l'écriture périmée n'a pas été reconnue comme telle").toBe(true);
+
+    const apresPerimee = await presentations.getPresentation(p.slug);
+    expect(apresPerimee.current_page, "la page a RECULÉ : le verrou n'a pas tenu").toBe(7);
+
+    // ⚠️ Et le verrou ne doit pas tout bloquer : une garde qui refuse aussi ce qui est légitime
+    // passerait cet essai en refusant simplement tout. Un rang supérieur doit encore passer.
+    const suivante = await presentations.setPage(p.slug, p.control, 9, 6);
+    expect(suivante.perime, "le verrou refuse aussi les écritures légitimes").toBeFalsy();
+    expect((await presentations.getPresentation(p.slug)).current_page).toBe(9);
   });
 
   // ⚠️ C'EST L'HYPOTHÈSE DERRIÈRE TOUTE LA SONDE DE SCHÉMA. Si PostgREST écrivait la ligne en
