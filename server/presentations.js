@@ -671,25 +671,62 @@ async function recordAttendance(slug, { key, name, email, avatar, isMember, isPr
   // resté ouvert, longtemps après la fin.
   if (pres.active === false && pres.control_hash == null) return REFUS_ARCHIVE;
   const page = Math.max(1, Math.trunc(Number(pres.current_page) || 1));
-  const now = Date.now();
-  const rows = await PLAYER.db.request(`doc_presentation_attendees?slug=eq.${enc(slug)}&attendee_key=eq.${enc(String(key))}&select=*&limit=1`);
-  const cur = Array.isArray(rows) && rows[0];
-  if (!cur) {
-    const row = { slug: String(slug), attendee_key: String(key).slice(0, 200), name: (name || "").slice(0, 120) || null, email: lc(email) || null, avatar: (avatar || "").slice(0, 600) || null, is_member: !!isMember, is_presenter: !!isPresenter, first_seen: new Date(now).toISOString(), last_seen: new Date(now).toISOString(), total_ms: 0, pages: [page] };
-    await PLAYER.db.request("doc_presentation_attendees", { method: "POST", headers: { Prefer: "return=minimal" }, body: [row] });
-    return { ok: true };
+  // ⚠️ LE DERNIER LIRE-MODIFIER-RÉÉCRIRE DU DÉPÔT, fermé comme les autres — mais SANS migration :
+  // `last_seen` change à chaque battement accepté, c'est un verrou optimiste gratuit. L'écriture
+  // est conditionnée à la valeur LUE ; zéro ligne = quelqu'un d'autre a battu entre-temps (l'autre
+  // onglet du même participant) — on relit et on rejoue. Sans ça, deux onglets qui battent dans la
+  // même seconde perdaient une page vue : la seconde réécriture emportait la première.
+  let cur = null;
+  for (let essai = 0; essai < 4; essai += 1) {
+    if (cur === null) {
+      const rows = await PLAYER.db.request(`doc_presentation_attendees?slug=eq.${enc(slug)}&attendee_key=eq.${enc(String(key))}&select=*&limit=1`);
+      cur = (Array.isArray(rows) && rows[0]) || false;
+    }
+    if (!cur) {
+      const now = Date.now();
+      const row = { slug: String(slug), attendee_key: String(key).slice(0, 200), name: (name || "").slice(0, 120) || null, email: lc(email) || null, avatar: (avatar || "").slice(0, 600) || null, is_member: !!isMember, is_presenter: !!isPresenter, first_seen: new Date(now).toISOString(), last_seen: new Date(now).toISOString(), total_ms: 0, pages: [page] };
+      try {
+        await PLAYER.db.request("doc_presentation_attendees", { method: "POST", headers: { Prefer: "return=minimal" }, body: [row] });
+        return { ok: true };
+      } catch (erreur) {
+        // ⚠️ La clé primaire (slug, attendee_key) fait son travail : deux PREMIERS battements
+        // simultanés (deux onglets ouverts ensemble), et le second recevait un 409 que personne ne
+        // rattrapait — un 500 pour un battement, bénin mais faux. Le conflit dit « la ligne existe
+        // maintenant » : on la relit et on continue en mise à jour. Tout autre échec remonte.
+        if (!String((erreur && erreur.message) || "").includes("409")) throw erreur;
+        // Journalisé comme bénin : deux onglets qui arrivent ensemble sont une information, pas
+        // une panne — et la garde des écritures muettes exige que tout rattrapage parle.
+        try { PLAYER.errors.capture(new Error("présence déjà ouverte (second onglet) : " + String(slug)), { route: "present-attend", benin: true }); } catch { /* jamais bloquant */ }
+        cur = null;
+        continue;
+      }
+    }
+    // ⚠️ UN `last_seen` ACCEPTÉ EST STRICTEMENT CROISSANT — sans ça, la serrure est aveugle dans
+    // la milliseconde : deux battements dans la même ms écrivent la MÊME valeur, la condition du
+    // suivant matche encore, et l'écrasement revient par la fenêtre qu'on venait de fermer. Vu au
+    // banc (trois écritures, trois conditions vraies) avant d'être vu nulle part ailleurs. Le prix :
+    // une milliseconde d'avance sur l'horloge dans les rafales, invisible pour des statistiques.
+    const lu = new Date(cur.last_seen || 0).getTime();
+    const now = Math.max(Date.now(), lu + 1);
+    const gap = now - lu;
+    const addMs = gap > 0 && gap <= ATTEND_MAX_GAP_MS ? gap : 0;
+    const pages = Array.isArray(cur.pages) ? cur.pages.slice() : [];
+    if (!pages.includes(page)) pages.push(page);
+    const ecrit = await ecrireSiEncoreVrai(
+      `doc_presentation_attendees?slug=eq.${enc(slug)}&attendee_key=eq.${enc(String(key))}&last_seen=eq.${enc(String(cur.last_seen))}`,
+      { last_seen: new Date(now).toISOString(), total_ms: Number(cur.total_ms || 0) + addMs, pages, name: (name || cur.name || "").slice(0, 120) || null, avatar: (avatar || cur.avatar || "").slice(0, 600) || null,
+        // ⚠️ Les deux drapeaux se remettent à jour à chaque battement, ils ne sont plus figés à la
+        // première ligne : un transfert de présentation change qui porte le titre, et une session qui
+        // s'authentifie en cours de route devient un membre. Figés, ils décriraient l'instant de
+        // l'arrivée et non la réalité — et le premier arrivé aurait raison pour toujours.
+        is_member: !!isMember, is_presenter: !!isPresenter },
+    );
+    if (ecrit) return { ok: true };
+    cur = null;   // battu en vol : on relira l'état frais au tour suivant
   }
-  const gap = now - new Date(cur.last_seen || now).getTime();
-  const addMs = gap > 0 && gap <= ATTEND_MAX_GAP_MS ? gap : 0;
-  const pages = Array.isArray(cur.pages) ? cur.pages.slice() : [];
-  if (!pages.includes(page)) pages.push(page);
-  await PLAYER.db.request(`doc_presentation_attendees?slug=eq.${enc(slug)}&attendee_key=eq.${enc(String(key))}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { last_seen: new Date(now).toISOString(), total_ms: Number(cur.total_ms || 0) + addMs, pages, name: (name || cur.name || "").slice(0, 120) || null, avatar: (avatar || cur.avatar || "").slice(0, 600) || null,
-    // ⚠️ Les deux drapeaux se remettent à jour à chaque battement, ils ne sont plus figés à la
-    // première ligne : un transfert de présentation change qui porte le titre, et une session qui
-    // s'authentifie en cours de route devient un membre. Figés, ils décriraient l'instant de
-    // l'arrivée et non la réalité — et le premier arrivé aurait raison pour toujours.
-    is_member: !!isMember, is_presenter: !!isPresenter } });
-  return { ok: true };
+  // Quatre tours perdus : un battement de présence se reperd sans conséquence — le suivant arrive
+  // dans quelques secondes. Refuser net plutôt qu'écraser ce que les gagnants viennent d'écrire.
+  return { ok: false, status: 409 };
 }
 
 // Détail d'une présentation : entête + participants + nombre de messages par participant.
