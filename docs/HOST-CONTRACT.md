@@ -65,6 +65,25 @@ it. `verdict` is then one of:
 | `partiel` | some expectations checked, none of them missing |
 | `complet` | all checked, all present |
 | `incomplet` | at least one is missing — `manquant` names the file and the sleeping feature |
+
+Each `manquant` entry has **exactly this shape** — pin your parser to it, not to what a schema
+probe "should" return:
+
+```json
+{ "migration": "supabase/migrations/0006-reactions-ordonnees.sql",
+  "fonction": "empêcher deux réactions simultanées de s'écraser" }
+```
+
+⚠️ This shape went **undocumented** for two releases, and the second host typed it from memory as
+`{table, colonne, migration}` — their monitoring filter then discarded every real entry and would
+have shown an empty table on a database that was actually missing something. **No mutation on
+their side could catch it: their test built the card the same wrong way, so the bench validated
+the assumption instead of the behaviour.** The only cure was reading data they had not fabricated.
+If you consume this card, test your parser against the JSON above, not against a fixture you wrote.
+
+⚠️ **A card without a `schema` field is an alert, not a success**: it signals an instance older
+than 0.1.58 — a version that cannot answer the question. (Rule contributed by the second host, for
+exactly the monitoring case where "no data" would otherwise read as "all clear".)
 | `indetermine` | the database did not answer; this measurement did not happen |
 
 ⚠️ **`incomplet` wins over `partiel`**: a missing column is a positive fact and settles the verdict
