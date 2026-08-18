@@ -2356,6 +2356,24 @@ ${LEGAL_CSS}
           body:JSON.stringify({action:'present-end',slug:p.slug,control:p.control})})
         .then(function(r){ if(!r||!r.ok) throw new Error('present-end'); })
         .then(function(){
+          // RELIRE, PAS REUTILISER : un second aller-retour, indépendant de l'écriture. Réserve
+          // posée par le second hôte, et elle est juste — relire la réponse du PATCH ferait ce que
+          // faisait le cache négatif : la mesure confirmerait ce que l'écriture CROIT avoir fait.
+          // C'est le seul moyen de rendre observable la classe entière des succès silencieux, y
+          // compris contre un futur serveur qui répondrait ok sans avoir écrit.
+          return Player.live.fetchBorne('/api/doc?present='+encodeURIComponent(p.slug)+'&state=1')
+            .then(function(r){ return r&&r.ok?r.json():null; })
+            .catch(function(){ return null; });   // relecture INDISPONIBLE n'est pas « encore active »
+        })
+        .then(function(d){
+          if(d&&d.state&&d.state.active){
+            // Le serveur a dit oui, la base dit encore active : fin non prise, ou reprise ailleurs.
+            // Dans les deux cas, fermer l'interface mentirait au présentateur.
+            if(btn){ btn.disabled=false; btn.textContent=libelle||'Terminer'; }
+            var err2=document.getElementById('pbarErr');
+            if(err2){ err2.textContent='La présentation est ENCORE ACTIVE après la fin — reprise ailleurs, ou fin non prise. Réessayez.'; err2.classList.add('on'); }
+            return;
+          }
           PRES=null; clearInterval(_hbIv); clearCtl(p.slug);
           var pb=document.getElementById('pbar'); if(pb)pb.style.display='none';
           try{ if(window.Live){ Live.sendState(); Live.disconnect(); } }catch(e){}

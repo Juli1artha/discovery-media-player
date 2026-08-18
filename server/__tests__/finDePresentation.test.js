@@ -133,9 +133,13 @@ async function banc() {
 
   const appels = [];
   let enAttente = null;                       // la requête « present-end » qu'on tient en suspens
+  const relu = { active: false };             // ce que la RELECTURE d'état rendra (banc : fermée par défaut)
   window.fetch = (url, init) => {
     const corps = (() => { try { return JSON.parse(String((init && init.body) || "{}")); } catch { return {}; } })();
     appels.push({ url: String(url), action: corps.action, corps, init: init || {} });
+    if (String(url).includes("state=1")) {
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ state: { active: relu.active } }) });
+    }
     if (corps.action === "present-start") {
       return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true, slug: "S1", control: "C1" }) });
     }
@@ -167,7 +171,7 @@ async function banc() {
     onState: () => {}, onMap: () => {}, detectMember: () => {},
   };
   return {
-    appels, vus,
+    appels, vus, relu,
     finir: () => { document.getElementById("pbarEnd").click(); return respirer(); },
     reponse: () => enAttente,
     bandeau: () => document.getElementById("pbar"),
@@ -279,6 +283,37 @@ describe("un échec ne fait pas croire à une fin", () => {
     expect(err, "l'élément d'erreur doit exister dans la barre").toBeTruthy();
     expect(err.textContent, "et dire ce qui s'est passé, plutôt que se taire").toMatch(/TOUJOURS ACTIVE/);
     expect(err.classList.contains("on"), "un message invisible ne dit rien").toBe(true);
+  });
+
+  // ⚠️ RELIRE, PAS RÉUTILISER — réserve du second hôte, et elle est juste : relire la réponse du
+  // PATCH ferait ce que faisait le cache négatif, la mesure confirmerait ce que l'écriture croit
+  // avoir fait. On exige donc un SECOND aller-retour, indépendant, après le ok du serveur.
+  it("après le ok du serveur, une RELECTURE indépendante confirme la fin", async () => {
+    const b = await banc();
+    await b.finir();
+    b.reponse().tenir({ ok: true, status: 200, json: async () => ({ ok: true }) });
+    await respirer();
+
+    // Après l'écriture seulement : la page vivante fait aussi des lectures d'état pour son propre
+    // suivi — c'est la relecture POST-clôture qu'on exige, pas l'absence de toute autre lecture.
+    const idxFin = b.appels.findIndex((x) => x.action === "present-end");
+    const relectures = b.appels.slice(idxFin + 1).filter((x) => x.url.includes("state=1"));
+    expect(relectures.length, "le ok de l'écriture a été cru sur parole — aucun second aller-retour").toBeGreaterThanOrEqual(1);
+    expect(b.bandeau().style.display, "état relu « fermée » : l'interface peut fermer").toBe("none");
+  });
+
+  it("le serveur dit ok mais la base dit ENCORE ACTIVE : l'interface ne ment pas", async () => {
+    const b = await banc();
+    b.relu.active = true;                     // la relecture contredira l'écriture
+    await b.finir();
+    b.reponse().tenir({ ok: true, status: 200, json: async () => ({ ok: true }) });
+    await respirer();
+
+    expect(b.bandeau().style.display, "fermer l'interface convertirait un échec en confirmation visuelle").toBe("flex");
+    const err = document.getElementById("pbarErr");
+    expect(err.classList.contains("on")).toBe(true);
+    expect(err.textContent).toMatch(/ENCORE ACTIVE/);
+    expect(b.jetonStocke(), "le jeton doit survivre : c'est le seul moyen de refermer").toBe(true);
   });
 
   it("et un second clic retente vraiment", async () => {
