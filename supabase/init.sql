@@ -269,6 +269,9 @@ begin
                           then now() + make_interval(secs => p_window_seconds)
                           else l.expires_at end
   returning l.count into v_count;
+
+  -- Le refus est décidé ICI, sur la valeur qu'on vient d'écrire : le client n'a rien à recalculer,
+  -- donc rien à recalculer sur une valeur déjà périmée.
   return query select (v_count <= p_max), v_count;
 end;
 $$;
