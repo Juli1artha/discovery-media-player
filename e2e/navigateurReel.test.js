@@ -61,11 +61,40 @@ const { creerPostgrestEnMemoire } = require("../tools/postgrest-en-memoire.cjs")
 const { TIERS } = require("../server/handler.js");
 
 const SLUG_TRACE = "essai-trace";
+const SLUG_PDF = "essai-pdf-reel";
 const SLUG_DIRECT = "essai-direct";
 const SLUG_URL_MUETTE = "url-muette";
 
 /** Octets réels de chaque dépendance, récupérés une fois et rejoués ensuite. */
 const octets = {};
+
+/**
+ * Un PDF MINIMAL mais VALIDE — une page, un texte, offsets xref calculés au lieu d'être bricolés.
+ * pdf.js refuse une table xref fausse : ce fabriquant est la seule façon d'avoir une fixture
+ * qu'on comprend octet par octet, sans dépendance.
+ */
+function fabriquerPdf() {
+  const objets = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    null, // le flux, traité à part
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  const flux = "BT /F1 24 Tf 72 720 Td (Essai reel) Tj ET";
+  let corps = "%PDF-1.4\n";
+  const positions = [];
+  for (let i = 0; i < objets.length; i++) {
+    positions.push(corps.length);
+    if (i === 3) corps += `4 0 obj\n<< /Length ${flux.length} >>\nstream\n${flux}\nendstream\nendobj\n`;
+    else corps += `${i + 1} 0 obj\n${objets[i]}\nendobj\n`;
+  }
+  const debutXref = corps.length;
+  corps += `xref\n0 ${objets.length + 1}\n0000000000 65535 f \n`;
+  for (const pos of positions) corps += String(pos).padStart(10, "0") + " 00000 n \n";
+  corps += `trailer\n<< /Size ${objets.length + 1} /Root 1 0 R >>\nstartxref\n${debutXref}\n%%EOF`;
+  return Buffer.from(corps, "latin1");
+}
 
 // PNG 4×4 valide. Une IMAGE et pas un PDF : le chemin image ne demande pas pdf.js, donc le banc
 // prouve le démarrage de la page sans dépendre du rendu d'une bibliothèque tierce.
@@ -114,12 +143,18 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
 
     // La base d'essai (constat P2-3) : sans elle, la visionneuse tracée et la page d'audience
     // répondent 404, et deux des trois politiques de sécurité du produit restent inexercées.
+    fs.writeFileSync(path.join(racine, "essai-reel.pdf"), fabriquerPdf());
     const graine = {
       commercial_doc_shares: [{
         id: 1, slug: SLUG_TRACE, doc_id: "doc-1", revoked: false, require_auth: false,
         file_url: fichier, file_name: "essai.png", doc_title: "Document d'essai",
         allow_download: true, created_by: "moi@exemple.fr", recipient_email: "client@exemple.fr",
         created_at: "2026-08-17T00:00:00Z",
+      }, {
+        id: 2, slug: SLUG_PDF, doc_id: "doc-pdf", revoked: false, require_auth: false,
+        file_url: pathToFileURL(path.join(racine, "essai-reel.pdf")).href, file_name: "essai-reel.pdf",
+        doc_title: "PDF réel", allow_download: true, created_by: "moi@exemple.fr",
+        recipient_email: "client@exemple.fr", created_at: "2026-08-17T00:00:00Z",
       }],
       doc_presentations: [{
         id: 1, slug: SLUG_DIRECT, doc_id: "doc-1", active: true, current_page: 1, write_seq: 0,
@@ -322,32 +357,27 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
    * depuis sa propre position sur le CDN et le charge quand même. Les deux annulaient l'empreinte
    * en silence, et aucun raisonnement ne l'aurait dit : il a fallu regarder les workers créés.
    */
-  it("un worker que le CDN a modifié n'est jamais exécuté", async () => {
+  // ⚠️ LE TEST QUE TROIS ANS DE CDN RENDAIENT IMPOSSIBLE. Le chemin PDF n'était jamais éprouvé au
+  // banc — la fixture était une image, exprès, pour ne pas dépendre d'un CDN. pdf.js vient
+  // désormais de NOTRE origine : un VRAI PDF, rendu par le VRAI worker, dans un VRAI Chromium.
+  // (Le test du worker-CDN-trafiqué vivait ici : son modèle de menace a disparu avec le CDN —
+  // l'intégrité d'un actif de même origine est celle du serveur, éprouvée octet pour octet en
+  // unitaire.)
+  it("un vrai PDF est rendu par notre pdf.js — et RIEN ne part vers un tiers", async () => {
     const page = await navigateur.newPage();
-    const distant = [];
-    // Tout chargement du worker AUTRE qu'une récupération pour vérification est un échec : c'est
-    // exactement ce que pdf.js faisait dans notre dos.
-    page.on("requestfinished", (r) => {
-      if (r.url().includes("pdf.worker") && r.resourceType() !== "fetch") distant.push(r.resourceType());
+    const horsOrigine = [];
+    page.on("request", (r) => {
+      const u = r.url();
+      if (!u.startsWith(`http://127.0.0.1:${port}`) && !u.startsWith("data:") && !u.startsWith("blob:")) horsOrigine.push(u);
     });
-    for (const [cle, tiers] of Object.entries(TIERS)) {
-      await page.route(tiers.url, (route) => route.fulfill({
-        status: 200, contentType: "application/javascript",
-        // Un octet de plus sur le worker : l'empreinte ne correspond plus.
-        body: cle === "pdfWorker" ? Buffer.concat([octets[cle], Buffer.from(" ")]) : octets[cle],
-      }));
-    }
-    await page.goto(`http://127.0.0.1:${port}/doc/${SLUG_TRACE}`, { waitUntil: "load" });
-    await page.waitForFunction(() => window.__workerRefuse === 1, null, { timeout: 15_000 });
-    expect(distant).toEqual([]);
-
-    // ⚠️ ET LE DOCUMENT S'AFFICHE QUAND MÊME, parce que c'est une IMAGE. Le premier correctif gatait
-    // la mise en route du lecteur entier : un worker invérifiable empêchait d'afficher un PNG, qui
-    // n'appelle pdf.js à aucun moment. Une porte fermée sur une pièce que le code refusé ne pouvait
-    // pas atteindre — trouvé par le harnais de l'hôte, pas ici.
+    await page.goto(`http://127.0.0.1:${port}/doc/${SLUG_PDF}`, { waitUntil: "load" });
+    // Le rendu réel : pdf.js pose un canvas dans la page, avec des dimensions non nulles.
     await page.waitForFunction(
-      () => { const i = document.querySelector("#pages .page img"); return !!i && i.naturalWidth > 0; },
-      null, { timeout: 15_000 });
+      () => { const c = document.querySelector("#pages .page canvas"); return !!c && c.width > 0 && c.height > 0; },
+      null, { timeout: 20_000 });
+    const nbPages = await page.evaluate(() => document.querySelectorAll("#pages .page").length);
+    expect(nbPages).toBe(1);
+    expect(horsOrigine, "le viewer PDF a appelé un domaine tiers — le CDN est censé avoir disparu").toEqual([]);
     await page.close();
   }, 60_000);
 

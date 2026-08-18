@@ -1,6 +1,6 @@
 // Page publique de consultation d'un document commercial : /doc/:slug → visionneuse pdf.js qui TRACE
 // l'ouverture et les PAGES VUES (un lien par destinataire → on sait qui a lu, combien de pages).
-//  - GET  /doc/:slug            → HTML visionneuse (pdf.js depuis cdnjs, nonce CSP)
+//  - GET  /doc/:slug            → HTML visionneuse (pdf.js EMBARQUÉ, servi par ?asset=…, nonce CSP)
 //  - GET  /doc/:slug?file=1     → stream le PDF depuis le Storage (MÊME ORIGINE → pas de souci CORS pour pdf.js)
 //  - POST /api/doc {slug,event…}→ journalise un événement (open / page / heartbeat) — best-effort
 const crypto = require("crypto");
@@ -71,14 +71,23 @@ const originOf = (u) => { try { return new URL(u).origin; } catch { return ""; }
 //      atténuation était IMPLICITE — une modification de CSP la rouvrait sans que rien ne le dise.
 //      Les quatre appels à `getDocument` forcent donc désormais `isEvalSupported: false`, en
 //      défense en profondeur : la protection ne dépend plus d'un en-tête écrit ailleurs.
-//   2. La montée vers 4.x n'est PAS un changement de numéro : cdnjs ne publie plus que des modules
-//      ES (`pdf.min.mjs`) à partir de 4.0, alors qu'on charge un script classique et qu'on
-//      configure le worker à la main. C'est une migration, elle est suivie séparément dans
-//      docs/AUDIT-2026-08-14-SUIVI.md (P1-3) avec l'embarquement de la bibliothèque, qui règle
-//      aussi la dépendance CDN sans intégrité (P2-4).
+//   2. La montée vers 4.x+ a été FAITE (0.1.66) : bibliothèque embarquée, modules ES servis par
+//      notre route ?asset=…, worker de même origine. L'historique de la contrainte cdnjs vit dans
+//      le CHANGELOG ; ce commentaire a longtemps décrit la migration au futur.
 //
 // Signalé par un audit externe. Fermer le chemin d'abord, migrer ensuite — dans cet ordre.
-const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174";
+// ⚠️ PDF.JS EST EMBARQUÉ (pdfjs-dist, épinglé exact) ET SERVI PAR NOTRE ROUTE `?asset=…`. Trois
+// ans de CDN ont coûté : un tiers dans la CSP, un worker impossible à couvrir par SRI (il n'entre
+// pas par une balise), le ballet d'empreintes qui le contournait, et un épinglage suspendu à ce
+// que cdnjs continuait de publier. Un actif de même origine EST nos octets.
+//
+// ⚠️ LE SCRIPTING PDF EST STRUCTURELLEMENT IMPOSSIBLE, pas désactivé par une option : il exige le
+// sandbox (pdf.sandbox.min.mjs), que nous ne servons ni ne chargeons nulle part. Une option
+// « enableScripting:false » ici serait un placebo — elle appartient au viewer de Mozilla, pas à
+// getDocument. `isEvalSupported:false` reste sur chaque appel : lui est réel (CVE-2024-4367).
+const PDFJS_VERSION = require("pdfjs-dist/package.json").version;
+const PDFJS = "/api/doc?asset=pdf&v=" + PDFJS_VERSION;
+const PDFJS_WORKER = "/api/doc?asset=pdfworker&v=" + PDFJS_VERSION;
 // ⚠️ VERSION EXACTE, PAS `@2` (constat P2-4). L'étiquette `@2` de jsdelivr suit la dernière 2.x :
 // la page servait donc, aux visiteurs, le code que Supabase avait publié le matin même — sans que
 // personne n'ait rien déployé, ni relu, ni pu revenir en arrière. Le jour où elle résolvait vers
@@ -122,14 +131,12 @@ const MAPS_VERSION = "3.65";
  * doivent être comparés par quelqu'un au moins une fois.
  */
 const TIERS = {
-  pdf: { url: PDFJS + "/pdf.min.js", sri: "sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" },
   // ⚠️ Le worker N'A PAS DE BALISE, donc pas d'attribut `integrity` : il est chargé par pdf.js,
   // pas par le document. Mais ses octets passent déjà par notre code (ils sont récupérés en texte
   // puis transformés en blob de même origine, sans quoi le navigateur refuserait un worker
   // distant) — on les vérifie donc à la main, là où ils passent. Sans ça, l'empreinte de
   // `pdf.min.js` protégerait la petite moitié et laisserait la grande (1 Mo contre 300 ko) entrer
   // sans contrôle, alors même qu'elle voit tout le contenu du document.
-  pdfWorker: { url: PDFJS + "/pdf.worker.min.js", sri: "sha384-SnzOobpRMLXZ52iJvZm/C0fYw0OQemTXzTjIsdsfMcrCtCEe9qgzxTd3RSklO5x2" },
   supa: { url: SUPAJS, sri: "sha384-qafw21c/iciq0VXsi9FzkfoQv5I/V0iqE4lSNcKXPnW9/UTJLnv5CcN4FHxVLnKg" },
   leaflet: { url: LEAFLET, sri: "sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" },
   // ⚠️ UNE FEUILLE DE STYLE TIERCE N'EST PAS INOFFENSIVE, et celle-ci n'était comptée nulle part.
@@ -1750,9 +1757,11 @@ function sendHtml(res, status, html, scriptSrc, imgExtra, frameAncestors) {
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader("Content-Security-Policy", [
     "default-src 'none'",
-    `script-src ${scriptSrc || "'none'"} https://cdnjs.cloudflare.com`,
-    "worker-src 'self' blob: https://cdnjs.cloudflare.com",
-    `connect-src 'self' https://cdnjs.cloudflare.com${supaOrigin ? " " + supaOrigin : ""}`,
+    // ⚠️ `'none'` DOIT ÊTRE SEUL ou la directive est invalide — « 'none' 'self' » a fait rejeter
+    // la CSP entière par Chrome (vu à la sonde du banc, pas en relisant le code).
+    `script-src ${scriptSrc ? scriptSrc + " 'self'" : "'self'"}`,
+    "worker-src 'self'",
+    `connect-src 'self'${supaOrigin ? " " + supaOrigin : ""}`,
     `img-src 'self' data: blob:${imgExtra ? " " + imgExtra : ""}`,
     `media-src 'self'${supaOrigin ? " " + supaOrigin : ""}`,
     "style-src 'unsafe-inline'",
@@ -2029,12 +2038,11 @@ function viewerHtml(share, nonce, logoUrl, pitch) {
   // En aperçu interne, on embarque de quoi démarrer une présentation live (URL Storage brute + métadonnées).
   // `fileName` : c'est LUI qui dit la nature du document côté page. L'URL publique est
   // `/api/doc?slug=…&file=1`, sans extension — sans ce champ, une image partait dans pdf.js.
-  const cfg = jsonPourScript({ brand: PLAYER.branding.name, slug: preview ? "" : share.slug, fileUrl, fileName: share.file_name || "", pdfjs: PDFJS, title, preview, embed, embedded, bot: botOn, botGuided: !preview && !!share.bot_enabled && share.bot_guided !== false, botAv: (!preview && share.bot_enabled && share.bot_avatar) || "", botName: (!preview && share.bot_enabled && share.bot_name) || "", botGreet: (!preview && share.bot_enabled && share.bot_greeting) || "", botGreetDoc: (!preview && share.bot_enabled && share.bot_greeting_doc) || "", dl: share.allow_download !== false, autoPresent: !!share.auto_present, botAnim: share.bot_page_anim !== false, botVoice: !preview && !!share.bot_enabled && !!process.env.ELEVENLABS_API_KEY, vIcOn: ICONS.sound, vIcOff: ICONS.mute, kStyle: (!preview && share.bot_enabled && share.bot_karaoke) || "classic", vLayout: (!preview && share.bot_enabled && share.video_layout) || "", vClips: !preview && !!share.bot_vclips, botVAv: (!preview && share.bot_enabled && share.bot_vphoto) || "", resumeSlug: preview ? (share.resume_slug || "") : "", supaUrl: preview ? (share.supa_url || "") : "", supaKey: preview ? (share.supa_key || "") : "", internal: preview && share.internal_email ? { email: share.internal_email, name: share.presenter_name || "", docId: share.doc_id || "", it: share.internal_token || "" } : null, present: preview ? { url: share.raw_url || "", name: share.file_name || "", title: share.doc_title || "", docId: share.doc_id || "", by: share.presenter_name || "", email: share.internal_email || "", av: share.presenter_avatar || "" } : null });
+  const cfg = jsonPourScript({ brand: PLAYER.branding.name, slug: preview ? "" : share.slug, fileUrl, fileName: share.file_name || "", pdfjs: PDFJS, pdfjsWorker: PDFJS_WORKER, title, preview, embed, embedded, bot: botOn, botGuided: !preview && !!share.bot_enabled && share.bot_guided !== false, botAv: (!preview && share.bot_enabled && share.bot_avatar) || "", botName: (!preview && share.bot_enabled && share.bot_name) || "", botGreet: (!preview && share.bot_enabled && share.bot_greeting) || "", botGreetDoc: (!preview && share.bot_enabled && share.bot_greeting_doc) || "", dl: share.allow_download !== false, autoPresent: !!share.auto_present, botAnim: share.bot_page_anim !== false, botVoice: !preview && !!share.bot_enabled && !!process.env.ELEVENLABS_API_KEY, vIcOn: ICONS.sound, vIcOff: ICONS.mute, kStyle: (!preview && share.bot_enabled && share.bot_karaoke) || "classic", vLayout: (!preview && share.bot_enabled && share.video_layout) || "", vClips: !preview && !!share.bot_vclips, botVAv: (!preview && share.bot_enabled && share.bot_vphoto) || "", resumeSlug: preview ? (share.resume_slug || "") : "", supaUrl: preview ? (share.supa_url || "") : "", supaKey: preview ? (share.supa_key || "") : "", internal: preview && share.internal_email ? { email: share.internal_email, name: share.presenter_name || "", docId: share.doc_id || "", it: share.internal_token || "" } : null, present: preview ? { url: share.raw_url || "", name: share.file_name || "", title: share.doc_title || "", docId: share.doc_id || "", by: share.presenter_name || "", email: share.internal_email || "", av: share.presenter_avatar || "" } : null });
   return `<!doctype html><html lang=fr><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=3,viewport-fit=cover,interactive-widget=resizes-content">
 <meta name=robots content="noindex,nofollow">
 <link rel=icon href="data:,">
-<link rel=preconnect href="https://cdnjs.cloudflare.com" crossorigin>
 <title>${esc(titreOnglet(share))}</title>
 <style>
   :root{--bg:#33312e;--bar:#26241f}
@@ -2229,7 +2237,6 @@ ${LEGAL_CSS}
   ${legalFooter({ tracked: !preview && !!share.slug, sansExpediteur: !share.recipient_email && !share.created_by })}
   ${brandLogo || !brandIntroRuntime ? "" : `<script nonce="${nonce}">(${brandIntroRuntime.toString()})();</script>`}
   <script nonce="${nonce}">${PLAYER_BROWSER_JS}</script>
-  ${balise(nonce, TIERS.pdf)}
   ${preview ? `${balise(nonce, TIERS.supa)}
   <script nonce="${nonce}">var LIVECFG=${jsonPourScript({ supaUrl: share.supa_url || "", supaKey: share.supa_key || "", hostAuthKey: cleSessionHote(), liveAuthKey: CLE_SESSION_PLAYER, guestKey: CLE_INVITE })};var GMAPS_KEY=${jsonPourScript((PLAYER.config && PLAYER.config.mapsKey) || "")};${LIVE_JS}
   ${MAP_JS}</script>` : ""}
@@ -2534,7 +2541,10 @@ ${LEGAL_CSS}
     }
     function loadError(m){ var l=document.getElementById('lpct'); if(l){ l.textContent=m; l.className='lerr'; } var b=document.getElementById('lbar'); if(b)b.style.display='none'; }
     function hideLoader(){ var l=document.getElementById('load'); if(l&&!l.classList.contains('hide')){ l.classList.add('hide'); setTimeout(function(){ if(l.parentNode) l.parentNode.removeChild(l); },450); } }
-    if(!window.pdfjsLib){ loadError("Impossible de charger la visionneuse."); return; }
+    // (Ici vivait « if(!window.pdfjsLib) return » — sentinelle de l'époque où pdf.js entrait par
+    // une balise AVANT ce script. La bibliothèque s'importe désormais dans le boot lui-même : la
+    // garde ne protégeait plus rien et faisait sortir la visionneuse ENTIÈRE, sans un mot — vu à
+    // la sonde du banc : zéro requête d'actif, zéro erreur, zéro document.)
     function start(){
       // Ouverture journalisée, chrono lancé, écouteurs de visibilité / focus / inactivité posés.
       T.start();
@@ -2575,11 +2585,13 @@ ${LEGAL_CSS}
       if(IS_IMG){ start(); return; }
       loadError("Document non affiche : une dependance n a pas pu etre verifiee.");
     }
-    var wsrc=CFG.pdfjs+'/pdf.worker.min.js';
+    // La bibliothèque vient de NOTRE origine, en module ES : l'import qui échoue est un échec de
+    // NOTRE serveur — même refus fermé qu'avant (l'image, elle, n'a pas besoin du worker).
     try{
-      Player.viewer.workerBlobUrl(wsrc,'${TIERS.pdfWorker.sri}').then(function(u){
-        if(!u){ refuserWorker(); return; }
-        pdfjsLib.GlobalWorkerOptions.workerSrc=u; start();
+      import(CFG.pdfjs).then(function(m){
+        window.pdfjsLib=m;
+        pdfjsLib.GlobalWorkerOptions.workerSrc=CFG.pdfjsWorker;
+        start();
       }).catch(refuserWorker);
     }catch(e){ refuserWorker(); }
     // Bord à bord en une-page mobile : chaque millimètre compte, surtout pour un PDF paysage.
@@ -2695,8 +2707,9 @@ ${LEGAL_CSS}
         var tl=document.createElement('div'); tl.className='textLayer';
         tl.style.width=v.width+'px'; tl.style.height=v.height+'px'; tl.style.setProperty('--scale-factor', scale);
         el.appendChild(tl);
-        try{ pdfjsLib.renderTextLayer({textContentSource:tc,container:tl,viewport:v}); }
-        catch(e){ try{ pdfjsLib.renderTextLayer({textContent:tc,container:tl,viewport:v}); }catch(e2){} }
+        try{ new pdfjsLib.TextLayer({textContentSource:tc,container:tl,viewport:v}).render(); }
+        catch(e){ try{ pdfjsLib.renderTextLayer({textContentSource:tc,container:tl,viewport:v}); }
+        catch(e2){ try{ pdfjsLib.renderTextLayer({textContent:tc,container:tl,viewport:v}); }catch(e3){} } }
       }); }catch(e){}
     }); }
     // ── Assistant IA « présentateur » : chat requête/réponse (bot-start/bot-say) + saut de page piloté ──
@@ -2706,7 +2719,7 @@ ${botOn && botBrowser ? botBrowser.botViewerJs(ICONS) : ""}
 </body></html>`;
 }
 
-// CSP de la page audience (Présenter) : autorise pdf.js (cdnjs), supabase-js (jsdelivr) et la connexion
+// CSP de la page audience (Présenter) : pdf.js vient de NOTRE origine ; supabase-js (jsdelivr) et la connexion
 // Realtime (https + wss vers le projet Supabase). Plus permissive que la visionneuse, limitée à cette page.
 /**
  * Les origines d'images qu'une page a le droit de charger.
@@ -2764,9 +2777,9 @@ function sendPresentHtml(res, html, nonce, supaUrl, imgExtra, frameAncestors) {
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader("Content-Security-Policy", [
     "default-src 'none'",
-    `script-src 'nonce-${nonce}' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com https://maps.googleapis.com https://maps.gstatic.com`,
-    "worker-src 'self' blob: https://cdnjs.cloudflare.com",
-    `connect-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://nominatim.openstreetmap.org https://*.googleapis.com https://*.gstatic.com ${supaUrl} ${wss}`,
+    `script-src 'nonce-${nonce}' 'self' https://cdn.jsdelivr.net https://unpkg.com https://maps.googleapis.com https://maps.gstatic.com`,
+    "worker-src 'self'",
+    `connect-src 'self' https://cdn.jsdelivr.net https://nominatim.openstreetmap.org https://*.googleapis.com https://*.gstatic.com ${supaUrl} ${wss}`,
     `img-src 'self' data: blob: https://*.tile.openstreetmap.org https://unpkg.com https://*.googleapis.com https://*.gstatic.com https://*.ggpht.com https://*.googleusercontent.com ${supaUrl}${imgExtra ? " " + imgExtra : ""}`,
     "style-src 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com",
     "font-src https://fonts.gstatic.com data:",
@@ -2794,11 +2807,10 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
   const presenter = esc(pres.presenter_name || "");
   const logo = esc(logoUrl || "");
   const fileUrl = `/api/doc?present=${encodeURIComponent(pres.slug)}&file=1`;
-  const cfg = jsonPourScript({ fileUrl, docUrl: pres.file_url, pdfjs: PDFJS, slug: pres.slug, fileName: pres.file_name || "", page: pres.current_page || 1, active: pres.active !== false, content: pres.content || null, supaUrl, supaKey, title: pres.doc_title || pres.file_name || "Document" });
+  const cfg = jsonPourScript({ fileUrl, docUrl: pres.file_url, pdfjs: PDFJS, pdfjsWorker: PDFJS_WORKER, slug: pres.slug, fileName: pres.file_name || "", page: pres.current_page || 1, active: pres.active !== false, content: pres.content || null, supaUrl, supaKey, title: pres.doc_title || pres.file_name || "Document" });
   return `<!doctype html><html lang=fr><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=3">
 <meta name=robots content="noindex,nofollow">
-<link rel=preconnect href="https://cdnjs.cloudflare.com" crossorigin>
 <title>${esc(PLAYER.branding.title(pres.doc_title || pres.file_name || "Document", "Présentation"))}</title>
 <style>
   :root{--bg:#23211e;--bar:#1a1916}
@@ -2864,7 +2876,6 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
   ${PLAYER.branding.poweredBy ? `<div class=brand>Propulsé par ${esc(PLAYER.branding.poweredBy)}</div>` : ""}
   ${legalFooter({ tracked: true })}
   <script nonce="${nonce}">${PLAYER_BROWSER_JS}</script>
-  ${balise(nonce, TIERS.pdf)}
   ${balise(nonce, TIERS.supa)}
   <script nonce="${nonce}">
   (function(){
@@ -2900,11 +2911,11 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
         pageEl.innerHTML=''; pageEl.appendChild(cv);
       });
     }
-    var wsrc=CFG.pdfjs+'/pdf.worker.min.js';
     function boot(){
-      Player.viewer.workerBlobUrl(wsrc,'${TIERS.pdfWorker.sri}').then(function(u){
-        if(!u){ window.__workerRefuse=1; var _e=document.getElementById('pg'); if(_e)_e.textContent="Document non affiche : une dependance n a pas pu etre verifiee."; return; }
-        pdfjsLib.GlobalWorkerOptions.workerSrc=u; load();
+      import(CFG.pdfjs).then(function(m){
+        window.pdfjsLib=m;
+        pdfjsLib.GlobalWorkerOptions.workerSrc=CFG.pdfjsWorker;
+        load();
       }).catch(function(){ window.__workerRefuse=1; var _e=document.getElementById('pg'); if(_e)_e.textContent="Document non affiche : une dependance n a pas pu etre verifiee."; });
     }
     // ⚠️ UNE PRÉSENTATION PEUT PORTER UNE IMAGE, ET CETTE VUE NE LE SAVAIT PAS. Le bouton
@@ -2974,7 +2985,8 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
       CFG.fileUrl='/api/doc?present='+encodeURIComponent(CFG.slug)+'&file=1&v='+encodeURIComponent(row.updated_at||String(row.current_page||1));
       load();
     }
-    if(window.pdfjsLib) boot(); else { var s=document.querySelector('script[src*="pdf.min.js"]'); if(s)s.addEventListener('load',boot); }
+    // La balise pdf.min.js n'existe plus : boot() importe lui-même la bibliothèque.
+    boot();
     window.__refit=function(){ if(ready) show(cur); };
     var _rzA; window.addEventListener('resize',function(){ clearTimeout(_rzA); _rzA=setTimeout(function(){ if(ready) show(cur); },140); });
     // Ce que l'audience fait d'un état reçu — player/src/presentation-state.ts, testé.
@@ -3896,11 +3908,31 @@ async function handler(req, res) {
     // AUCUN DOCUMENT DEMANDÉ. Ni slug, ni présentation, ni aperçu, ni carte d'identité — il n'y a
     // rien à afficher, et ce n'est pas un refus. Le dire franchement évite qu'un intégrateur
     // cherche un lien révoqué là où il lui manque un paramètre.
-    if (req.method === "GET" && !slug && !q.present && !q.preview && !q.contract) {
+    if (req.method === "GET" && !slug && !q.present && !q.preview && !q.contract && !q.asset) {
       res.statusCode = 400;
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
-      res.end("Aucun document demandé. Attendu : ?slug=… , ?present=… , ?preview=1 ou ?contract=1.\n" +
+      res.end("Aucun document demandé. Attendu : ?slug=… , ?present=… , ?preview=1, ?contract=1 ou ?asset=….\n" +
               "Si vous intégrez le player, vérifiez que la plateforme fournit les paramètres de requête.");
+      return;
+    }
+
+    // ── ACTIFS PDF.JS (`?asset=pdf` / `?asset=pdfworker`) ────────────────────────────────────
+    // La bibliothèque est EMBARQUÉE (pdfjs-dist, épinglée exacte) et servie depuis notre origine.
+    // Ce que ça ferme d'un coup : le tiers CDN dans la CSP, le script sans SRI possible (le worker
+    // n'entre pas par une balise), et le ballet d'empreintes qui l'entourait — un actif de même
+    // origine EST nos octets. Public et sans base, comme la carte : un actif qui exigerait une
+    // session casserait la page avant qu'elle existe. L'URL porte la version → cache immuable.
+    if (req.method === "GET" && (String(q.asset || "") === "pdf" || String(q.asset || "") === "pdfworker")) {
+      const fichier = q.asset === "pdf" ? "pdfjs-dist/build/pdf.min.mjs" : "pdfjs-dist/build/pdf.worker.min.mjs";
+      let octets = null;
+      try { octets = require("node:fs").readFileSync(require.resolve(fichier)); } catch { /* dépendance absente */ }
+      if (!octets) { res.statusCode = 404; res.end("actif indisponible"); return; }
+      res.statusCode = 200;
+      res.setHeader("Content-Type", "text/javascript; charset=utf-8");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      res.setHeader("Content-Length", String(octets.length));
+      res.end(octets);
       return;
     }
 
