@@ -173,6 +173,15 @@ async function lireDepuis(fh, stat, cible, range) {
     statut = 206;
   }
 
+  // ⚠️ LE PLAFOND AVANT L'ALLOCATION — parce que c'est l'allocation qui coûte. Le contrôle du
+  // relais (Content-Length, dans le handler) arrivait APRÈS ce Buffer.alloc : un fichier local plus
+  // grand que le plafond était alloué EN ENTIER à chaque requête, puis refusé — le refus payait
+  // exactement le prix qu'il devait éviter. Lu à l'appel et non au chargement : le serveur autonome
+  // fabrique son contexte à l'import, avant que l'exploitant ait pu poser la variable.
+  const plafond = Number(process.env.PLAYER_MAX_RELAY_BYTES || 0) || 60 * 1024 * 1024;
+  if (fin - debut + 1 > plafond) {
+    return reponse(413, {}, Buffer.alloc(0));
+  }
   const buf = Buffer.alloc(fin - debut + 1);
   const { bytesRead } = await fh.read(buf, 0, buf.length, debut);
   const corps = bytesRead === buf.length ? buf : buf.subarray(0, bytesRead);
