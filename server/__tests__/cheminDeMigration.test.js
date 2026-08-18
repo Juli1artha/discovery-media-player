@@ -101,6 +101,18 @@ describe("toute colonne écrite par le code est déclarée", () => {
       for (const m of src.matchAll(/body:\s*\{([^}]*)\}/g)) {
         for (const c of m[1].matchAll(/\b([a-z][a-z0-9_]{2,})\s*:/g)) noms.add(c[1]);
       }
+      // ⚠️ ET LES CORPS PASSÉS À `ecrireSiEncoreVrai` — le balayage ne lisait que `body:` et
+      // chaque adoption de l'écriture conditionnée le privait d'un site EN SILENCE : six colonnes
+      // ont disparu de l'énumération le jour où la présence a pris le motif, et rien ne l'a dit
+      // (31 → 25 essais, vu au diff des comptes, pas à un rouge). Une garde dont la couverture
+      // rétrécit quand le code s'améliore punit exactement le geste qu'on veut encourager.
+      for (const m of src.matchAll(/ecrireSiEncoreVrai\(\s*`[^`]*`,\s*\{([\s\S]*?)\n\s*\}?\s*[,)]/g)) {
+        for (const c of m[1].matchAll(/\b([a-z][a-z0-9_]{2,})\s*:/g)) noms.add(c[1]);
+      }
+      // Les lignes d'INSERT (`const row = {…}`) — passées en `body: [row]`, invisibles du premier motif.
+      for (const m of src.matchAll(/const row = \{([^}]*)\}/g)) {
+        for (const c of m[1].matchAll(/\b([a-z][a-z0-9_]{2,})\s*:/g)) noms.add(c[1]);
+      }
     }
     return [...noms];
   }
