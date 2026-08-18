@@ -10,6 +10,51 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.61] — 2026-08-18
+
+The second host had **four presentations stuck "active" for three days** — and nobody saw it.
+*A failed close deprives you of nothing you look at*: its success produces nothing, so neither
+does its failure. This release closes that class, four times over — and ships the contract fix
+that 0.1.60's release notes were already pointing hosts to.
+
+### Fixed
+
+- **The close route's catch swallowed everything without a trace.** Every "End" failed with 23502
+  (0.1.60's archive-marker defect) and that silent 500 left **nothing** — not even a line in the
+  error journal. A journal nobody reads is worth little; no journal is worth nothing. The catch
+  now captures, with the route named.
+
+- **The stale-presentation purge only ran if somebody opened the panel.** It lived solely in
+  `listActivePresentations`: no panel, no purge, eternal orphan. It now also hooks a gesture that
+  happens on its own — **starting a presentation purges the orphans before it** (presenters create
+  them; the next one cleans). Conditioned (`active=eq.true&last_seen=lte.threshold` — a session
+  that just heartbeat is untouched), and **never a prerequisite**: a failing purge does not prevent
+  presenting, or we would have traded an invisible orphan for a visible outage.
+
+- **The on-click failure was a tooltip.** "The end was not recorded" lived in a `title` nobody
+  hovers. It is a visible banner now — "the presentation is STILL ACTIVE" — cleared on retry. The
+  existing test pinned the tooltip; it demands the visible element.
+
+### Added
+
+- **Re-read, don't reuse: a second round-trip after the server's ok.** Reserve raised by the second
+  host before merge, and it was right: re-reading the PATCH response would do exactly what the
+  negative cache did — the measurement would confirm what the write *believes* it did. After the
+  ok, the client re-reads the public state independently; if the database still says *active*, the
+  interface **does not close** — closing would convert a failure into visual confirmation, the
+  exact interface optimism that lied to the second host's presenter. ⚠️ An **unavailable** re-read
+  is not "still active": the server confirmed, verification is a bonus, its absence is neutral —
+  a 429 on the read must not trap the presenter in an interface that refuses to close. This is the
+  only way to make the whole silent-success class observable, including against a future server
+  answering ok without having written.
+
+- **The identity-card contract now states the exact shape of `manquant`** (`{migration, fonction}`),
+  with the second host's rule: a card without a `schema` field is an **alert**, not a success — it
+  signals a pre-0.1.58 instance, a version that cannot answer the question. They had typed the
+  shape from memory (their bench built the card the same wrong way, so no mutation could catch it);
+  our share of that defect was a shape written nowhere. Merged in #136, and **published here** —
+  0.1.60's notes pointed hosts to a contract the package did not yet carry.
+
 ## [0.1.60] — 2026-08-18
 
 Closes every P1 of the third audit pass, plus one defect no report had seen.
