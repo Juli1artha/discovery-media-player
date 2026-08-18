@@ -1,6 +1,6 @@
 // Ce que l'audience fait d'un état de présentation reçu.
 //
-// Cette décision n'existait qu'à un seul endroit : le gestionnaire d'un `postgres_changes`. Elle
+// Cette décision n'existait qu'à un seul endroit : le gestionnaire du canal temps réel. Elle
 // doit maintenant servir TROIS sources — la table (existant), une diffusion `broadcast` par le
 // présentateur, et une relecture d'état à la (re)connexion — parce qu'on veut se passer de la
 // lecture anonyme des tables, qui rend aujourd'hui toutes les présentations énumérables.
@@ -44,7 +44,7 @@ export type PresentationAction =
 /**
  * Décide ce que l'audience doit faire d'un état reçu.
  *
- * ⚠️ Le contenu est **re-validé ici**. Sur la voie `postgres_changes` il venait de notre base,
+ * ⚠️ Le contenu est **re-validé ici**. Relu par la route HTTP il vient de notre base,
  * donc déjà assaini ; sur la voie `broadcast` il vient du NAVIGATEUR du présentateur. Faire
  * confiance à un message diffusé par un client reviendrait à laisser n'importe quel participant
  * imposer une vue à toute l'audience.
