@@ -10,6 +10,42 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.63] — 2026-08-18
+
+### Fixed
+
+- **The last read-modify-rewrite in the repository is closed — without a migration.** Two tabs of
+  the same participant heartbeating in the same second: both read the same row, the second rewrite
+  swallowed the first — a viewed page vanished from the statistics, no error anywhere. And two
+  *first* heartbeats at once: the primary key refused the second with a 409 nobody caught — a 500
+  for a heartbeat, benign but wrong (now caught, re-read, and **logged as benign**: the
+  silent-write guard refused the quiet first draft, as it did for P10). The lock is free:
+  `last_seen` changes on every accepted beat, so the write is conditioned on the value read — zero
+  rows means re-read and replay, bounded to four rounds. ⚠️ **The lock was blind within the
+  millisecond**: two beats in the same ms write the same `last_seen`, the next condition still
+  matches, and the overwrite comes back through the very window just closed — seen at the bench
+  (three writes, three true conditions) before being seen anywhere else. An accepted `last_seen`
+  is now **strictly increasing** (`max(now, read + 1 ms)`); the mutation removing the `+1`
+  **survived** the first round because the test clock was not frozen — frozen, replayed, red.
+
+- **The chat broadcast payload is empty — the strong property became true instead of the
+  description becoming weaker.** The second host confronted "a signal, never content" with the
+  code: the payload *carried* the projected row — dead weight no receiver consumed (they re-read
+  over HTTP), kept alive by a stale comment describing a vanished world. A content nobody consumes
+  is not neutral: the day a new receiver reads it "since it is there", the projection becomes
+  optional in silence. `payload:{}`, like `sendState` and `sendMap` already did; full
+  compatibility (every published receiver already ignores it); the mutation putting content back
+  is named by the rule guard.
+
+### Changed
+
+- **The column guard no longer erodes as the code improves.** Its sweep only read `body: {…}`
+  literals: every adoption of the conditional-write helper silently removed a site from its
+  enumeration — six columns vanished the day attendance took the pattern, seen in a **count diff**
+  (813 → 807 tests), never in a red. A guard whose coverage shrinks when the code gets better
+  punishes the very gesture it should encourage. It now reads all three write forms: **31 → 71
+  columns checked** against `init.sql` and the migrations.
+
 ## [0.1.62] — 2026-08-18
 
 Fourth external audit pass, both lots. Surface reduction on the database side, one serialization
