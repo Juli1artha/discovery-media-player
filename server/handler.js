@@ -337,9 +337,21 @@ var Live=(function(){
   // conversations de TOUTES les présentations, pas seulement la sienne. C'était le dernier
   // obstacle avant de pouvoir fermer cette lecture.
   // L'émetteur diffuse la ligne que le serveur vient d'écrire ; les autres l'ajoutent chez eux.
-  // ⚠️ La diffusion ne revient pas à son émetteur : il ajoute donc SA copie lui-même.
-  function sendMsg(m){if(!m)return;try{if(ch)ch.send({type:'broadcast',event:'msg',payload:m});}catch(e){}}
-  function sendMsgUpd(m){if(!m)return;try{if(ch)ch.send({type:'broadcast',event:'msg-upd',payload:m});}catch(e){}}
+  // ⚠️ La diffusion ne revient pas à son émetteur : il ajoute donc SA copie lui-même — depuis la
+  // RÉPONSE du serveur, jamais depuis le canal.
+  //
+  // ⚠️ LA CHARGE EST VIDE, ET C'EST CE QUI REND LA PROPRIÉTÉ STRUCTURELLE. Elle transportait la
+  // ligne projetée — que le récepteur IGNORAIT (il relit par HTTP, cf. le commentaire du
+  // récepteur : sans relecture, une notification pourrait afficher un texte forgé). Un contenu
+  // que personne ne consomme n'est pas neutre : la description « un signal, jamais un contenu »
+  // était plus forte que le code, et tenait lieu de garde sans en être une — le jour où un
+  // récepteur nouveau aurait lu la charge « puisqu'elle est là », la projection serait devenue
+  // optionnelle sans que rien ne le dise. Le second hôte a levé l'écart ; sendState et
+  // sendMap avaient déjà la bonne forme. Un commentaire ici même affirmait l'ancien monde
+  // (« les autres l'ajoutent chez eux ») : il a fait dériver sa lecture, pas la nôtre — un
+  // commentaire n'est pas du code, et il vieillit sans essai pour le contredire.
+  function sendMsg(m){if(!m)return;try{if(ch)ch.send({type:'broadcast',event:'msg',payload:{}});}catch(e){}}
+  function sendMsgUpd(m){if(!m)return;try{if(ch)ch.send({type:'broadcast',event:'msg-upd',payload:{}});}catch(e){}}
   // Édition, suppression, réaction : le serveur renvoie la ligne à jour, on l'applique chez soi
   // puis on la diffuse. Même chemin pour les trois — une seule façon de se tromper.
   function majDiffusee(r){return r.json().then(function(d){if(d&&d.ok&&d.message){updateMsg(d.message);sendMsgUpd(d.message);}}).catch(function(){});}
