@@ -1430,6 +1430,28 @@ function botMarkup(share, pitch) {
 // formats du README ne connaît que le PDF et les images bitmap).
 const TYPES_EXECUTABLES = /^(image\/svg|text\/html|application\/xhtml|application\/xml|text\/xml)/i;
 
+/**
+ * ⚠️ TOUTE DONNÉE SERVEUR QUI ENTRE DANS UN <script> PASSE PAR ICI — c'est une règle, pas une
+ * commodité, et une garde d'essai la fait respecter.
+ *
+ * `JSON.stringify` seul ne suffit pas : le PARSEUR HTML lit la page avant JavaScript, et un
+ * `</script>` DANS une chaîne JSON ferme l'élément pour lui — la suite du document devient du
+ * balisage. La CSP à nonce bloque l'exécution du script injecté (il n'a pas le nonce), mais pas
+ * la casse de la page : l'élément fermé trop tôt suffit à tout démonter. La protection vivait
+ * éparpillée (`cfg.replace(/</g, …)` à l'interpolation, et six interpolations NUES à côté) —
+ * appliquée à la sérialisation, elle ne peut plus être oubliée champ par champ.
+ *
+ * ⚠️ `undefined` LÈVE au lieu de devenir « undefined » dans la page : c'est une erreur de
+ * programmation, pas une valeur — la convertir en douce la masquerait. U+2028/U+2029 : les
+ * séparateurs Unicode, légaux en JSON et illégaux dans les littéraux JS d'anciens moteurs —
+ * durcissement de compatibilité, pas une faille des navigateurs modernes.
+ */
+function jsonPourScript(valeur) {
+  const json = JSON.stringify(valeur);
+  if (json === undefined) throw new TypeError("valeur impossible à sérialiser dans un script");
+  return json.replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
+}
+
 // ⚠️ `X-Forwarded-For` EST UN EN-TÊTE, DONC UNE AFFIRMATION DU CLIENT.
 //
 // Onze endroits en prenaient la première valeur pour identifier l'appelant, et toutes les limites
@@ -1799,7 +1821,7 @@ function embedFrameAncestors() {
 function sendRefusal(res, reason, embed) {
   if (!embed) return sendHtml(res, 404, notFoundHtml());
   const nonce = crypto.randomBytes(16).toString("base64");
-  const html = notFoundHtml() + `<script nonce="${nonce}">try{parent.postMessage({type:"3dd-doc-embed-denied",reason:${JSON.stringify(String(reason))}},"*")}catch(e){}</script>`;
+  const html = notFoundHtml() + `<script nonce="${nonce}">try{parent.postMessage({type:"3dd-doc-embed-denied",reason:${jsonPourScript(String(reason))}},"*")}catch(e){}</script>`;
   return sendHtml(res, 404, html, `'nonce-${nonce}'`, "", embedFrameAncestors());
 }
 
@@ -1875,8 +1897,8 @@ function softWallHtml(share, nonce, logoUrl, googleClientId) {
   </div>
 ${gcid ? `<script nonce="${nonce}" src="https://accounts.google.com/gsi/client" async></script>` : ""}
 <script nonce="${nonce}">
-  var SLUG=${JSON.stringify(share.slug || "")};
-  var GCID=${JSON.stringify(gcid)};
+  var SLUG=${jsonPourScript(share.slug || "")};
+  var GCID=${jsonPourScript(gcid)};
   var $=function(id){return document.getElementById(id);};
   function err(m){$('err').className='err';$('err').textContent=m||'';}
   function post(o){return fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)}).then(function(r){return r.json().then(function(j){return{s:r.status,j:j};});});}
@@ -1983,7 +2005,7 @@ function viewerHtml(share, nonce, logoUrl, pitch) {
   // En aperçu interne, on embarque de quoi démarrer une présentation live (URL Storage brute + métadonnées).
   // `fileName` : c'est LUI qui dit la nature du document côté page. L'URL publique est
   // `/api/doc?slug=…&file=1`, sans extension — sans ce champ, une image partait dans pdf.js.
-  const cfg = JSON.stringify({ brand: PLAYER.branding.name, slug: preview ? "" : share.slug, fileUrl, fileName: share.file_name || "", pdfjs: PDFJS, title, preview, embed, embedded, bot: botOn, botGuided: !preview && !!share.bot_enabled && share.bot_guided !== false, botAv: (!preview && share.bot_enabled && share.bot_avatar) || "", botName: (!preview && share.bot_enabled && share.bot_name) || "", botGreet: (!preview && share.bot_enabled && share.bot_greeting) || "", botGreetDoc: (!preview && share.bot_enabled && share.bot_greeting_doc) || "", dl: share.allow_download !== false, autoPresent: !!share.auto_present, botAnim: share.bot_page_anim !== false, botVoice: !preview && !!share.bot_enabled && !!process.env.ELEVENLABS_API_KEY, vIcOn: ICONS.sound, vIcOff: ICONS.mute, kStyle: (!preview && share.bot_enabled && share.bot_karaoke) || "classic", vLayout: (!preview && share.bot_enabled && share.video_layout) || "", vClips: !preview && !!share.bot_vclips, botVAv: (!preview && share.bot_enabled && share.bot_vphoto) || "", resumeSlug: preview ? (share.resume_slug || "") : "", supaUrl: preview ? (share.supa_url || "") : "", supaKey: preview ? (share.supa_key || "") : "", internal: preview && share.internal_email ? { email: share.internal_email, name: share.presenter_name || "", docId: share.doc_id || "", it: share.internal_token || "" } : null, present: preview ? { url: share.raw_url || "", name: share.file_name || "", title: share.doc_title || "", docId: share.doc_id || "", by: share.presenter_name || "", email: share.internal_email || "", av: share.presenter_avatar || "" } : null });
+  const cfg = jsonPourScript({ brand: PLAYER.branding.name, slug: preview ? "" : share.slug, fileUrl, fileName: share.file_name || "", pdfjs: PDFJS, title, preview, embed, embedded, bot: botOn, botGuided: !preview && !!share.bot_enabled && share.bot_guided !== false, botAv: (!preview && share.bot_enabled && share.bot_avatar) || "", botName: (!preview && share.bot_enabled && share.bot_name) || "", botGreet: (!preview && share.bot_enabled && share.bot_greeting) || "", botGreetDoc: (!preview && share.bot_enabled && share.bot_greeting_doc) || "", dl: share.allow_download !== false, autoPresent: !!share.auto_present, botAnim: share.bot_page_anim !== false, botVoice: !preview && !!share.bot_enabled && !!process.env.ELEVENLABS_API_KEY, vIcOn: ICONS.sound, vIcOff: ICONS.mute, kStyle: (!preview && share.bot_enabled && share.bot_karaoke) || "classic", vLayout: (!preview && share.bot_enabled && share.video_layout) || "", vClips: !preview && !!share.bot_vclips, botVAv: (!preview && share.bot_enabled && share.bot_vphoto) || "", resumeSlug: preview ? (share.resume_slug || "") : "", supaUrl: preview ? (share.supa_url || "") : "", supaKey: preview ? (share.supa_key || "") : "", internal: preview && share.internal_email ? { email: share.internal_email, name: share.presenter_name || "", docId: share.doc_id || "", it: share.internal_token || "" } : null, present: preview ? { url: share.raw_url || "", name: share.file_name || "", title: share.doc_title || "", docId: share.doc_id || "", by: share.presenter_name || "", email: share.internal_email || "", av: share.presenter_avatar || "" } : null });
   return `<!doctype html><html lang=fr><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=3,viewport-fit=cover,interactive-widget=resizes-content">
 <meta name=robots content="noindex,nofollow">
@@ -2185,11 +2207,11 @@ ${LEGAL_CSS}
   <script nonce="${nonce}">${PLAYER_BROWSER_JS}</script>
   ${balise(nonce, TIERS.pdf)}
   ${preview ? `${balise(nonce, TIERS.supa)}
-  <script nonce="${nonce}">var LIVECFG={supaUrl:${JSON.stringify(share.supa_url || "")},supaKey:${JSON.stringify(share.supa_key || "")},hostAuthKey:${JSON.stringify(cleSessionHote())},liveAuthKey:${JSON.stringify(CLE_SESSION_PLAYER)},guestKey:${JSON.stringify(CLE_INVITE)}};var GMAPS_KEY=${JSON.stringify((PLAYER.config && PLAYER.config.mapsKey) || "" || "")};${LIVE_JS}
+  <script nonce="${nonce}">var LIVECFG=${jsonPourScript({ supaUrl: share.supa_url || "", supaKey: share.supa_key || "", hostAuthKey: cleSessionHote(), liveAuthKey: CLE_SESSION_PLAYER, guestKey: CLE_INVITE })};var GMAPS_KEY=${jsonPourScript((PLAYER.config && PLAYER.config.mapsKey) || "")};${LIVE_JS}
   ${MAP_JS}</script>` : ""}
   <script nonce="${nonce}">
   (function(){
-    var CFG=${cfg.replace(/</g, "\\u003c")};
+    var CFG=${cfg};
     var cur=0, numPages=0;
     // Nature du document : le nom de fichier fait foi (le type MIME n'est pas toujours
     // renvoyé par le stockage). Une image = une page, sans pdf.js.
@@ -2748,7 +2770,7 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
   const presenter = esc(pres.presenter_name || "");
   const logo = esc(logoUrl || "");
   const fileUrl = `/api/doc?present=${encodeURIComponent(pres.slug)}&file=1`;
-  const cfg = JSON.stringify({ fileUrl, docUrl: pres.file_url, pdfjs: PDFJS, slug: pres.slug, fileName: pres.file_name || "", page: pres.current_page || 1, active: pres.active !== false, content: pres.content || null, supaUrl, supaKey, title: pres.doc_title || pres.file_name || "Document" });
+  const cfg = jsonPourScript({ fileUrl, docUrl: pres.file_url, pdfjs: PDFJS, slug: pres.slug, fileName: pres.file_name || "", page: pres.current_page || 1, active: pres.active !== false, content: pres.content || null, supaUrl, supaKey, title: pres.doc_title || pres.file_name || "Document" });
   return `<!doctype html><html lang=fr><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=3">
 <meta name=robots content="noindex,nofollow">
@@ -2822,7 +2844,7 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
   ${balise(nonce, TIERS.supa)}
   <script nonce="${nonce}">
   (function(){
-    var CFG=${cfg.replace(/</g, "\\u003c")};
+    var CFG=${cfg};
     var PDF=null, total=0, cur=CFG.page||1, ready=false;
     var stage=document.getElementById('stage'), pageEl=document.getElementById('page');
     function hideLoader(){ var l=document.getElementById('load'); if(l){ l.classList.add('hide'); setTimeout(function(){ if(l.parentNode)l.parentNode.removeChild(l); },450);} }
@@ -2980,11 +3002,11 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
   })();
   </script>
   <script nonce="${nonce}">
-  var LIVECFG={supaUrl:${JSON.stringify(supaUrl || "")},supaKey:${JSON.stringify(supaKey || "")},hostAuthKey:${JSON.stringify(cleSessionHote())},liveAuthKey:${JSON.stringify(CLE_SESSION_PLAYER)},guestKey:${JSON.stringify(CLE_INVITE)}};var GMAPS_KEY=${JSON.stringify((PLAYER.config && PLAYER.config.mapsKey) || "" || "")};
+  var LIVECFG=${jsonPourScript({ supaUrl: supaUrl || "", supaKey: supaKey || "", hostAuthKey: cleSessionHote(), liveAuthKey: CLE_SESSION_PLAYER, guestKey: CLE_INVITE })};var GMAPS_KEY=${jsonPourScript((PLAYER.config && PLAYER.config.mapsKey) || "")};
   ${LIVE_JS}
   ${MAP_JS}
   (function(){
-    var slug=${JSON.stringify(pres.slug)};
+    var slug=${jsonPourScript(pres.slug)};
     // Carte live : suivre en direct les mouvements du présentateur (broadcast).
     // ⚠️ ON NE CROIT PLUS LA CHARGE. Le signal dit « quelque chose a bougé » ; ce qui a bougé vient
     // de la relecture d'état, gatée par l'écriture du présentateur. Un participant hostile peut
@@ -4185,6 +4207,6 @@ async function handler(req, res) {
 // tenir une seconde liste — c'est la seule façon qu'une empreinte périmée finisse par se voir.
 // ⚠️ Exporté pour être ÉPROUVÉ, pas pour être appelé : le plafond du relais ne se vérifie qu en
 // regardant si le corps a été lu, ce qu aucune route ne peut montrer de l extérieur.
-module.exports = { handler, init, TIERS, __relayerFichier: relayerFichier };
+module.exports = { handler, init, TIERS, __relayerFichier: relayerFichier, __jsonPourScript: jsonPourScript };
 
 // redeploy: forcer le build production (Vercel a sauté la prod du merge #463 — wording re-partage).
