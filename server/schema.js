@@ -202,8 +202,14 @@ function verdict(manque, sondees, attendues) {
  * témoin ne répond pas, on ne sonde RIEN et on ne retient RIEN.
  */
 async function sonderTout() {
+  // ⚠️ LA PART ENCODÉE EST CALCULÉE À PART, comme dans `sonder()` dix lignes plus haut, et pour la
+  // même raison : la garde de portabilité traque une parenthèse après « select= », et un appel de
+  // fonction écrit dans le gabarit en produit une. J'ai reproduit ici le défaut dont le correctif
+  // était commenté juste au-dessus — la forme exacte de la migration 0004, où dix lignes
+  // expliquaient la prudence qu'un revoke six lignes plus haut n'appliquait pas.
+  const champTemoin = encodeURIComponent(TEMOIN.colonne);
   try {
-    await PLAYER.db.request(`${TEMOIN.table}?select=${encodeURIComponent(TEMOIN.colonne)}&limit=0`);
+    await PLAYER.db.request(`${TEMOIN.table}?select=${champTemoin}&limit=0`);
   } catch {
     // On rend ce qu'on savait déjà — un manque constaté plus tôt reste un fait — mais le verdict
     // dit que cette mesure-ci n'a pas eu lieu. Taire l'un ou l'autre serait mentir d'un côté.
