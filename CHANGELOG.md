@@ -10,6 +10,53 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.64] — 2026-08-18
+
+Every P1 of the fifth audit pass, closed. One of them was a defect in the very migration that
+claimed to make the archive atomic — proven on a real database before being fixed.
+
+### Fixed
+
+- **The archive seal now actually locks.** Closing a presentation modifies `active` and
+  `control_hash` — **non-key columns** — so its UPDATE takes `FOR NO KEY UPDATE`, which the
+  trigger's `FOR KEY SHARE` (0007) does **not** block: the trigger checked "open", the close
+  committed underneath it, and the message entered the archive. The window 0007 claimed to shut
+  was open, and its comment asserted an atomicity it did not provide. ⚠️ **Seen refusing on a real
+  database first**: the forge's two-transaction bench went red — *"the message ENTERED the
+  archive"* — then green with measured waits (the write **waited 1444 ms** for the uncommitted
+  close, then was refused; the close waited for the in-flight write). Migration `0010`
+  (`FOR SHARE`); 0007's comments rewritten, not cited. The CI shape now includes **function and
+  trigger bodies** (`pg_get_functiondef`/`pg_get_triggerdef` md5) — it caught two init/migration
+  body divergences before even serving its purpose. Audit 5, P1-1.
+
+- **The owner travels in the condition — switch and content too.** `switchPresentationDoc` and
+  `setPresentationContent` (owner path) verified the owner at read time, then wrote on
+  `slug+active` alone: a transfer between read and write handed the presentation to Bob, and
+  Alice's **delayed** request still changed Bob's document, or showed **her** map to Bob's
+  audience. Two survivors of the class closed in 0.1.60; `owner_email` in the filter, admin
+  unconditional (moderation), pilot path unchanged, zero rows = 409. Audit 5, P1-2.
+
+- **Deletion always wins over content.** Editing and reacting checked "not deleted" at read time,
+  then wrote by `id` alone: a deletion in between emptied the message — and the delayed write
+  **resurrected** the text or reactions inside a row marked deleted. Erased on screen, alive in
+  the JSON. Edits require `author_hash+deleted=false` (zero rows = 409); reactions carry
+  `deleted=false` on every attempt and stop with 404 if the message vanishes mid-loop — a replay
+  would revive it; author-deletion is **idempotent** and now clears the quote too
+  (`reply_text`/`reply_name`). ⚠️ **Belt in the projection**: a deleted row leaves empty whatever
+  the database still holds — the only place that also covers the past. ⚠️ Presenter path: the
+  token lives in **another table**, no PostgREST filter can carry it — the residual window (an
+  ex-presenter moderating in the second his control is reclaimed) is documented and accepted: it
+  only grants a right he legitimately held an instant before. No RPC. Audit 5, P1-3.
+
+### Added
+
+- **`internalStrict` on the identity card.** In transitional mode the internal-analytics route
+  accepts `docId`/`email`/`name` as the client declares them — a caller can fabricate "this
+  colleague read this document". The route already logs unsigned writes, but a log only lets you
+  reconstruct; the boolean makes the state **refusable by monitoring**. `false` is never absent —
+  a missing field cannot be refused. The strict default will come with an announced breaking
+  change. Audit 5, P1-4.
+
 ## [0.1.63] — 2026-08-18
 
 ### Fixed
