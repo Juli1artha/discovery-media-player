@@ -184,3 +184,40 @@ describe("l'auto-purge n'éteint pas une session redevenue vivante", () => {
     expect(t.lignes[1].active, "une session redevenue vivante a été éteinte sous son présentateur").toBe(true);
   });
 });
+
+// ⚠️ DEUX SURVIVANTS DE LA MÊME CLASSE, trouvés par le cinquième audit : le changement de document
+// et le contenu (carte) vérifiaient le propriétaire à la LECTURE, puis écrivaient sur
+// `slug+active` seuls — la requête retardée d'Alice modifiait encore la présentation que le
+// transfert venait de donner à Bob.
+describe("le propriétaire voyage dans la condition — switch et contenu aussi", () => {
+  it("un changement de document retardé, après transfert, ne touche pas la présentation de Bob", async () => {
+    const t = table({ ...LIGNE, file_url: "https://exemple.fr/ancien.pdf" });
+    t.surLecture = (etat) => { if (etat.lectures === 1) etat.ligne.owner_email = "bob@exemple.fr"; };
+    const r = await presentations.switchPresentationDoc(LIGNE.slug, "alice@exemple.fr", false, { fileUrl: "https://exemple.fr/nouveau.pdf" });
+    expect(r.ok).toBe(false);
+    expect(r.status).toBe(409);
+    expect(t.ligne.file_url, "Alice a changé le document de Bob").toBe("https://exemple.fr/ancien.pdf");
+  });
+
+  it("un contenu (carte) retardé, après transfert, ne s'applique pas — voie propriétaire", async () => {
+    const t = table({ ...LIGNE, content: null });
+    t.surLecture = (etat) => { if (etat.lectures === 1) etat.ligne.owner_email = "bob@exemple.fr"; };
+    const r = await presentations.setPresentationContent(LIGNE.slug, "alice@exemple.fr", false, { kind: "map", center: [46, 2], zoom: 6 }, null);
+    expect(r.ok).toBe(false);
+    expect(t.ligne.content, "la carte d'Alice s'est affichée chez l'audience de Bob").toBe(null);
+  });
+
+  it("l'admin écrit sans condition de propriétaire — modération", async () => {
+    const t = table({ ...LIGNE, content: null });
+    const r = await presentations.setPresentationContent(LIGNE.slug, "", true, { kind: "map", center: [46, 2], zoom: 6 }, null);
+    expect(r.ok).toBe(true);
+    expect(t.ligne.content).toBeTruthy();
+  });
+
+  it("et le chemin légitime passe : le vrai propriétaire change le document", async () => {
+    const t = table({ ...LIGNE, file_url: "https://exemple.fr/ancien.pdf" });
+    const r = await presentations.switchPresentationDoc(LIGNE.slug, "alice@exemple.fr", false, { fileUrl: "https://exemple.fr/nouveau.pdf" });
+    expect(r.ok).toBe(true);
+    expect(t.ligne.file_url).toBe("https://exemple.fr/nouveau.pdf");
+  });
+});
