@@ -176,7 +176,9 @@ async function lireDepuis(fh, stat, cible, range) {
   const buf = Buffer.alloc(fin - debut + 1);
   const { bytesRead } = await fh.read(buf, 0, buf.length, debut);
   const corps = bytesRead === buf.length ? buf : buf.subarray(0, bytesRead);
-  const entetes = { "content-type": type };
+  // La taille est connue d'un `stat` sur le descripteur ouvert : l'annoncer permet au relais de
+  // la refuser avant d'allouer, et à la visionneuse d'afficher une progression.
+  const entetes = { "content-type": type, "content-length": String(corps.length) };
   if (statut === 206) entetes["content-range"] = `bytes ${debut}-${fin}/${total}`;
   return reponse(statut, entetes, corps);
 }

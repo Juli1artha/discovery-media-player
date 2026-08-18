@@ -4,6 +4,8 @@
 //  - GET  /doc/:slug?file=1     → stream le PDF depuis le Storage (MÊME ORIGINE → pas de souci CORS pour pdf.js)
 //  - POST /api/doc {slug,event…}→ journalise un événement (open / page / heartbeat) — best-effort
 const crypto = require("crypto");
+const { Readable } = require("node:stream");
+const { pipeline } = require("node:stream/promises");
 const { getShareBySlug, logView, upsertSession, createReshare, sendReshareEmail, upsertInternalSession,
   createShare, revokeShare, setShareAuth, overview: docOverview, listSharesForDoc, listSessionsForDoc, internalStatsForDoc } = require("./shares");
 const { SESSION_QUOTA_PER_HOUR, PRESENT_QUOTA_PER_HOUR, PRESENT_CACHE_MS } = require("./shared.generated.js");
@@ -1563,24 +1565,28 @@ async function relayerFichier(res, r, disposition) {
   const compresse = !!r.headers.get("content-encoding");
   if (compresse && r.status === 206) { res.statusCode = 502; res.end("Fichier indisponible"); return; }
 
-  // ⚠️ UN PLAFOND, ET IL REFUSE AVANT D'ALLOUER. Ce relais chargeait le fichier ENTIER en mémoire
-  // sans borne : un PDF de 80 Mo, trois requêtes Range simultanées, et une fonction serverless
-  // tombe — pas pour un document en particulier, pour la somme. Le défaut n'est pas la taille d'un
-  // fichier, c'est l'absence de toute limite haute.
+  // ⚠️ DEUX BORNES, ET LA SECONDE EST LA SEULE QUI TIENNE DEVANT UN AMONT QUI MENT.
   //
-  // ⚠️ ON REGARDE `Content-Length` AVANT DE LIRE LE CORPS : refuser après l'allocation ne protège
-  // de rien, c'est l'allocation qui coûte. Un amont qui n'annonce pas sa taille passe quand même —
-  // on ne peut pas refuser ce qu'on ne sait pas mesurer, et fermer par défaut couperait des
-  // stockages parfaitement légitimes. La borne est donc une garde contre le GROS, pas contre
-  // l'inconnu ; c'est ce que le streaming, lui, fermera vraiment.
-  const annoncee = Number(r.headers.get("content-length") || 0);
+  // La première regarde `Content-Length` et renonce AVANT d'ouvrir le corps. C'est la seule qui
+  // puisse encore répondre 413, puisque rien n'est parti — mais elle croit l'amont sur parole : un
+  // stockage qui n'annonce rien, ou qui annonce 1 Ko et en envoie 500, passait sans être inquiété.
+  //
+  // La seconde COMPTE LES OCTETS QUI PASSENT et rompt au dépassement. Elle ne peut plus répondre
+  // 413 : les en-têtes sont partis avec le premier octet, et on ne dédit pas un en-tête déjà
+  // envoyé. Elle coupe. Le client voit un transfert interrompu — désagréable et honnête, là où
+  // l'épuisement de la mémoire emportait la fonction ENTIÈRE, donc aussi les requêtes des autres.
+  const brute = r.headers.get("content-length");
+  const annoncee = Number(brute || 0);
   if (annoncee > PLAFOND_RELAIS) {
     try { PLAYER.errors.capture(new Error(`relais refusé : ${annoncee} octets au-dessus du plafond de ${PLAFOND_RELAIS}`), { route: "relais" }); } catch { /* jamais bloquant */ }
     res.statusCode = 413;
     res.end("Fichier trop volumineux");
+    // ⚠️ Renoncer ne suffit pas : un corps jamais tiré laisse la connexion amont OUVERTE, et le
+    // pool de sockets s'épuise sur les gros fichiers — exactement la ressource qu'on protège.
+    try { if (r.body) r.body.cancel(); } catch { /* déjà refermé */ }
     return;
   }
-  const buf = Buffer.from(await r.arrayBuffer());
+
   res.statusCode = r.status;
   const typeAmont = r.headers.get("content-type") || "application/pdf";
   const executable = TYPES_EXECUTABLES.test(typeAmont);
@@ -1596,10 +1602,53 @@ async function relayerFichier(res, r, disposition) {
   // Les bornes d'un `Content-Range` ne valent que si l'amont n'a pas compressé.
   const cr = !compresse && r.headers.get("content-range");
   if (cr) res.setHeader("Content-Range", cr);
-  res.setHeader("Content-Length", String(buf.length)); // ce qu'on envoie, jamais ce qu'on a reçu
+  // ⚠️ `fetch` DÉCOMPRESSE DE LUI-MÊME, et c'est le piège du flux. Sur un amont gzip,
+  // `Content-Length` compte les octets COMPRIMÉS alors que nous relayons les octets déployés :
+  // le recopier ferait attendre au client des octets qui ne viendront jamais, ou lui ferait couper
+  // le document au milieu. La bufferisation nous rendait ce service sans qu'on le demande —
+  // `buf.length` était toujours juste. En flux, il faut savoir se taire ; voir plus bas.
   if (disposition) res.setHeader("Content-Disposition", disposition);
   res.setHeader("Cache-Control", "private, max-age=600");
-  res.end(buf);
+
+  // ⚠️ UN AMONT SANS CORPS LISIBLE N'EST PAS UNE ANOMALIE, C'EST LE CONTRAT. `storage.fetchFile`
+  // est une capacité de l'HÔTE : il rend ce qu'il veut, du moment qu'il sait dire `arrayBuffer()`.
+  // Le chemin fichier local du mode autonome, lui, ne rend rien d'autre. Traiter cette absence
+  // comme « rien à envoyer » servait des fichiers VIDES, sans une erreur pour le dire — un défaut
+  // pire que celui qu'on ferme ici, et que seuls deux essais existants ont vu tomber.
+  //
+  // Ici la borne du flux ne peut rien : `arrayBuffer()` a déjà tout alloué quand on pourrait
+  // compter. Seule la taille annoncée protège — ce qui suffit, parce qu'un hôte qui rend un corps
+  // en un bloc l'a lu depuis quelque chose dont il connaît la taille.
+  if (!r.body) {
+    const buf = Buffer.from(await r.arrayBuffer());
+    res.setHeader("Content-Length", String(buf.length)); // connue, donc annoncée
+    res.end(buf);
+    return;
+  }
+
+  // ⚠️ ON N'ANNONCE UNE LONGUEUR QUE QUAND ON SAIT QU'ELLE DÉCRIT CE QU'ON ENVOIE — et en flux,
+  // la seule qu'on ait est celle de l'amont. Sans encodage elle est exacte : on la garde, elle
+  // vaut une barre de progression. Avec encodage on se tait (cf. plus haut), et la fin du corps
+  // fait foi. Sans annonce amont, on se tait aussi : c'est le prix du flux, payé en connaissance.
+  if (!compresse && brute) res.setHeader("Content-Length", brute);
+
+  const plafond = PLAFOND_RELAIS;
+  try {
+    await pipeline(Readable.fromWeb(r.body), async function* (source) {
+      let vus = 0;
+      for await (const morceau of source) {
+        vus += morceau.length;
+        if (vus > plafond) throw new Error(`relais interrompu : ${vus} octets reçus, plafond ${plafond}`);
+        yield morceau;
+      }
+    }, res);
+  } catch (erreur) {
+    // ⚠️ ROMPRE, PAS RÉPONDRE — et le DIRE. Aucun code de retour n'est plus disponible ; ne
+    // reste que la coupure. Une coupure fréquente ici est un plafond mal réglé ou un amont
+    // défaillant : l'avaler ferait passer un défaut d'exploitation pour un caprice du réseau.
+    try { PLAYER.errors.capture(erreur instanceof Error ? erreur : new Error(String(erreur)), { route: "relais" }); } catch { /* jamais bloquant */ }
+    try { res.destroy(); } catch { /* le socket est peut-être déjà parti */ }
+  }
 }
 
 // ⚠️ UNE MENTION DONT L'OBJET EST D'ÊTRE EXACTE NE DOIT PAS INVENTER UN EXPÉDITEUR.
