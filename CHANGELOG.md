@@ -10,6 +10,42 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.59] — 2026-08-18
+
+### Added
+
+- **`?contract=1&schema=1` — ask, and the instance actually looks.** The card was reporting only
+  what the current process happened to have asked, and two hosts measured the same thing from
+  opposite traffic profiles: one where presentations are the traffic, one where documents are.
+  **Neither has ever read a non-zero value.** It was not *often empty*, it was *never yet observed
+  to be otherwise* — so the branch that fills it was code nothing had exercised. The bare card
+  keeps its property of answering when the database does not; this parameter is the one part that
+  needs it, and only when asked for.
+
+- **A `verdict`, because `manquant: []` has four meanings.** `non-sonde` / `partiel` / `complet` /
+  `incomplet` / `indetermine`. Making the reader reconstruct the state by crossing two fields
+  leaves them the mistake — and would have recreated, inside the parameter meant to remove the
+  ambiguity, the exact ambiguity `sondees` had just killed. ⚠️ `incomplet` **wins over** `partiel`:
+  a missing column is a positive fact and settles the verdict alone, even when the rest was not
+  checked — the ordinary path only ever probes one expectation at a time, so without that rule a
+  column known to be missing would have displayed as *partial*, which reads as reassuring.
+
+- **A control column separates *missing* from *unreachable*.** The probe deliberately does not
+  distinguish the two — for *deciding*, both mean the same thing. For *reporting*, conflating them
+  is wrong in both directions: an unreachable database makes all three probes fail, so the card
+  would have announced **three missing migrations that exist**, sending the operator to apply what
+  they already have. The control is the primary key of the oldest table: if *it* stays silent,
+  nothing is missing — the database is. Differential measurement, no dependence on a third party's
+  error text, which was the very reason the probe refused to distinguish.
+
+### Fixed
+
+- **A diagnostic call could have switched the product off.** The probe caches its answer for the
+  life of the process. Called during a database hiccup, `&schema=1` would have cached *absent* for
+  all three expectations — disabling write ordering and message idempotency until the next start.
+  A control route that breaks production. Silent control ⇒ nothing is probed and **nothing is
+  remembered**.
+
 ## [0.1.58] — 2026-08-18
 
 ### Added
