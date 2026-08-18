@@ -310,15 +310,18 @@ alter table public.doc_bot_sessions                  enable row level security;
 -- le présentateur sans qu'aucune table ne soit lisible publiquement. C'est ce qui permet de ne
 -- créer aucune politique de lecture au-dessus.
 --
--- ⚠️ LE CHAT N'EST PAS ENCORE SUR CE CHEMIN. Ses messages sont livrés par `postgres_changes`, qui
--- exige un SELECT au niveau de la TABLE — donc ouvert à quiconque détient la clé publiable, et
--- pour TOUTES les présentations, pas seulement la sienne. Ce fichier refuse ce compromis : la
--- table est publiée, mais AUCUNE politique de lecture n'est créée.
+-- ⚠️ LE CHAT AUSSI EST SUR CE CHEMIN, DÉSORMAIS. Un message émet un signal broadcast (`msg`,
+-- `msg-upd`) et chaque participant RELIT l'historique par la route du player — le signal dit
+-- « quelque chose a changé », jamais le contenu. Aucune politique de lecture n'est donc
+-- nécessaire, et le chat est en direct sur une installation neuve.
 --
--- Conséquence assumée sur une installation neuve : un participant voit l'historique du chat en
--- arrivant, et les messages suivants à l'actualisation — pas en direct. Le chat n'est pas cassé,
--- il est différé. Le portage du chat en broadcast lèvera cette limite ; d'ici là, mieux vaut une
--- fonctionnalité partiellement en retard qu'une base où chacun lit les conversations des autres.
+-- (Ce commentaire a affirmé le contraire pendant plusieurs versions après le portage du chat en
+-- broadcast — le troisième audit l'a relevé. Un commentaire périmé dans un fichier d'installation
+-- n'est pas un détail : il pousse un mainteneur à « réparer » un différé qui n'existe plus, en
+-- ajoutant précisément la politique de lecture que ce fichier refuse.)
+--
+-- La publication de la table reste utile aux INSTANCES HISTORIQUES encore sur `postgres_changes`,
+-- et inoffensive ici : publiée sans politique de lecture, elle ne livre rien à personne.
 --
 -- ⚠️ Ne mettez de toute façon jamais de donnée confidentielle dans un message de chat ni dans un
 -- nom d'auteur.
