@@ -794,7 +794,12 @@ async function switchPresentationDoc(slug, email, isAdmin, { fileUrl, fileName, 
   if (!row) return { ok: false, status: 404 };
   if (estClose(row)) return { ok: false, status: 409, error: "ended" };
   if (!isAdmin && (!row.owner_email || row.owner_email !== lc(email))) return { ok: false, status: 403 };
-  const ecrit = await ecrireSiEncoreVrai(`doc_presentations?slug=eq.${enc(slug)}&active=eq.true`, {
+  // ⚠️ LE PROPRIÉTAIRE VÉRIFIÉ VOYAGE DANS LA CONDITION — un transfert entre la lecture et
+  // l'écriture donnait la présentation à Bob, et la requête retardée d'Alice changeait ENCORE le
+  // document de Bob. Même classe que reprise/clôture/transfert (#130), deux survivants trouvés par
+  // le cinquième audit. L'admin, lui, écrit sur la présentation active telle quelle : modération.
+  const ecrit = await ecrireSiEncoreVrai(
+    `doc_presentations?slug=eq.${enc(slug)}&active=eq.true${isAdmin ? "" : `&owner_email=eq.${enc(row.owner_email)}`}`, {
     file_url: String(fileUrl), file_name: fileName || null, doc_title: docTitle || null, doc_id: docId ? String(docId) : null,
     content: null, current_page: 1, active: true, last_seen: new Date().toISOString(), updated_at: new Date().toISOString(),
   });
@@ -859,10 +864,12 @@ async function setPresentationContent(slug, email, isAdmin, content, control) {
   // droit en fermant une porte. Le PILOTE écrit tant que son jeton vaut : une carte affichée
   // pendant que le portable dormait doit encore partir, comme une page. Le PROPRIÉTAIRE, lui,
   // n'écrit que sur une présentation vivante : c'est déjà ce que le contrôle au-dessus exige.
+  // ⚠️ Et le PROPRIÉTAIRE (non-admin) voyage dans la condition, comme partout : sans ça, sa
+  // requête retardée écrivait encore sur la présentation qu'un transfert venait de donner.
   const ecrit = await ecrireSiEncoreVrai(
     pilote
       ? `doc_presentations?slug=eq.${enc(slug)}&control_hash=eq.${sha(control)}`
-      : `doc_presentations?slug=eq.${enc(slug)}&active=eq.true`,
+      : `doc_presentations?slug=eq.${enc(slug)}&active=eq.true${isAdmin ? "" : `&owner_email=eq.${enc(row.owner_email)}`}`,
     { content: sanitizeContent(content), active: true, last_seen: new Date().toISOString(), updated_at: new Date().toISOString() },
   );
   if (!ecrit) return { ok: false, status: 409, error: "ended" };
