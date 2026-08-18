@@ -288,6 +288,11 @@ jobs:
             from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'
           union all select 'trigger', event_object_table, trigger_name, action_timing || ' ' || event_manipulation, ''
             from information_schema.triggers where trigger_schema='public'
+          union all select 'fonctiondef', '', p.proname, md5(pg_get_functiondef(p.oid)), ''
+            from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'
+          union all select 'triggerdef', c.relname, t.tgname, md5(pg_get_triggerdef(t.oid)), ''
+            from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace
+            where n.nspname='public' and not t.tgisinternal
           union all select 'publication', pubname, tablename, '', ''
             from pg_publication_tables where schemaname='public'
           union all select 'replident', relname, c.relreplident::text, '', ''
@@ -338,6 +343,60 @@ jobs:
           publiees=$($NEUF -c "select count(*) from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='doc_presentation_messages'")
           [ "$publiees" = "0" ] || { echo "::error::init.sql a publié la table du chat alors que plus rien ne l'écoute"; exit 1; }
           echo "installation neuve : table jamais publiée"
+
+      # ⚠️ LE SCELLÉ DE L'ARCHIVE PRÉTENDAIT UNE ATOMICITÉ QUE SON VERROU NE FOURNISSAIT PAS.
+      # La clôture modifie `active` et `control_hash` — des colonnes NON-CLÉS — donc son UPDATE
+      # prend FOR NO KEY UPDATE, que le FOR KEY SHARE du trigger NE BLOQUE PAS (matrice des verrous
+      # PostgreSQL). Le trigger vérifiait « ouverte », la clôture se committait sous lui, le message
+      # entrait dans l'archive. Cinquième audit, constat P1-1. Ce test est la SEULE preuve possible :
+      # deux transactions réelles — PostgREST ne sait pas faire ça, psql si. Les deux sens :
+      # une clôture non committée doit faire ATTENDRE puis REFUSER l'écriture ; une écriture en
+      # cours doit faire attendre la clôture.
+      - name: The archive seal blocks a concurrent close, both ways
+        run: |
+          $PSQL -c "insert into public.doc_presentations (slug, control_hash, file_url, active) values ('__course', 'h', 'https://exemple.test/x.pdf', true)"
+
+          ( psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d player -qtA <<'SQL'
+          begin;
+          update public.doc_presentations set active=false, control_hash=null where slug='__course';
+          select pg_sleep(2);
+          commit;
+          SQL
+          ) &
+          CLOTURE=$!
+          sleep 0.6
+          debut=$(date +%s%N)
+          set +e
+          sortie=$($PSQL -c "insert into public.doc_presentation_messages (slug, body) values ('__course', 'pendant la clôture')" 2>&1)
+          code=$?
+          set -e
+          wait $CLOTURE
+          duree=$(( ( $(date +%s%N) - debut ) / 1000000 ))
+          echo "écriture pendant clôture : code=$code durée=${duree}ms"
+          [ $code -ne 0 ] || { echo "::error::le message est ENTRÉ dans l'archive — le verrou du trigger ne bloque pas la clôture concurrente"; exit 1; }
+          echo "$sortie" | grep -q "archivee" || { echo "::error::refusé pour une autre raison que le scellé : $sortie"; exit 1; }
+          [ $duree -ge 1200 ] || { echo "::error::l'écriture n'a pas ATTENDU la clôture (${duree}ms) : les verrous ne se voient pas"; exit 1; }
+
+          $PSQL -c "update public.doc_presentations set active=true, control_hash='h' where slug='__course'"
+          ( psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d player -qtA <<'SQL'
+          begin;
+          insert into public.doc_presentation_messages (slug, body) values ('__course', 'avant la clôture');
+          select pg_sleep(2);
+          commit;
+          SQL
+          ) &
+          ECRITURE=$!
+          sleep 0.6
+          debut=$(date +%s%N)
+          $PSQL -c "update public.doc_presentations set active=false, control_hash=null where slug='__course'"
+          duree=$(( ( $(date +%s%N) - debut ) / 1000000 ))
+          wait $ECRITURE
+          echo "clôture pendant écriture : durée=${duree}ms"
+          [ $duree -ge 1200 ] || { echo "::error::la clôture n'a pas attendu l'écriture en cours (${duree}ms)"; exit 1; }
+          n=$($PSQL -c "select count(*) from public.doc_presentation_messages where slug='__course'")
+          [ "$n" = "1" ] || { echo "::error::le message écrit AVANT la clôture doit exister (n=$n)"; exit 1; }
+          $PSQL -c "delete from public.doc_presentation_messages where slug='__course'"
+          $PSQL -c "delete from public.doc_presentations where slug='__course'"
 
       # ⚠️ Le fichier se dit « rejouable ». Une affirmation jamais éprouvée n'est pas une propriété.
       - name: init.sql is replayable

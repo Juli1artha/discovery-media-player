@@ -269,6 +269,9 @@ begin
                           then now() + make_interval(secs => p_window_seconds)
                           else l.expires_at end
   returning l.count into v_count;
+
+  -- Le refus est décidé ICI, sur la valeur qu'on vient d'écrire : le client n'a rien à recalculer,
+  -- donc rien à recalculer sur une valeur déjà périmée.
   return query select (v_count <= p_max), v_count;
 end;
 $$;
@@ -344,8 +347,11 @@ alter table public.doc_bot_sessions                  enable row level security;
 -- ── Le scellé de l'archive ─────────────────────────────────────────────────────────────────────
 -- Sept chemins d'écriture vérifient l'archive PUIS écrivent — dans une AUTRE table que celle qui
 -- porte l'état. Aucun filtre PostgREST ne peut fermer cette fenêtre : l'arbitre est la base.
--- `FOR KEY SHARE` bloque une clôture concurrente jusqu'au commit de l'écriture — c'est lui qui
--- rend le refus atomique, pas le simple test.
+-- ⚠️ `FOR SHARE`, PAS `FOR KEY SHARE` — la clôture modifie des colonnes NON-CLÉS, son UPDATE prend
+-- FOR NO KEY UPDATE, que KEY SHARE ne bloque pas. La 0007 a porté ce verrou trop faible pendant
+-- une version, avec un commentaire qui affirmait l'atomicité (corrigé par la 0010, constat du
+-- cinquième audit — VU au banc à deux transactions de la forge : le message entrait dans
+-- l'archive). C'est FOR SHARE qui rend le refus atomique.
 create or replace function public.player_archive_scellee()
 returns trigger
 language plpgsql
@@ -357,7 +363,7 @@ begin
   select p.active, p.control_hash into v_active, v_control
     from public.doc_presentations p
     where p.slug = new.slug
-    for key share;
+    for share;
   -- Pas de présentation : rien à sceller (chat d'un lien sans session live, données historiques).
   if not found then return new; end if;
   if v_active = false and v_control is null then
