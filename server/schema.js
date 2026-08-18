@@ -16,6 +16,34 @@
 // chantiers ont été repoussés pour cette seule raison. Avec cette sonde, l'ordre de déploiement
 // cesse d'être un piège.
 
+/**
+ * CE QUE CE CODE ATTEND DE LA BASE — DÉCLARÉ UNE FOIS, ET C'EST LA SOURCE.
+ *
+ * ⚠️ UN INVENTAIRE QUI N'EST PAS LA SOURCE DÉRIVE. Ces couples vivaient recopiés sur quatre
+ * appels ; en tirer une simple liste « pour l'affichage » aurait refait, en plus petit, le défaut
+ * qui a vidé supabase/init.sql de ses cinq migrations : deux exemplaires du même fait, personne
+ * pour les confronter. Les appelants passent donc par `attendue(nom)` et ne nomment plus de
+ * colonne — il n'existe plus qu'un endroit où se tromper. Une étape de la forge vérifie en outre
+ * que chaque fichier nommé ici existe, et qu'aucun appel ne contourne cette table.
+ */
+const ATTENDUES = {
+  destinataireAtteste: {
+    table: "commercial_doc_shares", colonne: "attested_recipient_email",
+    migration: "supabase/migrations/0001-destinataire-atteste.sql",
+    fonction: "attribuer une lecture au destinataire attesté par l'hôte",
+  },
+  rangEcriture: {
+    table: "doc_presentations", colonne: "write_seq",
+    migration: "supabase/migrations/0002-ordre-des-ecritures.sql",
+    fonction: "refuser une écriture de pilotage doublée en vol",
+  },
+  envoiUnique: {
+    table: "doc_presentation_messages", colonne: "client_key",
+    migration: "supabase/migrations/0005-envoi-unique.sql",
+    fonction: "empêcher qu'un renvoi crée un second message",
+  },
+};
+
 let PLAYER = null;
 /**
  * Une question posée une fois, retenue pour le processus.
@@ -28,9 +56,59 @@ let PLAYER = null;
  */
 const connues = new Map();
 
+/**
+ * Les réponses DÉJÀ OBTENUES, pour qui veut les lire — la carte d'identité, essentiellement.
+ *
+ * ⚠️ CE N'EST PAS UN DOUBLON DE `connues`. Celle-ci porte des promesses, dont on ne peut rien dire
+ * sans les attendre ; celle-là porte des réponses. La distinction compte parce que la carte
+ * d'identité ne doit RIEN demander à la base — elle doit répondre quand la base ne répond plus.
+ */
+const reponses = new Map();
+
 function init(ctx) {
   PLAYER = ctx;
   connues.clear();
+  reponses.clear();
+}
+
+/** La sonde d'une attente déclarée. C'est la seule forme d'appel que les appelants utilisent. */
+function attendue(nom) {
+  const a = ATTENDUES[nom];
+  // Un nom inconnu est une faute de frappe, pas une dégradation : la taire ferait passer la
+  // fonction pour « en attente de migration » alors qu'elle est simplement mal câblée.
+  if (!a) throw new Error(`attente de schéma inconnue : ${nom}`);
+  return aLaColonne(a.table, a.colonne, a.migration);
+}
+
+/**
+ * ⚠️ CE QUE LE JOURNAL NE DIRA JAMAIS À PERSONNE.
+ *
+ * La sonde signale une colonne absente par un `console.warn`, une fois par processus. Sur une
+ * fonction serverless, c'est une ligne perdue dans une sortie que personne n'ouvre quand tout a
+ * l'air de marcher — et « tout a l'air de marcher » est précisément l'état d'un hôte dont trois
+ * protections dorment. Remarque du second hôte, et elle est juste : la trace existait à l'endroit
+ * exact où on ne regarde pas.
+ *
+ * ⚠️ ON NE SONDE PAS ICI, ON RAPPORTE. La carte d'identité doit répondre quand la base ne répond
+ * plus ; sonder depuis elle en ferait un diagnostic qui tombe en même temps que ce qu'il diagnostique.
+ *
+ * ⚠️ D'OÙ TROIS ÉTATS, ET PAS DEUX. Un processus qui n'a encore rien demandé ne sait rien — et
+ * « rien de manquant » se lirait « tout va bien ». Une absence de résultat ressemble à un
+ * résultat ; `sondees` est là pour qu'on ne puisse pas les confondre.
+ */
+function etatDuSchema() {
+  const manquant = [];
+  for (const [, r] of reponses) if (!r.present) manquant.push({ migration: r.migration, fonction: r.fonction });
+  return {
+    attendues: Object.keys(ATTENDUES).length,
+    sondees: reponses.size,
+    // ⚠️ ON NOMME LE FICHIER, alors que cette route est publique. Même raison que `frameAncestors`
+    // juste au-dessus d'elle : l'exploitant n'a AUCUN autre moyen d'apprendre laquelle manque, et
+    // un compte nu le laisserait deviner. Ce qu'on révèle en échange — qu'une fonction de
+    // fiabilité est en attente, dans un dépôt dont les migrations sont publiques — n'ouvre aucun
+    // accès : il faut déjà détenir un jeton de pilotage pour tirer parti d'un rang absent.
+    manquant,
+  };
 }
 
 /**
@@ -67,6 +145,7 @@ async function sonder(table, colonne, migration, cle) {
     // portage a un fichier à réécrire, pas une habitude à retrouver partout.
     const champ = encodeURIComponent(colonne);
     await PLAYER.db.request(`${table}?select=${champ}&limit=0`);
+    noter(cle, true, migration);
     return true;
   } catch {
     // ⚠️ ON NE DISTINGUE PAS « COLONNE ABSENTE » DE « BASE INJOIGNABLE », ET C'EST VOULU. Les deux
@@ -74,9 +153,16 @@ async function sonder(table, colonne, migration, cle) {
     // message d'erreur, c'est-à-dire de dépendre du texte d'un service tiers. Ce qui change entre
     // les deux, c'est la durée : une base injoignable le redevient, et le processus suivant reposera
     // la question.
+    noter(cle, false, migration);
     signaler(cle, migration);
     return false;
   }
+}
+
+/** La réponse, retenue pour qui la demandera — sans repasser par la base. */
+function noter(cle, present, migration) {
+  const a = Object.values(ATTENDUES).find((x) => `${x.table}.${x.colonne}` === cle);
+  reponses.set(cle, { present, migration, fonction: a ? a.fonction : "" });
 }
 
 /**
@@ -92,6 +178,6 @@ function signaler(cle, migration) {
 }
 
 /** Pour les tests et l'exploitation : reposer la question. */
-function oublier() { connues.clear(); }
+function oublier() { connues.clear(); reponses.clear(); }
 
-module.exports = { init, aLaColonne, oublier };
+module.exports = { init, aLaColonne, attendue, etatDuSchema, oublier, ATTENDUES };

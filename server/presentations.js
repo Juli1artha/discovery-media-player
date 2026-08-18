@@ -54,9 +54,7 @@ async function reclaimPresentation(slug, email) {
   // ⚠️ Et j'ai écrit ce champ sans condition en premier jet, ce qui est exactement le piège que
   // docs/MIGRATIONS.md décrit : PostgREST rejette le PATCH ENTIER si la colonne manque. La reprise
   // aurait cessé de fonctionner chez tout hôte non migré — pas la nouvelle garantie, la reprise.
-  const rangDispo = await require("./schema").aLaColonne(
-    "doc_presentations", "write_seq", "supabase/migrations/0002-ordre-des-ecritures.sql",
-  );
+  const rangDispo = await require("./schema").attendue("rangEcriture");
   await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { control_hash: sha(control), active: true, ...(rangDispo ? { write_seq: 0 } : {}), last_seen: new Date().toISOString(), updated_at: new Date().toISOString() } });
   return { ok: true, slug, control, page: row.current_page || 1, fileUrl: row.file_url, fileName: row.file_name, docTitle: row.doc_title, docId: row.doc_id };
 }
@@ -200,9 +198,7 @@ async function getPresentation(slug) {
 async function rangAccepte(row, seq) {
   const rang = Number(seq);
   if (!Number.isFinite(rang) || rang <= 0) return { controle: false };   // client plus ancien : pas de rang
-  const dispo = await require("./schema").aLaColonne(
-    "doc_presentations", "write_seq", "supabase/migrations/0002-ordre-des-ecritures.sql",
-  );
+  const dispo = await require("./schema").attendue("rangEcriture");
   if (!dispo) return { controle: false };
   if (rang <= Number(row.write_seq || 0)) return { controle: true, perime: true };
   // ⚠️ ON REND LE RANG, PAS UN OBJET TOUT FAIT. La première version rendait « { write_seq: rang } »,
@@ -428,8 +424,7 @@ async function addMessage(slug, { name, email, avatar, isPresenter, isMember, bo
   // colonne inconnue : chez un hôte non migré, ce n'est pas l'idempotence qu'on perdrait, c'est
   // l'envoi de messages. Même piège que le rang d'écriture, même sonde.
   const cle = String(clientKey || "").slice(0, 80);
-  if (cle && await require("./schema").aLaColonne(
-    "doc_presentation_messages", "client_key", "supabase/migrations/0005-envoi-unique.sql")) {
+  if (cle && await require("./schema").attendue("envoiUnique")) {
     row.client_key = cle;
   }
 

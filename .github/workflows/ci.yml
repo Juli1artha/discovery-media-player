@@ -141,6 +141,18 @@ jobs:
       # Cette garde ne relit PAS une liste écrite à la main : elle part de l'inventaire exporté par
       # le code, puis vérifie qu'aucune URL de script du gabarit ne lui échappe — c'est ce second
       # temps qui compte, le premier ne prouverait que sa propre cohérence.
+      # ⚠️ UN INVENTAIRE QUI N'EST PAS LA SOURCE DÉRIVE — c'est exactement ce qui avait vidé
+      # supabase/init.sql de ses cinq migrations. Les attentes de schéma sont désormais déclarées
+      # une fois dans server/schema.js ; cette étape refuse tout appel qui les contourne, sans quoi
+      # la carte d'identité annoncerait un état complet en ignorant une colonne sondée ailleurs.
+      - name: Schema expectations go through the declared inventory
+        if: matrix.node == '22'
+        run: |
+          hors=$(grep -rn 'aLaColonne(' server/*.js | grep -v '^server/schema.js:' || true)
+          [ -z "$hors" ] || { echo "::error::sonde de schéma hors inventaire — utilisez attendue(nom) :"; echo "$hors"; exit 1; }
+          n=$(grep -c 'migration: "supabase/migrations/' server/schema.js)
+          echo "attentes de schéma déclarées : $n"
+
       - name: Third-party scripts are pinned and fingerprinted
         if: matrix.node == '22'
         run: |
