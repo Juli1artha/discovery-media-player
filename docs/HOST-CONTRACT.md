@@ -32,7 +32,7 @@ need.
   "hostShare": true,
   "hostMail": true,
   "plugins": { "bot": false, "visitors": false, "brandIntro": false, "botBrowser": false, "providerQuotas": false },
-  "schema": { "attendues": 3, "sondees": 1, "manquant": [] }
+  "schema": { "attendues": 3, "sondees": 1, "verdict": "partiel", "manquant": [] }
 }
 ```
 
@@ -47,10 +47,34 @@ mid-migration. That silence is the point: an operator whose write ordering and m
 are both switched off sees an instance that looks perfectly healthy. Each entry names the file to
 apply and the feature that is asleep.
 
-⚠️ **`sondees` is not decoration.** The card **reports** what this process has already asked; it
-never probes, because a diagnostic must answer when the database does not. A freshly started
-process therefore knows nothing, and `manquant: []` on `sondees: 0` means *no question asked yet*,
-not *nothing missing*. Compare `sondees` with `attendues` before you conclude.
+⚠️ **`manquant: []` has four meanings, so read `verdict`, not the array.** The card **reports**
+what this process has already asked; it never probes on its own, because a diagnostic must answer
+when the database does not — and on a serverless host that means it is usually empty. Ask a
+different question when you want a real answer:
+
+```
+GET /api/doc?contract=1&schema=1
+```
+
+That parameter **is** the one part of this card that needs the database, and only when you ask for
+it. `verdict` is then one of:
+
+| verdict | meaning |
+|---|---|
+| `non-sonde` | nothing asked yet — **not** *nothing missing* |
+| `partiel` | some expectations checked, none of them missing |
+| `complet` | all checked, all present |
+| `incomplet` | at least one is missing — `manquant` names the file and the sleeping feature |
+| `indetermine` | the database did not answer; this measurement did not happen |
+
+⚠️ **`incomplet` wins over `partiel`**: a missing column is a positive fact and settles the verdict
+on its own, even when the rest has not been checked.
+
+⚠️ **`indetermine` is not a failure of the card.** A control column — the primary key of the oldest
+table — is queried first. If *it* does not answer, nothing is missing: the database is. Without that
+control, an unreachable database would make all three probes fail and the card would announce three
+missing migrations **that exist**, sending you to apply what you already have. In that state nothing
+is cached either, so a passing outage does not switch features off for the life of the process.
 
 ⚠️ **`frameAncestors` matters more than it looks.** A host that is not listed will never see the
 viewer: the browser blocks the iframe **before any script runs**, so no message can be emitted and

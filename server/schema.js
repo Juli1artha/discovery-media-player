@@ -44,6 +44,21 @@ const ATTENDUES = {
   },
 };
 
+/**
+ * LE TÉMOIN — une colonne dont l'absence est impossible.
+ *
+ * ⚠️ IL DISTINGUE « ABSENTE » DE « INJOIGNABLE » SANS LIRE UN MESSAGE D'ERREUR. La sonde ne fait
+ * pas cette différence, et c'est juste pour DÉCIDER (les deux mènent à ne pas écrire le champ).
+ * Pour RAPPORTER, les confondre serait faux dans les deux sens : une base momentanément muette
+ * ferait annoncer trois migrations manquantes qui existent — une fausse alerte qui envoie
+ * l'exploitant appliquer ce qu'il a déjà.
+ *
+ * Le témoin est la clé primaire de la plus ancienne table : si LUI ne répond pas, ce n'est pas une
+ * migration qui manque, c'est la base. Mesure différentielle, aucune dépendance au texte d'un
+ * service tiers — la raison même pour laquelle la sonde refusait de distinguer.
+ */
+const TEMOIN = { table: "doc_presentations", colonne: "slug" };
+
 let PLAYER = null;
 /**
  * Une question posée une fois, retenue pour le processus.
@@ -99,9 +114,15 @@ function attendue(nom) {
 function etatDuSchema() {
   const manquant = [];
   for (const [, r] of reponses) if (!r.present) manquant.push({ migration: r.migration, fonction: r.fonction });
+  const attendues = Object.keys(ATTENDUES).length;
   return {
-    attendues: Object.keys(ATTENDUES).length,
+    attendues,
     sondees: reponses.size,
+    // ⚠️ UN MOT, PAS UN TABLEAU VIDE À INTERPRÉTER. `manquant: []` a quatre sens selon ce qu'on
+    // sait par ailleurs — rien demandé, tout vérifié, vérifié en partie, base muette — et forcer
+    // le lecteur à les reconstituer en croisant deux champs, c'est lui laisser la faute. Le second
+    // hôte l'a posé comme condition à ce paramètre, et il avait raison avant même de le voir.
+    verdict: verdict(manquant.length, reponses.size, attendues),
     // ⚠️ ON NOMME LE FICHIER, alors que cette route est publique. Même raison que `frameAncestors`
     // juste au-dessus d'elle : l'exploitant n'a AUCUN autre moyen d'apprendre laquelle manque, et
     // un compte nu le laisserait deviner. Ce qu'on révèle en échange — qu'une fonction de
@@ -159,6 +180,39 @@ async function sonder(table, colonne, migration, cle) {
   }
 }
 
+function verdict(manque, sondees, attendues) {
+  if (manque) return "incomplet";          // un manque est un fait positif : il tranche seul
+  if (!sondees) return "non-sonde";
+  return sondees < attendues ? "partiel" : "complet";
+}
+
+/**
+ * SONDER TOUT, À LA DEMANDE — `?contract=1&schema=1`.
+ *
+ * ⚠️ LE COÛT EST SUR L'APPELANT QUI VEUT LA RÉPONSE. Sonder au démarrage mettrait un aller-retour
+ * base sur chaque démarrage à froid, donc sur le chemin critique de la première vraie requête,
+ * pour un diagnostic que presque personne ne lit — et ferait dépendre le contenu de la carte de ce
+ * que la base a répondu, c'est-à-dire déplacerait le couplage que sa doctrine interdit au lieu de
+ * le supprimer. Arbitrage tranché avec le second hôte, sur ses trois raisons.
+ *
+ * ⚠️ ET UN DIAGNOSTIC NE DOIT PAS ÉTEINDRE CE QU'IL DIAGNOSTIQUE. `aLaColonne` retient sa réponse
+ * pour la vie du processus : appelé pendant un hoquet de la base, ce paramètre aurait mis en cache
+ * « absente » pour les trois attentes — désactivant l'ordre des écritures et l'idempotence des
+ * messages jusqu'au prochain démarrage. Une route de contrôle qui casse la production. Si le
+ * témoin ne répond pas, on ne sonde RIEN et on ne retient RIEN.
+ */
+async function sonderTout() {
+  try {
+    await PLAYER.db.request(`${TEMOIN.table}?select=${encodeURIComponent(TEMOIN.colonne)}&limit=0`);
+  } catch {
+    // On rend ce qu'on savait déjà — un manque constaté plus tôt reste un fait — mais le verdict
+    // dit que cette mesure-ci n'a pas eu lieu. Taire l'un ou l'autre serait mentir d'un côté.
+    return { ...etatDuSchema(), verdict: "indetermine" };
+  }
+  for (const nom of Object.keys(ATTENDUES)) await attendue(nom);
+  return etatDuSchema();
+}
+
 /** La réponse, retenue pour qui la demandera — sans repasser par la base. */
 function noter(cle, present, migration) {
   const a = Object.values(ATTENDUES).find((x) => `${x.table}.${x.colonne}` === cle);
@@ -180,4 +234,4 @@ function signaler(cle, migration) {
 /** Pour les tests et l'exploitation : reposer la question. */
 function oublier() { connues.clear(); reponses.clear(); }
 
-module.exports = { init, aLaColonne, attendue, etatDuSchema, oublier, ATTENDUES };
+module.exports = { init, aLaColonne, attendue, etatDuSchema, sonderTout, oublier, ATTENDUES, TEMOIN };
