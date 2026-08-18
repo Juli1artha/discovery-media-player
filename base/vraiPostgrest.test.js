@@ -151,3 +151,39 @@ decrire("les trois propriétés que le double ne sait pas simuler", () => {
     expect(tous.length, "une ligne partielle a été écrite malgré le refus").toBe(0);
   });
 });
+
+// ⚠️ LE SCELLÉ DE L'ARCHIVE NE PEUT S'ÉPROUVER QU'ICI : c'est un trigger, il vit dans la base.
+// Le double en mémoire ne le portera jamais — c'est tout le sens de la migration 0007.
+decrire("l'archive est scellée par la base, pas par le code", () => {
+  const presentations = () => require("../server/presentations.js");
+
+  it("écrire dans une présentation archivée est refusé par le TRIGGER, même en frappant la table", async () => {
+    const p = await presentations().createPresentation({
+      docId: "doc-scelle", fileUrl: "https://exemple.test/d.pdf", fileName: "d.pdf",
+      docTitle: "Banc", presenterName: "Banc", owner: { email: "banc@exemple.test", name: "Banc" },
+    });
+    await presentations().endPresentation(p.slug, p.control);
+
+    // ⚠️ On contourne exprès toute vérification du code : POST direct sur la table, comme le
+    // ferait la fenêtre de course — ou un futur chemin d'écriture qui oublierait `estArchive`.
+    let refus = null;
+    try {
+      await base.request("doc_presentation_messages", {
+        method: "POST", body: [{ slug: p.slug, body: "message posthume", author_name: "Banc" }],
+      });
+    } catch (e) { refus = e; }
+
+    expect(refus, "la base a accepté une écriture dans une archive").toBeTruthy();
+    const messages = await presentations().listMessages(p.slug);
+    expect(messages.length, "le message posthume est dans l'archive").toBe(0);
+  });
+
+  it("et une présentation VIVANTE accepte toujours — sceller n'est pas verrouiller", async () => {
+    const p = await presentations().createPresentation({
+      docId: "doc-vivant", fileUrl: "https://exemple.test/d.pdf", fileName: "d.pdf",
+      docTitle: "Banc", presenterName: "Banc", owner: { email: "banc@exemple.test", name: "Banc" },
+    });
+    const r = await presentations().addMessage(p.slug, { name: "Banc", body: "bien vivant", authorToken: "jeton" });
+    expect(r.ok).toBe(true);
+  });
+});

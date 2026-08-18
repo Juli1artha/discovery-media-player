@@ -336,6 +336,43 @@ begin
 end $$;
 alter table public.doc_presentation_messages replica identity full;
 
+-- ── Le scellé de l'archive ─────────────────────────────────────────────────────────────────────
+-- Sept chemins d'écriture vérifient l'archive PUIS écrivent — dans une AUTRE table que celle qui
+-- porte l'état. Aucun filtre PostgREST ne peut fermer cette fenêtre : l'arbitre est la base.
+-- `FOR KEY SHARE` bloque une clôture concurrente jusqu'au commit de l'écriture — c'est lui qui
+-- rend le refus atomique, pas le simple test.
+create or replace function public.player_archive_scellee()
+returns trigger
+language plpgsql
+as $$
+declare
+  v_active boolean;
+  v_control text;
+begin
+  select p.active, p.control_hash into v_active, v_control
+    from public.doc_presentations p
+    where p.slug = new.slug
+    for key share;
+  -- Pas de présentation : rien à sceller (chat d'un lien sans session live, données historiques).
+  if not found then return new; end if;
+  if v_active = false and v_control is null then
+    raise exception 'presentation archivee : ecriture refusee'
+      using errcode = 'P0001', hint = 'l''archive est en lecture seule';
+  end if;
+  return new;
+end
+$$;
+
+drop trigger if exists dpm_archive_scellee on public.doc_presentation_messages;
+create trigger dpm_archive_scellee
+  before insert or update on public.doc_presentation_messages
+  for each row execute function public.player_archive_scellee();
+
+drop trigger if exists dpa_archive_scellee on public.doc_presentation_attendees;
+create trigger dpa_archive_scellee
+  before insert or update on public.doc_presentation_attendees
+  for each row execute function public.player_archive_scellee();
+
 -- ── Rattrapage : bases installées depuis un init.sql plus ancien ───────────────────────────────
 --
 -- ⚠️ CE FICHIER A ÉTÉ INCOMPLET, ET RIEN NE LE DISAIT. Il annonçait « un seul fichier, sans rien à
