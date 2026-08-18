@@ -10,6 +10,94 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.60] — 2026-08-18
+
+Closes every P1 of the third audit pass, plus one defect no report had seen.
+
+### Fixed
+
+- **The reaction intent finally travels the HTTP route.** `toggleReaction` could set a state since
+  0.1.56, the browser sent it since 0.1.56 — and the route called the function **without the fifth
+  argument**. Three releases long, the real path kept toggling: the double click switched the
+  reaction off, the very defect P10 believed closed. ⚠️ The tests exercised the function, never the
+  route: the mutation went red, the property was true — **on a path production does not take**. The
+  new test plays the same property through `player.handler`. Audit 3, its first finding.
+
+- **A reactor's identity is derived, no longer declared.** The client sent `reactor: MOIREF` — and
+  MOIREF is **public**: every participant receives everyone's refs inside the reactions array. Anyone
+  could copy another's ref and set or remove **their** reactions. The client now sends its author
+  token — the secret that never leaves its browser — and the server derives the ref with the same
+  chain as the client (`sha("ref:" + sha(token))`, 16 chars); a test **confronts both engines**
+  (Node crypto vs WebCrypto). ⚠️ A "compatibility" fallback to `body.reactor` survived the first
+  mutation round: the forgery test sent token *and* forged ref, so the fallback never played — yet
+  it is exactly the attacker's path (no token, someone else's ref). Test added, mutation replayed, red.
+
+- **Two simultaneous reactions both survive.** Read-modify-rewrite lost one of them silently. Same
+  remedy as steering writes: a **rank** (`reactions_seq`, migration `0006`) — the write carries the
+  rank it read, a passed rank touches zero rows, the server re-reads and replays, bounded to four
+  rounds (each round, at least one writer wins). On an unmigrated host reactions keep working —
+  last writer wins, as before.
+
+- **Six presentation writes carried their check, not their condition.** Reclaim, heartbeat,
+  owner-close, handover, chat lock, auto-purge: all read the row, verified, then **PATCHed by slug
+  alone**. A stale reclaim stole the session a handover had just granted; a stale heartbeat kept an
+  orphan alive forever; a delayed close shut the **new** owner's session; two concurrent handovers
+  moved the document twice; the purge switched off a session that had come back to life. Owner or
+  token now sits **in the PostgREST filter**, zero rows = 409 — the form `setPage` already had.
+  ⚠️ The chat-lock mutation survived the first round: the test mutated too early, and the 403 of
+  the *check* played instead of the 409 of the *condition* — red for one reason, silent on the
+  property. Harness hook added, replayed, red by the condition, and the test requires it.
+
+- **The archive is sealed by the database, not only by the code.** Seven write paths check
+  `estArchive()` then write — into a **different table** than the one holding the state, so no
+  PostgREST filter can close the gap. The arbiter can only be the database: a trigger (migration
+  `0007`), with **`FOR KEY SHARE`** locking out a concurrent close until the write commits — the
+  lock is what makes the refusal atomic, not the test. The code checks remain as the *friendly*
+  refusal; unmigrated hosts keep exactly the window they had. Proven at the real-database bench, by
+  a POST that bypasses every code check on purpose.
+
+- **Closing a presentation was impossible on a fresh install.** Closing sets `control_hash = null`
+  — *the* archive marker — and `init.sql` declared the column **NOT NULL**: violation 23502 on
+  every close, presentations never ended, the read-only archive did not exist. ⚠️ **793 tests
+  passed**: the in-memory double has no constraints (its header says so), and historical databases
+  are nullable — neither the suite nor production could show it. The real-database bench caught it
+  on its **first prey**, while refusing the archive seal for an upstream reason. Migration `0008`;
+  the CI shape now includes **nullability** and **triggers**, without which init/migrations parity
+  covered neither.
+
+- **A schema "no" no longer outlives the outage that caused it** *(shipped in this cycle's
+  branches, see 0.1.59 notes for the probe itself)*: a transient database failure during normal use
+  cached "absent" for the life of the process — the feature stayed off after recovery, and
+  `sonderTout()` re-served the incident dated today. ⚠️ Our recovery test called `init()` between
+  failure and recovery — **which empties precisely that cache**: it proved a healing that did not
+  exist. A "yes" is stable and kept; a "no" expires (60 s); the on-demand probe drops cached "no"s
+  once the control column answers.
+
+- **The local-file relay allocated before checking.** The cap lived in the handler, on
+  `Content-Length` — **after** `readLocal` had already `Buffer.alloc`'d the whole range: a local
+  file above the cap cost its full allocation on every request before being refused. The cap now
+  sits before the allocation; a **range** below the cap of an over-cap file still passes (206) —
+  that is what ranges are for. 413/416 are relayed as such instead of melting into 502.
+
+- **Two comments described vanished behaviour** — and a stale comment in an install file is a
+  defect: it pushes a maintainer to "repair" toward the exact hole. `init.sql` claimed the chat was
+  not live (it rides broadcast + re-read); `viewer.ts` described a main-thread worker fallback (the
+  doubt is **fail-closed**). Both confronted with the code before rewriting.
+
+### Added
+
+- **`?contract=1&schema=1` is bounded.** Concurrent calls share **one** probe, the result serves
+  for 30 s — a public route was a small database amplifier, and the shared resource paid, never the
+  caller. The cache is not eternal: an applied migration must show.
+
+- **`schema.couvre: "colonnes-conditionnelles"`.** "complet" without a scope overpromises: the
+  rate-limit migrations (0003/0004) are deliberately not in the card — a host may provide its own
+  `limits` capability, where their absence is normal. The field prevents reading "complet" as
+  "everything under supabase/ is applied".
+
+- **PostgREST errors carry the response body.** A bare "400" cost a full forge round-trip to learn
+  what the database had been saying from the start.
+
 ## [0.1.59] — 2026-08-18
 
 ### Added
