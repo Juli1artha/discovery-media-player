@@ -288,6 +288,11 @@ jobs:
             from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'
           union all select 'trigger', event_object_table, trigger_name, action_timing || ' ' || event_manipulation, ''
             from information_schema.triggers where trigger_schema='public'
+          union all select 'publication', pubname, tablename, '', ''
+            from pg_publication_tables where schemaname='public'
+          union all select 'replident', relname, c.relreplident::text, '', ''
+            from pg_class c join pg_namespace n on n.oid=c.relnamespace
+            where n.nspname='public' and c.relkind='r'
           order by 1,2,3,4;
           SQL
           $PSQL -f /tmp/forme.sql > /tmp/avant.txt
@@ -302,6 +307,37 @@ jobs:
             exit 1
           fi
           echo "init.sql contient déjà tout ce que les migrations apportent."
+
+      # ⚠️ LA FORME NE VOIT NI LES PUBLICATIONS NI LE REPLICA IDENTITY SANS QU'ON LES LUI DONNE — le
+      # relevé ci-dessus les inclut désormais, sans quoi la parité init/migrations ne couvrait ni
+      # l'un ni l'autre (même angle mort, déjà comblé deux fois : nullabilité, triggers). Ce
+      # scénario rejoue une BASE ANCIENNE : publication présente, table publiée, REPLICA FULL —
+      # l'état exact qu'init.sql installait jusqu'à la 0009 — puis exige que la migration nettoie,
+      # DEUX FOIS (rejouable), et qu'une base née du nouvel init.sql ne publie jamais la table.
+      - name: An old base is cleaned by 0009, twice
+        run: |
+          psql -v ON_ERROR_STOP=1 -h localhost -U postgres -qtA -c "create database ancienne"
+          VIEUX="psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d ancienne -qtA"
+          $VIEUX -f supabase/init.sql
+          $VIEUX -c "create publication supabase_realtime"
+          $VIEUX -c "alter publication supabase_realtime add table public.doc_presentation_messages"
+          $VIEUX -c "alter table public.doc_presentation_messages replica identity full"
+          for tour in 1 2; do $VIEUX -f supabase/migrations/0009-chat-hors-postgres-changes.sql; done
+          publiees=$($VIEUX -c "select count(*) from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='doc_presentation_messages'")
+          [ "$publiees" = "0" ] || { echo "::error::la table est encore publiée après 0009 (x$publiees)"; exit 1; }
+          ident=$($VIEUX -c "select c.relreplident from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname='doc_presentation_messages'")
+          [ "$ident" = "d" ] || { echo "::error::replica identity encore '$ident' après 0009 (attendu 'd')"; exit 1; }
+          echo "base ancienne nettoyée, deux passages, replident=d"
+
+      - name: A fresh install never publishes the chat table, even when the publication pre-exists
+        run: |
+          psql -v ON_ERROR_STOP=1 -h localhost -U postgres -qtA -c "create database neuve"
+          NEUF="psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d neuve -qtA"
+          $NEUF -c "create publication supabase_realtime"
+          $NEUF -f supabase/init.sql
+          publiees=$($NEUF -c "select count(*) from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='doc_presentation_messages'")
+          [ "$publiees" = "0" ] || { echo "::error::init.sql a publié la table du chat alors que plus rien ne l'écoute"; exit 1; }
+          echo "installation neuve : table jamais publiée"
 
       # ⚠️ Le fichier se dit « rejouable ». Une affirmation jamais éprouvée n'est pas une propriété.
       - name: init.sql is replayable

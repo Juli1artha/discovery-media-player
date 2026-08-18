@@ -331,19 +331,15 @@ alter table public.doc_bot_sessions                  enable row level security;
 --
 -- ⚠️ Ne mettez de toute façon jamais de donnée confidentielle dans un message de chat ni dans un
 -- nom d'auteur.
-do $$
-begin
-  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
-    if not exists (
-      select 1 from pg_publication_tables
-      where pubname = 'supabase_realtime' and schemaname = 'public'
-        and tablename = 'doc_presentation_messages'
-    ) then
-      execute 'alter publication supabase_realtime add table public.doc_presentation_messages';
-    end if;
-  end if;
-end $$;
-alter table public.doc_presentation_messages replica identity full;
+-- ⚠️ AUCUNE TABLE DU PLAYER N'EST PUBLIÉE DANS `supabase_realtime`, ET C'EST UN CHOIX. Le direct
+-- passe par BROADCAST (un signal d'invalidation, jamais un contenu) suivi d'une relecture HTTP qui
+-- sert la PROJECTION publique. Publier la table n'alimenterait personne tant que RLS reste sans
+-- politique — mais laisserait armée la combinaison « quelqu'un ajoute un SELECT public un jour »
+-- → la ligne ENTIÈRE part au navigateur, author_hash compris, en contournant la projection.
+-- N'ajoutez pas non plus de politique SELECT publique « pour que le direct fonctionne » : c'est
+-- l'erreur exacte dont l'hôte historique a dû sortir. (Jusqu'à la 0009, ce fichier ajoutait la
+-- table à la publication avec REPLICA IDENTITY FULL — chaque réaction payait l'image complète de
+-- la ligne dans le WAL, pour un canal que plus rien n'écoutait.)
 
 -- ── Le scellé de l'archive ─────────────────────────────────────────────────────────────────────
 -- Sept chemins d'écriture vérifient l'archive PUIS écrivent — dans une AUTRE table que celle qui

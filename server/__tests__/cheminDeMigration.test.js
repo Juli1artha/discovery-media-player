@@ -44,8 +44,15 @@ describe("le chemin de migration existe et dit ses règles", () => {
   // Un `drop`, un `rename` ou un `not null` casse cette symétrie et transforme l'ordre en piège.
   it.each(["drop column", "drop table", "rename to", "rename column", "set not null"])(
     "aucune migration ne contient « %s »", (interdit) => {
-      const fautives = migrations().filter((f) =>
-        fs.readFileSync(path.join(DOSSIER, f), "utf8").toLowerCase().includes(interdit));
+      const fautives = migrations().filter((f) => {
+        let sql = fs.readFileSync(path.join(DOSSIER, f), "utf8").toLowerCase();
+        // ⚠️ « alter publication … drop table » n'est PAS un drop de table : il retire la table
+        // d'une PUBLICATION — additif au sens de cette garde (les données ne bougent pas, un hôte
+        // au code ancien continue de fonctionner). Le motif brut l'attrapait (0009) ; on retire
+        // cette forme-là, et elle seule, avant de chercher — la garde reste entière pour le reste.
+        sql = sql.replace(/alter\s+publication\s+\S+\s+drop\s+table/g, "");
+        return sql.includes(interdit);
+      });
       expect(fautives,
         `« ${interdit} » n'est pas additif : un hôte qui n'a pas encore déployé le nouveau code casse.\n`
         + "Ajoutez plutôt, et retirez une fois que plus personne ne lit l'ancien champ.")
