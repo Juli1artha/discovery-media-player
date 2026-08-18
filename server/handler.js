@@ -3398,7 +3398,11 @@ async function handler(req, res) {
           const ip = adresseAppelant(req) || "anon";
           const allowed = await PLAYER.limits.allow(`preact:${ip}`, 200, 3600);
           if (!allowed) return jp(429, { ok: false, error: "rate" });
-          const r = await toggleReaction(String(body.slug || ""), body.msgId, body.emoji, body.reactor);
+          // ⚠️ LE CINQUIÈME ARGUMENT A MANQUÉ ICI PENDANT TROIS VERSIONS. `toggleReaction` sait
+          // poser un état depuis 0.1.56, le client l'envoie depuis 0.1.56 — et cette ligne le
+          // jetait. Les essais éprouvaient la FONCTION, jamais la route : le correctif était vu
+          // refuser en mutation et inactif en production. Trouvé par le troisième audit.
+          const r = await toggleReaction(String(body.slug || ""), body.msgId, body.emoji, body.reactor, body.etat);
           return jp(r.ok ? 200 : (r.status || 400), r);
         } catch { return jp(500, { ok: false }); }
       }
