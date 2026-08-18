@@ -126,10 +126,11 @@ export interface DependancesWorker {
  * d'une autre origine est refusé par le navigateur, donc on le récupère en texte pour en faire un
  * blob de même origine — c'était fait pour contourner cette règle, ça sert maintenant à contrôler.
  *
- * ⚠️ TOUT DOUTE VAUT REFUS, et le refus ne casse rien : l'appelant retombe sur l'URL distante, que
- * le navigateur bloque à son tour, et pdf.js finit par son worker de secours sur le fil principal.
- * Plus lent, jamais muet-mais-faux. C'est déjà, exactement, le chemin que suivait un réseau en
- * panne — on ne crée donc pas un mode de défaillance, on en réutilise un déjà éprouvé.
+ * ⚠️ TOUT DOUTE VAUT REFUS — ET LE REFUS EST FERMÉ. L'appelant (`refuserWorker`, dans le gabarit)
+ * n'affiche PAS le document : « une dépendance n'a pas pu être vérifiée ». Seule une IMAGE démarre
+ * quand même — elle n'a pas besoin du worker. Ce commentaire a longtemps décrit un repli sur le
+ * fil principal qui n'existe plus : un mainteneur l'aurait « restauré » en croyant réparer, en
+ * rouvrant précisément le chemin non vérifié que le refus ferme. (Relevé par le troisième audit.)
  *
  * ⚠️ `crypto.subtle` n'existe QUE dans un contexte sécurisé. Sur une instance servie en clair, on
  * refuse aussi — non par sévérité, mais parce qu'il n'y aurait rien à protéger : une page servie

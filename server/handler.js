@@ -3847,9 +3847,14 @@ async function handler(req, res) {
         // carte est ce qu'un hôte interroge déjà pour épingler sa version ; c'est donc ici.
         // Elle RAPPORTE ce qui est connu, elle ne sonde pas : un diagnostic ne doit pas tomber en
         // même temps que ce qu'il diagnostique.
-        schema: String(q.schema || "") === "1"
-          ? await require("./schema").sonderTout()
-          : require("./schema").etatDuSchema(),
+        // ⚠️ `couvre` DIT LA PORTÉE, parce que « complet » sans portée surpromet : les migrations de
+        // limites (0003/0004) n'y sont PAS — un hôte peut fournir sa propre capacité `limits`, et
+        // chez lui leur absence est normale. Ce champ empêche de lire « complet » comme « tout le
+        // dossier supabase/ est appliqué ». Relevé par le troisième audit.
+        schema: { couvre: "colonnes-conditionnelles",
+          ...(String(q.schema || "") === "1"
+            ? await require("./schema").sonderTout()
+            : require("./schema").etatDuSchema()) },
         // « L'hôte peut-il créer un lien en son nom propre ? » — configuré, pas seulement
         // possible. Un hôte qui oublie le secret reçoit un 401 qui ressemble à un droit
         // manquant ; ce booléen le lui dit sans qu'il ait à essayer.
