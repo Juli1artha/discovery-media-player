@@ -10,6 +10,3818 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.56] — 2026-08-18
+
+### Fixed
+
+- **A network retry no longer cancels the reaction you just added.** Toggling only makes sense once:
+  a double click, a retried request, a resend after timeout — and the emoji the participant had just
+  lit goes out. They see **no error**; they see it blink, so they click again, which toggles again.
+  The caller now sends what it **wants**, not what to invert: replaying the same intent twice gives
+  the same result as once. An older client keeps the toggle rather than losing the feature, and a
+  test pins that inherited behaviour so we know what we are keeping. Audit finding **P10**.
+
+- **Disconnecting now stops everything connecting started.** `_ordEtat`, `_ordChat` and `_filet`
+  were declared *inside* `connect()`; `disconnect()`, one level up, could not reach them. After
+  connect → disconnect → connect, the old session's re-reads kept running: a viewer who reopened the
+  page **doubled the traffic**, and the safety net beat twice. No amount of good will in the stop
+  path would have helped — it was a matter of **scope**. The global `window.__presRelireEtat`, which
+  kept the whole closure alive, is removed too. Audit finding **P9**.
+
+- **The file relay refuses before allocating.** It loaded the entire file into memory with no upper
+  bound: an 80 MB PDF plus three concurrent `Range` requests takes down a serverless function — not
+  for one document, for the sum. The refusal happens **before the body is read**, and the test checks
+  exactly that. ⚠️ An upstream that announces no size still passes: one cannot refuse what one cannot
+  measure. **This bounds the large, not the unknown** — streaming will close the unknown, and P8 is
+  therefore not closed. Configurable via `PLAYER_MAX_RELAY_BYTES` (default 60 MB).
+
+### ⚠️ The forge was broken for twelve hours, by us
+
+Every CI run since the previous evening failed with **zero jobs**, and I blamed an ongoing GitHub
+incident — which was real, visible on their status page, and **not the cause**. The Actions page had
+been naming the file and the line the whole time: `Invalid workflow file: ci.yml#L285`.
+
+The cause: a guard inserted in 0.1.51 contains `grep -vE '@[0-9a-f]{40}
+
+### Fixed
+
+- **When the URL says nothing, the file name decides.** The audience view decided whether a document
+  was an image from the URL alone. A storage URL carrying no extension therefore answered "not an
+  image", and the audience got "Document unavailable" again — the defect 0.1.54 had just closed,
+  coming back through the side door.
+
+  ⚠️ **0.1.54 had kept the derived field and thrown away the authoritative one.** Two fixes had been
+  written for one symptom; since either sufficed, **no mutation could turn the bench red**. Removing
+  one left the other working — so I removed the one that decides, and kept the one the bench already
+  knew how to see. **The bench chose the fix instead of verifying it.**
+
+  The rule "a fix made of two changes cannot be proven" does not say *which* one to keep — and the
+  answer is never "the one the bench can see". Keep the field that decides, then make the bench able
+  to tell them apart.
+
+  Measured by the second host on their own instance: **4,287** presentable documents, **23** whose
+  URL carries no extension, **none of them images**. Reachable, unpopulated. The bench now populates
+  the case.
+
+### ⚠️ Evidence, by strength — and a correction to 0.1.54
+
+Counting "734 tests" reads as if all 734 weighed the same. They do not, and the difference is the one
+a hurried reader makes on our behalf, in whichever direction suits them. Three groups, borrowed from
+the second host:
+
+| | this release |
+|---|---|
+| **Seen refusing** — a guard replayed inverted, red observed | the mutation deciding on the URL alone: the new bench test falls, and it alone |
+| **Seen falling** — a behaviour replayed, red observed | the audience page displaying an image whose URL has no extension |
+| **Never failed in front of anyone** — typing, build, tests that already passed | everything else: 734 unit tests, 8 browser tests, lint, typecheck, build |
+
+The third group is not worthless — it attests that **nothing was broken**, never that something was
+repaired.
+
+⚠️ **Which makes one line of 0.1.54 false.** It announced the image fix as "verified by mutation".
+The mutation did *not* turn red — I found that out afterwards, and it was the second host who
+explained why. That claim belonged to the third group, dressed as the first.
+
+## [0.1.54] — 2026-08-17
+
+### Fixed
+
+- **A presentation carrying an image now displays for the audience.** The *Present* button appears
+  with no condition on the document type: a presenter looking at a PNG could present it, and the
+  audience got "Document unavailable" — pdf.js called on an image.
+
+  ⚠️ **This path had always been silent.** Not a regression from the worker refusal: nobody had seen
+  it because images are rarely presented. Found by the **second host, by asking** where we would have
+  asserted — their own view serves images, so they asked whether ours could receive one.
+
+  ⚠️ The first attempt at the fix **did not work, and nothing said so**: it decided on `CFG.fileUrl`,
+  which is `/api/doc?present=…&file=1` — no extension, so "not an image", always. A `try/catch`
+  added out of caution swallowed the cause; reading the loader's subtitle was what exposed it. A
+  defensive guard that returns false on error does not protect, it **hides**.
+
+  ⚠️ And there had been **two fixes for one symptom** — the file name added to the config as well.
+  Either one sufficed, so **no mutation could turn the bench red**: removing one left the other
+  working. A test never seen refusing guards nothing. One remains, and putting the proxy URL back
+  does make the bench fail.
+
+## [0.1.53] — 2026-08-17
+
+### Fixed
+
+- **An unverifiable pdf.js worker no longer stops an image from being displayed.** 0.1.52 gated
+  `start()` — the whole reader's boot — on the worker's fingerprint. But `start()` also serves the
+  **image** path, which never calls pdf.js: a worker that could not be verified therefore refused to
+  show a PNG. A door closed on a room the rejected code could not reach.
+
+  The refusal stays **whole for a PDF**, where the worker actually runs. Only the image path stops
+  being gated on something it never used.
+
+  ⚠️ Found by the **host's test harness**, not ours: its assistant stopped booting, and the first
+  diagnosis was "a jsdom artefact". Fixing the harness would have hidden the defect — the harness was
+  right and the diagnosis was incomplete.
+
+## [0.1.52] — 2026-08-17
+
+### ⚠️ One migration to apply — the player degrades without it, it does not break
+
+`0004-limites-atomiques.sql` makes the shared rate limit count in **one atomic step**. Until it is
+applied, counting stays as before — read, compute, write — so several simultaneous requests can
+cross the cap together, and the player says so once, naming the file. Nothing closes: a missed 429
+costs less than a dead viewer.
+
+The atomic increment is **not expressible in REST** (`on conflict do update set count = count + 1`
+has to name the column on both sides). This is the one operation in the product that needs a
+database function; the portability guard still holds, an `rpc/` adding neither join nor boolean tree.
+
+### Security
+
+- **No email leaves the presentation any more — and four paths carried one, not two.** The audit
+  reported `author_email` in the chat's public fields and `email` in the presence payload. Two more
+  carried the same data: the **reactions map**, stored in the database with `email || name` as the
+  reactor's identity, and the **presence channel key** itself, readable by every participant
+  regardless of what `track()` sends. Our audiences are anonymous external visitors: opening the
+  chat history was enough to walk away with the team's addresses.
+
+  ⚠️ What replaces it is not a random pseudonym but the fingerprint of the **author token** — the one
+  that already authorises editing and deleting. No instance secret is needed (hashing an address
+  without salt protects nothing: the domain is known, first names are guessable), and **"this is my
+  message" now says the same thing as "I am allowed to touch it"**: `isMine` compared addresses while
+  editing has only ever checked the token, so a member on a second browser was offered an *Edit*
+  button that answered 403.
+
+- **A delayed write can no longer reopen a presentation that was ended.** Steering did: read the row,
+  check the token, PATCH. Between the check and the PATCH the presentation may have been **ended** —
+  and since steering writes `active: true`, the late request **reopened it for the whole audience**.
+  The presenter had clicked *End*, seen the closing screen, and viewers kept following the pages.
+
+  ⚠️ The condition is **not** `active = true`: a presentation goes inactive after three minutes
+  without a heartbeat, and the next page must bring it back — an anonymous presenter has no other way
+  to return. What separates a *decided* end from an *observed* expiry already exists: ending revokes
+  the control token. So the token travels in the write's own condition, and each path carries the
+  criterion it was already checking. Zero rows touched means refused.
+
+- **An ended presentation becomes a read-only archive.** Seven routes still wrote after closing —
+  messages, reactions, chat lock, attendance, and even a **signed upload URL** into the bucket of a
+  closed session. The thread was no longer watched by anyone, which is exactly when something gets
+  dropped into it. Reading stays open: what was said during a presentation has value afterwards.
+
+- **An unverified pdf.js worker is never executed — the reader stops instead.** The previous
+  behaviour fell back to the remote URL when the fingerprint refused, and **pdf.js wraps that URL in
+  a same-origin blob itself**, so the unverified code ran: the worker's fingerprint bought nothing.
+  Leaving the value empty does not close it either — pdf.js then derives a default address from its
+  own position on the CDN. Both cancelled the check **in silence**; measuring the workers actually
+  created was the only way to see it. A document that is not rendered is visible; a document rendered
+  by unverified code is not.
+
+- **Third-party supply chain, pinned where it decided for us.** 18 GitHub actions referenced by
+  **tag** — which the author, or whoever takes their account, can move to another tree — are now
+  pinned to a commit, with the tag kept as a comment. Leaflet's **stylesheet** had never been
+  counted: third-party CSS moves, resizes and hides any element, so the button you think you are
+  clicking may not be the one you click. Google Maps moves from `v=weekly` — a *channel* — to a
+  version. A CI guard fails on any unpinned action.
+
+## [0.1.51] — 2026-08-17
+
+### Security
+
+- **Third-party scripts are pinned to an exact version and carry an integrity fingerprint.** The
+  serious part was not the missing fingerprint, it was `@2`: that jsdelivr tag follows the latest
+  2.x, so the page served visitors whatever Supabase had published that morning — no deployment, no
+  review, no way back. On the day of the fix it resolved to `2.112.3`, now pinned.
+
+  The two go together: a fingerprint on a moving URL would break the page at the third party's next
+  release. **Pinning makes the fingerprint possible; the fingerprint makes the pinning useful** — an
+  exact version says which file you *ask for*, never which one you *receive*.
+
+  | | before | after |
+  |---|---|---|
+  | `pdf.min.js` | exact version, no fingerprint | fingerprint |
+  | `pdf.worker.min.js` (1 MB) | exact version, **out of reach of `integrity`** | verified in code |
+  | `supabase-js` | **moving `@2`**, no fingerprint | `2.112.3` + fingerprint |
+  | `leaflet` | exact version, no fingerprint | fingerprint on the injected tag |
+
+  ⚠️ **The worker has no tag** — pdf.js loads it, so no `integrity` attribute can apply. It weighs
+  three times the main script and sees every page of the document: protecting the tag and letting
+  the worker through would be locking the door and leaving the window open. Its bytes already passed
+  through our code (a cross-origin worker is refused by the browser, so it is fetched as text and
+  turned into a same-origin blob), and that detour is now the checkpoint. Any doubt refuses, and
+  refusing falls back on pdf.js's own backup worker — the path a broken network already took.
+
+  ⚠️ A CI guard now refuses a third-party script that is unpinned, unfingerprinted, or absent from
+  the inventory. It found a fourth dependency on its first run — the Google identity loader on the
+  access wall, which a hand-written inventory had missed. Loaders that cannot carry a fingerprint
+  are named **with their reason**, so adding one tomorrow is a visible choice.
+
+  Audit finding **P2-4**.
+
+### Internal
+
+- **A test database, so the pages that matter are finally exercised.** The browser bench only
+  covered the local preview: the tracked viewer and the audience page need a database, answered 404,
+  and **their policies were exercised by nothing** — yet those are the pages a client and a viewer
+  actually open. `tools/postgrest-en-memoire.cjs` unlocks them in ~150 lines, with no dependency and
+  no account to create.
+
+  What makes the double honest is a discipline taken elsewhere: the CI portability guard has long
+  banned exotic query syntax, keeping the whole surface at `table?column=eq.value`. A constraint
+  taken to make *porting* possible ended up making a *test database* possible.
+
+  ⚠️ It refuses rather than invents: an unknown filter returns a 400 that names it, and an undeclared
+  relation returns 404 like real PostgREST. A double answering "no rows" to a query it misunderstood
+  would turn every test into fiction. It is **not** a database — no transactions, constraints, types
+  or RLS; what belongs to the DBMS is verified on a real DBMS.
+
+  The bench now covers three pages of four (the visitor access wall needs a plugin the standalone
+  context does not have) and, on the tracked page, **asserts the read is recorded in the database**:
+  the browser → server → database loop was closed nowhere.
+
+  Audit finding **P2-3**.
+
+## [0.1.50] — 2026-08-17
+
+### Fixed
+
+- **A participant could make their neighbours vanish from the attendee list.** The presence
+  de-duplication table was a plain object indexed by identities **each participant composes
+  themselves**, `uid` included.
+
+  Measured before the fix: a participant whose identity is `constructor` **disappears** — the object
+  answered "already seen" before anything had been written. And writing to `__proto__` does not
+  create an entry, it **changes the prototype of the table**: an intruder announcing
+  `uid: "__proto__"`, the presenter role, and their neighbours' addresses as extra keys made those
+  neighbours disappear **from everyone's list**. Four participants, two erased.
+
+  `Object.prototype` was never reached — the pollution stayed inside that table. But *local* does not
+  mean *harmless*: the table **is** the attendee list.
+
+  ⚠️ Why it lasted: `toString`, `valueOf` and `hasOwnProperty` were never a problem, because the
+  identity is lowercased and `tostring` is inherited from nobody. **Two keys only** got through —
+  `constructor` and `__proto__`. A defect that fires only there is never met by accident.
+
+  A `Map` inherits no key, and it preserves insertion order even when an existing key is rewritten —
+  exactly the "the presenter wins, at its position" rule, so the order array kept alongside became
+  unnecessary. Audit finding **C-6**, the last one open.
+
+### Internal
+
+- **The viewer is now exercised in a real browser.** `jsdom` does not enforce CSP, and the server
+  tests use a fake `res` that only records headers: a policy forbidding our own scripts passed every
+  test and still gave the visitor a blank page. `npm run test:e2e` opens the local preview in the
+  Chrome **already installed** (`playwright-core`, no browser download) and requires both that the
+  page starts *and* that the policy **refuses** — an unnonced script, a foreign origin. Separate
+  command and separate CI step: `npm test` must stay runnable in a bare container. Audit finding
+  **C-10**.
+
+## [0.1.49] — 2026-08-17
+
+### ⚠️ Three migrations to apply — the player degrades without them, it does not break
+
+| file | what it unlocks | until applied |
+|---|---|---|
+| `0001-destinataire-atteste.sql` | counting the reads of a visitor **you** vouch for | attested creation is refused, by name |
+| `0002-ordre-des-ecritures.sql` | a stale write can no longer overwrite a fresher one | no order control — last arrival wins, as before |
+| `0003-limites-partagees.sql` | rate limits count for the **instance**, not the process | counting falls back to memory, as before |
+
+None is required for the version to run. Each is **additive** and safe to apply while the previous
+code is running, so the deployment order never matters: migrate first and nobody writes the column
+yet; deploy first and the player detects its absence, degrades, and names the file to apply.
+
+The player will never apply them itself — it speaks to the database through PostgREST, which does not
+execute DDL. See `docs/MIGRATIONS.md`.
+
+### Added
+
+- **A host can now vouch for a visitor it identified itself.** Pass `recipientEmail` on the
+  server-to-server `docshare.create`: reads are counted, attributed and revocable, without an
+  anonymous link or a member's token. What makes it safe is **who supplies the address** — the host's
+  database after verification, never a form.
+
+  ⚠️ It is stored **apart from `recipient_email`**, because that field carried two facts. At re-share
+  time the parent's recipient becomes the **sender** (`from`, `replyTo`) of a message to an address
+  chosen by whoever holds the link. Filing a vouched visitor there would have made our servers a
+  relay signed by them — the second host's own objection, one step further along, which they had not
+  seen. Left empty, the send guard *and* the re-share inheritance both refuse **without knowing why**.
+
+  ⚠️ **An attested link is named, not closed.** It remains forwardable; a host whose documents are
+  confidential must not rely on it.
+
+- **Write order now survives an abandoned request.** The browser queue guarantees one write in
+  flight — it removes the disorder we *cause*. But a request abandoned by the timeout may have
+  reached the server and land after the one that replaced it: that disorder we *suffer*. Each write
+  now carries a rank, and the server refuses a rank it has already passed.
+
+  A rank, not a timestamp: a clock says *when*, and two tabs disagree; a counter says *after what*.
+
+### Changed
+
+- ⚠️ **`limits.allow` promises something different, and it is written in the contract.** It used to
+  count per **process** — so on serverless a limit of 120/hour allowed 120 *per instance*. It
+  existed, it reassured, and it bounded a fraction of what it claimed. The standalone context now
+  counts in a shared table.
+
+  The local counter stays in front as a **fast refusal**: it only ever under-counts, so if *it* is
+  over the ceiling the shared one is too. Abuse is refused for free. The public read path stays local
+  — its answers already come from a per-slug cache, and backing that guard with a shared counter
+  would make the guard pay the price we had just spared the thing it guards.
+
+  ⚠️ The shared count is **not atomic** (PostgREST cannot express "increment"): it under-estimates
+  under heavy concurrency — letting a little more through, never refusing wrongly.
+
+### Testing
+
+- **A column belonging to a migration can no longer be written unconditionally.** `docs/MIGRATIONS.md`
+  says PostgREST rejects the *whole* PATCH on an unknown column; two hours after writing that, I put
+  `write_seq: 0` in the reclaim path without a condition — which would have broken **reclaiming**, not
+  the new guarantee, on every un-migrated host. The probe existed; I had not called it there.
+
+  ⚠️ What was missing was not the knowledge, it was the guard. A rule you remember is a rule you will
+  forget.
+
+## [0.1.48] — 2026-08-17
+
+### Fixed
+
+- ⚠️ **0.1.47 carried the brand key but not its consequence: the loader was blocked.** The key was
+  fed, `brandForShare` resolved it, the right `src` was written into the page — and the logo's origin
+  was **not** added to `img-src` on the preview route. The browser asked for the image and refused
+  it. The file answered 200.
+
+  The tracked-link path derived its three origins and had done so from the start. Two policies, on
+  the same instance, at the same minute.
+
+  ⚠️ **No server-side probe can see this.** The rendered HTML is perfect, the script compiles, the
+  package is conform. Neither the post-publish smoke step, nor the artifact guard, nor a test that
+  executes the page bites — **only a browser shows it**, and only to the eye. The second host found
+  it at one of their clients.
+
+  This is the fourth field of the same family and the first of a different nature: `internal_token`,
+  the brand and the action names were all missing **from** the page. This one is *in* the page —
+  what was missing is what the page is allowed to do next. The "no field by accident" guard therefore
+  could not catch it: the field was provided.
+
+  **The form, as they put it:** *any value that produces a URL destined for the browser must, by
+  construction, add its origin to the policy.* One list, every route, and a guard that recognises
+  image-bearing fields **by their nature** rather than from an inventory.
+
+- **Two more cases the new guard found on its first run.** `bot_vphoto` worked **by accident** — the
+  presenter's photo and the assistant's avatar usually come from the same storage, hence the same
+  origin; the day a host files one elsewhere it disappears with nothing having changed on their side.
+  And `presenter_avatar`, which does not travel in the HTML but in the configuration: the live layer
+  turns it into an image at runtime, in the participants list.
+
+### Known limit, written next to the code
+
+The **audience** page shows participants' avatars, which arrive through presence — from as many
+origins as the host has members. No list set at render time can anticipate them. Pre-authorising them
+would mean widening the policy to an entire host origin: **a decision to take, not an oversight to
+fix in passing.**
+
+## [0.1.47] — 2026-08-17
+
+### Fixed
+
+- ⚠️ **A multi-brand host served one client's loader on another client's domain.** In preview mode —
+  the mode a host uses for its *own* documents, with no tracked link — nothing carried the brand key,
+  and `brandForShare` was never called on that path. A visitor opening a document therefore saw the
+  name of a company they had never heard of, on the domain of the one they were dealing with.
+
+  The machinery was already complete: the host answers `PLAYER_HOST_BRAND_URL`, `branding.forKey`
+  resolves, tracked links display correctly. **What was missing was a transport, on one route.**
+  `&brand=<key>` now feeds `brand_key`, and the same resolution runs.
+
+  Reported by the second host, on a document opened at one of their clients.
+
+### Testing
+
+- ⚠️ **The family the bug belonged to is now closed — but not the way it was proposed.** Preview mode
+  was built as *"a share without a share"*, so every field has to be rewired one at a time:
+  `internal_token` was missing, `brand_key` was missing, **a third one would be**. The second host
+  suggested letting preview accept the same fields as a share.
+
+  Measured, that would open too far. The page reads **34** fields; **20** are absent from the preview
+  object and **17 of those are deliberate** — the whole assistant plugin (which does not run in
+  preview, and whose 116 KB a test already checks are not even embedded), `is_test`,
+  `recipient_email`, `created_by`. Importing them wholesale would switch on features preview does not
+  have.
+
+  The closure is therefore *no field by accident*: everything the page reads must be **provided**, or
+  **declared absent with its reason**. Adding a line to that table is a decision; forgetting one fails
+  the build. The table is itself guarded against **relics** — a reason left for a field the page no
+  longer reads would make it look current while describing a world that is gone.
+
+## [0.1.46] — 2026-08-17
+
+One thread runs through all of it: **what used to be protected by discipline is now protected by
+construction.** Every fix here replaces a rule someone had to remember with a mechanism nobody can
+bypass.
+
+### ⚠️ Host action required before upgrading
+
+Two new authorization action names are asked of `identity.canManageShares`:
+
+| action | what it grants |
+|---|---|
+| `presentations.list.all` | list presentations one does **not** own — slugs, presenter names, counts |
+| `presentations.stats` | read the **attendees** of a presentation one does not own — names, addresses, dwell time, pages |
+
+If your authorization table is a **closed list**, add them before upgrading: an unknown action means
+refusal, so every member — administrators included — loses access, and the refusal reads exactly like
+a role problem. The second host saw this coming from the release note rather than from us writing it;
+`docs/HOST-CONTRACT.md` now carries the full table, says the list grows, and a guard fails the build
+if the code ever asks for a name the contract does not document.
+
+Neither right is needed to read one's **own** presentations: an owner, and an administrator, are
+always served without the player asking the host anything.
+
+### Fixed
+
+- ⚠️ **A hostile broadcaster could silence a whole meeting room.** The public-channel quota is keyed
+  on the address, but the re-read cadence is chosen by **whoever broadcasts** — three spectators
+  behind one office egress could be pushed past the quota, collect 429s, and **their pages stopped
+  turning**. Before the limit such a participant was expensive; after it, they could silence. The
+  cause is now bounded rather than the effect: a spectator gives itself a budget and never re-reads
+  more than a presenter's actions justify. **The resynchronisation net is never rationed** — doing so
+  would have replaced an outside denial of service with a home-made one.
+
+- **Ending a presentation could be undone by a tab left open.** The control token survived the
+  closure, and it is persisted in localStorage — so a second tab put the presentation back online for
+  the audience. Ending now **revokes** the token. ⚠️ Staleness (three minutes without a heartbeat)
+  deliberately does **not** revoke: there, "resurrection" is how a presenter whose laptop slept comes
+  back, and an anonymous presenter has no other way in.
+
+- **Attendance rows could be overwritten by any participant.** The presence channel broadcast the
+  *measurement key* — so anyone could read a neighbour's and repost it. Presence now carries its own
+  public identifier; the measurement key never leaves the browser except toward the server.
+
+- **A member who knew a slug read the attendees of someone else's presentation** — names, addresses,
+  dwell time, pages. The player now grants what is obvious (owner, administrator) and asks the host
+  for the rest.
+
+### Changed
+
+- **Public reads are cached per slug** (`state=1`, `chat=1`), collapsing any cadence — legitimate or
+  hostile — to one database read per window per instance. The window is derived from the audience
+  scheduler's existing coalescing, so **no latency is added beyond what a spectator already accepts**.
+  ⚠️ The idea came from the second host; the window did not: they proposed one second, citing our
+  0.1.19 doctrine — which is about *authority*, not latency. Since that same doctrine emptied
+  broadcast payloads, the re-read is now **the only path the page number travels**, so a one-second
+  cache would delay every page turn.
+
+  The rule is structural, not a list: *any response identical for all spectators of one slug is
+  cached*, served by a single path. A guard rejects any branch that answers without it.
+
+- **All presentation writes go through one queue.** Six paths wrote, two were guarded — 0.1.41's
+  "map writes are sequential" was true of one path in three. The **write functions themselves** now
+  queue: there is no direct path left, so nothing to forget. ⚠️ What it does not close, and it is
+  written next to the code: a request **abandoned** by the timeout may have reached the server and
+  land after the one that replaced it. The queue removes the disorder we cause, not the disorder we
+  suffer.
+
+## [0.1.45] — 2026-08-16
+
+⚠️ **The limit shipped in 0.1.42 turned an amplification into a denial of service against the
+audience — and we opened that door ourselves.**
+
+### Fixed
+
+- ⚠️ **A hostile broadcaster could silence a whole meeting room.** The public-channel quota is keyed
+  on the **address**, and it was sized on what legitimate use consumes. But the re-read cadence is
+  not chosen by the spectator — **it is chosen by whoever broadcasts.** The scheduler coalesces at
+  400 ms, so a spectator can be made to re-read ~9 000 times an hour; three spectators behind one
+  office egress therefore blow past the 21 600/h quota, collect 429s, and **their pages stop
+  turning**.
+
+  Before the limit, such a participant was expensive. After it, they could **silence**. That is the
+  `X-Forwarded-For` lesson inverted: the limit does not rest on what the *caller* chooses — but it
+  was *paid for* by someone who does not choose either.
+
+  **The cause is bounded, not the effect** — lowering the quota would have punished the victim
+  further. A spectator now gives itself a budget and never re-reads more than a presenter's actions
+  justify: under hammering, ~9 000/h drops to 720/h.
+
+  ⚠️ **The budget gates the signal, never the net.** `signaler()` is triggered by a broadcast, so by
+  any participant — that is the door to ration. `maintenant()` is our own 25 s resynchronisation net:
+  rationing it would leave an audience with an empty budget **permanently mute**, which would have
+  closed one door by opening a smaller, more reliable one. The net is the floor.
+
+  **The two numbers are one contract**: signal budget + net = a spectator's share, and the server
+  quota = that share × `READERS_PER_EGRESS`. ⚠️ A test forced the quota derivation to be corrected: it
+  counted only the *sustained* share, so a full room exceeded the quota by 475 re-reads — exactly
+  everyone's burst. **The server must cover what the client allows itself, not its average.**
+
+- **A dead copy of `fetchBorne` shipped in 0.1.44.** Moving the helper into the bundle removed
+  nothing: a second implementation still lived in the template, and it was *that one* the audience
+  used — a path covered by none of the tests written for the other. Two implementations of one
+  contract, exactly what this repository keeps warning about. Removed; one entry point for all four
+  paths.
+
+### Testing
+
+- ⚠️ **The test for the central property did not bite on the first try.** It hammered, then watched a
+  lull — and a rationed net passed anyway, because the budget refills a token every 5 s while the net
+  only runs every 25 s, so it always finds one after a pause. The condition that separates the two
+  worlds is **continuous** hammering. The threshold was then **measured, not guessed**: 884 re-reads
+  with the net free (720 budget + 20 burst + 144 net), exactly 740 when it is rationed. The assertion
+  compares against the signal budget — the real boundary — rather than a hand-written number.
+
+- **First end-to-end on the audience side**: the test renders the audience page, runs it, connects the
+  live layer, and drives broadcasts through it.
+
+## [0.1.44] — 2026-08-16
+
+Two findings from the audit re-review that followed 0.1.43. ⚠️ **One of them was created by our own
+0.1.41 fix** — the review is reading a movement, not a state.
+
+### Fixed
+
+- ⚠️ **"End" did not end anything final.** Piloting functions write `active: true`, and the control
+  token **survived the closure**. A second tab left open therefore put the presentation back online
+  for the audience while the presenter believed it closed. The token is persisted in localStorage:
+  this was not a narrow race, it was a door left open at will.
+
+  ⚠️ **The rule the audit proposed — "refuse every write when `active=false`" — would have broken a
+  real recovery.** `active:false` covers two unrelated situations: a **decided** end, and an
+  **observed** staleness (3 minutes without a heartbeat), where "resurrection" *is* how a presenter
+  whose laptop slept comes back. Refusing both would strand an **anonymous** presenter forever —
+  `present-reclaim` requires ownership, and `present-start` requires no session at all.
+
+  The two are therefore separated by what actually distinguishes them — the decision. **Ending
+  revokes the control token**; staleness leaves it intact. Owner paths, which need no token, are
+  closed separately on `active=false`. No schema change. A mutation that makes the staleness sweep
+  revoke — i.e. that applies the general rule — is rejected by the bench.
+
+- ⚠️ **A hung request froze the write queue, and that risk came from our own fix.** Before 0.1.41 the
+  scheduler called `fini()` immediately: writes could land out of order, but nothing could block. By
+  making them sequential we traded a correctness defect for an **availability** risk — a suspended
+  request never settles its promise, the queue never resumes, and the presenter drives into the void,
+  silently. A browser guarantees no timeout of its own.
+
+  `fetchBorne` lives next to `createScheduler` because it is its counterpart. It bounds the four
+  paths that can wedge: audience re-reads, `pushPage`, `presentContent`, `endPresent`. The `pagehide`
+  beacon stays deliberately unbounded — it is never awaited.
+
+  ⚠️ **What the timeout restores, and what it does not.** **Liveness**: the queue resumes. Not
+  **order** — an abandoned request may well have reached the server and land after the one that
+  replaced it. Order despite abandonment needs a version number carried by the write; that belongs to
+  the single-queue work, not here. Better said than left implied.
+
+### Testing
+
+- ⚠️ **A textual probe fell over, and the property had not moved.** A test looked literally for
+  `fetch('/api/doc'` and failed once the call went through the bounded wrapper — while what it
+  asserts (write *before* broadcasting) was unchanged. It now recognises the **act**, not the name of
+  the call. Same lesson as the tag-filter patterns two versions earlier.
+
+## [0.1.43] — 2026-08-16
+
+### Fixed
+
+- ⚠️ **A case detail is an attendance row.** 0.1.42 moved the member attendance key from the client
+  to the verified token — but the client key was lowercased (`me.email.toLowerCase()`) and the
+  derived one was not. Rows are found by `attendee_key=eq.` — an **exact** match. On a host whose
+  identity returns the address as typed, the same member would therefore get a **second row**:
+  accumulated time back to zero, and the colleague listed twice among participants.
+
+  No effect where addresses are already normalised — which is the case for both current hosts, and
+  exactly why nothing would have reported it. *An open contract does not rest on what its first two
+  hosts happen to do.* Found while re-reading 0.1.42 before announcing it.
+
+## [0.1.42] — 2026-08-16
+
+Four findings from a third external audit (CODEX 5.6), and the first browser end-to-end test.
+
+⚠️ **All four defects were already half-fixed.** In each case the right rule was written next to the
+place where it was missing — a comment three lines above, a sibling action, twelve guarded writes
+beside two unguarded reads. That is the pattern worth keeping from this release: *a rule stated in
+one branch does not travel to the branch beside it.*
+
+### Fixed
+
+- ⚠️ **Ending a presentation announced the end before obtaining it.** `endPresent()` sent
+  `sendBeacon` — which returns **no response at all**, neither "recorded" nor "refused" — then
+  cleared the UI, erased the control token and closed the channel. If the call failed, the
+  presentation stayed **live for the audience** while the presenter believed it closed; and with
+  `clearCtl` having already discarded the token, they no longer had the means to close it. Only the
+  3-minute staleness sweep remained.
+
+  ⚠️ **The beacon bought nothing here.** It exists to get a request out while the page is *dying* —
+  and the only caller was a **button**, which can afford to wait. It now lives on `pagehide`, and
+  only there. The button waits for a 2xx before broadcasting, disconnecting, or erasing anything;
+  on failure the presenter keeps everything needed to retry, and the button says so.
+
+- ⚠️ **The anonymous presenter could turn pages but not move the map.** `present-start` requires no
+  session — deliberately — and `present-page` therefore accepts the `control_token`. But
+  `present-content`, which drives what the presentation *displays*, had been filed with the
+  session-only actions. The call returned 401, swallowed by a browser-side `catch`, and the map
+  simply did not follow. The two are the same act of piloting; they had been grouped by **proximity
+  in the route, not by authority**. What stays owner-only is `present-switch`: changing the
+  *document* shown is not driving the display.
+
+- ⚠️ **A participant could overwrite a colleague's attendance row — using their email address.**
+  `present-attend` identifies its row by a client-chosen `key`, and for a member `attendeeKey()`
+  returned their **email**. Any anonymous visitor to the public link could post
+  `key: "colleague@company.com"` and rewrite that row: the name and avatar shown in the participant
+  list, and the accumulated reading time.
+
+  ⚠️ Three lines above, the same route already said *"a proven identity **replaces** a claimed one"*.
+  Name, email and avatar had indeed been replaced by the token's. The **key** slipped through —
+  though it is the one value that decides *which row is written*. A member's key is now derived from
+  the verified token; an anonymous keeps theirs, confined to an `anon-…` namespace it cannot leave.
+  It is also drawn with `valeurImprevisible` instead of `Math.random()`: acceptable for an analytics
+  id, not for the only thing separating two anonymous participants — the same fix made in 0.1.23 for
+  the chat author token, twenty lines below in the same file, never carried up.
+
+- ⚠️ **The public channel was an unbounded amplifier.** `state=1` and `chat=1` are served without a
+  session, on a public link, and each call costs a database query. Twelve write actions passed
+  through a limit; these two **reads** did not. And the **shared** resource pays — the database is
+  the same for every document on the instance — so the cost of abuse does not fall on whoever causes
+  it.
+
+  ⚠️ **Where the guard sits *is* the fix.** `getPresentation()` ran *before* the `state`/`chat`
+  branches: a limit written where the refusal is phrased would have refused correctly, with the
+  right status code, **after spending exactly what it protects**. The tests therefore count database
+  queries, not response codes. The quota is *derived* from the audience's cadence (25 s resync net
+  + one presenter action every 5 s, times `READERS_PER_EGRESS` — the sessions constant reused, not
+  reinvented), and a refusal is logged hourly: otherwise a whole meeting room would drop off with no
+  named cause.
+
+### Testing
+
+- **First real browser end-to-end.** `finDePresentation.test.js` renders the presenter page, installs
+  it in jsdom, runs its scripts, clicks *Present*, then clicks *End* with a server response held open
+  by hand.
+
+  ⚠️ This is what separates it from a textual probe. *"After the response"* and *"in the failure
+  branch"* both place the broadcast after the call — only a provoked failure tells them apart. Four
+  mutations restoring the defect are refused.
+
+- ⚠️ **Two benches were fixed rather than worked around.** Static analysis was right three times
+  about a hand-rolled `<script>` filter (it missed `<SCRIPT>`, then `</script >`, then
+  `</script\t\n bar>`): the regex was **removed** — the benches run in jsdom, and `DOMParser` sees
+  what the browser sees by construction. And a test that passed on Node 22 while failing on Node 24
+  was not flaky: benches share one window, therefore share its timers, and a previous bench's
+  500 ms-deferred write landed on the current bench's spy.
+
+- ⚠️ **An artifact guard that read instead of running.** Its first version scanned the minified
+  bundle for `.email`; a mutation reintroducing the defect under another name walked straight past.
+  It now **executes** the shipped bundle and offers it identity five ways, old signature included.
+
+## [0.1.41] — 2026-08-16
+
+### Fixed
+- ⚠️ **0.1.39 removed `hasFocus()` from the reading condition — and left `on(win,"blur",pause)` 170
+  lines below.** The project therefore said two things at once: *"a visible document counts"* and
+  *"a window without focus does not"*. Clicking the other screen's window fired `blur`, which
+  paused counting.
+
+  ⚠️ **Measured rather than assumed, and the audit's framing was too dark**: the periodic flush
+  (12 s) calls `commit()`, which ends with `activeSince = viewable() ? now() : null` — so counting
+  restarted by itself at the next flush. The leftover handler cost **at most one interval**, not the
+  session: 58 s counted for 65 s elapsed in the bench. Real, bounded, and silent — every trip
+  between screens shaved a few seconds.
+
+  The contract is settled: losing focus means *another window is in front*, not *this document is
+  no longer read*. Only `visibilitychange` carries that authority. The old test that demanded the
+  opposite has been flipped, and a second one pins what must **not** change — a hidden tab still
+  does not count.
+
+  ⚠️ **Our bench never fired `blur`.** Third time in a day that a bench failed to exercise the
+  property its test described, and the assertion was loose enough (`> 50` on 65 s) to pass with the
+  defect anyway. *A test that tolerates twelve seconds of loss cannot see twelve seconds of loss.*
+
+- **Map writes were not actually sequential.** The scheduler called `fini()` immediately while
+  `presentContent()` was fire-and-forget, so its "one in flight, last one wins" guarantee applied to
+  the order of *calls*, never to the order of *writes*. Several `PATCH` could fly together and an
+  older position land after a newer one. `presentContent()` now returns its promise, and both
+  schedulers wait for it.
+
+  *Both reported by an external audit pass on 0.1.40.*
+
+## [0.1.40] — 2026-08-16
+
+### Fixed
+- ⚠️ **Turning a page did not count as reading.** Idleness was measured from *input* events — mouse,
+  keyboard, wheel, touch. But someone following a live presentation touches nothing: the pages turn
+  in front of them, pushed by the presenter. They went idle after a minute, while **the one thing
+  that proves they are watching was happening**.
+
+  A page turn now counts as activity. It also puts the threshold back in its place: it arbitrates
+  **silences** only. A real reader turns pages; a forgotten tab turns none.
+
+  *Seen by the second host: "what really separates a reading from a forgotten tab is not duration,
+  it is turning a page."*
+
+### Changed
+- **The idle threshold goes from 60 s to 3 minutes**, and the number comes from an asymmetry rather
+  than a preference. A dense page — a spec sheet, a contract — takes one to three minutes to read
+  without a single mouse movement, so 60 s counted an attentive reader as absent.
+
+  The two errors do not cost the same:
+
+  - *under-counting a real reading* → you call back a client who had read. Unpleasant, no consequence.
+  - *over-counting an abandoned tab* → you tell a salesperson "they read their contract for twenty
+    minutes", and they use it to push on price. **A decision taken on a fiction.**
+
+  Hence the low end of the range the second host proposed (3–5 minutes).
+
+  ⚠️ **The two measures stay separate**, and that is the point: `last_at − started_at` is *presence*,
+  `total_seconds` is *activity*. A contract skimmed for thirty seconds and a contract left open for
+  twenty minutes on a second screen are two different facts; collapsing them into one number loses
+  one. Whoever reads the statistics chooses.
+
+### Note
+- ⚠️ **Three of our own tests pinned `70` instead of the threshold**, so they broke when the value
+  moved although the property had not. They now derive from `SESSION_IDLE_MS`, which joins the
+  shared contract: *a test that fixes a number forbids changing the number; a test that fixes the
+  relation lets the number live.*
+- ⚠️ **And the bench neutralised the very mechanism under test.** It returned `setInterval: () => 0`,
+  so the idle loop never ran, `idle` stayed false forever, and removing the page-turn rule left the
+  tests **green**. The mutation revealed it, not a re-reading. *A bench that disables what it tests
+  is a test that cannot say no.*
+
+## [0.1.39] — 2026-08-16
+
+### Fixed
+- ⚠️ **A document displayed on a second screen was counted as an absence.** `viewable()` required
+  `doc.hasFocus()` — and `hasFocus()` answers *"the user is typing here"*, not *"the user is
+  looking"*. A reader with the document visible for forty seconds while working on the other screen
+  was credited **two seconds**.
+
+  ⚠️ This never was an internal-population problem. A prospect keeping a brochure open while it is
+  discussed over the phone is the **central** use of a shared link, and it measured as absence. The
+  function promised *reading time* and returned *typing time*.
+
+  `visibilityState` read `visible` throughout: the right signal was available, overridden by a
+  stricter condition answering a different question.
+
+  ⚠️ **What remains is deliberate.** The idle threshold is now the *sole* thing separating a reader
+  from a forgotten tab, so a document read with no interaction at all counts at most `idleMs` — 60 s
+  by default. Better than zero, less than a real ten-minute reading. Raising it would measure
+  passive reading better *and* credit an abandoned tab for longer: that is a decision about what
+  "reading" means, and it is written next to the option rather than taken alone.
+
+  *Found by the second host on a real reading — 26 s of presence, 2 s counted — after a first
+  diagnosis ("the frame had no focus") that the reader themselves corrected.*
+
+- **`start()` began counting without checking visibility.** A document opened in a background tab —
+  a link clicked with Cmd, a session restore — started counting before ever being seen, and the
+  idle cap still credited it `idleMs`. One minute of reading for a tab nobody looked at. `commit()`
+  already made that check; `start()` did not.
+
+  *Found by the test written for the second-screen case, which was looking for something else.*
+
+### Note
+- ⚠️ **`main` had been failing CI since 0.1.36**, and three versions shipped on top of it: a test
+  in the browser suite read files through `node:fs`, which vitest runs happily and `tsc` refuses.
+
+  I did not see it because **I was counting passes instead of looking for failures** — `gh pr checks
+  | grep -c pass` returns 6 whether or not something else failed beside it. A count of successes
+  says nothing about failures. It is the same mistake this repository has been documenting in its
+  own guards for two days, made on the tool meant to watch them.
+
+  Disk-reading assertions now live in the server suite, where they belong. I put one back in the
+  browser suite ten minutes after fixing the first — the rule is simple, and writing it down did not
+  stop me breaking it twice.
+
+## [0.1.38] — 2026-08-16
+
+### Fixed
+- ⚠️ **The guard written in 0.1.37 missed a case, and it missed it the same way the guard it
+  replaced did.** It filtered on a **list of names** of write helpers; `recordUnlock` writes
+  straight through `PLAYER.db.request`, so it went unseen — a silent catch swallowing a visitor
+  unlock journal entry. That is exactly what the audit held against the prototype guard (*"it
+  filtered on variable names"*), reproduced the same day in a guard written to prevent this class
+  of thing.
+
+  Found by checking the **published tarball** of 0.1.37, not by the guard.
+
+  The rule now targets the **form** — any database write caught in silence — rather than names. A
+  list only sees what was put in it; a form also sees the next one.
+
+  ⚠️ **Writes only.** A lost write is lost forever; a failed read is retried on the next call. A
+  catch that drops a display counter to zero is a legitimate choice; a catch that loses a
+  measurement never is. The first version of the form accused both — too broad in one direction
+  after being too narrow in the other.
+
+### Note
+- **This probe was wrong three times before it bit**, and every error was found by running it, never
+  by re-reading it: bounded by characters (a long comment pushed `capture(` out of view, and it
+  accused the corrected code); by a fixed number of lines (it spilled into the *next* block and
+  found a `capture(` that was not its own); and without a function boundary (a write that is
+  correctly *not* wrapped had the following function's catch attributed to it).
+
+  A guard is worth exactly what its reading is worth. That is the whole lesson of this version, and
+  it applies to the guard as much as to the code it watches.
+
+## [0.1.37] — 2026-08-16
+
+### Fixed
+- ⚠️ **Internal reading tracking had never written a single row — on either instance.** The row
+  carried `ua` and `ip`; the internal-sessions table has neither. PostgREST refused
+  (`column "ua" ... does not exist`), the caller's `catch { /* best-effort */ }` swallowed the
+  refusal, and the route answered `{"ok":true}`. **Our own production table held zero rows.**
+
+  ⚠️ **The schema was right and the code was lying.** An *internal* reading is a colleague:
+  `device`, `os` and `browser` — derived — describe it well enough, and one does not keep the full
+  user-agent or the address of one's own team. The *external* sessions table carries them, because
+  that is neither the same population nor the same promise.
+
+  Fixing it by **adding the columns** would have done the opposite: raising the schema to the level
+  of the code instead of the code to the level of the intent. What you keep about your own teams is
+  not decided by a PostgREST error message.
+
+- ⚠️ **A rule written in a comment does not protect the code that follows it.** In 0.1.35 we wrote,
+  inside `upsertInternalSession`: *"the guard was not the problem; its muteness was."* Three lines
+  below, in the calling function, `catch { /* best-effort */ }` swallowed the failure of the write
+  itself.
+
+  "Best-effort" is a sound intention — a measurement must never stop someone reading a document.
+  But best-effort does not mean **mute**: what is caught there is the right to *continue*, never the
+  right to *say nothing*. Both catches now report, once an hour, naming the cause.
+
+  The rule became a **test** rather than a comment: `ecritureMuette.test.js` refuses any silent
+  catch around a measurement write. It immediately found the twin on the external path — harmless
+  so far, since that table does have the columns, but it would have swallowed the next mismatch the
+  same way. **What makes the class dangerous is not the instance.**
+
+  *Found by the second host, reproduced by replaying the insert.*
+
+### Note
+- The guard's own probe was wrong twice before it bit: it bounded the catch body by characters
+  (a long comment pushed the `capture(` out of view, and it accused the corrected code), then by a
+  fixed number of lines (it spilled into the *next* block and found a `capture(` that was not its
+  own). A guard that reads beside the point guards nothing — established by mutation, not by
+  reading.
+
+## [0.1.36] — 2026-08-16
+
+### Fixed
+- ⚠️ **The internal-session quota could not hold a single reader.** The browser writes one session
+  every 12 s — **300 per hour for one person** — and the server allowed **120 per hour per address**.
+  The limit therefore sat *below* what one legitimate reader consumes: after 24 minutes of
+  continuous reading, everything was refused. And since the key is the address, a team behind a
+  single internet egress — the *ordinary* case for a company, not the edge case — shared a quota
+  that one person alone exceeds.
+
+  ⚠️ **The guard was right in its shape and wrong in its number**, which is exactly why nobody
+  re-read it: we re-read what looks doubtful, not what looks reasonable.
+
+  ⚠️ **And the refusal was silent.** The 429 appears only in the reader's console; the hourly log
+  named the missing field, never the quota. An operator saw a table that would not fill, with no
+  cause attached — the very symptom we had just fixed elsewhere. It is now reported once an hour,
+  naming the quota, **before** the `return` rather than after it (the linter caught that one:
+  `Unreachable code`).
+
+  The cadence and the quota were two halves of one contract written in two places. They now live in
+  `src/cadence.ts`, inside the **shared** module whose own generated header already said why: *"two
+  implementations of one contract always end up diverging in silence."* The quota is **derived**
+  from the cadence — changing one moves the other.
+
+  ⚠️ **The key stays the address**, and that is not an oversight. A session id is chosen by the
+  browser; a quota keyed on it is bypassed by rotating it — the `X-Forwarded-For` lesson of 0.1.22,
+  where the limit existed and limited nothing. **A limit can only rest on what the caller does not
+  choose.** It was the number that was wrong, not the key.
+
+  *Found by the second host, on their instance, while looking for why their table stayed empty.*
+
+### Changed
+- The shared bundle takes an explicit entry point. `SHARED_SOURCES` and the esbuild entry were the
+  same list, so adding a file made it count toward the cache-busting hash **without being bundled**:
+  the file would exist, the hash would change, and the import would fail only at runtime.
+
+## [0.1.35] — 2026-08-15
+
+### Fixed
+- ⚠️ **The lock had no keyhole.** 0.1.22 added `verifyInternalToken`, which reads `body.it`, and
+  announced that `PLAYER_INTERNAL_STRICT=1` "closes the door entirely". That was true of the
+  **check** and false of the **system**: no path allowed a host to *supply* that token. The preview
+  route read `uemail`, `docId`, `name`, `title`, `by`, `av`, `resume`, `autopresent` — no token —
+  and `CFG.internal` carried only `{email, name, docId}`.
+
+  Setting the variable would therefore have refused **100% of internal sessions on every
+  instance**, ours included. And that is why "strict analytics by default" — the next item on the
+  audit's list — could not be shipped: it would not have hardened hosts, it would have cut them off.
+  A lock nobody can close is not a transition, it is an announcement.
+
+  A host can now pass `it` on the preview route; it travels through `CFG.internal` and comes back
+  in the body, where the check has been waiting since 0.1.22.
+
+  *Found by the second host, while preparing the very token we had asked them to sign.*
+- **A silent rejection cost a host weeks.** An internal session without a `docId` is dropped — the
+  guard is right, a session with no document measures nothing — but it said nothing. That host
+  brought up their internal tracking, believed it live, and found out much later that the table was
+  empty: their `docId` never left, and every heartbeat was discarded in silence.
+
+  ⚠️ The guard was not the problem; its muteness was. **A measurement that reports nothing is
+  indistinguishable from a measurement with nothing to report** — nobody goes looking for a failure
+  no signal announces. It is now reported once an hour, naming the missing field, exactly like the
+  unsigned-session gap of 0.1.22. An abnormal state left unsaid becomes the normal state.
+
+## [0.1.34] — 2026-08-15
+
+### Security
+- **A proven identity now replaces the claimed one instead of sitting beside it.** `isPresenter` and
+  `isMember` have been verified since 0.1.25/0.1.28, but `name`, `email` and `avatar` still came
+  from the request body — **even when a valid token accompanied the call**. An authenticated member
+  could therefore post under a colleague's name and address, *with the member badge*: the visible
+  attribution said someone else.
+
+  ⚠️ It granted no rights — editing and deleting are authorised by `author_hash`, not by the email
+  (`editMessage`), so a spoofed address never took control of anyone's message. The damage is
+  attribution, not takeover. That is enough: in a conversation, a message signed with someone
+  else's name **is** the problem.
+
+  A host can supply `identity.profileOf(user)` to say how to read *its* user; without it the core
+  reads the usual shapes, and the email — which is universal — is always taken from the token.
+
+  A visitor with no token keeps the name they typed. That is the intended mode: they are announcing
+  themselves, not proving anything, and the badges stay off.
+
+  *Reported by the second audit pass (P1-6).*
+
+### Note
+- The opaque author id the report also suggests — so that author emails stop being broadcast to the
+  whole audience when the interface never displays them — needs a column and a migration path for
+  existing messages. Tracked, not done here: `author_email` currently carries `isMine()`, which
+  decides whether the edit and delete controls appear.
+
+## [0.1.33] — 2026-08-15
+
+### Security
+- ⚠️ **An alert is not a prohibition.** 0.1.21 introduced `PLAYER_PUBLIC_URL`, fell back to the
+  `Host` header when it was missing, and *logged* the fallback. That was the right compatibility
+  reflex and the wrong conclusion: a log entry does not stop a phishing email. A misconfigured
+  instance kept sending — signed with its brand, with a button pointing wherever the reader chose —
+  and the operator found out from an abuse report.
+
+  The send is now **refused**: `sent: false`, `sendRefused: "public-url-unconfigured"`.
+
+  ⚠️ **What is refused is the send, not the link.** The child link is still created, tracked and
+  returned, so the caller can forward it themselves. What is withheld is the only part that cannot
+  be taken back — mail leaving our servers with our domain in the header and our sender reputation
+  behind it. The compatibility argument from 0.1.21 therefore did not hold: refusing the send does
+  not break link creation, which is this route's main function.
+
+  *Reported by the second audit pass (P1-1).*
+
+### Fixed
+- **The test had encoded the fallback**, and so protected the hole: it required "no public URL:
+  falls back to Host, but logged" — that is, it required the email to go out anyway. It is the
+  fourth test today found pinning a defect while believing it described a property.
+
+## [0.1.32] — 2026-08-15
+
+### Security
+- ⚠️ **One table row could poison a whole process.** The aggregators were plain objects indexed by
+  data from outside — document ids, emails, session ids — and the shape `X[k] = X[k] || {…}` is
+  enough:
+
+  `byDoc["__proto__"]` does not return `undefined`, it returns `Object.prototype`, which is
+  **truthy**. The `|| {…}` therefore never fires, `a` *becomes* the prototype, `a.opens++` writes
+  `Object.prototype.opens = NaN`, and `a.readers.add(…)` throws on `undefined`.
+
+  The `TypeError` is visible. **The property left on the prototype is not**, and it survives the
+  request: on a warm serverless instance every object in the process then carries an `opens`, and
+  any `if (x.opens)` elsewhere silently changes meaning.
+
+  ⚠️ `user_email` is reachable **without authentication** as long as `PLAYER_INTERNAL_STRICT` is
+  unset (0.1.22), and `session_id` is written by the reader. Not theoretical.
+
+  Every aggregator is now a `Map` — keys are data, not property names — and every browser-side
+  dictionary is built with `Object.create(null)`, including `typers`, which is fed by `typing`, the
+  one event that still trusts its sender. Uniformly, including the sites that were not reachable:
+  an aggregator that has to justify itself case by case eventually gets a case wrong.
+
+  *Reproduced and reported by the second audit pass (P1-2).*
+
+### Fixed
+- **The static guard that missed it.** It filtered on a **list of variable names** — `body`, `q`,
+  `emoji`, `name` — and `id`, `k`, `sid` were not in it, so all of `shares.js` went through. It now
+  excludes only what is certainly internal (loop counters) rather than listing what comes from
+  outside, and it looks for the object's **declaration** instead of scanning 25 lines back: a window
+  approximates scope, a name is exact. It found nine further sites, all fixed here.
+
+  ⚠️ It remains an alarm. The barrier is `clefsHeritees.test.js`, which exercises the five inherited
+  keys against running code — as the report put it, a regular expression over variable names can
+  only ever be a complementary alarm.
+
+## [0.1.31] — 2026-08-15
+
+### Fixed
+- ⚠️ **The signal went out before the write, and the comment claimed the opposite.** `pushPage`,
+  `presentContent` and `endPresent` broadcast first, then started the write. Since 0.1.19 that
+  signal says only one thing — "re-read" — so the audience re-read while the database still held
+  the old state, and **no second signal was guaranteed**: the page turn was lost until the 25 s
+  resynchronisation.
+
+  `endPresent` was the worst of the three: it signalled, then **cut the channel**, then sent the
+  end notice. The signal left on a stale state and the disconnect preceded the send — an audience
+  could simply never learn the presentation had ended. `sendBeacon` cannot be awaited, but it
+  returns once the request is *queued*; signalling right after it, then disconnecting, respects the
+  order as far as that transport allows.
+
+  Delaying the signal by one round-trip costs nothing, since it only ever meant "re-read". Sending
+  it too early cost both a pointless re-read **and** the change itself.
+
+  *Reported by the second audit pass (P0-3).*
+
+### Changed
+- **The state signal no longer carries a state.** The audience ignored it already (it re-reads), but
+  a payload that travels without serving gives the impression that it serves, and invites the next
+  person to use it. Same reasoning as `map` in 0.1.30: cut the path, not just the use.
+
+### Note
+- The tests here compare **positions** — where the write sits relative to the signal in each
+  function — rather than searching for a string. Three tests today had pinned a defect while
+  believing they described a property; this one fails when the original order is restored, which is
+  the only thing that makes it worth writing.
+
+## [0.1.30] — 2026-08-15
+
+### Security
+- ⚠️ **The map position no longer travels in the broadcast.** It did, and the audience applied it
+  as-is. The channel being public, **any participant could move everyone's map**, with coordinates
+  of their choosing. 0.1.19 granted that exception on the grounds that the signal is "ephemeral,
+  with no server truth to check against". The argument does not hold: **during map mode, that
+  signal is the image the audience sees.** `typing` can stay cosmetic; `map` cannot.
+
+  The presenter now persists its position through the JWT-gated route and emits an **empty**
+  signal. The audience re-reads the state and applies what the server gives it. A hostile
+  participant can still emit: they trigger a bounded re-read and obtain nothing.
+
+  ⚠️ **The obstacle was that persistence was a debounce**, not the broadcast. `schedPersist` pushed
+  the write back 700 ms on every movement, so during *continuous* panning it never fired — which is
+  precisely why the position had to travel in the broadcast. It now uses the same bounded scheduler
+  as the re-read: at most one write per 500 ms, and **always the last position**, so the audience
+  follows during the movement and not only once it stops.
+
+  **Live map following becomes stepped rather than continuous** — about twice a second. That is the
+  price of nobody but the presenter driving the audience's screen, and it is the right price.
+
+  The payload path is removed rather than merely ignored: leaving it would be defence by accident,
+  and the day someone reconnects a parameter the public payload would be trusted again with nothing
+  to say so.
+
+  *Reported by the second audit pass (P0-1).*
+
+### Fixed
+- **A test had endorsed the exception.** It asserted that `map` "still applies the payload —
+  ephemeral, no server truth", and it would have stayed green after the fix: it read the Live
+  layer's handler, which forwarded `p.payload` regardless. The sweep now names the events that
+  trust their sender, and `typing` is the only one left — it will have to justify itself on every
+  reading of that file.
+
+## [0.1.29] — 2026-08-15
+
+### Security
+- ⚠️ **The re-read could be starved indefinitely.** Since 0.1.19 the whole defence of the public
+  Realtime channel rests on one move: stop believing the transport, re-read the source of truth.
+  That re-read was a debounce — `clearTimeout` then `setTimeout(…, 120)` — so **every signal pushed
+  the deadline back**. A participant broadcasting every 100 ms postponed it forever.
+
+  Starving the re-read falsifies nothing; it simply stops the audience learning anything. Pages
+  stop turning, the chat freezes, and **no error says so** — the hardest kind of failure, because
+  everything looks like it is working. The comment above it read "grouped: ten broadcasts in a row
+  must not produce ten requests". The intent was right; the shape inverted it.
+
+  The opposite direction was open too: signals spaced slightly wider than the delay produced one
+  HTTP request each, **per connected viewer**. The public channel became an amplifier aimed at the
+  API.
+
+  It is now a bounded scheduler with four properties, each exercised on running code: a pending
+  deadline is never pushed back, one request in flight at a time, never more than one run per
+  interval, and **the last signal is always served** — bounding without that would drop the signal
+  that mattered.
+
+  ⚠️ The fix is in how the delay is computed, not in removing `clearTimeout`: the wait is measured
+  from the last *run*, not from the incoming signal, so the deadline is **absolute** and
+  rescheduling cannot postpone it. Established by mutation — reintroducing the original shape fails
+  five tests.
+
+  A slow resynchronisation (25 s) now catches a lost signal. Bounding the rate makes losing one
+  possible; the safety net is the price of the bound, not an optimisation.
+
+  *Reported by the second audit pass (P0-2).*
+
+### Fixed
+- **A test was pinning the defect as a feature.** It asserted that `clearTimeout(_relEtat)` appeared
+  in the source — the exact line that allowed the starvation — believing it checked "re-reads are
+  grouped". It checked a *shape* and would have rejected the fix. The properties are now exercised
+  on executed code; the source-level test only confirms the page uses that scheduler.
+
+## [0.1.28] — 2026-08-15
+
+### Security
+- ⚠️ **The state route published the presenter's email address.** 0.1.25 added `presenter_key` to
+  `GET ?state=1` — a public route, read by every anonymous viewer of a share link. That key comes
+  from `attendeeKey()`, which returns **the email address** whenever the participant has one. The
+  field had a technical name and nobody, myself included, went to look at what it contained — on
+  the very route whose comment promises "only what the audience must know".
+
+  ⚠️ **And it was not a proof either.** The badge compared that key to the `uid` in the *presence*
+  payload, which the client composes. Read the public key, announce yourself with it, wear the
+  title. 0.1.25 had replaced "the client declares its role" with "the client declares a value the
+  server handed it" — more laborious to exploit, no more true.
+
+  The participant list now carries **no badge at all**. The presenter is displayed separately, from
+  `presenter_name` — set by the host, compared to nothing.
+
+  *The false proof was reported by the second audit pass (P0-4). The leak was not in it: it was
+  found by following the value rather than the name.*
+
+### Note
+- The methodological line this version pays for, in the auditor's words: **a value coming from the
+  server is not automatically a proof if the client can choose what it will be compared against.**
+- The `vm.Script` guard added in 0.1.26 caught the removal itself — deleting the badge expression
+  left a `++` in the template. Second catch in a day, on the day it was written.
+
+## [0.1.27] — 2026-08-15
+
+### Security
+- **One host's `localStorage` key was hard-coded for every other host.** `3dd-supabase-auth` — the
+  3D Discovery studio's session key — appeared in five places in this package. On any other host,
+  `detectMember()` and `accessToken()` therefore found nothing: **none of its members were
+  recognised as members**, and the separation of internal from external populations that this
+  product sells worked only on ours.
+
+  ⚠️ Since 0.1.25 that key also carries a **security** property — it is how membership is proven.
+  One host's constant had become load-bearing for all of them.
+
+  It is now `config.hostAuthStorageKey` (`PLAYER_HOST_AUTH_STORAGE_KEY`), and the default is
+  **empty**: no key declared, no member detected, therefore nothing to impersonate. Defaulting to
+  `3dd-supabase-auth` would have kept *our* instance running while leaving the design flaw intact,
+  and the next host would have discovered it the way the second one did — by noticing that its
+  statistics separate nothing.
+
+  ⚠️ **This is a transition, not a solution.** Reading another application's `localStorage` cannot
+  work across origins: the second instance lives on `doc.…` and its application on `app.…` — two
+  storages, and no configuration value will bridge them. The right mechanism is for the host to
+  *inject* its member when the page is rendered, the way it already injects its brand. Tracked in
+  [`docs/AUDIT-2026-08-14-SUIVI.md`](docs/AUDIT-2026-08-14-SUIVI.md).
+
+  *Found by the second host, from its own instance.*
+
+### Changed
+- **The player's Realtime client now declares its own `storageKey`** (`dmp-live-auth`) instead of
+  taking the default. That client will one day hold an anonymous session (private channel); if it
+  wrote under the default key and the host's application used it too on the same origin, the
+  anonymous session would **overwrite the signed-in member's**. The two already differ on our
+  instance — by happy accident. Declaring it makes intentional what was only a consequence, and a
+  topology can change.
+- The guest identity moves from `3dd-present-me` to `dmp-present-me`. It belongs to the player, so
+  it now carries the player's name rather than someone else's. A guest who had entered their name
+  will be asked once more.
+
+## [0.1.26] — 2026-08-15
+
+### Fixed
+- ⚠️ **0.1.25 shipped an inline script that does not parse.** An edit produced `return var h2={…}`,
+  and the whole block stopped compiling — no chat, no presence, no state re-read. The live layer was
+  dead in that version. **Upgrade past it.**
+
+  This repository already had a test that *executes* the rendered page, and it swallowed the error:
+  its `catch` exists for scripts whose dependencies (pdf.js) are missing outside a browser, and a
+  `SyntaxError` came through the same door. Parsing and executing are now separate questions —
+  **compiling must never throw**, executing is allowed to. `new vm.Script` answers "is this valid
+  JavaScript" without needing a single dependency.
+- **A missing presenter key no longer costs the whole state.** `presenterKey` added a query to a
+  route the audience depends on to know which page is displayed. One more query is one more reason
+  to answer 500 — and losing the entire state because we could not say who wears a badge is a bad
+  trade. No answer now means no key, therefore no title, and everything else still goes through.
+
+  *Both found by the **host's** tests, rendering the page from the installed package — not by this
+  repository. The same imbalance as 0.1.20. Both guards have been brought back here, at the source.*
+
+## [0.1.25] — 2026-08-15
+
+> ⚠️ **Ne pas utiliser cette version.** Elle publie aussi l'e-mail du présentateur sur une route
+> publique (corrigé en 0.1.28). Son script en ligne ne se parse pas : la couche live
+> (chat, présence, relecture d'état) est morte. Corrigé en 0.1.26.
+
+### Security
+- **The presenter title was claimed, not proven.** The audit names the attacker precisely: *any
+  participant who knows the slug*. ⚠️ That wording disqualifies the fix that looked obvious —
+  making the Realtime channel private. A private channel excludes whoever has no right to be
+  there; this attacker **has** the right, they hold the link. What separates them from the
+  presenter is not channel access, it is the `control_token`.
+
+  Three places granted status without checking it:
+
+  - **`present-attend` took `isPresenter` *and* `isMember` straight from the request body.** A
+    prospect could count themselves as a colleague — polluting the very separation of populations
+    this product sells — and take the presenter title in the attendance table.
+  - **`present-chat` verified `isPresenter` against the control token but left `isMember` to the
+    caller.** Two weights on one line: the presenter badge had to be earned, the colleague badge
+    could be asked for.
+  - **The participant list rendered "presenter" from the *presence* payload**, which each
+    participant composes: `track({role:'presenter'})` was enough to appear as the presenter to the
+    whole audience, with the name and avatar of one's choosing.
+
+  ⚠️ That third one cannot be fixed at the channel level — a legitimate participant is entitled to
+  write *their own* presence. The title now comes from the server, which alone knows who proved the
+  control token, and the audience compares a key rather than believing a claim. **No key, no
+  title**: better none than a stolen one.
+
+  Membership is now proven by the session's access token. This route is a `fetch`, so it can carry
+  a header — unlike reading analytics, which leave through `sendBeacon` and therefore sign in the
+  body (0.1.22). No fallback to what the caller asserts: a check that yields to the claim it was
+  meant to replace only ever protects the honest.
+
+  The two attendance flags also stop being frozen at the first heartbeat. Frozen, they described
+  the moment someone arrived rather than the truth — a handover changed who held the title and the
+  record did not follow, and the first to arrive was right forever.
+
+  *Closes the remaining half of P1-2 (presence) and the part of P0-2 that a private channel would
+  not have closed.*
+
+### Note
+- A page open from before this version keeps sending the old body: it will simply lose the badge
+  until it reloads. Degrading toward "no title" is the intended direction.
+
+## [0.1.24] — 2026-08-14
+
+### Security
+- **One long address froze the whole instance.** Re-sharing validated the recipient with
+  `/.+@.+\..+/`. That pattern restarts at every position, so its cost grows with the *square* of
+  the length — measured before fixing: 49 ms at 10 000 characters, **3 900 ms at 100 000**. Node has
+  one event loop and a regular expression does not yield: one request, four seconds of frozen
+  instance, for every reader — not only the caller.
+
+  ⚠️ The rate limit did not help: 8/h per IP is checked **after** the pattern, two lines below. A
+  guard placed behind what it is meant to guard guards nothing. The length is now checked first, at
+  254 — the maximum length of an address (RFC 5321), past which it is not "long", it is invalid.
+
+### Fixed
+- **A local read could describe one file while sending another.** `readLocal` did `stat(path)` and
+  then, further down, `open(path)` — two resolutions of the same *name* at two moments. Between
+  them the file can be replaced (a sync, a deployment `mv`, a client rewriting their document), and
+  we would then send the bytes of the **new** file with the size of the **old** one. Not a crash —
+  worse: a `Content-Range` that does not describe what it carries, so the viewer assembles a wrong
+  document and nothing reports it. A descriptor designates an object, not a name: `fh.stat()` now
+  speaks about the same file `fh.read()` does.
+
+### Documentation
+- `allow_download` is stated for what it is: a **display preference**, not a protection. A reader
+  looking at the document already has its bytes; hiding the button removes a convenience, not an
+  access. A document that must not leave should not be shared, or should be shared behind
+  `require_auth` — that one decides who gets the bytes. (P3-3)
+- The Express example says why there is **no rate limiter** in front of the player routes, rather
+  than leaving the absence to be read as an oversight: the player already limits per action, and
+  limiting a shared link by IP shuts the document to nineteen people out of twenty behind one
+  office NAT. What must be limited is what the host adds around it.
+
+  *The first two reported by static analysis; neither appeared in the external audit.*
+
+## [0.1.23] — 2026-08-14
+
+### Security
+- **The postMessage bridge accepted messages from any window.** An origin check is impossible here
+  — the player is framed by hosts on arbitrary domains and does not know its host's origin when it
+  starts listening, which is why the check had been dropped. But comparing the **source window**
+  needs no origin: either it is the window you expect, or it is not. Without it, any tab or frame
+  holding a reference could send `close`, `share` or `handover-done`, and the page treated them as
+  coming from its host.
+
+  Player side, it is closed **by default** — the only legitimate sender is `window.parent`, and no
+  host has code to change. Host side the parameter is optional: forcing it would silence messages
+  for every host that has not passed it yet, and a message that stops arriving is the worst way to
+  announce hardening.
+- **The chat author token came from `Math.random()`.** That token *authorises* — it proves "this
+  message is mine" for editing and deleting. `Math.random` is deterministic from the engine's
+  internal state, so guessing another participant's token means rewriting their messages. Now from
+  `crypto`, with a fallback that **warns** rather than degrading in silence. The analytics session
+  id follows the same rule: it is the upsert key, so guessing one overwrites someone else's
+  measurement.
+
+### Changed
+- The user-agent string is bounded before parsing. Static analysis flagged `Android.*Mobile` as
+  backtracking-prone; measured first, V8 handles it linearly even at 200 000 characters, so this
+  was not a real slowdown. Bounded anyway — the stored column was already truncated to 300, only
+  the parsing saw the whole string, and feeding an unbounded length into a regular expression is a
+  habit that eventually costs.
+
+  *All three reported by static analysis; the first two also by the external audit (P3-1, P3-2).*
+
+## [0.1.22] — 2026-08-14
+
+### Security
+- **The internal reading population was open to anyone.** It is the population this product
+  promises never to mix with prospects — "this client read for twelve minutes" is worth something
+  only if a colleague re-reading the document does not land in the same count. Yet the route
+  accepted any email, any document, any duration, with no token and no limit: "this colleague read
+  this document for three hours" could be manufactured with one request.
+
+  ⚠️ **A JWT was not an option.** Reading analytics leave through `sendBeacon`, the only transport
+  that survives a closing tab, and it cannot carry a header — requiring one would lose the
+  measurement at the exact moment it matters most. The proof therefore travels in the **body** and
+  comes from the host, who alone knows who its member is: an HMAC over `{email, name, docId, exp}`
+  signed with the secret the host already holds. When it is present, its claims win and the
+  caller's are ignored. `exp` is required — a signature without expiry would outlive the member.
+
+  `PLAYER_INTERNAL_STRICT=1` closes the door entirely. It is **not** the default, because that
+  would break every instance already running, including ours; without it the write is still
+  accepted, but bounded, rate-limited, and **reported once an hour** so the gap is visible in the
+  logs. An open door nobody mentions is a defect; an open door stated, with the lock supplied, is
+  a transition.
+
+  Client-asserted numbers are now bounded regardless: page counts, durations, and the free-form
+  per-page object — which had no ceiling at all, so a single call could write a JSON of any size,
+  as often as it liked.
+
+  *Reported by an external audit (P1-2). The presence claims `isMember` / `isPresenter` remain and
+  are tracked separately.*
+- **A property name written from client input** (`toggleReaction`). In 0.1.2 a whitelist indexed by
+  outside data let `constructor` through, because an object literal answers for its prototype; the
+  fix put `Object.hasOwn` everywhere and a static test refused any unguarded **read**. It covered
+  half the shape: `Object.hasOwn` stops you *reading* `constructor`, and nothing stopped you
+  *writing* it.
+
+  What saved us from the worst was an accident — the 8-character cap truncates `__proto__` (9) and
+  `constructor` (11) into harmless keys. But `toString` (8) and `valueOf` (7) got through and
+  became own properties of the stored object, shadowing the prototype's for every consumer,
+  browser included. ⚠️ That accidental protection is fragile: composed emoji (family, ZWJ
+  sequences) exceed 8 characters, so raising the cap to accept them — an innocuous cosmetic change
+  — would let the real keys in.
+
+  Two barriers now: identifier-shaped keys are refused outright, and the object is built with no
+  prototype at all, so there is nothing left to shadow or reach whatever the cap becomes. **And the
+  static guard now sweeps writes, not only reads** — without it, the next `obj[outsideValue] = …`
+  passes exactly as this one did.
+
+  *Found by static analysis. Neither the external audit nor we had seen it.*
+- **Rate limits keyed on a header the caller writes.** Eleven places took the first value of
+  `X-Forwarded-For` to identify the caller. A client reaching the server directly — the standalone
+  case, and any instance whose proxy does not rewrite that header — changed it per request and was
+  never limited. **The limit existed; it limited nothing**, which is worse than no limit because it
+  gives assurance.
+
+  The caller's address is now a host decision (`identity.clientIp`), since only the host knows
+  whether a proxy sits in front. Unset, the header is ignored entirely and the socket address is
+  used — **an instance without a proxy is protected without doing anything**.
+  `PLAYER_TRUSTED_PROXY_HOPS=1` reads from the **end** of the chain, not the beginning: the
+  beginning is what the client wrote, the end is what the proxies observed. Reading the first
+  element is the classic mistake with this header, and it is the one the code made.
+
+  *This also makes the new limit above real: without it, the internal-session throttle would have
+  been bypassable by the same trick it was meant to stop.* (P1-6)
+
+## [0.1.21] — 2026-08-14
+
+### Security
+- **Email links no longer come from the `Host` header** (`PLAYER_PUBLIC_URL`). The client chooses
+  that header: on the standalone server, or behind a proxy that does not rewrite it strictly, a
+  reader could request a perfectly legitimate send — signed by the host, carrying its brand and its
+  sender reputation — **whose button points at their own domain**. Phishing supplied turn-key, to a
+  recipient the attacker picks, and the victim has no reason to suspect it. Unset, the player falls
+  back to `Host` so no running instance breaks, and **says so**: an instance sending mail without a
+  public URL should learn it before a phishing report teaches it.
+- **`isEvalSupported: false` forced on every PDF render.** The pinned pdf.js is within the range of
+  CVE-2024-4367 (script execution when opening a crafted PDF). Our CSP does not allow
+  `unsafe-eval`, which blocks the path today — but that mitigation was **implicit**, and one CSP
+  edit would have reopened it without a word. The protection no longer depends on a header written
+  somewhere else.
+
+  *Upgrading pdf.js is not a version bump: cdnjs ships only ES modules from 4.0, while we load a
+  classic script and configure the worker by hand. That migration is tracked separately, together
+  with bundling the library — which also settles the CDN-without-integrity finding.*
+
+  *Both reported by an external audit (P1-1, P1-3).*
+
+## [0.1.20] — 2026-08-14
+
+### Fixed
+- **The unread badge stopped counting.** 0.1.19 routed chat broadcasts through a re-read, and the
+  re-read added the messages without ever notifying — so a new message arrived silently. The
+  condition matters as much as the call: a re-read returns the whole history, so notifying without
+  checking what was *actually* added would recount every message on every re-read, which is the
+  "badge goes up by 2" defect fixed back in 0.1.2 returning through another door.
+
+  *Nobody here saw it. **A host's test caught it**, by reading this package's source once installed
+  — across the boundary of two repositories. That guard was written for a different reason and
+  still did its job.*
+
+## [0.1.19] — 2026-08-14
+
+### Security
+- **A presentation broadcast is now a signal, not a truth.** The Realtime channel is **public**:
+  the publishable key and the slug are both in the page, so any participant can emit on it. The
+  audience applied the received payload directly, which let any viewer announce the end of the
+  presentation, change the page or document shown to everyone, lock the chat, or post a message
+  signed with someone else's name.
+
+  ⚠️ **Moving emission to the server would not have fixed this** — that was the audit's first
+  suggestion. On a public channel an attacker still emits, and the client cannot tell the two
+  sources apart. The only defence that holds is to stop believing the transport: authoritative
+  events now trigger a **re-read from the server**, which was already the source of truth
+  (`state=1`, `chat=1` — both routes already existed). An attacker can still emit; they trigger a
+  re-read and obtain nothing. That property also survives a future flaw in the transport itself.
+
+  `map` and `typing` still apply their payload, deliberately: ephemeral signals (live map
+  movement, "someone is typing") with no server state to check against and a high rate.
+  Re-verifying them would cost a round-trip per mouse move to protect a mouse move. Everything
+  authoritative goes through `state`, which is re-read. A test enforces that **no other event**
+  may trust its sender.
+
+  *Reported by an external audit. A private channel with row-level policies remains the cleaner
+  end state and is tracked in [`docs/AUDIT-2026-08-14-SUIVI.md`](docs/AUDIT-2026-08-14-SUIVI.md);
+  it needs short-lived tokens for an anonymous audience, which is infrastructure rather than a
+  fix — hence this first.*
+
+## [0.1.18] — 2026-08-14
+
+### Security
+- **The file proxy followed redirects, and the host secret followed with it.** `isAllowedStorageUrl`
+  validated only the *initial* URL; `fetch` then followed redirects by default, so the final
+  destination faced no origin list, no route prefix and no `https:` check. An allowed upstream —
+  the host's own file route, or any listed storage origin — answering `302` took the call wherever
+  it wanted: `localhost`, a private address, a cloud metadata endpoint. The invariant this project
+  documents ("no redirect following into your private network") was false.
+
+  ⚠️ **And `x-player-fetch-secret` travelled.** `fetch` strips only `Authorization`, `Cookie` and
+  `Proxy-Authorization` across a cross-origin redirect; a custom header is forwarded as-is.
+  Measured with two local servers before fixing: the destination received the host's shared secret
+  in clear. That is not only an SSRF — it is exfiltration of the key that authorises reading
+  **every** document the host serves.
+
+  Redirects are now followed by hand, with three properties: every hop re-passes the full guard, so
+  a redirect opens nothing the starting URL could not; **the secret is recomputed per hop**, so it
+  travels only where *that* hop is under the host's route; and the chain is bounded, with protocol
+  changes refused — a redirect to `file:` would have turned a remote upstream into a local disk
+  read. `AbortSignal.timeout` added: an upstream that never answers used to hold the request
+  forever.
+
+  *Reported by an external audit, confirmed by measurement rather than by reading.*
+
+## [0.1.17] — 2026-08-14
+
+### Security
+- **`form-action 'self'` added to every page.** `form-action` is one of the few CSP directives
+  that does **not** fall back to `default-src`: a page served with `default-src 'none'` could still
+  post a form to any domain. No page here contains a `<form>` — submissions go through `fetch`, so
+  `connect-src` governs them — but an injected script could build one to exfiltrate, and nothing
+  stopped it. `'self'` rather than `'none'`: the access wall and visitor sign-in may need a
+  same-origin post, and breaking authentication to close a door nobody walked through would be a
+  poor trade. `'self'` closes exfiltration, which is the real risk.
+
+  *Found while checking an external review that recommended `object-src 'none'` — that one **is**
+  covered by `default-src 'none'`, so the recommendation was redundant. The directive that was
+  genuinely missing was not on its list.*
+
+## [0.1.16] — 2026-08-14
+
+### Fixed
+- **An embedded preview never said it was there** — *announced in 0.1.15 and not actually in it;
+  see below.* `embed-ready` tells a host "I am alive". A host waiting for it and hearing nothing
+  cannot tell an **absent** player from a **living** one, and a prudent startup watchdog replaces
+  the second with the browser's own viewer a few seconds in, in front of the reader.
+
+  One variable answered two questions: *should the embedded close button be drawn?* (no in
+  preview — it already has its own, and drawing both would show two crosses) and *is this page
+  served inside a frame?*. Only the second governs the handshake. The server already knew — it
+  derives the response's `frame-ancestors` from it — and the page already spoke to its host
+  (`share`, `close`); it simply never announced itself. Preview is precisely the mode a host uses
+  for its **own** documents. The chrome is unchanged.
+
+### Fixed (release process)
+- ⚠️ **0.1.15 was published without the fix above, and announced as containing it.** The commit
+  landed on a branch whose pull request had already been merged, so it never reached `main`. Every
+  check passed, because every check looks at the working tree or the branch — never at the
+  artifact. **The host found it**, by diffing the two npm tarballs.
+
+  Two guards now exist, and the second is the one that generalises:
+  - a `pre-push` hook refuses to push to a branch whose pull request is already merged (the
+    neighbouring repository has had one since a similar incident on 5 August; this one did not);
+  - the release summary lists **what actually changed inside the published package** since the
+    previous version. Release notes promising a fix in a file that is absent from that list are
+    visibly wrong, at the moment of publishing rather than days later.
+
+  *A mutation test cannot catch this: it runs on the working tree, not on the tarball. The lesson
+  is the host's, and it is exact — verify the published artifact, not the sources.*
+
+## [0.1.15] — 2026-08-14
+
+### Fixed
+- **An embedded preview never said it was there.** `embed-ready` tells a host "I am alive". A host
+  waiting for it and hearing nothing cannot tell an **absent** player from a **living** one — and
+  a prudent startup watchdog replaces the second with the browser's own viewer a few seconds in,
+  in front of the reader. That is what happened: the second host removed their watchdog until
+  silence became information again.
+
+  One variable was answering two questions: *should the embedded close button be drawn?* (no in
+  preview — it already has its own, and drawing both would show two crosses) and *is this page
+  served inside a frame?*. Only the second governs the handshake. The server already knew — it
+  derives the response's `frame-ancestors` from it — and the page already spoke to its host
+  (`share`, `close`); it simply never announced itself.
+
+  Preview is precisely the mode a host uses for **its own** documents: no tracked link, no
+  recipient. The chrome is unchanged.
+- **The folder-mode home page offered a format the viewer no longer opens.** It kept its own list
+  of displayable extensions, and that list still contained `.svg` after it was dropped from the
+  type table in 0.1.7. The file appeared, the click produced a download, and a first-time visitor
+  concluded the project does not work — on the one screen that never gets a second run. The list
+  is now **derived** from the type table rather than copied.
+
+  *Found while checking an external review about MIME sniffing. Its recommendation — `nosniff`, a
+  generic type, forced download — has been in place since 0.1.7, and measurement confirms it: a
+  `.png` containing HTML is served `image/png` with `nosniff`, so the browser will not sniff it
+  into a script. The defect was next door: a list promising a format that had been removed.*
+
+## [0.1.14] — 2026-08-14
+
+### Security
+- **Re-sharing a document stripped its restrictions.** `createReshare` enumerated the columns to
+  copy, so every column added since was silently left out — and because these columns are
+  `not null default`, the omission did not leave a hole, it wrote the **most permissive value**:
+
+  - **`require_auth`** (default `false`) — a document behind the access wall, once forwarded,
+    opened **without the wall**. A recipient could therefore lift the protection by forwarding the
+    document to themselves. This was the worst of the three, and it was not in the report that led
+    here.
+  - **`allow_download`** (default `true`) — the Download button came back on a document where it
+    had been refused.
+  - **`brand_key`** — the brand was lost exactly where the document starts to travel.
+
+  Inheritance is now the rule and the exceptions are enumerated: a column added tomorrow is
+  inherited without anyone thinking about it. If it is a restriction, it propagates. A test covers
+  the *mechanism* — an unknown column must survive a re-share — rather than a list that would go
+  stale the same way the code did.
+
+  *Reported by the second host, who saw the brand — the one that **shows** — and assumed the rest
+  followed. The rest followed.*
+
+### Added
+- **Sending the re-share email can be delegated to the host** (`PLAYER_HOST_MAIL_URL` +
+  `PLAYER_HOST_MAIL_SECRET`), which is what a host with its own provider and templates wants.
+
+  ⚠️ **The player calls it only for a link that has a recipient.** The reader of an anonymous link
+  is any passing visitor; letting them request a send would turn the host's servers into a relay
+  for unsolicited mail, with the host's domain in the header. What that costs is not the message —
+  it is a sender reputation that takes weeks to recover, during which *none* of their mail arrives.
+  The guard sits on the path that acts, not in the host's route on arrival: a filter on arrival
+  depends on a list staying current, a path that cannot phrase the request never phrases it by
+  accident. *Requested by the host in our code rather than kept in theirs.*
+
+  The payload carries structured fields (`kind`, `doc`, `from`) next to the HTML, and isolates
+  caller-supplied text under `untrusted` — a host composing its own message can ignore it in one
+  gesture instead of remembering which field is doubtful.
+
+  A third secret, deliberately: the file secret travels on every document opened and lives in the
+  host's logs; adding "send mail in your name" to what a log leak permits is a different power.
+
+## [0.1.13] — 2026-08-14
+
+### Fixed
+- **The tracking notice invented a sender.** "…passed on to its sender" is right for a named link
+  and false for a public brochure opened from a map by someone who received no message. This is
+  the one sentence in the product whose whole job is to be exact. The player now picks by the link
+  itself — no recipient and no creator means nobody sent it — which needed no new data: that is
+  already the idempotency key for host-owned links. `PLAYER_TRACKING_NOTICE_ANON` overrides it; a
+  context that provides no second text falls back to the first rather than showing none.
+- **The tab title showed the operator instead of the brand the visitor clicked.** Someone arriving
+  on a client's brand read the name of the company that runs the tool. The link's brand was
+  *already* resolved for the loader and sitting on the share — the title simply did not consult it.
+  No new configuration. "Powered by" stays the instance's, deliberately: saying who operates the
+  tool is honest disclosure, not a brand leak.
+
+  *Both reported by the second host looking at their own screen — which no test does. Both were
+  true while an instance served one audience, and false the moment it served two.*
+
+## [0.1.12] — 2026-08-14
+
+### Fixed
+- **A sleeping machine reported hours of reading.** The tab stays `visible`, the window keeps
+  focus, no `visibilitychange` or `blur` fires — and the timers do not run either, so the idle
+  loop cannot do its job. On wake, a raw timestamp delta poured the entire sleep into the current
+  page: **eight hours of a closed laptop measured as 28 805 seconds read.**
+
+  Accumulated time is now capped at "up to the last activity, plus the idle grace" — the same rule
+  the idle loop applies, extended to the case where it could not run. An active reader produces
+  events, so a real reading session is untouched; a sleeping machine produces none.
+
+  *This is not an exotic case: it is how a laptop closes in the evening. And it is the number the
+  whole product rests on — "this client read for twelve minutes" is only worth something if the
+  number is honest when it is large as well as when it is small.*
+
+  *Found while checking an external review that pointed at the right place with the wrong
+  diagnosis: it recommended cutting on `visibilitychange`, which has been done since day one,
+  alongside `blur`/`focus` and a 60-second idle timeout. The hole was where no event fires at all.*
+
+## [0.1.11] — 2026-08-14
+
+### Added
+- **The host can create a tracked link in its own name** (`PLAYER_HOST_SHARE_SECRET`). Some links
+  have no sender: the public brochure of a listing, opened by a prospect who has no account and
+  should not need one. No member is present, so there is no token to require — and requiring one
+  forces the host to invent an identity that does not exist. Same nature as `/authz` and
+  `/branding`, which the host already answers server to server.
+
+  ⚠️ **A different secret from `PLAYER_HOST_FETCH_SECRET`, deliberately.** That one only ever
+  travels *outward* — the player sends it on every file fetch, so it sits in the host's access
+  logs, proxies and error tracker. Whoever holds it can impersonate the player *to the host*;
+  accepting it inbound would additionally grant write access *here*. One more variable against a
+  blast radius that does not grow. The core never sees the secret: it asks the context a question,
+  the adapter answers yes or no.
+
+  **Three locks:** `docshare.create` only (revoking, listing and analytics stay member actions — a
+  server secret must not reveal who read what); no recipient (a named link belongs to a member);
+  idempotent by `docId`, which needed no new column — "the host's link for this document" is the
+  row with no creator *and* no recipient, so an instance already in service migrates nothing.
+  Without idempotence, a redeploy or a double click yields three links for one brochure, and
+  analytics split three ways that nobody notices until they read them six months later.
+
+  The link carries no creator, so it appears in no member's "my links" and stays visible under
+  `list.all` — the existing filter already did the right thing. *Requested by the second host,
+  who had ruled out all three workarounds themselves before writing, including the one that would
+  have filed a prospect among internal readers.*
+- `host-share` in `capabilities`, and `hostShare` alongside `separateIssuer`: what the instance
+  *can* do, and what is *configured*.
+
+## [0.1.10] — 2026-08-14
+
+### Changed
+- **The core no longer opens the environment; it goes through the injected context.** Eleven direct
+  `process.env` reads were bypassing the very boundary this project documents everywhere else —
+  six for the database, two for the maps key, one for frame ancestors, and one for the **service
+  role key**, which opens the whole database. A host wiring its own storage or database was
+  silently short-circuited. Nothing changes for a host whose context mirrors its environment,
+  which is both hosts today; what changes is that a host that does not is now actually obeyed.
+- **Signing an upload URL is a host capability** (`storage.signUpload`). The core asked the
+  environment for a service-role key to sign chat-attachment uploads; it now asks the host, which
+  is where the key lives. A host that does not provide it gets a clean refusal that says so,
+  rather than an attachment that never leaves. *Honest about what remains: the returned page still
+  calls supabase-js `uploadToSignedUrl`, so the feature is not portable yet — only the secret has
+  moved out of the core.*
+- **One source of truth for frame ancestors.** `embedFrameAncestors()` read the environment while
+  `?contract=1` announced `PLAYER.config.extraFrameAncestors`. They agree only as long as a host
+  fills its config from that same variable. A host computing it otherwise would have the card
+  announce one list and the CSP header serve another — configured and served diverging *inside*
+  the mechanism built to detect exactly that.
+
+  *Raised by an external review as "you are coupled to Supabase, add an abstraction layer". The
+  abstraction already existed — it was leaking. A static test now refuses any new leak, and it
+  found two the manual inventory had missed.*
+
+## [0.1.9] — 2026-08-14
+
+### Added
+- **`separateIssuer` in `GET /api/doc?contract=1`.** `host-auth` says an instance *can* verify
+  tokens against an issuer separate from its database; this says one *is configured*. Without the
+  second signal, a host that upgrades and forgets the variable sees exactly the failure 0.1.8
+  removed — members come back unauthenticated, which reads like a missing permission — and
+  concludes the upgrade changed nothing. A boolean, never the issuer: the host already knows which
+  one is theirs, and naming it would only inform whoever probes.
+
+### Changed
+- **The container image moves to Node 24 (active LTS).** It stays on the **active LTS**, never on
+  Current: Current ships every six weeks and carries breaking changes, and self-hosters should not
+  inherit that. Node 26 exists since August 2026 but is not supported long-term until October.
+  `engines` stays `>=22` — what the *package* accepts and what the *image* embeds are different
+  questions, and 22 is maintained until April 2027.
+- Dependabot no longer proposes Node **major** bumps for the image. It cannot know that a release
+  is Current, and proposed 26 the day it appeared. A green PR that puts production on an
+  unsupported base is still a green PR — review catches that, not CI, so the proposal stops.
+
+## [0.1.8] — 2026-08-14
+
+### Fixed
+- **A third-party instance could not authenticate its own members.** `SUPABASE_URL` served two
+  roles at once: the player's database, and the issuer of the tokens it accepts. True — and
+  necessary — while the player and its application share a deployment; false by construction once
+  an instance is separate, because the database belongs to the player and identity belongs to the
+  host. Members were issued tokens by one project and verified against another, which put the
+  entire *member* half of the surface out of reach: sending, revoking, analytics, authenticated
+  presentations. `PLAYER_AUTH_URL` (+ `PLAYER_AUTH_KEY`) now names the issuer; unset, it falls back
+  to `SUPABASE_URL`, so an instance where both coincide changes by not one character.
+
+  *Reported by the second host, who had checked both sides before writing. It is the third
+  assumption of this shape in two days — after `'self'` for framing and "same origin" for the
+  internal preview. They only become visible by exercising the separation.*
+
+### Security
+- **The key sent to the issuer no longer falls back to the service role.** That fallback was
+  harmless while the issuer was the player's own project; toward a third-party issuer it would
+  hand over the master key to the player's database on a single configuration mistake. A distinct
+  issuer requires its own publishable key, and its absence is reported instead of improvised —
+  a silent refusal here reads like a missing permission, which is the failure this release exists
+  to remove.
+
+### Added
+- `host-auth` in `GET /api/doc?contract=1` capabilities: a host can tell whether an instance
+  supports a separate issuer without opening a document.
+
+## [0.1.7] — 2026-08-13
+
+### Security
+- **A relayed file could execute on the player's own origin.** The relay copied the upstream
+  `Content-Type` verbatim, so a file announced as `image/svg+xml` or `text/html` — from a public
+  bucket, or from a host's own file route — opened *inline* on the domain that serves the
+  documents, next to its sessions, its presentation tokens and its analytics. A streaming response
+  carries no CSP: it is a file, not a page. Anything a browser would render rather than download is
+  now served inert (generic type, forced download, `nosniff`); it stays retrievable and cannot
+  execute. The displayable formats are untouched.
+
+  *Found while writing the README's format matrix — a documentation question. Dropping `.svg` from
+  the local type table had closed only the half we control; the remote upstream announces whatever
+  it likes.*
+
+### Changed
+- **Node.js 22 or newer** is now required. 20 reached end of life; the image, the CI matrix and the
+  declared `engines` say the same thing, which was not the case before.
+- **The published package ships compiled JavaScript and type declarations**, not TypeScript source.
+  `discovery-media-player/bridge` was published as `.ts`, so a host without a build step could not
+  import the very thing meant to spare it from copying constants by hand. The package is also 4×
+  smaller. A CI check refuses a package containing `src/`.
+- **The host contract is documented in English, in the open** ([`docs/HOST-CONTRACT.md`](docs/HOST-CONTRACT.md)).
+  It used to be a working document written for two known teams, in French, mixing the contract with
+  internal deploy history. The rules are unchanged; what left is the part that was true only for us.
+
+### Removed
+- **`.svg` is no longer served.** An SVG is a document that executes script: served inline it runs
+  in the instance's origin, and the viewer's own type detection did not treat it as an image
+  anyway — so it was never displayed as one. Nothing regresses that worked.
+
+### Added
+- Multi-architecture image (`linux/amd64`, `linux/arm64`) with SBOM and build provenance.
+- Automated GitHub Releases on `vX.Y.Z` tags, with this file's section as the notes.
+- CodeQL analysis and grouped monthly Dependabot updates.
+
+## [0.1.6] — 2026-08-13
+
+### Fixed
+- **A separate instance could not be framed by its own host — on the success path only.** The
+  internal preview branch had `frame-ancestors 'self'` written as a literal, so
+  `DOC_FRAME_ANCESTORS` was never consulted there. True while the application and the player share
+  a deployment; false the moment an instance is separate — which is the entire point of a separate
+  instance. Nothing signalled it.
+
+  The absurd consequence, spotted by the host: the **refusal** page was framable (fixed the day
+  before, on their report) while the **success** page was not. The error path was more portable
+  than the nominal one.
+- **The audience page passed no ancestors at all**, so `frame-ancestors 'none'` — framable by
+  nobody, not even by its own origin. Found while checking the first.
+
+### Added
+- **`frameAncestors` in `GET /api/doc?contract=1`.** A boolean would not have been enough: a host
+  needs to see that *its own domain* is missing, not merely that embedding is possible. This is
+  the one failure a host cannot diagnose — the browser blocks before any script runs, so nothing
+  can be emitted to it. Now it can see the mismatch without opening a single document.
+
+## [0.1.5] — 2026-08-13
+
+### Added
+- **A warning when embedding is requested with no host allowed to frame it.** With
+  `DOC_FRAME_ANCESTORS` empty, only a same-origin page and `*.vercel.app` may frame the viewer;
+  any other parent is blocked **by the browser, before the page loads** — so no `embed-denied` can
+  be sent, and the host sees a silence indistinguishable from an unreachable instance. This is the
+  one failure the player cannot signal to the host, so it now signals it to the operator, at the
+  only moment it can know: when serving an embedded page.
+- **A live demo** (`examples/demo`): one function, one dependency, no database and no secret.
+
+### Changed
+- Contract: the fourth requirement of *"the host serves the file"* gains its corollary — **when
+  the reference itself carries a capability, signing is not enough; it must be encrypted.**
+  *Signed* means nobody can forge it. It has never meant nobody can read it.
+- Contract: the search criteria you use to inventory your document-opening doors decides what you
+  find. Search by what the user **obtains**, not by the technique you expect.
+
+  *(All three come from the first host's real switchover.)*
+
+## [0.1.4] — 2026-08-13
+
+### Fixed
+- **A wiring mistake looked like a refusal.** The handler reads `req.query` — the serverless and
+  Express convention — which a bare `http.createServer` does not fill. With no parameters, a
+  request went looking for a share named *nothing*, found none, and rendered *"this link is no
+  longer valid or has been revoked"*. An integrator saw a **refusal** where they had simply not
+  wired the platform. It now falls back to parsing `req.url`, so the handler is platform-agnostic
+  in fact and not only in the README.
+- **A request asking for nothing now says so** (`400`, naming the missing parameters) instead of
+  returning the revocation page. A refusal and a missing parameter must not look alike.
+
+### Changed
+- **Documentation: most hosts need no wiring file at all.** `context/standalone` already delegates
+  both host decisions to `PLAYER_HOST_AUTHZ_URL` and `PLAYER_HOST_BRAND_URL`; an instance whose
+  application exposes those routes is four files, one of them ten lines. The custom-context example
+  is now presented as the exception — for decisions that cannot travel over HTTP.
+
+  *Both changes come from the first third-party integration. The extraction had gone further than
+  its own instructions said.*
+
+## [0.1.3] — 2026-08-13
+
+### Fixed
+- **The audience stopped following the presenter.** The page's state handler was registered from a
+  script block that could not see the function it named — a silent `ReferenceError` at wiring time,
+  after which slide changes simply never arrived. Covered by a test that *executes* the generated
+  page rather than reading its source, which is the only way this class of fault shows up.
+
+## [0.1.2] — 2026-08-13
+
+### Security
+- **Attachment type whitelist could be bypassed.** `ATT_KINDS["constructor"]` returns a *function* —
+  a truthy value — so a public `present-upload-url` call with `type: "constructor"` passed the
+  whitelist and got a signed upload URL for a type that was never allowed. The storage bucket
+  remained a second barrier, but the first one was open. Every lookup of that shape now goes
+  through `Object.hasOwn`, and a static test refuses any that does not.
+  *Found after a third-party host reported the same pattern three times in their own code.*
+
+### Added
+- **Live chat now travels by broadcast.** It was delivered through table-level realtime, which
+  requires a public SELECT on the table — meaning anyone holding the publishable key could read
+  the conversations of *every* presentation. This was the last thing requiring that policy;
+  `supabase/init.sql` no longer needs one, and instances that had it can drop it.
+- **Host-route call formats are documented** (`PLAYER_HOST_AUTHZ_URL`, `PLAYER_HOST_BRAND_URL`).
+  They were missing, and a host implemented them from prose: right intention, wrong shape, and
+  two of the three mismatches were silent — a wrongly-shaped response reads as a refusal.
+- **A broken host route no longer looks like a refusal.** Unreachable, timed out, non-JSON, or a
+  wrongly-typed `allowed` are logged with their cause. The player stays fail-closed.
+
+### Fixed
+- Unread badge counted each chat message twice while both delivery paths were active.
+
+## [0.1.1] — 2026-08-13
+
+### Added
+- The standalone server's root page lists what there is to read, instead of answering `404` to
+  someone who just started the container and has no slug yet.
+
+### Changed
+- Published from CI by OIDC, with provenance — no long-lived token stored anywhere.
+- Dependency tree cleaned: no vulnerability reported at install.
+
+## [0.1.0] — 2026-08-13
+
+First public release: the viewer extracted from the 3D Discovery studio into a project that runs on
+its own.
+
+### Added
+- Framework-agnostic `(req, res)` handler — serverless, Express, or the bundled standalone server.
+- Standalone server (`bin/serve.js`) and Docker image — the player runs without a platform.
+- Local folder as a document source (`PLAYER_LOCAL_ROOT`), with `Range` support, symlink
+  containment and traversal tests. Makes the project usable with no database at all.
+- `GET /api/doc?contract=1` — version, contract number, capabilities and plugin state. No
+  session, no database, no cache: it must answer when nothing else does.
+- `embed-denied` on the postMessage bridge, with a reason (`revoked`, `auth-required`,
+  `auth-unavailable`, `url-not-allowed`, `ended`). An embedded host can now tell a refusal from
+  an outage instead of falling back to its own viewer on a document the player just closed.
+- `supabase/init.sql` — brings a fresh database to the expected state in one replayable file,
+  already hardened.
+
+### Fixed
+- **Truncated documents.** `fetch()` decompresses a body while keeping the upstream headers;
+  relaying `Content-Length` announced the compressed size for decompressed bytes. All three
+  streaming paths now announce the size of what they actually send, request `identity` encoding,
+  and refuse a compressed `206` rather than serve something false.
+- **Silent refusals.** Refusal pages were served with `frame-ancestors 'none'`, so an embedded
+  host saw a blank frame and no message. They are now framable in embed mode.
+- **A widening guard.** `PLAYER_HOST_FETCH_BASE` without a trailing slash matched sibling routes
+  (`/api/documents` also allowed `/api/documents-prives/`). Normalised rather than documented.
+- `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
+  load. It now reaches the page as the image's alternative text.
+
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.41...HEAD
+[0.1.41]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.40...v0.1.41
+[0.1.40]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.39...v0.1.40
+[0.1.39]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.38...v0.1.39
+[0.1.38]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.37...v0.1.38
+[0.1.37]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.36...v0.1.37
+[0.1.36]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.35...v0.1.36
+[0.1.35]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.34...v0.1.35
+[0.1.34]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.33...v0.1.34
+[0.1.33]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.32...v0.1.33
+[0.1.32]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.31...v0.1.32
+[0.1.31]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.30...v0.1.31
+[0.1.30]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.29...v0.1.30
+[0.1.29]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.28...v0.1.29
+[0.1.28]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.27...v0.1.28
+[0.1.27]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.26...v0.1.27
+[0.1.26]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.25...v0.1.26
+[0.1.25]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.24...v0.1.25
+[0.1.24]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.23...v0.1.24
+[0.1.23]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.22...v0.1.23
+[0.1.22]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.21...v0.1.22
+[0.1.21]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.20...v0.1.21
+[0.1.20]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.19...v0.1.20
+[0.1.19]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.18...v0.1.19
+[0.1.18]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.17...v0.1.18
+[0.1.17]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.16...v0.1.17
+[0.1.16]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.15...v0.1.16
+[0.1.15]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.14...v0.1.15
+[0.1.14]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.13...v0.1.14
+[0.1.13]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.12...v0.1.13
+[0.1.12]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.11...v0.1.12
+[0.1.11]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.10...v0.1.11
+[0.1.10]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.9...v0.1.10
+[0.1.9]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.8...v0.1.9
+[0.1.8]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.7...v0.1.8
+[0.1.7]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.6...v0.1.7
+[0.1.6]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.5...v0.1.6
+[0.1.5]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.4...v0.1.5
+[0.1.4]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.3...v0.1.4
+[0.1.3]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/Juli1artha/discovery-media-player/releases/tag/v0.1.0
+ || true`. Passed as a
+replacement **string** to `String.replace`, `
+
+### Fixed
+
+- **When the URL says nothing, the file name decides.** The audience view decided whether a document
+  was an image from the URL alone. A storage URL carrying no extension therefore answered "not an
+  image", and the audience got "Document unavailable" again — the defect 0.1.54 had just closed,
+  coming back through the side door.
+
+  ⚠️ **0.1.54 had kept the derived field and thrown away the authoritative one.** Two fixes had been
+  written for one symptom; since either sufficed, **no mutation could turn the bench red**. Removing
+  one left the other working — so I removed the one that decides, and kept the one the bench already
+  knew how to see. **The bench chose the fix instead of verifying it.**
+
+  The rule "a fix made of two changes cannot be proven" does not say *which* one to keep — and the
+  answer is never "the one the bench can see". Keep the field that decides, then make the bench able
+  to tell them apart.
+
+  Measured by the second host on their own instance: **4,287** presentable documents, **23** whose
+  URL carries no extension, **none of them images**. Reachable, unpopulated. The bench now populates
+  the case.
+
+### ⚠️ Evidence, by strength — and a correction to 0.1.54
+
+Counting "734 tests" reads as if all 734 weighed the same. They do not, and the difference is the one
+a hurried reader makes on our behalf, in whichever direction suits them. Three groups, borrowed from
+the second host:
+
+| | this release |
+|---|---|
+| **Seen refusing** — a guard replayed inverted, red observed | the mutation deciding on the URL alone: the new bench test falls, and it alone |
+| **Seen falling** — a behaviour replayed, red observed | the audience page displaying an image whose URL has no extension |
+| **Never failed in front of anyone** — typing, build, tests that already passed | everything else: 734 unit tests, 8 browser tests, lint, typecheck, build |
+
+The third group is not worthless — it attests that **nothing was broken**, never that something was
+repaired.
+
+⚠️ **Which makes one line of 0.1.54 false.** It announced the image fix as "verified by mutation".
+The mutation did *not* turn red — I found that out afterwards, and it was the second host who
+explained why. That claim belonged to the third group, dressed as the first.
+
+## [0.1.54] — 2026-08-17
+
+### Fixed
+
+- **A presentation carrying an image now displays for the audience.** The *Present* button appears
+  with no condition on the document type: a presenter looking at a PNG could present it, and the
+  audience got "Document unavailable" — pdf.js called on an image.
+
+  ⚠️ **This path had always been silent.** Not a regression from the worker refusal: nobody had seen
+  it because images are rarely presented. Found by the **second host, by asking** where we would have
+  asserted — their own view serves images, so they asked whether ours could receive one.
+
+  ⚠️ The first attempt at the fix **did not work, and nothing said so**: it decided on `CFG.fileUrl`,
+  which is `/api/doc?present=…&file=1` — no extension, so "not an image", always. A `try/catch`
+  added out of caution swallowed the cause; reading the loader's subtitle was what exposed it. A
+  defensive guard that returns false on error does not protect, it **hides**.
+
+  ⚠️ And there had been **two fixes for one symptom** — the file name added to the config as well.
+  Either one sufficed, so **no mutation could turn the bench red**: removing one left the other
+  working. A test never seen refusing guards nothing. One remains, and putting the proxy URL back
+  does make the bench fail.
+
+## [0.1.53] — 2026-08-17
+
+### Fixed
+
+- **An unverifiable pdf.js worker no longer stops an image from being displayed.** 0.1.52 gated
+  `start()` — the whole reader's boot — on the worker's fingerprint. But `start()` also serves the
+  **image** path, which never calls pdf.js: a worker that could not be verified therefore refused to
+  show a PNG. A door closed on a room the rejected code could not reach.
+
+  The refusal stays **whole for a PDF**, where the worker actually runs. Only the image path stops
+  being gated on something it never used.
+
+  ⚠️ Found by the **host's test harness**, not ours: its assistant stopped booting, and the first
+  diagnosis was "a jsdom artefact". Fixing the harness would have hidden the defect — the harness was
+  right and the diagnosis was incomplete.
+
+## [0.1.52] — 2026-08-17
+
+### ⚠️ One migration to apply — the player degrades without it, it does not break
+
+`0004-limites-atomiques.sql` makes the shared rate limit count in **one atomic step**. Until it is
+applied, counting stays as before — read, compute, write — so several simultaneous requests can
+cross the cap together, and the player says so once, naming the file. Nothing closes: a missed 429
+costs less than a dead viewer.
+
+The atomic increment is **not expressible in REST** (`on conflict do update set count = count + 1`
+has to name the column on both sides). This is the one operation in the product that needs a
+database function; the portability guard still holds, an `rpc/` adding neither join nor boolean tree.
+
+### Security
+
+- **No email leaves the presentation any more — and four paths carried one, not two.** The audit
+  reported `author_email` in the chat's public fields and `email` in the presence payload. Two more
+  carried the same data: the **reactions map**, stored in the database with `email || name` as the
+  reactor's identity, and the **presence channel key** itself, readable by every participant
+  regardless of what `track()` sends. Our audiences are anonymous external visitors: opening the
+  chat history was enough to walk away with the team's addresses.
+
+  ⚠️ What replaces it is not a random pseudonym but the fingerprint of the **author token** — the one
+  that already authorises editing and deleting. No instance secret is needed (hashing an address
+  without salt protects nothing: the domain is known, first names are guessable), and **"this is my
+  message" now says the same thing as "I am allowed to touch it"**: `isMine` compared addresses while
+  editing has only ever checked the token, so a member on a second browser was offered an *Edit*
+  button that answered 403.
+
+- **A delayed write can no longer reopen a presentation that was ended.** Steering did: read the row,
+  check the token, PATCH. Between the check and the PATCH the presentation may have been **ended** —
+  and since steering writes `active: true`, the late request **reopened it for the whole audience**.
+  The presenter had clicked *End*, seen the closing screen, and viewers kept following the pages.
+
+  ⚠️ The condition is **not** `active = true`: a presentation goes inactive after three minutes
+  without a heartbeat, and the next page must bring it back — an anonymous presenter has no other way
+  to return. What separates a *decided* end from an *observed* expiry already exists: ending revokes
+  the control token. So the token travels in the write's own condition, and each path carries the
+  criterion it was already checking. Zero rows touched means refused.
+
+- **An ended presentation becomes a read-only archive.** Seven routes still wrote after closing —
+  messages, reactions, chat lock, attendance, and even a **signed upload URL** into the bucket of a
+  closed session. The thread was no longer watched by anyone, which is exactly when something gets
+  dropped into it. Reading stays open: what was said during a presentation has value afterwards.
+
+- **An unverified pdf.js worker is never executed — the reader stops instead.** The previous
+  behaviour fell back to the remote URL when the fingerprint refused, and **pdf.js wraps that URL in
+  a same-origin blob itself**, so the unverified code ran: the worker's fingerprint bought nothing.
+  Leaving the value empty does not close it either — pdf.js then derives a default address from its
+  own position on the CDN. Both cancelled the check **in silence**; measuring the workers actually
+  created was the only way to see it. A document that is not rendered is visible; a document rendered
+  by unverified code is not.
+
+- **Third-party supply chain, pinned where it decided for us.** 18 GitHub actions referenced by
+  **tag** — which the author, or whoever takes their account, can move to another tree — are now
+  pinned to a commit, with the tag kept as a comment. Leaflet's **stylesheet** had never been
+  counted: third-party CSS moves, resizes and hides any element, so the button you think you are
+  clicking may not be the one you click. Google Maps moves from `v=weekly` — a *channel* — to a
+  version. A CI guard fails on any unpinned action.
+
+## [0.1.51] — 2026-08-17
+
+### Security
+
+- **Third-party scripts are pinned to an exact version and carry an integrity fingerprint.** The
+  serious part was not the missing fingerprint, it was `@2`: that jsdelivr tag follows the latest
+  2.x, so the page served visitors whatever Supabase had published that morning — no deployment, no
+  review, no way back. On the day of the fix it resolved to `2.112.3`, now pinned.
+
+  The two go together: a fingerprint on a moving URL would break the page at the third party's next
+  release. **Pinning makes the fingerprint possible; the fingerprint makes the pinning useful** — an
+  exact version says which file you *ask for*, never which one you *receive*.
+
+  | | before | after |
+  |---|---|---|
+  | `pdf.min.js` | exact version, no fingerprint | fingerprint |
+  | `pdf.worker.min.js` (1 MB) | exact version, **out of reach of `integrity`** | verified in code |
+  | `supabase-js` | **moving `@2`**, no fingerprint | `2.112.3` + fingerprint |
+  | `leaflet` | exact version, no fingerprint | fingerprint on the injected tag |
+
+  ⚠️ **The worker has no tag** — pdf.js loads it, so no `integrity` attribute can apply. It weighs
+  three times the main script and sees every page of the document: protecting the tag and letting
+  the worker through would be locking the door and leaving the window open. Its bytes already passed
+  through our code (a cross-origin worker is refused by the browser, so it is fetched as text and
+  turned into a same-origin blob), and that detour is now the checkpoint. Any doubt refuses, and
+  refusing falls back on pdf.js's own backup worker — the path a broken network already took.
+
+  ⚠️ A CI guard now refuses a third-party script that is unpinned, unfingerprinted, or absent from
+  the inventory. It found a fourth dependency on its first run — the Google identity loader on the
+  access wall, which a hand-written inventory had missed. Loaders that cannot carry a fingerprint
+  are named **with their reason**, so adding one tomorrow is a visible choice.
+
+  Audit finding **P2-4**.
+
+### Internal
+
+- **A test database, so the pages that matter are finally exercised.** The browser bench only
+  covered the local preview: the tracked viewer and the audience page need a database, answered 404,
+  and **their policies were exercised by nothing** — yet those are the pages a client and a viewer
+  actually open. `tools/postgrest-en-memoire.cjs` unlocks them in ~150 lines, with no dependency and
+  no account to create.
+
+  What makes the double honest is a discipline taken elsewhere: the CI portability guard has long
+  banned exotic query syntax, keeping the whole surface at `table?column=eq.value`. A constraint
+  taken to make *porting* possible ended up making a *test database* possible.
+
+  ⚠️ It refuses rather than invents: an unknown filter returns a 400 that names it, and an undeclared
+  relation returns 404 like real PostgREST. A double answering "no rows" to a query it misunderstood
+  would turn every test into fiction. It is **not** a database — no transactions, constraints, types
+  or RLS; what belongs to the DBMS is verified on a real DBMS.
+
+  The bench now covers three pages of four (the visitor access wall needs a plugin the standalone
+  context does not have) and, on the tracked page, **asserts the read is recorded in the database**:
+  the browser → server → database loop was closed nowhere.
+
+  Audit finding **P2-3**.
+
+## [0.1.50] — 2026-08-17
+
+### Fixed
+
+- **A participant could make their neighbours vanish from the attendee list.** The presence
+  de-duplication table was a plain object indexed by identities **each participant composes
+  themselves**, `uid` included.
+
+  Measured before the fix: a participant whose identity is `constructor` **disappears** — the object
+  answered "already seen" before anything had been written. And writing to `__proto__` does not
+  create an entry, it **changes the prototype of the table**: an intruder announcing
+  `uid: "__proto__"`, the presenter role, and their neighbours' addresses as extra keys made those
+  neighbours disappear **from everyone's list**. Four participants, two erased.
+
+  `Object.prototype` was never reached — the pollution stayed inside that table. But *local* does not
+  mean *harmless*: the table **is** the attendee list.
+
+  ⚠️ Why it lasted: `toString`, `valueOf` and `hasOwnProperty` were never a problem, because the
+  identity is lowercased and `tostring` is inherited from nobody. **Two keys only** got through —
+  `constructor` and `__proto__`. A defect that fires only there is never met by accident.
+
+  A `Map` inherits no key, and it preserves insertion order even when an existing key is rewritten —
+  exactly the "the presenter wins, at its position" rule, so the order array kept alongside became
+  unnecessary. Audit finding **C-6**, the last one open.
+
+### Internal
+
+- **The viewer is now exercised in a real browser.** `jsdom` does not enforce CSP, and the server
+  tests use a fake `res` that only records headers: a policy forbidding our own scripts passed every
+  test and still gave the visitor a blank page. `npm run test:e2e` opens the local preview in the
+  Chrome **already installed** (`playwright-core`, no browser download) and requires both that the
+  page starts *and* that the policy **refuses** — an unnonced script, a foreign origin. Separate
+  command and separate CI step: `npm test` must stay runnable in a bare container. Audit finding
+  **C-10**.
+
+## [0.1.49] — 2026-08-17
+
+### ⚠️ Three migrations to apply — the player degrades without them, it does not break
+
+| file | what it unlocks | until applied |
+|---|---|---|
+| `0001-destinataire-atteste.sql` | counting the reads of a visitor **you** vouch for | attested creation is refused, by name |
+| `0002-ordre-des-ecritures.sql` | a stale write can no longer overwrite a fresher one | no order control — last arrival wins, as before |
+| `0003-limites-partagees.sql` | rate limits count for the **instance**, not the process | counting falls back to memory, as before |
+
+None is required for the version to run. Each is **additive** and safe to apply while the previous
+code is running, so the deployment order never matters: migrate first and nobody writes the column
+yet; deploy first and the player detects its absence, degrades, and names the file to apply.
+
+The player will never apply them itself — it speaks to the database through PostgREST, which does not
+execute DDL. See `docs/MIGRATIONS.md`.
+
+### Added
+
+- **A host can now vouch for a visitor it identified itself.** Pass `recipientEmail` on the
+  server-to-server `docshare.create`: reads are counted, attributed and revocable, without an
+  anonymous link or a member's token. What makes it safe is **who supplies the address** — the host's
+  database after verification, never a form.
+
+  ⚠️ It is stored **apart from `recipient_email`**, because that field carried two facts. At re-share
+  time the parent's recipient becomes the **sender** (`from`, `replyTo`) of a message to an address
+  chosen by whoever holds the link. Filing a vouched visitor there would have made our servers a
+  relay signed by them — the second host's own objection, one step further along, which they had not
+  seen. Left empty, the send guard *and* the re-share inheritance both refuse **without knowing why**.
+
+  ⚠️ **An attested link is named, not closed.** It remains forwardable; a host whose documents are
+  confidential must not rely on it.
+
+- **Write order now survives an abandoned request.** The browser queue guarantees one write in
+  flight — it removes the disorder we *cause*. But a request abandoned by the timeout may have
+  reached the server and land after the one that replaced it: that disorder we *suffer*. Each write
+  now carries a rank, and the server refuses a rank it has already passed.
+
+  A rank, not a timestamp: a clock says *when*, and two tabs disagree; a counter says *after what*.
+
+### Changed
+
+- ⚠️ **`limits.allow` promises something different, and it is written in the contract.** It used to
+  count per **process** — so on serverless a limit of 120/hour allowed 120 *per instance*. It
+  existed, it reassured, and it bounded a fraction of what it claimed. The standalone context now
+  counts in a shared table.
+
+  The local counter stays in front as a **fast refusal**: it only ever under-counts, so if *it* is
+  over the ceiling the shared one is too. Abuse is refused for free. The public read path stays local
+  — its answers already come from a per-slug cache, and backing that guard with a shared counter
+  would make the guard pay the price we had just spared the thing it guards.
+
+  ⚠️ The shared count is **not atomic** (PostgREST cannot express "increment"): it under-estimates
+  under heavy concurrency — letting a little more through, never refusing wrongly.
+
+### Testing
+
+- **A column belonging to a migration can no longer be written unconditionally.** `docs/MIGRATIONS.md`
+  says PostgREST rejects the *whole* PATCH on an unknown column; two hours after writing that, I put
+  `write_seq: 0` in the reclaim path without a condition — which would have broken **reclaiming**, not
+  the new guarantee, on every un-migrated host. The probe existed; I had not called it there.
+
+  ⚠️ What was missing was not the knowledge, it was the guard. A rule you remember is a rule you will
+  forget.
+
+## [0.1.48] — 2026-08-17
+
+### Fixed
+
+- ⚠️ **0.1.47 carried the brand key but not its consequence: the loader was blocked.** The key was
+  fed, `brandForShare` resolved it, the right `src` was written into the page — and the logo's origin
+  was **not** added to `img-src` on the preview route. The browser asked for the image and refused
+  it. The file answered 200.
+
+  The tracked-link path derived its three origins and had done so from the start. Two policies, on
+  the same instance, at the same minute.
+
+  ⚠️ **No server-side probe can see this.** The rendered HTML is perfect, the script compiles, the
+  package is conform. Neither the post-publish smoke step, nor the artifact guard, nor a test that
+  executes the page bites — **only a browser shows it**, and only to the eye. The second host found
+  it at one of their clients.
+
+  This is the fourth field of the same family and the first of a different nature: `internal_token`,
+  the brand and the action names were all missing **from** the page. This one is *in* the page —
+  what was missing is what the page is allowed to do next. The "no field by accident" guard therefore
+  could not catch it: the field was provided.
+
+  **The form, as they put it:** *any value that produces a URL destined for the browser must, by
+  construction, add its origin to the policy.* One list, every route, and a guard that recognises
+  image-bearing fields **by their nature** rather than from an inventory.
+
+- **Two more cases the new guard found on its first run.** `bot_vphoto` worked **by accident** — the
+  presenter's photo and the assistant's avatar usually come from the same storage, hence the same
+  origin; the day a host files one elsewhere it disappears with nothing having changed on their side.
+  And `presenter_avatar`, which does not travel in the HTML but in the configuration: the live layer
+  turns it into an image at runtime, in the participants list.
+
+### Known limit, written next to the code
+
+The **audience** page shows participants' avatars, which arrive through presence — from as many
+origins as the host has members. No list set at render time can anticipate them. Pre-authorising them
+would mean widening the policy to an entire host origin: **a decision to take, not an oversight to
+fix in passing.**
+
+## [0.1.47] — 2026-08-17
+
+### Fixed
+
+- ⚠️ **A multi-brand host served one client's loader on another client's domain.** In preview mode —
+  the mode a host uses for its *own* documents, with no tracked link — nothing carried the brand key,
+  and `brandForShare` was never called on that path. A visitor opening a document therefore saw the
+  name of a company they had never heard of, on the domain of the one they were dealing with.
+
+  The machinery was already complete: the host answers `PLAYER_HOST_BRAND_URL`, `branding.forKey`
+  resolves, tracked links display correctly. **What was missing was a transport, on one route.**
+  `&brand=<key>` now feeds `brand_key`, and the same resolution runs.
+
+  Reported by the second host, on a document opened at one of their clients.
+
+### Testing
+
+- ⚠️ **The family the bug belonged to is now closed — but not the way it was proposed.** Preview mode
+  was built as *"a share without a share"*, so every field has to be rewired one at a time:
+  `internal_token` was missing, `brand_key` was missing, **a third one would be**. The second host
+  suggested letting preview accept the same fields as a share.
+
+  Measured, that would open too far. The page reads **34** fields; **20** are absent from the preview
+  object and **17 of those are deliberate** — the whole assistant plugin (which does not run in
+  preview, and whose 116 KB a test already checks are not even embedded), `is_test`,
+  `recipient_email`, `created_by`. Importing them wholesale would switch on features preview does not
+  have.
+
+  The closure is therefore *no field by accident*: everything the page reads must be **provided**, or
+  **declared absent with its reason**. Adding a line to that table is a decision; forgetting one fails
+  the build. The table is itself guarded against **relics** — a reason left for a field the page no
+  longer reads would make it look current while describing a world that is gone.
+
+## [0.1.46] — 2026-08-17
+
+One thread runs through all of it: **what used to be protected by discipline is now protected by
+construction.** Every fix here replaces a rule someone had to remember with a mechanism nobody can
+bypass.
+
+### ⚠️ Host action required before upgrading
+
+Two new authorization action names are asked of `identity.canManageShares`:
+
+| action | what it grants |
+|---|---|
+| `presentations.list.all` | list presentations one does **not** own — slugs, presenter names, counts |
+| `presentations.stats` | read the **attendees** of a presentation one does not own — names, addresses, dwell time, pages |
+
+If your authorization table is a **closed list**, add them before upgrading: an unknown action means
+refusal, so every member — administrators included — loses access, and the refusal reads exactly like
+a role problem. The second host saw this coming from the release note rather than from us writing it;
+`docs/HOST-CONTRACT.md` now carries the full table, says the list grows, and a guard fails the build
+if the code ever asks for a name the contract does not document.
+
+Neither right is needed to read one's **own** presentations: an owner, and an administrator, are
+always served without the player asking the host anything.
+
+### Fixed
+
+- ⚠️ **A hostile broadcaster could silence a whole meeting room.** The public-channel quota is keyed
+  on the address, but the re-read cadence is chosen by **whoever broadcasts** — three spectators
+  behind one office egress could be pushed past the quota, collect 429s, and **their pages stopped
+  turning**. Before the limit such a participant was expensive; after it, they could silence. The
+  cause is now bounded rather than the effect: a spectator gives itself a budget and never re-reads
+  more than a presenter's actions justify. **The resynchronisation net is never rationed** — doing so
+  would have replaced an outside denial of service with a home-made one.
+
+- **Ending a presentation could be undone by a tab left open.** The control token survived the
+  closure, and it is persisted in localStorage — so a second tab put the presentation back online for
+  the audience. Ending now **revokes** the token. ⚠️ Staleness (three minutes without a heartbeat)
+  deliberately does **not** revoke: there, "resurrection" is how a presenter whose laptop slept comes
+  back, and an anonymous presenter has no other way in.
+
+- **Attendance rows could be overwritten by any participant.** The presence channel broadcast the
+  *measurement key* — so anyone could read a neighbour's and repost it. Presence now carries its own
+  public identifier; the measurement key never leaves the browser except toward the server.
+
+- **A member who knew a slug read the attendees of someone else's presentation** — names, addresses,
+  dwell time, pages. The player now grants what is obvious (owner, administrator) and asks the host
+  for the rest.
+
+### Changed
+
+- **Public reads are cached per slug** (`state=1`, `chat=1`), collapsing any cadence — legitimate or
+  hostile — to one database read per window per instance. The window is derived from the audience
+  scheduler's existing coalescing, so **no latency is added beyond what a spectator already accepts**.
+  ⚠️ The idea came from the second host; the window did not: they proposed one second, citing our
+  0.1.19 doctrine — which is about *authority*, not latency. Since that same doctrine emptied
+  broadcast payloads, the re-read is now **the only path the page number travels**, so a one-second
+  cache would delay every page turn.
+
+  The rule is structural, not a list: *any response identical for all spectators of one slug is
+  cached*, served by a single path. A guard rejects any branch that answers without it.
+
+- **All presentation writes go through one queue.** Six paths wrote, two were guarded — 0.1.41's
+  "map writes are sequential" was true of one path in three. The **write functions themselves** now
+  queue: there is no direct path left, so nothing to forget. ⚠️ What it does not close, and it is
+  written next to the code: a request **abandoned** by the timeout may have reached the server and
+  land after the one that replaced it. The queue removes the disorder we cause, not the disorder we
+  suffer.
+
+## [0.1.45] — 2026-08-16
+
+⚠️ **The limit shipped in 0.1.42 turned an amplification into a denial of service against the
+audience — and we opened that door ourselves.**
+
+### Fixed
+
+- ⚠️ **A hostile broadcaster could silence a whole meeting room.** The public-channel quota is keyed
+  on the **address**, and it was sized on what legitimate use consumes. But the re-read cadence is
+  not chosen by the spectator — **it is chosen by whoever broadcasts.** The scheduler coalesces at
+  400 ms, so a spectator can be made to re-read ~9 000 times an hour; three spectators behind one
+  office egress therefore blow past the 21 600/h quota, collect 429s, and **their pages stop
+  turning**.
+
+  Before the limit, such a participant was expensive. After it, they could **silence**. That is the
+  `X-Forwarded-For` lesson inverted: the limit does not rest on what the *caller* chooses — but it
+  was *paid for* by someone who does not choose either.
+
+  **The cause is bounded, not the effect** — lowering the quota would have punished the victim
+  further. A spectator now gives itself a budget and never re-reads more than a presenter's actions
+  justify: under hammering, ~9 000/h drops to 720/h.
+
+  ⚠️ **The budget gates the signal, never the net.** `signaler()` is triggered by a broadcast, so by
+  any participant — that is the door to ration. `maintenant()` is our own 25 s resynchronisation net:
+  rationing it would leave an audience with an empty budget **permanently mute**, which would have
+  closed one door by opening a smaller, more reliable one. The net is the floor.
+
+  **The two numbers are one contract**: signal budget + net = a spectator's share, and the server
+  quota = that share × `READERS_PER_EGRESS`. ⚠️ A test forced the quota derivation to be corrected: it
+  counted only the *sustained* share, so a full room exceeded the quota by 475 re-reads — exactly
+  everyone's burst. **The server must cover what the client allows itself, not its average.**
+
+- **A dead copy of `fetchBorne` shipped in 0.1.44.** Moving the helper into the bundle removed
+  nothing: a second implementation still lived in the template, and it was *that one* the audience
+  used — a path covered by none of the tests written for the other. Two implementations of one
+  contract, exactly what this repository keeps warning about. Removed; one entry point for all four
+  paths.
+
+### Testing
+
+- ⚠️ **The test for the central property did not bite on the first try.** It hammered, then watched a
+  lull — and a rationed net passed anyway, because the budget refills a token every 5 s while the net
+  only runs every 25 s, so it always finds one after a pause. The condition that separates the two
+  worlds is **continuous** hammering. The threshold was then **measured, not guessed**: 884 re-reads
+  with the net free (720 budget + 20 burst + 144 net), exactly 740 when it is rationed. The assertion
+  compares against the signal budget — the real boundary — rather than a hand-written number.
+
+- **First end-to-end on the audience side**: the test renders the audience page, runs it, connects the
+  live layer, and drives broadcasts through it.
+
+## [0.1.44] — 2026-08-16
+
+Two findings from the audit re-review that followed 0.1.43. ⚠️ **One of them was created by our own
+0.1.41 fix** — the review is reading a movement, not a state.
+
+### Fixed
+
+- ⚠️ **"End" did not end anything final.** Piloting functions write `active: true`, and the control
+  token **survived the closure**. A second tab left open therefore put the presentation back online
+  for the audience while the presenter believed it closed. The token is persisted in localStorage:
+  this was not a narrow race, it was a door left open at will.
+
+  ⚠️ **The rule the audit proposed — "refuse every write when `active=false`" — would have broken a
+  real recovery.** `active:false` covers two unrelated situations: a **decided** end, and an
+  **observed** staleness (3 minutes without a heartbeat), where "resurrection" *is* how a presenter
+  whose laptop slept comes back. Refusing both would strand an **anonymous** presenter forever —
+  `present-reclaim` requires ownership, and `present-start` requires no session at all.
+
+  The two are therefore separated by what actually distinguishes them — the decision. **Ending
+  revokes the control token**; staleness leaves it intact. Owner paths, which need no token, are
+  closed separately on `active=false`. No schema change. A mutation that makes the staleness sweep
+  revoke — i.e. that applies the general rule — is rejected by the bench.
+
+- ⚠️ **A hung request froze the write queue, and that risk came from our own fix.** Before 0.1.41 the
+  scheduler called `fini()` immediately: writes could land out of order, but nothing could block. By
+  making them sequential we traded a correctness defect for an **availability** risk — a suspended
+  request never settles its promise, the queue never resumes, and the presenter drives into the void,
+  silently. A browser guarantees no timeout of its own.
+
+  `fetchBorne` lives next to `createScheduler` because it is its counterpart. It bounds the four
+  paths that can wedge: audience re-reads, `pushPage`, `presentContent`, `endPresent`. The `pagehide`
+  beacon stays deliberately unbounded — it is never awaited.
+
+  ⚠️ **What the timeout restores, and what it does not.** **Liveness**: the queue resumes. Not
+  **order** — an abandoned request may well have reached the server and land after the one that
+  replaced it. Order despite abandonment needs a version number carried by the write; that belongs to
+  the single-queue work, not here. Better said than left implied.
+
+### Testing
+
+- ⚠️ **A textual probe fell over, and the property had not moved.** A test looked literally for
+  `fetch('/api/doc'` and failed once the call went through the bounded wrapper — while what it
+  asserts (write *before* broadcasting) was unchanged. It now recognises the **act**, not the name of
+  the call. Same lesson as the tag-filter patterns two versions earlier.
+
+## [0.1.43] — 2026-08-16
+
+### Fixed
+
+- ⚠️ **A case detail is an attendance row.** 0.1.42 moved the member attendance key from the client
+  to the verified token — but the client key was lowercased (`me.email.toLowerCase()`) and the
+  derived one was not. Rows are found by `attendee_key=eq.` — an **exact** match. On a host whose
+  identity returns the address as typed, the same member would therefore get a **second row**:
+  accumulated time back to zero, and the colleague listed twice among participants.
+
+  No effect where addresses are already normalised — which is the case for both current hosts, and
+  exactly why nothing would have reported it. *An open contract does not rest on what its first two
+  hosts happen to do.* Found while re-reading 0.1.42 before announcing it.
+
+## [0.1.42] — 2026-08-16
+
+Four findings from a third external audit (CODEX 5.6), and the first browser end-to-end test.
+
+⚠️ **All four defects were already half-fixed.** In each case the right rule was written next to the
+place where it was missing — a comment three lines above, a sibling action, twelve guarded writes
+beside two unguarded reads. That is the pattern worth keeping from this release: *a rule stated in
+one branch does not travel to the branch beside it.*
+
+### Fixed
+
+- ⚠️ **Ending a presentation announced the end before obtaining it.** `endPresent()` sent
+  `sendBeacon` — which returns **no response at all**, neither "recorded" nor "refused" — then
+  cleared the UI, erased the control token and closed the channel. If the call failed, the
+  presentation stayed **live for the audience** while the presenter believed it closed; and with
+  `clearCtl` having already discarded the token, they no longer had the means to close it. Only the
+  3-minute staleness sweep remained.
+
+  ⚠️ **The beacon bought nothing here.** It exists to get a request out while the page is *dying* —
+  and the only caller was a **button**, which can afford to wait. It now lives on `pagehide`, and
+  only there. The button waits for a 2xx before broadcasting, disconnecting, or erasing anything;
+  on failure the presenter keeps everything needed to retry, and the button says so.
+
+- ⚠️ **The anonymous presenter could turn pages but not move the map.** `present-start` requires no
+  session — deliberately — and `present-page` therefore accepts the `control_token`. But
+  `present-content`, which drives what the presentation *displays*, had been filed with the
+  session-only actions. The call returned 401, swallowed by a browser-side `catch`, and the map
+  simply did not follow. The two are the same act of piloting; they had been grouped by **proximity
+  in the route, not by authority**. What stays owner-only is `present-switch`: changing the
+  *document* shown is not driving the display.
+
+- ⚠️ **A participant could overwrite a colleague's attendance row — using their email address.**
+  `present-attend` identifies its row by a client-chosen `key`, and for a member `attendeeKey()`
+  returned their **email**. Any anonymous visitor to the public link could post
+  `key: "colleague@company.com"` and rewrite that row: the name and avatar shown in the participant
+  list, and the accumulated reading time.
+
+  ⚠️ Three lines above, the same route already said *"a proven identity **replaces** a claimed one"*.
+  Name, email and avatar had indeed been replaced by the token's. The **key** slipped through —
+  though it is the one value that decides *which row is written*. A member's key is now derived from
+  the verified token; an anonymous keeps theirs, confined to an `anon-…` namespace it cannot leave.
+  It is also drawn with `valeurImprevisible` instead of `Math.random()`: acceptable for an analytics
+  id, not for the only thing separating two anonymous participants — the same fix made in 0.1.23 for
+  the chat author token, twenty lines below in the same file, never carried up.
+
+- ⚠️ **The public channel was an unbounded amplifier.** `state=1` and `chat=1` are served without a
+  session, on a public link, and each call costs a database query. Twelve write actions passed
+  through a limit; these two **reads** did not. And the **shared** resource pays — the database is
+  the same for every document on the instance — so the cost of abuse does not fall on whoever causes
+  it.
+
+  ⚠️ **Where the guard sits *is* the fix.** `getPresentation()` ran *before* the `state`/`chat`
+  branches: a limit written where the refusal is phrased would have refused correctly, with the
+  right status code, **after spending exactly what it protects**. The tests therefore count database
+  queries, not response codes. The quota is *derived* from the audience's cadence (25 s resync net
+  + one presenter action every 5 s, times `READERS_PER_EGRESS` — the sessions constant reused, not
+  reinvented), and a refusal is logged hourly: otherwise a whole meeting room would drop off with no
+  named cause.
+
+### Testing
+
+- **First real browser end-to-end.** `finDePresentation.test.js` renders the presenter page, installs
+  it in jsdom, runs its scripts, clicks *Present*, then clicks *End* with a server response held open
+  by hand.
+
+  ⚠️ This is what separates it from a textual probe. *"After the response"* and *"in the failure
+  branch"* both place the broadcast after the call — only a provoked failure tells them apart. Four
+  mutations restoring the defect are refused.
+
+- ⚠️ **Two benches were fixed rather than worked around.** Static analysis was right three times
+  about a hand-rolled `<script>` filter (it missed `<SCRIPT>`, then `</script >`, then
+  `</script\t\n bar>`): the regex was **removed** — the benches run in jsdom, and `DOMParser` sees
+  what the browser sees by construction. And a test that passed on Node 22 while failing on Node 24
+  was not flaky: benches share one window, therefore share its timers, and a previous bench's
+  500 ms-deferred write landed on the current bench's spy.
+
+- ⚠️ **An artifact guard that read instead of running.** Its first version scanned the minified
+  bundle for `.email`; a mutation reintroducing the defect under another name walked straight past.
+  It now **executes** the shipped bundle and offers it identity five ways, old signature included.
+
+## [0.1.41] — 2026-08-16
+
+### Fixed
+- ⚠️ **0.1.39 removed `hasFocus()` from the reading condition — and left `on(win,"blur",pause)` 170
+  lines below.** The project therefore said two things at once: *"a visible document counts"* and
+  *"a window without focus does not"*. Clicking the other screen's window fired `blur`, which
+  paused counting.
+
+  ⚠️ **Measured rather than assumed, and the audit's framing was too dark**: the periodic flush
+  (12 s) calls `commit()`, which ends with `activeSince = viewable() ? now() : null` — so counting
+  restarted by itself at the next flush. The leftover handler cost **at most one interval**, not the
+  session: 58 s counted for 65 s elapsed in the bench. Real, bounded, and silent — every trip
+  between screens shaved a few seconds.
+
+  The contract is settled: losing focus means *another window is in front*, not *this document is
+  no longer read*. Only `visibilitychange` carries that authority. The old test that demanded the
+  opposite has been flipped, and a second one pins what must **not** change — a hidden tab still
+  does not count.
+
+  ⚠️ **Our bench never fired `blur`.** Third time in a day that a bench failed to exercise the
+  property its test described, and the assertion was loose enough (`> 50` on 65 s) to pass with the
+  defect anyway. *A test that tolerates twelve seconds of loss cannot see twelve seconds of loss.*
+
+- **Map writes were not actually sequential.** The scheduler called `fini()` immediately while
+  `presentContent()` was fire-and-forget, so its "one in flight, last one wins" guarantee applied to
+  the order of *calls*, never to the order of *writes*. Several `PATCH` could fly together and an
+  older position land after a newer one. `presentContent()` now returns its promise, and both
+  schedulers wait for it.
+
+  *Both reported by an external audit pass on 0.1.40.*
+
+## [0.1.40] — 2026-08-16
+
+### Fixed
+- ⚠️ **Turning a page did not count as reading.** Idleness was measured from *input* events — mouse,
+  keyboard, wheel, touch. But someone following a live presentation touches nothing: the pages turn
+  in front of them, pushed by the presenter. They went idle after a minute, while **the one thing
+  that proves they are watching was happening**.
+
+  A page turn now counts as activity. It also puts the threshold back in its place: it arbitrates
+  **silences** only. A real reader turns pages; a forgotten tab turns none.
+
+  *Seen by the second host: "what really separates a reading from a forgotten tab is not duration,
+  it is turning a page."*
+
+### Changed
+- **The idle threshold goes from 60 s to 3 minutes**, and the number comes from an asymmetry rather
+  than a preference. A dense page — a spec sheet, a contract — takes one to three minutes to read
+  without a single mouse movement, so 60 s counted an attentive reader as absent.
+
+  The two errors do not cost the same:
+
+  - *under-counting a real reading* → you call back a client who had read. Unpleasant, no consequence.
+  - *over-counting an abandoned tab* → you tell a salesperson "they read their contract for twenty
+    minutes", and they use it to push on price. **A decision taken on a fiction.**
+
+  Hence the low end of the range the second host proposed (3–5 minutes).
+
+  ⚠️ **The two measures stay separate**, and that is the point: `last_at − started_at` is *presence*,
+  `total_seconds` is *activity*. A contract skimmed for thirty seconds and a contract left open for
+  twenty minutes on a second screen are two different facts; collapsing them into one number loses
+  one. Whoever reads the statistics chooses.
+
+### Note
+- ⚠️ **Three of our own tests pinned `70` instead of the threshold**, so they broke when the value
+  moved although the property had not. They now derive from `SESSION_IDLE_MS`, which joins the
+  shared contract: *a test that fixes a number forbids changing the number; a test that fixes the
+  relation lets the number live.*
+- ⚠️ **And the bench neutralised the very mechanism under test.** It returned `setInterval: () => 0`,
+  so the idle loop never ran, `idle` stayed false forever, and removing the page-turn rule left the
+  tests **green**. The mutation revealed it, not a re-reading. *A bench that disables what it tests
+  is a test that cannot say no.*
+
+## [0.1.39] — 2026-08-16
+
+### Fixed
+- ⚠️ **A document displayed on a second screen was counted as an absence.** `viewable()` required
+  `doc.hasFocus()` — and `hasFocus()` answers *"the user is typing here"*, not *"the user is
+  looking"*. A reader with the document visible for forty seconds while working on the other screen
+  was credited **two seconds**.
+
+  ⚠️ This never was an internal-population problem. A prospect keeping a brochure open while it is
+  discussed over the phone is the **central** use of a shared link, and it measured as absence. The
+  function promised *reading time* and returned *typing time*.
+
+  `visibilityState` read `visible` throughout: the right signal was available, overridden by a
+  stricter condition answering a different question.
+
+  ⚠️ **What remains is deliberate.** The idle threshold is now the *sole* thing separating a reader
+  from a forgotten tab, so a document read with no interaction at all counts at most `idleMs` — 60 s
+  by default. Better than zero, less than a real ten-minute reading. Raising it would measure
+  passive reading better *and* credit an abandoned tab for longer: that is a decision about what
+  "reading" means, and it is written next to the option rather than taken alone.
+
+  *Found by the second host on a real reading — 26 s of presence, 2 s counted — after a first
+  diagnosis ("the frame had no focus") that the reader themselves corrected.*
+
+- **`start()` began counting without checking visibility.** A document opened in a background tab —
+  a link clicked with Cmd, a session restore — started counting before ever being seen, and the
+  idle cap still credited it `idleMs`. One minute of reading for a tab nobody looked at. `commit()`
+  already made that check; `start()` did not.
+
+  *Found by the test written for the second-screen case, which was looking for something else.*
+
+### Note
+- ⚠️ **`main` had been failing CI since 0.1.36**, and three versions shipped on top of it: a test
+  in the browser suite read files through `node:fs`, which vitest runs happily and `tsc` refuses.
+
+  I did not see it because **I was counting passes instead of looking for failures** — `gh pr checks
+  | grep -c pass` returns 6 whether or not something else failed beside it. A count of successes
+  says nothing about failures. It is the same mistake this repository has been documenting in its
+  own guards for two days, made on the tool meant to watch them.
+
+  Disk-reading assertions now live in the server suite, where they belong. I put one back in the
+  browser suite ten minutes after fixing the first — the rule is simple, and writing it down did not
+  stop me breaking it twice.
+
+## [0.1.38] — 2026-08-16
+
+### Fixed
+- ⚠️ **The guard written in 0.1.37 missed a case, and it missed it the same way the guard it
+  replaced did.** It filtered on a **list of names** of write helpers; `recordUnlock` writes
+  straight through `PLAYER.db.request`, so it went unseen — a silent catch swallowing a visitor
+  unlock journal entry. That is exactly what the audit held against the prototype guard (*"it
+  filtered on variable names"*), reproduced the same day in a guard written to prevent this class
+  of thing.
+
+  Found by checking the **published tarball** of 0.1.37, not by the guard.
+
+  The rule now targets the **form** — any database write caught in silence — rather than names. A
+  list only sees what was put in it; a form also sees the next one.
+
+  ⚠️ **Writes only.** A lost write is lost forever; a failed read is retried on the next call. A
+  catch that drops a display counter to zero is a legitimate choice; a catch that loses a
+  measurement never is. The first version of the form accused both — too broad in one direction
+  after being too narrow in the other.
+
+### Note
+- **This probe was wrong three times before it bit**, and every error was found by running it, never
+  by re-reading it: bounded by characters (a long comment pushed `capture(` out of view, and it
+  accused the corrected code); by a fixed number of lines (it spilled into the *next* block and
+  found a `capture(` that was not its own); and without a function boundary (a write that is
+  correctly *not* wrapped had the following function's catch attributed to it).
+
+  A guard is worth exactly what its reading is worth. That is the whole lesson of this version, and
+  it applies to the guard as much as to the code it watches.
+
+## [0.1.37] — 2026-08-16
+
+### Fixed
+- ⚠️ **Internal reading tracking had never written a single row — on either instance.** The row
+  carried `ua` and `ip`; the internal-sessions table has neither. PostgREST refused
+  (`column "ua" ... does not exist`), the caller's `catch { /* best-effort */ }` swallowed the
+  refusal, and the route answered `{"ok":true}`. **Our own production table held zero rows.**
+
+  ⚠️ **The schema was right and the code was lying.** An *internal* reading is a colleague:
+  `device`, `os` and `browser` — derived — describe it well enough, and one does not keep the full
+  user-agent or the address of one's own team. The *external* sessions table carries them, because
+  that is neither the same population nor the same promise.
+
+  Fixing it by **adding the columns** would have done the opposite: raising the schema to the level
+  of the code instead of the code to the level of the intent. What you keep about your own teams is
+  not decided by a PostgREST error message.
+
+- ⚠️ **A rule written in a comment does not protect the code that follows it.** In 0.1.35 we wrote,
+  inside `upsertInternalSession`: *"the guard was not the problem; its muteness was."* Three lines
+  below, in the calling function, `catch { /* best-effort */ }` swallowed the failure of the write
+  itself.
+
+  "Best-effort" is a sound intention — a measurement must never stop someone reading a document.
+  But best-effort does not mean **mute**: what is caught there is the right to *continue*, never the
+  right to *say nothing*. Both catches now report, once an hour, naming the cause.
+
+  The rule became a **test** rather than a comment: `ecritureMuette.test.js` refuses any silent
+  catch around a measurement write. It immediately found the twin on the external path — harmless
+  so far, since that table does have the columns, but it would have swallowed the next mismatch the
+  same way. **What makes the class dangerous is not the instance.**
+
+  *Found by the second host, reproduced by replaying the insert.*
+
+### Note
+- The guard's own probe was wrong twice before it bit: it bounded the catch body by characters
+  (a long comment pushed the `capture(` out of view, and it accused the corrected code), then by a
+  fixed number of lines (it spilled into the *next* block and found a `capture(` that was not its
+  own). A guard that reads beside the point guards nothing — established by mutation, not by
+  reading.
+
+## [0.1.36] — 2026-08-16
+
+### Fixed
+- ⚠️ **The internal-session quota could not hold a single reader.** The browser writes one session
+  every 12 s — **300 per hour for one person** — and the server allowed **120 per hour per address**.
+  The limit therefore sat *below* what one legitimate reader consumes: after 24 minutes of
+  continuous reading, everything was refused. And since the key is the address, a team behind a
+  single internet egress — the *ordinary* case for a company, not the edge case — shared a quota
+  that one person alone exceeds.
+
+  ⚠️ **The guard was right in its shape and wrong in its number**, which is exactly why nobody
+  re-read it: we re-read what looks doubtful, not what looks reasonable.
+
+  ⚠️ **And the refusal was silent.** The 429 appears only in the reader's console; the hourly log
+  named the missing field, never the quota. An operator saw a table that would not fill, with no
+  cause attached — the very symptom we had just fixed elsewhere. It is now reported once an hour,
+  naming the quota, **before** the `return` rather than after it (the linter caught that one:
+  `Unreachable code`).
+
+  The cadence and the quota were two halves of one contract written in two places. They now live in
+  `src/cadence.ts`, inside the **shared** module whose own generated header already said why: *"two
+  implementations of one contract always end up diverging in silence."* The quota is **derived**
+  from the cadence — changing one moves the other.
+
+  ⚠️ **The key stays the address**, and that is not an oversight. A session id is chosen by the
+  browser; a quota keyed on it is bypassed by rotating it — the `X-Forwarded-For` lesson of 0.1.22,
+  where the limit existed and limited nothing. **A limit can only rest on what the caller does not
+  choose.** It was the number that was wrong, not the key.
+
+  *Found by the second host, on their instance, while looking for why their table stayed empty.*
+
+### Changed
+- The shared bundle takes an explicit entry point. `SHARED_SOURCES` and the esbuild entry were the
+  same list, so adding a file made it count toward the cache-busting hash **without being bundled**:
+  the file would exist, the hash would change, and the import would fail only at runtime.
+
+## [0.1.35] — 2026-08-15
+
+### Fixed
+- ⚠️ **The lock had no keyhole.** 0.1.22 added `verifyInternalToken`, which reads `body.it`, and
+  announced that `PLAYER_INTERNAL_STRICT=1` "closes the door entirely". That was true of the
+  **check** and false of the **system**: no path allowed a host to *supply* that token. The preview
+  route read `uemail`, `docId`, `name`, `title`, `by`, `av`, `resume`, `autopresent` — no token —
+  and `CFG.internal` carried only `{email, name, docId}`.
+
+  Setting the variable would therefore have refused **100% of internal sessions on every
+  instance**, ours included. And that is why "strict analytics by default" — the next item on the
+  audit's list — could not be shipped: it would not have hardened hosts, it would have cut them off.
+  A lock nobody can close is not a transition, it is an announcement.
+
+  A host can now pass `it` on the preview route; it travels through `CFG.internal` and comes back
+  in the body, where the check has been waiting since 0.1.22.
+
+  *Found by the second host, while preparing the very token we had asked them to sign.*
+- **A silent rejection cost a host weeks.** An internal session without a `docId` is dropped — the
+  guard is right, a session with no document measures nothing — but it said nothing. That host
+  brought up their internal tracking, believed it live, and found out much later that the table was
+  empty: their `docId` never left, and every heartbeat was discarded in silence.
+
+  ⚠️ The guard was not the problem; its muteness was. **A measurement that reports nothing is
+  indistinguishable from a measurement with nothing to report** — nobody goes looking for a failure
+  no signal announces. It is now reported once an hour, naming the missing field, exactly like the
+  unsigned-session gap of 0.1.22. An abnormal state left unsaid becomes the normal state.
+
+## [0.1.34] — 2026-08-15
+
+### Security
+- **A proven identity now replaces the claimed one instead of sitting beside it.** `isPresenter` and
+  `isMember` have been verified since 0.1.25/0.1.28, but `name`, `email` and `avatar` still came
+  from the request body — **even when a valid token accompanied the call**. An authenticated member
+  could therefore post under a colleague's name and address, *with the member badge*: the visible
+  attribution said someone else.
+
+  ⚠️ It granted no rights — editing and deleting are authorised by `author_hash`, not by the email
+  (`editMessage`), so a spoofed address never took control of anyone's message. The damage is
+  attribution, not takeover. That is enough: in a conversation, a message signed with someone
+  else's name **is** the problem.
+
+  A host can supply `identity.profileOf(user)` to say how to read *its* user; without it the core
+  reads the usual shapes, and the email — which is universal — is always taken from the token.
+
+  A visitor with no token keeps the name they typed. That is the intended mode: they are announcing
+  themselves, not proving anything, and the badges stay off.
+
+  *Reported by the second audit pass (P1-6).*
+
+### Note
+- The opaque author id the report also suggests — so that author emails stop being broadcast to the
+  whole audience when the interface never displays them — needs a column and a migration path for
+  existing messages. Tracked, not done here: `author_email` currently carries `isMine()`, which
+  decides whether the edit and delete controls appear.
+
+## [0.1.33] — 2026-08-15
+
+### Security
+- ⚠️ **An alert is not a prohibition.** 0.1.21 introduced `PLAYER_PUBLIC_URL`, fell back to the
+  `Host` header when it was missing, and *logged* the fallback. That was the right compatibility
+  reflex and the wrong conclusion: a log entry does not stop a phishing email. A misconfigured
+  instance kept sending — signed with its brand, with a button pointing wherever the reader chose —
+  and the operator found out from an abuse report.
+
+  The send is now **refused**: `sent: false`, `sendRefused: "public-url-unconfigured"`.
+
+  ⚠️ **What is refused is the send, not the link.** The child link is still created, tracked and
+  returned, so the caller can forward it themselves. What is withheld is the only part that cannot
+  be taken back — mail leaving our servers with our domain in the header and our sender reputation
+  behind it. The compatibility argument from 0.1.21 therefore did not hold: refusing the send does
+  not break link creation, which is this route's main function.
+
+  *Reported by the second audit pass (P1-1).*
+
+### Fixed
+- **The test had encoded the fallback**, and so protected the hole: it required "no public URL:
+  falls back to Host, but logged" — that is, it required the email to go out anyway. It is the
+  fourth test today found pinning a defect while believing it described a property.
+
+## [0.1.32] — 2026-08-15
+
+### Security
+- ⚠️ **One table row could poison a whole process.** The aggregators were plain objects indexed by
+  data from outside — document ids, emails, session ids — and the shape `X[k] = X[k] || {…}` is
+  enough:
+
+  `byDoc["__proto__"]` does not return `undefined`, it returns `Object.prototype`, which is
+  **truthy**. The `|| {…}` therefore never fires, `a` *becomes* the prototype, `a.opens++` writes
+  `Object.prototype.opens = NaN`, and `a.readers.add(…)` throws on `undefined`.
+
+  The `TypeError` is visible. **The property left on the prototype is not**, and it survives the
+  request: on a warm serverless instance every object in the process then carries an `opens`, and
+  any `if (x.opens)` elsewhere silently changes meaning.
+
+  ⚠️ `user_email` is reachable **without authentication** as long as `PLAYER_INTERNAL_STRICT` is
+  unset (0.1.22), and `session_id` is written by the reader. Not theoretical.
+
+  Every aggregator is now a `Map` — keys are data, not property names — and every browser-side
+  dictionary is built with `Object.create(null)`, including `typers`, which is fed by `typing`, the
+  one event that still trusts its sender. Uniformly, including the sites that were not reachable:
+  an aggregator that has to justify itself case by case eventually gets a case wrong.
+
+  *Reproduced and reported by the second audit pass (P1-2).*
+
+### Fixed
+- **The static guard that missed it.** It filtered on a **list of variable names** — `body`, `q`,
+  `emoji`, `name` — and `id`, `k`, `sid` were not in it, so all of `shares.js` went through. It now
+  excludes only what is certainly internal (loop counters) rather than listing what comes from
+  outside, and it looks for the object's **declaration** instead of scanning 25 lines back: a window
+  approximates scope, a name is exact. It found nine further sites, all fixed here.
+
+  ⚠️ It remains an alarm. The barrier is `clefsHeritees.test.js`, which exercises the five inherited
+  keys against running code — as the report put it, a regular expression over variable names can
+  only ever be a complementary alarm.
+
+## [0.1.31] — 2026-08-15
+
+### Fixed
+- ⚠️ **The signal went out before the write, and the comment claimed the opposite.** `pushPage`,
+  `presentContent` and `endPresent` broadcast first, then started the write. Since 0.1.19 that
+  signal says only one thing — "re-read" — so the audience re-read while the database still held
+  the old state, and **no second signal was guaranteed**: the page turn was lost until the 25 s
+  resynchronisation.
+
+  `endPresent` was the worst of the three: it signalled, then **cut the channel**, then sent the
+  end notice. The signal left on a stale state and the disconnect preceded the send — an audience
+  could simply never learn the presentation had ended. `sendBeacon` cannot be awaited, but it
+  returns once the request is *queued*; signalling right after it, then disconnecting, respects the
+  order as far as that transport allows.
+
+  Delaying the signal by one round-trip costs nothing, since it only ever meant "re-read". Sending
+  it too early cost both a pointless re-read **and** the change itself.
+
+  *Reported by the second audit pass (P0-3).*
+
+### Changed
+- **The state signal no longer carries a state.** The audience ignored it already (it re-reads), but
+  a payload that travels without serving gives the impression that it serves, and invites the next
+  person to use it. Same reasoning as `map` in 0.1.30: cut the path, not just the use.
+
+### Note
+- The tests here compare **positions** — where the write sits relative to the signal in each
+  function — rather than searching for a string. Three tests today had pinned a defect while
+  believing they described a property; this one fails when the original order is restored, which is
+  the only thing that makes it worth writing.
+
+## [0.1.30] — 2026-08-15
+
+### Security
+- ⚠️ **The map position no longer travels in the broadcast.** It did, and the audience applied it
+  as-is. The channel being public, **any participant could move everyone's map**, with coordinates
+  of their choosing. 0.1.19 granted that exception on the grounds that the signal is "ephemeral,
+  with no server truth to check against". The argument does not hold: **during map mode, that
+  signal is the image the audience sees.** `typing` can stay cosmetic; `map` cannot.
+
+  The presenter now persists its position through the JWT-gated route and emits an **empty**
+  signal. The audience re-reads the state and applies what the server gives it. A hostile
+  participant can still emit: they trigger a bounded re-read and obtain nothing.
+
+  ⚠️ **The obstacle was that persistence was a debounce**, not the broadcast. `schedPersist` pushed
+  the write back 700 ms on every movement, so during *continuous* panning it never fired — which is
+  precisely why the position had to travel in the broadcast. It now uses the same bounded scheduler
+  as the re-read: at most one write per 500 ms, and **always the last position**, so the audience
+  follows during the movement and not only once it stops.
+
+  **Live map following becomes stepped rather than continuous** — about twice a second. That is the
+  price of nobody but the presenter driving the audience's screen, and it is the right price.
+
+  The payload path is removed rather than merely ignored: leaving it would be defence by accident,
+  and the day someone reconnects a parameter the public payload would be trusted again with nothing
+  to say so.
+
+  *Reported by the second audit pass (P0-1).*
+
+### Fixed
+- **A test had endorsed the exception.** It asserted that `map` "still applies the payload —
+  ephemeral, no server truth", and it would have stayed green after the fix: it read the Live
+  layer's handler, which forwarded `p.payload` regardless. The sweep now names the events that
+  trust their sender, and `typing` is the only one left — it will have to justify itself on every
+  reading of that file.
+
+## [0.1.29] — 2026-08-15
+
+### Security
+- ⚠️ **The re-read could be starved indefinitely.** Since 0.1.19 the whole defence of the public
+  Realtime channel rests on one move: stop believing the transport, re-read the source of truth.
+  That re-read was a debounce — `clearTimeout` then `setTimeout(…, 120)` — so **every signal pushed
+  the deadline back**. A participant broadcasting every 100 ms postponed it forever.
+
+  Starving the re-read falsifies nothing; it simply stops the audience learning anything. Pages
+  stop turning, the chat freezes, and **no error says so** — the hardest kind of failure, because
+  everything looks like it is working. The comment above it read "grouped: ten broadcasts in a row
+  must not produce ten requests". The intent was right; the shape inverted it.
+
+  The opposite direction was open too: signals spaced slightly wider than the delay produced one
+  HTTP request each, **per connected viewer**. The public channel became an amplifier aimed at the
+  API.
+
+  It is now a bounded scheduler with four properties, each exercised on running code: a pending
+  deadline is never pushed back, one request in flight at a time, never more than one run per
+  interval, and **the last signal is always served** — bounding without that would drop the signal
+  that mattered.
+
+  ⚠️ The fix is in how the delay is computed, not in removing `clearTimeout`: the wait is measured
+  from the last *run*, not from the incoming signal, so the deadline is **absolute** and
+  rescheduling cannot postpone it. Established by mutation — reintroducing the original shape fails
+  five tests.
+
+  A slow resynchronisation (25 s) now catches a lost signal. Bounding the rate makes losing one
+  possible; the safety net is the price of the bound, not an optimisation.
+
+  *Reported by the second audit pass (P0-2).*
+
+### Fixed
+- **A test was pinning the defect as a feature.** It asserted that `clearTimeout(_relEtat)` appeared
+  in the source — the exact line that allowed the starvation — believing it checked "re-reads are
+  grouped". It checked a *shape* and would have rejected the fix. The properties are now exercised
+  on executed code; the source-level test only confirms the page uses that scheduler.
+
+## [0.1.28] — 2026-08-15
+
+### Security
+- ⚠️ **The state route published the presenter's email address.** 0.1.25 added `presenter_key` to
+  `GET ?state=1` — a public route, read by every anonymous viewer of a share link. That key comes
+  from `attendeeKey()`, which returns **the email address** whenever the participant has one. The
+  field had a technical name and nobody, myself included, went to look at what it contained — on
+  the very route whose comment promises "only what the audience must know".
+
+  ⚠️ **And it was not a proof either.** The badge compared that key to the `uid` in the *presence*
+  payload, which the client composes. Read the public key, announce yourself with it, wear the
+  title. 0.1.25 had replaced "the client declares its role" with "the client declares a value the
+  server handed it" — more laborious to exploit, no more true.
+
+  The participant list now carries **no badge at all**. The presenter is displayed separately, from
+  `presenter_name` — set by the host, compared to nothing.
+
+  *The false proof was reported by the second audit pass (P0-4). The leak was not in it: it was
+  found by following the value rather than the name.*
+
+### Note
+- The methodological line this version pays for, in the auditor's words: **a value coming from the
+  server is not automatically a proof if the client can choose what it will be compared against.**
+- The `vm.Script` guard added in 0.1.26 caught the removal itself — deleting the badge expression
+  left a `++` in the template. Second catch in a day, on the day it was written.
+
+## [0.1.27] — 2026-08-15
+
+### Security
+- **One host's `localStorage` key was hard-coded for every other host.** `3dd-supabase-auth` — the
+  3D Discovery studio's session key — appeared in five places in this package. On any other host,
+  `detectMember()` and `accessToken()` therefore found nothing: **none of its members were
+  recognised as members**, and the separation of internal from external populations that this
+  product sells worked only on ours.
+
+  ⚠️ Since 0.1.25 that key also carries a **security** property — it is how membership is proven.
+  One host's constant had become load-bearing for all of them.
+
+  It is now `config.hostAuthStorageKey` (`PLAYER_HOST_AUTH_STORAGE_KEY`), and the default is
+  **empty**: no key declared, no member detected, therefore nothing to impersonate. Defaulting to
+  `3dd-supabase-auth` would have kept *our* instance running while leaving the design flaw intact,
+  and the next host would have discovered it the way the second one did — by noticing that its
+  statistics separate nothing.
+
+  ⚠️ **This is a transition, not a solution.** Reading another application's `localStorage` cannot
+  work across origins: the second instance lives on `doc.…` and its application on `app.…` — two
+  storages, and no configuration value will bridge them. The right mechanism is for the host to
+  *inject* its member when the page is rendered, the way it already injects its brand. Tracked in
+  [`docs/AUDIT-2026-08-14-SUIVI.md`](docs/AUDIT-2026-08-14-SUIVI.md).
+
+  *Found by the second host, from its own instance.*
+
+### Changed
+- **The player's Realtime client now declares its own `storageKey`** (`dmp-live-auth`) instead of
+  taking the default. That client will one day hold an anonymous session (private channel); if it
+  wrote under the default key and the host's application used it too on the same origin, the
+  anonymous session would **overwrite the signed-in member's**. The two already differ on our
+  instance — by happy accident. Declaring it makes intentional what was only a consequence, and a
+  topology can change.
+- The guest identity moves from `3dd-present-me` to `dmp-present-me`. It belongs to the player, so
+  it now carries the player's name rather than someone else's. A guest who had entered their name
+  will be asked once more.
+
+## [0.1.26] — 2026-08-15
+
+### Fixed
+- ⚠️ **0.1.25 shipped an inline script that does not parse.** An edit produced `return var h2={…}`,
+  and the whole block stopped compiling — no chat, no presence, no state re-read. The live layer was
+  dead in that version. **Upgrade past it.**
+
+  This repository already had a test that *executes* the rendered page, and it swallowed the error:
+  its `catch` exists for scripts whose dependencies (pdf.js) are missing outside a browser, and a
+  `SyntaxError` came through the same door. Parsing and executing are now separate questions —
+  **compiling must never throw**, executing is allowed to. `new vm.Script` answers "is this valid
+  JavaScript" without needing a single dependency.
+- **A missing presenter key no longer costs the whole state.** `presenterKey` added a query to a
+  route the audience depends on to know which page is displayed. One more query is one more reason
+  to answer 500 — and losing the entire state because we could not say who wears a badge is a bad
+  trade. No answer now means no key, therefore no title, and everything else still goes through.
+
+  *Both found by the **host's** tests, rendering the page from the installed package — not by this
+  repository. The same imbalance as 0.1.20. Both guards have been brought back here, at the source.*
+
+## [0.1.25] — 2026-08-15
+
+> ⚠️ **Ne pas utiliser cette version.** Elle publie aussi l'e-mail du présentateur sur une route
+> publique (corrigé en 0.1.28). Son script en ligne ne se parse pas : la couche live
+> (chat, présence, relecture d'état) est morte. Corrigé en 0.1.26.
+
+### Security
+- **The presenter title was claimed, not proven.** The audit names the attacker precisely: *any
+  participant who knows the slug*. ⚠️ That wording disqualifies the fix that looked obvious —
+  making the Realtime channel private. A private channel excludes whoever has no right to be
+  there; this attacker **has** the right, they hold the link. What separates them from the
+  presenter is not channel access, it is the `control_token`.
+
+  Three places granted status without checking it:
+
+  - **`present-attend` took `isPresenter` *and* `isMember` straight from the request body.** A
+    prospect could count themselves as a colleague — polluting the very separation of populations
+    this product sells — and take the presenter title in the attendance table.
+  - **`present-chat` verified `isPresenter` against the control token but left `isMember` to the
+    caller.** Two weights on one line: the presenter badge had to be earned, the colleague badge
+    could be asked for.
+  - **The participant list rendered "presenter" from the *presence* payload**, which each
+    participant composes: `track({role:'presenter'})` was enough to appear as the presenter to the
+    whole audience, with the name and avatar of one's choosing.
+
+  ⚠️ That third one cannot be fixed at the channel level — a legitimate participant is entitled to
+  write *their own* presence. The title now comes from the server, which alone knows who proved the
+  control token, and the audience compares a key rather than believing a claim. **No key, no
+  title**: better none than a stolen one.
+
+  Membership is now proven by the session's access token. This route is a `fetch`, so it can carry
+  a header — unlike reading analytics, which leave through `sendBeacon` and therefore sign in the
+  body (0.1.22). No fallback to what the caller asserts: a check that yields to the claim it was
+  meant to replace only ever protects the honest.
+
+  The two attendance flags also stop being frozen at the first heartbeat. Frozen, they described
+  the moment someone arrived rather than the truth — a handover changed who held the title and the
+  record did not follow, and the first to arrive was right forever.
+
+  *Closes the remaining half of P1-2 (presence) and the part of P0-2 that a private channel would
+  not have closed.*
+
+### Note
+- A page open from before this version keeps sending the old body: it will simply lose the badge
+  until it reloads. Degrading toward "no title" is the intended direction.
+
+## [0.1.24] — 2026-08-14
+
+### Security
+- **One long address froze the whole instance.** Re-sharing validated the recipient with
+  `/.+@.+\..+/`. That pattern restarts at every position, so its cost grows with the *square* of
+  the length — measured before fixing: 49 ms at 10 000 characters, **3 900 ms at 100 000**. Node has
+  one event loop and a regular expression does not yield: one request, four seconds of frozen
+  instance, for every reader — not only the caller.
+
+  ⚠️ The rate limit did not help: 8/h per IP is checked **after** the pattern, two lines below. A
+  guard placed behind what it is meant to guard guards nothing. The length is now checked first, at
+  254 — the maximum length of an address (RFC 5321), past which it is not "long", it is invalid.
+
+### Fixed
+- **A local read could describe one file while sending another.** `readLocal` did `stat(path)` and
+  then, further down, `open(path)` — two resolutions of the same *name* at two moments. Between
+  them the file can be replaced (a sync, a deployment `mv`, a client rewriting their document), and
+  we would then send the bytes of the **new** file with the size of the **old** one. Not a crash —
+  worse: a `Content-Range` that does not describe what it carries, so the viewer assembles a wrong
+  document and nothing reports it. A descriptor designates an object, not a name: `fh.stat()` now
+  speaks about the same file `fh.read()` does.
+
+### Documentation
+- `allow_download` is stated for what it is: a **display preference**, not a protection. A reader
+  looking at the document already has its bytes; hiding the button removes a convenience, not an
+  access. A document that must not leave should not be shared, or should be shared behind
+  `require_auth` — that one decides who gets the bytes. (P3-3)
+- The Express example says why there is **no rate limiter** in front of the player routes, rather
+  than leaving the absence to be read as an oversight: the player already limits per action, and
+  limiting a shared link by IP shuts the document to nineteen people out of twenty behind one
+  office NAT. What must be limited is what the host adds around it.
+
+  *The first two reported by static analysis; neither appeared in the external audit.*
+
+## [0.1.23] — 2026-08-14
+
+### Security
+- **The postMessage bridge accepted messages from any window.** An origin check is impossible here
+  — the player is framed by hosts on arbitrary domains and does not know its host's origin when it
+  starts listening, which is why the check had been dropped. But comparing the **source window**
+  needs no origin: either it is the window you expect, or it is not. Without it, any tab or frame
+  holding a reference could send `close`, `share` or `handover-done`, and the page treated them as
+  coming from its host.
+
+  Player side, it is closed **by default** — the only legitimate sender is `window.parent`, and no
+  host has code to change. Host side the parameter is optional: forcing it would silence messages
+  for every host that has not passed it yet, and a message that stops arriving is the worst way to
+  announce hardening.
+- **The chat author token came from `Math.random()`.** That token *authorises* — it proves "this
+  message is mine" for editing and deleting. `Math.random` is deterministic from the engine's
+  internal state, so guessing another participant's token means rewriting their messages. Now from
+  `crypto`, with a fallback that **warns** rather than degrading in silence. The analytics session
+  id follows the same rule: it is the upsert key, so guessing one overwrites someone else's
+  measurement.
+
+### Changed
+- The user-agent string is bounded before parsing. Static analysis flagged `Android.*Mobile` as
+  backtracking-prone; measured first, V8 handles it linearly even at 200 000 characters, so this
+  was not a real slowdown. Bounded anyway — the stored column was already truncated to 300, only
+  the parsing saw the whole string, and feeding an unbounded length into a regular expression is a
+  habit that eventually costs.
+
+  *All three reported by static analysis; the first two also by the external audit (P3-1, P3-2).*
+
+## [0.1.22] — 2026-08-14
+
+### Security
+- **The internal reading population was open to anyone.** It is the population this product
+  promises never to mix with prospects — "this client read for twelve minutes" is worth something
+  only if a colleague re-reading the document does not land in the same count. Yet the route
+  accepted any email, any document, any duration, with no token and no limit: "this colleague read
+  this document for three hours" could be manufactured with one request.
+
+  ⚠️ **A JWT was not an option.** Reading analytics leave through `sendBeacon`, the only transport
+  that survives a closing tab, and it cannot carry a header — requiring one would lose the
+  measurement at the exact moment it matters most. The proof therefore travels in the **body** and
+  comes from the host, who alone knows who its member is: an HMAC over `{email, name, docId, exp}`
+  signed with the secret the host already holds. When it is present, its claims win and the
+  caller's are ignored. `exp` is required — a signature without expiry would outlive the member.
+
+  `PLAYER_INTERNAL_STRICT=1` closes the door entirely. It is **not** the default, because that
+  would break every instance already running, including ours; without it the write is still
+  accepted, but bounded, rate-limited, and **reported once an hour** so the gap is visible in the
+  logs. An open door nobody mentions is a defect; an open door stated, with the lock supplied, is
+  a transition.
+
+  Client-asserted numbers are now bounded regardless: page counts, durations, and the free-form
+  per-page object — which had no ceiling at all, so a single call could write a JSON of any size,
+  as often as it liked.
+
+  *Reported by an external audit (P1-2). The presence claims `isMember` / `isPresenter` remain and
+  are tracked separately.*
+- **A property name written from client input** (`toggleReaction`). In 0.1.2 a whitelist indexed by
+  outside data let `constructor` through, because an object literal answers for its prototype; the
+  fix put `Object.hasOwn` everywhere and a static test refused any unguarded **read**. It covered
+  half the shape: `Object.hasOwn` stops you *reading* `constructor`, and nothing stopped you
+  *writing* it.
+
+  What saved us from the worst was an accident — the 8-character cap truncates `__proto__` (9) and
+  `constructor` (11) into harmless keys. But `toString` (8) and `valueOf` (7) got through and
+  became own properties of the stored object, shadowing the prototype's for every consumer,
+  browser included. ⚠️ That accidental protection is fragile: composed emoji (family, ZWJ
+  sequences) exceed 8 characters, so raising the cap to accept them — an innocuous cosmetic change
+  — would let the real keys in.
+
+  Two barriers now: identifier-shaped keys are refused outright, and the object is built with no
+  prototype at all, so there is nothing left to shadow or reach whatever the cap becomes. **And the
+  static guard now sweeps writes, not only reads** — without it, the next `obj[outsideValue] = …`
+  passes exactly as this one did.
+
+  *Found by static analysis. Neither the external audit nor we had seen it.*
+- **Rate limits keyed on a header the caller writes.** Eleven places took the first value of
+  `X-Forwarded-For` to identify the caller. A client reaching the server directly — the standalone
+  case, and any instance whose proxy does not rewrite that header — changed it per request and was
+  never limited. **The limit existed; it limited nothing**, which is worse than no limit because it
+  gives assurance.
+
+  The caller's address is now a host decision (`identity.clientIp`), since only the host knows
+  whether a proxy sits in front. Unset, the header is ignored entirely and the socket address is
+  used — **an instance without a proxy is protected without doing anything**.
+  `PLAYER_TRUSTED_PROXY_HOPS=1` reads from the **end** of the chain, not the beginning: the
+  beginning is what the client wrote, the end is what the proxies observed. Reading the first
+  element is the classic mistake with this header, and it is the one the code made.
+
+  *This also makes the new limit above real: without it, the internal-session throttle would have
+  been bypassable by the same trick it was meant to stop.* (P1-6)
+
+## [0.1.21] — 2026-08-14
+
+### Security
+- **Email links no longer come from the `Host` header** (`PLAYER_PUBLIC_URL`). The client chooses
+  that header: on the standalone server, or behind a proxy that does not rewrite it strictly, a
+  reader could request a perfectly legitimate send — signed by the host, carrying its brand and its
+  sender reputation — **whose button points at their own domain**. Phishing supplied turn-key, to a
+  recipient the attacker picks, and the victim has no reason to suspect it. Unset, the player falls
+  back to `Host` so no running instance breaks, and **says so**: an instance sending mail without a
+  public URL should learn it before a phishing report teaches it.
+- **`isEvalSupported: false` forced on every PDF render.** The pinned pdf.js is within the range of
+  CVE-2024-4367 (script execution when opening a crafted PDF). Our CSP does not allow
+  `unsafe-eval`, which blocks the path today — but that mitigation was **implicit**, and one CSP
+  edit would have reopened it without a word. The protection no longer depends on a header written
+  somewhere else.
+
+  *Upgrading pdf.js is not a version bump: cdnjs ships only ES modules from 4.0, while we load a
+  classic script and configure the worker by hand. That migration is tracked separately, together
+  with bundling the library — which also settles the CDN-without-integrity finding.*
+
+  *Both reported by an external audit (P1-1, P1-3).*
+
+## [0.1.20] — 2026-08-14
+
+### Fixed
+- **The unread badge stopped counting.** 0.1.19 routed chat broadcasts through a re-read, and the
+  re-read added the messages without ever notifying — so a new message arrived silently. The
+  condition matters as much as the call: a re-read returns the whole history, so notifying without
+  checking what was *actually* added would recount every message on every re-read, which is the
+  "badge goes up by 2" defect fixed back in 0.1.2 returning through another door.
+
+  *Nobody here saw it. **A host's test caught it**, by reading this package's source once installed
+  — across the boundary of two repositories. That guard was written for a different reason and
+  still did its job.*
+
+## [0.1.19] — 2026-08-14
+
+### Security
+- **A presentation broadcast is now a signal, not a truth.** The Realtime channel is **public**:
+  the publishable key and the slug are both in the page, so any participant can emit on it. The
+  audience applied the received payload directly, which let any viewer announce the end of the
+  presentation, change the page or document shown to everyone, lock the chat, or post a message
+  signed with someone else's name.
+
+  ⚠️ **Moving emission to the server would not have fixed this** — that was the audit's first
+  suggestion. On a public channel an attacker still emits, and the client cannot tell the two
+  sources apart. The only defence that holds is to stop believing the transport: authoritative
+  events now trigger a **re-read from the server**, which was already the source of truth
+  (`state=1`, `chat=1` — both routes already existed). An attacker can still emit; they trigger a
+  re-read and obtain nothing. That property also survives a future flaw in the transport itself.
+
+  `map` and `typing` still apply their payload, deliberately: ephemeral signals (live map
+  movement, "someone is typing") with no server state to check against and a high rate.
+  Re-verifying them would cost a round-trip per mouse move to protect a mouse move. Everything
+  authoritative goes through `state`, which is re-read. A test enforces that **no other event**
+  may trust its sender.
+
+  *Reported by an external audit. A private channel with row-level policies remains the cleaner
+  end state and is tracked in [`docs/AUDIT-2026-08-14-SUIVI.md`](docs/AUDIT-2026-08-14-SUIVI.md);
+  it needs short-lived tokens for an anonymous audience, which is infrastructure rather than a
+  fix — hence this first.*
+
+## [0.1.18] — 2026-08-14
+
+### Security
+- **The file proxy followed redirects, and the host secret followed with it.** `isAllowedStorageUrl`
+  validated only the *initial* URL; `fetch` then followed redirects by default, so the final
+  destination faced no origin list, no route prefix and no `https:` check. An allowed upstream —
+  the host's own file route, or any listed storage origin — answering `302` took the call wherever
+  it wanted: `localhost`, a private address, a cloud metadata endpoint. The invariant this project
+  documents ("no redirect following into your private network") was false.
+
+  ⚠️ **And `x-player-fetch-secret` travelled.** `fetch` strips only `Authorization`, `Cookie` and
+  `Proxy-Authorization` across a cross-origin redirect; a custom header is forwarded as-is.
+  Measured with two local servers before fixing: the destination received the host's shared secret
+  in clear. That is not only an SSRF — it is exfiltration of the key that authorises reading
+  **every** document the host serves.
+
+  Redirects are now followed by hand, with three properties: every hop re-passes the full guard, so
+  a redirect opens nothing the starting URL could not; **the secret is recomputed per hop**, so it
+  travels only where *that* hop is under the host's route; and the chain is bounded, with protocol
+  changes refused — a redirect to `file:` would have turned a remote upstream into a local disk
+  read. `AbortSignal.timeout` added: an upstream that never answers used to hold the request
+  forever.
+
+  *Reported by an external audit, confirmed by measurement rather than by reading.*
+
+## [0.1.17] — 2026-08-14
+
+### Security
+- **`form-action 'self'` added to every page.** `form-action` is one of the few CSP directives
+  that does **not** fall back to `default-src`: a page served with `default-src 'none'` could still
+  post a form to any domain. No page here contains a `<form>` — submissions go through `fetch`, so
+  `connect-src` governs them — but an injected script could build one to exfiltrate, and nothing
+  stopped it. `'self'` rather than `'none'`: the access wall and visitor sign-in may need a
+  same-origin post, and breaking authentication to close a door nobody walked through would be a
+  poor trade. `'self'` closes exfiltration, which is the real risk.
+
+  *Found while checking an external review that recommended `object-src 'none'` — that one **is**
+  covered by `default-src 'none'`, so the recommendation was redundant. The directive that was
+  genuinely missing was not on its list.*
+
+## [0.1.16] — 2026-08-14
+
+### Fixed
+- **An embedded preview never said it was there** — *announced in 0.1.15 and not actually in it;
+  see below.* `embed-ready` tells a host "I am alive". A host waiting for it and hearing nothing
+  cannot tell an **absent** player from a **living** one, and a prudent startup watchdog replaces
+  the second with the browser's own viewer a few seconds in, in front of the reader.
+
+  One variable answered two questions: *should the embedded close button be drawn?* (no in
+  preview — it already has its own, and drawing both would show two crosses) and *is this page
+  served inside a frame?*. Only the second governs the handshake. The server already knew — it
+  derives the response's `frame-ancestors` from it — and the page already spoke to its host
+  (`share`, `close`); it simply never announced itself. Preview is precisely the mode a host uses
+  for its **own** documents. The chrome is unchanged.
+
+### Fixed (release process)
+- ⚠️ **0.1.15 was published without the fix above, and announced as containing it.** The commit
+  landed on a branch whose pull request had already been merged, so it never reached `main`. Every
+  check passed, because every check looks at the working tree or the branch — never at the
+  artifact. **The host found it**, by diffing the two npm tarballs.
+
+  Two guards now exist, and the second is the one that generalises:
+  - a `pre-push` hook refuses to push to a branch whose pull request is already merged (the
+    neighbouring repository has had one since a similar incident on 5 August; this one did not);
+  - the release summary lists **what actually changed inside the published package** since the
+    previous version. Release notes promising a fix in a file that is absent from that list are
+    visibly wrong, at the moment of publishing rather than days later.
+
+  *A mutation test cannot catch this: it runs on the working tree, not on the tarball. The lesson
+  is the host's, and it is exact — verify the published artifact, not the sources.*
+
+## [0.1.15] — 2026-08-14
+
+### Fixed
+- **An embedded preview never said it was there.** `embed-ready` tells a host "I am alive". A host
+  waiting for it and hearing nothing cannot tell an **absent** player from a **living** one — and
+  a prudent startup watchdog replaces the second with the browser's own viewer a few seconds in,
+  in front of the reader. That is what happened: the second host removed their watchdog until
+  silence became information again.
+
+  One variable was answering two questions: *should the embedded close button be drawn?* (no in
+  preview — it already has its own, and drawing both would show two crosses) and *is this page
+  served inside a frame?*. Only the second governs the handshake. The server already knew — it
+  derives the response's `frame-ancestors` from it — and the page already spoke to its host
+  (`share`, `close`); it simply never announced itself.
+
+  Preview is precisely the mode a host uses for **its own** documents: no tracked link, no
+  recipient. The chrome is unchanged.
+- **The folder-mode home page offered a format the viewer no longer opens.** It kept its own list
+  of displayable extensions, and that list still contained `.svg` after it was dropped from the
+  type table in 0.1.7. The file appeared, the click produced a download, and a first-time visitor
+  concluded the project does not work — on the one screen that never gets a second run. The list
+  is now **derived** from the type table rather than copied.
+
+  *Found while checking an external review about MIME sniffing. Its recommendation — `nosniff`, a
+  generic type, forced download — has been in place since 0.1.7, and measurement confirms it: a
+  `.png` containing HTML is served `image/png` with `nosniff`, so the browser will not sniff it
+  into a script. The defect was next door: a list promising a format that had been removed.*
+
+## [0.1.14] — 2026-08-14
+
+### Security
+- **Re-sharing a document stripped its restrictions.** `createReshare` enumerated the columns to
+  copy, so every column added since was silently left out — and because these columns are
+  `not null default`, the omission did not leave a hole, it wrote the **most permissive value**:
+
+  - **`require_auth`** (default `false`) — a document behind the access wall, once forwarded,
+    opened **without the wall**. A recipient could therefore lift the protection by forwarding the
+    document to themselves. This was the worst of the three, and it was not in the report that led
+    here.
+  - **`allow_download`** (default `true`) — the Download button came back on a document where it
+    had been refused.
+  - **`brand_key`** — the brand was lost exactly where the document starts to travel.
+
+  Inheritance is now the rule and the exceptions are enumerated: a column added tomorrow is
+  inherited without anyone thinking about it. If it is a restriction, it propagates. A test covers
+  the *mechanism* — an unknown column must survive a re-share — rather than a list that would go
+  stale the same way the code did.
+
+  *Reported by the second host, who saw the brand — the one that **shows** — and assumed the rest
+  followed. The rest followed.*
+
+### Added
+- **Sending the re-share email can be delegated to the host** (`PLAYER_HOST_MAIL_URL` +
+  `PLAYER_HOST_MAIL_SECRET`), which is what a host with its own provider and templates wants.
+
+  ⚠️ **The player calls it only for a link that has a recipient.** The reader of an anonymous link
+  is any passing visitor; letting them request a send would turn the host's servers into a relay
+  for unsolicited mail, with the host's domain in the header. What that costs is not the message —
+  it is a sender reputation that takes weeks to recover, during which *none* of their mail arrives.
+  The guard sits on the path that acts, not in the host's route on arrival: a filter on arrival
+  depends on a list staying current, a path that cannot phrase the request never phrases it by
+  accident. *Requested by the host in our code rather than kept in theirs.*
+
+  The payload carries structured fields (`kind`, `doc`, `from`) next to the HTML, and isolates
+  caller-supplied text under `untrusted` — a host composing its own message can ignore it in one
+  gesture instead of remembering which field is doubtful.
+
+  A third secret, deliberately: the file secret travels on every document opened and lives in the
+  host's logs; adding "send mail in your name" to what a log leak permits is a different power.
+
+## [0.1.13] — 2026-08-14
+
+### Fixed
+- **The tracking notice invented a sender.** "…passed on to its sender" is right for a named link
+  and false for a public brochure opened from a map by someone who received no message. This is
+  the one sentence in the product whose whole job is to be exact. The player now picks by the link
+  itself — no recipient and no creator means nobody sent it — which needed no new data: that is
+  already the idempotency key for host-owned links. `PLAYER_TRACKING_NOTICE_ANON` overrides it; a
+  context that provides no second text falls back to the first rather than showing none.
+- **The tab title showed the operator instead of the brand the visitor clicked.** Someone arriving
+  on a client's brand read the name of the company that runs the tool. The link's brand was
+  *already* resolved for the loader and sitting on the share — the title simply did not consult it.
+  No new configuration. "Powered by" stays the instance's, deliberately: saying who operates the
+  tool is honest disclosure, not a brand leak.
+
+  *Both reported by the second host looking at their own screen — which no test does. Both were
+  true while an instance served one audience, and false the moment it served two.*
+
+## [0.1.12] — 2026-08-14
+
+### Fixed
+- **A sleeping machine reported hours of reading.** The tab stays `visible`, the window keeps
+  focus, no `visibilitychange` or `blur` fires — and the timers do not run either, so the idle
+  loop cannot do its job. On wake, a raw timestamp delta poured the entire sleep into the current
+  page: **eight hours of a closed laptop measured as 28 805 seconds read.**
+
+  Accumulated time is now capped at "up to the last activity, plus the idle grace" — the same rule
+  the idle loop applies, extended to the case where it could not run. An active reader produces
+  events, so a real reading session is untouched; a sleeping machine produces none.
+
+  *This is not an exotic case: it is how a laptop closes in the evening. And it is the number the
+  whole product rests on — "this client read for twelve minutes" is only worth something if the
+  number is honest when it is large as well as when it is small.*
+
+  *Found while checking an external review that pointed at the right place with the wrong
+  diagnosis: it recommended cutting on `visibilitychange`, which has been done since day one,
+  alongside `blur`/`focus` and a 60-second idle timeout. The hole was where no event fires at all.*
+
+## [0.1.11] — 2026-08-14
+
+### Added
+- **The host can create a tracked link in its own name** (`PLAYER_HOST_SHARE_SECRET`). Some links
+  have no sender: the public brochure of a listing, opened by a prospect who has no account and
+  should not need one. No member is present, so there is no token to require — and requiring one
+  forces the host to invent an identity that does not exist. Same nature as `/authz` and
+  `/branding`, which the host already answers server to server.
+
+  ⚠️ **A different secret from `PLAYER_HOST_FETCH_SECRET`, deliberately.** That one only ever
+  travels *outward* — the player sends it on every file fetch, so it sits in the host's access
+  logs, proxies and error tracker. Whoever holds it can impersonate the player *to the host*;
+  accepting it inbound would additionally grant write access *here*. One more variable against a
+  blast radius that does not grow. The core never sees the secret: it asks the context a question,
+  the adapter answers yes or no.
+
+  **Three locks:** `docshare.create` only (revoking, listing and analytics stay member actions — a
+  server secret must not reveal who read what); no recipient (a named link belongs to a member);
+  idempotent by `docId`, which needed no new column — "the host's link for this document" is the
+  row with no creator *and* no recipient, so an instance already in service migrates nothing.
+  Without idempotence, a redeploy or a double click yields three links for one brochure, and
+  analytics split three ways that nobody notices until they read them six months later.
+
+  The link carries no creator, so it appears in no member's "my links" and stays visible under
+  `list.all` — the existing filter already did the right thing. *Requested by the second host,
+  who had ruled out all three workarounds themselves before writing, including the one that would
+  have filed a prospect among internal readers.*
+- `host-share` in `capabilities`, and `hostShare` alongside `separateIssuer`: what the instance
+  *can* do, and what is *configured*.
+
+## [0.1.10] — 2026-08-14
+
+### Changed
+- **The core no longer opens the environment; it goes through the injected context.** Eleven direct
+  `process.env` reads were bypassing the very boundary this project documents everywhere else —
+  six for the database, two for the maps key, one for frame ancestors, and one for the **service
+  role key**, which opens the whole database. A host wiring its own storage or database was
+  silently short-circuited. Nothing changes for a host whose context mirrors its environment,
+  which is both hosts today; what changes is that a host that does not is now actually obeyed.
+- **Signing an upload URL is a host capability** (`storage.signUpload`). The core asked the
+  environment for a service-role key to sign chat-attachment uploads; it now asks the host, which
+  is where the key lives. A host that does not provide it gets a clean refusal that says so,
+  rather than an attachment that never leaves. *Honest about what remains: the returned page still
+  calls supabase-js `uploadToSignedUrl`, so the feature is not portable yet — only the secret has
+  moved out of the core.*
+- **One source of truth for frame ancestors.** `embedFrameAncestors()` read the environment while
+  `?contract=1` announced `PLAYER.config.extraFrameAncestors`. They agree only as long as a host
+  fills its config from that same variable. A host computing it otherwise would have the card
+  announce one list and the CSP header serve another — configured and served diverging *inside*
+  the mechanism built to detect exactly that.
+
+  *Raised by an external review as "you are coupled to Supabase, add an abstraction layer". The
+  abstraction already existed — it was leaking. A static test now refuses any new leak, and it
+  found two the manual inventory had missed.*
+
+## [0.1.9] — 2026-08-14
+
+### Added
+- **`separateIssuer` in `GET /api/doc?contract=1`.** `host-auth` says an instance *can* verify
+  tokens against an issuer separate from its database; this says one *is configured*. Without the
+  second signal, a host that upgrades and forgets the variable sees exactly the failure 0.1.8
+  removed — members come back unauthenticated, which reads like a missing permission — and
+  concludes the upgrade changed nothing. A boolean, never the issuer: the host already knows which
+  one is theirs, and naming it would only inform whoever probes.
+
+### Changed
+- **The container image moves to Node 24 (active LTS).** It stays on the **active LTS**, never on
+  Current: Current ships every six weeks and carries breaking changes, and self-hosters should not
+  inherit that. Node 26 exists since August 2026 but is not supported long-term until October.
+  `engines` stays `>=22` — what the *package* accepts and what the *image* embeds are different
+  questions, and 22 is maintained until April 2027.
+- Dependabot no longer proposes Node **major** bumps for the image. It cannot know that a release
+  is Current, and proposed 26 the day it appeared. A green PR that puts production on an
+  unsupported base is still a green PR — review catches that, not CI, so the proposal stops.
+
+## [0.1.8] — 2026-08-14
+
+### Fixed
+- **A third-party instance could not authenticate its own members.** `SUPABASE_URL` served two
+  roles at once: the player's database, and the issuer of the tokens it accepts. True — and
+  necessary — while the player and its application share a deployment; false by construction once
+  an instance is separate, because the database belongs to the player and identity belongs to the
+  host. Members were issued tokens by one project and verified against another, which put the
+  entire *member* half of the surface out of reach: sending, revoking, analytics, authenticated
+  presentations. `PLAYER_AUTH_URL` (+ `PLAYER_AUTH_KEY`) now names the issuer; unset, it falls back
+  to `SUPABASE_URL`, so an instance where both coincide changes by not one character.
+
+  *Reported by the second host, who had checked both sides before writing. It is the third
+  assumption of this shape in two days — after `'self'` for framing and "same origin" for the
+  internal preview. They only become visible by exercising the separation.*
+
+### Security
+- **The key sent to the issuer no longer falls back to the service role.** That fallback was
+  harmless while the issuer was the player's own project; toward a third-party issuer it would
+  hand over the master key to the player's database on a single configuration mistake. A distinct
+  issuer requires its own publishable key, and its absence is reported instead of improvised —
+  a silent refusal here reads like a missing permission, which is the failure this release exists
+  to remove.
+
+### Added
+- `host-auth` in `GET /api/doc?contract=1` capabilities: a host can tell whether an instance
+  supports a separate issuer without opening a document.
+
+## [0.1.7] — 2026-08-13
+
+### Security
+- **A relayed file could execute on the player's own origin.** The relay copied the upstream
+  `Content-Type` verbatim, so a file announced as `image/svg+xml` or `text/html` — from a public
+  bucket, or from a host's own file route — opened *inline* on the domain that serves the
+  documents, next to its sessions, its presentation tokens and its analytics. A streaming response
+  carries no CSP: it is a file, not a page. Anything a browser would render rather than download is
+  now served inert (generic type, forced download, `nosniff`); it stays retrievable and cannot
+  execute. The displayable formats are untouched.
+
+  *Found while writing the README's format matrix — a documentation question. Dropping `.svg` from
+  the local type table had closed only the half we control; the remote upstream announces whatever
+  it likes.*
+
+### Changed
+- **Node.js 22 or newer** is now required. 20 reached end of life; the image, the CI matrix and the
+  declared `engines` say the same thing, which was not the case before.
+- **The published package ships compiled JavaScript and type declarations**, not TypeScript source.
+  `discovery-media-player/bridge` was published as `.ts`, so a host without a build step could not
+  import the very thing meant to spare it from copying constants by hand. The package is also 4×
+  smaller. A CI check refuses a package containing `src/`.
+- **The host contract is documented in English, in the open** ([`docs/HOST-CONTRACT.md`](docs/HOST-CONTRACT.md)).
+  It used to be a working document written for two known teams, in French, mixing the contract with
+  internal deploy history. The rules are unchanged; what left is the part that was true only for us.
+
+### Removed
+- **`.svg` is no longer served.** An SVG is a document that executes script: served inline it runs
+  in the instance's origin, and the viewer's own type detection did not treat it as an image
+  anyway — so it was never displayed as one. Nothing regresses that worked.
+
+### Added
+- Multi-architecture image (`linux/amd64`, `linux/arm64`) with SBOM and build provenance.
+- Automated GitHub Releases on `vX.Y.Z` tags, with this file's section as the notes.
+- CodeQL analysis and grouped monthly Dependabot updates.
+
+## [0.1.6] — 2026-08-13
+
+### Fixed
+- **A separate instance could not be framed by its own host — on the success path only.** The
+  internal preview branch had `frame-ancestors 'self'` written as a literal, so
+  `DOC_FRAME_ANCESTORS` was never consulted there. True while the application and the player share
+  a deployment; false the moment an instance is separate — which is the entire point of a separate
+  instance. Nothing signalled it.
+
+  The absurd consequence, spotted by the host: the **refusal** page was framable (fixed the day
+  before, on their report) while the **success** page was not. The error path was more portable
+  than the nominal one.
+- **The audience page passed no ancestors at all**, so `frame-ancestors 'none'` — framable by
+  nobody, not even by its own origin. Found while checking the first.
+
+### Added
+- **`frameAncestors` in `GET /api/doc?contract=1`.** A boolean would not have been enough: a host
+  needs to see that *its own domain* is missing, not merely that embedding is possible. This is
+  the one failure a host cannot diagnose — the browser blocks before any script runs, so nothing
+  can be emitted to it. Now it can see the mismatch without opening a single document.
+
+## [0.1.5] — 2026-08-13
+
+### Added
+- **A warning when embedding is requested with no host allowed to frame it.** With
+  `DOC_FRAME_ANCESTORS` empty, only a same-origin page and `*.vercel.app` may frame the viewer;
+  any other parent is blocked **by the browser, before the page loads** — so no `embed-denied` can
+  be sent, and the host sees a silence indistinguishable from an unreachable instance. This is the
+  one failure the player cannot signal to the host, so it now signals it to the operator, at the
+  only moment it can know: when serving an embedded page.
+- **A live demo** (`examples/demo`): one function, one dependency, no database and no secret.
+
+### Changed
+- Contract: the fourth requirement of *"the host serves the file"* gains its corollary — **when
+  the reference itself carries a capability, signing is not enough; it must be encrypted.**
+  *Signed* means nobody can forge it. It has never meant nobody can read it.
+- Contract: the search criteria you use to inventory your document-opening doors decides what you
+  find. Search by what the user **obtains**, not by the technique you expect.
+
+  *(All three come from the first host's real switchover.)*
+
+## [0.1.4] — 2026-08-13
+
+### Fixed
+- **A wiring mistake looked like a refusal.** The handler reads `req.query` — the serverless and
+  Express convention — which a bare `http.createServer` does not fill. With no parameters, a
+  request went looking for a share named *nothing*, found none, and rendered *"this link is no
+  longer valid or has been revoked"*. An integrator saw a **refusal** where they had simply not
+  wired the platform. It now falls back to parsing `req.url`, so the handler is platform-agnostic
+  in fact and not only in the README.
+- **A request asking for nothing now says so** (`400`, naming the missing parameters) instead of
+  returning the revocation page. A refusal and a missing parameter must not look alike.
+
+### Changed
+- **Documentation: most hosts need no wiring file at all.** `context/standalone` already delegates
+  both host decisions to `PLAYER_HOST_AUTHZ_URL` and `PLAYER_HOST_BRAND_URL`; an instance whose
+  application exposes those routes is four files, one of them ten lines. The custom-context example
+  is now presented as the exception — for decisions that cannot travel over HTTP.
+
+  *Both changes come from the first third-party integration. The extraction had gone further than
+  its own instructions said.*
+
+## [0.1.3] — 2026-08-13
+
+### Fixed
+- **The audience stopped following the presenter.** The page's state handler was registered from a
+  script block that could not see the function it named — a silent `ReferenceError` at wiring time,
+  after which slide changes simply never arrived. Covered by a test that *executes* the generated
+  page rather than reading its source, which is the only way this class of fault shows up.
+
+## [0.1.2] — 2026-08-13
+
+### Security
+- **Attachment type whitelist could be bypassed.** `ATT_KINDS["constructor"]` returns a *function* —
+  a truthy value — so a public `present-upload-url` call with `type: "constructor"` passed the
+  whitelist and got a signed upload URL for a type that was never allowed. The storage bucket
+  remained a second barrier, but the first one was open. Every lookup of that shape now goes
+  through `Object.hasOwn`, and a static test refuses any that does not.
+  *Found after a third-party host reported the same pattern three times in their own code.*
+
+### Added
+- **Live chat now travels by broadcast.** It was delivered through table-level realtime, which
+  requires a public SELECT on the table — meaning anyone holding the publishable key could read
+  the conversations of *every* presentation. This was the last thing requiring that policy;
+  `supabase/init.sql` no longer needs one, and instances that had it can drop it.
+- **Host-route call formats are documented** (`PLAYER_HOST_AUTHZ_URL`, `PLAYER_HOST_BRAND_URL`).
+  They were missing, and a host implemented them from prose: right intention, wrong shape, and
+  two of the three mismatches were silent — a wrongly-shaped response reads as a refusal.
+- **A broken host route no longer looks like a refusal.** Unreachable, timed out, non-JSON, or a
+  wrongly-typed `allowed` are logged with their cause. The player stays fail-closed.
+
+### Fixed
+- Unread badge counted each chat message twice while both delivery paths were active.
+
+## [0.1.1] — 2026-08-13
+
+### Added
+- The standalone server's root page lists what there is to read, instead of answering `404` to
+  someone who just started the container and has no slug yet.
+
+### Changed
+- Published from CI by OIDC, with provenance — no long-lived token stored anywhere.
+- Dependency tree cleaned: no vulnerability reported at install.
+
+## [0.1.0] — 2026-08-13
+
+First public release: the viewer extracted from the 3D Discovery studio into a project that runs on
+its own.
+
+### Added
+- Framework-agnostic `(req, res)` handler — serverless, Express, or the bundled standalone server.
+- Standalone server (`bin/serve.js`) and Docker image — the player runs without a platform.
+- Local folder as a document source (`PLAYER_LOCAL_ROOT`), with `Range` support, symlink
+  containment and traversal tests. Makes the project usable with no database at all.
+- `GET /api/doc?contract=1` — version, contract number, capabilities and plugin state. No
+  session, no database, no cache: it must answer when nothing else does.
+- `embed-denied` on the postMessage bridge, with a reason (`revoked`, `auth-required`,
+  `auth-unavailable`, `url-not-allowed`, `ended`). An embedded host can now tell a refusal from
+  an outage instead of falling back to its own viewer on a document the player just closed.
+- `supabase/init.sql` — brings a fresh database to the expected state in one replayable file,
+  already hardened.
+
+### Fixed
+- **Truncated documents.** `fetch()` decompresses a body while keeping the upstream headers;
+  relaying `Content-Length` announced the compressed size for decompressed bytes. All three
+  streaming paths now announce the size of what they actually send, request `identity` encoding,
+  and refuse a compressed `206` rather than serve something false.
+- **Silent refusals.** Refusal pages were served with `frame-ancestors 'none'`, so an embedded
+  host saw a blank frame and no message. They are now framable in embed mode.
+- **A widening guard.** `PLAYER_HOST_FETCH_BASE` without a trailing slash matched sibling routes
+  (`/api/documents` also allowed `/api/documents-prives/`). Normalised rather than documented.
+- `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
+  load. It now reaches the page as the image's alternative text.
+
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.41...HEAD
+[0.1.41]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.40...v0.1.41
+[0.1.40]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.39...v0.1.40
+[0.1.39]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.38...v0.1.39
+[0.1.38]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.37...v0.1.38
+[0.1.37]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.36...v0.1.37
+[0.1.36]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.35...v0.1.36
+[0.1.35]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.34...v0.1.35
+[0.1.34]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.33...v0.1.34
+[0.1.33]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.32...v0.1.33
+[0.1.32]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.31...v0.1.32
+[0.1.31]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.30...v0.1.31
+[0.1.30]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.29...v0.1.30
+[0.1.29]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.28...v0.1.29
+[0.1.28]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.27...v0.1.28
+[0.1.27]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.26...v0.1.27
+[0.1.26]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.25...v0.1.26
+[0.1.25]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.24...v0.1.25
+[0.1.24]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.23...v0.1.24
+[0.1.23]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.22...v0.1.23
+[0.1.22]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.21...v0.1.22
+[0.1.21]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.20...v0.1.21
+[0.1.20]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.19...v0.1.20
+[0.1.19]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.18...v0.1.19
+[0.1.18]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.17...v0.1.18
+[0.1.17]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.16...v0.1.17
+[0.1.16]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.15...v0.1.16
+[0.1.15]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.14...v0.1.15
+[0.1.14]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.13...v0.1.14
+[0.1.13]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.12...v0.1.13
+[0.1.12]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.11...v0.1.12
+[0.1.11]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.10...v0.1.11
+[0.1.10]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.9...v0.1.10
+[0.1.9]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.8...v0.1.9
+[0.1.8]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.7...v0.1.8
+[0.1.7]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.6...v0.1.7
+[0.1.6]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.5...v0.1.6
+[0.1.5]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.4...v0.1.5
+[0.1.4]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.3...v0.1.4
+[0.1.3]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/Juli1artha/discovery-media-player/releases/tag/v0.1.0
+` means *everything after the match* — so it
+re-inserted the entire tail of the file. Three jobs were declared twice.
+
+⚠️ **I reproduced it while repairing it**, ten minutes later. The fix is a replacement **function**.
+
+It stayed invisible because every PR opened after 0.1.51 branched from a `main` predating it, and so
+carried the old, valid file. Two true causes at the same moment, and I attributed ours to theirs —
+the costliest variant of a diagnosis dressed as an observation, because the context supplied a
+plausible culprit for free.
+
+### Evidence, by strength
+
+| | this release |
+|---|---|
+| **Seen refusing** | the mutation ignoring the reaction intent (two tests), `_filet` removed from disconnect and the handles made local again (one each), the relay ceiling removed (the 413 test) |
+| **Seen falling** | nothing |
+| **Never failed in front of anyone** | 752 unit tests, 8 browser tests, lint, typecheck, build |
+
 ## [0.1.55] — 2026-08-17
 
 ### Fixed
