@@ -154,7 +154,7 @@ player.init(context)
 | `legal.trackingNoticeAnonymous` | **Optional**: the notice for a link nobody sent. Absent ⇒ falls back to the first, rather than showing none. |
 | `config.supabaseUrl` · `supabasePublishableKey` · `mapsKey` · `extraFrameAncestors` | consumed as given — `supabaseUrl` **without a trailing slash**, the core no longer re-normalises |
 | `config.separateIssuer` · `hostShare` · `hostMail` | booleans echoed by the identity card: what is *configured*, next to what the code *can* do |
-| `schema` | migrations this instance still waits for — reported from what was already asked, never probed on the spot |
+| `schema` | migrations this instance still waits for — reported from what was already asked; `&schema=1` probes on demand, with a control column separating *missing* from *unreachable* |
 | `plugins` | optional, host-owned |
 
 `context/standalone.js` implements all of it from environment variables — start there and replace
@@ -207,7 +207,7 @@ estimated:
 
 | | |
 |---|---|
-| Call sites | **49**, in four files |
+| Call sites | **50**, in four files |
 | Tables | **9** |
 | Verbs | `GET`, `POST`, `PATCH`, one `HEAD` — no `DELETE` |
 | Embedded selects (`select=*,other(*)`) | **0** |

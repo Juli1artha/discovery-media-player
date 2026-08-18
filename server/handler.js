@@ -3790,6 +3790,10 @@ async function handler(req, res) {
     // en booléens parce qu'un hôte doit pouvoir refuser de démarrer si le mur d'accès manque
     // alors qu'il compte dessus.
     if (String(q.contract || "") === "1") {
+      // ⚠️ `&schema=1` : la SEULE partie de cette carte qui demande la base, et seulement quand on
+      // la réclame. Sans le paramètre, la route garde sa propriété de répondre quand plus rien ne
+      // répond ; avec lui, l'appelant choisit d'en avoir besoin. Un échec ici ne fait pas échouer
+      // la carte — il devient le verdict « indetermine ».
       res.statusCode = 200;
       res.setHeader("Content-Type", "application/json; charset=utf-8");
       res.setHeader("Cache-Control", "no-store, max-age=0");
@@ -3828,7 +3832,9 @@ async function handler(req, res) {
         // carte est ce qu'un hôte interroge déjà pour épingler sa version ; c'est donc ici.
         // Elle RAPPORTE ce qui est connu, elle ne sonde pas : un diagnostic ne doit pas tomber en
         // même temps que ce qu'il diagnostique.
-        schema: require("./schema").etatDuSchema(),
+        schema: String(q.schema || "") === "1"
+          ? await require("./schema").sonderTout()
+          : require("./schema").etatDuSchema(),
         // « L'hôte peut-il créer un lien en son nom propre ? » — configuré, pas seulement
         // possible. Un hôte qui oublie le secret reçoit un 401 qui ressemble à un droit
         // manquant ; ce booléen le lui dit sans qu'il ait à essayer.

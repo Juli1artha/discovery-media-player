@@ -79,3 +79,94 @@ describe("l'état du schéma se lit ailleurs que dans un journal", () => {
     }
   });
 });
+
+// ⚠️ « MANQUANT: [] » A QUATRE SENS, ET LE LECTEUR NE DOIT PAS AVOIR À LES RECONSTITUER.
+//
+// Rien demandé, tout vérifié, vérifié en partie, base muette. Croiser deux champs pour trancher,
+// c'est laisser la faute au lecteur — condition posée par le second hôte avant même de voir le
+// paramètre, et elle évitait de recréer, DANS le correctif, l'ambiguïté que `sondees` venait de
+// tuer. Même défaut qu'init.sql reproduit dans sa propre correction.
+describe("sonder à la demande dit ce qu'il a pu voir, et ce qu'il n'a pas pu", () => {
+  const schema = require("../schema.js");
+
+  function base({ temoin = true, absentes = [] }) {
+    let requetes = 0;
+    return {
+      compte: () => requetes,
+      ctx: {
+        plugins: {}, has: () => false, errors: { capture() {} }, branding: {}, config: {}, storage: {},
+        db: { async request(chemin) {
+          requetes += 1;
+          const estTemoin = chemin.startsWith(`${schema.TEMOIN.table}?select=${schema.TEMOIN.colonne}`);
+          if (estTemoin && !temoin) throw new Error("base injoignable");
+          if (!estTemoin && !temoin) throw new Error("base injoignable");
+          if (absentes.some((c) => chemin.includes(c))) throw new Error("400 column does not exist");
+          return [];
+        } },
+      },
+    };
+  }
+
+  it("tout présent : verdict complet, et toutes les attentes sondées", async () => {
+    const b = base({}); schema.init(b.ctx);
+    const etat = await schema.sonderTout();
+    expect(etat.verdict).toBe("complet");
+    expect(etat.sondees).toBe(etat.attendues);
+    expect(etat.manquant).toEqual([]);
+  });
+
+  it("une absente : verdict incomplet, et elle est nommée", async () => {
+    const b = base({ absentes: ["client_key"] }); schema.init(b.ctx);
+    const etat = await schema.sonderTout();
+    expect(etat.verdict).toBe("incomplet");
+    expect(etat.manquant.map((m) => m.migration).join()).toContain("0005");
+  });
+
+  // ⚠️ LE CŒUR DE LA CONDITION. Sans témoin, une base muette fait échouer les trois sondes et la
+  // carte annonce trois migrations manquantes QUI EXISTENT — l'exploitant part appliquer ce qu'il a
+  // déjà. Faux dans l'autre sens que redouté, faux quand même.
+  it("base muette : verdict indetermine, et AUCUN manque inventé", async () => {
+    const b = base({ temoin: false }); schema.init(b.ctx);
+    const etat = await schema.sonderTout();
+    expect(etat.verdict, "une base muette se lit comme trois migrations absentes").toBe("indetermine");
+    expect(etat.manquant, "des manques inventés envoient appliquer ce qui est déjà là").toEqual([]);
+  });
+
+  // ⚠️ ET UN DIAGNOSTIC NE DOIT PAS ÉTEINDRE CE QU'IL DIAGNOSTIQUE. `aLaColonne` retient sa réponse
+  // pour la vie du processus : sonder pendant un hoquet aurait mis « absente » en cache pour les
+  // trois, désactivant l'ordre des écritures et l'idempotence jusqu'au prochain démarrage.
+  it("base muette : rien n'est retenu, la fonction remarche dès que la base revient", async () => {
+    const muette = base({ temoin: false }); schema.init(muette.ctx);
+    await schema.sonderTout();
+    expect(schema.etatDuSchema().sondees, "le diagnostic a mis les attentes en cache à ABSENT").toBe(0);
+
+    // La base revient — sans redémarrer le processus.
+    const vivante = base({});
+    schema.init(vivante.ctx);            // `init` seul remettrait le contexte ; le cache DOIT être vide
+    expect(await schema.attendue("envoiUnique"), "une panne passagère a éteint la fonction pour de bon").toBe(true);
+  });
+
+  // ⚠️ UN MANQUE TRANCHE SEUL, MÊME PARTIELLEMENT SONDÉ — et rien ne l'exigeait : une mutation qui
+  // n'annonçait « incomplet » qu'une fois TOUT sondé a survécu à la première série. Le chemin
+  // ordinaire ne sonde qu'une attente à la fois (le chat sonde la clé, jamais le rang) : sans cette
+  // règle, une colonne constatée absente se serait affichée « partiel », c'est-à-dire rassurante.
+  it("une seule attente sondée et absente : incomplet, jamais partiel", async () => {
+    const b = base({ absentes: ["client_key"] }); schema.init(b.ctx);
+    expect(await schema.attendue("envoiUnique")).toBe(false);
+
+    const etat = schema.etatDuSchema();
+    expect(etat.sondees).toBeLessThan(etat.attendues);
+    expect(etat.verdict, "un manque constaté se dilue dans « partiel »").toBe("incomplet");
+  });
+
+  it("le témoin est demandé AVANT les attentes — sinon il n'arbitre rien", async () => {
+    const chemins = [];
+    schema.init({
+      plugins: {}, has: () => false, errors: { capture() {} }, branding: {}, config: {}, storage: {},
+      db: { async request(c) { chemins.push(c); return []; } },
+    });
+    await schema.sonderTout();
+    expect(chemins[0]).toContain(schema.TEMOIN.table);
+    expect(chemins[0]).toContain(schema.TEMOIN.colonne);
+  });
+});
