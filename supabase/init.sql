@@ -126,7 +126,10 @@ create index if not exists commercial_doc_internal_sessions_last_at_idx
 -- que le droit de suivre.
 create table if not exists public.doc_presentations (
   slug           text primary key,
-  control_hash   text not null,
+  -- ⚠️ NULLABLE, ET C'EST LE CŒUR DU MODÈLE : null = archivée (plus de pilote). Déclarée NOT NULL
+  -- jusqu'à la 0008, ce qui rendait la CLÔTURE impossible sur une base neuve — trouvé par le banc
+  -- vraie base, seul endroit où une contrainte peut refuser quelque chose.
+  control_hash   text,
   doc_id         text,
   file_url       text not null,
   file_name      text,
@@ -392,3 +395,6 @@ alter table public.doc_presentations
   add column if not exists write_seq bigint not null default 0;
 alter table public.doc_presentation_messages
   add column if not exists client_key text;
+-- Une base née d'un init.sql d'avant la 0008 porte un NOT NULL qui rend la clôture impossible.
+alter table public.doc_presentations
+  alter column control_hash drop not null;
