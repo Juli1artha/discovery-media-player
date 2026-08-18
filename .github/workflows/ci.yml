@@ -254,6 +254,11 @@ jobs:
       PSQL: psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d player -qtA
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
 
       - name: init.sql brings a virgin database up on its own
         run: $PSQL -f supabase/init.sql
@@ -290,6 +295,62 @@ jobs:
           $PSQL -f supabase/init.sql
           $PSQL -f /tmp/forme.sql > /tmp/rejoue.txt
           diff -u /tmp/avant.txt /tmp/rejoue.txt || { echo "::error::rejouer init.sql modifie la base"; exit 1; }
+
+      # ─────────────────────────────────────────────────────────────────────────────────────────
+      # ⚠️ LE DOUBLE POSTGREST EN MÉMOIRE DIT LUI-MÊME CE QU'IL NE SAIT PAS FAIRE : « pas de
+      # contraintes, pas de transactions… PAS un substitut pour vérifier ce qui relève du SGBD ».
+      # Or l'idempotence des messages tient à une contrainte d'unicité, l'ordre des écritures de
+      # pilotage à l'atomicité d'un PATCH conditionnel, et la sonde de schéma au fait que PostgREST
+      # rejette le POST ENTIER sur une colonne inconnue. Trois propriétés DÉDUITES de la
+      # documentation, jamais constatées. Elles le sont ici, devant un vrai PostgREST.
+      # ─────────────────────────────────────────────────────────────────────────────────────────
+      - name: Roles PostgREST needs
+        run: |
+          $PSQL <<'SQL'
+          -- `authenticator` se connecte et ne peut rien ; il ENDOSSE le rôle porté par le jeton.
+          -- C'est le montage standard de PostgREST, et celui de Supabase.
+          create role authenticator noinherit login password 'player';
+          -- `bypassrls` reproduit ce que fait `service_role` : le player n'est jamais appelé depuis
+          -- un navigateur, il décide lui-même de ce qu'il sert. Sans ça, RLS sans politique bloque
+          -- tout et le banc mesurerait un refus de la base, pas le comportement du player.
+          create role player_test nologin bypassrls;
+          grant player_test to authenticator;
+          grant usage on schema public to player_test;
+          grant all on all tables in schema public to player_test;
+          grant all on all sequences in schema public to player_test;
+          grant execute on all functions in schema public to player_test;
+          SQL
+
+      - name: A real PostgREST, in front of a real Postgres
+        env:
+          # Valeur de banc, pas un identifiant : elle n'ouvre qu'un Postgres jetable créé six
+          # étapes plus haut et détruit avec le conteneur. PostgREST exige 32 caractères en HS256.
+          JWT: banc-vraie-base-secret-de-quarante-deux-caracteres
+        run: |
+          echo "PLAYER_TEST_JWT_SECRET=$JWT" >> "$GITHUB_ENV"
+          docker run -d --name postgrest --network host \
+            -e PGRST_DB_URI="postgres://authenticator:player@localhost:5432/player" \
+            -e PGRST_DB_ANON_ROLE=player_test \
+            -e PGRST_DB_SCHEMAS=public \
+            -e PGRST_JWT_SECRET="$JWT" \
+            -e PGRST_SERVER_PORT=3001 \
+            postgrest/postgrest:v12.2.3
+          for i in $(seq 1 40); do curl -fsS localhost:3001/ >/dev/null 2>&1 && break || sleep 1; done
+          curl -fsS localhost:3001/ >/dev/null || { echo "::error::PostgREST n'a pas démarré"; docker logs postgrest; exit 1; }
+          # Supabase sert PostgREST sous /rest/v1 ; un PostgREST nu le sert à la racine. Ce renvoi
+          # ne touche QUE le chemin — statut, en-têtes et corps passent tels quels.
+          # `setsid` + `nohup` : un simple `&` peut mourir avec le shell de l'étape, et l'étape
+          # suivante n'aurait plus de renvoi — sans que rien ne dise pourquoi.
+          setsid nohup node tools/prefixe-rest.cjs > /tmp/renvoi.log 2>&1 < /dev/null &
+          for i in $(seq 1 20); do curl -fsS "localhost:3002/rest/v1/doc_presentations?limit=1" >/dev/null 2>&1 && break || sleep 1; done
+          curl -fsS "localhost:3002/rest/v1/doc_presentations?limit=1" >/dev/null || { echo "::error::le renvoi /rest/v1 ne répond pas"; exit 1; }
+
+      # ⚠️ Le banc REFUSE de s'esquiver quand `CI` est posé : si PostgREST ne démarrait pas, une
+      # esquive silencieuse rendrait cette étape verte sans que rien n'ait été éprouvé.
+      - name: The three properties the in-memory double cannot simulate
+        env:
+          PLAYER_TEST_POSTGREST_URL: http://127.0.0.1:3002
+        run: npm run test:base
 
   docker:
     runs-on: ubuntu-latest

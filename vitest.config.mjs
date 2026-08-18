@@ -12,6 +12,10 @@ export default defineConfig({
     include: ["**/*.{test,spec}.{ts,js}"],
     // ⚠️ `e2e/**` est EXCLU ICI : ce banc demande un vrai navigateur et vit sous `npm run test:e2e`.
     // Le laisser entrer ferait dépendre la commande de base d'un Chrome installé.
-    exclude: ["node_modules/**", "examples/**", "e2e/**"],
+    //
+    // ⚠️ `base/**` de même : il demande un vrai Postgres et un vrai PostgREST, et il REFUSE de
+    // s'esquiver quand `CI` est posé — donc il ferait échouer `npm test` partout ailleurs.
+    // `npm run test:base`, et sa propre étape sur la forge.
+    exclude: ["node_modules/**", "examples/**", "e2e/**", "base/**"],
   },
 });
