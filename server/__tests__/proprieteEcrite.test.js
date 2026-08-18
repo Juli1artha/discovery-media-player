@@ -59,7 +59,7 @@ describe("une clé écrite ne peut pas atteindre le prototype", () => {
   it("l'objet des réactions est construit sans prototype", () => {
     const src = fs.readFileSync(path.join(__dirname, "..", "presentations.js"), "utf8");
     expect(src, "deux barrières, parce que la première dépend d'un plafond de longueur")
-      .toContain("Object.assign(Object.create(null)");
+      .toContain("const cur = Object.create(null)");   // déclaré NU tel quel — la forme que la garde statique reconnaît
   });
 });
 

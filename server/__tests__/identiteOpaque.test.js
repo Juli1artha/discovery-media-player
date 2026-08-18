@@ -120,8 +120,11 @@ describe("la présence ne publie plus d'adresse", () => {
     expect(cle, "la clé de présence doit rester repérable").toBeTruthy();
     expect(cle[0]).not.toMatch(/email/);
 
-    // Et l'identité d'un réacteur, qui part en base et revient à toute l'audience.
-    expect(sansCommentaires).toContain("reactor:MOIREF");
+    // Et l'identité d'un réacteur ne part plus DU TOUT du client : MOIREF est public (le tableau
+    // des réactions porte les refs de tous), donc s'y fier laissait usurper. Le client envoie son
+    // JETON, le serveur dérive — l'essai vérifie que l'ancien champ a bien disparu de l'appel.
+    expect(sansCommentaires).toContain("authorToken:authToken()");
+    expect(sansCommentaires).not.toMatch(/reactor:MOIREF/);
     expect(sansCommentaires).not.toContain("reactor:reactorId()");
   });
 });

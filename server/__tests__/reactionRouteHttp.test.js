@@ -11,7 +11,12 @@
 // D'où ce fichier : la MÊME propriété, éprouvée à travers `player.handler`, c'est-à-dire par le
 // chemin que le navigateur emprunte vraiment.
 
-const MOI = "0123456789abcdef";
+const crypto = require("node:crypto");
+const sha = (t) => crypto.createHash("sha256").update(String(t)).digest("hex");
+
+// Le jeton reste dans le navigateur ; le ref qui en découle est ce que la base stocke.
+const JETON = "jeton-d-auteur-secret";
+const MOI = sha("ref:" + sha(JETON)).slice(0, 16);
 const PRES = { slug: "Ab3-_xYz9012", active: true, control_hash: "h", chat_locked: false };
 
 const etatBase = { reactions: {} };
@@ -43,12 +48,12 @@ function contexte() {
   };
 }
 
-async function reagir(etat) {
+async function reagir(etat, extra = {}) {
   player.init(contexte());
   const res = { statusCode: 0, headers: {}, body: "", setHeader(k, v) { this.headers[k.toLowerCase()] = v; }, end(b) { this.body = String(b == null ? "" : b); } };
   await player.handler(
     { method: "POST", headers: { "content-type": "application/json" }, socket: {}, query: {},
-      body: { action: "present-react", slug: PRES.slug, msgId: 1, emoji: "👍", reactor: MOI, etat } },
+      body: { action: "present-react", slug: PRES.slug, msgId: 1, emoji: "👍", authorToken: JETON, etat, ...extra } },
     res,
   );
   return { statut: res.statusCode, corps: JSON.parse(res.body || "{}") };
@@ -67,5 +72,45 @@ describe("l'intention traverse la route HTTP, pas seulement la fonction", () => 
     await reagir(false);
     await reagir(false);
     expect(etatBase.reactions["👍"]).toBeUndefined();
+  });
+});
+
+// ⚠️ LES REFS SONT PUBLICS — chaque participant reçoit ceux de tous les autres dans le tableau des
+// réactions. Un champ `reactor` fourni par le client permettait donc de retirer la réaction de
+// n'importe qui. L'identité se dérive du JETON, le secret qui ne quitte pas son navigateur.
+describe("l'identité d'un réacteur ne se déclare pas", () => {
+  const VICTIME = sha("ref:" + sha("jeton-de-la-victime")).slice(0, 16);
+
+  it("un `reactor` forgé est ignoré : seule l'identité dérivée du jeton est touchée", async () => {
+    etatBase.reactions = { "👍": [VICTIME] };
+    const r = await reagir(false, { reactor: VICTIME });   // « retire la réaction de la victime »
+    expect(r.statut).toBe(200);
+    expect(etatBase.reactions["👍"], "la réaction de la victime a été retirée par un tiers").toEqual([VICTIME]);
+  });
+
+  // ⚠️ L'ATTAQUE QUI RESTAIT OUVERTE SOUS UN REPLI « DE COMPATIBILITÉ ». Une mutation qui
+  // retombait sur `body.reactor` quand le jeton manque a SURVÉCU à la première série : l'essai
+  // d'usurpation envoyait jeton ET ref forgé, donc le repli ne jouait jamais. Or c'est précisément
+  // le chemin de l'attaquant : ne PAS envoyer de jeton, et déclarer le ref d'un autre.
+  it("un ref forgé SANS jeton : 400, et la victime n'est pas touchée", async () => {
+    etatBase.reactions = { "👍": [VICTIME] };
+    const r = await reagir(false, { authorToken: undefined, reactor: VICTIME });
+    expect(r.statut, "le repli sur body.reactor rouvre l'usurpation").toBe(400);
+    expect(etatBase.reactions["👍"]).toEqual([VICTIME]);
+  });
+
+  it("sans jeton, pas d'identité : 400", async () => {
+    etatBase.reactions = {};
+    const r = await reagir(true, { authorToken: undefined });
+    expect(r.statut).toBe(400);
+    expect(etatBase.reactions["👍"]).toBeUndefined();
+  });
+
+  // La dérivation serveur doit rendre EXACTEMENT le ref que le client calcule : sinon « mes »
+  // réactions cessent de s'afficher comme miennes. Confrontée au moteur du cœur navigateur.
+  it("la dérivation serveur et celle du client rendent le même ref", async () => {
+    const { referenceAuteur } = await import("../../src/live.ts");
+    const duClient = await referenceAuteur(JETON, crypto.webcrypto.subtle);
+    expect(duClient).toBe(MOI);
   });
 });

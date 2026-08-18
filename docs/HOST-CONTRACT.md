@@ -32,7 +32,7 @@ need.
   "hostShare": true,
   "hostMail": true,
   "plugins": { "bot": false, "visitors": false, "brandIntro": false, "botBrowser": false, "providerQuotas": false },
-  "schema": { "attendues": 3, "sondees": 1, "verdict": "partiel", "manquant": [] }
+  "schema": { "couvre": "colonnes-conditionnelles", "attendues": 4, "sondees": 1, "verdict": "partiel", "manquant": [] }
 }
 ```
 
@@ -69,6 +69,13 @@ it. `verdict` is then one of:
 
 ⚠️ **`incomplet` wins over `partiel`**: a missing column is a positive fact and settles the verdict
 on its own, even when the rest has not been checked.
+
+⚠️ **`couvre` states the scope, because `complet` without a scope overpromises.** The card checks
+the **conditional columns** — the ones a feature probes before writing. The rate-limit migrations
+(`0003`, `0004`) are deliberately **not** in it: a host may provide its own `limits` capability, and
+on such a host their absence is normal, not a defect. `complet` therefore never means *every file
+under `supabase/` has been applied* — read it as *every column this code conditions its writes on
+is present*.
 
 ⚠️ **`indetermine` is not a failure of the card.** A control column — the primary key of the oldest
 table — is queried first. If *it* does not answer, nothing is missing: the database is. Without that

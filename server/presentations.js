@@ -387,6 +387,21 @@ const CHAMPS_PUBLICS = [
 const refAuteur = (hash) => (hash ? sha("ref:" + hash).slice(0, 16) : null);
 
 /**
+ * ⚠️ L'IDENTITÉ D'UN RÉACTEUR SE DÉRIVE D'UN SECRET, ELLE NE SE DÉCLARE PAS.
+ *
+ * Le client envoyait `reactor: MOIREF` — or MOIREF est PUBLIC : chaque participant reçoit les refs
+ * de tous les autres dans le tableau des réactions (il en a besoin pour dessiner « j'ai réagi »).
+ * N'importe qui pouvait donc copier le ref d'un autre et poser ou retirer SES réactions. Constat
+ * du troisième audit, vérifié : les refs transitent en clair dans `reactionsPubliques`.
+ *
+ * Le jeton d'auteur, lui, ne quitte jamais le navigateur qui l'a tiré. La dérivation est la même
+ * que côté client (`referenceAuteur` dans src/live.ts) : sha("ref:" + sha(jeton)), tronqué à 16 —
+ * si les deux divergent, « mes » réactions cessent de s'afficher comme miennes, et l'essai qui
+ * confronte les deux moteurs le dira.
+ */
+const reacteurDepuisJeton = (jeton) => (jeton ? refAuteur(sha(String(jeton))) : null);
+
+/**
  * ⚠️ LES ANCIENNES RÉACTIONS PORTENT DES ADRESSES, et aucune migration ne les réécrira : le
  * client stockait `email || nom` comme identité de réacteur. On garde le COMPTE — la pastille
  * affiche toujours « 👍 3 » — en remplaçant chaque identité illisible par un jeton de place qui
@@ -573,7 +588,10 @@ async function toggleReaction(slug, msgId, emoji, reactor, etat) {
   // participants comme une réaction, ce qui est absurde même sans être dangereux. Deux barrières,
   // parce que la seconde protège le jour où quelqu'un lève le plafond de longueur.
   if (/[A-Za-z_$]/.test(e)) return { ok: false, status: 400 };
-  const rows = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&slug=eq.${enc(String(slug || ""))}&select=reactions&limit=1`);
+  // ⚠️ LE RANG N'EST DEMANDÉ QUE LÀ OÙ IL EXISTE — sélectionner une colonne absente fait échouer
+  // la LECTURE entière chez un hôte non migré, et ce serait les réactions qu'on casserait.
+  const ordonne = await require("./schema").attendue("reactionsOrdonnees");
+  const rows = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&slug=eq.${enc(String(slug || ""))}&select=${ordonne ? "reactions,reactions_seq" : "reactions"}&limit=1`);
   // ⚠️ LE NOM DE PROPRIÉTÉ ÉCRIT ICI VIENT DU CLIENT — et la garde posée en 0.1.2 ne couvrait que
   // les LECTURES. `Object.hasOwn` empêchait de LIRE `constructor` ; rien n'empêchait de l'ÉCRIRE.
   //
@@ -588,16 +606,35 @@ async function toggleReaction(slug, msgId, emoji, reactor, etat) {
   //
   // Un objet SANS prototype retire la classe entière : il n'y a plus rien à masquer ni à
   // atteindre, quelle que soit la clé et quel que soit le plafond.
-  const brut = (Array.isArray(rows) && rows[0] && rows[0].reactions && typeof rows[0].reactions === "object" && !Array.isArray(rows[0].reactions)) ? rows[0].reactions : {};
-  const cur = Object.assign(Object.create(null), brut);
-  const arr = Array.isArray(cur[e]) ? cur[e] : [];
-  const i = arr.indexOf(who);
-  const veut = etat === undefined || etat === null ? (i < 0) : !!etat;
-  if (veut && i < 0) arr.push(who);
-  if (!veut && i >= 0) arr.splice(i, 1);
-  if (arr.length) cur[e] = arr; else delete cur[e];
-  const maj = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&select=*`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: { reactions: cur } });
-  return { ok: true, message: premierPublic(maj) };
+  // ⚠️ LIRE-MODIFIER-RÉÉCRIRE PERD DES ÉCRITURES : deux participants qui réagissent dans la même
+  // seconde lisent le même JSON, et la seconde réécriture emporte la première — une réaction
+  // disparaît, sans erreur nulle part. Même remède que le pilotage (0002) : l'écriture porte le
+  // rang qu'elle a LU, la base ne l'accepte que s'il n'a pas bougé, sinon on relit et on rejoue.
+  // Trois rejeux suffisent : chaque tour, au moins UN écrivain gagne — l'attente est bornée par le
+  // nombre de concurrents réels, pas par la malchance.
+  let lu = rows;
+  for (let essai = 0; essai < 4; essai += 1) {
+    const brut = (Array.isArray(lu) && lu[0] && lu[0].reactions && typeof lu[0].reactions === "object" && !Array.isArray(lu[0].reactions)) ? lu[0].reactions : {};
+    const rang = ordonne ? Math.trunc(Number((Array.isArray(lu) && lu[0] && lu[0].reactions_seq) || 0)) : 0;
+    // Objet NU déclaré tel quel : la garde statique des écritures indexées reconnaît la
+    // déclaration, pas un voisinage — et c'est elle qui a refusé la première forme de cette boucle.
+    const cur = Object.create(null);
+    Object.assign(cur, brut);
+    const arr = Array.isArray(cur[e]) ? cur[e] : [];
+    const i = arr.indexOf(who);
+    const veut = etat === undefined || etat === null ? (i < 0) : !!etat;
+    if (veut && i < 0) arr.push(who);
+    if (!veut && i >= 0) arr.splice(i, 1);
+    if (arr.length) cur[e] = arr; else delete cur[e];
+    const condition = ordonne ? `&reactions_seq=eq.${rang}` : "";
+    const maj = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}${condition}&select=*`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: { reactions: cur, ...(ordonne ? { reactions_seq: rang + 1 } : {}) } });
+    if (!ordonne || (Array.isArray(maj) && maj.length)) return { ok: true, message: premierPublic(maj) };
+    // Rang dépassé : quelqu'un a écrit entre notre lecture et notre écriture. On relit, on rejoue.
+    lu = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&slug=eq.${enc(String(slug || ""))}&select=reactions,reactions_seq&limit=1`);
+  }
+  // Quatre tours perdus : plus de concurrents que de raisons d'attendre. Un refus net vaut mieux
+  // qu'une écriture qui écraserait ce que les gagnants viennent de poser.
+  return { ok: false, status: 409 };
 }
 
 // ── Statistiques de présentation (assistance) ────────────────────────────────────────────────────────────
@@ -808,4 +845,5 @@ async function listPresentationsForDoc(docId, email, isAdmin, autoriseLarge) {
 }
 
 module.exports = {
+  reacteurDepuisJeton,
   messagePublic, CHAMPS_PUBLICS, init, createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent };

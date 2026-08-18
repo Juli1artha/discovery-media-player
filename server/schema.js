@@ -42,6 +42,11 @@ const ATTENDUES = {
     migration: "supabase/migrations/0005-envoi-unique.sql",
     fonction: "empêcher qu'un renvoi crée un second message",
   },
+  reactionsOrdonnees: {
+    table: "doc_presentation_messages", colonne: "reactions_seq",
+    migration: "supabase/migrations/0006-reactions-ordonnees.sql",
+    fonction: "empêcher deux réactions simultanées de s'écraser",
+  },
 };
 
 /**
@@ -104,6 +109,8 @@ function init(ctx) {
   connues.clear();
   reponses.clear();
   quandNegatif.clear();
+  sondeEnCours = null;
+  sondePrise = 0;
 }
 
 /** La sonde d'une attente déclarée. C'est la seule forme d'appel que les appelants utilisent. */
@@ -229,7 +236,24 @@ function verdict(manque, sondees, attendues) {
  * messages jusqu'au prochain démarrage. Une route de contrôle qui casse la production. Si le
  * témoin ne répond pas, on ne sonde RIEN et on ne retient RIEN.
  */
-async function sonderTout() {
+/**
+ * ⚠️ LA SONDE EST PUBLIQUE : chaque appel coûtait des requêtes base, autant de fois qu'on veut.
+ * Une boucle sur `?contract=1&schema=1` faisait de la carte un petit amplificateur — la ressource
+ * PARTAGÉE paie, pas l'appelant. Deux bornes : les appels simultanés partagent UNE sonde, et le
+ * résultat sert pendant 30 s — un état de schéma ne change pas plus vite qu'une migration.
+ */
+const CACHE_SONDE_MS = 30 * 1000;
+let sondeEnCours = null;
+let sondePrise = 0;
+
+function sonderTout() {
+  if (sondeEnCours && Date.now() - sondePrise < CACHE_SONDE_MS) return sondeEnCours;
+  sondePrise = Date.now();
+  sondeEnCours = vraimentSonderTout();
+  return sondeEnCours;
+}
+
+async function vraimentSonderTout() {
   // ⚠️ LA PART ENCODÉE EST CALCULÉE À PART, comme dans `sonder()` dix lignes plus haut, et pour la
   // même raison : la garde de portabilité traque une parenthèse après « select= », et un appel de
   // fonction écrit dans le gabarit en produit une. J'ai reproduit ici le défaut dont le correctif
@@ -271,6 +295,6 @@ function signaler(cle, migration) {
 }
 
 /** Pour les tests et l'exploitation : reposer la question. */
-function oublier() { connues.clear(); reponses.clear(); quandNegatif.clear(); }
+function oublier() { connues.clear(); reponses.clear(); quandNegatif.clear(); sondeEnCours = null; sondePrise = 0; }
 
 module.exports = { init, aLaColonne, attendue, etatDuSchema, sonderTout, oublier, ATTENDUES, TEMOIN };

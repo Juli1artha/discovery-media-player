@@ -254,9 +254,48 @@ describe("un « non » n'a pas la même durée de vie qu'un « oui »", () => {
 
     const avant = b.requetes;
     await schema.sonderTout();
-    // témoin (1) + re-sonde des DEUX négatifs possibles… mais le oui, lui, ne repart pas.
-    // Ce qu'on fixe : le nombre d'appels exclut la re-sonde d'envoiUnique déjà positive.
+    // Témoin (1) + toutes les attentes SAUF celle déjà positive. Dérivé de l'inventaire, pas
+    // figé : un compte en dur avait rougi à la simple arrivée d'une quatrième attente — la garde
+    // accusait alors l'inventaire d'avoir grandi, ce qui n'est pas un défaut.
     const couts = b.requetes - avant;
-    expect(couts, "un oui a été re-sondé, ou un non ne l'a pas été").toBe(1 + 2);
+    expect(couts, "un oui a été re-sondé, ou un non ne l'a pas été").toBe(1 + Object.keys(schema.ATTENDUES).length - 1);
+  });
+});
+
+// ⚠️ LA SONDE EST PUBLIQUE — chaque appel coûtait des requêtes base, autant qu'on veut. La carte
+// devenait un petit amplificateur : la ressource PARTAGÉE paie, jamais l'appelant.
+describe("la sonde publique ne se laisse pas jouer en boucle", () => {
+  const schema = require("../schema.js");
+
+  function baseComptee() {
+    const etat = { requetes: 0 };
+    schema.init({
+      plugins: {}, has: () => false, errors: { capture() {} }, branding: {}, config: {}, storage: {},
+      db: { async request() { etat.requetes += 1; return []; } },
+    });
+    return etat;
+  }
+
+  it("deux appels simultanés partagent UNE sonde", async () => {
+    const b = baseComptee();
+    await Promise.all([schema.sonderTout(), schema.sonderTout()]);
+    // témoin + une sonde par attente — une seule fois, pas deux.
+    expect(b.requetes).toBe(1 + Object.keys(schema.ATTENDUES).length);
+  });
+
+  it("dans la fenêtre, le résultat resservi ne coûte RIEN à la base", async () => {
+    const b = baseComptee();
+    const ici = Date.now();
+    const horloge = vi.spyOn(Date, "now").mockReturnValue(ici);
+    try {
+      await schema.sonderTout();
+      const avant = b.requetes;
+      await schema.sonderTout();
+      expect(b.requetes, "chaque appel de la route publique touche la base").toBe(avant);
+
+      horloge.mockReturnValue(ici + 31 * 1000);
+      await schema.sonderTout();
+      expect(b.requetes, "le cache ne doit pas être éternel : une migration appliquée doit se voir").toBeGreaterThan(avant);
+    } finally { horloge.mockRestore(); }
   });
 });
