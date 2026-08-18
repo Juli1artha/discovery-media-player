@@ -182,107 +182,14 @@ jobs:
           '
 
       # ⚠️ UNE ACTION RÉFÉRENCÉE PAR ÉTIQUETTE EST UNE DÉPENDANCE MOUVANTE — le défaut de `@2`,
-      # retourné sur notre propre chaîne, et avec des conséquences plus larges : cette forge PUBLIE
-      # sur npm. Une étiquette peut être redéplacée sur un autre commit par son auteur, ou par qui
-      # prend son compte ; le SHA, lui, ne désigne qu'un arbre. L'étiquette reste en commentaire :
-      # un SHA nu se relit comme du bruit, et on ne saurait plus quoi comparer à la montée suivante.
+      # retourné sur notre propre chaîne : cette forge PUBLIE sur npm. Une étiquette peut être
+      # redéplacée sur un autre commit par son auteur, ou par qui prend son compte ; le SHA, lui,
+      # ne désigne qu'un arbre. L'étiquette reste en commentaire : un SHA nu se relit comme du
+      # bruit, et on ne saurait plus quoi comparer à la montée suivante.
       - name: GitHub actions are pinned to immutable commits
         if: matrix.node == '22'
         run: |
-          flottantes=$(grep -rhoE 'uses: [a-zA-Z0-9_./-]+@[a-zA-Z0-9._-]+' .github/workflows/ \
-            | grep -vE '@[0-9a-f]{40}
-        if: matrix.node == '22'
-        run: |
-          bad=$(grep -l '"discovery-media-player": *"[\^~]' examples/*/package.json || true)
-          [ -z "$bad" ] || { echo "::error::a version range in: $bad"; exit 1; }
-          grep -q '">=22"' examples/demo/package.json || { echo "::error::examples must declare node >=22"; exit 1; }
-
-  # ⚠️ CE QUE `npm test` NE PEUT PAS VOIR. `jsdom` n'applique pas la CSP, et le `res` postiche des
-  # essais serveur se contente d'ENREGISTRER les en-têtes. Une politique qui interdit nos propres
-  # scripts passe donc les 690 essais et donne un écran blanc chez le visiteur. Il faut un moteur
-  # qui refuse pour de vrai — d'où cette étape, et son navigateur.
-  #
-  # Séparée de `check` : un banc navigateur qui s'invite dans la commande de base la rendrait
-  # inexécutable dans un conteneur nu, et personne ne la lancerait plus en boucle.
-  navigateur:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci
-      # ⚠️ ON NOMME LE NAVIGATEUR AVANT DE S'EN SERVIR. Le banc s'esquive en local quand il n'y a pas
-      # de Chrome — c'est confortable, et ce serait un trou béant ici : le jour où l'image de la
-      # forge cesse d'en embarquer un, l'étape passerait au vert sans avoir rien exercé. `CI` étant
-      # posé, le banc échoue au lieu de s'esquiver ; cette ligne dit juste lequel, et depuis quand.
-      - run: google-chrome --version
-      - run: npm run test:e2e
-
-  docker:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - run: docker build -t player:ci .
-      # Une image qui construit mais ne répond pas n'est pas une image qui marche.
-      - name: The image answers
-        run: |
-          docker run -d --name player-ci -p 3000:3000 player:ci
-          for i in $(seq 1 30); do curl -fsS localhost:3000/healthz && break || sleep 1; done
-          curl -fsS "localhost:3000/api/doc?contract=1" | grep -q '"contract":1'
-          docker rm -f player-ci
-
-  # ⚠️ TROISIÈME FOIS QUE LA PUBLICATION EST LE POINT DE RUPTURE.
-  #
-  #   0.1.15 — publiée SANS son correctif (commit sur une branche dont la PR venait d'être fusionnée) ;
-  #   0.1.25 — publiée CASSÉE (script en ligne qui ne se parse pas) ;
-  #   0.1.35 — JAMAIS publiée : PR fusionnée, tag oublié. Le code était sur `main`, l'artefact nulle part.
-  #
-  # Les trois ont été trouvées par un HÔTE, pas ici. Le troisième cas est le plus sournois : rien
-  # n'échoue. La CI est verte, la PR est fusionnée, le CHANGELOG annonce la version — et npm sert
-  # toujours la précédente. Un état anormal que rien ne dit devient l'état normal.
-  #
-  # C'est la règle qu'on vient d'écrire pour les gardes muettes du produit (0.1.35), retournée sur
-  # notre propre chaîne de livraison : si `main` déclare une version que le registre ne sert pas,
-  # quelque chose est resté à moitié fait, et ça doit se voir sans qu'on pense à regarder.
-  #
-  # ⚠️ Ce contrôle N'ÉCHOUE PAS la CI. Entre la fusion et la fin de la publication il s'écoule
-  # légitimement quelques minutes, et un échec rouge à chaque fusion apprendrait à ignorer la
-  # couleur — le défaut même qu'on corrige. Il écrit un avertissement dans le résumé de la course :
-  # visible pour qui vient de fusionner, silencieux quand tout est en ordre.
-  #
-  # ⚠️ ET IL NE SUFFIT PAS. Le second hôte a fait la remarque qui le disqualifie comme garde
-  # principale : un avertissement dans un résumé ne se voit QUE SI QUELQU'UN OUVRE LA COURSE. Les
-  # trois fois, personne ne l'avait ouverte — c'est un hôte qui a trouvé, en comparant le registre à
-  # l'annonce. La garde qui n'a besoin de personne est dans `publication.yml` : elle tourne toute
-  # seule et ouvre une issue. Celle-ci reste pour l'immédiateté ; l'autre pour la certitude.
-  publication:
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: main declares a version the registry does not serve
-        run: |
-          locale=$(node -p "require('./package.json').version")
-          publiee=$(npm view discovery-media-player version 2>/dev/null || echo "")
-          echo "main=$locale registre=$publiee"
-          if [ "$locale" != "$publiee" ]; then
-            {
-              echo "### ⚠️ Version non publiée"
-              echo ""
-              echo "\`main\` déclare **$locale**, le registre sert **${publiee:-rien}**."
-              echo ""
-              echo "Si la publication vient d'être lancée, ignorez — elle prend quelques minutes."
-              echo "Sinon il manque le tag :"
-              echo ""
-              echo '```'
-              echo "git tag -a v$locale -m \"$locale\" && git push origin v$locale"
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-            echo "::warning::main déclare $locale, npm sert ${publiee:-rien} — tag manquant ?"
-          fi
- || true)
+          flottantes=$(grep -rhoE 'uses: [a-zA-Z0-9_./-]+@[a-zA-Z0-9._-]+' .github/workflows/ | grep -vE '@[0-9a-f]{40}$' || true)
           [ -z "$flottantes" ] || { echo "::error::action non épinglée :"; echo "$flottantes"; exit 1; }
           n=$(grep -rhoE 'uses: [a-zA-Z0-9_./-]+@[0-9a-f]{40}' .github/workflows/ | wc -l | tr -d ' ')
           echo "actions : $n références, toutes épinglées sur un commit"
