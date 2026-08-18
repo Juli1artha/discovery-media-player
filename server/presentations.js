@@ -483,7 +483,21 @@ async function setChatLock(slug, control, locked) {
 }
 
 // Réaction emoji (toggle) : le participant (identifié par email ou nom) ajoute/retire un emoji sur un message.
-async function toggleReaction(slug, msgId, emoji, reactor) {
+/**
+ * ⚠️ ON POSE UN ÉTAT, ON NE BASCULE PLUS — et la différence est ce qui rend l'opération IDEMPOTENTE.
+ *
+ * « Basculer » n'a de sens qu'une fois : un renvoi réseau, un double-clic, une reprise de requête,
+ * et la réaction que le participant vient d'ajouter disparaît. Il ne voit aucune erreur — il voit
+ * son émoji s'allumer puis s'éteindre, et il recommence, ce qui rebascule encore.
+ *
+ * L'appelant sait ce qu'il VEUT (`etat`), pas ce qu'il faut inverser. Rejouer la même intention
+ * deux fois donne le même résultat qu'une fois, ce qui est exactement la propriété qu'un réseau
+ * peu fiable exige. Constat P10 de l'audit.
+ *
+ * ⚠️ Compatibilité : `etat` absent = ancien client, on bascule comme avant. Un client à jour ne
+ * repasse jamais par là ; un ancien garde son comportement plutôt que de perdre la fonction.
+ */
+async function toggleReaction(slug, msgId, emoji, reactor, etat) {
   if (await estArchive(slug)) return REFUS_ARCHIVE;
   const id = Math.trunc(+msgId); const e = String(emoji || "").slice(0, 8); const who = String(reactor || "").slice(0, 160).toLowerCase();
   if (!id || !e || !who) return { ok: false, status: 400 };
@@ -511,7 +525,9 @@ async function toggleReaction(slug, msgId, emoji, reactor) {
   const cur = Object.assign(Object.create(null), brut);
   const arr = Array.isArray(cur[e]) ? cur[e] : [];
   const i = arr.indexOf(who);
-  if (i >= 0) arr.splice(i, 1); else arr.push(who);
+  const veut = etat === undefined || etat === null ? (i < 0) : !!etat;
+  if (veut && i < 0) arr.push(who);
+  if (!veut && i >= 0) arr.splice(i, 1);
   if (arr.length) cur[e] = arr; else delete cur[e];
   const maj = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&select=*`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: { reactions: cur } });
   return { ok: true, message: premierPublic(maj) };
