@@ -9,10 +9,11 @@
 -- doc_presentation_attendees, la condition vit dans doc_presentations — une AUTRE table. Sans
 -- transaction ni RPC côté player, l'arbitre ne peut être que la base elle-même. D'où ce trigger.
 --
--- ⚠️ `FOR KEY SHARE` EST CE QUI REND LE REFUS ATOMIQUE, pas le simple test. Sans lui, une clôture
--- peut se COMMITTER entre la vérification du trigger et le commit de l'écriture — la fenêtre
--- rétrécit mais survit. Le verrou de ligne bloque la clôture concurrente jusqu'au commit de
--- l'écriture : l'ordre devient réel, plus probable.
+-- ⚠️ LE VERROU CI-DESSOUS EST TROP FAIBLE, ET LA 0010 LE REMPLACE. Cette migration affirmait que
+-- FOR KEY SHARE rendait le refus atomique : faux — la clôture modifie des colonnes non-clés, son
+-- UPDATE prend FOR NO KEY UPDATE, compatible avec KEY SHARE. La fenêtre prétendue fermée restait
+-- ouverte (cinquième audit, VU au banc à deux transactions). Le fichier reste tel qu'appliqué par
+-- les bases historiques ; la correction est une migration de plus, comme toujours.
 --
 -- Sans lui : rien ne casse — les sept chemins gardent leur vérification préalable, et la fenêtre
 -- de course reste ce qu'elle était avant cette migration. Le trigger est le scellé, pas la porte.
