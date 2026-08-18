@@ -24,8 +24,29 @@ const tokenMatches = (token, storedHash) => !!(token && storedHash && sameHash(s
 // owner = { id, email, name, avatar } (membre authentifié). La CLÉ de propriété est l'EMAIL (issu du JWT
 // vérifié) → permet reprise / liste / transfert, y compris vers un membre choisi par email.
 const lc = (s) => String(s || "").trim().toLowerCase();
+/**
+ * ⚠️ LA PURGE NE DOIT PAS DÉPENDRE DE L'OUVERTURE D'UN PANNEAU. Elle ne vivait que dans
+ * `listActivePresentations` — c'est-à-dire qu'elle ne tournait que si quelqu'un ouvrait la liste.
+ * Le second hôte a eu QUATRE présentations bloquées « actives » pendant TROIS JOURS : personne
+ * n'avait ouvert le panneau, donc personne n'avait déclenché le seul mécanisme qui les fermait.
+ * Un échec de clôture ne prive de rien qu'on regarde — la purge doit donc s'accrocher à un geste
+ * qui arrive de lui-même. Démarrer une présentation en est un : ce sont les présentateurs qui
+ * créent les orphelines, et le suivant nettoie celles d'avant.
+ *
+ * Conditionnée à `active=eq.true&last_seen=lte.seuil` : une session qui vient de battre n'est pas
+ * touchée (même garde que la purge du panneau, chantier des écritures conditionnées).
+ */
+async function purgerPerimees(now) {
+  const seuil = new Date(now - STALE_MS).toISOString();
+  await PLAYER.db.request(
+    `doc_presentations?active=eq.true&last_seen=lte.${enc(seuil)}`,
+    { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { active: false, updated_at: new Date(now).toISOString() } },
+  ).catch(() => { /* la purge est un service, jamais un préalable */ });
+}
+
 async function createPresentation({ docId, fileUrl, fileName, docTitle, presenterName, owner }) {
   if (!fileUrl) throw Object.assign(new Error("doc invalide"), { statusCode: 400 });
+  await purgerPerimees(Date.now());
   const slug = newToken(9);     // ~12 chars URL-safe
   const control = newToken(18); // secret pilotage
   const o = owner && typeof owner === "object" ? owner : {};
@@ -846,4 +867,5 @@ async function listPresentationsForDoc(docId, email, isAdmin, autoriseLarge) {
 
 module.exports = {
   reacteurDepuisJeton,
+  purgerPerimees,
   messagePublic, CHAMPS_PUBLICS, init, createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent };
