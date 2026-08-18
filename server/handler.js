@@ -3582,24 +3582,43 @@ async function handler(req, res) {
             const dejaLa = await PLAYER.db.request(
               `commercial_doc_shares?doc_id=eq.${encodeURIComponent(docId)}&created_by=is.null&recipient_email=is.null${filtreAtteste}&select=slug&limit=1`,
             );
+            const cleHote = `hote:${docId}|${atteste || ""}`;
             if (Array.isArray(dejaLa) && dejaLa[0]) {
+              // Réemploi d'une ligne historique (sans clé) : on lui POSE la clé au passage — les
+              // demandes suivantes la trouveront par l'unicité, et les doublons d'avant 0011
+              // s'éteignent d'eux-mêmes faute d'être resservis.
+              const cleDispo = await require("./schema").attendue("liensUniques");
               await PLAYER.db.request(`commercial_doc_shares?slug=eq.${encodeURIComponent(dejaLa[0].slug)}`, {
                 method: "PATCH", headers: { Prefer: "return=minimal" },
-                body: { doc_title: body.docTitle || null, file_url: String(body.fileUrl), file_name: body.fileName || null, revoked: false },
+                body: { doc_title: body.docTitle || null, file_url: String(body.fileUrl), file_name: body.fileName || null, revoked: false, ...(cleDispo ? { idem_key: cleHote } : {}) },
               });
               return jd(200, { ok: true, slug: dejaLa[0].slug, reused: true });
             }
             // `createdBy` reste NUL : personne ne l'a créé. Le filtre « mes liens » compare
             // `created_by=eq.<email>`, qui exclut les NUL — ce lien n'apparaît donc dans la liste
             // de personne, et reste visible en administration (`list.all`, qui ne filtre pas).
-            const neuf = await createShare({
-              brandKey: body.brandKey, docId, docTitle: body.docTitle, fileUrl: body.fileUrl,
-              fileName: body.fileName, createdBy: null, attestedRecipientEmail: atteste || null,
-              bot: body.bot, botScript: body.botScript,
-              guided: body.guided, profileId: body.profileId, allowDownload: body.allowDownload,
-              videoLayout: body.videoLayout, logo: body.logo, logoDark: body.logoDark,
-            });
-            return jd(200, { ok: true, slug: neuf.slug, reused: false });
+            // ⚠️ LA LECTURE-PUIS-ÉCRITURE NE PROMET RIEN : deux demandes dans la même seconde
+            // passaient toutes deux le « déjà là ? » et DEUX liens naissaient — les statistiques du
+            // document se fragmentent entre eux. La contrainte (0011) promet ; le 409 qu'elle rend
+            // est une CONFIRMATION : l'autre demande a gagné, on relit son lien et on le rend
+            // `reused` — même règle que le renvoi d'un message (0005).
+            try {
+              const neuf = await createShare({
+                brandKey: body.brandKey, docId, docTitle: body.docTitle, fileUrl: body.fileUrl,
+                fileName: body.fileName, createdBy: null, attestedRecipientEmail: atteste || null,
+                bot: body.bot, botScript: body.botScript,
+                guided: body.guided, profileId: body.profileId, allowDownload: body.allowDownload,
+                videoLayout: body.videoLayout, logo: body.logo, logoDark: body.logoDark,
+                idemKey: cleHote,
+              });
+              return jd(200, { ok: true, slug: neuf.slug, reused: false });
+            } catch (erreur) {
+              if (!String((erreur && erreur.message) || "").includes("409")) throw erreur;
+              try { PLAYER.errors.capture(new Error("lien hôte déjà créé par une demande simultanée : " + docId), { route: "hostshare", benin: true }); } catch { /* jamais bloquant */ }
+              const gagnant = await PLAYER.db.request(`commercial_doc_shares?idem_key=eq.${encodeURIComponent(cleHote)}&select=slug&limit=1`);
+              if (!Array.isArray(gagnant) || !gagnant[0]) throw erreur;   // 409 d'autre chose : on ne l'invente pas
+              return jd(200, { ok: true, slug: gagnant[0].slug, reused: true });
+            }
           }
 
           const u = await PLAYER.identity.verifyToken(req.headers.authorization);
@@ -3637,12 +3656,23 @@ async function handler(req, res) {
           const docId = String(body.docId || "");
           if (!docId || !body.fileUrl) return jd(400, { ok: false, error: "docId/fileUrl requis" });
           const ex = await PLAYER.db.request(`commercial_doc_shares?doc_id=eq.${encodeURIComponent(docId)}&is_test=eq.true&select=slug&limit=1`);
+          const cleTest = `repetition:${docId}`;
           if (Array.isArray(ex) && ex[0]) {
-            await PLAYER.db.request(`commercial_doc_shares?slug=eq.${encodeURIComponent(ex[0].slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { doc_title: body.docTitle || null, file_url: String(body.fileUrl), file_name: body.fileName || null, bot_enabled: true, bot_guided: true, bot_profile_id: (body.profileId || "").trim() || null, revoked: false } });
+            const cleDispo = await require("./schema").attendue("liensUniques");
+            await PLAYER.db.request(`commercial_doc_shares?slug=eq.${encodeURIComponent(ex[0].slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { doc_title: body.docTitle || null, file_url: String(body.fileUrl), file_name: body.fileName || null, bot_enabled: true, bot_guided: true, bot_profile_id: (body.profileId || "").trim() || null, revoked: false, ...(cleDispo ? { idem_key: cleTest } : {}) } });
             return jd(200, { ok: true, slug: ex[0].slug });
           }
-          const t = await createShare({ docId, docTitle: body.docTitle, fileUrl: body.fileUrl, fileName: body.fileName, recipientName: "Répétition (test)", createdBy: u.email, bot: true, guided: true, profileId: body.profileId, isTest: true });
-          return jd(200, { ok: true, slug: t.slug });
+          // Deux ouvertures simultanées de la répétition : la contrainte tranche, le perdant relit.
+          try {
+            const t = await createShare({ docId, docTitle: body.docTitle, fileUrl: body.fileUrl, fileName: body.fileName, recipientName: "Répétition (test)", createdBy: u.email, bot: true, guided: true, profileId: body.profileId, isTest: true, idemKey: cleTest });
+            return jd(200, { ok: true, slug: t.slug });
+          } catch (erreur) {
+            if (!String((erreur && erreur.message) || "").includes("409")) throw erreur;
+            try { PLAYER.errors.capture(new Error("lien de répétition déjà créé par une demande simultanée : " + docId), { route: "docshare-test", benin: true }); } catch { /* jamais bloquant */ }
+            const gagnant = await PLAYER.db.request(`commercial_doc_shares?idem_key=eq.${encodeURIComponent(cleTest)}&select=slug&limit=1`);
+            if (!Array.isArray(gagnant) || !gagnant[0]) throw erreur;
+            return jd(200, { ok: true, slug: gagnant[0].slug, reused: true });
+          }
         }
         if (body.action === "docshare.revoke") {
           await revokeShare(String(body.slug || ""));

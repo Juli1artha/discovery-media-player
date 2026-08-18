@@ -15,10 +15,15 @@ function newSlug() { return crypto.randomBytes(9).toString("base64url"); } // ~1
 
 // Crée un lien de partage (un par destinataire). Dénormalise titre/URL/nom pour résilience (le doc vit dans
 // un snapshot). Renvoie le slug.
-async function createShare({ docId, docTitle, fileUrl, fileName, recipientEmail, recipientName, attestedRecipientEmail, createdBy, bot, botScript, guided, profileId, allowDownload, isTest, videoLayout, logo, logoDark, brandKey}) {
+async function createShare({ docId, docTitle, fileUrl, fileName, recipientEmail, recipientName, attestedRecipientEmail, createdBy, bot, botScript, guided, profileId, allowDownload, isTest, videoLayout, logo, logoDark, brandKey, idemKey}) {
   if (!docId || !fileUrl) throw Object.assign(new Error("doc invalide"), { statusCode: 400 });
   const slug = newSlug();
+  // ⚠️ LA CLÉ N'EST ÉCRITE QUE LÀ OÙ LA COLONNE EXISTE — PostgREST rejette le POST ENTIER sur une
+  // colonne inconnue : chez un hôte non migré, ce n'est pas l'unicité qu'on perdrait, c'est la
+  // CRÉATION de liens. Même sonde que la clé des messages (0005).
+  const cleDispo = idemKey ? await require("./schema").attendue("liensUniques") : false;
   const row = {
+    ...(cleDispo ? { idem_key: String(idemKey).slice(0, 300) } : {}),
     slug, doc_id: String(docId), doc_title: docTitle || null, file_url: String(fileUrl), file_name: fileName || null,
     recipient_email: low(recipientEmail) || null, recipient_name: (recipientName || "").trim() || null, created_by: low(createdBy) || null,
     // ⚠️ DEUX CHAMPS, DEUX FAITS. `recipient_email` dit qui a le droit d'EXPÉDIER en son nom au

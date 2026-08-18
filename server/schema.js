@@ -42,6 +42,11 @@ const ATTENDUES = {
     migration: "supabase/migrations/0005-envoi-unique.sql",
     fonction: "empêcher qu'un renvoi crée un second message",
   },
+  liensUniques: {
+    table: "commercial_doc_shares", colonne: "idem_key",
+    migration: "supabase/migrations/0011-liens-uniques.sql",
+    fonction: "empêcher deux demandes simultanées de créer deux liens système pour le même usage",
+  },
   reactionsOrdonnees: {
     table: "doc_presentation_messages", colonne: "reactions_seq",
     migration: "supabase/migrations/0006-reactions-ordonnees.sql",

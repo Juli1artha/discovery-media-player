@@ -187,3 +187,28 @@ decrire("l'archive est scellée par la base, pas par le code", () => {
     expect(r.ok).toBe(true);
   });
 });
+
+// ⚠️ L'UNICITÉ DES LIENS SYSTÈME NE S'ÉPROUVE QU'ICI : c'est un index partiel, il vit dans la base.
+decrire("un usage, un lien — la contrainte réelle tranche", () => {
+  it("deux inserts avec la même clé d'idempotence : le second est refusé", async () => {
+    const cle = "hote:banc-" + crypto.randomBytes(4).toString("hex") + "|";
+    const inserer = () => base.request("commercial_doc_shares", {
+      method: "POST", body: [{ slug: "b-" + crypto.randomBytes(6).toString("hex"), doc_id: "banc-doc",
+        file_url: "https://exemple.test/d.pdf", idem_key: cle }],
+    });
+    await inserer();
+    let refus = null;
+    try { await inserer(); } catch (e) { refus = e; }
+    expect(refus, "deux liens pour le même usage sont entrés en base").toBeTruthy();
+    expect(String(refus.message)).toContain("409");
+  });
+
+  it("et deux liens SANS clé passent — les liens ordinaires restent illimités", async () => {
+    const inserer = () => base.request("commercial_doc_shares", {
+      method: "POST", body: [{ slug: "b-" + crypto.randomBytes(6).toString("hex"), doc_id: "banc-doc-libre",
+        file_url: "https://exemple.test/d.pdf" }],
+    });
+    await inserer();
+    await inserer();   // pas d'erreur attendue : l'index est PARTIEL
+  });
+});
