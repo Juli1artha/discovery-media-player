@@ -63,7 +63,14 @@ function creerDb(env) {
       },
       body: options.body ? JSON.stringify(options.body) : undefined,
     });
-    if (!r.ok) throw new Error(`Supabase ${methode} ${chemin} → ${r.status}`);
+    if (!r.ok) {
+      // ⚠️ LE CORPS DIT POURQUOI, LE CODE NE DIT QUE COMBIEN. Un « 400 » nu a coûté un aller-retour
+      // de forge complet pour apprendre ce que PostgREST avait écrit dans sa réponse depuis le
+      // début. Tronqué : c'est un message d'erreur, pas un relais de données.
+      let detail = "";
+      try { detail = (await r.text()).slice(0, 300); } catch { /* le statut restera seul */ }
+      throw new Error(`Supabase ${methode} ${chemin} → ${r.status}${detail ? ` — ${detail}` : ""}`);
+    }
     const texte = await r.text();
     return texte ? JSON.parse(texte) : null;
   }
