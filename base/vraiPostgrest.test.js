@@ -42,8 +42,11 @@ function jeton() {
   return `${tete}.${corps}.${sig}`;
 }
 
+// Partagés entre TOUS les describes du banc : le premier beforeAll câble, les suivants s'en
+// servent — une ReferenceError en forge a montré que la portée d'un describe n'est pas un module.
+let presentations, schema, base;
+
 decrire("les trois propriétés que le double ne sait pas simuler", () => {
-  let presentations, schema, base;
 
   beforeAll(() => {
     // ⚠️ AVANT le `require` : le contexte autonome se fabrique à l'import, depuis l'environnement.
@@ -185,5 +188,30 @@ decrire("l'archive est scellée par la base, pas par le code", () => {
     });
     const r = await presentations().addMessage(p.slug, { name: "Banc", body: "bien vivant", authorToken: "jeton" });
     expect(r.ok).toBe(true);
+  });
+});
+
+// ⚠️ L'UNICITÉ DES LIENS SYSTÈME NE S'ÉPROUVE QU'ICI : c'est un index partiel, il vit dans la base.
+decrire("un usage, un lien — la contrainte réelle tranche", () => {
+  it("deux inserts avec la même clé d'idempotence : le second est refusé", async () => {
+    const cle = "hote:banc-" + crypto.randomBytes(4).toString("hex") + "|";
+    const inserer = () => base.request("commercial_doc_shares", {
+      method: "POST", body: [{ slug: "b-" + crypto.randomBytes(6).toString("hex"), doc_id: "banc-doc",
+        file_url: "https://exemple.test/d.pdf", idem_key: cle }],
+    });
+    await inserer();
+    let refus = null;
+    try { await inserer(); } catch (e) { refus = e; }
+    expect(refus, "deux liens pour le même usage sont entrés en base").toBeTruthy();
+    expect(String(refus.message)).toContain("409");
+  });
+
+  it("et deux liens SANS clé passent — les liens ordinaires restent illimités", async () => {
+    const inserer = () => base.request("commercial_doc_shares", {
+      method: "POST", body: [{ slug: "b-" + crypto.randomBytes(6).toString("hex"), doc_id: "banc-doc-libre",
+        file_url: "https://exemple.test/d.pdf" }],
+    });
+    await inserer();
+    await inserer();   // pas d'erreur attendue : l'index est PARTIEL
   });
 });

@@ -51,11 +51,17 @@ create table if not exists public.commercial_doc_shares (
   brand_dark      boolean not null default false,
   require_auth    boolean not null default false,
   brand_key       text,                      -- ⚠️ RÉFÉRENCE résolue à l'affichage (branding.forKey)
+  -- Clé d'idempotence des liens SYSTÈME (hôte, répétition) — nulle sur les liens ordinaires.
+  -- Unique quand renseignée : deux demandes simultanées ne créent qu'un lien.
+  idem_key        text,
   -- Destinataire attesté par l'hôte : sert à ATTRIBUER une lecture, jamais à expédier en son nom.
   -- `recipient_email`, elle, dit qui peut expédier — vide quand personne ne le peut.
   attested_recipient_email text
 );
 create index if not exists cds_doc_id_idx on public.commercial_doc_shares (doc_id);
+create unique index if not exists cds_idem_key_uniq
+  on public.commercial_doc_shares (idem_key)
+  where idem_key is not null;
 create index if not exists cds_parent_idx on public.commercial_doc_shares (parent_slug);
 create index if not exists idx_doc_shares_brand_key
   on public.commercial_doc_shares (brand_key) where brand_key is not null;
@@ -403,6 +409,8 @@ alter table public.doc_presentations
   add column if not exists write_seq bigint not null default 0;
 alter table public.doc_presentation_messages
   add column if not exists client_key text;
+alter table public.commercial_doc_shares
+  add column if not exists idem_key text;
 -- Une base née d'un init.sql d'avant la 0008 porte un NOT NULL qui rend la clôture impossible.
 alter table public.doc_presentations
   alter column control_hash drop not null;
