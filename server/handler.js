@@ -2102,6 +2102,8 @@ ${LEGAL_CSS}
   .pbar-link{border:1px solid #e4e0d9;border-radius:8px;padding:6px 9px;font:inherit;font-size:12px;color:#555;width:240px;max-width:32vw;background:#f8f6f2}
   .pbar-btn{border:1px solid #e4e0d9;background:#f6f4ef;color:#1c1c1c;border-radius:8px;padding:7px 11px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap}
   .pbar-btn:hover{background:#eceae5}
+  .pbar-err{display:none;color:#b3261e;font-size:12px;font-weight:600;max-width:260px;line-height:1.25}
+  .pbar-err.on{display:inline-block}
   #pbarEnd{color:#c0392b}
   /* Barre d'outils responsive : sous 860px, zoom/plein écran/Présenter/Partager/Télécharger passent dans le
      menu « ⋯ » ; le titre se tronque puis disparaît. */
@@ -2149,6 +2151,7 @@ ${LEGAL_CSS}
     <button class=pbar-btn id=pbarInvite>Inviter l'équipe</button>
     <button class=pbar-btn id=pbarHandover>Passer la main</button>
     <button class=pbar-btn id=pbarEnd>Terminer</button>
+    <span class=pbar-err id=pbarErr role=alert></span>
   </div>` : ""}
   <div class=pop id=pop>
     <h4>Transmettre le document</h4>
@@ -2348,6 +2351,7 @@ ${LEGAL_CSS}
       if(!PRES) return Promise.resolve();
       var p=PRES, btn=document.getElementById('pbarEnd'), libelle=btn?btn.textContent:'';
       if(btn){ btn.disabled=true; btn.textContent='…'; }
+      var errAvant=document.getElementById('pbarErr'); if(errAvant){ errAvant.classList.remove('on'); }
       return Player.live.fetchBorne('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},keepalive:true,
           body:JSON.stringify({action:'present-end',slug:p.slug,control:p.control})})
         .then(function(r){ if(!r||!r.ok) throw new Error('present-end'); })
@@ -2356,7 +2360,12 @@ ${LEGAL_CSS}
           var pb=document.getElementById('pbar'); if(pb)pb.style.display='none';
           try{ if(window.Live){ Live.sendState(); Live.disconnect(); } }catch(e){}
         }, function(){
-          if(btn){ btn.disabled=false; btn.textContent=libelle||'Terminer'; btn.title='La fin n’a pas été enregistrée — réessayez.'; }
+          // L'échec d'une clôture ne prive de rien qu'on regarde : son succès ne produit rien,
+          // donc son échec non plus. La première version le disait dans un TITLE — un tooltip que
+          // personne ne survole. Le second hôte a eu des présentations « actives » trois jours.
+          if(btn){ btn.disabled=false; btn.textContent=libelle||'Terminer'; }
+          var err=document.getElementById('pbarErr');
+          if(err){ err.textContent='La présentation est TOUJOURS ACTIVE — la fin n’a pas été enregistrée. Réessayez.'; err.classList.add('on'); }
         });
     }
     // ⚠️ LE SEUL ENDROIT OÙ « sendBeacon » A UN SENS : la page s'en va, aucune réponse ne pourra être
@@ -3107,7 +3116,14 @@ async function handler(req, res) {
             ? await touchPresentation(String(body.slug || ""), String(body.control || ""))
             : await endPresentation(String(body.slug || ""), String(body.control || ""));
           return jp(r.ok ? 200 : (r.status || 400), r);
-        } catch { return jp(500, { ok: false }); }
+        } catch (erreur) {
+          // ⚠️ CE CATCH A AVALÉ TROIS JOURS DE CLÔTURES IMPOSSIBLES SANS UNE TRACE. Chez le second
+          // hôte, chaque « Terminer » échouait en 23502 (marqueur d'archive NOT NULL) — et ce 500
+          // muet ne laissait RIEN, même pas une ligne dans le journal d'erreurs. Un journal que
+          // personne ne lit vaut peu ; aucun journal ne vaut rien du tout.
+          try { PLAYER.errors.capture(erreur instanceof Error ? erreur : new Error(String(erreur)), { route: "present-" + String(body.action || "").replace(/^present-/, "") }); } catch { /* jamais bloquant */ }
+          return jp(500, { ok: false });
+        }
       }
       // Assistant IA « présentateur » (bot) sur un lien tracé bot_enabled. PUBLIC (prospect anonyme) → rate-limit IP.
       // Synthèse vocale (ElevenLabs) : Léa lit ses messages. PUBLIC (audience anonyme), mais gated : la clé

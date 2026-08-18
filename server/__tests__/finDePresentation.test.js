@@ -271,7 +271,14 @@ describe("un échec ne fait pas croire à une fin", () => {
     expect(b.bandeau().style.display, "le bandeau reflète l'état réel : la présentation vit encore")
       .toBe("flex");
     expect(b.bouton().disabled, "le bouton doit redevenir cliquable").toBe(false);
-    expect(b.bouton().title, "et dire ce qui s'est passé, plutôt que se taire").toMatch(/enregistr/i);
+    // ⚠️ VISIBLE, PAS UN TOOLTIP. La première version disait l'échec dans un `title` — que
+    // personne ne survole. Le second hôte a eu des présentations « actives » trois jours sans
+    // que quiconque le voie : l'échec d'une clôture ne prive de rien qu'on regarde, donc c'est
+    // à l'interface de le mettre sous les yeux.
+    const err = document.getElementById("pbarErr");
+    expect(err, "l'élément d'erreur doit exister dans la barre").toBeTruthy();
+    expect(err.textContent, "et dire ce qui s'est passé, plutôt que se taire").toMatch(/TOUJOURS ACTIVE/);
+    expect(err.classList.contains("on"), "un message invisible ne dit rien").toBe(true);
   });
 
   it("et un second clic retente vraiment", async () => {
