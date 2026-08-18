@@ -173,7 +173,10 @@ create table if not exists public.doc_presentation_messages (
   attachment    jsonb,
   -- Clé d'idempotence fabriquée par le client AVANT le premier envoi et réutilisée au renvoi :
   -- un renvoi réseau ne crée pas un second message. Nulle si le client ne la fournit pas.
-  client_key    text
+  client_key    text,
+  -- Rang de la dernière écriture de réactions acceptée : deux réactions simultanées ne
+  -- s'écrasent plus — l'écriture conditionnée à un rang dépassé ne modifie rien, le serveur rejoue.
+  reactions_seq bigint not null default 0
 );
 create index if not exists dpm_slug_idx on public.doc_presentation_messages (slug, created_at);
 -- ⚠️ Portée sur (slug, client_key), pas sur la clé seule : deux présentations n'ont aucune raison
@@ -355,3 +358,5 @@ alter table public.doc_presentations
   add column if not exists write_seq bigint not null default 0;
 alter table public.doc_presentation_messages
   add column if not exists client_key text;
+alter table public.doc_presentation_messages
+  add column if not exists reactions_seq bigint not null default 0;
