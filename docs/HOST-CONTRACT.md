@@ -29,6 +29,7 @@ need.
   "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail"],
   "frameAncestors": ["'self'", "https://*.vercel.app", "https://app.example.com"],
   "separateIssuer": true,
+  "internalStrict": true,
   "hostShare": true,
   "hostMail": true,
   "plugins": { "bot": false, "visitors": false, "brandIntro": false, "botBrowser": false, "providerQuotas": false },
@@ -88,6 +89,13 @@ exactly the monitoring case where "no data" would otherwise read as "all clear".
 
 ⚠️ **`incomplet` wins over `partiel`**: a missing column is a positive fact and settles the verdict
 on its own, even when the rest has not been checked.
+
+⚠️ **`internalStrict: false` means internal identity comes from the browser.** In transitional
+mode the internal-analytics route accepts `docId`, `email` and `name` as the client declares them —
+a caller can fabricate "this colleague read this document". Strict mode (`PLAYER_INTERNAL_STRICT=1`)
+only accepts host-signed tokens. The flag exists so monitoring can **refuse** a non-strict instance
+instead of discovering it in a log; treat `false` as an alert on any instance whose host already
+issues internal tokens. The default will flip to strict at the next announced breaking change.
 
 ⚠️ **`couvre` states the scope, because `complet` without a scope overpromises.** The card checks
 the **conditional columns** — the ones a feature probes before writing. The rate-limit migrations

@@ -3914,6 +3914,12 @@ async function handler(req, res) {
         // l'hôte connaît déjà son émetteur — il veut seulement savoir si l'instance le regarde.
         // Dire lequel n'aiderait personne et renseignerait qui sonde.
         separateIssuer: !!(PLAYER.config && PLAYER.config.separateIssuer),
+        // ⚠️ « L'identité interne vient-elle d'un JETON, ou du navigateur ? » En mode transitoire
+        // (false), la route interne accepte docId/email/name tels que le client les déclare — un
+        // appelant peut fabriquer « tel collègue a consulté tel document ». Le booléen rend l'état
+        // MESURABLE : un cockpit peut refuser une instance non stricte, au lieu de le découvrir en
+        // lisant un journal. Demandé par le second hôte (cinquième audit, P1-4).
+        internalStrict: !!(PLAYER.config && PLAYER.config.internalStrict),
         // ⚠️ L'ÉTAT DU SCHÉMA, LÀ OÙ ON REGARDE. Une colonne absente était signalée par un
         // `console.warn`, une fois par processus : sur une fonction serverless, une ligne perdue
         // dans une sortie que personne n'ouvre tant que tout a l'air de marcher — et « tout a
