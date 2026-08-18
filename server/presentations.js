@@ -55,7 +55,15 @@ async function reclaimPresentation(slug, email) {
   // docs/MIGRATIONS.md décrit : PostgREST rejette le PATCH ENTIER si la colonne manque. La reprise
   // aurait cessé de fonctionner chez tout hôte non migré — pas la nouvelle garantie, la reprise.
   const rangDispo = await require("./schema").attendue("rangEcriture");
-  await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { control_hash: sha(control), active: true, ...(rangDispo ? { write_seq: 0 } : {}), last_seen: new Date().toISOString(), updated_at: new Date().toISOString() } });
+  // ⚠️ LE PROPRIÉTAIRE DANS LA CONDITION, pas seulement dans la vérification. Entre la lecture et
+  // l'écriture, un transfert a pu donner la présentation à quelqu'un d'autre : la reprise de
+  // l'ANCIEN propriétaire arrivait quand même, régénérait le jeton, et volait la session au
+  // nouveau — précisément ce que le transfert venait d'accorder. Constat du troisième audit.
+  const ecrit = await ecrireSiEncoreVrai(
+    `doc_presentations?slug=eq.${enc(slug)}&owner_email=eq.${enc(row.owner_email)}`,
+    { control_hash: sha(control), active: true, ...(rangDispo ? { write_seq: 0 } : {}), last_seen: new Date().toISOString(), updated_at: new Date().toISOString() },
+  );
+  if (!ecrit) return { ok: false, status: 409 };
   return { ok: true, slug, control, page: row.current_page || 1, fileUrl: row.file_url, fileName: row.file_name, docTitle: row.doc_title, docId: row.doc_id };
 }
 
@@ -65,8 +73,15 @@ async function touchPresentation(slug, control) {
   const row = await getPresentation(slug);
   if (!row) return { ok: false, status: 404 };
   if (!tokenMatches(control, row.control_hash)) return { ok: false, status: 403 };
-  await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { last_seen: new Date().toISOString() } });
-  return { ok: true };
+  // ⚠️ LE JETON DANS LA CONDITION : une reprise ailleurs le régénère, une clôture l'annule. Sans
+  // ça, le heartbeat d'un ANCIEN onglet maintenait « vivante » une session qui ne lui appartient
+  // plus — et l'auto-purge, qui se fie à `last_seen`, ne fermait jamais l'orpheline.
+  const ecrit = await ecrireSiEncoreVrai(
+    `doc_presentations?slug=eq.${enc(slug)}&control_hash=eq.${sha(control)}`,
+    { last_seen: new Date().toISOString() },
+  );
+  // Un heartbeat refusé dit à l'onglet périmé de s'arrêter — c'est une information, pas une panne.
+  return ecrit ? { ok: true } : { ok: false, status: 409 };
 }
 
 // Liste des présentations en cours (membre authentifié). Auto-purge : une présentation active dont le
@@ -108,7 +123,12 @@ async function listActivePresentations(email) {
   const now = Date.now();
   const stale = list.filter((r) => now - new Date(r.last_seen || r.updated_at || 0).getTime() > STALE_MS).map((r) => r.slug);
   if (stale.length) {
-    await PLAYER.db.request(`doc_presentations?slug=in.(${stale.map((s) => enc(s)).join(",")})`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { active: false, updated_at: new Date().toISOString() } }).catch(() => {});
+    // ⚠️ L'INACTIVITÉ DANS LA CONDITION, pas seulement dans le calcul. Entre la lecture de la liste
+    // et cette écriture, une présentation « orpheline » a pu envoyer son heartbeat : la purger
+    // quand même désactivait une session redevenue vivante, sous les pieds de son présentateur.
+    // `lte` sur le seuil : seule une ligne dont last_seen n'a PAS bougé est purgée.
+    const seuil = new Date(now - STALE_MS).toISOString();
+    await PLAYER.db.request(`doc_presentations?slug=in.(${stale.map((s) => enc(s)).join(",")})&active=eq.true&last_seen=lte.${enc(seuil)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { active: false, updated_at: new Date().toISOString() } }).catch(() => {});
   }
   const live = list.filter((r) => !stale.includes(r.slug));
   return live.map((r) => ({ slug: r.slug, docId: r.doc_id, fileUrl: r.file_url, fileName: r.file_name, docTitle: r.doc_title, presenterName: r.presenter_name, ownerName: r.owner_name, ownerAvatar: r.owner_avatar, currentPage: r.current_page || 1, mine: !!(me && r.owner_email && r.owner_email === me), updatedAt: r.updated_at }));
@@ -148,8 +168,18 @@ async function endPresentationByOwner(slug, email, isAdmin) {
   const row = await getPresentation(slug);
   if (!row) return { ok: false, status: 404 };
   if (!isAdmin && (!row.owner_email || row.owner_email !== lc(email))) return { ok: false, status: 403 };
-  await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { ...CLOTURE, updated_at: new Date().toISOString() } });
-  return { ok: true };
+  // ⚠️ LE PROPRIÉTAIRE DANS LA CONDITION (l'admin, lui, ferme ce qu'il veut : modération). Une
+  // clôture retardée émise par l'ANCIEN propriétaire après un transfert fermait la session du
+  // nouveau — le contraire de ce que le transfert venait d'accorder.
+  if (isAdmin) {
+    await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { ...CLOTURE, updated_at: new Date().toISOString() } });
+    return { ok: true };
+  }
+  const ecrit = await ecrireSiEncoreVrai(
+    `doc_presentations?slug=eq.${enc(slug)}&owner_email=eq.${enc(row.owner_email)}`,
+    { ...CLOTURE, updated_at: new Date().toISOString() },
+  );
+  return ecrit ? { ok: true } : { ok: false, status: 409 };
 }
 
 // Transfert de contrôle : le propriétaire actuel (JWT) désigne un nouveau membre propriétaire (par email).
@@ -161,8 +191,14 @@ async function handoverPresentation(slug, currentEmail, newOwner) {
   const row = await getPresentation(slug);
   if (!row) return { ok: false, status: 404 };
   if (!row.owner_email || row.owner_email !== lc(currentEmail)) return { ok: false, status: 403 };
-  await PLAYER.db.request(`doc_presentations?slug=eq.${enc(slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { owner_user_id: o.id ? String(o.id) : null, owner_email: lc(o.email), owner_name: (o.name || "").slice(0, 120) || null, owner_avatar: (o.avatar || "").slice(0, 600) || null, updated_at: new Date().toISOString() } });
-  return { ok: true, slug };
+  // ⚠️ Deux transferts concurrents depuis le même propriétaire : le premier écrit gagne, le second
+  // ne trouve plus sa ligne — sans condition, il ÉCRASAIT le premier et le document changeait de
+  // mains deux fois, dans un ordre que personne n'avait choisi.
+  const ecrit = await ecrireSiEncoreVrai(
+    `doc_presentations?slug=eq.${enc(slug)}&owner_email=eq.${enc(lc(currentEmail))}`,
+    { owner_user_id: o.id ? String(o.id) : null, owner_email: lc(o.email), owner_name: (o.name || "").slice(0, 120) || null, owner_avatar: (o.avatar || "").slice(0, 600) || null, updated_at: new Date().toISOString() },
+  );
+  return ecrit ? { ok: true, slug } : { ok: false, status: 409 };
 }
 
 async function getPresentation(slug) {
@@ -504,8 +540,13 @@ async function setChatLock(slug, control, locked) {
   const pres = await getPresentation(slug);
   if (!pres) return { ok: false, status: 404 };
   if (!tokenMatches(control, pres.control_hash)) return { ok: false, status: 403 };
-  await PLAYER.db.request(`doc_presentations?slug=eq.${enc(String(slug || ""))}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { chat_locked: !!locked } });
-  return { ok: true };
+  // Le jeton dans la condition : un verrou posé APRÈS une clôture ou une reprise ailleurs ne
+  // trouve plus sa ligne — il ne s'applique pas à une session qui n'est plus la sienne.
+  const ecrit = await ecrireSiEncoreVrai(
+    `doc_presentations?slug=eq.${enc(String(slug || ""))}&control_hash=eq.${sha(control)}`,
+    { chat_locked: !!locked },
+  );
+  return ecrit ? { ok: true } : { ok: false, status: 409 };
 }
 
 // Réaction emoji (toggle) : le participant (identifié par email ou nom) ajoute/retire un emoji sur un message.
