@@ -224,6 +224,73 @@ jobs:
       - run: google-chrome --version
       - run: npm run test:e2e
 
+  # ⚠️ `supabase/init.sql` ANNONÇAIT « UN SEUL FICHIER, SANS RIEN À LIRE AILLEURS » — ET IL ÉTAIT
+  # INCOMPLET. Aucune des cinq migrations n'y figurait : un hôte neuf installait une base sans rang
+  # d'écriture, sans limites de débit partagées et sans clé d'idempotence. Les sondes de schéma
+  # dégradent en SILENCE, par conception, pour ne pas casser un hôte en cours de migration — donc
+  # cet hôte-là ne l'apprenait jamais. Trois protections éteintes, pour toujours, sans un mot.
+  #
+  # ⚠️ CETTE GARDE NE LIT PAS LE TEXTE, ELLE EXÉCUTE LES DEUX. Comparer par `grep` ne prouverait que
+  # la présence d'un mot ; ici on installe une base VIERGE avec init.sql, on relève sa forme, on
+  # rejoue les migrations par-dessus, et on exige que RIEN n'ait bougé. C'est la formule déjà
+  # employée pour docs/API.md : quand un fait existe en deux exemplaires, quelqu'un doit les
+  # confronter au moins une fois — et « quelqu'un » peut être cette étape.
+  schema:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Un vrai Postgres, parce que le double en mémoire le dit lui-même : « pas de contraintes,
+        # pas de transactions… PAS un substitut pour vérifier ce qui relève du SGBD ».
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: player
+          POSTGRES_DB: player
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s
+          --health-timeout 5s --health-retries 20
+    env:
+      PGPASSWORD: player
+      PSQL: psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d player -qtA
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: init.sql brings a virgin database up on its own
+        run: $PSQL -f supabase/init.sql
+
+      # La forme, telle que la base la rapporte : colonnes, index, fonctions. Pas le texte du
+      # fichier — ce qui en RÉSULTE.
+      - name: Record the shape
+        run: |
+          cat > /tmp/forme.sql <<'SQL'
+          select 'colonne', table_name, column_name, data_type, coalesce(column_default,'')
+            from information_schema.columns where table_schema='public'
+          union all select 'index', tablename, indexname, indexdef, ''
+            from pg_indexes where schemaname='public'
+          union all select 'fonction', '', p.proname, pg_get_function_identity_arguments(p.oid), ''
+            from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'
+          order by 1,2,3,4;
+          SQL
+          $PSQL -f /tmp/forme.sql > /tmp/avant.txt
+          wc -l < /tmp/avant.txt | xargs echo "forme après init.sql : lignes ="
+
+      - name: Replaying every migration changes nothing
+        run: |
+          for f in supabase/migrations/*.sql; do echo "→ $f"; $PSQL -f "$f"; done
+          $PSQL -f /tmp/forme.sql > /tmp/apres.txt
+          if ! diff -u /tmp/avant.txt /tmp/apres.txt; then
+            echo "::error::supabase/init.sql est incomplet : une migration a encore quelque chose à ajouter. Un hôte neuf installerait une base amputée, et les sondes de schéma le lui tairaient."
+            exit 1
+          fi
+          echo "init.sql contient déjà tout ce que les migrations apportent."
+
+      # ⚠️ Le fichier se dit « rejouable ». Une affirmation jamais éprouvée n'est pas une propriété.
+      - name: init.sql is replayable
+        run: |
+          $PSQL -f supabase/init.sql
+          $PSQL -f /tmp/forme.sql > /tmp/rejoue.txt
+          diff -u /tmp/avant.txt /tmp/rejoue.txt || { echo "::error::rejouer init.sql modifie la base"; exit 1; }
+
   docker:
     runs-on: ubuntu-latest
     steps:
