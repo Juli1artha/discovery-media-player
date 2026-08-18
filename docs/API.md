@@ -206,7 +206,7 @@ estimated:
 
 | | |
 |---|---|
-| Call sites | **48**, in four files |
+| Call sites | **49**, in four files |
 | Tables | **9** |
 | Verbs | `GET`, `POST`, `PATCH`, one `HEAD` — no `DELETE` |
 | Embedded selects (`select=*,other(*)`) | **0** |

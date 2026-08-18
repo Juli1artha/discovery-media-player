@@ -7,6 +7,7 @@ const NODE = {
   globalThis: "readonly", URL: "readonly", URLSearchParams: "readonly", fetch: "readonly",
   TextEncoder: "readonly", TextDecoder: "readonly", crypto: "readonly", AbortSignal: "readonly",
   setTimeout: "readonly", clearTimeout: "readonly", setInterval: "readonly", clearInterval: "readonly",
+  setImmediate: "readonly", ReadableStream: "readonly", Headers: "readonly", Response: "readonly",
 };
 const TEST = {
   describe: "readonly", it: "readonly", expect: "readonly", vi: "readonly",
