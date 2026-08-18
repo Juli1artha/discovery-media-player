@@ -1560,7 +1560,13 @@ const PLAFOND_RELAIS = Number(process.env.PLAYER_MAX_RELAY_BYTES || 0) || 60 * 1
 
 async function relayerFichier(res, r, disposition) {
   if (!r) { res.statusCode = 404; res.end("Fichier indisponible"); return; }
-  if (!r.ok && r.status !== 206) { res.statusCode = 502; res.end("Fichier indisponible"); return; }
+  // 413 et 416 sont des REFUS ARGUMENTÉS de l'amont local (plafond, borne absurde) : les fondre
+  // dans un 502 dirait « panne » là où l'amont a dit « demande irrecevable ».
+  if (!r.ok && r.status !== 206) {
+    res.statusCode = r.status === 413 || r.status === 416 ? r.status : 502;
+    res.end(r.status === 413 ? "Fichier trop volumineux" : "Fichier indisponible");
+    return;
+  }
 
   const compresse = !!r.headers.get("content-encoding");
   if (compresse && r.status === 206) { res.statusCode = 502; res.end("Fichier indisponible"); return; }
