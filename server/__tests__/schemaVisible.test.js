@@ -299,3 +299,35 @@ describe("la sonde publique ne se laisse pas jouer en boucle", () => {
     } finally { horloge.mockRestore(); }
   });
 });
+
+// ⚠️ « L'IDENTITÉ INTERNE VIENT-ELLE D'UN JETON, OU DU NAVIGATEUR ? » — la carte doit le dire.
+// En mode transitoire, la route interne accepte docId/email/name déclarés par le client : un
+// appelant peut fabriquer « tel collègue a consulté tel document ». Un cockpit ne peut refuser que
+// ce qu'il peut mesurer. Cinquième audit, P1-4 — champ demandé par le second hôte.
+describe("la carte dit si l'identité interne est signée", () => {
+  async function carte(config) {
+    delete require.cache[require.resolve("../handler.js")];
+    const player = require("../handler.js");
+    player.init({
+      plugins: {}, has: () => false,
+      storage: { isAllowedUrl: () => true, async fetchFile() { return null; }, async put() {} },
+      db: { async request() { return []; }, async selectAll() { return []; } },
+      mail: { async send() {} },
+      identity: { async verifyToken() { return null; }, roleOf: () => "", isAdmin: () => false, async canManageShares() { return false; } },
+      limits: { async allow() { return true; } },
+      branding: { async logo() { return ""; }, name: "", poweredBy: "", loaderName: "", async forKey() { return null; }, title: (b) => b },
+      errors: { async capture() {} },
+      legal: { sourceUrl: "", legalUrl: "", privacyUrl: "", trackingNotice: "" },
+      config: { supabaseUrl: "https://exemple.supabase.co", supabasePublishableKey: "k", mapsKey: "", extraFrameAncestors: [], ...config },
+    });
+    const res = { statusCode: 0, headers: {}, body: "", setHeader(k, v) { this.headers[k.toLowerCase()] = v; }, end(b) { this.body = String(b == null ? "" : b); } };
+    await player.handler({ method: "GET", headers: {}, socket: {}, query: { contract: "1" } }, res);
+    return JSON.parse(res.body);
+  }
+
+  it("strict configuré : true — non configuré : false, jamais absent", async () => {
+    expect((await carte({ internalStrict: true })).internalStrict).toBe(true);
+    const nue = await carte({});
+    expect(nue.internalStrict, "absent, un cockpit ne peut pas refuser — false doit être DIT").toBe(false);
+  });
+});
