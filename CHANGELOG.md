@@ -10,6 +10,41 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.65] — 2026-08-18
+
+The remaining P2s of the fifth audit.
+
+### Fixed
+
+- **One purpose, one link.** The host link (one per document and attested recipient) and the
+  rehearsal link (one per document) read "does it exist?" then inserted: two requests in the same
+  second both passed the read — **two links for the same purpose, statistics fragmented between
+  them**, discovered reading them six months later. Same remedy as message idempotency (0005):
+  migration `0011` adds a **nullable** `idem_key` with a **partial** unique index — ordinary links
+  stay unlimited, only system links carry a key (`hote:<doc>|<attested>`, `repetition:<doc>`). The
+  constraint's 409 is a **confirmation**: re-read the winner, `reused: true` — and a 409 with
+  **no winner raises**, we do not invent a link. Historical duplicates are kept (their URLs are in
+  inboxes): the first one reused receives the key on the way, the others die out unused.
+  ⚠️ The test harness had to **replay the window, not the sequence** — the route's awaits
+  serialized two `Promise.all` requests and the second *found* the row at SELECT time: the harness
+  validated the old code. ⚠️ The key is only written where the column exists — the surviving
+  mutation showed that on an unmigrated host it is not uniqueness that breaks, it is **link
+  creation**. Audit 5, P2.
+
+- **The Maps pin no longer pinned.** Google serves a sliding window of versions (~4 quarters);
+  `v=3.58` fell out of it, so the parameter was **ignored** and the weekly channel loaded — the
+  pin lied with no error anywhere. Pinned to 3.65, and the comment now carries the **date of the
+  last check** — the only possible guard for a window only Google knows. Audit 5, P2.
+
+- **Five texts described a vanished world** — each rewritten first, cited after: the README's
+  "visible and focused" (focus is not required — visible and recently active); `tracking.ts`'s
+  "60 s" idle default (the constant beside it said 180,000 ms); `MIGRATIONS.md`'s bare "never
+  remove" (additive is about the **shape of the data** — the three permitted non-additive gestures
+  are named, four shipped migrations already used them); `init.sql`'s "the publication remains
+  useful" (contradicting the very next section, and 0009 removes it); `presentation-state.ts`
+  describing table reads in the present tense. The 2026-08-14 audit tracker now carries a
+  **historical** banner. Audit 5, P2.
+
 ## [0.1.64] — 2026-08-18
 
 Every P1 of the fifth audit pass, closed. One of them was a defect in the very migration that
