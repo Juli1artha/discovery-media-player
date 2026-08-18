@@ -403,7 +403,7 @@ function premierPublic(reponse) {
   return messagePublic(row);
 }
 
-async function addMessage(slug, { name, email, avatar, isPresenter, isMember, body, replyTo, replyName, replyText, authorToken, attachment }) {
+async function addMessage(slug, { name, email, avatar, isPresenter, isMember, body, replyTo, replyName, replyText, authorToken, attachment, clientKey }) {
   if (await estArchive(slug)) return REFUS_ARCHIVE;
   const b = String(body || "").trim().slice(0, 2000);
   // ⚠️ Pas de normalisation ici : `config.supabaseUrl` arrive SANS barre finale, c'est le
@@ -424,10 +424,41 @@ async function addMessage(slug, { name, email, avatar, isPresenter, isMember, bo
     author_hash: authorToken ? sha(authorToken) : null,
     reply_to: rt, reply_name: rt ? ((replyName || "").slice(0, 80) || null) : null, reply_text: rt ? ((replyText || "").slice(0, 140) || null) : null,
   };
+  // ⚠️ LA CLÉ N'EST ÉCRITE QUE SI LA COLONNE EXISTE. PostgREST rejette le POST ENTIER sur une
+  // colonne inconnue : chez un hôte non migré, ce n'est pas l'idempotence qu'on perdrait, c'est
+  // l'envoi de messages. Même piège que le rang d'écriture, même sonde.
+  const cle = String(clientKey || "").slice(0, 80);
+  if (cle && await require("./schema").aLaColonne(
+    "doc_presentation_messages", "client_key", "supabase/migrations/0005-envoi-unique.sql")) {
+    row.client_key = cle;
+  }
+
   // `return=representation` : c'est la ligne écrite qui part ensuite en diffusion vers l'audience.
   // Sans elle, l'émetteur devrait deviner l'`id` et la date attribués par la base.
-  const cree = await PLAYER.db.request("doc_presentation_messages?select=*", { method: "POST", headers: { Prefer: "return=representation" }, body: [row] });
-  return { ok: true, message: premierPublic(cree) };
+  // ⚠️ UN REFUS D'UNICITÉ N'EST PAS UNE ERREUR, C'EST UNE CONFIRMATION. La contrainte dit « ce
+  // message est déjà là » : le remonter au participant remplacerait « deux messages » par « une
+  // erreur », ce qui n'est pas mieux. On relit donc la ligne déjà écrite et on la rend comme si
+  // l'envoi venait de réussir — ce qu'il a fait, la première fois.
+  try {
+    const cree = await PLAYER.db.request("doc_presentation_messages?select=*", { method: "POST", headers: { Prefer: "return=representation" }, body: [row] });
+    return { ok: true, message: premierPublic(cree) };
+  } catch (erreur) {
+    // ⚠️ LA GARDE DES ÉCRITURES MUETTES A REFUSÉ CE BLOC, et elle avait raison de le faire : un
+    // `try` autour d'une écriture doit dire quelque chose. Ici le silence était volontaire — un 409
+    // attendu n'est pas un incident — mais rien ne distinguait « je sais ce que je rattrape » de
+    // « j'avale tout ». On le dit donc : ce qui n'est pas le conflit attendu remonte, et le conflit
+    // attendu est journalisé une fois, en clair, parce qu'un renvoi fréquent est une information.
+    const conflit = cle && String((erreur && erreur.message) || "").includes("409");
+    if (!conflit) throw erreur;
+    try { PLAYER.errors.capture(new Error("message déjà enregistré (renvoi) : " + String(slug)), { route: "present-chat", benin: true }); } catch { /* jamais bloquant */ }
+    const deja = await PLAYER.db.request(
+      `doc_presentation_messages?slug=eq.${enc(String(slug))}&client_key=eq.${enc(cle)}&select=*&limit=1`);
+    const ligne = Array.isArray(deja) && deja[0];
+    // ⚠️ Si la relecture ne trouve rien, on ne prétend pas : le 409 venait d'autre chose, et le
+    // taire ferait croire à un envoi réussi qui n'a pas eu lieu.
+    if (!ligne) throw erreur;
+    return { ok: true, message: messagePublic(ligne), deja: true };
+  }
 }
 
 /**

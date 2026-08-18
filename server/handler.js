@@ -436,7 +436,12 @@ var Live=(function(){
   function setReply(id){var m=msgData[id];if(!m||m.deleted)return;var nm=m.author_name||'Invité';replyCtx={id:+id,name:nm,text:(m.body||'').slice(0,120)};var el=document.getElementById('chatReply');if(el){el.style.display='flex';el.innerHTML='<span class=cq><b>'+esc(nm)+'</b> '+esc((m.body||'').slice(0,80))+'</span><button id=chatReplyX title=Annuler>×</button>';var x=document.getElementById('chatReplyX');if(x)x.addEventListener('click',clearReply);}var t=document.getElementById('chatText');if(t)t.focus();}
   function clearReply(){replyCtx=null;var el=document.getElementById('chatReply');if(el){el.style.display='none';el.innerHTML='';}}
   function send(){var i=document.getElementById('chatText');var t=(i.value||'').trim();if(!t||!ME)return;if(LOCKED&&!canMod())return;i.value='';toggleSend();
-    var o={action:'present-chat',slug:SLUG,name:ME.name,email:ME.email,avatar:ME.avatar,body:t,authorToken:authToken()};
+    
+    // ⚠️ LA CLÉ EST FABRIQUÉE ICI, UNE FOIS, AVANT LE PREMIER ENVOI. Une clé tirée à chaque
+    // tentative ne servirait à rien : deux envois porteraient deux clés et passeraient tous les
+    // deux. C'est sa RÉUTILISATION au renvoi qui rend l'opération idempotente.
+    var _cle=(function(){ try{ var r=crypto.getRandomValues(new Uint8Array(12)); return Array.from(r,function(x){return x.toString(16).padStart(2,'0');}).join(''); }catch(e){ return ''; } })();
+    var o={action:'present-chat',clientKey:_cle,slug:SLUG,name:ME.name,email:ME.email,avatar:ME.avatar,body:t,authorToken:authToken()};
     if(CONTROL)o.control=CONTROL;
     if(replyCtx){o.replyTo=replyCtx.id;o.replyName=replyCtx.name;o.replyText=replyCtx.text;clearReply();}
     var h1={'Content-Type':'application/json'};var j1=accessToken();if(j1)h1.Authorization='Bearer '+j1;
@@ -3309,7 +3314,7 @@ async function handler(req, res) {
             name: (profil && profil.name) || body.name,
             email: profil ? profil.email : body.email,
             avatar: (profil && profil.avatar) || body.avatar,
-            isPresenter: validControl, isMember: !!profil, body: body.body, replyTo: body.replyTo, replyName: body.replyName, replyText: body.replyText, authorToken: body.authorToken, attachment: body.attachment });
+            isPresenter: validControl, isMember: !!profil, body: body.body, replyTo: body.replyTo, replyName: body.replyName, replyText: body.replyText, authorToken: body.authorToken, attachment: body.attachment , clientKey: body.clientKey });
           return jp(r.ok ? 200 : (r.status || 400), r);
         } catch { return jp(500, { ok: false }); }
       }
