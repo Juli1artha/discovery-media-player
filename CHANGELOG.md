@@ -10,6 +10,46 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.62] — 2026-08-18
+
+Fourth external audit pass, both lots. Surface reduction on the database side, one serialization
+rule on the template side — and the afternoon's flaky test, caught and fixed.
+
+### Fixed
+
+- **The database stops offering the channel nothing listens to.** Chat travels as broadcast — an
+  invalidation signal, never content — followed by a bounded HTTP re-read serving the **public
+  projection**. Yet `init.sql` still published `doc_presentation_messages` into `supabase_realtime`
+  with `REPLICA IDENTITY FULL` (0.1.58 had fixed the *comment*, not the install). An unused surface
+  is not a neutral surface: the day someone adds a public `SELECT` policy "so live works" — the
+  exact mistake the historical host had to climb out of — the publication becomes a channel again,
+  delivering the **whole row**, `author_hash` included, bypassing the projection. ⚠️ And
+  `REPLICA IDENTITY FULL` costs on every write: each reaction wrote the full row image to WAL —
+  measured `relreplident='f'` in our production before applying. Migration `0009` (idempotent;
+  refuses **loudly** on a `FOR ALL TABLES` publication instead of pretending success); the CI shape
+  now includes **publications and replica identity** — the third blind spot of the same kind, after
+  nullability and triggers — and two scenarios run against real databases: an old base cleaned
+  twice, a fresh one where the table never enters.
+
+- **One serialization for everything entering a `<script>`.** The HTML parser reads the page before
+  JavaScript: a `</script>` inside a JSON string closes the element for it — the nonce CSP blocks
+  the injected script's execution, not the page breakage. Protection lived scattered: a `.replace`
+  at the interpolation site for `CFG` (the rich data — the only surface carrying user input), and
+  **six naked interpolations** beside it (server/operator values: hardening, not an exploitable
+  hole). `jsonPourScript` applies the rule **at serialization**, where it cannot be forgotten field
+  by field; `undefined` throws instead of silently becoming text. The guard checks the **rule**,
+  not a list — a variable added tomorrow goes through the function or the test names it — and
+  strips comments before searching, because a probe that reads comments invents culprits. Proven on
+  the **rendered page**, not just the function: the audience page rendered with a hostile title
+  carries no raw string, the neutralized form, no open executable fragment.
+
+- **The quadratic-cost demonstration no longer depends on machine load.** The test proving the old
+  address pattern's O(n²) cost went red three times in one afternoon, never twice in a row — seven
+  takes on 16,000 characters graze the 5 s ceiling under load. Its first stabilization pass (min of
+  takes) had fixed the *ratio*; the *total time* was failing. Same square, one-sixteenth the cost
+  (2,000 → 8,000), explicit ceiling. *An unstable test has a danger of its own, worse than failure:
+  you learn to ignore it, then ignore it the day it is right.*
+
 ## [0.1.61] — 2026-08-18
 
 The second host had **four presentations stuck "active" for three days** — and nobody saw it.
