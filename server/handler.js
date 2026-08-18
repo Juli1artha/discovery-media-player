@@ -336,9 +336,10 @@ var Live=(function(){
   // qui exige que cette table soit lisible publiquement — donc, avec la clé publiable, les
   // conversations de TOUTES les présentations, pas seulement la sienne. C'était le dernier
   // obstacle avant de pouvoir fermer cette lecture.
-  // L'émetteur diffuse la ligne que le serveur vient d'écrire ; les autres l'ajoutent chez eux.
+  // L'émetteur SIGNALE qu'un message existe ; chacun — émetteur compris — tient son affichage de
+  // la RÉPONSE du serveur ou de la relecture HTTP, jamais du canal.
   // ⚠️ La diffusion ne revient pas à son émetteur : il ajoute donc SA copie lui-même — depuis la
-  // RÉPONSE du serveur, jamais depuis le canal.
+  // RÉPONSE du serveur.
   //
   // ⚠️ LA CHARGE EST VIDE, ET C'EST CE QUI REND LA PROPRIÉTÉ STRUCTURELLE. Elle transportait la
   // ligne projetée — que le récepteur IGNORAIT (il relit par HTTP, cf. le commentaire du
@@ -347,13 +348,18 @@ var Live=(function(){
   // était plus forte que le code, et tenait lieu de garde sans en être une — le jour où un
   // récepteur nouveau aurait lu la charge « puisqu'elle est là », la projection serait devenue
   // optionnelle sans que rien ne le dise. Le second hôte a levé l'écart ; sendState et
-  // sendMap avaient déjà la bonne forme. Un commentaire ici même affirmait l'ancien monde
-  // (« les autres l'ajoutent chez eux ») : il a fait dériver sa lecture, pas la nôtre — un
-  // commentaire n'est pas du code, et il vieillit sans essai pour le contredire.
+  // sendMap avaient déjà la bonne forme. Le commentaire d'en tête de ce bloc a affirmé l'ancien
+  // monde (« les autres l'ajoutent chez eux ») pendant des versions : il a fait dériver la
+  // lecture du second hôte — puis a SURVÉCU à sa propre citation : le correctif qui le désignait
+  // comme menteur l'a cité au lieu de le réécrire, et documenter un défaut l'avait rendu
+  // intouchable. Réécrit à la relecture suivante, par le même hôte. Un commentaire n'est pas du
+  // code : il vieillit sans essai pour le contredire — et un essai fige désormais la charge vide.
   function sendMsg(m){if(!m)return;try{if(ch)ch.send({type:'broadcast',event:'msg',payload:{}});}catch(e){}}
   function sendMsgUpd(m){if(!m)return;try{if(ch)ch.send({type:'broadcast',event:'msg-upd',payload:{}});}catch(e){}}
   // Édition, suppression, réaction : le serveur renvoie la ligne à jour, on l'applique chez soi
-  // puis on la diffuse. Même chemin pour les trois — une seule façon de se tromper.
+  // puis on SIGNALE — la charge part vide, les autres relisent. Même chemin pour les trois — une
+  // seule façon de se tromper. (« Puis on la diffuse » a survécu ici une version de trop : second
+  // exemplaire du commentaire d'en tête, trouvé par le second hôte dans le tarball publié.)
   function majDiffusee(r){return r.json().then(function(d){if(d&&d.ok&&d.message){updateMsg(d.message);sendMsgUpd(d.message);}}).catch(function(){});}
   function onState(fn){_onState=fn;}
   // Badge « non lus » sur le bouton chat/FAB (panneau fermé) + pulse du FAB. Aperçu (ticker) au nouveau message.
