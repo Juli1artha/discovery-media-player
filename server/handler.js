@@ -1532,6 +1532,12 @@ async function profilDuJeton(req) {
   } catch { return null; }
 }
 
+/**
+ * Plafond du relais, en octets. Réglable par l'exploitant : un hôte qui sert des plans
+ * d'architecte n'a pas les mêmes documents qu'un hôte qui sert des notices.
+ */
+const PLAFOND_RELAIS = Number(process.env.PLAYER_MAX_RELAY_BYTES || 0) || 60 * 1024 * 1024;
+
 async function relayerFichier(res, r, disposition) {
   if (!r) { res.statusCode = 404; res.end("Fichier indisponible"); return; }
   if (!r.ok && r.status !== 206) { res.statusCode = 502; res.end("Fichier indisponible"); return; }
@@ -1539,6 +1545,23 @@ async function relayerFichier(res, r, disposition) {
   const compresse = !!r.headers.get("content-encoding");
   if (compresse && r.status === 206) { res.statusCode = 502; res.end("Fichier indisponible"); return; }
 
+  // ⚠️ UN PLAFOND, ET IL REFUSE AVANT D'ALLOUER. Ce relais chargeait le fichier ENTIER en mémoire
+  // sans borne : un PDF de 80 Mo, trois requêtes Range simultanées, et une fonction serverless
+  // tombe — pas pour un document en particulier, pour la somme. Le défaut n'est pas la taille d'un
+  // fichier, c'est l'absence de toute limite haute.
+  //
+  // ⚠️ ON REGARDE `Content-Length` AVANT DE LIRE LE CORPS : refuser après l'allocation ne protège
+  // de rien, c'est l'allocation qui coûte. Un amont qui n'annonce pas sa taille passe quand même —
+  // on ne peut pas refuser ce qu'on ne sait pas mesurer, et fermer par défaut couperait des
+  // stockages parfaitement légitimes. La borne est donc une garde contre le GROS, pas contre
+  // l'inconnu ; c'est ce que le streaming, lui, fermera vraiment.
+  const annoncee = Number(r.headers.get("content-length") || 0);
+  if (annoncee > PLAFOND_RELAIS) {
+    try { PLAYER.errors.capture(new Error(`relais refusé : ${annoncee} octets au-dessus du plafond de ${PLAFOND_RELAIS}`), { route: "relais" }); } catch { /* jamais bloquant */ }
+    res.statusCode = 413;
+    res.end("Fichier trop volumineux");
+    return;
+  }
   const buf = Buffer.from(await r.arrayBuffer());
   res.statusCode = r.status;
   const typeAmont = r.headers.get("content-type") || "application/pdf";
@@ -4028,6 +4051,8 @@ async function handler(req, res) {
 // ⚠️ `TIERS` est exporté pour être CONFRONTÉ, pas pour être utilisé. Le banc navigateur et la
 // forge doivent pouvoir demander « quelles dépendances tierces, à quelles empreintes » sans en
 // tenir une seconde liste — c'est la seule façon qu'une empreinte périmée finisse par se voir.
-module.exports = { handler, init, TIERS };
+// ⚠️ Exporté pour être ÉPROUVÉ, pas pour être appelé : le plafond du relais ne se vérifie qu en
+// regardant si le corps a été lu, ce qu aucune route ne peut montrer de l extérieur.
+module.exports = { handler, init, TIERS, __relayerFichier: relayerFichier };
 
 // redeploy: forcer le build production (Vercel a sauté la prod du merge #463 — wording re-partage).
