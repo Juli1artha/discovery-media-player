@@ -27,6 +27,7 @@ begin
     from public.doc_presentations p
     where p.slug = new.slug
     for share;
+  -- Pas de présentation : rien à sceller (chat d'un lien sans session live, données historiques).
   if not found then return new; end if;
   if v_active = false and v_control is null then
     raise exception 'presentation archivee : ecriture refusee'
