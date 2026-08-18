@@ -309,6 +309,12 @@ var Live=(function(){
   // participants, d'URL — donc du dehors. typers est le cas vif : il est alimenté par 'typing',
   // le SEUL événement qui croie encore son émetteur (cf. 0.1.30). Un objet nu retire la question
   // entière au lieu de la traiter cas par cas. (audit P1-2)
+  // ⚠️ _ordEtat, _ordChat et _filet VIVAIENT DANS connect() : disconnect(), défini ici, ne pouvait
+  // pas les atteindre. Après connect → disconnect → connect, les relectures de l'ancienne session
+  // continuaient — un spectateur qui rouvre la page doublait le trafic, et le filet de sécurité
+  // battait deux fois. On les déclare au niveau du CYCLE DE VIE : ce qui doit être arrêté doit
+  // être visible depuis l'endroit qui arrête.
+  var _ordEtat=null,_ordChat=null,_filet=null;
   var sb=null,ch=null,ME=null,SLUG=null,CONTROL=null,LOCKED=false,AUTHTOK=null,PRESENT=[],PRESNAME='',seen=Object.create(null),msgEls=Object.create(null),msgData=Object.create(null),replyCtx=null,typers=Object.create(null),pdfCache=Object.create(null),_tyT=0,_tyIv=0,_atIv=0,unread=0,autoOpened=false,_histDone=false,_phWired=false,_onMap=null,_onState=null,_peekT=0,MUTED=false;
   try{ MUTED=localStorage.getItem('3dd-present-mute')==='1'; }catch(e){}
   // Couper/rétablir les notifications du chat (cloche) : coupé = plus de ticker ni de pulse (badge silencieux gardé).
@@ -605,14 +611,14 @@ var Live=(function(){
           arreter:function(){ ord.arreter(); },
         };
       }
-      var _ordEtat=relireAvec('&state=1',function(d){if(d.state)etatDuServeur(d.state);});
+      _ordEtat=relireAvec('&state=1',function(d){if(d.state)etatDuServeur(d.state);});
       // ⚠️ Exposé hors de cette fermeture : la carte vit dans un AUTRE bloc de script et doit
       // pouvoir déclencher la relecture. Même raison que window.__presAppliquerEtat — un nom
       // référencé depuis la mauvaise portée part dans un catch muet, et l'audience se fige.
       window.__presRelireEtat=function(){_ordEtat.signaler();};
       function relireEtat(){_ordEtat.signaler();}
       function relireChat(){_ordChat.signaler();}
-      var _ordChat=relireAvec('&chat=1',function(d){
+      _ordChat=relireAvec('&chat=1',function(d){
           // ⚠️ NOTIFIER CE QUI VIENT D'ARRIVER, ET SEULEMENT ÇA. 'addMsg' rend faux pour un
           // message déjà connu — la relecture ramène tout l'historique, donc sans cette condition
           // la pastille de non-lus compterait chaque message à chaque relecture. Et sans l'appel,
@@ -627,7 +633,7 @@ var Live=(function(){
       // rattrape ce cas : elle ne coûte presque rien et évite qu'une audience reste figée sur un
       // état périmé en croyant être à jour. C'est l'inverse d'une optimisation : c'est le prix de
       // la borne.
-      var _filet=setInterval(function(){_ordEtat.maintenant();_ordChat.maintenant();},25000);
+      _filet=setInterval(function(){_ordEtat.maintenant();_ordChat.maintenant();},25000);
 
       // ⚠️ LE TITRE VIENT D'ICI, PAS DE LA PRÉSENCE. La liste des participants tirait
       // « présentateur » de la charge de présence, que chacun compose lui-même : un
@@ -662,7 +668,7 @@ var Live=(function(){
       // → évite les fantômes (« je me vois deux fois » au retour). Une seule fois.
       if(!_phWired){_phWired=true;window.addEventListener('pagehide',function(){try{clearInterval(_filet);_ordEtat.arreter();_ordChat.arreter();}catch(e){}try{if(ch){ch.untrack();ch.unsubscribe();ch=null;}}catch(e){}});}
     }catch(e){}}
-  function disconnect(){try{clearInterval(_tyIv);}catch(e){}try{clearInterval(_atIv);}catch(e){}try{sendAttend();}catch(e){}try{if(ch){ch.untrack();ch.unsubscribe();ch=null;}}catch(e){}var pb=document.getElementById('presBtn');if(pb)pb.style.display='none';var cb=document.getElementById('chatBtn');if(cb)cb.style.display='none';var _fb=document.getElementById('chatFab');if(_fb)_fb.classList.remove('on');var pn=document.getElementById('chatPanel');if(pn)pn.classList.add('hidden');}
+  function disconnect(){try{clearInterval(_tyIv);}catch(e){}try{clearInterval(_atIv);}catch(e){}try{clearInterval(_filet);_filet=null;}catch(e){}try{if(_ordEtat)_ordEtat.arreter();_ordEtat=null;}catch(e){}try{if(_ordChat)_ordChat.arreter();_ordChat=null;}catch(e){}try{delete window.__presRelireEtat;}catch(e){window.__presRelireEtat=null;}try{sendAttend();}catch(e){}try{if(ch){ch.untrack();ch.unsubscribe();ch=null;}}catch(e){}var pb=document.getElementById('presBtn');if(pb)pb.style.display='none';var cb=document.getElementById('chatBtn');if(cb)cb.style.display='none';var _fb=document.getElementById('chatFab');if(_fb)_fb.classList.remove('on');var pn=document.getElementById('chatPanel');if(pn)pn.classList.add('hidden');}
   // Membre de l'équipe reconnu via la session app (MÊME ORIGINE, localStorage) → avatar + nom auto.
   // Le jeton d'acces de la session locale, quand il y en a une. C'est la SEULE chose qui prouve au
   // serveur qu'on est un membre ; 'member:true' dans la page ne prouve rien, il ne sert qu'a l'affichage.
