@@ -52,7 +52,24 @@ end;
 $$;
 
 -- Le player parle à la base avec la clé de service ; personne d'autre n'a à appeler ceci.
-revoke all on function public.player_rate_limit_bump(text, integer, integer) from public, anon, authenticated;
+-- ⚠️ `anon` ET `authenticated` SONT DES RÔLES SUPABASE, PAS DES RÔLES POSTGRES. Les nommer en dur
+-- faisait ÉCHOUER ce fichier sur un Postgres nu — donc chez tout hôte auto-hébergé, c'est-à-dire le
+-- public que ce dépôt vise en s'ouvrant. Le `grant` ci-dessous était déjà gardé par un `if exists` ;
+-- ce `revoke` ne l'était pas : la prudence s'arrêtait à mi-chemin. Trouvé par la garde de schéma.
+--
+-- `public` n'est pas un rôle mais un mot-clé : celui-là passe partout, et c'est le seul qui compte.
+revoke all on function public.player_rate_limit_bump(text, integer, integer) from public;
+do $$
+declare
+  r text;
+begin
+  foreach r in array array['anon', 'authenticated'] loop
+    if exists (select 1 from pg_roles where rolname = r) then
+      execute format('revoke all on function public.player_rate_limit_bump(text, integer, integer) from %I', r);
+    end if;
+  end loop;
+end
+$$;
 
 -- ⚠️ LE `revoke` CI-DESSUS NE SUFFIT PAS À RENDRE CE FICHIER VRAI TOUT SEUL — signalé par le
 -- second hôte, qui a interrogé `has_function_privilege` au lieu de relire la migration. Chez
