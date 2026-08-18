@@ -50,7 +50,10 @@ create table if not exists public.commercial_doc_shares (
   brand_logo      text,                      -- logo RECOPIÉ (flux historiques, toujours accepté)
   brand_dark      boolean not null default false,
   require_auth    boolean not null default false,
-  brand_key       text                       -- ⚠️ RÉFÉRENCE résolue à l'affichage (branding.forKey)
+  brand_key       text,                      -- ⚠️ RÉFÉRENCE résolue à l'affichage (branding.forKey)
+  -- Destinataire attesté par l'hôte : sert à ATTRIBUER une lecture, jamais à expédier en son nom.
+  -- `recipient_email`, elle, dit qui peut expédier — vide quand personne ne le peut.
+  attested_recipient_email text
 );
 create index if not exists cds_doc_id_idx on public.commercial_doc_shares (doc_id);
 create index if not exists cds_parent_idx on public.commercial_doc_shares (parent_slug);
@@ -139,7 +142,11 @@ create table if not exists public.doc_presentations (
   owner_avatar   text,
   owner_email    text,
   last_seen      timestamptz not null default now(),
-  content        jsonb                       -- carte / Street View (revalidé à la réception)
+  content        jsonb,                      -- carte / Street View (revalidé à la réception)
+  -- Rang de la dernière écriture de pilotage acceptée. Une écriture de rang inférieur ou égal est
+  -- refusée : elle a été doublée en vol. Remis à zéro par toute émission d'un jeton de contrôle
+  -- (démarrage, reprise), qui ouvre un nouveau domaine d'ordre.
+  write_seq      bigint not null default 0
 );
 create index if not exists doc_presentations_active_idx      on public.doc_presentations (active, updated_at);
 create index if not exists doc_presentations_last_seen_idx   on public.doc_presentations (active, last_seen);
@@ -163,9 +170,17 @@ create table if not exists public.doc_presentation_messages (
   reply_text    text,
   deleted       boolean not null default false,
   edited        boolean not null default false,
-  attachment    jsonb
+  attachment    jsonb,
+  -- Clé d'idempotence fabriquée par le client AVANT le premier envoi et réutilisée au renvoi :
+  -- un renvoi réseau ne crée pas un second message. Nulle si le client ne la fournit pas.
+  client_key    text
 );
 create index if not exists dpm_slug_idx on public.doc_presentation_messages (slug, created_at);
+-- ⚠️ Portée sur (slug, client_key), pas sur la clé seule : deux présentations n'ont aucune raison
+-- de partager un espace de clés. Partiel, pour que les lignes sans clé ne se gênent pas entre elles.
+create unique index if not exists dpm_client_key_uniq
+  on public.doc_presentation_messages (slug, client_key)
+  where client_key is not null;
 
 create table if not exists public.doc_presentation_attendees (
   slug         text not null,
@@ -208,6 +223,74 @@ create table if not exists public.doc_bot_sessions (
   etat           jsonb
 );
 create index if not exists doc_bot_sessions_share_idx on public.doc_bot_sessions (share_slug);
+
+-- ── Limites de débit partagées ─────────────────────────────────────────────────────────────────
+-- ⚠️ EN MÉMOIRE, UNE LIMITE NE LIMITE RIEN. Chaque instance serverless a la sienne : N instances
+-- accordent N fois le quota, et l'hôte croit être protégé. Le compteur vit donc en base.
+create table if not exists public.player_rate_limits (
+  key         text primary key,
+  count       integer not null default 0,
+  expires_at  timestamptz not null
+);
+create index if not exists player_rate_limits_expires_idx
+  on public.player_rate_limits (expires_at);
+alter table public.player_rate_limits enable row level security;
+comment on table public.player_rate_limits is
+  'Compteurs de débit partagés entre instances. Une ligne par clé et par fenêtre ; les lignes '
+  'périmées sont écrasées à la première demande suivante, il n''y a rien à purger.';
+
+-- ⚠️ ET LIRE PUIS ÉCRIRE N'EST PAS ATOMIQUE. Deux appels simultanés lisent le même compte et
+-- écrivent la même valeur : la limite laisse passer le double. L'incrément se fait donc en UNE
+-- instruction, côté serveur.
+create or replace function public.player_rate_limit_bump(
+  p_key text,
+  p_max integer,
+  p_window_seconds integer
+)
+returns table (autorise boolean, compte integer)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_count integer;
+begin
+  insert into public.player_rate_limits as l (key, count, expires_at)
+  values (p_key, 1, now() + make_interval(secs => p_window_seconds))
+  on conflict (key) do update
+    set count = case when l.expires_at <= now() then 1 else l.count + 1 end,
+        expires_at = case when l.expires_at <= now()
+                          then now() + make_interval(secs => p_window_seconds)
+                          else l.expires_at end
+  returning l.count into v_count;
+  return query select (v_count <= p_max), v_count;
+end;
+$$;
+-- ⚠️ `anon` ET `authenticated` SONT DES RÔLES SUPABASE, PAS DES RÔLES POSTGRES. Les nommer en dur
+-- faisait ÉCHOUER ce fichier sur un Postgres nu — donc chez tout hôte auto-hébergé, c'est-à-dire le
+-- public que ce dépôt vise en s'ouvrant. Le `grant` ci-dessous était déjà gardé par un `if exists` ;
+-- ce `revoke` ne l'était pas : la prudence s'arrêtait à mi-chemin. Trouvé par la garde de schéma.
+--
+-- `public` n'est pas un rôle mais un mot-clé : celui-là passe partout, et c'est le seul qui compte.
+revoke all on function public.player_rate_limit_bump(text, integer, integer) from public;
+do $$
+declare
+  r text;
+begin
+  foreach r in array array['anon', 'authenticated'] loop
+    if exists (select 1 from pg_roles where rolname = r) then
+      execute format('revoke all on function public.player_rate_limit_bump(text, integer, integer) from %I', r);
+    end if;
+  end loop;
+end
+$$;
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    grant execute on function public.player_rate_limit_bump(text, integer, integer) to service_role;
+  end if;
+end
+$$;
 
 -- ── Accès ──────────────────────────────────────────────────────────────────────────────────────
 -- RLS activé SANS politique permissive : seul `service_role` (donc la route du player) passe.
@@ -252,3 +335,23 @@ begin
   end if;
 end $$;
 alter table public.doc_presentation_messages replica identity full;
+
+-- ── Rattrapage : bases installées depuis un init.sql plus ancien ───────────────────────────────
+--
+-- ⚠️ CE FICHIER A ÉTÉ INCOMPLET, ET RIEN NE LE DISAIT. Il annonçait « un seul fichier, sans rien à
+-- lire ailleurs » alors qu'aucune des cinq migrations de `supabase/migrations/` n'y figurait : un
+-- hôte neuf installait une base sans rang d'écriture, sans limites partagées et sans clé
+-- d'idempotence. Les sondes de schéma dégradent en silence — par conception, pour ne pas casser un
+-- hôte en cours de migration — donc cet hôte-là ne l'apprenait JAMAIS. Un état anormal que rien ne
+-- dit devient l'état normal.
+--
+-- Les colonnes sont désormais dans le corps des tables ci-dessus, ce qui règle le cas d'une base
+-- VIERGE. Mais `create table if not exists` ne touche pas une table déjà là : une base créée
+-- depuis l'ancien init.sql resterait incomplète en rejouant celui-ci. D'où ce rattrapage, qui ne
+-- coûte rien sur une base neuve et rend le fichier vrai dans les deux cas.
+alter table public.commercial_doc_shares
+  add column if not exists attested_recipient_email text;
+alter table public.doc_presentations
+  add column if not exists write_seq bigint not null default 0;
+alter table public.doc_presentation_messages
+  add column if not exists client_key text;
