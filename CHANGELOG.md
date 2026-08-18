@@ -10,6 +10,35 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.58] — 2026-08-18
+
+### Added
+
+- **The identity card now says which migrations the instance is still waiting for.** A missing
+  column was reported by a `console.warn`, **once per process**: on a serverless function, a line
+  lost in an output nobody opens while everything *looks* fine — and *everything looks fine* is
+  exactly the state of a host whose write ordering and message idempotency are both asleep. The
+  trace existed at precisely the place no one looks. `GET /api/doc?contract=1` — the card hosts
+  already query to pin their version — now carries a `schema` field naming the file to apply and
+  the feature that is waiting. ⚠️ It **reports, it does not probe**: that route must answer when
+  the database does not, so probing from it would make a diagnostic that falls together with what
+  it diagnoses. ⚠️ Hence **three states, not two**: a process that has asked nothing knows nothing,
+  and `manquant: []` would read as *all clear*; `sondees` is there so the two cannot be confused —
+  an absence of result looks like a result. ⚠️ The file is **named**, on a public route, for the
+  same reason `frameAncestors` names origins ten lines above it: the operator has no other way to
+  learn which one is missing, and what it reveals — that a reliability feature is waiting, in a
+  repository whose migrations are public — grants no access. Found by the second host, reading our
+  probe.
+
+### Changed
+
+- **Schema expectations are declared once, and that declaration is the source.** The
+  *(table, column, migration)* triples lived copied across four call sites. Deriving a list from
+  them *for display* would have rebuilt, in miniature, the defect that had emptied `init.sql` of
+  its five migrations: two copies of the same fact and no one to confront them. Callers now go
+  through `attendue(name)` and no longer name a column; a CI step refuses any call that bypasses
+  the table, and every file named there must exist.
+
 ## [0.1.57] — 2026-08-18
 
 ### Fixed
