@@ -10,6 +10,66 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.57] — 2026-08-18
+
+### Fixed
+
+- **A resent message no longer creates a second one.** A network retry, a double click, a resume
+  after timeout: the request left **twice** and the database stored two rows. The participant saw
+  their message duplicated with nothing to explain it — no error, just one success too many. The
+  client now makes an idempotency key **once, before the first send**, and reuses it on retry; a
+  key drawn per attempt would prove nothing, since two sends would carry two keys and both would
+  pass. ⚠️ A uniqueness refusal is a **confirmation, not an error**: the constraint says *this
+  message is already here*, so the row is re-read and returned as a success — but if the re-read
+  finds nothing, it is raised, because that 409 came from something else and hiding it would
+  report a send that never happened. ⚠️ The column is written **only where it exists**: PostgREST
+  rejects the **whole** POST on an unknown column, so on an unmigrated host it would not be
+  idempotency that breaks, it would be **sending messages**. Requires migration
+  `0005-envoi-unique.sql`. Audit finding **P10**, now closed.
+
+- **The file relay streams instead of loading everything.** The ceiling added in 0.1.56 read
+  `Content-Length` and took the upstream at its word — a store that announces nothing, or announces
+  1 KB and sends 500, went through unchallenged. The relay now flows, with a counter that breaks.
+  ⚠️ That second bound can no longer answer **413**: the headers left with the first byte, and one
+  does not take back a header already sent. It cuts — the client sees an interrupted transfer,
+  unpleasant and honest, where memory exhaustion took down the **whole** function, and with it
+  everyone else's requests. ⚠️ The point is not to stop writing but to stop **reading**: without
+  cancelling the upstream it keeps sending the file and memory goes anyway. Same reason on the 413:
+  a body never pulled leaves the connection **open**, and the socket pool drains — the very
+  resource being protected. ⚠️ And `fetch` **decompresses on its own**: on a gzip upstream,
+  `Content-Length` counts compressed bytes while we relay expanded ones, so it is no longer
+  announced. A host whose `storage.fetchFile` returns no readable body — the standalone local-file
+  path — keeps a buffered path, named and tested: treating that absence as *nothing to send* served
+  **empty files** in silence, a worse defect than the one being closed. Audit finding **P8**, now
+  closed.
+
+- **A fresh host was installing a truncated database, and nothing said so.** `supabase/init.sql`
+  announces *one file, replayable, with nothing to read elsewhere*. **None of the five migrations
+  were in it**: no write ordering, no shared rate limits, no idempotency key. ⚠️ And the host never
+  found out — the schema probes degrade **silently** by design, so as not to break a host
+  mid-migration; on a fresh database that same silence means four protections switched off, for
+  good, without a word. A CI job now installs a **virgin Postgres** from `init.sql`, records the
+  shape the database itself reports, replays every migration on top, and requires that nothing
+  moved. It also tests the word *replayable*, which had never been checked.
+
+- **Migration 0004 required Supabase roles.** `revoke all … from public, anon, authenticated`:
+  `anon` and `authenticated` do not exist outside Supabase, so the migration stopped on a bare
+  Postgres — every self-hosted host, the very audience this repository opens itself to. The `grant`
+  six lines below was already guarded by an `if exists`, with ten lines explaining why: **caution
+  had stopped halfway, in the same file**. Found by the schema guard on its first run.
+
+### Added
+
+- **The three properties the in-memory PostgREST double cannot simulate are now tested against a
+  real one.** The double says so itself: *no constraints, no transactions… not a substitute for
+  checking what belongs to the DBMS*. Yet message idempotency rests on a **unique constraint**,
+  steering-write ordering on the **atomicity** of a conditional PATCH, and the whole schema probe
+  on PostgREST rejecting the **entire** POST for an unknown column — three properties inferred from
+  documentation and never observed. A CI job runs a real Postgres behind a real PostgREST and the
+  player connects to it **the same way it connects to the double**: one URL and one key in the
+  environment. ⚠️ The bench **refuses to skip** under `CI`: a bench that quietly skips goes green
+  having exercised nothing. `npm run test:base`. Audit finding **P12**, now closed.
+
 ## [0.1.56] — 2026-08-18
 
 ### Fixed
