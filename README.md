@@ -70,7 +70,7 @@ This player answers the same questions and runs on your own infrastructure.
 |  | What you get |
 |---|---|
 | **Tracked links** | One link per recipient. Revocable. Re-shares are chained to their parent, so you see when a document travels. |
-| **Reading analytics** | Time per page, furthest page reached, device. Counted only while the tab is visible and focused — an open tab in the background is not reading. |
+| **Reading analytics** | Time per page, furthest page reached, device. Counted only while the tab is visible and recently active — a hidden tab, or one idle past the threshold, is not reading. |
 | **Live presentation** | Present a document to a remote audience, with chat, presence, and handover. The audience follows your page without a video call. |
 | **Access wall** | Optional: a document can require an email + code before it opens. |
 | **Brand per client** | The loader carries your client's logo, resolved at display time — fix a logo and links already in inboxes follow. |

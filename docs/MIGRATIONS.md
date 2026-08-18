@@ -19,7 +19,12 @@ il manque quelque chose, au lieu de casser.
 > **Une migration est ADDITIVE, et sûre à appliquer pendant que la version PRÉCÉDENTE du code
 > tourne.**
 
-Ajouter une colonne, une table, un index. Jamais renommer, jamais supprimer, jamais rendre
+Ajouter une colonne, une table, un index. Jamais renommer, jamais supprimer une colonne ou une
+table, jamais rendre — « additive » porte sur la FORME DES DONNÉES. Trois gestes non-additifs en
+apparence sont permis parce qu'ils ne touchent aucune donnée et restent sûrs sous l'ancien code :
+`create or replace function` (0004, 0010), `alter column … drop not null` (0008), et retirer une
+table d'une PUBLICATION (0009). Cette phrase a dit « jamais supprimer » tout court pendant que
+trois migrations faisaient légitimement l'un de ces gestes — cinquième audit. Jamais rendre
 obligatoire ce qui ne l'était pas.
 
 ⚠️ **Sans cette règle, l'ordre de déploiement devient un piège.** PostgREST rejette un `PATCH`

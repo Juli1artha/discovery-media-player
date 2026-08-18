@@ -93,7 +93,13 @@ const LEAFLET = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
 // scripts, donc l'intégrité restera hors de portée ici ; épingler la version trimestrielle rend
 // au moins le changement DÉCIDÉ, et daté. À relever à chaque montée — Google retire les versions
 // après environ un an.
-const MAPS_VERSION = "3.58";
+// ⚠️ UNE VERSION INVALIDE N'EST PAS UNE ERREUR, C'EST UN CANAL PAR DÉFAUT SILENCIEUX. Google ne
+// sert qu'une fenêtre glissante de versions (~4 trimestres) ; en dehors, le paramètre est IGNORÉ
+// et le canal hebdomadaire se charge — l'épinglage devient une illusion sans qu'aucune erreur ne
+// le dise. « 3.58 » a menti ainsi pendant des mois (cinquième audit). À vérifier à chaque
+// trimestre — le commentaire d'à côté doit porter la date du dernier contrôle.
+// Contrôlé le 18/08/2026 : fenêtre servie 3.62 → 3.65.
+const MAPS_VERSION = "3.65";
 
 /**
  * Empreintes des dépendances tierces (constat P2-4).
