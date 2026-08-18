@@ -62,7 +62,8 @@
     "lint:fix": "eslint bin context server src build --fix",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build && npm test",
-    "test:e2e": "vitest run --config vitest.e2e.config.mjs"
+    "test:e2e": "vitest run --config vitest.e2e.config.mjs",
+    "test:base": "vitest run --config vitest.base.config.mjs"
   },
   "engines": {
     "node": ">=22"
