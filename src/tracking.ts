@@ -179,7 +179,7 @@ export function createTracker(options: TrackerOptions = {}): Tracker {
    *
    * ⚠️ CE QUI RESTE, ET QUI EST VOULU : le seuil d'inactivité. C'est lui qui distingue un lecteur
    * d'un onglet oublié, et il est maintenant SEUL à le faire. Un document affiché sans aucune
-   * interaction compte donc `idleMs` au plus — 60 s par défaut. Mieux que zéro, moins qu'une
+   * interaction compte donc `idleMs` au plus — 3 minutes par défaut (SESSION_IDLE_MS ; ce commentaire a dit « 60 s » pendant que la constante disait 180 000 ms — cinquième audit). Mieux que zéro, moins qu'une
    * lecture réelle de dix minutes : voir la note d'`idleMs`, c'est une décision de mesure et pas
    * un défaut.
    *

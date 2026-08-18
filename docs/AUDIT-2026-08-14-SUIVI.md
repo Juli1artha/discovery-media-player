@@ -1,3 +1,7 @@
+> ⚠️ **Document HISTORIQUE — état au 15/08/2026.** Les statuts ci-dessous ne sont plus tenus à
+> jour : cinq passes d'audit ont suivi, toutes closes (voir CHANGELOG 0.1.49 → 0.1.64). Ce fichier
+> reste comme trace du premier cycle ; rien ici ne décrit l'état courant.
+
 # Suivi de l'audit externe du 14 août 2026
 
 Audit reçu le 14/08/2026 sur la version `0.1.17`. Ce fichier suit ce qui est **fait**, ce qui est

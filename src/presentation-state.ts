@@ -1,9 +1,10 @@
 // Ce que l'audience fait d'un état de présentation reçu.
 //
-// Cette décision n'existait qu'à un seul endroit : le gestionnaire du canal temps réel. Elle
-// doit maintenant servir TROIS sources — la table (existant), une diffusion `broadcast` par le
-// présentateur, et une relecture d'état à la (re)connexion — parce qu'on veut se passer de la
-// lecture anonyme des tables, qui rend aujourd'hui toutes les présentations énumérables.
+// Cette décision n'existait qu'à un seul endroit : le gestionnaire du canal temps réel de
+// l'époque, qui lisait la table. Elle sert aujourd'hui DEUX sources — le signal `broadcast` du
+// présentateur (charge vide, jamais un contenu) et la relecture d'état HTTP à la (re)connexion —
+// la lecture anonyme des tables, qui rendait toutes les présentations énumérables, a été retirée.
+// (Ce paragraphe a décrit l'ancien monde au présent pendant plusieurs versions — cinquième audit.)
 //
 // Une même règle, trois portes d'entrée : elle vit ici, testée, plutôt que recopiée trois fois.
 //

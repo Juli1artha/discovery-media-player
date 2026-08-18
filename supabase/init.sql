@@ -335,9 +335,6 @@ alter table public.doc_bot_sessions                  enable row level security;
 -- n'est pas un détail : il pousse un mainteneur à « réparer » un différé qui n'existe plus, en
 -- ajoutant précisément la politique de lecture que ce fichier refuse.)
 --
--- La publication de la table reste utile aux INSTANCES HISTORIQUES encore sur `postgres_changes`,
--- et inoffensive ici : publiée sans politique de lecture, elle ne livre rien à personne.
---
 -- ⚠️ Ne mettez de toute façon jamais de donnée confidentielle dans un message de chat ni dans un
 -- nom d'auteur.
 -- ⚠️ AUCUNE TABLE DU PLAYER N'EST PUBLIÉE DANS `supabase_realtime`, ET C'EST UN CHOIX. Le direct
