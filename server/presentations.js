@@ -446,6 +446,11 @@ function messagePublic(row) {
   // relit sans avoir à vérifier d'où vient chaque clé.
   const out = Object.create(null);
   for (const c of CHAMPS_PUBLICS) if (c in row) out[c] = row[c];
+  // ⚠️ LA CEINTURE : une ligne supprimée sort VIDE, quoi que porte encore la base. Les courses
+  // d'avant ce correctif — et les lignes historiques qu'elles ont laissées — peuvent avoir gardé
+  // un corps, une pièce jointe ou une citation sous deleted=true : la projection est le dernier
+  // endroit qui peut refuser de les resservir, et le seul qui couvre AUSSI le passé.
+  if (out.deleted) { out.body = ""; out.attachment = null; out.reactions = {}; out.reply_text = null; out.reply_name = null; }
   if ("reactions" in out) out.reactions = reactionsPubliques(out.reactions);
   // Dérivé, jamais recopié : `author_hash` est lu pour ça et ne sort jamais tel quel.
   if ("author_hash" in row) out.author_ref = refAuteur(row.author_hash);
@@ -551,7 +556,13 @@ async function editMessage(slug, msgId, authorToken, body) {
   const rows = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&slug=eq.${enc(String(slug || ""))}&select=author_hash,deleted&limit=1`);
   const m = Array.isArray(rows) && rows[0]; if (!m || m.deleted) return { ok: false, status: 404 };
   if (!m.author_hash || m.author_hash !== sha(authorToken)) return { ok: false, status: 403 };
-  const maj = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&select=*`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: { body: b, edited: true } });
+  // ⚠️ CE QUI A ÉTÉ VÉRIFIÉ VOYAGE DANS LA CONDITION. Une suppression entre la lecture et
+  // l'écriture vidait le message — et l'édition retardée RÉÉCRIVAIT le texte dans une ligne
+  // marquée supprimée : effacé à l'écran, ressuscité dans le JSON. Cinquième audit, P1-3.
+  // `deleted=eq.false` fait de « pas supprimé » une propriété de l'ÉCRITURE ; `author_hash` et
+  // `slug` par cohérence — l'écriture ne repose plus sur rien qu'elle n'exige elle-même.
+  const maj = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&slug=eq.${enc(String(slug || ""))}&author_hash=eq.${sha(authorToken)}&deleted=eq.false&select=*`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: { body: b, edited: true } });
+  if (!Array.isArray(maj) || !maj.length) return { ok: false, status: 409 };
   return { ok: true, message: premierPublic(maj) };
 }
 
@@ -566,7 +577,16 @@ async function deleteMessage(slug, msgId, { authorToken, control }) {
   let byPresenter = false;
   if (!byAuthor && control) { const pres = await getPresentation(slug); byPresenter = !!(pres && tokenMatches(control, pres.control_hash)); }
   if (!byAuthor && !byPresenter) return { ok: false, status: 403 };
-  const maj = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&select=*`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: { deleted: true, body: "", reactions: {}, attachment: null } });
+  // ⚠️ Par l'AUTEUR : son hash dans la condition — l'écriture n'exige que ce qu'elle a vérifié.
+  // Par le PRÉSENTATEUR : le jeton vit dans une AUTRE table, aucun filtre PostgREST ne peut le
+  // porter — la fenêtre résiduelle (un ex-présentateur modère dans la seconde où on lui reprend
+  // la main) est assumée : elle ne rend qu'un droit qu'il avait légitimement l'instant d'avant.
+  // `deleted=eq.false` partout : supprimer deux fois est IDEMPOTENT — zéro ligne veut dire
+  // « déjà supprimé », et c'est l'état que l'appelant voulait. `reply_text`/`reply_name` partent
+  // aussi : un message supprimé ne doit pas continuer de citer ce qu'il citait.
+  const cond = byAuthor ? `&author_hash=eq.${sha(authorToken)}` : "";
+  const maj = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&slug=eq.${enc(String(slug || ""))}${cond}&deleted=eq.false&select=*`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: { deleted: true, body: "", reactions: {}, attachment: null, reply_text: null, reply_name: null } });
+  if (!Array.isArray(maj) || !maj.length) return { ok: true, deja: true };
   return { ok: true, message: premierPublic(maj) };
 }
 
@@ -612,7 +632,7 @@ async function toggleReaction(slug, msgId, emoji, reactor, etat) {
   // ⚠️ LE RANG N'EST DEMANDÉ QUE LÀ OÙ IL EXISTE — sélectionner une colonne absente fait échouer
   // la LECTURE entière chez un hôte non migré, et ce serait les réactions qu'on casserait.
   const ordonne = await require("./schema").attendue("reactionsOrdonnees");
-  const rows = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&slug=eq.${enc(String(slug || ""))}&select=${ordonne ? "reactions,reactions_seq" : "reactions"}&limit=1`);
+  const rows = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&slug=eq.${enc(String(slug || ""))}&select=${ordonne ? "reactions,reactions_seq,deleted" : "reactions,deleted"}&limit=1`);
   // ⚠️ LE NOM DE PROPRIÉTÉ ÉCRIT ICI VIENT DU CLIENT — et la garde posée en 0.1.2 ne couvrait que
   // les LECTURES. `Object.hasOwn` empêchait de LIRE `constructor` ; rien n'empêchait de l'ÉCRIRE.
   //
@@ -635,6 +655,10 @@ async function toggleReaction(slug, msgId, emoji, reactor, etat) {
   // nombre de concurrents réels, pas par la malchance.
   let lu = rows;
   for (let essai = 0; essai < 4; essai += 1) {
+    // ⚠️ Un message supprimé PENDANT la boucle : on s'arrête — réagir à un message effacé le
+    // ferait revivre dans le tableau des réactions. Et `deleted=eq.false` dans la condition
+    // d'écriture ferme la course entre cette lecture et le PATCH.
+    if (Array.isArray(lu) && lu[0] && lu[0].deleted) return { ok: false, status: 404 };
     const brut = (Array.isArray(lu) && lu[0] && lu[0].reactions && typeof lu[0].reactions === "object" && !Array.isArray(lu[0].reactions)) ? lu[0].reactions : {};
     const rang = ordonne ? Math.trunc(Number((Array.isArray(lu) && lu[0] && lu[0].reactions_seq) || 0)) : 0;
     // Objet NU déclaré tel quel : la garde statique des écritures indexées reconnaît la
@@ -647,11 +671,14 @@ async function toggleReaction(slug, msgId, emoji, reactor, etat) {
     if (veut && i < 0) arr.push(who);
     if (!veut && i >= 0) arr.splice(i, 1);
     if (arr.length) cur[e] = arr; else delete cur[e];
-    const condition = ordonne ? `&reactions_seq=eq.${rang}` : "";
+    const condition = (ordonne ? `&reactions_seq=eq.${rang}` : "") + "&deleted=eq.false";
     const maj = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}${condition}&select=*`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: { reactions: cur, ...(ordonne ? { reactions_seq: rang + 1 } : {}) } });
-    if (!ordonne || (Array.isArray(maj) && maj.length)) return { ok: true, message: premierPublic(maj) };
+    if (Array.isArray(maj) && maj.length) return { ok: true, message: premierPublic(maj) };
+    // Hôte non migré (pas de rang) : zéro ligne ne peut venir que de `deleted` — le message est
+    // parti pendant qu'on écrivait. Pas de rejeu qui le ferait revivre.
+    if (!ordonne) return { ok: false, status: 404 };
     // Rang dépassé : quelqu'un a écrit entre notre lecture et notre écriture. On relit, on rejoue.
-    lu = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&slug=eq.${enc(String(slug || ""))}&select=reactions,reactions_seq&limit=1`);
+    lu = await PLAYER.db.request(`doc_presentation_messages?id=eq.${id}&slug=eq.${enc(String(slug || ""))}&select=reactions,reactions_seq,deleted&limit=1`);
   }
   // Quatre tours perdus : plus de concurrents que de raisons d'attendre. Un refus net vaut mieux
   // qu'une écriture qui écraserait ce que les gagnants viennent de poser.
