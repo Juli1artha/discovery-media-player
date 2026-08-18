@@ -3476,10 +3476,7 @@ async function handler(req, res) {
             // capable d'expédier en son nom : le repli silencieux ouvrirait exactement la porte que
             // la séparation ferme. On nomme le fichier à appliquer et on s'arrête.
             if (atteste) {
-              const pret = await require("./schema").aLaColonne(
-                "commercial_doc_shares", "attested_recipient_email",
-                "supabase/migrations/0001-destinataire-atteste.sql",
-              );
+              const pret = await require("./schema").attendue("destinataireAtteste");
               if (!pret) {
                 return jd(409, { ok: false, error: "migration", message: "Destinataire attesté indisponible : appliquez supabase/migrations/0001-destinataire-atteste.sql." });
               }
@@ -3824,6 +3821,14 @@ async function handler(req, res) {
         // l'hôte connaît déjà son émetteur — il veut seulement savoir si l'instance le regarde.
         // Dire lequel n'aiderait personne et renseignerait qui sonde.
         separateIssuer: !!(PLAYER.config && PLAYER.config.separateIssuer),
+        // ⚠️ L'ÉTAT DU SCHÉMA, LÀ OÙ ON REGARDE. Une colonne absente était signalée par un
+        // `console.warn`, une fois par processus : sur une fonction serverless, une ligne perdue
+        // dans une sortie que personne n'ouvre tant que tout a l'air de marcher — et « tout a
+        // l'air de marcher » est exactement l'état d'un hôte dont trois protections dorment. Cette
+        // carte est ce qu'un hôte interroge déjà pour épingler sa version ; c'est donc ici.
+        // Elle RAPPORTE ce qui est connu, elle ne sonde pas : un diagnostic ne doit pas tomber en
+        // même temps que ce qu'il diagnostique.
+        schema: require("./schema").etatDuSchema(),
         // « L'hôte peut-il créer un lien en son nom propre ? » — configuré, pas seulement
         // possible. Un hôte qui oublie le secret reçoit un 401 qui ressemble à un droit
         // manquant ; ce booléen le lui dit sans qu'il ait à essayer.

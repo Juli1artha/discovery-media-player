@@ -31,13 +31,26 @@ need.
   "separateIssuer": true,
   "hostShare": true,
   "hostMail": true,
-  "plugins": { "bot": false, "visitors": false, "brandIntro": false, "botBrowser": false, "providerQuotas": false }
+  "plugins": { "bot": false, "visitors": false, "brandIntro": false, "botBrowser": false, "providerQuotas": false },
+  "schema": { "attendues": 3, "sondees": 1, "manquant": [] }
 }
 ```
 
 **Pin `contract`**, not `version`: it moves only on a break. Test `capabilities` by **presence**,
 never by order. `plugins` lets you refuse to start when you depend on an optional module this
 instance does not have.
+
+⚠️ **`schema` tells you which migrations this instance is still waiting for.** The player never
+applies migrations — it cannot, it only speaks PostgREST — so it *detects* instead, and a missing
+column makes the feature that needs it **degrade silently**, by design, so as not to break a host
+mid-migration. That silence is the point: an operator whose write ordering and message idempotency
+are both switched off sees an instance that looks perfectly healthy. Each entry names the file to
+apply and the feature that is asleep.
+
+⚠️ **`sondees` is not decoration.** The card **reports** what this process has already asked; it
+never probes, because a diagnostic must answer when the database does not. A freshly started
+process therefore knows nothing, and `manquant: []` on `sondees: 0` means *no question asked yet*,
+not *nothing missing*. Compare `sondees` with `attendues` before you conclude.
 
 ⚠️ **`frameAncestors` matters more than it looks.** A host that is not listed will never see the
 viewer: the browser blocks the iframe **before any script runs**, so no message can be emitted and
