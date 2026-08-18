@@ -42,8 +42,11 @@ function jeton() {
   return `${tete}.${corps}.${sig}`;
 }
 
+// Partagés entre TOUS les describes du banc : le premier beforeAll câble, les suivants s'en
+// servent — une ReferenceError en forge a montré que la portée d'un describe n'est pas un module.
+let presentations, schema, base;
+
 decrire("les trois propriétés que le double ne sait pas simuler", () => {
-  let presentations, schema, base;
 
   beforeAll(() => {
     // ⚠️ AVANT le `require` : le contexte autonome se fabrique à l'import, depuis l'environnement.
