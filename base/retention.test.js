@@ -56,8 +56,8 @@ describe.skipIf(skip)("rétention : le déclaré et les survivantes", () => {
       { session_id: "ret-i-fraiche", doc_id: "ret-doc", user_email: "frais@exemple.fr", last_at: RECENT, started_at: RECENT },
     ] });
     await base.request("doc_bot_sessions", { method: "POST", headers: { Prefer: "return=minimal" }, body: [
-      { id: "ret-b-vieille", doc_id: "ret-doc", last_at: IL_Y_A(14), created_at: IL_Y_A(14) },
-      { id: "ret-b-fraiche", doc_id: "ret-doc", last_at: RECENT, created_at: RECENT },
+      { id: "ret-b-vieille", share_slug: "ret-l-vivant", doc_id: "ret-doc", last_at: IL_Y_A(14), created_at: IL_Y_A(14) },
+      { id: "ret-b-fraiche", share_slug: "ret-l-vivant", doc_id: "ret-doc", last_at: RECENT, created_at: RECENT },
     ] });
     await base.request("player_rate_limits", { method: "POST", headers: { Prefer: "return=minimal" }, body: [
       { key: "ret-limite-expiree", count: 1, expires_at: IL_Y_A(1) },
