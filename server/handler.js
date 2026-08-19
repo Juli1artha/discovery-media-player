@@ -7,7 +7,7 @@ const crypto = require("crypto");
 const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const { getShareBySlug, logView, upsertSession, createReshare, sendReshareEmail, upsertInternalSession,
-  createShare, revokeShare, setShareAuth, overview: docOverview, listSharesForDoc, listSessionsForDoc, internalStatsForDoc } = require("./shares");
+  createShare, revokeShare, setShareAuth, overview: docOverview, listSharesForDoc, listSessionsForDoc, internalStatsForDoc , cleIdempotence } = require("./shares");
 const { SESSION_QUOTA_PER_HOUR, PRESENT_QUOTA_PER_HOUR, PRESENT_CACHE_MS } = require("./shared.generated.js");
 const { creerCache } = require("./cache.js");
 
@@ -3600,7 +3600,7 @@ async function handler(req, res) {
             const dejaLa = await PLAYER.db.request(
               `commercial_doc_shares?doc_id=eq.${encodeURIComponent(docId)}&created_by=is.null&recipient_email=is.null${filtreAtteste}&select=slug&limit=1`,
             );
-            const cleHote = `hote:${docId}|${atteste || ""}`;
+            const cleHote = cleIdempotence("hote", [docId, atteste || ""]);
             if (Array.isArray(dejaLa) && dejaLa[0]) {
               // Réemploi d'une ligne historique (sans clé) : on lui POSE la clé au passage — les
               // demandes suivantes la trouveront par l'unicité, et les doublons d'avant 0011
@@ -3674,7 +3674,7 @@ async function handler(req, res) {
           const docId = String(body.docId || "");
           if (!docId || !body.fileUrl) return jd(400, { ok: false, error: "docId/fileUrl requis" });
           const ex = await PLAYER.db.request(`commercial_doc_shares?doc_id=eq.${encodeURIComponent(docId)}&is_test=eq.true&select=slug&limit=1`);
-          const cleTest = `repetition:${docId}`;
+          const cleTest = cleIdempotence("repetition", [docId]);
           if (Array.isArray(ex) && ex[0]) {
             const cleDispo = await require("./schema").attendue("liensUniques");
             await PLAYER.db.request(`commercial_doc_shares?slug=eq.${encodeURIComponent(ex[0].slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { doc_title: body.docTitle || null, file_url: String(body.fileUrl), file_name: body.fileName || null, bot_enabled: true, bot_guided: true, bot_profile_id: (body.profileId || "").trim() || null, revoked: false, ...(cleDispo ? { idem_key: cleTest } : {}) } });

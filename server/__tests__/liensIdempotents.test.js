@@ -8,6 +8,7 @@
 
 const crypto = require("node:crypto");
 const schema = require("../schema.js");
+const { cleIdempotence } = require("../shares.js");
 
 function harnais({ aveuglesDejaLa = 0, conflitSansGagnant = false, colonne = true } = {}) {
   // `aveuglesDejaLa` rejoue la FENÊTRE réelle : les N premières lectures « existe-t-il déjà ? »
@@ -103,7 +104,38 @@ describe("un usage, un lien — la contrainte tranche, le perdant relit", () => 
     const r = await appeler(player, { action: "docshare.create", docId: "doc-2", fileUrl: "https://exemple.supabase.co/storage/v1/object/public/resources/d.pdf" }, { hote: true });
     expect(r.corps.reused).toBe(true);
     expect(r.corps.slug).toBe("ancien-lien");
-    expect(etat.lignes[0].idem_key, "sans backfill, les doublons historiques ne s'éteignent jamais").toBe("hote:doc-2|");
+    expect(etat.lignes[0].idem_key, "sans backfill, les doublons historiques ne s'éteignent jamais").toBe(cleIdempotence("hote", ["doc-2", ""]));
+  });
+
+  // ⚠️ SIXIÈME AUDIT : la clé était TRONQUÉE à 300 caractères à l'écriture mais relue ENTIÈRE
+  // après un 409 — sur un docId long, le perdant LÉGITIME ne trouvait pas de gagnant et notre
+  // propre garde « un 409 sans gagnant remonte » le finissait en 500. Deux exemplaires du même
+  // fait (la clé écrite, la clé relue), jamais confrontés sur leur longueur.
+  it("l'empreinte fixe les frontières : un | dans une composante ne déplace rien", () => {
+    expect(cleIdempotence("hote", ["doc|a", "b"])).not.toBe(cleIdempotence("hote", ["doc", "a|b"]));
+    expect(cleIdempotence("hote", ["doc-1", ""])).toBe(cleIdempotence("hote", ["doc-1", ""]));
+    expect(cleIdempotence("hote", ["doc-1", ""]).length).toBeLessThan(80);
+  });
+
+  it("un docId de 320 caractères : deux demandes simultanées rendent le MÊME slug, pas un 500", async () => {
+    const { etat, player } = harnais({ aveuglesDejaLa: 2 });
+    const docLong = "d".repeat(320);
+    const demande = () => appeler(player, { action: "docshare.create", docId: docLong, fileUrl: "https://exemple.supabase.co/storage/v1/object/public/resources/d.pdf" }, { hote: true });
+    const [a, b] = await Promise.all([demande(), demande()]);
+    expect(a.corps.ok && b.corps.ok, "le perdant légitime d'un docId long doit relire le gagnant, pas finir en 500").toBe(true);
+    expect(a.corps.slug).toBe(b.corps.slug);
+    expect(etat.lignes.filter((l) => l.doc_id === docLong).length).toBe(1);
+  });
+
+  it("deux docId partageant 300 caractères de préfixe font DEUX liens, pas une collision", async () => {
+    const { etat, player } = harnais();
+    const prefixe = "p".repeat(310);
+    const url = "https://exemple.supabase.co/storage/v1/object/public/resources/d.pdf";
+    const a = await appeler(player, { action: "docshare.create", docId: prefixe + "-alpha", fileUrl: url }, { hote: true });
+    const b = await appeler(player, { action: "docshare.create", docId: prefixe + "-beta", fileUrl: url }, { hote: true });
+    expect(a.corps.ok && b.corps.ok, "un préfixe partagé ne doit voler le lien de personne").toBe(true);
+    expect(a.corps.slug).not.toBe(b.corps.slug);
+    expect(etat.lignes.length).toBe(2);
   });
 
   it("deux ouvertures simultanées de la répétition : un seul lien de test", async () => {
