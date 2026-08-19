@@ -462,7 +462,7 @@ jobs:
             select table_name || '.' || column_name
             from information_schema.columns
             where table_schema = 'public'
-              and (column_name ~ '(email|name|avatar|body|comment|hash|attachment|session|token|content|rating|pages)'
+              and (column_name ~ '(email|name|avatar|body|comment|hash|attachment|session|token|content|rating|pages|text|user)'
                    or column_name in ('ip','ua','key','client_key','attendee_key','created_by'))
             order by 1;" > /tmp/personnelles.txt
           test -s /tmp/personnelles.txt || { echo "::error::le recensement des colonnes n'a rien rendu — la sonde vise à côté"; exit 1; }
