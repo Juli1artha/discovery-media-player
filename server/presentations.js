@@ -310,6 +310,33 @@ async function endPresentation(slug, control) {
 // Pièce jointe : URL d'upload SIGNÉE (service role) → le client PUT directement dans le bucket. Type/taille
 // validés par le bucket (image/*+pdf, ≤10 Mo). L'URL publique finale est renvoyée pour attacher au message.
 const ATT_KINDS = { "image/png": "image", "image/jpeg": "image", "image/webp": "image", "image/gif": "image", "application/pdf": "pdf" };
+const BUCKET_PIECES = "present-attachments";
+
+// ⚠️ LE CHEMIN CANONIQUE D'UNE PIÈCE JOINTE — UNE SEULE FONCTION POUR L'ÉCRITURE ET LA
+// SUPPRESSION (P1 du huitième audit). Rend le chemin RELATIF au bucket (« <slug>/fichier ») si,
+// et seulement si, l'URL publique désigne EXACTEMENT le dossier du slug courant, sans traversée.
+// Refuse tout le reste — `null`. La barrière est la même des deux côtés : un `startsWith` laissait
+// passer `…/present-attachments/../autre-bucket/x`, inerte tant que l'URL n'était que lue, devenu
+// une primitive de suppression avec la rétention.
+//
+// Refusés : `.`/`..` en segment, leurs formes encodées (%2e), les slash/antislash encodés
+// (%2f/%5c), l'antislash brut, l'octet nul — et tout premier segment différent du slug.
+function cheminPieceJointe(url, slug, base) {
+  const prefixe = `${String(base || "")}/storage/v1/object/public/${BUCKET_PIECES}/`;
+  const brut = String(url || "");
+  if (!brut.startsWith(prefixe)) return null;
+  const chemin = brut.slice(prefixe.length).split("?")[0];
+  if (/%2e|%2f|%5c|\\|\0/i.test(chemin)) return null;          // formes encodées + antislash + nul
+  if (chemin.includes("\u0000")) return null;
+  const segments = chemin.split("/");
+  if (segments.length < 2) return null;                          // il faut « <slug>/<fichier> »
+  if (segments[0] !== String(slug)) return null;                 // premier segment = slug courant
+  for (const seg of segments) {
+    if (seg === "" || seg === "." || seg === "..") return null;  // pas de segment vide ni de point
+    if (!/^[A-Za-z0-9._-]+$/.test(seg)) return null;             // même alphabet que createUploadUrl
+  }
+  return chemin;
+}
 /**
  * UNE PRÉSENTATION TERMINÉE DEVIENT UNE ARCHIVE : on la relit, on ne l'écrit plus.
  *
@@ -484,8 +511,19 @@ async function addMessage(slug, { name, email, avatar, isPresenter, isMember, bo
   // et c'est comme ça que `.replace(/\/+$/, "")` s'est retrouvé à cinq exemplaires dans ce dépôt.
   const base = String((PLAYER.config && PLAYER.config.supabaseUrl) || "");
   let att = null;
-  if (attachment && typeof attachment === "object" && attachment.url && String(attachment.url).startsWith(base + "/storage/v1/object/public/present-attachments/")) {
-    att = { url: String(attachment.url).slice(0, 600), name: String(attachment.name || "").slice(0, 120), type: String(attachment.type || "").slice(0, 60), kind: attachment.kind === "pdf" ? "pdf" : "image" };
+  if (attachment && typeof attachment === "object" && attachment.url) {
+    const chemin = cheminPieceJointe(attachment.url, slug, base);
+    if (chemin) {
+      // On stocke le CHEMIN validé et on RECONSTRUIT l'URL publique depuis lui — jamais l'URL
+      // telle que le client l'a envoyée. Deux barrières : ce chemin est revalidé à la suppression.
+      att = {
+        path: chemin,
+        url: `${base}/storage/v1/object/public/${BUCKET_PIECES}/${chemin}`,
+        name: String(attachment.name || "").slice(0, 120),
+        type: String(attachment.type || "").slice(0, 60),
+        kind: attachment.kind === "pdf" ? "pdf" : "image",
+      };
+    }
   }
   if ((!b && !att) || !slug) return { ok: false, status: 400 };
   const rt = Number.isFinite(+replyTo) ? Math.trunc(+replyTo) : null;
@@ -939,4 +977,4 @@ async function listPresentationsForDoc(docId, email, isAdmin, autoriseLarge) {
 module.exports = {
   reacteurDepuisJeton,
   purgerPerimees,
-  messagePublic, CHAMPS_PUBLICS, init, createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent };
+  messagePublic, CHAMPS_PUBLICS, cheminPieceJointe, init, createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent };
