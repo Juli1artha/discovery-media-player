@@ -115,6 +115,16 @@ Parcours guidé par l'agent : **purge 13 mois** après `last_at`.
   contexte hôte fournit `storage.remove` (capacité optionnelle). Sans elle, l'URL devient
   introuvable depuis le produit mais l'objet survit dans le bucket — c'est dit ici plutôt que
   simulé.
+- **La purge avance par LOTS bornés** (200 lignes, plafond 5000 par table et 500 présentations
+  par exécution) : elle sélectionne un lot d'identifiants, les supprime par `id=in.(…)`, et
+  recommence. Le rapport (`r.rapport`) porte, par table : `examinees`, `supprimees`, `tronque`
+  (il reste à faire au prochain passage). `retention.run` accepte `{ dryRun: true }` : elle
+  compte sans rien effacer — à lancer avant la première vraie purge d'un gros historique.
+- **Index** (migration 0014) : `commercial_doc_sessions(last_at)`, `doc_bot_sessions(last_at)`,
+  `commercial_doc_shares(revoked_at) where revoked`. Sur une installation VOLUMINEUSE déjà en
+  production, créez-les à la main en `CREATE INDEX CONCURRENTLY` hors migration (la migration les
+  pose en index ordinaire, ce qui verrouille brièvement l'écriture — négligeable sur une base
+  jeune, à éviter sur une grosse table active).
 - **Le recensement ne tourne pas tout seul en production** : c'est un SQL qu'un exploitant lance
   (et que la forge exécute à chaque course sur une base réelle vieillie artificiellement).
 - **« Ce qui existe » a une profondeur temporelle qu'`information_schema` n'a pas** (question du

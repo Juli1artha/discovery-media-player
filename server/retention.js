@@ -54,9 +54,41 @@ function borne(now, mois) {
   return new Date(Date.UTC(a, m, jour, d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), d.getUTCMilliseconds())).toISOString();
 }
 
-async function effacer(chemin) {
-  const lignes = await PLAYER.db.request(chemin, { method: "DELETE", headers: { Prefer: "return=representation" } });
-  return Array.isArray(lignes) ? lignes.length : 0;
+// Bornes d'exécution par défaut — un lot raisonnable, un plafond qui tient dans une fenêtre
+// serverless. L'appelant peut resserrer (dryRun, taille, plafond) ; jamais dépasser sans le dire.
+const LOT = 200, PLAFOND = 5000, PLAFOND_PRESENTATIONS = 500;
+
+// Une valeur pour `id=in.(…)` : double-guillemets, guillemet et antislash internes échappés —
+// PostgREST exige le guillemetage dès qu'une valeur porte un caractère réservé (`:` d'une clé de
+// débit, par exemple). Guillemeter TOUJOURS est correct et évite d'avoir à deviner.
+const guill = (v) => '"' + String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+
+// ⚠️ PURGE PAR LOTS BORNÉS (P2 huitième audit). On SÉLECTIONNE un lot d'identifiants (borné,
+// ordonné par la colonne de date), on les supprime par `id=in.(…)`, on recommence — jamais un
+// DELETE non borné qui ramènerait tout l'historique d'un coup (mémoire, WAL, verrous, timeout).
+// `dryRun` sélectionne sans supprimer. Le rapport remplace la liste d'identifiants : examinées,
+// supprimées, tronqué (il reste à faire au prochain passage).
+async function purgerParLots(table, filtre, colId, { dryRun = false, taille = LOT, plafond = PLAFOND } = {}) {
+  let examinees = 0, supprimees = 0;
+  const maxTours = Math.max(1, Math.ceil(plafond / taille));
+  let tours = 0, tronque = false;
+  for (;;) {
+    if (tours >= maxTours) { tronque = true; break; }
+    tours += 1;
+    const lot = await PLAYER.db.request(`${table}?${filtre}&select=${colId}&order=${colId}.asc&limit=${taille}`);
+    if (!Array.isArray(lot) || !lot.length) break;
+    examinees += lot.length;
+    if (!dryRun) {
+      const ids = lot.map((r) => r[colId]).filter((v) => v != null).map(guill);
+      if (ids.length) {
+        await PLAYER.db.request(`${table}?${colId}=in.(${ids.join(",")})`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+        supprimees += ids.length;
+      }
+    }
+    if (lot.length < taille) break;   // dernier lot
+    if (dryRun) { tronque = tours >= maxTours; if (tours >= maxTours) break; }
+  }
+  return { examinees, supprimees, tronque };
 }
 
 // ⚠️ REVALIDATION À LA SUPPRESSION — le MÊME validateur que l'écriture (server/presentations.js),
@@ -64,7 +96,7 @@ async function effacer(chemin) {
 // d'un delete : les lignes déjà en base d'avant le correctif peuvent porter une URL piégée.
 const { cheminPieceJointe: cheminSurSlug } = require("./presentations");
 
-async function purgerRetention(now) {
+async function purgerRetention(now, opts = {}) {
   let f;
   try { f = fenetresValidees(); }
   catch (e) {
@@ -73,46 +105,65 @@ async function purgerRetention(now) {
     return { ok: false, error: e.message };   // config douteuse → zéro DELETE
   }
   const base = String((PLAYER.config && PLAYER.config.supabaseUrl) || "");
-  const efface = {};
+  const rapport = {};
   const bJournaux = borne(now, f.journauxMois);
 
-  efface.commercial_doc_views = await effacer(`commercial_doc_views?at=lt.${enc(bJournaux)}&select=id`);
-  efface.commercial_doc_sessions = await effacer(`commercial_doc_sessions?last_at=lt.${enc(bJournaux)}&select=session_id`);
-  efface.commercial_doc_internal_sessions = await effacer(`commercial_doc_internal_sessions?last_at=lt.${enc(bJournaux)}&select=session_id`);
-  efface.doc_bot_sessions = await effacer(`doc_bot_sessions?last_at=lt.${enc(bJournaux)}&select=id`);
-  efface.player_rate_limits = await effacer(`player_rate_limits?expires_at=lt.${enc(new Date(now).toISOString())}&select=key`);
+  rapport.commercial_doc_views = await purgerParLots("commercial_doc_views", `at=lt.${enc(bJournaux)}`, "id", opts);
+  rapport.commercial_doc_sessions = await purgerParLots("commercial_doc_sessions", `last_at=lt.${enc(bJournaux)}`, "session_id", opts);
+  rapport.commercial_doc_internal_sessions = await purgerParLots("commercial_doc_internal_sessions", `last_at=lt.${enc(bJournaux)}`, "session_id", opts);
+  rapport.doc_bot_sessions = await purgerParLots("doc_bot_sessions", `last_at=lt.${enc(bJournaux)}`, "id", opts);
+  rapport.player_rate_limits = await purgerParLots("player_rate_limits", `expires_at=lt.${enc(new Date(now).toISOString())}`, "key", opts);
 
-  // Liens révoqués : seulement là où la révocation est DATÉE (0013) — sans la colonne, la purge
-  // resterait muette plutôt que d'inventer une borne depuis l'âge du lien.
+  // Liens révoqués : seulement là où la révocation est DATÉE (0013).
   const dateDispo = await require("./schema").attendue("revocationDatee");
-  efface.commercial_doc_shares = dateDispo
-    ? await effacer(`commercial_doc_shares?revoked=eq.true&revoked_at=lt.${enc(borne(now, f.liensRevoquesMois))}&select=slug`)
-    : 0;
+  rapport.commercial_doc_shares = dateDispo
+    ? await purgerParLots("commercial_doc_shares", `revoked=eq.true&revoked_at=lt.${enc(borne(now, f.liensRevoquesMois))}`, "slug", opts)
+    : { examinees: 0, supprimees: 0, tronque: false };
 
-  // Présentations mortes : la ligne, ses messages, ses présences — et les fichiers du bucket si
-  // l'hôte fournit storage.remove (capacité OPTIONNELLE : sans elle, la limite est écrite dans
-  // RETENTION.md plutôt que simulée ici).
+  // Présentations mortes : bornées à PLAFOND_PRESENTATIONS par exécution ; la ligne, ses messages,
+  // ses présences — et les fichiers du bucket si storage.remove est fourni (OPTIONNELLE).
   const bPres = borne(now, f.presentationsMois);
-  const mortes = await PLAYER.db.request(`doc_presentations?active=eq.false&updated_at=lt.${enc(bPres)}&select=slug`);
-  efface.doc_presentations = 0; efface.doc_presentation_messages = 0;
-  efface.doc_presentation_attendees = 0; efface.pieces_jointes = 0;
+  const mortes = await PLAYER.db.request(`doc_presentations?active=eq.false&updated_at=lt.${enc(bPres)}&select=slug&order=slug.asc&limit=${PLAFOND_PRESENTATIONS}`);
+  const presRapport = { examinees: 0, supprimees: 0, messages: 0, presences: 0, fichiers: 0, fichiersErreur: 0, tronque: Array.isArray(mortes) && mortes.length >= PLAFOND_PRESENTATIONS };
   const retirer = PLAYER.storage && typeof PLAYER.storage.remove === "function" ? PLAYER.storage.remove.bind(PLAYER.storage) : null;
   for (const p of (Array.isArray(mortes) ? mortes : [])) {
     const slug = p && p.slug; if (!slug) continue;
-    if (retirer) {
+    presRapport.examinees += 1;
+    if (retirer && !opts.dryRun) {
       const jointes = await PLAYER.db.request(`doc_presentation_messages?slug=eq.${enc(slug)}&attachment=not.is.null&select=attachment`);
       for (const j of (Array.isArray(jointes) ? jointes : [])) {
         const url = j && j.attachment && (typeof j.attachment === "object" ? j.attachment.url : j.attachment);
         const chemin = cheminSurSlug(url, slug, base);
         if (!chemin) continue;   // hors du dossier du slug → jamais supprimé (barrière 2)
-        try { if (await retirer("present-attachments", chemin)) efface.pieces_jointes += 1; } catch { /* le fichier survit, la ligne part quand même — limite dite */ }
+        try { if (await retirer("present-attachments", chemin)) presRapport.fichiers += 1; } catch { presRapport.fichiersErreur += 1; /* le fichier survit, la ligne part */ }
       }
     }
-    efface.doc_presentation_messages += await effacer(`doc_presentation_messages?slug=eq.${enc(slug)}&select=id`);
-    efface.doc_presentation_attendees += await effacer(`doc_presentation_attendees?slug=eq.${enc(slug)}&select=attendee_key`);
-    efface.doc_presentations += await effacer(`doc_presentations?slug=eq.${enc(slug)}&select=slug`);
+    if (!opts.dryRun) {
+      presRapport.messages += (await purgerParLots("doc_presentation_messages", `slug=eq.${enc(slug)}`, "id", opts)).supprimees;
+      presRapport.presences += (await purgerParLots("doc_presentation_attendees", `slug=eq.${enc(slug)}`, "attendee_key", opts)).supprimees;
+    }
+    if (!opts.dryRun) {
+      presRapport.supprimees += (await purgerParLots("doc_presentations", `slug=eq.${enc(slug)}`, "slug", opts)).supprimees;
+    }
   }
-  return { ok: true, efface };
+  rapport.presentations = presRapport;
+
+  // `efface` : l'ANCIENNE forme (table → nombre supprimé), dérivée du rapport — les appelants et
+  // essais existants continuent de lire `r.efface.commercial_doc_views`. Le rapport détaillé vit
+  // à côté, sous `r.rapport`.
+  const efface = {
+    commercial_doc_views: rapport.commercial_doc_views.supprimees,
+    commercial_doc_sessions: rapport.commercial_doc_sessions.supprimees,
+    commercial_doc_internal_sessions: rapport.commercial_doc_internal_sessions.supprimees,
+    doc_bot_sessions: rapport.doc_bot_sessions.supprimees,
+    player_rate_limits: rapport.player_rate_limits.supprimees,
+    commercial_doc_shares: rapport.commercial_doc_shares.supprimees,
+    doc_presentations: presRapport.supprimees,
+    doc_presentation_messages: presRapport.messages,
+    doc_presentation_attendees: presRapport.presences,
+    pieces_jointes: presRapport.fichiers,
+  };
+  return { ok: true, dryRun: !!opts.dryRun, efface, rapport };
 }
 
 // Balayage opportuniste : au plus UN par fenêtre de 24 h (le verrou est le compteur de débit

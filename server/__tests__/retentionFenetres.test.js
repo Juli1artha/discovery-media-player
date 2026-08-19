@@ -18,6 +18,7 @@ function harnais(retentionCfg) {
       async request(chemin, opts = {}) {
         if ((opts.method || "GET") === "DELETE") { suppressions.push(chemin); return []; }
         if (chemin.startsWith("commercial_doc_shares?select=revoked_at")) return [];
+        if (chemin.startsWith("commercial_doc_views?at=lt")) return [{ id: "v1" }];   // une vieille ligne → un lot
         return [];
       },
       async selectAll() { return []; },
