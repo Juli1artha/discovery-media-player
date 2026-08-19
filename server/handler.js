@@ -847,7 +847,7 @@ var Map3DD=(function(){
     var svb=document.getElementById('mapSV'); if(svb&&!svb._w){svb._w=1;svb.addEventListener('click',function(){ if(!map)return; var c=useG?[map.getCenter().lat(),map.getCenter().lng()]:[map.getCenter().lat,map.getCenter().lng]; goSV(c); });}
     var tm=document.getElementById('mapToMap'); if(tm&&!tm._w){tm._w=1;tm.addEventListener('click',toMap);} }
   function doSearch(text){ text=(text||'').trim(); var res=document.getElementById('mapRes'); if(!text||!res)return; res.innerHTML='<div style="padding:9px 14px;color:#888;font-size:12px">Recherche…</div>';
-    fetch('https://nominatim.openstreetmap.org/search?format=json&limit=5&q='+encodeURIComponent(text),{headers:{Accept:'application/json'}}).then(function(r){return r.json();}).then(function(l){ if(!l||!l.length){res.innerHTML='<div style="padding:9px 14px;color:#888;font-size:12px">Aucun résultat.</div>';return;} res.innerHTML=l.map(function(o){return '<button data-lat="'+o.lat+'" data-lng="'+o.lon+'">'+String(o.display_name||'').replace(/</g,'&lt;')+'</button>';}).join(''); }).catch(function(){res.innerHTML='<div style="padding:9px 14px;color:#c0392b;font-size:12px">Recherche indisponible.</div>';}); }
+    fetch('https://nominatim.openstreetmap.org/search?format=json&limit=5&q='+encodeURIComponent(text),{headers:{Accept:'application/json'}}).then(function(r){return r.json();}).then(function(l){ if(!l||!l.length){res.innerHTML='<div style="padding:9px 14px;color:#888;font-size:12px">Aucun résultat.</div>';return;} res.innerHTML=l.map(function(o){var la=Number(o.lat),lo=Number(o.lon);if(!isFinite(la)||!isFinite(lo))return '';return '<button data-lat="'+la+'" data-lng="'+lo+'">'+String(o.display_name||'').replace(/</g,'&lt;')+'</button>';}).join(''); }).catch(function(){res.innerHTML='<div style="padding:9px 14px;color:#c0392b;font-size:12px">Recherche indisponible.</div>';}); }
   // ── Street View (Google) ─────────────────────────────────────────────────────────────────────────
   function tempHint(t){ var h=document.getElementById('mapHint'); if(h){h.textContent=t; setTimeout(function(){ if(h.textContent===t)h.textContent=(isPres?'':'Vue du présentateur — en direct'); },2600);} }
   // Le présentateur passe en Street View depuis le centre de la carte : on cherche le panorama le plus proche.
@@ -3924,8 +3924,13 @@ async function handler(req, res) {
     // session casserait la page avant qu'elle existe. L'URL porte la version → cache immuable.
     if (req.method === "GET" && (String(q.asset || "") === "pdf" || String(q.asset || "") === "pdfworker")) {
       const fichier = q.asset === "pdf" ? "pdfjs-dist/build/pdf.min.mjs" : "pdfjs-dist/build/pdf.worker.min.mjs";
-      let octets = null;
-      try { octets = require("node:fs").readFileSync(require.resolve(fichier)); } catch { /* dépendance absente */ }
+      // Lu UNE fois par processus : la dépendance est épinglée exacte, les octets ne changent
+      // qu'avec un déploiement — relire 1,7 Mo sur disque à chaque requête ne prouvait rien.
+      if (!global.__actifsPdfjs) global.__actifsPdfjs = Object.create(null);
+      let octets = global.__actifsPdfjs[fichier] || null;
+      if (!octets) {
+        try { octets = global.__actifsPdfjs[fichier] = require("node:fs").readFileSync(require.resolve(fichier)); } catch { /* dépendance absente */ }
+      }
       if (!octets) { res.statusCode = 404; res.end("actif indisponible"); return; }
       res.statusCode = 200;
       res.setHeader("Content-Type", "text/javascript; charset=utf-8");
