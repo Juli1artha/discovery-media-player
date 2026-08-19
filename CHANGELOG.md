@@ -10,6 +10,18 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.74] — 2026-08-19
+
+### Changed
+
+- **Internal refactor, no behavior change: the page templates leave `handler.js`** (4,362 →
+  3,029 lines). Live layer, map overlay, sales-agent assets, pinned third parties and text
+  helpers now live in their own flat `server/` modules — flat on purpose: several CI guards
+  target `server/*.js`, and a subdirectory would have silently emptied them. The source-text
+  tests read the concatenation of handler + templates (a completeness test enumerates
+  `gabarit-*.js` from disk), so a moved template never leaves their sight. 856 + 19 tests green,
+  byte-identical templates.
+
 ## [0.1.73] — 2026-08-19
 
 ### Fixed
