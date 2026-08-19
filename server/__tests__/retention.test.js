@@ -32,7 +32,7 @@ function harnais({ colonneDate = true, remove = null, lignes = {} } = {}) {
           for (const [prefixe, pool] of Object.entries(pools)) {
             const tablePrefixe = prefixe.split("?")[0];
             if (chemin.startsWith(tablePrefixe + "?") && chemin.includes("=in.(")) {
-              const dedans = chemin.slice(chemin.indexOf("in.(") + 4, chemin.lastIndexOf(")"));
+              const dedans = decodeURIComponent(chemin.slice(chemin.indexOf("in.(") + 4, chemin.lastIndexOf(")")));
               const dedans2 = (r) => dedans.includes('"' + String(r.id ?? r.session_id ?? r.key) + '"');
               rendues = pool.filter(dedans2);
               pools[prefixe] = pool.filter((r) => !dedans2(r));
