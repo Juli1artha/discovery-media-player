@@ -315,7 +315,7 @@ const LIVE_CSS = `
 const LIVE_BAR = `<button class=pres id=presBtn><span class=dot></span><span id=presCount>1</span><span class=pres-avs id=presAvs></span></button><button class="ic chatBtn" id=chatBtn title="Discussion"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.9-.9L3 21l1.9-5.6A8.5 8.5 0 1 1 21 11.5z"/></svg><span class=chat-badge id=chatBadge></span></button>`;
 
 // Panneau chat (à droite) + popover présence.
-const LIVE_PANEL = `<div class="chat hidden" id=chatPanel><div class=chat-grip id=chatGrip></div><div class=chat-h><span class=chat-h-t>Discussion</span><button class=cd id=chatMute title="Couper les notifications du chat"><svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2 stroke-linecap=round stroke-linejoin=round><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button><button class=cd id=chatLockBtn title="Verrouiller le chat (lecture seule)" style="display:none"><svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2 stroke-linecap=round stroke-linejoin=round><rect x=5 y=11 width=14 height=10 rx=2 /><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></button><button class=cd id=chatDock title="Ancrer / détacher le chat"><svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2 stroke-linecap=round stroke-linejoin=round><rect x=3 y=4 width=18 height=16 rx=2 /><line x1=15 y1=4 x2=15 y2=20 /></svg></button><button class=cx id=chatClose title=Fermer>×</button></div><div class=chat-msgs id=chatMsgs></div><div class=chat-typing id=chatTyping></div><div class=chat-locked id=chatLocked style="display:none">Chat en lecture seule</div><div class=chat-reply id=chatReply style="display:none"></div><div class=mentionpop id=mentionPop></div><div class=chat-in><button class=chat-attach id=chatAttach title="Joindre une image ou un PDF"><svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2.2 stroke-linecap=round><line x1=12 y1=6 x2=12 y2=18 /><line x1=6 y1=12 x2=18 y2=12 /></svg></button><input type=file id=chatFile accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" style="display:none"><div class=chat-field><input id=chatText placeholder="Écrire un message…" maxlength=2000 autocomplete=off><button id=chatSend title=Envoyer><svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2.4 stroke-linecap=round stroke-linejoin=round><line x1=12 y1=20 x2=12 y2=6 /><polyline points="6 12 12 6 18 12" /></svg></button></div></div></div><div class=pres-pop id=presList></div><div class=emojipick id=emojiPick></div><button class=chatfab id=chatFab title="Discussion"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.9-.9L3 21l1.9-5.6A8.5 8.5 0 1 1 21 11.5z"/></svg><span class=chatfab-badge id=chatFabBadge></span></button><div class=chatpeek id=chatPeek></div><div class=lmodal id=lModal><div class=lmodal-box><div class=lmodal-t id=lModalT>Confirmer ?</div><div class=lmodal-d id=lModalD></div><div class=lmodal-a><button class=lmodal-cancel id=lModalNo>Annuler</button><button class=lmodal-ok id=lModalYes>Confirmer</button></div></div></div>`;
+const LIVE_PANEL = `<div class="chat hidden" id=chatPanel><div class=chat-grip id=chatGrip></div><div class=chat-h><span class=chat-h-t>Discussion</span><button class=cd id=chatMute title="Couper les notifications du chat"><svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2 stroke-linecap=round stroke-linejoin=round><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button><button class=cd id=chatLockBtn title="Verrouiller le chat (lecture seule)" style="display:none"><svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2 stroke-linecap=round stroke-linejoin=round><rect x=5 y=11 width=14 height=10 rx=2 /><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></button><button class=cd id=chatDock title="Ancrer / détacher le chat"><svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2 stroke-linecap=round stroke-linejoin=round><rect x=3 y=4 width=18 height=16 rx=2 /><line x1=15 y1=4 x2=15 y2=20 /></svg></button><button class=cx id=chatClose title=Fermer>×</button></div><div class=chat-msgs id=chatMsgs role=log aria-label="Messages de la discussion"></div><div class=chat-typing id=chatTyping></div><div class=chat-locked id=chatLocked style="display:none">Chat en lecture seule</div><div class=chat-reply id=chatReply style="display:none"></div><div class=mentionpop id=mentionPop></div><div class=chat-in><button class=chat-attach id=chatAttach title="Joindre une image ou un PDF"><svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2.2 stroke-linecap=round><line x1=12 y1=6 x2=12 y2=18 /><line x1=6 y1=12 x2=18 y2=12 /></svg></button><input type=file id=chatFile accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" style="display:none"><div class=chat-field><input id=chatText placeholder="Écrire un message…" aria-label="Écrire un message" maxlength=2000 autocomplete=off><button id=chatSend title=Envoyer aria-label="Envoyer le message"><svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2.4 stroke-linecap=round stroke-linejoin=round><line x1=12 y1=20 x2=12 y2=6 /><polyline points="6 12 12 6 18 12" /></svg></button></div></div></div><div class=pres-pop id=presList></div><div class=emojipick id=emojiPick></div><button class=chatfab id=chatFab title="Discussion" aria-label="Ouvrir la discussion"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.9-.9L3 21l1.9-5.6A8.5 8.5 0 1 1 21 11.5z"/></svg><span class=chatfab-badge id=chatFabBadge></span></button><div class=chatpeek id=chatPeek></div><div class=lmodal id=lModal><div class=lmodal-box><div class=lmodal-t id=lModalT>Confirmer ?</div><div class=lmodal-d id=lModalD></div><div class=lmodal-a><button class=lmodal-cancel id=lModalNo>Annuler</button><button class=lmodal-ok id=lModalYes>Confirmer</button></div></div></div>`;
 
 // JS partagé : présence + chat via Supabase Realtime. Live.connect(slug, me) / Live.disconnect().
 const LIVE_JS = `
@@ -2697,6 +2697,7 @@ ${LEGAL_CSS}
       var scale=Math.min(5,targetWidth()/page.getViewport({scale:1}).width);
       var v=page.getViewport({scale:scale});
       var c=document.createElement('canvas');
+      c.setAttribute('role','img'); c.setAttribute('aria-label','Page '+n);
       c.width=Math.floor(v.width*dpr); c.height=Math.floor(v.height*dpr);   // backing store HD → net comme du natif
       c.style.width=v.width+'px'; c.style.height=v.height+'px';
       el.style.height=''; el.classList.remove('ph'); el.textContent=''; el.style.width=v.width+'px'; el.appendChild(c); // classList.remove (PAS className=) : ne pas écraser .cur — en mode une-page la page disparaissait une fois rendue (refit après réduction/réouverture du chat)
@@ -2836,6 +2837,7 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
   .lword{font-weight:800;font-size:20px;color:#fff;animation:lp 1.6s ease-in-out infinite}
   @keyframes lp{0%,100%{opacity:.5}50%{opacity:1}}
   .lsub{font-size:11.5px;color:#aaa69d;letter-spacing:.03em}
+  .srol{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   .ended{position:absolute;inset:0;background:rgba(20,18,15,.93);display:none;align-items:center;justify-content:center;z-index:6;text-align:center;padding:24px}
   .ended .ettl{font-size:20px;font-weight:800;margin-bottom:8px}
   .ended .esub{font-size:13.5px;color:#bbb}
@@ -2865,6 +2867,7 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
   <div class=lrow>
     <div class=lmain>
       <div class=stage id=stage>
+        <div id=sr aria-live=polite class=srol></div>
         <div id=page></div>
         ${MAP_MARKUP}
         <div id=load><div class=lbox>${logo ? `<img src="${logo}" alt="${esc(PLAYER.branding.loaderName || "Chargement")}">` : (PLAYER.branding.loaderName ? `<div class=lword>${esc(PLAYER.branding.loaderName)}</div>` : "")}<div class=lsub>Connexion à la présentation…</div></div></div>
@@ -2883,11 +2886,13 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
     var PDF=null, total=0, cur=CFG.page||1, ready=false;
     var stage=document.getElementById('stage'), pageEl=document.getElementById('page');
     function hideLoader(){ var l=document.getElementById('load'); if(l){ l.classList.add('hide'); setTimeout(function(){ if(l.parentNode)l.parentNode.removeChild(l); },450);} }
-    function ended(){ document.getElementById('ended').style.display='flex'; }
+    function ended(){ document.getElementById('ended').style.display='flex';
+      var sr=document.getElementById('sr'); if(sr)sr.textContent='Présentation terminée.'; }
     function show(n){
       if(!PDF) return;
       n=Math.max(1,Math.min(total||1, n||1)); cur=n;
       var c=document.getElementById('cur'); if(c)c.textContent=n;
+      var sr=document.getElementById('sr'); if(sr)sr.textContent='Page '+n+(total>1?' sur '+total:'');
       // Une image tient sur une page : on la pose, ajustée au cadre, et le reste de la vue —
       // synchronisation, présence, chat — continue de fonctionner à l identique.
       if(PDF.image){
@@ -2906,6 +2911,7 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
         var scale=Math.min(availW/v1.width, availH/v1.height); // fit entier → une page à l'écran
         var dpr=window.devicePixelRatio||1, vp=page.getViewport({scale:scale});
         var cv=document.createElement('canvas'); cv.width=Math.floor(vp.width*dpr); cv.height=Math.floor(vp.height*dpr);
+        cv.setAttribute('role','img'); cv.setAttribute('aria-label','Page '+n+(total>1?' sur '+total:''));
         cv.style.width=vp.width+'px'; cv.style.height=vp.height+'px';
         page.render({canvasContext:cv.getContext('2d'),viewport:vp,transform:dpr!==1?[dpr,0,0,dpr,0,0]:null});
         pageEl.innerHTML=''; pageEl.appendChild(cv);
@@ -3074,7 +3080,7 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
     if(saved&&saved.name){ Live.connect(slug, saved); return; }
     // Externe : on demande le nom pour participer.
     var o=document.createElement('div'); o.className='join';
-    o.innerHTML='<div class=join-card><h4>Rejoindre la présentation</h4><p>Votre nom pour participer à la discussion.</p><input id=jName placeholder="Votre nom" maxlength=60 autocomplete=name><input id=jMail placeholder="Email (facultatif)" maxlength=120 autocomplete=email><button id=jGo>Rejoindre</button></div>';
+    o.innerHTML='<div class=join-card><h4>Rejoindre la présentation</h4><p>Votre nom pour participer à la discussion.</p><input id=jName placeholder="Votre nom" aria-label="Votre nom" maxlength=60 autocomplete=name><input id=jMail placeholder="Email (facultatif)" aria-label="Email, facultatif" maxlength=120 autocomplete=email><button id=jGo>Rejoindre</button></div>';
     document.body.appendChild(o);
     var n=o.querySelector('#jName'); try{ n.focus(); }catch(e){}
     function go(){ var name=(n.value||'').trim()||'Invité'; var email=(o.querySelector('#jMail').value||'').trim(); var me2={name:name,email:email,avatar:'',member:false,role:'viewer'}; try{ localStorage.setItem(LIVECFG.guestKey||'dmp-present-me',JSON.stringify(me2)); }catch(e){} o.parentNode&&o.parentNode.removeChild(o); Live.connect(slug, me2); }
