@@ -10,6 +10,29 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.71] — 2026-08-19
+
+### Added
+
+- **Data retention, as a two-sided contract.** `docs/RETENTION.md` declares a policy for every
+  personal-data-shaped column — and a CI guard enumerates the LIVE schema (`information_schema`,
+  classified by forms: email, ip, ua, name, body, session…) and refuses any column without a
+  written policy, deny-by-default. `server/retention.js` purges by windows (13 months for reading
+  journals — including the clear-text IP —, 12 months for dead presentations with their messages,
+  attendees and bucket attachments, 13 months for revoked links; host-adjustable via
+  `config.retention`) and declares its counts from the rows each `DELETE` returned. The other
+  half, `supabase/recensement-retention.sql`, recounts in raw SQL what remains in the claimed
+  perimeter — sharing no function, filter or transport with the purge: two texts that cannot be
+  wrong the same way. CI runs both against a real Postgres: seeded old rows must be declared
+  exactly, fresh twins must survive (over-deleting is as wrong as forgetting), and the census
+  must find nothing.
+- Migration `0013`: `revoked_at` dates a link's revocation — "13 months after revocation" was
+  uncomputable without it. Existing revoked links start their clock at the migration. Trigger:
+  `retention.run` (trusted host or admin) plus an opportunistic sweep at most once per 24 h.
+- First `DELETE` in the product's database surface — every call bounded by an age filter.
+  `storage.remove` joins the standalone context as an optional capability (attachments of purged
+  presentations); without it the rows still go and the limit is written, not simulated.
+
 ## [0.1.70] — 2026-08-19
 
 ### Fixed
