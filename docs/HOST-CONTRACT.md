@@ -35,6 +35,7 @@ need.
   "frameAncestors": ["'self'", "https://*.vercel.app", "https://app.example.com"],
   "separateIssuer": true,
   "internalStrict": true,
+  "retentionSweep": false,
   "hostShare": true,
   "hostMail": true,
   "plugins": { "bot": false, "visitors": false, "brandIntro": false, "botBrowser": false, "providerQuotas": false },
@@ -94,6 +95,12 @@ exactly the monitoring case where "no data" would otherwise read as "all clear".
 
 ⚠️ **`incomplet` wins over `partiel`**: a missing column is a positive fact and settles the verdict
 on its own, even when the rest has not been checked.
+
+⚠️ **`retentionSweep`** says whether the automatic retention purge is *armed*
+(`config.retention.balayage === true`). The `retention` capability only says the instance *can*
+purge; this boolean says whether it *does*, on its own, once a day. Default `false` — nothing is
+deleted unless an operator wrote the policy. A cockpit can read this to know if an instance is
+subject to automatic deletion, instead of inferring it from a log.
 
 ⚠️ **`internalStrict: false` means internal identity comes from the browser.** In transitional
 mode the internal-analytics route accepts `docId`, `email` and `name` as the client declares them —

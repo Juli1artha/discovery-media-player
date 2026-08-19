@@ -138,7 +138,7 @@ jobs:
               process.exit(1);
             }
             // Les booléens de configuration doivent apparaître aussi : ils disent ce qui est POSÉ.
-            for (const champ of ["separateIssuer", "hostShare", "hostMail"]) {
+            for (const champ of ["separateIssuer", "hostShare", "hostMail", "retentionSweep"]) {
               if (!src.includes(champ + ":")) { console.error("::error::" + champ + " absent du code"); process.exit(1); }
               if (!doc.includes("\"" + champ + "\"")) { console.error("::error::" + champ + " absent du contrat"); process.exit(1); }
             }

@@ -595,6 +595,12 @@ async function handler(req, res) {
         // MESURABLE : un cockpit peut refuser une instance non stricte, au lieu de le découvrir en
         // lisant un journal. Demandé par le second hôte (cinquième audit, P1-4).
         internalStrict: !!(PLAYER.config && PLAYER.config.internalStrict),
+        // ⚠️ LE BALAYAGE DE RÉTENTION EST-IL ARMÉ ? La capacité `retention` dit que l'instance PEUT
+        // purger ; ce booléen dit si le balayage automatique TOURNE (`config.retention.balayage`).
+        // Sans lui, une instance armée est indiscernable d'une instance éteinte — et une purge qui
+        // supprime se compose mal avec l'ignorance de savoir si l'on est concerné (signalé par le
+        // second hôte). Défaut false, comme la décision par défaut : rien ne s'efface tout seul.
+        retentionSweep: !!(PLAYER.config && PLAYER.config.retention && PLAYER.config.retention.balayage === true),
         // ⚠️ L'ÉTAT DU SCHÉMA, LÀ OÙ ON REGARDE. Une colonne absente était signalée par un
         // `console.warn`, une fois par processus : sur une fonction serverless, une ligne perdue
         // dans une sortie que personne n'ouvre tant que tout a l'air de marcher — et « tout a
