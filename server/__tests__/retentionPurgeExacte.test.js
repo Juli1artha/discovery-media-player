@@ -163,3 +163,44 @@ describe("le rapport dryRun est complet pour les présentations", () => {
     expect(r.efface.doc_presentation_messages, "efface.* reste 0 en simulation").toBe(0);
   });
 });
+
+describe("le rapport tronque dit la vérité pour les présentations", () => {
+  function harnaisPres(nbMessages) {
+    const pres = poolTable("doc_presentations", "slug", 0); pres.lignes = [{ slug: "pt" }];
+    const msgs = { table: "doc_presentation_messages", col: "id", lignes:
+      Array.from({ length: nbMessages }, (_, k) => ({ id: `pt-m${k}`, slug: "pt" })) };
+    const att = { table: "doc_presentation_attendees", col: "attendee_key", lignes: [] };
+    return harnais({ pools: [pres, msgs, att] });
+  }
+
+  it("2 messages, plafond 1 → tronque true (un reste), parent gardé", async () => {
+    const h = harnaisPres(2);
+    const r = await retention.purgerRetention(Date.now(), { taille: 1, plafond: 1 });
+    expect(r.rapport.presentations.tronque, "un message reste → rapport tronqué").toBe(true);
+    expect(h.parTable.doc_presentations.lignes.length, "le parent est gardé").toBe(1);
+  });
+
+  it("le même scénario en dryRun → tronque true (la supervision voit qu'il resterait à faire)", async () => {
+    harnaisPres(2);
+    const r = await retention.purgerRetention(Date.now(), { dryRun: true, taille: 1, plafond: 1 });
+    expect(r.rapport.presentations.tronque).toBe(true);
+  });
+
+  it("exactement 1 message, plafond 1, aucun reste → tronque false, parent supprimé", async () => {
+    const h = harnaisPres(1);
+    const r = await retention.purgerRetention(Date.now(), { taille: 1, plafond: 1 });
+    expect(r.rapport.presentations.tronque, "tout est parti → non tronqué").toBe(false);
+    expect(h.parTable.doc_presentations.lignes.length, "le parent part une fois vidé").toBe(0);
+  });
+
+  it("présence tronquée sans message tronqué → rapport global tronqué", async () => {
+    const pres = poolTable("doc_presentations", "slug", 0); pres.lignes = [{ slug: "pt" }];
+    const msgs = { table: "doc_presentation_messages", col: "id", lignes: [{ id: "pt-m0", slug: "pt" }] };
+    const att = { table: "doc_presentation_attendees", col: "attendee_key", lignes:
+      [{ attendee_key: "pt-a0", slug: "pt" }, { attendee_key: "pt-a1", slug: "pt" }] };
+    const h = harnais({ pools: [pres, msgs, att] });
+    const r = await retention.purgerRetention(Date.now(), { taille: 1, plafond: 1 });
+    expect(r.rapport.presentations.tronque, "une présence reste → tronqué même si les messages sont finis").toBe(true);
+    expect(h.parTable.doc_presentations.lignes.length, "parent gardé tant qu'une présence reste").toBe(1);
+  });
+});
