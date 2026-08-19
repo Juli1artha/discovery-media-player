@@ -10,6 +10,30 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.82] — 2026-08-19
+
+### Fixed
+
+- **The retention report's `tronque` now tells the truth for presentations.** It came only from the
+  presentation-list length and budget exhaustion, never from the child purges' truncation — a
+  presentation kept because its messages or attendees were truncated still reported `tronque:
+  false`. Data stayed safe (the parent is not deleted), but supervision was wrong. Now
+  `presRapport.tronque ||= msgs.tronque || pres.tronque`, and an off-by-one is fixed (query
+  cap+1, truncate when `length > cap`, so exactly-500 presentations with none after no longer
+  false-positives).
+
+### Changed
+
+- **Container image publishing is fixed and hardened** (delivery P1): a literal `\n` in the tags
+  expression had made a single invalid tag, so the `v0.1.81` image was never published. The build
+  now pushes only the immutable versioned tag; `latest` is promoted afterward by an atomic retag
+  (`imagetools create`) with the highest git tag recomputed just before promotion; `concurrency`
+  serializes publishes; the manifest and both architectures are verified, and `latest` is checked
+  to share the versioned tag's digest. The hourly job opens an issue if npm serves a version whose
+  image is missing. The `v0.1.81` image was backfilled.
+- The accessibility E2E measures the stable overlay state (`reducedMotion`, waits for animations)
+  instead of a mid-transition — no more contrast flake.
+
 ## [0.1.81] — 2026-08-19
 
 ### Fixed
