@@ -10,6 +10,34 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.78] — 2026-08-19
+
+### Security
+
+- **P1: an attachment can only name its own presentation's folder — at write AND at delete.**
+  `addMessage` accepted the client's `attachment.url` on a bare `startsWith` check; a
+  `…/present-attachments/../autre-bucket/secret.pdf` passed. The chain lay inert while the URL was
+  only ever read; the retention feature gave it teeth — `storage.remove` concatenated the path
+  into a service-role DELETE and `fetch` normalized the `..` out of the bucket. A single canonical
+  path validator now guards both barriers (path must start with `<slug>/`, signed-path alphabet,
+  rejects `.`/`..`/`%2e`/`%2f`/`%5c`/backslash/null); writes store the validated path and
+  reconstruct the URL server-side; deletion re-validates against the purged slug; `storage.remove`
+  is whitelisted to its bucket. No live exposure — retention is off everywhere by decision.
+
+### Fixed
+
+- **Retention windows are validated before any DELETE.** Non-integer, out-of-range `[1,120]`,
+  negative, zero, `NaN`, `Infinity` or string windows now fail the purge (a negative window
+  computed a *future* cutoff — mass deletion). Cutoffs are computed in UTC and clamped to the
+  month's last day (`31 Mar − 1 month` = 28 Feb, not 3 Mar).
+- **The purge runs in bounded batches** (select a capped id batch, delete by `id=in.(…)`, repeat)
+  instead of one `return=representation` delete of the whole history; a per-table report
+  (`examinees`/`supprimees`/`tronque`) and a `{ dryRun: true }` mode replace the id list.
+  Migration `0014` adds the three retention-filter indexes.
+- **An unknown POST `action` is rejected** (`400 unknown-action`) instead of falling through the
+  analytics fallback and returning `{"ok":true}` — a typo like `present-pgae` no longer looks
+  like a success. `retention` joins the `?contract=1` capabilities; `retention.run` is documented.
+
 ## [0.1.77] — 2026-08-19
 
 ### Added
