@@ -243,14 +243,27 @@ export function createTracker(options: TrackerOptions = {}): Tracker {
     post({ slug, event, page: page || current, maxPage: furthest, seconds: totalSeconds(), sessionId });
   };
 
+  // ⚠️ DRAPEAU « DIRTY » (P1 réduction de charge). Le filet périodique appelait `flush` à cadence
+  // fixe et RÉÉMETTAIT une session identique à chaque tick — même pour un onglet caché ou un lecteur
+  // inactif, dont la mesure ne bouge pas. Autant d'écritures base pour zéro information nouvelle.
+  // La signature (temps total, page la plus loin, nombre de pages) capture TOUT changement réel :
+  // le temps lu ne fait qu'augmenter, `furthest` ne fait que croître, `pageCount` est posé une fois.
+  // Un simple retour en arrière sans temps écoulé laisse la signature inchangée — et il n'y a alors
+  // rien de neuf à persister. On mémorise la dernière signature ENVOYÉE (pas seulement calculée) :
+  // c'est l'écriture qu'on veut éviter de répéter.
+  let derniereSignatureEnvoyee = "";
   const flush = () => {
     commit();
+    const totalActuel = totalSeconds();
+    const signature = `${totalActuel}|${furthest}|${pageCount}`;
+    // Rien n'a changé depuis le dernier envoi → le filet ne paie pas une écriture pour rien.
+    if (signature === derniereSignatureEnvoyee) return;
     const payload: Record<string, unknown> = {
       event: "session",
       sessionId,
       numPages: pageCount,
       maxPage: furthest,
-      totalSeconds: totalSeconds(),
+      totalSeconds: totalActuel,
       pagesTime: roundedPageTimes(),
     };
     if (internal) {
@@ -264,6 +277,10 @@ export function createTracker(options: TrackerOptions = {}): Tracker {
     } else {
       payload.slug = slug;
     }
+    // La signature n'est retenue que quand l'envoi part réellement (le transport est best-effort ;
+    // s'il jette, `post` avale — on n'aggrave pas en oubliant qu'on a « envoyé »). Un tick suivant
+    // à mesure inchangée sera alors sauté ; un tick à mesure nouvelle repartira quoi qu'il arrive.
+    derniereSignatureEnvoyee = signature;
     post(payload);
   };
 

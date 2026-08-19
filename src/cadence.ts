@@ -20,10 +20,23 @@
 //
 // Trouvé par le second hôte, sur son instance, en cherchant pourquoi sa table restait vide.
 
-/** Intervalle entre deux écritures de session, côté navigateur. */
-export const SESSION_INTERVAL_MS = 12_000;
+/**
+ * Intervalle PLANCHER entre deux écritures de session, côté navigateur.
+ *
+ * ⚠️ C'EST LA CADENCE LA PLUS RAPIDE, ET C'EST ELLE QUI DIMENSIONNE LE QUOTA. Deux réductions de
+ * charge s'appuient dessus (P1 « réduction de charge ») :
+ *   1. la cadence est passée de 12 s à 30 s — 2,5× moins d'écritures même pour un lecteur qui lit
+ *      sans discontinuer ;
+ *   2. le traceur n'émet plus au tick QUE si la mesure a changé depuis le dernier envoi (drapeau
+ *      « dirty », cf. `tracking.ts`) : un onglet caché, un lecteur inactif, un document laissé
+ *      ouvert n'écrivent plus une session à l'identique toutes les 30 s.
+ * Le worst-case reste UN envoi par intervalle plancher pour un lecteur pleinement actif — c'est ce
+ * que le quota ci-dessous couvre. Le drapeau dirty ne fait que descendre EN DESSOUS de ce plafond ;
+ * il ne le déplace pas, donc il n'entre pas dans le calcul du quota (sûr par construction).
+ */
+export const SESSION_INTERVAL_MS = 30_000;
 
-/** Ce qu'un seul lecteur émet en une heure, par construction. */
+/** Ce qu'un seul lecteur émet AU PIRE en une heure (cadence plancher), par construction. */
 export const SESSION_WRITES_PER_HOUR = Math.ceil(3_600_000 / SESSION_INTERVAL_MS);
 
 /**
