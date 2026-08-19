@@ -207,7 +207,7 @@ estimated:
 
 | | |
 |---|---|
-| Call sites | **54**, in five files |
+| Call sites | **55**, in five files |
 | Tables | **9** |
 | Verbs | `GET`, `POST`, `PATCH`, one `HEAD`, and `DELETE` only in `server/retention.js` — every one bounded by an age filter (`docs/RETENTION.md`) |
 | Embedded selects (`select=*,other(*)`) | **0** |
@@ -219,7 +219,7 @@ Every query is of the shape `table?column=eq.value&select=*&limit=1`. **Nothing 
 semantics** — the coupling is syntactic, not semantic, and a guard keeps it that way: CI refuses
 the advanced syntax above, so the porting cost cannot quietly grow.
 
-⚠️ **What a repository layer would and would not buy.** Moving those 54 sites behind ~25 named
+⚠️ **What a repository layer would and would not buy.** Moving those 55 sites behind ~25 named
 methods is a real but bounded refactor. It would *not* make the product portable on its own: live
 presentation chat uses `supabase-js` realtime in the **browser**, and a chat attachment is
 uploaded with `uploadToSignedUrl`. A host implementing 25 methods and then discovering that would
