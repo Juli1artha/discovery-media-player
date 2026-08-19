@@ -82,7 +82,17 @@ async function purgerRetention(now) {
 // Balayage opportuniste : au plus UN par fenêtre de 24 h (le verrou est le compteur de débit
 // partagé — même mécanique que les limites, donc multi-processus sans coordination). Jamais
 // bloquant : la route qui l'héberge répond sans l'attendre, l'échec se capture.
+//
+// ⚠️ OPT-IN STRICT (`config.retention.balayage === true`), et le second hôte a payé pour la
+// règle avant qu'elle existe : il consomme le contexte autonome TEL QUEL — « nous n'avons rien
+// à brancher parce que nous n'avons rien débranché » — et le premier envoi de lien après sa
+// montée aurait balayé selon NOS fenêtres par défaut, sans que personne n'ait rien décidé.
+// Les fenêtres sont des décisions MÉTIER (ce qu'un conseiller peut encore prouver à un client) ;
+// une suppression n'agit donc que là où un exploitant l'a écrite. `retention.run` reste
+// disponible sans opt-in : appeler la route EST la décision.
 function tick() {
+  const r = PLAYER.config && PLAYER.config.retention;
+  if (!r || r.balayage !== true) return;
   Promise.resolve()
     .then(() => PLAYER.limits.allow("retention:sweep", 1, 86400))
     .then((permis) => { if (permis) return purgerRetention(Date.now()); })
