@@ -590,11 +590,13 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
       journal: (document.querySelector("#chatMsgs") || {}).getAttribute?.("role") || null,
       saisie: (document.querySelector("#chatText") || {}).getAttribute?.("aria-label") || null,
       envoi: (document.querySelector("#chatSend") || {}).getAttribute?.("aria-label") || null,
+      dialogue: (document.querySelector("#lModal .lmodal-box") || {}).getAttribute?.("role") || null,
     }));
     expect(sem.annonceur, "sans région vivante, un changement de page est un événement muet").toBe("polite");
     expect(sem.journal, "un fil de chat sans role=log n'annonce jamais un message").toBe("log");
     expect(sem.saisie).toBeTruthy();
     expect(sem.envoi).toBeTruthy();
+    expect(sem.dialogue, "un dialogue qui ne se déclare pas laisse le lecteur d'écran « dans la page »").toBe("dialog");
     await page.close();
   }, 60_000);
 
