@@ -21,17 +21,23 @@ function harnais() {
   const supprimes = [];
   const ctx = {
     db: {
-      async request(chemin, o) {
+      async request(chemin, o = {}) {
         if (chemin.includes("select=client_key&limit=0")) return [];
         if (chemin.startsWith("doc_presentations?active=eq.false")) return [{ slug: "s-a" }];
         if (chemin.startsWith("doc_presentations?")) return [{ slug: "s-a", active: true, control_hash: "h" }];
-        if (chemin.startsWith("doc_presentation_messages?slug=eq.s-a&attachment")) {
-          // Une pièce jointe LÉGITIME du slug, plus une PIÉGÉE stockée par un attaquant.
+        // Le moteur lit id+attachment ENSEMBLE, paginé par curseur (id.asc). Une pièce jointe
+        // LÉGITIME du slug, plus deux PIÉGÉES stockées par un attaquant. Après la 1re page, le
+        // curseur `id=gt.m3` ne rend plus rien.
+        if (o.method !== "POST" && o.method !== "DELETE" && chemin.startsWith("doc_presentation_messages?slug=eq.s-a") && chemin.includes("select=id,attachment")) {
+          if (/id=gt\./.test(chemin)) return [];
           return [
-            { attachment: `${PREFIXE}s-a/1-photo.png` },
-            { attachment: `${PREFIXE}../autre-bucket/secret.pdf` },
-            { attachment: `${PREFIXE}s-b/vol.png` },
+            { id: "m1", attachment: `${PREFIXE}s-a/1-photo.png` },
+            { id: "m2", attachment: `${PREFIXE}../autre-bucket/secret.pdf` },
+            { id: "m3", attachment: `${PREFIXE}s-b/vol.png` },
           ];
+        }
+        if (o && o.method === "DELETE" && chemin.startsWith("doc_presentation_messages")) {
+          return chemin.includes("select=") ? [{ id: "m1" }, { id: "m2" }, { id: "m3" }] : [];
         }
         if (o && o.method === "POST" && chemin.startsWith("doc_presentation_messages")) {
           ecrits.push(o.body[0]); return [{ id: ecrits.length, author_hash: "x", attachment: o.body[0].attachment }];
