@@ -15,7 +15,14 @@ ni fonction de périmètre, ni filtre) :
 
 > ⚠️ **Fenêtres proposées, à valider par l'exploitant.** Les durées ci-dessous sont des défauts
 > raisonnés (journaux analytiques : 13 mois, comparaison année sur année ; archives de
-> présentation : 12 mois après la fin). Un hôte les ajuste via `retentionMois` dans son contexte.
+> présentation : 12 mois après la fin). Un hôte les ajuste via `config.retention`.
+>
+> ⚠️ **Le balayage automatique est OPT-IN STRICT** : il ne tourne que si l'hôte écrit
+> `config.retention.balayage: true`. Un hôte qui consomme le contexte autonome tel quel hérite de
+> toutes ses capacités par défaut — « rien à brancher parce que rien n'a été débranché » — et une
+> suppression est une décision métier : elle n'agit que là où un exploitant l'a écrite. L'action
+> `retention.run` (hôte de confiance ou admin) reste disponible sans opt-in : l'appeler EST la
+> décision.
 
 ## Journaux de lecture (population externe)
 
@@ -106,3 +113,10 @@ Parcours guidé par l'agent : **purge 13 mois** après `last_at`.
   simulé.
 - **Le recensement ne tourne pas tout seul en production** : c'est un SQL qu'un exploitant lance
   (et que la forge exécute à chaque course sur une base réelle vieillie artificiellement).
+- **« Ce qui existe » a une profondeur temporelle qu'`information_schema` n'a pas** (question du
+  second hôte, sans réponse mécanique) : une colonne supprimée du schéma sort du périmètre des
+  deux textes, mais sa donnée peut survivre dans un dump, une sauvegarde ou une table d'archive.
+  Ce contrat couvre la BASE VIVANTE ; les copies (sauvegardes, exports, dumps de migration) sont
+  le périmètre de l'exploitant, nommé ici plutôt que simulé. Corollaire opératoire : supprimer
+  une colonne à donnée personnelle est un acte de rétention — sa ligne quitte ce document dans
+  le même commit, et les copies antérieures suivent la politique de sauvegarde de l'hôte.

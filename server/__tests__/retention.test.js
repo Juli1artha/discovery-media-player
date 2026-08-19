@@ -81,11 +81,35 @@ describe("rétention au double", () => {
     expect(appels.some((a) => a.methode === "DELETE" && a.chemin.startsWith("doc_presentation_messages")), "les messages partent même sans retrait de fichiers").toBe(true);
   });
 
-  it("le tick ne balaie qu'avec la permission du verrou partagé — au plus un par fenêtre", async () => {
+  it("le tick est OPT-IN STRICT : sans balayage:true écrit par l'hôte, il ne demande MÊME PAS le verrou", async () => {
+    // Le second hôte consomme le contexte autonome tel quel : une purge par défaut aurait agi
+    // chez lui sans décision. Supprimer n'agit que là où un exploitant l'a écrit.
+    let demandes = 0, suppressions = 0;
+    const faire = (config) => {
+      const ctx = {
+        db: { async request(chemin, opts = {}) { if ((opts.method || "GET") === "DELETE") suppressions += 1; return []; }, async selectAll() { return []; } },
+        storage: {}, errors: { capture() {} }, config,
+        limits: { async allow() { demandes += 1; return true; } },
+      };
+      retention.init(ctx); schema.init(ctx);
+      retention.tick();
+      return new Promise((r) => setTimeout(r, 30));
+    };
+    await faire({});
+    await faire({ retention: {} });
+    await faire({ retention: { balayage: false } });
+    expect(demandes, "sans opt-in, pas même une demande de verrou").toBe(0);
+    expect(suppressions).toBe(0);
+    await faire({ retention: { balayage: true } });
+    expect(demandes).toBe(1);
+    expect(suppressions, "opté : le balayage tourne").toBeGreaterThan(0);
+  });
+
+  it("le tick opté ne balaie qu'avec la permission du verrou partagé — au plus un par fenêtre", async () => {
     let demandes = 0, permis = false, balayages = 0;
     const ctx = {
       db: { async request(chemin, opts = {}) { if ((opts.method || "GET") === "DELETE") balayages += 1; if (chemin.startsWith("commercial_doc_shares?select=revoked_at")) return []; return []; }, async selectAll() { return []; } },
-      storage: {}, errors: { capture() {} }, config: {},
+      storage: {}, errors: { capture() {} }, config: { retention: { balayage: true } },
       limits: { async allow(cle, max, fenetre) { demandes += 1; expect(cle).toBe("retention:sweep"); expect(max).toBe(1); expect(fenetre).toBe(86400); return permis; } },
     };
     retention.init(ctx); schema.init(ctx);
