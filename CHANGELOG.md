@@ -10,6 +10,18 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.75] — 2026-08-19
+
+### Changed
+
+- **Refactor lot 2, no behavior change: the page builders leave `handler.js` too** (3,029 →
+  1,761 lines — 4,362 this morning). Viewer, audience, soft wall, legal footer, session keys,
+  `jsonPourScript` and the pdf.js asset URLs each live in their own flat `server/` module; every
+  module's requires were detected from its own text, not listed from memory, and host plugins
+  resolve from the context in each module. The source-text test surface (`sourceDesPages.cjs`)
+  covers all eleven files, with the completeness test's shape widened to `page-*`. Byte-identical
+  templates; 858 + 19 tests green.
+
 ## [0.1.74] — 2026-08-19
 
 ### Changed
