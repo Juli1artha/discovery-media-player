@@ -59,6 +59,12 @@ create table if not exists public.commercial_doc_shares (
   attested_recipient_email text
 );
 create index if not exists cds_doc_id_idx on public.commercial_doc_shares (doc_id);
+-- ⚠️ RÈGLE (sixième audit) : tout index sur une colonne apparue APRÈS un init déjà publié est
+-- précédé de son ALTER, ICI MÊME. Le rattrapage de fin de fichier ne suffit pas : sur une base
+-- d'hier, `create table if not exists` saute le corps de table, et l'index s'exécutait AVANT le
+-- rattrapage — le rejeu cassait sur cette ligne. Garde : scénario CI « init v0.1.64 → rejeu ».
+alter table public.commercial_doc_shares
+  add column if not exists idem_key text;
 create unique index if not exists cds_idem_key_uniq
   on public.commercial_doc_shares (idem_key)
   where idem_key is not null;
@@ -190,6 +196,9 @@ create table if not exists public.doc_presentation_messages (
 create index if not exists dpm_slug_idx on public.doc_presentation_messages (slug, created_at);
 -- ⚠️ Portée sur (slug, client_key), pas sur la clé seule : deux présentations n'ont aucune raison
 -- de partager un espace de clés. Partiel, pour que les lignes sans clé ne se gênent pas entre elles.
+-- Même règle que cds_idem_key_uniq : la colonne est assurée avant son index.
+alter table public.doc_presentation_messages
+  add column if not exists client_key text;
 create unique index if not exists dpm_client_key_uniq
   on public.doc_presentation_messages (slug, client_key)
   where client_key is not null;
