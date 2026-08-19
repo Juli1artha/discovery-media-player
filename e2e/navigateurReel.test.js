@@ -421,7 +421,9 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
       () => { const i = document.querySelector("#pages .page img"); return !!i && i.naturalWidth > 0; },
       null, { timeout: 15_000 });
 
-    expect(await page.evaluate(() => typeof window.pdfjsLib)).toBe("object");
+    // ⚠️ pdfjsLib arrive par un import() DYNAMIQUE : le lire sans l'attendre est une course —
+    // verte en local où l'import gagne toujours, rouge sur la machine plus lente de la forge.
+    await page.waitForFunction(() => typeof window.pdfjsLib === "object", null, { timeout: 15_000 });
     expect(violations).toEqual([]);
     expect(erreurs).toEqual([]);
 
@@ -515,7 +517,9 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
       () => typeof window.Player === "object" && typeof window.supabase === "object",
       null, { timeout: 15_000 });
 
-    expect(await page.evaluate(() => typeof window.pdfjsLib)).toBe("object");
+    // ⚠️ pdfjsLib arrive par un import() DYNAMIQUE : le lire sans l'attendre est une course —
+    // verte en local où l'import gagne toujours, rouge sur la machine plus lente de la forge.
+    await page.waitForFunction(() => typeof window.pdfjsLib === "object", null, { timeout: 15_000 });
     expect(await page.evaluate(() => document.title)).toContain("Document d'essai");
     expect(violations).toEqual([]);
 
