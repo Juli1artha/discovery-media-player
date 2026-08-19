@@ -177,7 +177,7 @@ describe("qui décide qu'un participant est un membre", () => {
 // Le titre ne se compare plus : il vient de l'hôte (`presenter_name`), et il s'affiche À PART de
 // la liste des participants, qui ne porte plus aucun badge.
 describe("le titre ne se compare plus à rien", () => {
-  const SRC = fs.readFileSync(path.join(__dirname, "..", "handler.js"), "utf8");
+  const SRC = require("./sourceDesPages.cjs").SOURCE_PAGES;
 
   it("la liste des participants ne porte plus de badge", () => {
     expect(SRC, "un badge dans la liste se fonde forcément sur la présence, donc sur le client")

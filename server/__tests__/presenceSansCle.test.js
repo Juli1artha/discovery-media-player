@@ -22,7 +22,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const { PLAYER_BROWSER_JS } = require("../browser.generated.js");
-const SRC = fs.readFileSync(path.join(__dirname, "..", "handler.js"), "utf8");
+const SRC = require("./sourceDesPages.cjs").SOURCE_PAGES;
 
 /** On EXÉCUTE le paquet livré : c'est lui qui part chez les hôtes, pas nos sources. */
 function playerDuPaquet() {

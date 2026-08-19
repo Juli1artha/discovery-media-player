@@ -177,7 +177,7 @@ describe("la route laisse passer le pilote sans session", () => {
 describe("le navigateur envoie effectivement le jeton", () => {
   const fs = require("node:fs");
   const path = require("node:path");
-  const SRC = fs.readFileSync(path.join(__dirname, "..", "handler.js"), "utf8");
+  const SRC = require("./sourceDesPages.cjs").SOURCE_PAGES;
 
   it("l'appel « present-content » porte le control_token", () => {
     const i = SRC.indexOf("action:'present-content'");

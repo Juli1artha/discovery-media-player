@@ -135,7 +135,7 @@ describe("un hôte qui n'a pas migré continue de piloter", () => {
 describe("le navigateur numérote ses écritures", () => {
   const fs = require("node:fs");
   const path = require("node:path");
-  const SRC = fs.readFileSync(path.join(__dirname, "..", "handler.js"), "utf8");
+  const SRC = require("./sourceDesPages.cjs").SOURCE_PAGES;
 
   it("chaque écriture de page porte un rang", () => {
     const i = SRC.indexOf("action:'present-page'");

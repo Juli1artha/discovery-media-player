@@ -13,7 +13,7 @@
 
 const fs = require("node:fs");
 
-const SOURCE = fs.readFileSync(require.resolve("../handler.js"), "utf8")
+const SOURCE = require("./sourceDesPages.cjs").SOURCE_PAGES
   .split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
 
 // ⚠️ `{2}` plutôt que deux espaces littéraux : eslint refuse — et il a raison, deux espaces dans
