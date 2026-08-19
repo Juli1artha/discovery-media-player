@@ -34,10 +34,24 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Image name, lowercased
         id: img
         run: echo "ref=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      # ⚠️ `latest` NE DOIT PAS ÊTRE ÉCRASÉ PAR UN VIEUX BUILD PLUS LENT (P3 dixième audit — course
+      # introduite en sortant l'image du chemin critique). On promeut `latest` UNIQUEMENT si ce tag
+      # est le PLUS HAUT tag du dépôt. Décidé via git, PAS via `npm view` : Release publie npm en
+      # PARALLÈLE de ce workflow, npm pourrait ne pas encore servir la version → on croirait à tort
+      # que ce n'est pas la dernière. Le plus haut tag git ne dépend d'aucun timing.
+      - name: Is this tag the highest version tag?
+        id: dernier
+        run: |
+          plusHaut=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          if [ "$TAG" = "$plusHaut" ]; then echo "latest=true" >> "$GITHUB_OUTPUT"; echo "$TAG est le plus haut tag → latest promu";
+          else echo "latest=false" >> "$GITHUB_OUTPUT"; echo "$TAG n'est pas le plus haut ($plusHaut) → latest NON touché"; fi
 
       - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
@@ -57,8 +71,18 @@ jobs:
           push: true
           sbom: true
           provenance: mode=max
-          tags: |
-            ${{ steps.img.outputs.ref }}:${{ env.TAG }}
-            ${{ steps.img.outputs.ref }}:latest
+          tags: ${{ steps.dernier.outputs.latest == 'true' && format('{0}:{1}\n{0}:latest', steps.img.outputs.ref, env.TAG) || format('{0}:{1}', steps.img.outputs.ref, env.TAG) }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # ⚠️ GARDE DIFFÉRÉE (P3) : depuis que l'image ne bloque plus la publication npm, Release peut
+      # réussir pendant que l'image échoue. On vérifie ICI, à la fin du build, que le manifeste du
+      # tag est réellement servi par GHCR — sinon on échoue en le NOMMANT (une alerte visible, pas
+      # un silence). La provenance/SBOM sont attachées par build-push ; leur présence suit celle du
+      # manifeste.
+      - name: The pushed image manifest is really served
+        run: |
+          jeton=$(curl -s "https://ghcr.io/token?scope=repository:$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]'):pull" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.stdout.write(JSON.parse(d).token||''))")
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $jeton" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')/manifests/${TAG}")
+          [ "$code" = "200" ] || { echo "::error::l'image ${TAG} n'est PAS servie par GHCR (HTTP $code) — publication d'image incomplète"; exit 1; }
+          echo "image ${TAG} servie par GHCR (200)"
