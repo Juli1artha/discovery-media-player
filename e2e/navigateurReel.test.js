@@ -510,4 +510,63 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
 
     await page.close();
   }, 60_000);
+
+  // ── ACCESSIBILITÉ : MESURÉE, PAS DÉCLARÉE ─────────────────────────────────────────────────────
+  //
+  // ⚠️ POURQUOI ICI : l'accessibilité d'une page ne se lit pas dans son gabarit — un `aria-label`
+  // peut exister dans la source et être écrasé par le script qui reconstruit le DOM. Seul le DOM
+  // FINAL, dans un vrai moteur, dit ce qu'une technologie d'assistance recevra. Même argument que
+  // la CSP en tête de ce fichier : relire n'est pas appliquer.
+  //
+  // L'arbitre est axe-core (celui des outils d'audit du navigateur), injecté par `evaluate` — qui
+  // passe par le protocole d'inspection, PAS par une balise : la CSP de la page reste celle de
+  // prod, on n'ouvre rien pour mesurer. Le seuil : ZÉRO violation `serious` ou `critical` sur
+  // les règles WCAG 2.1 A/AA. Les impacts moindres sont TOLÉRÉS mais IMPRIMÉS : on voit la dette,
+  // elle ne casse pas la forge.
+  //
+  // ⚠️ ET L'ARBITRE DOIT REFUSER AU MOINS UNE FOIS (même règle que le collecteur CSP) : le dernier
+  // essai plante une page volontairement infirme et exige de voir axe la refuser. Sans lui, un
+  // axe mal injecté qui rendrait zéro violation partout serait indistinguable d'un parc parfait.
+  async function mesurerAxe(page) {
+    await page.evaluate(require("axe-core").source);
+    return page.evaluate(() => window.axe.run(document, {
+      runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] },
+      resultTypes: ["violations"],
+    }).then((r) => r.violations.map((v) => ({
+      regle: v.id, impact: v.impact, aide: v.help,
+      noeuds: v.nodes.slice(0, 4).map((n) => n.target.join(" ")),
+    }))));
+  }
+  const graves = (violations) => violations.filter((v) => v.impact === "serious" || v.impact === "critical");
+  const imprimer = (nom, violations) => {
+    for (const v of violations) console.log(`[a11y] ${nom} — ${v.impact} — ${v.regle} : ${v.aide} → ${v.noeuds.join(" | ")}`);
+  };
+
+  it("la visionneuse tracée ne porte aucune violation grave WCAG A/AA", async () => {
+    const { page } = await ouvrirPageSurveillee(`/doc/${SLUG_TRACE}`);
+    await page.waitForFunction(() => document.body && document.body.innerHTML.length > 0, null, { timeout: 15_000 });
+    const violations = await mesurerAxe(page);
+    imprimer("visionneuse", violations);
+    expect(graves(violations), "le DOM final de la visionneuse refuse une technologie d'assistance").toEqual([]);
+    await page.close();
+  }, 60_000);
+
+  it("la page d'audience ne porte aucune violation grave WCAG A/AA", async () => {
+    const { page } = await ouvrirPageSurveillee(`/present/${SLUG_DIRECT}`);
+    await page.waitForFunction(
+      () => typeof window.Player === "object" && typeof window.supabase === "object",
+      null, { timeout: 15_000 });
+    const violations = await mesurerAxe(page);
+    imprimer("audience", violations);
+    expect(graves(violations), "le DOM final de la page d'audience refuse une technologie d'assistance").toEqual([]);
+    await page.close();
+  }, 60_000);
+
+  it("l'arbitre refuse une page volontairement infirme — sinon ses zéros ne valent rien", async () => {
+    const page = await navigateur.newPage();
+    await page.goto(`data:text/html,<html><body><img src="x"><input type="text"></body></html>`, { waitUntil: "load" });
+    const violations = await mesurerAxe(page);
+    expect(graves(violations).length, "axe n'a rien vu sur une page SANS lang, SANS alt, SANS label : il n'est pas branché").toBeGreaterThan(0);
+    await page.close();
+  }, 60_000);
 });

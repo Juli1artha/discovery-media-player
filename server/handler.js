@@ -293,7 +293,7 @@ const LIVE_CSS = `
   .join{position:fixed;inset:0;background:rgba(20,18,15,.66);display:flex;align-items:center;justify-content:center;z-index:60}
   .join-card{background:#fff;color:#1c1c1c;border-radius:16px;padding:22px;width:330px;max-width:90vw;text-align:center}
   .join-card h4{margin:0 0 5px;font-size:16px}
-  .join-card p{margin:0 0 15px;font-size:12.5px;color:#777}
+  .join-card p{margin:0 0 15px;font-size:12.5px;color:#666}
   .join-card input{width:100%;border:1px solid #e0dcd4;border-radius:10px;padding:10px 13px;font:inherit;font-size:14px;margin-bottom:9px}
   .join-card button{width:100%;border:0;background:#1a1a1a;color:#fff;border-radius:11px;padding:11px;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
   /* Modale de confirmation maison (remplace window.confirm dans l'iframe présentation). */
@@ -1739,11 +1739,11 @@ function legalFooter({ tracked, sansExpediteur }) {
 const LEGAL_CSS = `
   .lgl{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;flex-wrap:wrap;gap:4px 10px;
     align-items:center;justify-content:center;padding:5px 12px;font-size:10.5px;line-height:1.35;
-    color:rgba(255,255,255,.42);background:rgba(0,0,0,.28);backdrop-filter:blur(3px);pointer-events:none}
+    color:rgba(255,255,255,.94);background:rgba(0,0,0,.66);backdrop-filter:blur(3px);pointer-events:none}
   .lgl a{color:inherit;text-decoration:underline;text-underline-offset:2px;pointer-events:auto}
-  .lgl a:hover{color:rgba(255,255,255,.8)}
-  .lgl-sep{margin:0 6px;opacity:.5}
-  .lgl-note{opacity:.9}
+  .lgl a:hover{color:#fff}
+  .lgl-sep{margin:0 6px;opacity:.8}
+  .lgl-note{opacity:1}
   @media (max-width:640px){ .lgl{font-size:10px;padding:4px 10px} }
 `;
 
@@ -2223,7 +2223,7 @@ ${LEGAL_CSS}
   </div>
   <div class=lrow>
     <div class=lmain>
-      <div class=scroll id=scroll>
+      <div class=scroll id=scroll tabindex=0 role=region aria-label="Document">
         <div id=pages></div>
         <div id=load class="${brandDark ? "ldark" : ""}${brandLogo ? "" : " has-intro"}">${brandLogo || !PLAYER.branding.loaderName ? "" : `<div class=lintro id=lintro data-theme="${brandDark ? "dark" : "light"}"><div class=lword>${esc(PLAYER.branding.loaderName)}</div></div>`}<div class=lbox>${brandLogo ? `<img class=lbrand src="${brandLogo}" alt="${brandName}">${PLAYER.branding.poweredBy ? `<div class=lpowered>Powered by ${esc(PLAYER.branding.poweredBy)}</div>` : ""}` : ""}<div class="lbar idle" id=lbar><i id=lbarFill></i></div><div class=lpct id=lpct>Chargement…</div></div></div>
       </div>
@@ -2835,7 +2835,7 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
   .lbox img{height:34px;opacity:.92;animation:lp 1.6s ease-in-out infinite}
   .lword{font-weight:800;font-size:20px;color:#fff;animation:lp 1.6s ease-in-out infinite}
   @keyframes lp{0%,100%{opacity:.5}50%{opacity:1}}
-  .lsub{font-size:11.5px;color:#8a857c;letter-spacing:.03em}
+  .lsub{font-size:11.5px;color:#aaa69d;letter-spacing:.03em}
   .ended{position:absolute;inset:0;background:rgba(20,18,15,.93);display:none;align-items:center;justify-content:center;z-index:6;text-align:center;padding:24px}
   .ended .ettl{font-size:20px;font-weight:800;margin-bottom:8px}
   .ended .esub{font-size:13.5px;color:#bbb}
@@ -2956,6 +2956,7 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
     function estImage(){ return Player.viewer.isImageDocument(CFG.fileName, CFG.docUrl); }
     function chargerImage(){
       var im=new Image();
+      im.alt='Document présenté';
       im.onload=function(){
         total=1; ready=true; PDF={image:im};
         var tot=document.getElementById('tot'); if(tot)tot.textContent=1;
