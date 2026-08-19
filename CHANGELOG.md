@@ -10,6 +10,17 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.77] — 2026-08-19
+
+### Added
+
+- **The package exposes its contract and retention policy as exports** —
+  `require.resolve("discovery-media-player/contrat")` and `…/retention`. Two consumers were
+  reading our files by hand-written `node_modules` paths, and both broke during one day of
+  refactoring — with no way for us to know who else does. An exposed path is a promise that
+  survives reorganizations; a found path is a guess about our tree. `docs/RETENTION.md` ships in
+  the tarball, and CI holds the promise from a real consumer install.
+
 ## [0.1.76] — 2026-08-19
 
 ### Changed
