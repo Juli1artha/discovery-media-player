@@ -65,6 +65,7 @@ const SLUG_PDF = "essai-pdf-reel";
 const SLUG_DIRECT = "essai-direct";
 const SLUG_URL_MUETTE = "url-muette";
 const SLUG_PRESENT_PDF = "direct-pdf-reel";
+const SLUG_SOMBRE = "essai-sombre";
 
 /** Octets réels de chaque dépendance, récupérés une fois et rejoués ensuite. */
 const octets = {};
@@ -155,6 +156,13 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
         id: 2, slug: SLUG_PDF, doc_id: "doc-pdf", revoked: false, require_auth: false,
         file_url: pathToFileURL(path.join(racine, "essai-reel.pdf")).href, file_name: "essai-reel.pdf",
         doc_title: "PDF réel", allow_download: true, created_by: "moi@exemple.fr",
+        recipient_email: "client@exemple.fr", created_at: "2026-08-17T00:00:00Z",
+      }, {
+        // Marque sombre : la SEULE différence visuelle est le loader (#load.ldark) — un état
+        // TRANSITOIRE, invisible pour un axe lancé après chargement. L'essai dédié le fige.
+        id: 3, slug: SLUG_SOMBRE, doc_id: "doc-1", revoked: false, require_auth: false,
+        file_url: fichier, file_name: "essai.png", doc_title: "Document d'essai",
+        brand_dark: true, allow_download: true, created_by: "moi@exemple.fr",
         recipient_email: "client@exemple.fr", created_at: "2026-08-17T00:00:00Z",
       }],
       doc_presentations: [{
@@ -628,6 +636,31 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     expect(nom.label).toContain("Page 1");
     await page.close();
   }, 60_000);
+
+  // ⚠️ QUESTION D'ADV (19/08) : « vos violations ont-elles été mesurées sur le thème clair, le
+  // sombre, ou les deux ? » Réponse par une MESURE : le sombre ne change QUE le loader, un état
+  // que l'arbitre post-chargement ne voit jamais — on bloque donc le fichier pour le figer, et
+  // axe tourne sur le loader SOMBRE affiché. Leurs deux marques sont dark:true : ce chemin-là
+  // était exactement le non-mesuré.
+  // Et la symétrie a montré le trou jumeau : le loader CLAIR non plus n'était jamais mesuré —
+  // l'arbitre passait toujours après sa disparition. Les deux états, figés puis mesurés.
+  for (const [nom, slugCible, attente] of [
+    ["loader-sombre", SLUG_SOMBRE, "#load.ldark"],
+    ["loader-clair", SLUG_TRACE, "#load:not(.ldark)"],
+  ]) {
+    it(`le ${nom} ne porte aucune violation grave — l'état transitoire, figé puis mesuré`, async () => {
+      const page = await navigateur.newPage();
+      await page.route("**/*file=1*", () => { /* jamais résolu : le loader reste affiché */ });
+      await page.goto(`http://127.0.0.1:${port}/doc/${slugCible}`, { waitUntil: "domcontentloaded" });
+      await page.waitForFunction(
+        (sel) => { const l = document.querySelector(sel); return !!l && getComputedStyle(l).opacity !== "0"; },
+        attente, { timeout: 15_000 });
+      const violations = await mesurerAxe(page);
+      imprimer(nom, violations);
+      expect(graves(violations), "un état transitoire non mesuré est un état non couvert").toEqual([]);
+      await page.close();
+    }, 60_000);
+  }
 
   it("l'arbitre refuse une page volontairement infirme — sinon ses zéros ne valent rien", async () => {
     const page = await navigateur.newPage();

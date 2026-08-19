@@ -56,14 +56,14 @@
     "prepare": "node tools/install-hooks.mjs",
     "start": "node bin/serve.js",
     "build": "node build/bundle.mjs && tsc -p tsconfig.build.json && node -e \"import('./build/bundle.mjs').then(m=>m.marquerDistEsm())\"",
-    "test": "vitest run",
+    "test": "node -e \"require('fs').existsSync('server/__tests__')||(console.error('Ce banc ne vit pas dans le paquet publié - le champ scripts annonce plus que le tarball ne contient. Clonez le depot puis npm ci : https://github.com/Juli1artha/discovery-media-player'),process.exit(1))\" && vitest run",
     "test:watch": "vitest",
     "lint": "eslint bin context server src build",
     "lint:fix": "eslint bin context server src build --fix",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build && npm test",
-    "test:e2e": "vitest run --config vitest.e2e.config.mjs",
-    "test:base": "vitest run --config vitest.base.config.mjs"
+    "test:e2e": "node -e \"require('fs').existsSync('vitest.e2e.config.mjs')||(console.error('Ce banc ne vit pas dans le paquet publié - le champ scripts annonce plus que le tarball ne contient. Clonez le depot puis npm ci : https://github.com/Juli1artha/discovery-media-player'),process.exit(1))\" && vitest run --config vitest.e2e.config.mjs",
+    "test:base": "node -e \"require('fs').existsSync('vitest.base.config.mjs')||(console.error('Ce banc ne vit pas dans le paquet publié - le champ scripts annonce plus que le tarball ne contient. Clonez le depot puis npm ci : https://github.com/Juli1artha/discovery-media-player'),process.exit(1))\" && vitest run --config vitest.base.config.mjs"
   },
   "engines": {
     "node": ">=22"

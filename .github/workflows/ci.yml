@@ -52,6 +52,33 @@ jobs:
           ! grep -q '__tests__'     /tmp/files.txt || { echo "::error::tests are being published"; exit 1; }
           node --input-type=module -e "import('./dist/bridge.js').then(m => { if (typeof m.toWire !== 'function') process.exit(1); })"
 
+      # ⚠️ « UN package.json PUBLIÉ DÉCRIT CE QUE LE MAINTENEUR PEUT FAIRE, PAS CE QUE LE
+      # CONSOMMATEUR REÇOIT » (second hôte, 19/08) : le champ `scripts` n'est pas filtré par
+      # `files` — il annonce donc structurellement plus que le tarball ne contient. Nos trois
+      # bancs n'embarquent pas (et ne doivent pas embarquer) ; sans garde, un consommateur qui
+      # lance `npm run test:e2e` récolte une erreur de configuration qui ressemble à SON problème.
+      # Ce scénario installe le tarball comme un consommateur et exige le refus qui NOMME la
+      # situation — pas l'erreur cryptique.
+      - name: The published scripts refuse by name outside a clone
+        if: matrix.node == '22'
+        run: |
+          rm -rf /tmp/conso && mkdir -p /tmp/conso && cd /tmp/conso
+          npm init -y >/dev/null
+          npm i --silent "$GITHUB_WORKSPACE"/discovery-media-player-*.tgz
+          cd node_modules/discovery-media-player
+          for banc in test test:e2e test:base; do
+            if sortie=$(npm run "$banc" 2>&1); then
+              echo "::error::npm run $banc a RÉUSSI depuis une installation consommatrice — il n'a rien pu mesurer"
+              exit 1
+            fi
+            echo "$sortie" | grep -q "Clonez le depot" || {
+              echo "::error::npm run $banc échoue SANS nommer la situation — le consommateur croira que son installation est cassée"
+              echo "$sortie" | tail -5
+              exit 1
+            }
+          done
+          echo "les trois bancs refusent en nommant la situation"
+
       # ⚠️ Le contrat d'hôte demande une version EXACTE — « une plage fait entrer une version que
       # personne n'a décidé de déployer, le jour où quelqu'un lance npm install pour autre chose ».
       # Deux exemples sur trois disaient `^0.1.0` : un intégrateur qui copie l'exemple récolte

@@ -2120,7 +2120,7 @@ ${LEGAL_CSS}
   /* balayage « tech » tant qu'on ne connaît pas encore le total */
   .lbar.idle i{width:36%;animation:lsweep 1.1s ease-in-out infinite}
   @keyframes lsweep{0%{left:-36%}100%{left:100%}}
-  .lpct{font-size:11px;color:#8a857c;letter-spacing:.04em;text-transform:uppercase;font-weight:600}
+  .lpct{font-size:11px;color:#6e695f;letter-spacing:.04em;text-transform:uppercase;font-weight:600}
   .lerr{color:#c0392b;font-size:13px}
   /* Filigrane discret (libère la barre du bas) — masqué sur mobile (chevauche le FAB/teaser, sans valeur). */
   .brand{position:fixed;right:13px;bottom:10px;font-size:10px;color:#fff;opacity:.42;pointer-events:none;letter-spacing:.02em;z-index:3}
