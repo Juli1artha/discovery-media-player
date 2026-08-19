@@ -219,4 +219,22 @@ function lireCorps(req) {
   });
 }
 
-module.exports = { creerPostgrestEnMemoire };
+// ⚠️ CE QUE CE DOUBLE NE SIMULE PAS — déclaré, pas seulement sous-entendu (ADV, dixième audit).
+//
+// « Ce double n'a pas de contraintes » est honnête mais incomplet : personne ne comprend que ça
+// inclut « ni délimiteurs d'URL, ni encodage, ni protocole ». Or le bug `in.()` du dixième audit
+// vivait exactement là — un `&` non encodé dans une valeur. Un double ne peut pas révéler un
+// défaut d'une couche qu'il ne simule pas ; il n'est pas incomplet, il est dans un autre monde.
+// Cette liste dit OÙ il ne peut PAS trouver — donc où il faut un banc RÉEL (base/*.test.js). Un
+// essai (couchesAbsentes.test.js) exige qu'elle existe et ne soit pas vide.
+const COUCHES_ABSENTES = [
+  "transactions",            // un verrou optimiste concurrent, un rollback → banc réel
+  "contraintes",             // unicité, clés étrangères, NOT NULL → banc réel
+  "encodage-url",            // les valeurs mal encodées (`&`, `#`) — le bug in.() du 10e audit
+  "delimiteurs-postgrest",   // le guillemetage/échappement des valeurs de filtre
+  "types-postgres",          // coercition, comparaisons de dates réelles
+  "rls",                     // les politiques de rangée
+  "triggers",                // le scellé d'archive, par exemple
+];
+
+module.exports = { creerPostgrestEnMemoire, COUCHES_ABSENTES };
