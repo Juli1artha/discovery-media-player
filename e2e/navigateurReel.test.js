@@ -66,6 +66,7 @@ const SLUG_DIRECT = "essai-direct";
 const SLUG_URL_MUETTE = "url-muette";
 const SLUG_PRESENT_PDF = "direct-pdf-reel";
 const SLUG_SOMBRE = "essai-sombre";
+const SLUG_BOT = "essai-bot";
 
 /** Octets réels de chaque dépendance, récupérés une fois et rejoués ensuite. */
 const octets = {};
@@ -163,6 +164,12 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
         id: 3, slug: SLUG_SOMBRE, doc_id: "doc-1", revoked: false, require_auth: false,
         file_url: fichier, file_name: "essai.png", doc_title: "Document d'essai",
         brand_dark: true, allow_download: true, created_by: "moi@exemple.fr",
+        recipient_email: "client@exemple.fr", created_at: "2026-08-17T00:00:00Z",
+      }, {
+        // Lien avec AGENT : les surcouches notation/quiz/au revoir/reprise n'existent que là.
+        id: 4, slug: SLUG_BOT, doc_id: "doc-1", revoked: false, require_auth: false,
+        file_url: fichier, file_name: "essai.png", doc_title: "Document d'essai",
+        bot_enabled: true, bot_guided: true, allow_download: true, created_by: "moi@exemple.fr",
         recipient_email: "client@exemple.fr", created_at: "2026-08-17T00:00:00Z",
       }],
       doc_presentations: [{
@@ -718,6 +725,54 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     expect(apres.focus, "le focus REVIENT à l'élément qui l'avait — sinon l'utilisateur clavier repart de zéro").toBe("jName");
     await page.close();
   }, 60_000);
+
+  // ⚠️ LES ÉTATS À PROVOQUER — le lot annoncé après la leçon du régime établi : notation, quiz,
+  // au revoir, reprise (visionneuse à agent) et « Présentation terminée » + dialogue OUVERT
+  // (audience). Tous display:none au repos — un état qu'axe ne voit pas n'est pas mesuré. On les
+  // AFFICHE (classe/style, les mêmes gestes que le code de prod) puis l'arbitre passe, état par
+  // état, le périmètre imprimé à côté du verdict.
+  // ⚠️ Limite dite : le contenu DYNAMIQUE de ces surcouches (étoiles de notation, cartes de
+  // quiz) est injecté par le PlayerBot de l'HÔTE (`if(window.PlayerBot)…`) — absent du contexte
+  // autonome. Ce banc mesure ce que CE paquet livre ; les pixels de l'hôte se mesurent chez lui.
+  it("les surcouches de la visionneuse à agent, affichées une à une, sans violation grave", async () => {
+    const { page } = await ouvrirPageSurveillee(`/doc/${SLUG_BOT}`);
+    await page.waitForFunction(() => !!document.getElementById("rateov"), null, { timeout: 15_000 });
+    const etats = [
+      ["reprise", () => document.body.classList.add("deskpaused"), () => document.body.classList.remove("deskpaused")],
+      ["notation", () => document.getElementById("rateov").classList.add("on"), () => document.getElementById("rateov").classList.remove("on")],
+      ["quiz", () => document.getElementById("qov").classList.add("on"), () => document.getElementById("qov").classList.remove("on")],
+      ["au-revoir", () => document.getElementById("byeov").classList.add("on"), () => document.getElementById("byeov").classList.remove("on")],
+    ];
+    for (const [nom, montrer, cacher] of etats) {
+      await page.evaluate(montrer);
+      const violations = await mesurerAxe(page);
+      imprimer(`etat-${nom}`, violations);
+      expect(graves(violations), `l'état « ${nom} » refuse une technologie d'assistance`).toEqual([]);
+      await page.evaluate(cacher);
+    }
+    await page.close();
+  }, 90_000);
+
+  it("« Présentation terminée » et le dialogue OUVERT de l'audience, sous l'arbitre", async () => {
+    const { page } = await ouvrirPageSurveillee(`/present/${SLUG_DIRECT}`);
+    await page.waitForFunction(() => typeof window.__confirmDialog === "function", null, { timeout: 15_000 });
+    await page.evaluate(() => { document.getElementById("ended").style.display = "flex"; });
+    const fin = await mesurerAxe(page);
+    imprimer("etat-terminee", fin);
+    expect(graves(fin), "l'écran de fin refuse une technologie d'assistance").toEqual([]);
+    await page.evaluate(() => { document.getElementById("ended").style.display = ""; window.__confirmDialog({ title: "Essai", desc: "d" }); });
+    // L'animation d'entrée part d'opacité 0 : mesurer PENDANT mélange la boîte au fond sombre et
+    // fabrique de faux contrastes. L'arbitre attend l'état STABLE — celui que l'utilisateur lit.
+    await page.waitForFunction(
+      () => getComputedStyle(document.querySelector("#lModal .lmodal-box")).opacity === "1"
+        && document.querySelector("#lModal .lmodal-box").getAnimations().length === 0,
+      null, { timeout: 5_000 });
+    const dialogue = await mesurerAxe(page);
+    imprimer("etat-dialogue-ouvert", dialogue);
+    expect(graves(dialogue), "le dialogue ouvert refuse une technologie d'assistance").toEqual([]);
+    await page.keyboard.press("Escape");
+    await page.close();
+  }, 90_000);
 
   it("l'arbitre refuse une page volontairement infirme — sinon ses zéros ne valent rien", async () => {
     const page = await navigateur.newPage();
