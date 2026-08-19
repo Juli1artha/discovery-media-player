@@ -10,6 +10,38 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.66] — 2026-08-19
+
+### Changed
+
+- **pdf.js is bundled, served from our own origin, and current: 3.11.174-from-CDN → 6.2.108 local
+  ESM.** What disappears in one move: the cdnjs third party in two CSPs (plus `blob:` in
+  worker-src, plus the preconnects); the worker no `integrity` attribute could ever cover (it does
+  not enter through a tag) and the whole fingerprint dance built around it; a pin that hung on
+  what cdnjs chose to keep publishing; and the 2026 vulnerability affecting 5.6.83+ (fixed in
+  6.2.108 — `isEvalSupported: false` kept on every call). Assets are served by `?asset=pdf` /
+  `?asset=pdfworker` — version in the URL, immutable cache, byte-for-byte identical to the pinned
+  `pdfjs-dist` package, `nosniff`. ⚠️ **No `enableScripting:false` placebo**: that option belongs
+  to Mozilla's viewer, not to `getDocument` — adding it would be a description stronger than the
+  implementation. The real guarantee is structural: the scripting sandbox
+  (`pdf.sandbox.min.mjs`) is neither served nor loaded anywhere.
+
+- **The bench finally renders a real PDF.** Three years of CDN made the PDF path untestable — the
+  e2e fixture was an image, on purpose. The bench now renders a **real PDF** (hand-built with
+  computed xref offsets) through the **real 6.2.108 worker** in a **real Chromium**, and asserts
+  the claim that matters: **zero requests leave our origin**. The bench drops from 98 s to 4 s —
+  nothing left to download.
+
+### Fixed
+
+- ⚠️ **Two sentinels from the tag era nearly sank the whole page** — zero requests, zero errors,
+  zero document. Not the import: `if (!window.pdfjsLib) return` at the top of the viewer, and the
+  audience boot listening on `script[src*="pdf.min.js"]` — a tag that no longer exists. Both made
+  the entire viewer exit **without a word**. Found with an instrumented-Chromium probe, not by
+  re-reading — which also caught a real CSP bug of this migration: `'none'` alongside `'self'`
+  invalidates the whole directive. The browser-side silent-success class, same family as the
+  close-path fixes of 0.1.61.
+
 ## [0.1.65] — 2026-08-18
 
 The remaining P2s of the fifth audit.
