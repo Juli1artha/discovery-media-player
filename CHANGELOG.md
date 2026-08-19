@@ -10,6 +10,29 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.81] — 2026-08-19
+
+### Fixed
+
+- **The presentation purge cap is now GLOBAL, not per-presentation.** It was applied per
+  presentation — 500 × 5,000 = 2.5 M messages possible in one run (serverless timeout, chat
+  contention). Messages and attendees each get one shared budget spread across presentations; the
+  loop stops when they are exhausted, without deleting the remaining presentations. `plafond: 1`
+  over 3 presentations now deletes one message total, not three.
+- **The dry-run report is complete for presentations**: `messagesExaminees`, `presencesExaminees`
+  and `fichiersCandidats` report what a real purge would do (same selection path, no-op deletes,
+  `efface.* = 0`) — an operator no longer under-estimates the real purge.
+- **`in.(…)` values are URL-encoded.** A reserved character in an id (`&`, `#`, `"`, `,`) broke the
+  filter — quoting handles PostgREST's delimiters, but the URL's (`&`, `#`) need percent-encoding.
+  Found by a new **volumetric real-Postgres bench** (multi-batch, exact cap, a >5,000-message
+  presentation over two passes, reserved-char ids).
+
+### Changed
+
+- **The container image release is hardened** (after moving it off the npm critical path): `latest`
+  is promoted only when the tag is the highest git tag (no more slow old build overwriting it), and
+  a deferred check verifies the tag's GHCR manifest is actually served.
+
 ## [0.1.80] — 2026-08-19
 
 ### Added
