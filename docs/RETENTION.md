@@ -15,7 +15,11 @@ ni fonction de périmètre, ni filtre) :
 
 > ⚠️ **Fenêtres proposées, à valider par l'exploitant.** Les durées ci-dessous sont des défauts
 > raisonnés (journaux analytiques : 13 mois, comparaison année sur année ; archives de
-> présentation : 12 mois après la fin). Un hôte les ajuste via `config.retention`.
+> présentation : 12 mois après la fin). Un hôte les ajuste via `config.retention` — **entiers de
+> mois dans [1, 120] uniquement**. Toute valeur négative, nulle, non entière, `NaN`, `Infinity`
+> ou chaîne fait ÉCHOUER la purge avant le premier `DELETE`, en nommant la clé fautive : une
+> faute de configuration ne supprime jamais rien. Les bornes sont calculées en UTC, rabattues au
+> dernier jour du mois cible (« 31 mars − 1 mois » = 28 février, pas le 3 mars).
 >
 > ⚠️ **Le balayage automatique est OPT-IN STRICT** : il ne tourne que si l'hôte écrit
 > `config.retention.balayage: true`. Un hôte qui consomme le contexte autonome tel quel hérite de

@@ -20,10 +20,39 @@ const enc = encodeURIComponent;
 
 // Fenêtres par défaut de docs/RETENTION.md — l'hôte ajuste via `config.retention`.
 const FENETRES = { journauxMois: 13, presentationsMois: 12, liensRevoquesMois: 13 };
-const fenetres = () => ({ ...FENETRES, ...((PLAYER.config && PLAYER.config.retention) || {}) });
+const CLES_FENETRE = Object.keys(FENETRES);
+const MIN_MOIS = 1, MAX_MOIS = 120;
 
-// Borne calendaire : N mois avant `now`, en ISO — les fenêtres de RETENTION.md parlent en mois.
-function borne(now, mois) { const d = new Date(now); d.setMonth(d.getMonth() - mois); return d.toISOString(); }
+// ⚠️ UNE FENÊTRE EST UN ENTIER DE MOIS DANS [1,120] — RIEN D'AUTRE (P2 huitième audit). Une valeur
+// négative calculerait une borne FUTURE (perte massive), zéro purgerait tout, une chaîne/NaN/
+// Infinity produirait une date invalide. On refuse AVANT le premier DELETE, en NOMMANT la clé.
+// Zéro n'est PAS une purge immédiate : ce serait un geste trop dangereux pour un défaut de config.
+function fenetresValidees() {
+  const brut = { ...FENETRES, ...((PLAYER.config && PLAYER.config.retention) || {}) };
+  const out = Object.create(null);   // nu : la garde de forme reconnaît cet accumulateur
+  for (const cle of CLES_FENETRE) {
+    const v = brut[cle];
+    if (typeof v !== "number" || !Number.isInteger(v) || v < MIN_MOIS || v > MAX_MOIS) {
+      const e = new Error(`fenêtre de rétention invalide : ${cle}=${JSON.stringify(v)} — attendu un entier de mois dans [${MIN_MOIS},${MAX_MOIS}]. Aucune suppression.`);
+      e.retentionInvalide = true;
+      throw e;
+    }
+    out[cle] = v;
+  }
+  return out;
+}
+
+// ⚠️ Borne = N mois avant `now`, en UTC, RABATTUE au dernier jour du mois cible. `Date.setMonth`
+// déborde (« 31 mars − 1 mois » → 3 mars) et l'heure locale + le changement d'heure décalaient la
+// borne : on construit la date en UTC, jour rabattu sur le dernier du mois visé.
+function borne(now, mois) {
+  const d = new Date(now);
+  const a = d.getUTCFullYear();
+  const m = d.getUTCMonth() - mois;
+  const dernierDuMois = new Date(Date.UTC(a, m + 1, 0)).getUTCDate();   // jour 0 du mois suivant = dernier du mois
+  const jour = Math.min(d.getUTCDate(), dernierDuMois);
+  return new Date(Date.UTC(a, m, jour, d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), d.getUTCMilliseconds())).toISOString();
+}
 
 async function effacer(chemin) {
   const lignes = await PLAYER.db.request(chemin, { method: "DELETE", headers: { Prefer: "return=representation" } });
@@ -36,7 +65,13 @@ async function effacer(chemin) {
 const { cheminPieceJointe: cheminSurSlug } = require("./presentations");
 
 async function purgerRetention(now) {
-  const f = fenetres();
+  let f;
+  try { f = fenetresValidees(); }
+  catch (e) {
+    if (!e.retentionInvalide) throw e;
+    try { PLAYER.errors.capture(e, { route: "retention" }); } catch { /* jamais bloquant */ }
+    return { ok: false, error: e.message };   // config douteuse → zéro DELETE
+  }
   const base = String((PLAYER.config && PLAYER.config.supabaseUrl) || "");
   const efface = {};
   const bJournaux = borne(now, f.journauxMois);
@@ -100,4 +135,4 @@ function tick() {
     .catch((e) => { try { PLAYER.errors.capture(e, { route: "retention", benin: true }); } catch { /* jamais bloquant */ } });
 }
 
-module.exports = { init, purgerRetention, tick };
+module.exports = { init, purgerRetention, tick, borne };
