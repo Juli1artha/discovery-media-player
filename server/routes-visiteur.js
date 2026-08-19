@@ -12,7 +12,7 @@ const init = (ctx) => { PLAYER = ctx; };
 // chute au bout rend `false` et le dispatch continue. Aucune liste d'actions n'est dupliquée
 // entre ici et handler (un correctif à deux exemplaires finit par diverger) — et aucun appui
 // sur res.writableEnded, absent des `res` postiches des bancs comme de certains hôtes.
-async function traiter(req, res, body, slug) {
+async function traiter(req, res, body, _slug) {
       // ── Connexion VISITEUR (soft wall) : demande d'un code par email, puis vérification. ──
       // Émet un jeton signé posé en cookie qui débloque les contenus gatés (require_auth).
       if (body.action === "visitor-request" || body.action === "visitor-verify" || body.action === "visitor-google") {

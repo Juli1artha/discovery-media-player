@@ -329,7 +329,7 @@ var Live=(function(){
   function setReply(id){var m=msgData[id];if(!m||m.deleted)return;var nm=m.author_name||'Invité';replyCtx={id:+id,name:nm,text:(m.body||'').slice(0,120)};var el=document.getElementById('chatReply');if(el){el.style.display='flex';el.innerHTML='<span class=cq><b>'+esc(nm)+'</b> '+esc((m.body||'').slice(0,80))+'</span><button id=chatReplyX title=Annuler>×</button>';var x=document.getElementById('chatReplyX');if(x)x.addEventListener('click',clearReply);}var t=document.getElementById('chatText');if(t)t.focus();}
   function clearReply(){replyCtx=null;var el=document.getElementById('chatReply');if(el){el.style.display='none';el.innerHTML='';}}
   function send(){var i=document.getElementById('chatText');var t=(i.value||'').trim();if(!t||!ME)return;if(LOCKED&&!canMod())return;i.value='';toggleSend();
-    
+
     // ⚠️ LA CLÉ EST FABRIQUÉE ICI, UNE FOIS, AVANT LE PREMIER ENVOI. Une clé tirée à chaque
     // tentative ne servirait à rien : deux envois porteraient deux clés et passeraient tous les
     // deux. C'est sa RÉUTILISATION au renvoi qui rend l'opération idempotente.

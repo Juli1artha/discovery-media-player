@@ -576,7 +576,7 @@ async function handler(req, res) {
         // muette sur les URL.
         capabilities: [
           "docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth",
-          "host-share", "host-mail",
+          "host-share", "host-mail", "retention",
         ],
         // ⚠️ POUR QUELLES ORIGINES cette instance accepte d'être encadrée. Un booléen ne
         // suffisait pas : un hôte a besoin de voir que SON domaine manque, pas seulement que

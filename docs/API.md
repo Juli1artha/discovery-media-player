@@ -67,6 +67,13 @@ a broken tracked link is a commercial relationship landing on an error page.
 `present-list|reclaim|handover|owner-end|stats|doc-list|switch|content` ·
 `docshare.create|list|revoke|setauth|overview|sessions|test`
 
+**Trusted host or admin** — `retention.run`: runs the retention purge (see
+[`docs/RETENTION.md`](RETENTION.md)). Authenticated by a trusted-host call
+(`identity.isTrustedHostCall`) or an admin JWT. Body accepts `{ dryRun?, taille?, plafond? }`;
+`dryRun: true` counts without deleting. Responds `{ ok, dryRun, efface, rapport }` where `rapport`
+carries, per table, `{ examinees, supprimees, tronque }`. An unknown `action` is rejected with
+`400 unknown-action`; a bodiless analytics POST requires an `event` of `open|page|heartbeat|session`.
+
 ### Who may manage tracked links
 
 Every `docshare.*` call asks your wiring:
