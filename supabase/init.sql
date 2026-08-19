@@ -68,6 +68,12 @@ alter table public.commercial_doc_shares
 create unique index if not exists cds_idem_key_uniq
   on public.commercial_doc_shares (idem_key)
   where idem_key is not null;
+comment on column public.commercial_doc_shares.idem_key is
+  'Clé d''idempotence des liens SYSTÈME (hôte, répétition) : empreinte « genre:sha256(JSON des '
+  'composants) » — genre = hote | repetition. Les clés historiques au format concaténé '
+  '« hote:<doc>|<email> » se remplacent d''elles-mêmes au réemploi (backfill). Nulle sur les '
+  'liens ordinaires. Unique quand renseignée : deux demandes simultanées ne créent qu''un lien, '
+  'la seconde relit le gagnant.';
 create index if not exists cds_parent_idx on public.commercial_doc_shares (parent_slug);
 create index if not exists idx_doc_shares_brand_key
   on public.commercial_doc_shares (brand_key) where brand_key is not null;

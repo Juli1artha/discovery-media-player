@@ -847,7 +847,7 @@ var Map3DD=(function(){
     var svb=document.getElementById('mapSV'); if(svb&&!svb._w){svb._w=1;svb.addEventListener('click',function(){ if(!map)return; var c=useG?[map.getCenter().lat(),map.getCenter().lng()]:[map.getCenter().lat,map.getCenter().lng]; goSV(c); });}
     var tm=document.getElementById('mapToMap'); if(tm&&!tm._w){tm._w=1;tm.addEventListener('click',toMap);} }
   function doSearch(text){ text=(text||'').trim(); var res=document.getElementById('mapRes'); if(!text||!res)return; res.innerHTML='<div style="padding:9px 14px;color:#888;font-size:12px">Recherche…</div>';
-    fetch('https://nominatim.openstreetmap.org/search?format=json&limit=5&q='+encodeURIComponent(text),{headers:{Accept:'application/json'}}).then(function(r){return r.json();}).then(function(l){ if(!l||!l.length){res.innerHTML='<div style="padding:9px 14px;color:#888;font-size:12px">Aucun résultat.</div>';return;} res.innerHTML=l.map(function(o){var la=Number(o.lat),lo=Number(o.lon);if(!isFinite(la)||!isFinite(lo))return '';return '<button data-lat="'+la+'" data-lng="'+lo+'">'+String(o.display_name||'').replace(/</g,'&lt;')+'</button>';}).join(''); }).catch(function(){res.innerHTML='<div style="padding:9px 14px;color:#c0392b;font-size:12px">Recherche indisponible.</div>';}); }
+    fetch('https://nominatim.openstreetmap.org/search?format=json&limit=5&q='+encodeURIComponent(text),{headers:{Accept:'application/json'}}).then(function(r){return r.json();}).then(function(l){ if(!l||!l.length){res.innerHTML='<div style="padding:9px 14px;color:#888;font-size:12px">Aucun résultat.</div>';return;} res.innerHTML=l.map(function(o){var la=Number(o.lat),lo=Number(o.lon);if(!isFinite(la)||!isFinite(lo)||la<-90||la>90||lo<-180||lo>180)return '';return '<button data-lat="'+la+'" data-lng="'+lo+'">'+String(o.display_name||'').replace(/</g,'&lt;')+'</button>';}).join(''); }).catch(function(){res.innerHTML='<div style="padding:9px 14px;color:#c0392b;font-size:12px">Recherche indisponible.</div>';}); }
   // ── Street View (Google) ─────────────────────────────────────────────────────────────────────────
   function tempHint(t){ var h=document.getElementById('mapHint'); if(h){h.textContent=t; setTimeout(function(){ if(h.textContent===t)h.textContent=(isPres?'':'Vue du présentateur — en direct'); },2600);} }
   // Le présentateur passe en Street View depuis le centre de la carte : on cherche le panorama le plus proche.
@@ -3613,10 +3613,21 @@ async function handler(req, res) {
               // demandes suivantes la trouveront par l'unicité, et les doublons d'avant 0011
               // s'éteignent d'eux-mêmes faute d'être resservis.
               const cleDispo = await require("./schema").attendue("liensUniques");
-              await PLAYER.db.request(`commercial_doc_shares?slug=eq.${encodeURIComponent(dejaLa[0].slug)}`, {
-                method: "PATCH", headers: { Prefer: "return=minimal" },
-                body: { doc_title: body.docTitle || null, file_url: String(body.fileUrl), file_name: body.fileName || null, revoked: false, ...(cleDispo ? { idem_key: cleHote } : {}) },
-              });
+              // ⚠️ MÊME RATTRAPAGE QUE LE CHEMIN DE CRÉATION (septième audit : le correctif ne
+              // s'était pas appliqué à lui-même). Deux doublons d'avant 0011 en concurrence :
+              // l'index refuse la seconde pose de clé — on relit le gagnant au lieu de rendre 500.
+              try {
+                await PLAYER.db.request(`commercial_doc_shares?slug=eq.${encodeURIComponent(dejaLa[0].slug)}`, {
+                  method: "PATCH", headers: { Prefer: "return=minimal" },
+                  body: { doc_title: body.docTitle || null, file_url: String(body.fileUrl), file_name: body.fileName || null, revoked: false, ...(cleDispo ? { idem_key: cleHote } : {}) },
+                });
+              } catch (erreur) {
+                if (!String((erreur && erreur.message) || "").includes("409")) throw erreur;
+                try { PLAYER.errors.capture(new Error("backfill hôte : la clé était déjà posée ailleurs — " + docId), { route: "hostshare", benin: true }); } catch { /* jamais bloquant */ }
+                const gagnant = await PLAYER.db.request(`commercial_doc_shares?idem_key=eq.${encodeURIComponent(cleHote)}&select=slug&limit=1`);
+                if (!Array.isArray(gagnant) || !gagnant[0]) throw erreur;
+                return jd(200, { ok: true, slug: gagnant[0].slug, reused: true });
+              }
               return jd(200, { ok: true, slug: dejaLa[0].slug, reused: true });
             }
             // `createdBy` reste NUL : personne ne l'a créé. Le filtre « mes liens » compare
@@ -3684,7 +3695,16 @@ async function handler(req, res) {
           const cleTest = cleIdempotence("repetition", [docId]);
           if (Array.isArray(ex) && ex[0]) {
             const cleDispo = await require("./schema").attendue("liensUniques");
-            await PLAYER.db.request(`commercial_doc_shares?slug=eq.${encodeURIComponent(ex[0].slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { doc_title: body.docTitle || null, file_url: String(body.fileUrl), file_name: body.fileName || null, bot_enabled: true, bot_guided: true, bot_profile_id: (body.profileId || "").trim() || null, revoked: false, ...(cleDispo ? { idem_key: cleTest } : {}) } });
+            // Même rattrapage que ci-dessus : le backfill de la répétition pose la même clé.
+            try {
+              await PLAYER.db.request(`commercial_doc_shares?slug=eq.${encodeURIComponent(ex[0].slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { doc_title: body.docTitle || null, file_url: String(body.fileUrl), file_name: body.fileName || null, bot_enabled: true, bot_guided: true, bot_profile_id: (body.profileId || "").trim() || null, revoked: false, ...(cleDispo ? { idem_key: cleTest } : {}) } });
+            } catch (erreur) {
+              if (!String((erreur && erreur.message) || "").includes("409")) throw erreur;
+              try { PLAYER.errors.capture(new Error("backfill répétition : la clé était déjà posée ailleurs — " + docId), { route: "docshare-test", benin: true }); } catch { /* jamais bloquant */ }
+              const gagnant = await PLAYER.db.request(`commercial_doc_shares?idem_key=eq.${encodeURIComponent(cleTest)}&select=slug&limit=1`);
+              if (!Array.isArray(gagnant) || !gagnant[0]) throw erreur;
+              return jd(200, { ok: true, slug: gagnant[0].slug, reused: true });
+            }
             return jd(200, { ok: true, slug: ex[0].slug });
           }
           // Deux ouvertures simultanées de la répétition : la contrainte tranche, le perdant relit.
