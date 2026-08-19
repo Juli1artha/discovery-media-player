@@ -29,7 +29,7 @@ const MIN_MOIS = 1, MAX_MOIS = 120;
 // Zéro n'est PAS une purge immédiate : ce serait un geste trop dangereux pour un défaut de config.
 function fenetresValidees() {
   const brut = { ...FENETRES, ...((PLAYER.config && PLAYER.config.retention) || {}) };
-  const out = {};
+  const out = Object.create(null);   // nu : la garde de forme reconnaît cet accumulateur
   for (const cle of CLES_FENETRE) {
     const v = brut[cle];
     if (typeof v !== "number" || !Number.isInteger(v) || v < MIN_MOIS || v > MAX_MOIS) {
