@@ -345,7 +345,9 @@ async function sendReshareEmail({ parent, childSlug, origin, toEmail, toName }) 
 }
 
 async function revokeShare(slug) {
-  await PLAYER.db.request(`commercial_doc_shares?slug=eq.${enc(String(slug || ""))}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { revoked: true } });
+  // La date borne la rétention (RETENTION.md) — écrite seulement là où la colonne existe (0013).
+  const dateDispo = await require("./schema").attendue("revocationDatee");
+  await PLAYER.db.request(`commercial_doc_shares?slug=eq.${enc(String(slug || ""))}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { revoked: true, ...(dateDispo ? { revoked_at: new Date().toISOString() } : {}) } });
 }
 
 // Soft wall : (dé)verrouille l'accès d'un lien /doc — require_auth=true → connexion visiteur exigée.

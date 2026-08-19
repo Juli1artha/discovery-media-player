@@ -537,6 +537,21 @@ jobs:
           PLAYER_TEST_POSTGREST_URL: http://127.0.0.1:3002
         run: npm run test:base
 
+      # ── LA SECONDE MOITIÉ DU CONTRAT DE RÉTENTION : LE RECENSEMENT INDÉPENDANT ───────────────
+      # Le banc base vient de semer des lignes vieilles et de lancer la purge. Ce recensement — un
+      # SQL nu qui ne partage NI fonction NI filtre avec server/retention.js — recompte ce qui
+      # reste dans le périmètre revendiqué par docs/RETENTION.md. Un reste = la purge a menti OU
+      # son périmètre ne couvre pas. Deux textes indépendants ne peuvent pas être faux de la même
+      # manière ; c'est la propriété, pas un style (design arrêté avec le second hôte, 19/08).
+      - name: The independent census finds nothing left in the claimed perimeter
+        run: |
+          $PSQL -f supabase/recensement-retention.sql > /tmp/recensement.txt
+          echo "recensement (périmètre|restantes) :"; cat /tmp/recensement.txt
+          restes=$(awk -F'|' '{s+=$2} END {print s+0}' /tmp/recensement.txt)
+          [ "$restes" = "0" ] || { echo "::error::le recensement indépendant trouve $restes ligne(s) dans le périmètre revendiqué"; exit 1; }
+          lignes=$(grep -c '|' /tmp/recensement.txt | tr -d ' ')
+          [ "$lignes" = "9" ] || { echo "::error::le recensement rend $lignes périmètres au lieu de 9 — la sonde s'est déformée"; exit 1; }
+
   docker:
     runs-on: ubuntu-latest
     steps:

@@ -269,6 +269,18 @@ function createStandaloneContext(env = process.env) {
       }),
       // Écriture de fichier : hors périmètre d'une instance autonome (elle sert, elle ne range pas).
       async put() { throw new Error("storage.put n'est pas disponible sans câblage d'hôte"); },
+      // Optionnelle (rétention) : efface un objet du bucket — faux si l'API Storage est absente.
+      async remove(bucket, chemin) {
+        const base = sansBarreFinale(env.SUPABASE_URL);
+        const cle = String(env.SUPABASE_SERVICE_ROLE_KEY || "");
+        if (!base || !cle || !bucket || !chemin) return false;
+        try {
+          const r = await fetch(`${base}/storage/v1/object/${bucket}/${chemin}`, {
+            method: "DELETE", headers: { apikey: cle, Authorization: `Bearer ${cle}` },
+          });
+          return r.ok;
+        } catch { return false; }
+      },
 
       /**
        * URL d'envoi signée, pour une pièce jointe de chat. **Capacité de l'HÔTE**, pas du cœur.

@@ -39,6 +39,7 @@ create table if not exists public.commercial_doc_shares (
   created_by      text,
   created_at      timestamptz not null default now(),
   revoked         boolean not null default false,
+  revoked_at      timestamptz,               -- date de l'acte : borne la rétention (RETENTION.md)
   parent_slug     text,                      -- re-partage : le lien d'où celui-ci est issu
   bot_enabled     boolean not null default false,
   bot_script      text,
@@ -423,6 +424,9 @@ alter table public.doc_presentation_messages
   add column if not exists client_key text;
 alter table public.commercial_doc_shares
   add column if not exists idem_key text;
+alter table public.commercial_doc_shares
+  add column if not exists revoked_at timestamptz;
+update public.commercial_doc_shares set revoked_at = now() where revoked = true and revoked_at is null;
 -- Une base née d'un init.sql d'avant la 0008 porte un NOT NULL qui rend la clôture impossible.
 alter table public.doc_presentations
   alter column control_hash drop not null;

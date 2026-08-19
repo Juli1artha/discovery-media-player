@@ -29,6 +29,7 @@ function init(ctx) {
   PLAYER = ctx;
   // Le domaine reçoit le même contexte : une seule construction pour tout le player.
   require("./shares").init(ctx);
+  require("./retention").init(ctx);
   require("./presentations").init(ctx);
   require("./brands").init(ctx);
   // ⚠️ Réinitialisé avec le contexte : les réponses de la sonde valent pour UNE base. Un hôte qui
@@ -3535,8 +3536,23 @@ async function handler(req, res) {
       // ⚠️ QUI a le droit de diffuser un document est en revanche une règle de l'HÔTE, pas du
       // player : elle passe par le contexte (`identity.canManageShares`). Le player se contente de
       // vérifier le jeton. Sans réponse de l'hôte : refus.
+      // ── RÉTENTION (docs/RETENTION.md) ────────────────────────────────────────────────────────
+      // Déclenchement explicite : hôte de confiance ou admin. Renvoie les comptes DÉCLARÉS —
+      // le recensement indépendant (SQL nu) est l'autre moitié du contrat, pas cette route.
+      if (body.action === "retention.run") {
+        const jd = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
+        try {
+          const hote = !!(PLAYER.identity.isTrustedHostCall && PLAYER.identity.isTrustedHostCall(req.headers));
+          let admin = false;
+          if (!hote) { const u = await PLAYER.identity.verifyToken(req.headers.authorization); admin = !!(u && PLAYER.identity.isAdmin(u)); }
+          if (!hote && !admin) return jd(403, { ok: false, error: "retention.run : hôte de confiance ou admin requis" });
+          return jd(200, await require("./retention").purgerRetention(Date.now()));
+        } catch (e) { try { PLAYER.errors.capture(e, { route: "retention" }); } catch { /* jamais bloquant */ } return jd(500, { ok: false }); }
+      }
       if (String(body.action || "").startsWith("docshare.")) {
         const jd = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
+        // Balayage de rétention opportuniste — au plus un par 24 h, jamais bloquant.
+        try { require("./retention").tick(); } catch { /* jamais bloquant */ }
         try {
           // ── L'HÔTE PARLE EN SON NOM PROPRE ────────────────────────────────────────────────
           //
