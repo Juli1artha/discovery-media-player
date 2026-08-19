@@ -28,7 +28,10 @@ function harnais({ pools = [], remove = null, dryRun, taille, plafond } = {}) {
         const table = chemin.split("?")[0];
         const p = parTable[table];
         if (chemin.startsWith("commercial_doc_shares?select=revoked_at")) return [];
-        if (chemin.startsWith("doc_presentations?active=eq.false")) return (parTable.doc_presentations && parTable.doc_presentations.lignes.slice(0, 500)) || [];
+        if (chemin.startsWith("doc_presentations?active=eq.false")) {
+          const limMortes = Number(/limit=(\d+)/.exec(chemin)?.[1] || 999);
+          return (parTable.doc_presentations && parTable.doc_presentations.lignes.slice(0, limMortes)) || [];
+        }
         if (!p) { if (m === "DELETE") return []; return []; }
         if (m === "DELETE") {
           const dedans = chemin.slice(chemin.indexOf("in.(") + 4, chemin.lastIndexOf(")"));
@@ -202,5 +205,27 @@ describe("le rapport tronque dit la vérité pour les présentations", () => {
     const r = await retention.purgerRetention(Date.now(), { taille: 1, plafond: 1 });
     expect(r.rapport.presentations.tronque, "une présence reste → tronqué même si les messages sont finis").toBe(true);
     expect(h.parTable.doc_presentations.lignes.length, "parent gardé tant qu'une présence reste").toBe(1);
+  });
+});
+
+describe("l'off-by-one des 500 présentations", () => {
+  function harnaisN(nbPres) {
+    const pres = poolTable("doc_presentations", "slug", nbPres);   // nbPres présentations mortes
+    // pas de messages ni présences : chaque présentation se supprime au premier passage
+    return harnais({ pools: [pres, poolTable("doc_presentation_messages", "id", 0), poolTable("doc_presentation_attendees", "attendee_key", 0)] });
+  }
+
+  it("exactement 500 présentations, aucune 501e → tronque false", async () => {
+    harnaisN(500);
+    const r = await retention.purgerRetention(Date.now());
+    expect(r.rapport.presentations.examinees, "les 500 sont traitées").toBe(500);
+    expect(r.rapport.presentations.tronque, "pile 500, rien après → non tronqué").toBe(false);
+  });
+
+  it("501 présentations → seules 500 traitées, tronque true", async () => {
+    const h = harnaisN(501);
+    const r = await retention.purgerRetention(Date.now());
+    expect(r.rapport.presentations.examinees, "on n'en traite que 500 par exécution").toBe(500);
+    expect(r.rapport.presentations.tronque, "une 501e existe → tronqué").toBe(true);
   });
 });

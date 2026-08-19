@@ -211,14 +211,20 @@ async function purgerRetention(now, optsBrutes = {}) {
   // Présentations mortes : bornées à PLAFOND_PRESENTATIONS par exécution ; la ligne, ses messages,
   // ses présences — et les fichiers du bucket si storage.remove est fourni (OPTIONNELLE).
   const bPres = borne(now, f.presentationsMois);
-  const mortes = await PLAYER.db.request(`doc_presentations?active=eq.false&updated_at=lt.${enc(bPres)}&select=slug&order=slug.asc&limit=${PLAFOND_PRESENTATIONS}`);
+  // ⚠️ On interroge PLAFOND+1 pour départager « pile PLAFOND présentations, rien après » (non
+  // tronqué) de « il y en a plus » — `>= PLAFOND` seul rendait un faux positif à exactement 500
+  // (P3 douzième audit : annoncé en 0.1.82, mais l'édition avait été perdue, sans essai pour la
+  // garder — c'est cet essai-ci qui manquait).
+  const mortesLot = await PLAYER.db.request(`doc_presentations?active=eq.false&updated_at=lt.${enc(bPres)}&select=slug&order=slug.asc&limit=${PLAFOND_PRESENTATIONS + 1}`);
+  const troncPres = Array.isArray(mortesLot) && mortesLot.length > PLAFOND_PRESENTATIONS;
+  const mortes = Array.isArray(mortesLot) ? mortesLot.slice(0, PLAFOND_PRESENTATIONS) : [];
   // ⚠️ BUDGET GLOBAL AUX PRÉSENTATIONS (P2 dixième audit). Le plafond n'était appliqué qu'À CHAQUE
   // présentation : 500 présentations × 5 000 = 2,5 M de messages en une exécution, timeout et
   // contention avec le chat. Deux budgets partagés — messages et présences — décrémentés au fil
   // des présentations ; la boucle s'arrête quand ils sont épuisés (tronque), sans supprimer les
   // parents restants. En dry-run, on parcourt quand même pour REMONTER ce que la vraie purge
   // ferait (examinés), sans jamais détruire.
-  const presRapport = { examinees: 0, supprimees: 0, messages: 0, presences: 0, messagesExaminees: 0, presencesExaminees: 0, fichiers: 0, fichiersErreur: 0, fichiersCandidats: 0, tronque: Array.isArray(mortes) && mortes.length >= PLAFOND_PRESENTATIONS };
+  const presRapport = { examinees: 0, supprimees: 0, messages: 0, presences: 0, messagesExaminees: 0, presencesExaminees: 0, fichiers: 0, fichiersErreur: 0, fichiersCandidats: 0, tronque: troncPres };
   let budgetMessages = opts.plafond, budgetPresences = opts.plafond;
   for (const p of (Array.isArray(mortes) ? mortes : [])) {
     const slug = p && p.slug; if (!slug) continue;
