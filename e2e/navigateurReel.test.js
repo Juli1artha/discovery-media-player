@@ -64,6 +64,7 @@ const SLUG_TRACE = "essai-trace";
 const SLUG_PDF = "essai-pdf-reel";
 const SLUG_DIRECT = "essai-direct";
 const SLUG_URL_MUETTE = "url-muette";
+const SLUG_PRESENT_PDF = "direct-pdf-reel";
 
 /** Octets réels de chaque dépendance, récupérés une fois et rejoués ensuite. */
 const octets = {};
@@ -168,6 +169,16 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
         file_url: pathToFileURL(path.join(racine, "sans-extension")).href,
         file_name: "plan.png", doc_title: "Plan",
         presenter_name: "Léa", owner_email: "moi@exemple.fr",
+        last_seen: new Date(0).toISOString(),
+        created_at: "2026-08-17T00:00:00Z", updated_at: "2026-08-17T00:00:00Z",
+      }, {
+        // ⚠️ SANS CETTE LIGNE, LE CHEMIN CANVAS DE L'AUDIENCE N'EST EXERCÉ PAR RIEN : les deux
+        // présentations ci-dessus portent des IMAGES. Une mutation posée sur le nommage du canvas
+        // audience (`cv.setAttribute('role','img')` retiré) est restée VERTE — c'est elle qui a
+        // exigé cette présentation sur le PDF réel.
+        id: 3, slug: SLUG_PRESENT_PDF, doc_id: "doc-pdf", active: true, current_page: 1, write_seq: 0,
+        file_url: pathToFileURL(path.join(racine, "essai-reel.pdf")).href, file_name: "essai-reel.pdf",
+        doc_title: "PDF réel", presenter_name: "Léa", owner_email: "moi@exemple.fr",
         last_seen: new Date(0).toISOString(),
         created_at: "2026-08-17T00:00:00Z", updated_at: "2026-08-17T00:00:00Z",
       }],
@@ -508,6 +519,115 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     expect(await page.evaluate(() => document.title)).toContain("Document d'essai");
     expect(violations).toEqual([]);
 
+    await page.close();
+  }, 60_000);
+
+  // ── ACCESSIBILITÉ : MESURÉE, PAS DÉCLARÉE ─────────────────────────────────────────────────────
+  //
+  // ⚠️ POURQUOI ICI : l'accessibilité d'une page ne se lit pas dans son gabarit — un `aria-label`
+  // peut exister dans la source et être écrasé par le script qui reconstruit le DOM. Seul le DOM
+  // FINAL, dans un vrai moteur, dit ce qu'une technologie d'assistance recevra. Même argument que
+  // la CSP en tête de ce fichier : relire n'est pas appliquer.
+  //
+  // L'arbitre est axe-core (celui des outils d'audit du navigateur), injecté par `evaluate` — qui
+  // passe par le protocole d'inspection, PAS par une balise : la CSP de la page reste celle de
+  // prod, on n'ouvre rien pour mesurer. Le seuil : ZÉRO violation `serious` ou `critical` sur
+  // les règles WCAG 2.1 A/AA. Les impacts moindres sont TOLÉRÉS mais IMPRIMÉS : on voit la dette,
+  // elle ne casse pas la forge.
+  //
+  // ⚠️ ET L'ARBITRE DOIT REFUSER AU MOINS UNE FOIS (même règle que le collecteur CSP) : le dernier
+  // essai plante une page volontairement infirme et exige de voir axe la refuser. Sans lui, un
+  // axe mal injecté qui rendrait zéro violation partout serait indistinguable d'un parc parfait.
+  async function mesurerAxe(page) {
+    await page.evaluate(require("axe-core").source);
+    return page.evaluate(() => window.axe.run(document, {
+      runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] },
+      resultTypes: ["violations"],
+    }).then((r) => r.violations.map((v) => ({
+      regle: v.id, impact: v.impact, aide: v.help,
+      noeuds: v.nodes.slice(0, 4).map((n) => n.target.join(" ")),
+    }))));
+  }
+  const graves = (violations) => violations.filter((v) => v.impact === "serious" || v.impact === "critical");
+  const imprimer = (nom, violations) => {
+    for (const v of violations) console.log(`[a11y] ${nom} — ${v.impact} — ${v.regle} : ${v.aide} → ${v.noeuds.join(" | ")}`);
+  };
+
+  it("la visionneuse tracée ne porte aucune violation grave WCAG A/AA", async () => {
+    const { page } = await ouvrirPageSurveillee(`/doc/${SLUG_TRACE}`);
+    await page.waitForFunction(() => document.body && document.body.innerHTML.length > 0, null, { timeout: 15_000 });
+    const violations = await mesurerAxe(page);
+    imprimer("visionneuse", violations);
+    expect(graves(violations), "le DOM final de la visionneuse refuse une technologie d'assistance").toEqual([]);
+    await page.close();
+  }, 60_000);
+
+  it("la page d'audience ne porte aucune violation grave WCAG A/AA", async () => {
+    const { page } = await ouvrirPageSurveillee(`/present/${SLUG_DIRECT}`);
+    await page.waitForFunction(
+      () => typeof window.Player === "object" && typeof window.supabase === "object",
+      null, { timeout: 15_000 });
+    const violations = await mesurerAxe(page);
+    imprimer("audience", violations);
+    expect(graves(violations), "le DOM final de la page d'audience refuse une technologie d'assistance").toEqual([]);
+    await page.close();
+  }, 60_000);
+
+  // ⚠️ CE QU'AXE NE SAIT PAS EXIGER : une région vivante ABSENTE n'est pas une violation — c'est
+  // juste un silence. Ces assertions demandent les sémantiques une à une, dans le DOM FINAL :
+  // un refactor du gabarit qui les efface rougit ici, pas chez un utilisateur de lecteur d'écran.
+  it("l'audience annonce, journalise et nomme — région vivante, chat en journal, saisies étiquetées", async () => {
+    const { page } = await ouvrirPageSurveillee(`/present/${SLUG_DIRECT}`);
+    await page.waitForFunction(
+      () => typeof window.Player === "object" && typeof window.supabase === "object",
+      null, { timeout: 15_000 });
+    const sem = await page.evaluate(() => ({
+      annonceur: (document.querySelector("#sr") || {}).getAttribute?.("aria-live") || null,
+      journal: (document.querySelector("#chatMsgs") || {}).getAttribute?.("role") || null,
+      saisie: (document.querySelector("#chatText") || {}).getAttribute?.("aria-label") || null,
+      envoi: (document.querySelector("#chatSend") || {}).getAttribute?.("aria-label") || null,
+    }));
+    expect(sem.annonceur, "sans région vivante, un changement de page est un événement muet").toBe("polite");
+    expect(sem.journal, "un fil de chat sans role=log n'annonce jamais un message").toBe("log");
+    expect(sem.saisie).toBeTruthy();
+    expect(sem.envoi).toBeTruthy();
+    await page.close();
+  }, 60_000);
+
+  it("la page rendue de l'AUDIENCE porte un NOM — le chemin canvas, sur le PDF réel", async () => {
+    const { page } = await ouvrirPageSurveillee(`/present/${SLUG_PRESENT_PDF}`);
+    await page.waitForFunction(
+      () => { const c = document.querySelector("#page canvas"); return !!c && c.width > 0; },
+      null, { timeout: 20_000 });
+    const nom = await page.evaluate(() => {
+      const c = document.querySelector("#page canvas");
+      return { role: c.getAttribute("role"), label: c.getAttribute("aria-label") };
+    });
+    expect(nom.role, "le canvas de l'audience est un trou dans l'arbre d'accessibilité").toBe("img");
+    expect(nom.label).toContain("Page 1");
+    await page.close();
+  }, 60_000);
+
+  it("la page rendue de la visionneuse porte un NOM — role=img et son numéro", async () => {
+    const page = await navigateur.newPage();
+    await page.goto(`http://127.0.0.1:${port}/doc/${SLUG_PDF}`, { waitUntil: "load" });
+    await page.waitForFunction(
+      () => { const c = document.querySelector("#pages canvas"); return !!c && c.width > 0; },
+      null, { timeout: 20_000 });
+    const nom = await page.evaluate(() => {
+      const c = document.querySelector("#pages canvas");
+      return { role: c.getAttribute("role"), label: c.getAttribute("aria-label") };
+    });
+    expect(nom.role, "un canvas sans rôle est un trou dans l'arbre d'accessibilité").toBe("img");
+    expect(nom.label).toContain("Page 1");
+    await page.close();
+  }, 60_000);
+
+  it("l'arbitre refuse une page volontairement infirme — sinon ses zéros ne valent rien", async () => {
+    const page = await navigateur.newPage();
+    await page.goto(`data:text/html,<html><body><img src="x"><input type="text"></body></html>`, { waitUntil: "load" });
+    const violations = await mesurerAxe(page);
+    expect(graves(violations).length, "axe n'a rien vu sur une page SANS lang, SANS alt, SANS label : il n'est pas branché").toBeGreaterThan(0);
     await page.close();
   }, 60_000);
 });
