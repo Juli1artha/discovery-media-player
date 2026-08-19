@@ -27,7 +27,7 @@ let recu = null;
 require.cache[ID] = { id: ID, filename: ID, loaded: true, exports: {
   ...vraies,
   getPresentation: async () => ({ ...PRES }), listMessages: async () => [],
-  recordAttendance: async (slug, arg) => { recu = { slug, ...arg }; return { ok: true }; },
+  recordAttendance: async (slug, _pres, arg) => { recu = { slug, ...arg }; return { ok: true }; },
 } };
 const player = require("../handler.js");
 

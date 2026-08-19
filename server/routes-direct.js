@@ -4,6 +4,10 @@
 const { adresseAppelant, lcMembre, cleAnonyme, profilDuJeton } = require("./appelant");
 
 const { createPresentation, getPresentation, setPage, endPresentation, addMessage, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent } = require("./presentations");
+// Cadence de présence et cible de mutualisation par IP (P1 performance). L'intervalle DOIT
+// refléter celui du navigateur (gabarit-live.js) ; la cible est un vrai événement en salle.
+const ATTENDANCE_INTERVAL_MS = 25_000;
+const ATTENDEES_PER_EGRESS = 250;
 let PLAYER = null;
 const init = (ctx) => { PLAYER = ctx; };
 // Même délégation que dans handler : la règle vit chez l'hôte.
@@ -55,7 +59,14 @@ async function traiter(req, res, body, _slug) {
         const jp = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
         try {
           const ip = adresseAppelant(req) || "anon";
-          const allowed = await PLAYER.limits.allow(`patt:${ip}`, 1000, 3600);
+          // ⚠️ QUOTA DÉRIVÉ DE LA CADENCE, PAS 1000 EN DUR (P1 performance). Un participant émet un
+          // battement toutes les ATTENDANCE_INTERVAL_MS ; le quota vise ATTENDEES_PER_EGRESS
+          // participants derrière une même IP (bureau, Wi-Fi d'événement partagent une sortie).
+          // 1000/h ne couvrait que ~6 participants — le 7e prenait des 429. Marge ×1,3 pour les
+          // battements immédiats (arrivée, changement de page, pagehide).
+          const battementsParH = Math.ceil(3_600_000 / ATTENDANCE_INTERVAL_MS);
+          const quotaPresence = Math.ceil(battementsParH * ATTENDEES_PER_EGRESS * 1.3);
+          const allowed = await PLAYER.limits.allow(`patt:${ip}`, quotaPresence, 3600);
           if (!allowed) return jp(429, { ok: false, error: "rate" });
           // ⚠️ CES DEUX BOOLÉENS ÉTAIENT CEUX DE L'APPELANT. `isMember` sépare la population interne
           // de celle des prospects — c'est la promesse même du produit — et `isPresenter` accorde le
@@ -83,7 +94,7 @@ async function traiter(req, res, body, _slug) {
           // On dérive donc la clé de ce qui est prouvé, et jamais de ce qui est affirmé. Un anonyme,
           // lui, ne peut rien prouver : sa clé reste la sienne, mais enfermée dans un espace de noms
           // dont elle ne peut pas sortir — elle ne pourra jamais ressembler à l'e-mail d'un membre.
-          const r = await recordAttendance(String(body.slug || ""), {
+          const r = await recordAttendance(String(body.slug || ""), pres, {
             // ⚠️ MINUSCULÉE, ET CE DÉTAIL EST UNE LIGNE DE PRÉSENCE. La clé cliente que 0.1.42 a
             // remplacée l'était (`me.email.toLowerCase()`) ; la clé dérivée ne l'était pas, et la
             // ligne se retrouve par `attendee_key=eq.` — une correspondance EXACTE. Un hôte dont
