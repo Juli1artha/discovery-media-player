@@ -398,6 +398,27 @@ jobs:
           $PSQL -c "delete from public.doc_presentation_messages where slug='__course'"
           $PSQL -c "delete from public.doc_presentations where slug='__course'"
 
+      # ⚠️ « REJOUABLE » DOIT AUSSI VALOIR DEPUIS UNE ANCIENNE BASE — c'est même son seul intérêt :
+      # une base vierge n'a pas besoin d'être rejouée. Or l'index d'une colonne CONDITIONNELLE
+      # (idem_key) était créé ligne 62 quand le rattrapage qui ajoute la colonne vivait ligne 410 :
+      # une base née de l'init 0.1.64 cassait à la ligne 62, avant d'atteindre ce qui l'aurait
+      # sauvée. Sixième audit. Ce scénario installe l'init HISTORIQUE (depuis le tag git), rejoue
+      # l'actuel, et exige la même forme qu'une installation vierge — deux TOUTS comparés.
+      - name: Yesterday's install replays today's init.sql
+        run: |
+          git fetch --quiet --depth 1 origin tag v0.1.64
+          git show v0.1.64:supabase/init.sql > /tmp/init-v64.sql
+          psql -v ON_ERROR_STOP=1 -h localhost -U postgres -qtA -c "create database hier"
+          HIER="psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d hier -qtA"
+          $HIER -f /tmp/init-v64.sql
+          $HIER -f supabase/init.sql
+          $HIER -f /tmp/forme.sql > /tmp/forme-hier.txt
+          if ! diff -u /tmp/avant.txt /tmp/forme-hier.txt; then
+            echo "::error::rejouer l'init actuel sur une base 0.1.64 ne donne PAS la forme d'une installation vierge"
+            exit 1
+          fi
+          echo "base 0.1.64 → rejeu de l'init actuel : forme identique au vierge"
+
       # ⚠️ Le fichier se dit « rejouable ». Une affirmation jamais éprouvée n'est pas une propriété.
       - name: init.sql is replayable
         run: |
