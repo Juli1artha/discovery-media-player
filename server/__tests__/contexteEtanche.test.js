@@ -66,7 +66,7 @@ describe("le cœur passe par le contexte, pas par l'environnement", () => {
   });
 
   it("n'a qu'UNE source pour les ancres de framing", () => {
-    const src = fs.readFileSync(path.join(RACINE, "server", "handler.js"), "utf8");
+    const src = require("./sourceDesPages.cjs").SOURCE_PAGES;
     const lectures = lecturesEnv(src).filter(([, v]) => /DOC_FRAME_ANCESTORS/.test(v));
     expect(lectures, "la carte d'identité et l'en-tête CSP doivent lire la MÊME chose").toEqual([]);
     expect(src).toContain("PLAYER.config.extraFrameAncestors");
@@ -90,7 +90,7 @@ describe("le cœur passe par le contexte, pas par l'environnement", () => {
 // exception invisible jamais.
 describe("ce qui n'est pas encore fait", () => {
   it("les clés de synthèse vocale restent à sortir du cœur", () => {
-    const src = fs.readFileSync(path.join(RACINE, "server", "handler.js"), "utf8");
+    const src = require("./sourceDesPages.cjs").SOURCE_PAGES;
     const restant = lecturesEnv(src).filter(([, v]) => /ELEVENLABS/.test(v));
     expect(restant.length, "si ce test tombe à 0, retirez ce bloc et l'exception du test ci-dessus").toBeGreaterThan(0);
   });
