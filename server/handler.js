@@ -16,7 +16,7 @@ const { creerCache } = require("./cache.js");
 // au chargement du module, et non dans `init()` : un hôte qui réinitialise son contexte ne doit
 // pas vider ce qui protège sa base.
 const cacheLecture = creerCache({ ttlMs: PRESENT_CACHE_MS });
-const { getPresentation, listMessages, editMessage } = require("./presentations");
+const { getPresentation, listMessages } = require("./presentations");
 // CONTEXTE INJECTÉ : tout ce que le player emprunte à l'application hôte passe par ici — stockage,
 // base, identité, limites, marque, journalisation — et rien d'autre. C'est la frontière qui permettra
 // de brancher un second projet, puis d'ouvrir le cœur. Cf. api/_player-context.js.
@@ -499,6 +499,8 @@ async function handler(req, res) {
       // ── Familles d'actions POST : extraites dans server/routes-*.js. Chaque module traite
       // les siennes et répond ; on teste la réponse, pas une liste d'actions (jamais deux
       // exemplaires de la même liste). L'ordre reproduit celui des blocs d'origine.
+      // ⚠️ routes-liens porte le REPLI POST ({"ok":true} pour toute action inconnue) : il répond
+      // toujours, et doit rester la DERNIÈRE famille de cette liste.
       for (const famille of ["routes-visiteur", "routes-direct", "routes-agent", "routes-liens"]) {
         if ((await require("./" + famille).traiter(req, res, body, slug)) !== false) return;
       }

@@ -12,7 +12,7 @@ const init = (ctx) => { PLAYER = ctx; docbot = ctx.plugins.bot; };
 // chute au bout rend `false` et le dispatch continue. Aucune liste d'actions n'est dupliquée
 // entre ici et handler (un correctif à deux exemplaires finit par diverger) — et aucun appui
 // sur res.writableEnded, absent des `res` postiches des bancs comme de certains hôtes.
-async function traiter(req, res, body, slug) {
+async function traiter(req, res, body, _slug) {
       if (body.action === "bot-tts") {
         const jp = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
         if (!docbot) return jp(404, { ok: false, error: "disabled" });

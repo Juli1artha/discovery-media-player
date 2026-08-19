@@ -443,7 +443,9 @@ async function traiter(req, res, body, slug) {
       }
       res.statusCode = 200; res.setHeader("Content-Type", "application/json"); res.end('{"ok":true}');
       return;
-  return false;
+  // ⚠️ PAS de `return false` ici : le bloc ci-dessus est le REPLI POST d'origine — toute action
+  // qu'aucune famille n'a reconnue finit {"ok":true}, comme avant l'extraction. Cette famille
+  // répond donc TOUJOURS, et doit rester la DERNIÈRE du dispatch (handler le dit aussi).
 }
 
 module.exports = { init, traiter };
