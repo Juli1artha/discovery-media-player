@@ -92,5 +92,8 @@ describe("le chemin d'une pièce jointe reste dans le dossier du slug", () => {
     await retention.purgerRetention(Date.now());
     expect(supprimes.some((s) => s.ch.includes("..") || s.ch.includes("autre-bucket") || s.ch.startsWith("s-b/")), "aucune suppression hors du dossier du slug").toBe(false);
     for (const s of supprimes) expect(s.bucket).toBe("present-attachments");
+    // ⚠️ Et EXACTEMENT la légitime (neuvième audit) : « aucune suppression du tout » passerait
+    // aussi le test ci-dessus, ce qui masquerait une purge de fichiers cassée.
+    expect(supprimes, "la pièce légitime du slug DOIT être supprimée, une seule").toEqual([{ bucket: "present-attachments", ch: "s-a/1-photo.png" }]);
   });
 });
