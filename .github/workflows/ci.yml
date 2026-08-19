@@ -446,6 +446,34 @@ jobs:
           fi
           echo "base 0.1.64 → rejeu de l'init actuel : forme identique au vierge"
 
+      # ⚠️ CHAQUE COLONNE À DONNÉE PERSONNELLE A UNE POLITIQUE DE RÉTENTION ÉCRITE — deny-by-default.
+      #
+      # Le vrai sujet d'une purge n'est pas « fait-elle ce qu'elle dit » mais « ce qu'elle dit
+      # couvre-t-il ce qui existe » : une donnée hors périmètre déclaré ne fait bouger aucun
+      # compte, et tous les contrôles sont sincères (second hôte, 19/08). Cette garde énumère donc
+      # CE QUI EXISTE — les colonnes du schéma VIVANT, par information_schema, jamais par notre
+      # mémoire du fichier — et classe par FORMES (email, ip, ua, nom, corps, clé de session…),
+      # pas par instances : une colonne nouvelle qui matche une forme rougit ici tant que
+      # docs/RETENTION.md ne dit pas son sort (purgée après N / conservée parce que). Sur-matcher
+      # coûte une ligne de documentation ; sous-matcher coûte une donnée qui survit sans politique.
+      - name: Every personal-data column has a written retention policy
+        run: |
+          $PSQL -c "
+            select table_name || '.' || column_name
+            from information_schema.columns
+            where table_schema = 'public'
+              and (column_name ~ '(email|name|avatar|body|comment|hash|attachment|session|token|content|rating|pages)'
+                   or column_name in ('ip','ua','key','client_key','attendee_key','created_by'))
+            order by 1;" > /tmp/personnelles.txt
+          test -s /tmp/personnelles.txt || { echo "::error::le recensement des colonnes n'a rien rendu — la sonde vise à côté"; exit 1; }
+          echo "périmètre existant : $(wc -l < /tmp/personnelles.txt) colonnes à forme personnelle"
+          manque=0
+          while read -r col; do
+            grep -qF "\`$col\`" docs/RETENTION.md 2>/dev/null || { echo "::error::$col existe dans le schéma et n'a AUCUNE politique dans docs/RETENTION.md"; manque=1; }
+          done < /tmp/personnelles.txt
+          [ "$manque" = "0" ] || exit 1
+          echo "chaque colonne à forme personnelle a sa politique écrite"
+
       # ⚠️ Le fichier se dit « rejouable ». Une affirmation jamais éprouvée n'est pas une propriété.
       - name: init.sql is replayable
         run: |
