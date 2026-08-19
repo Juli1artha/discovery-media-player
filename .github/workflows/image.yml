@@ -1,0 +1,64 @@
+# IMAGE DE CONTENEUR — HORS DU CHEMIN CRITIQUE DE LA PUBLICATION.
+#
+# ⚠️ Le build multi-arch (amd64 + arm64 + SBOM + provenance) dure ~2 min 30 : c'était le plus
+# gros poste du workflow Release, et il bloquait la fin de la publication alors que le paquet npm
+# — la seule chose dont dépend la montée du studio — était prêt en ~1 min 30. On le sort donc ici :
+# ce workflow se déclenche sur le MÊME tag, EN PARALLÈLE de Release. Personne n'attend l'image ;
+# Release publie npm et la GitHub Release sans elle.
+#
+# ⚠️ La garde de complétude reste vraie : l'image est toujours produite pour chaque tag (le
+# septième audit l'exigeait). Simplement, elle ne retient plus la publication npm.
+name: Image
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag existant à rejouer (ex. v0.1.78)"
+        required: true
+
+permissions:
+  contents: read
+  packages: write        # pousser l'image sur ghcr
+  id-token: write        # OIDC
+  attestations: write    # provenance de l'image
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+
+      - name: Image name, lowercased
+        id: img
+        run: echo "ref=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # amd64 + arm64 : les serveurs ARM (Graviton, Ampere) et les Mac Apple Silicon sont
+      # majoritaires chez les auto-hébergeurs. SBOM et provenance : ce qu'il y a dans l'image et
+      # d'où elle vient, vérifiables sans nous croire sur parole.
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          sbom: true
+          provenance: mode=max
+          tags: |
+            ${{ steps.img.outputs.ref }}:${{ env.TAG }}
+            ${{ steps.img.outputs.ref }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
