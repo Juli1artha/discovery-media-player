@@ -67,7 +67,7 @@ describe.skipIf(skip)("rétention : le déclaré et les survivantes", () => {
     await base.request("commercial_doc_shares", { method: "POST", headers: { Prefer: "return=minimal" }, body: [
       { slug: "ret-l-revoque-ancien", doc_id: "ret-doc", file_url: "https://x.supabase.co/storage/v1/object/public/r/d.pdf", revoked: true, revoked_at: IL_Y_A(14) },
       { slug: "ret-l-revoque-recent", doc_id: "ret-doc", file_url: "https://x.supabase.co/storage/v1/object/public/r/d.pdf", revoked: true, revoked_at: RECENT },
-      { slug: "ret-l-vivant", doc_id: "ret-doc", file_url: "https://x.supabase.co/storage/v1/object/public/r/d.pdf", revoked: false },
+      { slug: "ret-l-vivant", doc_id: "ret-doc", file_url: "https://x.supabase.co/storage/v1/object/public/r/d.pdf", revoked: false, revoked_at: null },
     ] });
     // Présentations : morte-ancienne (part, avec messages+présences semés AVANT la clôture),
     // morte-récente et active-ancienne (restent, avec leurs messages).
