@@ -78,6 +78,10 @@ comment on column public.commercial_doc_shares.idem_key is
 create index if not exists cds_parent_idx on public.commercial_doc_shares (parent_slug);
 create index if not exists idx_doc_shares_brand_key
   on public.commercial_doc_shares (brand_key) where brand_key is not null;
+-- Filtres de rétention (migration 0014) : mêmes index sur une base vierge.
+create index if not exists idx_shares_revoked_at on public.commercial_doc_shares (revoked_at) where revoked = true;
+create index if not exists idx_cds_last_at on public.commercial_doc_sessions (last_at);
+create index if not exists idx_bot_last_at on public.doc_bot_sessions (last_at);
 
 -- ── Journal des ouvertures (population EXTERNE) ────────────────────────────────────────────────
 create table if not exists public.commercial_doc_views (

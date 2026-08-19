@@ -8,15 +8,41 @@ const schema = require("../schema.js");
 
 function harnais({ colonneDate = true, remove = null, lignes = {} } = {}) {
   const appels = [];
+  // Un pool par table de journal : la sélection sert un LOT, la suppression par id=in.() le vide —
+  // le double reproduit le contrat en lots (P2 huitième audit), pas le DELETE-en-un-coup d'avant.
+  const pools = {};
+  for (const [prefixe, reponse] of Object.entries(lignes)) {
+    if (Array.isArray(reponse) && reponse.length && reponse[0] && ("id" in reponse[0] || "session_id" in reponse[0] || "key" in reponse[0])) {
+      pools[prefixe] = reponse.map((r) => ({ ...r }));
+    }
+  }
   const ctx = {
     db: {
       async request(chemin, opts = {}) {
-        appels.push({ chemin, methode: opts.method || "GET" });
+        const methode = opts.method || "GET";
+        appels.push({ chemin, methode });
         if (chemin.startsWith("commercial_doc_shares?select=revoked_at")) {
           if (!colonneDate) throw new Error("400 column revoked_at does not exist");
           return [];
         }
+        if (methode === "DELETE") {
+          // Vider le pool des ids présents dans in.(…)
+          for (const [prefixe, pool] of Object.entries(pools)) {
+            const tablePrefixe = prefixe.split("?")[0];
+            if (chemin.startsWith(tablePrefixe + "?") && chemin.includes("=in.(")) {
+              const dedans = chemin.slice(chemin.indexOf("in.(") + 4, chemin.lastIndexOf(")"));
+              pools[prefixe] = pool.filter((r) => !dedans.includes('"' + String(r.id ?? r.session_id ?? r.key) + '"'));
+            }
+          }
+          return [];
+        }
+        // Sélection d'un lot (SELECT id … limit N) : servir le pool borné à la limite.
+        const lim = Number(/limit=(\d+)/.exec(chemin)?.[1] || 999);
+        for (const [prefixe, pool] of Object.entries(pools)) {
+          if (chemin.startsWith(prefixe)) return pool.slice(0, lim);
+        }
         for (const [prefixe, reponse] of Object.entries(lignes)) {
+          if (pools[prefixe]) continue;
           if (chemin.startsWith(prefixe)) return reponse;
         }
         return [];
@@ -42,11 +68,16 @@ describe("rétention au double", () => {
     } });
     const r = await retention.purgerRetention(Date.UTC(2026, 7, 19));
     expect(r.ok).toBe(true);
-    expect(r.efface.commercial_doc_views).toBe(2);
+    expect(r.efface.commercial_doc_views, "les deux lignes semées partent").toBe(2);
     expect(r.efface.doc_presentations).toBe(0);
+    // Chaque SÉLECTION de journal est bornée par sa date ET par une limite (le lot).
+    const selections = appels.filter((a) => a.methode === "GET" && /select=(id|session_id|key)&order=/.test(a.chemin));
+    expect(selections.length, "une sélection par table de journal").toBeGreaterThanOrEqual(5);
+    for (const sel of selections) expect(sel.chemin, "sélection bornée en date et en taille").toMatch(/[?&](at|last_at|expires_at|revoked_at)=lt\.[^&]+.*limit=\d+/);
+    // La seule table peuplée (views) reçoit un DELETE par id ; les autres, aucune (pool vide).
     const suppressions = appels.filter((a) => a.methode === "DELETE");
-    expect(suppressions.length, "cinq journaux + liens révoqués — pas de présentation morte semée").toBe(6);
-    for (const s of suppressions) expect(s.chemin, "chaque DELETE est borné par un filtre").toMatch(/[?&](at|last_at|expires_at|revoked_at)=lt\./);
+    expect(suppressions.length, "un seul lot supprimé : celui des views").toBe(1);
+    expect(suppressions[0].chemin, "suppression par identifiants, pas par filtre de date").toMatch(/id=in\.\(/);
   });
 
   it("sans la colonne 0013, la purge des liens révoqués se TAIT — elle n'invente pas de borne", async () => {
@@ -77,6 +108,7 @@ describe("rétention au double", () => {
   it("sans storage.remove, les lignes partent quand même — la limite est dite, pas simulée", async () => {
     const { appels } = harnais({ lignes: {
       "doc_presentations?active=eq.false": [{ slug: "morte" }],
+      "doc_presentation_messages?slug=eq.morte": [{ id: 1 }],   // un message ancien à supprimer par lot
     } });
     const r = await retention.purgerRetention(Date.now());
     expect(r.efface.pieces_jointes).toBe(0);
@@ -89,7 +121,12 @@ describe("rétention au double", () => {
     let demandes = 0, suppressions = 0;
     const faire = (config) => {
       const ctx = {
-        db: { async request(chemin, opts = {}) { if ((opts.method || "GET") === "DELETE") suppressions += 1; return []; }, async selectAll() { return []; } },
+        db: { async request(chemin, opts = {}) {
+          const m = opts.method || "GET";
+          if (m === "DELETE") { suppressions += 1; return []; }
+          if (chemin.startsWith("commercial_doc_views?at=lt")) return [{ id: "v1" }];   // une vieille ligne → un lot à supprimer
+          return [];
+        }, async selectAll() { return []; } },
         storage: {}, errors: { capture() {} }, config,
         limits: { async allow() { demandes += 1; return true; } },
       };
@@ -110,7 +147,13 @@ describe("rétention au double", () => {
   it("le tick opté ne balaie qu'avec la permission du verrou partagé — au plus un par fenêtre", async () => {
     let demandes = 0, permis = false, balayages = 0;
     const ctx = {
-      db: { async request(chemin, opts = {}) { if ((opts.method || "GET") === "DELETE") balayages += 1; if (chemin.startsWith("commercial_doc_shares?select=revoked_at")) return []; return []; }, async selectAll() { return []; } },
+      db: { async request(chemin, opts = {}) {
+        const m = opts.method || "GET";
+        if (m === "DELETE") { balayages += 1; return []; }
+        if (chemin.startsWith("commercial_doc_shares?select=revoked_at")) return [];
+        if (chemin.startsWith("commercial_doc_views?at=lt")) return [{ id: "v1" }];
+        return [];
+      }, async selectAll() { return []; } },
       storage: {}, errors: { capture() {} }, config: { retention: { balayage: true } },
       limits: { async allow(cle, max, fenetre) { demandes += 1; expect(cle).toBe("retention:sweep"); expect(max).toBe(1); expect(fenetre).toBe(86400); return permis; } },
     };
