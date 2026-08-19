@@ -25,16 +25,16 @@ permissions:
   id-token: write        # OIDC
   attestations: write    # provenance de l'image
 
-# ⚠️ SÉRIALISER LES PUBLICATIONS D'IMAGE (P1 onzième audit). Deux builds concurrents pouvaient
-# écraser `latest` dans le désordre ; la promotion se décide sur le plus haut tag, mais deux
-# promotions simultanées gardent la course. Un seul build d'image à la fois — les autres attendent.
-concurrency:
-  group: image-publish
-  cancel-in-progress: false
-
+# ⚠️ PAS de concurrency au niveau du workflow (P2 douzième audit). Deux tags rapprochés produisent
+# deux images VERSIONNÉES distinctes qui ne se marchent pas dessus : les sérialiser ferait qu'un
+# troisième tag ANNULE le deuxième en attente (GitHub Actions ne garde qu'une exécution en file),
+# et l'image intermédiaire ne naîtrait jamais. Les builds tournent donc en PARALLÈLE ; seule la
+# promotion de `latest` — le seul point de course réel — est sérialisée, dans son propre job.
 jobs:
   image:
     runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.img.outputs.ref }}
     env:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
@@ -93,18 +93,40 @@ jobs:
           index=$(curl -s -H "Authorization: Bearer $jeton" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/$depot/manifests/${TAG}")
           echo "$index" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const m=JSON.parse(d);const arch=(m.manifests||[]).map(x=>x.platform&&x.platform.architecture).filter(Boolean);if(!arch.includes('amd64')||!arch.includes('arm64')){console.error('::error::image '+process.env.TAG+' incomplète — arches: '+arch.join(',')||'aucune');process.exit(1)}console.log('image '+process.env.TAG+' servie, arches: '+arch.join(', '))})"
 
-      # ⚠️ PROMOTION DE `latest` PAR RETAG ATOMIQUE, APRÈS un build réussi — jamais pendant. On
-      # RECALCULE le plus haut tag ICI (pas avant le build) : un vieux build lent ne peut plus
-      # promouvoir `latest` s'il a été dépassé entre-temps. `imagetools create` retague sans
-      # reconstruire, en préservant la liste multi-arch et les attestations.
+  promote-latest:
+    needs: image
+    runs-on: ubuntu-latest
+    # ⚠️ SEUL point sérialisé : deux promotions de `latest` ne doivent pas se croiser. Un build
+    # versionné en retard n'écrase pas `latest` car ce job RECALCULE le plus haut tag ici même.
+    concurrency:
+      group: image-latest-promote
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      REF: ${{ needs.image.outputs.ref }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ⚠️ Le plus haut tag est recalculé ICI, après le build et juste avant la promotion : un
+      # build versionné plus lent qui aurait été dépassé ne promeut plus `latest`. `imagetools
+      # create` retague sans reconstruire, en préservant la liste multi-arch et les attestations.
       - name: Promote latest only if this is the highest tag
         run: |
-          git fetch --tags --quiet
           plusHaut=$(git tag -l 'v*' --sort=-v:refname | head -1)
           if [ "$TAG" != "$plusHaut" ]; then echo "$TAG n'est pas le plus haut ($plusHaut) — latest NON touché"; exit 0; fi
-          docker buildx imagetools create --tag "${{ steps.img.outputs.ref }}:latest" "${{ steps.img.outputs.ref }}:${TAG}"
+          docker buildx imagetools create --tag "$REF:latest" "$REF:$TAG"
           echo "latest promu vers $TAG (retag atomique)"
-          # Vérifier que latest et le tag pointent le MÊME digest.
           depot=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
           jeton=$(curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.stdout.write(JSON.parse(d).token||''))")
           dtag=$(curl -sI -H "Authorization: Bearer $jeton" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/$depot/manifests/${TAG}" | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}')
