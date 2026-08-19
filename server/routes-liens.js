@@ -443,7 +443,16 @@ async function traiter(req, res, body, slug) {
         return;
       }
       const share = await getShareBySlug(body.slug || slug);
-      if (share && !share.is_test) { // répétition générale : la lecture de test ne compte pas dans les stats
+      // ⚠️ PLAFOND ANTI-INONDATION PAR IP (P1 performance). Le chemin analytique externe écrivait
+      // SANS quota : un slug public permettait des écritures illimitées (base gonflée, stats
+      // faussées). Même quota dérivé de la cadence que l'interne (SESSION_QUOTA_PER_HOUR par IP).
+      // Dépassé : on n'écrit pas — mais on répond 200, car une mesure ne doit pas casser une lecture.
+      const ipTrack = ip0 || "anon";
+      const sousQuota = await PLAYER.limits.allow(`sess:${ipTrack}`, SESSION_QUOTA_PER_HOUR, 3600);
+      if (share && !share.is_test && !sousQuota) {
+        try { if (await PLAYER.limits.allow("sess:quota-avert", 1, 3600)) PLAYER.errors.capture(new Error(`télémétrie externe refusée : quota horaire atteint (${SESSION_QUOTA_PER_HOUR}/h par adresse)`), { route: "track" }); } catch { /* jamais bloquant */ }
+      }
+      if (share && !share.is_test && sousQuota) { // répétition générale : la lecture de test ne compte pas dans les stats
         try {
           // 'session' = résumé riche (temps par page, appareil) → upsert ; open/page/heartbeat → journal léger (funnel/overview).
           if (body.event === "session") await upsertSession(share, { sessionId: body.sessionId, numPages: body.numPages, maxPage: body.maxPage, totalSeconds: body.totalSeconds, pagesTime: body.pagesTime }, { ip: ip0, ua: ua0 });

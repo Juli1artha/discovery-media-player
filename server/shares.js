@@ -277,14 +277,14 @@ function parseUa(ua) {
 // Upsert d'une session de consultation (résumé envoyé périodiquement par la visionneuse). Stocke le temps
 // PAR page (cumulatif côté client → on remplace), totaux, appareil. Conserve started_at (insert) via merge.
 async function upsertSession(share, p, { ip, ua }) {
-  const num = (v) => (Number.isFinite(+v) ? Math.trunc(+v) : null);
   const sessionId = String(p.sessionId || "").slice(0, 64);
   if (!sessionId) return;
-  const pagesTime = (p.pagesTime && typeof p.pagesTime === "object") ? p.pagesTime : {};
   const { device, os, browser } = parseUa(ua);
   const row = {
     session_id: sessionId, slug: share.slug, doc_id: share.doc_id, recipient_email: share.recipient_email,
-    num_pages: num(p.numPages), max_page: num(p.maxPage), total_seconds: num(p.totalSeconds) || 0, pages_time: pagesTime,
+    // Bornées comme la session INTERNE : plafond d'entrées, clés/valeurs numériques, totaux capés.
+    num_pages: bornerNombre(p.numPages, BORNES.pages), max_page: bornerNombre(p.maxPage, BORNES.pages),
+    total_seconds: bornerNombre(p.totalSeconds, BORNES.secondes) || 0, pages_time: bornerPagesTime(p.pagesTime),
     ua: String(ua || "").slice(0, 300), ip: String(ip || "").slice(0, 60), device, os, browser, last_at: new Date().toISOString(),
   };
   // started_at non touché par l'upsert (default à l'insert ; merge ne l'écrase pas car absent du body).
@@ -370,6 +370,21 @@ async function setShareAuth(slug, requireAuth) {
 // que l'hôte se porte garant de l'identité (jeton signé) : c'est le second volet, et il est
 // signalé au point d'entrée plutôt qu'ici.
 const BORNES = { pages: 10_000, secondes: 24 * 3600, entreesPagesTime: 2_000 };
+// ⚠️ BORNER CE QUI VIENT DU DEHORS — les DEUX chemins de session (interne ET externe). Un objet
+// libre sans plafond laisse un seul appel écrire un JSON de la taille qu'il veut (P1 performance).
+const bornerNombre = (v, max) => { const n = Number.isFinite(+v) ? Math.trunc(+v) : null; return n == null ? null : Math.max(0, Math.min(n, max)); };
+function bornerPagesTime(brut) {
+  const src = (brut && typeof brut === "object" && !Array.isArray(brut)) ? brut : {};
+  const out = {};
+  let n = 0;
+  for (const k in src) {
+    if (++n > BORNES.entreesPagesTime) break;
+    const page = Number.isFinite(+k) ? Math.trunc(+k) : null;
+    if (page == null || page < 0 || page > BORNES.pages) continue;
+    out[String(page)] = bornerNombre(src[k], BORNES.secondes) || 0;
+  }
+  return out;
+}
 
 // ⚠️ `ip` N'EST PLUS LU, ET LA SIGNATURE LE DIT. L'appelant continue de le passer — il ne sait pas
 // ce que chaque table conserve, et ce n'est pas à lui de le savoir. Mais le garder en paramètre
