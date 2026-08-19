@@ -52,6 +52,12 @@ function harnais({ aveuglesDejaLa = 0, conflitSansGagnant = false, colonne = tru
         if (o.method === "PATCH") {
           const m = /slug=eq\.([^&]+)/.exec(chemin);
           const l = etat.lignes.find((x) => x.slug === decodeURIComponent(m[1]));
+          // ⚠️ L'index partiel ne distingue pas INSERT et UPDATE : poser en PATCH une clé qu'une
+          // AUTRE ligne porte déjà rend le même 409 que le POST — fidélité sans laquelle le
+          // chemin de backfill semble sûr alors qu'il ne rattrape rien (septième audit).
+          if (l && o.body && o.body.idem_key && etat.lignes.some((x) => x !== l && x.idem_key === o.body.idem_key)) {
+            throw new Error("Supabase PATCH commercial_doc_shares → 409 duplicate key cds_idem_key_uniq");
+          }
           if (l) Object.assign(l, o.body);
           return [];
         }
@@ -111,6 +117,20 @@ describe("un usage, un lien — la contrainte tranche, le perdant relit", () => 
   // après un 409 — sur un docId long, le perdant LÉGITIME ne trouvait pas de gagnant et notre
   // propre garde « un 409 sans gagnant remonte » le finissait en 500. Deux exemplaires du même
   // fait (la clé écrite, la clé relue), jamais confrontés sur leur longueur.
+  // ⚠️ SEPTIÈME AUDIT : le chemin de CRÉATION rattrapait le 409 en relisant le gagnant ; le
+  // chemin de BACKFILL (réemploi d'une ligne historique) posait la même clé SANS rattrapage —
+  // le correctif ne s'était pas appliqué à lui-même. Deux doublons d'avant 0011 en concurrence :
+  // l'un reçoit la clé, l'autre doit relire le gagnant, pas finir en 500.
+  it("le backfill d'une ligne historique rattrape le 409 et relit le gagnant", async () => {
+    const { etat, player } = harnais();
+    etat.lignes.push({ slug: "gagnant", doc_id: "doc-vieux", created_by: "x@y.fr", recipient_email: "z@y.fr", attested_recipient_email: null, idem_key: cleIdempotence("hote", ["doc-vieux", ""]) });
+    etat.lignes.push({ slug: "doublon-legacy", doc_id: "doc-vieux", created_by: null, recipient_email: null, attested_recipient_email: null, idem_key: null });
+    const r = await appeler(player, { action: "docshare.create", docId: "doc-vieux", fileUrl: "https://exemple.supabase.co/storage/v1/object/public/resources/d.pdf" }, { hote: true });
+    expect(r.corps.ok, "le perdant du backfill doit relire le gagnant, pas finir en 500").toBe(true);
+    expect(r.corps.slug).toBe("gagnant");
+    expect(r.corps.reused).toBe(true);
+  });
+
   it("l'empreinte fixe les frontières : un | dans une composante ne déplace rien", () => {
     expect(cleIdempotence("hote", ["doc|a", "b"])).not.toBe(cleIdempotence("hote", ["doc", "a|b"]));
     expect(cleIdempotence("hote", ["doc-1", ""])).toBe(cleIdempotence("hote", ["doc-1", ""]));

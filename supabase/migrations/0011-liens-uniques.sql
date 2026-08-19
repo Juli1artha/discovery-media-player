@@ -17,6 +17,9 @@
 alter table public.commercial_doc_shares
   add column if not exists idem_key text;
 
+-- ⚠️ Le format décrit ci-dessous était celui de l'époque ; la clé est devenue une EMPREINTE
+-- (genre:sha256) et la 0012 remet ce commentaire de colonne à jour EN BASE. Le texte d'origine
+-- reste ici tel qu'appliqué — une migration ne se réécrit pas, elle se corrige par la suivante.
 comment on column public.commercial_doc_shares.idem_key is
   'Clé d''idempotence des liens SYSTÈME (hôte, répétition) : « hote:<doc>|<destinataire attesté> » '
   'ou « repetition:<doc> ». Nulle sur les liens ordinaires. Unique quand renseignée : deux '
