@@ -237,6 +237,9 @@ async function purgerRetention(now, optsBrutes = {}) {
     presRapport.presences += pres.supprimees;
     presRapport.presencesExaminees += pres.examinees;
     budgetPresences -= opts.dryRun ? pres.examinees : pres.supprimees;
+    // ⚠️ LE RAPPORT DIT LA VÉRITÉ : si un enfant est tronqué, le rapport parent l'est aussi
+    // (P2 onzième audit — sinon la supervision croit la purge complète alors qu'un reste subsiste).
+    presRapport.tronque = presRapport.tronque || msgs.tronque || pres.tronque;
     // La présentation n'est supprimée que si TOUS ses enfants sont partis (9e audit).
     if (!opts.dryRun && !msgs.tronque && !pres.tronque) {
       presRapport.supprimees += (await purgerParLots("doc_presentations", `slug=eq.${enc(slug)}`, "slug", opts)).supprimees;
