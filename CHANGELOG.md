@@ -10,6 +10,25 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.83] — 2026-08-19
+
+### Fixed
+
+- **The 500-presentation off-by-one is actually applied now** — and guarded by a test that fails
+  without it. 0.1.82's changelog and commit claimed this fix, but the edit had been silently lost
+  (a script aborted before writing the file) and no test guarded it: the doc promised more than the
+  code. The purge now queries `cap + 1` presentations and truncates on `length > cap`, so exactly
+  500 expired presentations with no 501st report `tronque: false` instead of a false positive.
+  Two dedicated tests: exactly 500 → false, 501 → 500 processed + true.
+
+### Changed
+
+- **Container image builds run in parallel; only the `latest` promotion is serialized.** Workflow-
+  level concurrency kept just one queued run, so three tags in quick succession would cancel the
+  middle one and its versioned image would never be built. Versioned builds (distinct tags, no
+  conflict) now run freely; a separate serialized `promote-latest` job recomputes the highest tag
+  and retags `latest` atomically — no versioned image can be lost.
+
 ## [0.1.82] — 2026-08-19
 
 ### Fixed
