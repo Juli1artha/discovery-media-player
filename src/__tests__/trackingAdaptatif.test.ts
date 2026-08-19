@@ -40,7 +40,7 @@ function harness(over: Partial<TrackerOptions> = {}) {
     fire: (type: string) => listeners.get(type)?.forEach((h) => h()),
     hide: () => { visible = false; },
     // Le filet périodique = la minuterie la plus lente (celle de session, pas celle d'inactivité à 5 s).
-    tickSession: () => { const t = timers.slice().sort((a, b) => b.every - a.every)[0]; t && t.fn(); },
+    tickSession: () => { const t = timers.slice().sort((a, b) => b.every - a.every)[0]; if (t) t.fn(); },
     sessions: () => sent.filter((p) => p.event === "session").length,
   };
 }
