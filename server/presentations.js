@@ -582,8 +582,12 @@ async function addMessage(slug, { name, email, avatar, isPresenter, isMember, bo
  * garde qui dépend de ce qu'on n'a pas demandé cède au premier champ qu'on demande.
  */
 async function listMessages(slug) {
-  const rows = await PLAYER.db.request(`doc_presentation_messages?slug=eq.${enc(String(slug || ""))}&select=id,author_name,author_avatar,author_hash,is_presenter,is_member,body,attachment,reactions,reply_to,reply_name,reply_text,deleted,edited,created_at&order=created_at.asc&limit=300`);
-  return Array.isArray(rows) ? rows.map(messagePublic) : [];
+  // ⚠️ LES 300 PLUS RÉCENTS, PAS LES 300 PLUS ANCIENS (P1 performance). Avec `asc&limit=300`, au
+  // 301e message les nouveaux ne revenaient JAMAIS à ceux qui relisaient — seul l'auteur le voyait,
+  // par la réponse du POST. On trie `desc` (id départage created_at à la milliseconde) puis on
+  // REND en ordre chronologique, comme l'affichage l'attend.
+  const rows = await PLAYER.db.request(`doc_presentation_messages?slug=eq.${enc(String(slug || ""))}&select=id,author_name,author_avatar,author_hash,is_presenter,is_member,body,attachment,reactions,reply_to,reply_name,reply_text,deleted,edited,created_at&order=created_at.desc,id.desc&limit=300`);
+  return Array.isArray(rows) ? rows.slice().reverse().map(messagePublic) : [];
 }
 
 // Éditer son message (jeton d'auteur requis). Ne touche pas aux messages supprimés.
