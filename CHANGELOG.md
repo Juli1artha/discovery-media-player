@@ -10,6 +10,32 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.79] — 2026-08-19
+
+### Security / Safety
+
+- **P1: `retention.run` now passes its options through — `dryRun:true` no longer deletes.** The
+  route received `dryRun:true` but called `purgerRetention(Date.now())` without the second
+  argument, so the purge fell back to `dryRun:false` and deleted for real — the worst case, since
+  `dryRun` is what an operator runs first. Options are now validated before any DELETE (`dryRun`
+  strict boolean, `taille` 1–500, `plafond` 1–5000, unknown key rejected — never a `Number()` or
+  `!!`); an invalid option returns `400`. HTTP-level test plus a mutation (removing the 2nd
+  argument) that must fail.
+
+### Fixed
+
+- **The purge never exceeds its cap, counts the dry-run exactly, and leaves no orphans.** Batches
+  are clamped to the remaining cap (`min(taille, plafond − examinees)`); dry-run paginates by a
+  keyset cursor (`col=gt.…`, portable — no `offset`) so it no longer re-reads the first batch
+  (120 rows counted 120, not 300); a one-row probe distinguishes "exactly at the cap, nothing
+  left" from "more to do". A presentation is deleted only if its messages AND attendees are fully
+  purged — otherwise it is kept inactive for the next pass (no 1,000 orphaned messages). Attachment
+  reads are folded into the bounded message batch; DELETE counts the rows it actually returned
+  (concurrency-safe); `storage.remove` returning `false` counts as an error.
+- The `storage.remove` barrier gets a direct test; the census SQL takes psql window variables
+  (custom retention windows now check the same policy); the stale "unknown action → ok:true"
+  comment is corrected.
+
 ## [0.1.78] — 2026-08-19
 
 ### Security
