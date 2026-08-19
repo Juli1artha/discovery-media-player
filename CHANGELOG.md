@@ -10,6 +10,61 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.69] — 2026-08-19
+
+### Fixed
+
+- **The light-theme loader failed WCAG contrast (`#lpct`) — found by measuring what only exists
+  while loading.** Both loader themes are now frozen on screen (the file request is stalled) and
+  passed under axe: a transient state that no post-load audit ever saw. The dark loader — the one
+  both external brands use — was already compliant; our light one was not.
+
+### Changed
+
+- **The three bench scripts (`test`, `test:e2e`, `test:base`) refuse by name outside a clone.**
+  A published `package.json` describes what the maintainer can do, not what the consumer receives:
+  the `scripts` field is not filtered by `files`. From a consumer install these scripts now exit 1
+  with the reason and the repository address, instead of a config-not-found error that looks like
+  a broken installation. CI installs the real tarball as a consumer and requires the named refusal.
+
+## [0.1.68] — 2026-08-19
+
+### Added
+
+- **Accessibility, measured rather than declared.** axe-core arbitrates inside the real-Chromium
+  bench (injected over the inspection protocol — the production CSP stays intact): zero
+  serious/critical WCAG 2.1 A/AA violations required on the traced viewer and the audience page,
+  and the arbiter is proven against a deliberately broken page (its zeros must mean something).
+  First measurement found five real violations (legal strip at 0.42 contrast, keyboard-inaccessible
+  scroll region, the presented document image with no name, join card at 4.48:1, loader subtitle) —
+  all fixed.
+- **What axe cannot demand, the bench asserts one by one in the final DOM:** a live region
+  announces page changes and the end of a presentation; the chat feed is a `role=log`; inputs and
+  buttons carry names; every rendered canvas is `role=img` + "Page N" (viewer AND audience — the
+  audience canvas path required adding a real-PDF presentation to the bench); dialogs declare
+  `role=dialog`/`aria-modal`.
+
+## [0.1.67] — 2026-08-19
+
+### Fixed
+
+- **`init.sql` is replayable from an old base again.** The unique index on `idem_key` (line 62)
+  ran before the catch-up `ALTER` that adds the column (line 410): a base born from the 0.1.64
+  init crashed before reaching what would have saved it. Conditional columns are now ensured
+  right before their index, and CI installs the historical init from the `v0.1.64` tag, replays
+  the current file, and requires the exact shape of a fresh install.
+- **The link idempotency key is a digest — one function writes and re-reads it.** The historical
+  `hote:<docId>|<email>` form was truncated to 300 chars at insert but re-read in full after a 409:
+  a legitimate loser on a long docId ended as a 500. Keys are now
+  `genre:sha256(JSON.stringify(parts))` — fixed length, fixed boundaries, no truncation. Legacy
+  keys self-heal: reuse goes through `doc_id` and re-writes the canonical key.
+
+### Changed
+
+- pdf.js assets are read once per process (no more per-request disk read of 1.7 MB); Nominatim
+  coordinates are numerically validated before entering attributes; `PLAYER_INTERNAL_STRICT` is
+  documented in `.env.example`.
+
 ## [0.1.66] — 2026-08-19
 
 ### Changed
