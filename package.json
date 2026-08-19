@@ -36,6 +36,7 @@
     "LICENSE",
     "LICENSE-MIT",
     "docs/HOST-CONTRACT.md",
+    "docs/RETENTION.md",
     "!**/__tests__"
   ],
   "exports": {
@@ -43,6 +44,8 @@
     "./shares": "./server/shares.js",
     "./presentations": "./server/presentations.js",
     "./brands": "./server/brands.js",
+    "./contrat": "./docs/HOST-CONTRACT.md",
+    "./retention": "./docs/RETENTION.md",
     "./context/standalone": "./context/standalone.js",
     "./context/storage": "./context/storage.js",
     "./bridge": {

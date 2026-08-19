@@ -1,5 +1,10 @@
 # Host contract
 
+> **This document is an export of the package** — resolve it with
+> `require.resolve("discovery-media-player/contrat")` (and the retention policy with
+> `…/retention`). An exposed path is a promise that survives file reorganizations; reading
+> `node_modules` paths by hand is a guess about our tree, and it broke twice in one day.
+
 What a host application may call, what it must implement, and what will not change without a
 version bump. If you are integrating the player, this page and [`API.md`](API.md) are the two you
 need.

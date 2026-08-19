@@ -79,6 +79,25 @@ jobs:
           done
           echo "les trois bancs refusent en nommant la situation"
 
+      # ⚠️ « UNE DONNÉE EXPOSÉE EST UNE PROMESSE ; UNE DONNÉE TROUVÉE EST UNE SUPPOSITION SUR
+      # VOTRE ARBORESCENCE » (second hôte, 19/08 — deux consommateurs nous lisaient par chemin,
+      # et rien ne permettait de le savoir). Le contrat et la politique de rétention sont donc des
+      # EXPORTS du paquet : require.resolve les suit à travers tout rangement. Cette étape tient
+      # la promesse depuis une installation consommatrice — un export retiré ou un fichier sorti
+      # du tarball rougit ici, pas chez un hôte.
+      - name: The package EXPOSES its contract and retention policy
+        if: matrix.node == '22'
+        run: |
+          cd /tmp/conso
+          node -e "
+            const fs = require('fs');
+            for (const sub of ['contrat', 'retention']) {
+              const p = require.resolve('discovery-media-player/' + sub);
+              const n = fs.readFileSync(p, 'utf8').length;
+              if (n < 1000) { console.error('::error::' + sub + ' resolu mais quasi vide (' + n + ' octets)'); process.exit(1); }
+              console.log(sub + ' : ' + n + ' octets, promis et tenu');
+            }"
+
       # ⚠️ Le contrat d'hôte demande une version EXACTE — « une plage fait entrer une version que
       # personne n'a décidé de déployer, le jour où quelqu'un lance npm install pour autre chose ».
       # Deux exemples sur trois disaient `^0.1.0` : un intégrateur qui copie l'exemple récolte
