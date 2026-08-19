@@ -50,8 +50,11 @@ jobs:
 
       # ⚠️ Le tag doit correspondre EXACTEMENT à la version du package.json de ce commit — sinon on
       # publierait une image sous un nom qui ne dit pas ce qu'elle contient.
-      - name: Tag matches package version
+      - name: Tag matches package version, and is a strict semver tag
         run: |
+          # Le tag doit être un vX.Y.Z STRICT (P3 treizième audit — même validation que la sélection
+          # du plus haut, via le module partagé) ET correspondre à la version du package.json.
+          node -e "import('./tools/plus-haut-tag.mjs').then(m=>{const t=process.env.TAG;if(!m.estTagValide(t)){console.error('::error::'+t+' n\'est pas un tag semver strict vX.Y.Z');process.exit(1)}})"
           test "$TAG" = "v$(node -p 'require("./package.json").version')" \
             || { echo "::error::tag $TAG != v$(node -p 'require(\"./package.json\").version')"; exit 1; }
 
@@ -121,15 +124,25 @@ jobs:
       # ⚠️ Le plus haut tag est recalculé ICI, après le build et juste avant la promotion : un
       # build versionné plus lent qui aurait été dépassé ne promeut plus `latest`. `imagetools
       # create` retague sans reconstruire, en préservant la liste multi-arch et les attestations.
-      - name: Promote latest only if this is the highest tag
+      # ⚠️ RÉCONCILIER `latest` VERS LE PLUS HAUT TAG, pas vers $TAG (P2 treizième audit). L'ancien
+      # code ne promouvait que si CE build était le plus haut — mais un groupe de concurrence ne
+      # garde qu'un job en attente : si la promotion du tag récent était droppée et qu'un vieux
+      # build finissait ensuite, il constatait « je ne suis pas le plus haut » et ne faisait RIEN,
+      # laissant `latest` en arrière. En réconciliant vers le plus haut (via tools/plus-haut-tag.mjs,
+      # semver strict), N'IMPORTE QUEL job survivant remet `latest` sur le bon — un intermédiaire
+      # perdu ne coûte rien. L'image versionnée du plus haut existe toujours (le build la publie).
+      - name: Reconcile latest to the highest version tag
         run: |
-          plusHaut=$(git tag -l 'v*' --sort=-v:refname | head -1)
-          if [ "$TAG" != "$plusHaut" ]; then echo "$TAG n'est pas le plus haut ($plusHaut) — latest NON touché"; exit 0; fi
-          docker buildx imagetools create --tag "$REF:latest" "$REF:$TAG"
-          echo "latest promu vers $TAG (retag atomique)"
+          plusHaut=$(git tag -l | node tools/plus-haut-tag.mjs)
+          [ -n "$plusHaut" ] || { echo "aucun tag de version valide — latest NON touché"; exit 0; }
           depot=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
-          jeton=$(curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.stdout.write(JSON.parse(d).token||''))")
-          dtag=$(curl -sI -H "Authorization: Bearer $jeton" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/$depot/manifests/${TAG}" | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}')
-          dlat=$(curl -sI -H "Authorization: Bearer $jeton" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/$depot/manifests/latest" | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}')
-          [ -n "$dtag" ] && [ "$dtag" = "$dlat" ] || { echo "::error::latest ($dlat) ne pointe pas le digest de $TAG ($dtag)"; exit 1; }
-          echo "latest et $TAG partagent le digest $dtag"
+          jeton() { curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.stdout.write(JSON.parse(d).token||''))"; }
+          digest() { curl -sI -H "Authorization: Bearer $(jeton)" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/$depot/manifests/$1" | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}'; }
+          # L'image versionnée du plus haut doit exister avant de pointer latest dessus.
+          dhaut=$(digest "$plusHaut")
+          [ -n "$dhaut" ] || { echo "::error::l'image $plusHaut n'est pas encore servie — réconciliation reportée (le contrôle horaire rattrapera)"; exit 1; }
+          docker buildx imagetools create --tag "$REF:latest" "$REF:$plusHaut"
+          echo "latest réconcilié vers $plusHaut (déclenché par $TAG)"
+          dlat=$(digest latest)
+          [ "$dhaut" = "$dlat" ] || { echo "::error::latest ($dlat) ne pointe pas le digest de $plusHaut ($dhaut)"; exit 1; }
+          echo "latest et $plusHaut partagent le digest $dhaut"
