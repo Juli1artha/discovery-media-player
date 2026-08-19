@@ -1,0 +1,50 @@
+# EXERCER LE CHEMIN DE RÉCUPÉRATION HORS INCIDENT.
+#
+# ⚠️ Un chemin de récupération n'est jamais exercé sauf quand tout va mal — c'est la définition
+# d'un code qui ne rougit jamais (leçon du treizième audit : le mécanisme de réparation hérite du
+# défaut qu'il répare). Ce workflow ré-exécute chaque semaine la réconciliation `latest` → plus
+# haut tag, INDÉPENDAMMENT de toute release : si la sélection stricte, le retag ou les permissions
+# cassent, on le découvre ICI, à froid, et pas au pire moment.
+#
+# Il ne rebuild RIEN (l'image versionnée du plus haut existe déjà) : il retague `latest` dessus,
+# ce qui est idempotent — sur une base saine, il repose simplement le même digest.
+name: Image reconcile (exercise recovery)
+
+on:
+  schedule:
+    - cron: "23 6 * * 1"   # lundi matin, à froid
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Reconcile latest to the highest tag, and prove it
+        run: |
+          ref="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+          plusHaut=$(git tag -l | node tools/plus-haut-tag.mjs)
+          [ -n "$plusHaut" ] || { echo "::error::aucun tag de version valide — la sélection stricte est cassée"; exit 1; }
+          depot=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
+          jeton() { curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.stdout.write(JSON.parse(d).token||''))"; }
+          digest() { curl -sI -H "Authorization: Bearer $(jeton)" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/$depot/manifests/$1" | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}'; }
+          dhaut=$(digest "$plusHaut")
+          [ -n "$dhaut" ] || { echo "::error::l'image $plusHaut n'est pas servie — le mécanisme ne peut pas réparer"; exit 1; }
+          docker buildx imagetools create --tag "$ref:latest" "$ref:$plusHaut"
+          dlat=$(digest latest)
+          [ "$dhaut" = "$dlat" ] || { echo "::error::après réconciliation, latest ($dlat) != $plusHaut ($dhaut)"; exit 1; }
+          echo "récupération EXERCÉE : latest → $plusHaut, digest $dhaut"
