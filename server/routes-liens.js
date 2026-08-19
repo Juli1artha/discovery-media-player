@@ -464,9 +464,11 @@ async function traiter(req, res, body, slug) {
       }
       res.statusCode = 200; res.setHeader("Content-Type", "application/json"); res.end('{"ok":true}');
       return;
-  // ⚠️ PAS de `return false` ici : le bloc ci-dessus est le REPLI POST d'origine — toute action
-  // qu'aucune famille n'a reconnue finit {"ok":true}, comme avant l'extraction. Cette famille
-  // répond donc TOUJOURS, et doit rester la DERNIÈRE du dispatch (handler le dit aussi).
+  // ⚠️ PAS de `return false` ici : le bloc ci-dessus est le repli ANALYTIQUE (open/page/heartbeat/
+  // session). Une action inconnue N'Y ARRIVE PLUS — elle est refusée en 400 unknown-action au
+  // début de ce repli (neuvième audit : le commentaire disait encore « finit ok:true », c'était
+  // faux depuis le huitième). Cette famille répond donc toujours pour un événement valide, et doit
+  // rester la DERNIÈRE du dispatch (handler le dit aussi).
 }
 
 module.exports = { init, traiter };

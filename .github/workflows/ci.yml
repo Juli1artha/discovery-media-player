@@ -570,6 +570,14 @@ jobs:
           [ "$restes" = "0" ] || { echo "::error::le recensement indépendant trouve $restes ligne(s) dans le périmètre revendiqué"; exit 1; }
           lignes=$(grep -c '|' /tmp/recensement.txt | tr -d ' ')
           [ "$lignes" = "9" ] || { echo "::error::le recensement rend $lignes périmètres au lieu de 9 — la sonde s'est déformée"; exit 1; }
+          # ⚠️ Fenêtres NON STANDARD (neuvième audit) : les variables psql doivent être câblées —
+          # sinon un hôte à durées personnalisées verrait le recensement contrôler une AUTRE
+          # politique que sa purge. On l'exécute avec des mois resserrés et on exige 9 lignes
+          # valides (le SQL tient sous substitution).
+          $PSQL -v journaux_mois=1 -v presentations_mois=1 -v liens_mois=1 -f supabase/recensement-retention.sql > /tmp/recens-perso.txt
+          lignes2=$(grep -c '|' /tmp/recens-perso.txt | tr -d ' ')
+          [ "$lignes2" = "9" ] || { echo "::error::recensement à fenêtres personnalisées cassé ($lignes2 lignes)"; cat /tmp/recens-perso.txt; exit 1; }
+          echo "recensement paramétrable : OK sous fenêtres non standard"
 
   docker:
     runs-on: ubuntu-latest
