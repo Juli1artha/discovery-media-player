@@ -32,7 +32,14 @@ async function traiter(req, res, body, slug) {
           let admin = false;
           if (!hote) { const u = await PLAYER.identity.verifyToken(req.headers.authorization); admin = !!(u && PLAYER.identity.isAdmin(u)); }
           if (!hote && !admin) return jd(403, { ok: false, error: "retention.run : hôte de confiance ou admin requis" });
-          return jd(200, await require("./retention").purgerRetention(Date.now()));
+          // ⚠️ LES OPTIONS TRAVERSENT LA ROUTE (P1 neuvième audit) — dryRun compris, sinon la
+          // purge « à blanc » supprimait pour de vrai. La validation vit dans purgerRetention
+          // (avant tout DELETE) ; un refus (ok:false + error) devient un 400, pas un 200.
+          // Tout le corps SAUF `action` est passé au validateur : une clé inconnue (faute de
+          // frappe d'option) est ainsi refusée, pas ignorée en silence.
+          const { action: _a, ...opts } = body;
+          const resultat = await require("./retention").purgerRetention(Date.now(), opts);
+          return jd(resultat.ok === false ? 400 : 200, resultat);
         } catch (e) { try { PLAYER.errors.capture(e, { route: "retention" }); } catch { /* jamais bloquant */ } return jd(500, { ok: false }); }
       }
       if (String(body.action || "").startsWith("docshare.")) {

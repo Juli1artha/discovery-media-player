@@ -57,6 +57,33 @@ function borne(now, mois) {
 // Bornes d'exécution par défaut — un lot raisonnable, un plafond qui tient dans une fenêtre
 // serverless. L'appelant peut resserrer (dryRun, taille, plafond) ; jamais dépasser sans le dire.
 const LOT = 200, PLAFOND = 5000, PLAFOND_PRESENTATIONS = 500;
+const MAX_TAILLE = 500, MAX_PLAFOND = 5000;
+
+// ⚠️ LES OPTIONS D'EXÉCUTION SONT VALIDÉES AVANT TOUT DELETE (P1 neuvième audit). La route les
+// reçoit d'un appelant ; un `dryRun` non booléen strict, une taille/plafond hors bornes ou une
+// clé inconnue font ÉCHOUER la purge — jamais un `Number()` ni un `!!` qui transformerait
+// `"false"` en purge réelle. `dryRun` est ce qu'un exploitant lance EN PREMIER : il ne doit pas
+// pouvoir supprimer par une faute de type.
+const CLES_OPTS = new Set(["dryRun", "taille", "plafond"]);
+function optionsValidees(opts) {
+  const o = opts || {};
+  for (const cle of Object.keys(o)) {
+    if (!CLES_OPTS.has(cle)) { const e = new Error(`option de rétention inconnue : ${cle}`); e.retentionInvalide = true; throw e; }
+  }
+  if ("dryRun" in o && typeof o.dryRun !== "boolean") { const e = new Error("dryRun doit être un booléen strict"); e.retentionInvalide = true; throw e; }
+  const entierDans = (v, min, max, nom) => {
+    if (v === undefined) return undefined;
+    if (typeof v !== "number" || !Number.isInteger(v) || v < min || v > max) {
+      const e = new Error(`${nom} doit être un entier dans [${min},${max}] — reçu ${JSON.stringify(v)}`); e.retentionInvalide = true; throw e;
+    }
+    return v;
+  };
+  return {
+    dryRun: o.dryRun === true,
+    taille: entierDans(o.taille, 1, MAX_TAILLE, "taille") ?? LOT,
+    plafond: entierDans(o.plafond, 1, MAX_PLAFOND, "plafond") ?? PLAFOND,
+  };
+}
 
 // Une valeur pour `id=in.(…)` : double-guillemets, guillemet et antislash internes échappés —
 // PostgREST exige le guillemetage dès qu'une valeur porte un caractère réservé (`:` d'une clé de
@@ -96,13 +123,13 @@ async function purgerParLots(table, filtre, colId, { dryRun = false, taille = LO
 // d'un delete : les lignes déjà en base d'avant le correctif peuvent porter une URL piégée.
 const { cheminPieceJointe: cheminSurSlug } = require("./presentations");
 
-async function purgerRetention(now, opts = {}) {
-  let f;
-  try { f = fenetresValidees(); }
+async function purgerRetention(now, optsBrutes = {}) {
+  let f, opts;
+  try { f = fenetresValidees(); opts = optionsValidees(optsBrutes); }
   catch (e) {
     if (!e.retentionInvalide) throw e;
     try { PLAYER.errors.capture(e, { route: "retention" }); } catch { /* jamais bloquant */ }
-    return { ok: false, error: e.message };   // config douteuse → zéro DELETE
+    return { ok: false, error: e.message };   // config OU option douteuse → zéro DELETE
   }
   const base = String((PLAYER.config && PLAYER.config.supabaseUrl) || "");
   const rapport = {};
