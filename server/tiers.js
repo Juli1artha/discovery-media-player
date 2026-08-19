@@ -67,4 +67,12 @@ const TIERS = {
 const balise = (nonce, tiers) =>
   `<script nonce="${nonce}" src="${tiers.url}" integrity="${tiers.sri}" crossorigin="anonymous"></script>`;
 
-module.exports = { SUPAJS, LEAFLET, MAPS_VERSION, TIERS, balise };
+// ⚠️ LE SCRIPTING PDF EST STRUCTURELLEMENT IMPOSSIBLE, pas désactivé par une option : il exige le
+// sandbox (pdf.sandbox.min.mjs), que nous ne servons ni ne chargeons nulle part. Une option
+// « enableScripting:false » ici serait un placebo — elle appartient au viewer de Mozilla, pas à
+// getDocument. `isEvalSupported:false` reste sur chaque appel : lui est réel (CVE-2024-4367).
+const PDFJS_VERSION = require("pdfjs-dist/package.json").version;
+const PDFJS = "/api/doc?asset=pdf&v=" + PDFJS_VERSION;
+const PDFJS_WORKER = "/api/doc?asset=pdfworker&v=" + PDFJS_VERSION;
+
+module.exports = { SUPAJS, LEAFLET, MAPS_VERSION, TIERS, balise, PDFJS_VERSION, PDFJS, PDFJS_WORKER };
