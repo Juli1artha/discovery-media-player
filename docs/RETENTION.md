@@ -46,7 +46,10 @@ Même finalité, population interne. **Purge : 13 mois** après `last_at`.
 
 Un lien **vivant** est un enregistrement métier : ses champs restent tant que l'URL distribuée
 doit fonctionner. Un lien **révoqué** ne sert plus personne : **purge 13 mois après révocation**
-(alignée sur les journaux, qui référencent son slug).
+(alignée sur les journaux, qui référencent son slug). La révocation est **datée** par
+`commercial_doc_shares.revoked_at` (migration 0013) ; les révoqués d'avant la colonne ont reçu la
+date de la migration — leur horloge démarre là, compter large plutôt qu'inventer. Sans la
+colonne, cette purge-là se tait (sonde de schéma), les autres tournent.
 
 | colonne | contenu | sort |
 |---|---|---|

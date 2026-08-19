@@ -47,6 +47,11 @@ const ATTENDUES = {
     migration: "supabase/migrations/0011-liens-uniques.sql",
     fonction: "empêcher deux demandes simultanées de créer deux liens système pour le même usage",
   },
+  revocationDatee: {
+    table: "commercial_doc_shares", colonne: "revoked_at",
+    migration: "supabase/migrations/0013-revocation-datee.sql",
+    fonction: "dater la révocation pour borner la rétention des liens révoqués",
+  },
   reactionsOrdonnees: {
     table: "doc_presentation_messages", colonne: "reactions_seq",
     migration: "supabase/migrations/0006-reactions-ordonnees.sql",
