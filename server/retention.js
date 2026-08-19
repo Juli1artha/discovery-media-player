@@ -88,7 +88,11 @@ function optionsValidees(opts) {
 // Une valeur pour `id=in.(…)` : double-guillemets, guillemet et antislash internes échappés —
 // PostgREST exige le guillemetage dès qu'une valeur porte un caractère réservé (`:` d'une clé de
 // débit, par exemple). Guillemeter TOUJOURS est correct et évite d'avoir à deviner.
-const guill = (v) => '"' + String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+// ⚠️ DOUBLE encodage nécessaire (trouvé par le banc volumétrique, audit 10) : le guillemetage
+// gère les délimiteurs de PostgREST (virgule, parenthèse) ; l'encodage d'URL gère ceux de l'URL
+// (`&`, `#`, `+`, espace…) — un `&` non encodé dans une valeur coupe le filtre `in.(…)` en deux.
+// PostgREST décode le percent-encoding avant de parser, donc `%22…%26…%22` redevient `"…&…"`.
+const guill = (v) => encodeURIComponent('"' + String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"');
 
 // ⚠️ LES DEUX SEULES PORTES DE DESTRUCTION DU MODULE — dryRun court-circuité en PREMIÈRE ligne.
 // « Honoré » ne se prouve pas en lisant chaque DELETE (une fenêtre de lecture décide de la réponse

@@ -32,7 +32,7 @@ function harnais({ pools = [], remove = null, dryRun, taille, plafond } = {}) {
         if (!p) { if (m === "DELETE") return []; return []; }
         if (m === "DELETE") {
           const dedans = chemin.slice(chemin.indexOf("in.(") + 4, chemin.lastIndexOf(")"));
-          const vals = dedans.split(",").map((v) => v.replace(/^"|"$/g, ""));
+          const vals = dedans.split(",").map((v) => decodeURIComponent(v).replace(/^"|"$/g, ""));
           const partis = p.lignes.filter((l) => vals.includes(String(l[p.col])));
           p.lignes = p.lignes.filter((l) => !vals.includes(String(l[p.col])));
           (supprimesIds[table] ||= []).push(...partis.map((l) => l[p.col]));
