@@ -10,6 +10,19 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.72] — 2026-08-19
+
+### Fixed
+
+- **The retention sweep is strictly opt-in** (`config.retention.balayage: true`). The second host
+  consumes the standalone context as-is — "nothing to plug because nothing was unplugged" — and
+  its first share action after upgrading would have swept with OUR default windows, decided by
+  nobody; only its five-day-old data made that harmless. Retention windows are business
+  decisions: deletion only acts where an operator wrote it. `retention.run` stays available
+  without the opt-in — calling it IS the decision. `docs/RETENTION.md` also names the temporal
+  depth `information_schema` cannot see: dropped columns, dumps and backups are the operator's
+  perimeter, stated rather than simulated.
+
 ## [0.1.71] — 2026-08-19
 
 ### Added
