@@ -10,6 +10,19 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.76] — 2026-08-19
+
+### Changed
+
+- **Refactor lot 3, no behavior change: the POST route families leave `handler.js`** (1,761 →
+  908 lines — 4,362 at the start of the day). Soft-wall, live-presentation, sales-agent and
+  share-link actions each live in their own `server/routes-*.js` module, plus `appelant.js` for
+  caller identity. The dispatch tests each family's RETURN value (false = not mine, anything
+  else = responded) — no duplicated action lists, and no reliance on `res.writableEnded`, which
+  test doubles and some hosts' response objects do not carry (58 unit tests said so before CI
+  did). The source-text surface covers all sixteen server files. Byte-identical blocks;
+  858 + 19 tests green.
+
 ## [0.1.75] — 2026-08-19
 
 ### Changed
