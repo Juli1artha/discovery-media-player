@@ -10,6 +10,31 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.70] — 2026-08-19
+
+### Fixed
+
+- **The release chain publishes nothing before its gates.** Three releases in a row (0.1.67 →
+  0.1.69) published npm then failed on notes extraction, silently skipping the GitHub Release,
+  the GHCR image, SBOM and provenance — and 0.1.68 was published while its CI was red. The
+  workflow now requires the exact commit's CI to be entirely green and the changelog section to
+  exist BEFORE `npm publish`, and a `workflow_dispatch` replays the release of an existing tag
+  (npm skipped, everything else redone). The three missing GitHub Releases and the 0.1.69 GHCR
+  image were recovered.
+- **Legacy-link backfill catches the 409 like the creation path does.** Two pre-0011 duplicates
+  racing: one gets the canonical key, the loser now re-reads the winner instead of surfacing a
+  500 — the fix had not applied to itself. The test double learned PATCH uniqueness first
+  (the partial index does not distinguish INSERT from UPDATE).
+- Migration `0012`: the `idem_key` column comment in the database described the dead concatenated
+  format; it now describes the digest. Nominatim coordinates are bounded to [-90,90]/[-180,180].
+
+### Added
+
+- **The confirmation dialog traps and returns focus, keyboard-driven in the bench:** Tab loops
+  between the two buttons, Shift+Tab loops backwards, Escape closes and gives focus back to the
+  element that had it — a `role=dialog` without a focus trap is a declaration with no effect.
+- `build`, `lint` and `typecheck` refuse by name outside a clone, like the three benches.
+
 ## [0.1.69] — 2026-08-19
 
 ### Fixed
