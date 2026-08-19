@@ -10,6 +10,20 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.73] — 2026-08-19
+
+### Fixed
+
+- **The confirm button failed WCAG contrast for real** (`#e5484d` under white = 3.9:1 → `#d13b40`
+  = 4.75:1) — found by the "provoked states" accessibility pass: rating, quiz, goodbye, resume
+  overlays (agent viewer) and the ended screen + OPEN dialog (audience) are all `display:none`
+  at rest, invisible to any post-load audit. The bench now shows each state with the production
+  gestures and runs axe on it. Also instructive: measuring DURING the dialog's entry animation
+  (opacity < 1) blends the box into the dark backdrop and fabricates false contrast failures —
+  the arbiter now waits for the stable state, the one users actually read. Stated limit: dynamic
+  overlay content (rating stars, quiz cards) is injected by the HOST's PlayerBot — this bench
+  measures what this package ships.
+
 ## [0.1.72] — 2026-08-19
 
 ### Fixed
