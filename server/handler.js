@@ -308,8 +308,8 @@ const LIVE_CSS = `
   .lmodal-a button{flex:1;border:0;border-radius:12px;padding:11px 0;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
   .lmodal-cancel{background:#ecebe6;color:#1c1c1c}
   .lmodal-cancel:hover{background:#e2e0da}
-  .lmodal-ok{background:#e5484d;color:#fff}
-  .lmodal-ok:hover{background:#d13b40}
+  .lmodal-ok{background:#d13b40;color:#fff}
+  .lmodal-ok:hover{background:#c1343a}
 `;
 
 // Contrôles de la barre (pastille présence + bouton chat).
