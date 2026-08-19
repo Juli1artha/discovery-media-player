@@ -90,6 +90,24 @@ function optionsValidees(opts) {
 // débit, par exemple). Guillemeter TOUJOURS est correct et évite d'avoir à deviner.
 const guill = (v) => '"' + String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
 
+// ⚠️ LES DEUX SEULES PORTES DE DESTRUCTION DU MODULE — dryRun court-circuité en PREMIÈRE ligne.
+// « Honoré » ne se prouve pas en lisant chaque DELETE (une fenêtre de lecture décide de la réponse
+// — le piège du périmètre), mais en n'ayant QU'UNE porte, gardée ici, et une garde de forme qui
+// exige qu'il n'y en ait qu'une (server/__tests__/retentionUnePorte.test.js). Un troisième chemin
+// d'écriture DEVRA passer par ces portes, ou il rougira le compte. C'est « retirer la seconde
+// source de vérité » appliqué à la suppression : un seul endroit peut détruire.
+async function effacerParIds(table, colId, ids, opts) {
+  if (opts.dryRun || !ids || !ids.length) return 0;
+  const del = await PLAYER.db.request(`${table}?${colId}=in.(${ids.map(guill).join(",")})&select=${colId}`, { method: "DELETE", headers: { Prefer: "return=representation" } });
+  return Array.isArray(del) ? del.length : 0;   // lignes RENDUES, pas ids présélectionnés
+}
+async function retirerFichier(chemin, opts) {
+  if (opts.dryRun || !chemin) return null;   // null = rien tenté ; true = retiré ; false = échec
+  const retirer = PLAYER.storage && typeof PLAYER.storage.remove === "function" ? PLAYER.storage.remove.bind(PLAYER.storage) : null;
+  if (!retirer) return null;
+  try { return !!(await retirer("present-attachments", chemin)); } catch { return false; }
+}
+
 // ⚠️ PURGE PAR LOTS BORNÉS (P2 huitième audit). On SÉLECTIONNE un lot d'identifiants (borné,
 // ordonné par la colonne de date), on les supprime par `id=in.(…)`, on recommence — jamais un
 // DELETE non borné qui ramènerait tout l'historique d'un coup (mémoire, WAL, verrous, timeout).
@@ -113,13 +131,7 @@ async function purgerParLots(table, filtre, colId, { dryRun = false, taille = LO
     if (!Array.isArray(lot) || !lot.length) break;
     examinees += lot.length;
     curseur = lot[lot.length - 1][colId];
-    if (!dryRun) {
-      const ids = lot.map((r) => r[colId]).filter((v) => v != null).map(guill);
-      if (ids.length) {
-        const del = await PLAYER.db.request(`${table}?${colId}=in.(${ids.join(",")})&select=${colId}`, { method: "DELETE", headers: { Prefer: "return=representation" } });
-        supprimees += Array.isArray(del) ? del.length : 0;
-      }
-    }
+    supprimees += await effacerParIds(table, colId, lot.map((r) => r[colId]).filter((v) => v != null), { dryRun });
     if (lot.length < limite) break;   // dernier lot (moins que demandé → plus rien après)
   }
   return { examinees, supprimees, tronque };
@@ -142,7 +154,7 @@ const { cheminPieceJointe: cheminSurSlug } = require("./presentations");
 // Purge des messages d'une présentation morte, par lots bornés qui lisent id+attachment ENSEMBLE :
 // on retire les fichiers du bucket du lot (si l'hôte sait), puis on supprime le lot. Rend `tronque`
 // pour que l'appelant décide de garder ou non la présentation. Compte les lignes RENDUES.
-async function purgerMessagesPresentation(slug, opts, retirer, base) {
+async function purgerMessagesPresentation(slug, opts, base) {
   const { dryRun, taille, plafond } = opts;
   let supprimees = 0, fichiers = 0, fichiersErreur = 0, examinees = 0, tronque = false, curseur = null;
   for (;;) {
@@ -154,22 +166,13 @@ async function purgerMessagesPresentation(slug, opts, retirer, base) {
     if (!Array.isArray(lot) || !lot.length) break;
     examinees += lot.length;
     curseur = lot[lot.length - 1].id;
-    if (!dryRun) {
-      if (retirer) {
-        for (const j of lot) {
-          const url = j.attachment && (typeof j.attachment === "object" ? j.attachment.url : j.attachment);
-          const chemin = cheminSurSlug(url, slug, base);
-          if (!chemin) continue;   // hors du dossier du slug → jamais supprimé (barrière 2)
-          try { if (await retirer("present-attachments", chemin)) fichiers += 1; else fichiersErreur += 1; }   // false = échec compté aussi
-          catch { fichiersErreur += 1; }
-        }
-      }
-      const ids = lot.map((r) => r.id).filter((v) => v != null).map(guill);
-      if (ids.length) {
-        const del = await PLAYER.db.request(`doc_presentation_messages?id=in.(${ids.join(",")})&select=id`, { method: "DELETE", headers: { Prefer: "return=representation" } });
-        supprimees += Array.isArray(del) ? del.length : 0;
-      }
+    for (const j of lot) {
+      const url = j.attachment && (typeof j.attachment === "object" ? j.attachment.url : j.attachment);
+      const chemin = cheminSurSlug(url, slug, base);   // hors du dossier du slug → null → jamais retiré (barrière 2)
+      const issue = await retirerFichier(chemin, { dryRun });
+      if (issue === true) fichiers += 1; else if (issue === false) fichiersErreur += 1;   // false = échec compté
     }
+    supprimees += await effacerParIds("doc_presentation_messages", "id", lot.map((r) => r.id).filter((v) => v != null), { dryRun });
     if (lot.length < limite) break;
   }
   return { supprimees, fichiers, fichiersErreur, examinees, tronque };
@@ -204,13 +207,12 @@ async function purgerRetention(now, optsBrutes = {}) {
   const bPres = borne(now, f.presentationsMois);
   const mortes = await PLAYER.db.request(`doc_presentations?active=eq.false&updated_at=lt.${enc(bPres)}&select=slug&order=slug.asc&limit=${PLAFOND_PRESENTATIONS}`);
   const presRapport = { examinees: 0, supprimees: 0, messages: 0, presences: 0, fichiers: 0, fichiersErreur: 0, tronque: Array.isArray(mortes) && mortes.length >= PLAFOND_PRESENTATIONS };
-  const retirer = PLAYER.storage && typeof PLAYER.storage.remove === "function" ? PLAYER.storage.remove.bind(PLAYER.storage) : null;
   for (const p of (Array.isArray(mortes) ? mortes : [])) {
     const slug = p && p.slug; if (!slug) continue;
     presRapport.examinees += 1;
     // Messages : lot borné qui lit id ET attachment ENSEMBLE (la lecture des pièces jointes n'est
     // plus une requête globale non bornée — P2), retire les fichiers du lot, puis supprime le lot.
-    const msgs = await purgerMessagesPresentation(slug, opts, retirer, base);
+    const msgs = await purgerMessagesPresentation(slug, opts, base);
     presRapport.messages += msgs.supprimees;
     presRapport.fichiers += msgs.fichiers;
     presRapport.fichiersErreur += msgs.fichiersErreur;
