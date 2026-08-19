@@ -26,10 +26,11 @@ function harnais({ colonneDate = true, remove = null, lignes = {} } = {}) {
     storage: remove ? { remove } : {},
     limits: { async allow() { return true; } },
     errors: { capture() {} },
-    config: {},
+    config: { supabaseUrl: "https://x.supabase.co" },
   };
   retention.init(ctx);
   schema.init(ctx);
+  require("../presentations.js").init(ctx);
   return { ctx, appels };
 }
 
@@ -64,6 +65,7 @@ describe("rétention au double", () => {
         "doc_presentation_messages?slug=eq.morte&attachment": [
           { attachment: "https://x.supabase.co/storage/v1/object/public/present-attachments/morte/photo.png?v=1" },
           { attachment: "https://ailleurs.exemple.fr/pas-a-nous.png" },
+          { attachment: "https://x.supabase.co/storage/v1/object/public/present-attachments/../autre-bucket/secret.pdf" },
         ],
       },
     });

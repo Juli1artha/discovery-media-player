@@ -30,14 +30,14 @@ async function effacer(chemin) {
   return Array.isArray(lignes) ? lignes.length : 0;
 }
 
-// Chemin du bucket depuis l'URL publique d'une pièce jointe — nul si l'URL vient d'ailleurs.
-function cheminPieceJointe(url) {
-  const m = /\/present-attachments\/(.+)$/.exec(String(url || ""));
-  return m ? m[1].split("?")[0] : null;
-}
+// ⚠️ REVALIDATION À LA SUPPRESSION — le MÊME validateur que l'écriture (server/presentations.js),
+// avec le slug de la présentation purgée. Une validation d'écriture n'est jamais la seule barrière
+// d'un delete : les lignes déjà en base d'avant le correctif peuvent porter une URL piégée.
+const { cheminPieceJointe: cheminSurSlug } = require("./presentations");
 
 async function purgerRetention(now) {
   const f = fenetres();
+  const base = String((PLAYER.config && PLAYER.config.supabaseUrl) || "");
   const efface = {};
   const bJournaux = borne(now, f.journauxMois);
 
@@ -67,8 +67,9 @@ async function purgerRetention(now) {
     if (retirer) {
       const jointes = await PLAYER.db.request(`doc_presentation_messages?slug=eq.${enc(slug)}&attachment=not.is.null&select=attachment`);
       for (const j of (Array.isArray(jointes) ? jointes : [])) {
-        const chemin = cheminPieceJointe(j && j.attachment);
-        if (!chemin) continue;
+        const url = j && j.attachment && (typeof j.attachment === "object" ? j.attachment.url : j.attachment);
+        const chemin = cheminSurSlug(url, slug, base);
+        if (!chemin) continue;   // hors du dossier du slug → jamais supprimé (barrière 2)
         try { if (await retirer("present-attachments", chemin)) efface.pieces_jointes += 1; } catch { /* le fichier survit, la ligne part quand même — limite dite */ }
       }
     }
@@ -99,4 +100,4 @@ function tick() {
     .catch((e) => { try { PLAYER.errors.capture(e, { route: "retention", benin: true }); } catch { /* jamais bloquant */ } });
 }
 
-module.exports = { init, purgerRetention, tick, cheminPieceJointe };
+module.exports = { init, purgerRetention, tick };

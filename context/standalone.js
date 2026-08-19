@@ -274,8 +274,16 @@ function createStandaloneContext(env = process.env) {
         const base = sansBarreFinale(env.SUPABASE_URL);
         const cle = String(env.SUPABASE_SERVICE_ROLE_KEY || "");
         if (!base || !cle || !bucket || !chemin) return false;
+        // ⚠️ DERNIÈRE BARRIÈRE avant un DELETE à la clé service_role (P1 huitième audit). Bucket en
+        // liste blanche, et refus de toute traversée — chaque segment sur l'alphabet des chemins
+        // signés. `fetch` normalise `..` : un chemin non validé sortirait du bucket visé.
+        if (bucket !== "present-attachments") return false;
+        const segs = String(chemin).split("/");
+        for (const seg of segs) {
+          if (seg === "" || seg === "." || seg === ".." || !/^[A-Za-z0-9._-]+$/.test(seg)) return false;
+        }
         try {
-          const r = await fetch(`${base}/storage/v1/object/${bucket}/${chemin}`, {
+          const r = await fetch(`${base}/storage/v1/object/${encodeURIComponent(bucket)}/${segs.map(encodeURIComponent).join("/")}`, {
             method: "DELETE", headers: { apikey: cle, Authorization: `Bearer ${cle}` },
           });
           return r.ok;
