@@ -79,6 +79,11 @@ create index if not exists cds_parent_idx on public.commercial_doc_shares (paren
 create index if not exists idx_doc_shares_brand_key
   on public.commercial_doc_shares (brand_key) where brand_key is not null;
 -- Filtres de rétention (migration 0014) : mêmes index sur une base vierge.
+-- ⚠️ RÈGLE (sixième audit) : un index sur une colonne apparue APRÈS un init publié est précédé
+-- de son ALTER, ICI MÊME — sur une base d'hier, `create table if not exists` saute le corps de
+-- table et `revoked_at` n'existe qu'au rattrapage de fin de fichier, trop tard pour cet index.
+alter table public.commercial_doc_shares
+  add column if not exists revoked_at timestamptz;
 create index if not exists idx_shares_revoked_at on public.commercial_doc_shares (revoked_at) where revoked = true;
 
 -- ── Journal des ouvertures (population EXTERNE) ────────────────────────────────────────────────
