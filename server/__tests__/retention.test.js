@@ -57,7 +57,7 @@ describe("rétention au double", () => {
 
   it("les pièces jointes ne partent que si l'hôte sait retirer — et par leur CHEMIN de bucket", async () => {
     const retires = [];
-    const { } = harnais({
+    harnais({
       remove: async (bucket, chemin) => { retires.push({ bucket, chemin }); return true; },
       lignes: {
         "doc_presentations?active=eq.false": [{ slug: "morte" }],
