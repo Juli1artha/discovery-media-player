@@ -25,6 +25,13 @@ permissions:
   id-token: write        # OIDC
   attestations: write    # provenance de l'image
 
+# ⚠️ SÉRIALISER LES PUBLICATIONS D'IMAGE (P1 onzième audit). Deux builds concurrents pouvaient
+# écraser `latest` dans le désordre ; la promotion se décide sur le plus haut tag, mais deux
+# promotions simultanées gardent la course. Un seul build d'image à la fois — les autres attendent.
+concurrency:
+  group: image-publish
+  cancel-in-progress: false
+
 jobs:
   image:
     runs-on: ubuntu-latest
@@ -41,18 +48,16 @@ jobs:
         id: img
         run: echo "ref=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
-      # ⚠️ `latest` NE DOIT PAS ÊTRE ÉCRASÉ PAR UN VIEUX BUILD PLUS LENT (P3 dixième audit — course
-      # introduite en sortant l'image du chemin critique). On promeut `latest` UNIQUEMENT si ce tag
-      # est le PLUS HAUT tag du dépôt. Décidé via git, PAS via `npm view` : Release publie npm en
-      # PARALLÈLE de ce workflow, npm pourrait ne pas encore servir la version → on croirait à tort
-      # que ce n'est pas la dernière. Le plus haut tag git ne dépend d'aucun timing.
-      - name: Is this tag the highest version tag?
-        id: dernier
+      # ⚠️ Le tag doit correspondre EXACTEMENT à la version du package.json de ce commit — sinon on
+      # publierait une image sous un nom qui ne dit pas ce qu'elle contient.
+      - name: Tag matches package version
         run: |
-          plusHaut=$(git tag -l 'v*' --sort=-v:refname | head -1)
-          if [ "$TAG" = "$plusHaut" ]; then echo "latest=true" >> "$GITHUB_OUTPUT"; echo "$TAG est le plus haut tag → latest promu";
-          else echo "latest=false" >> "$GITHUB_OUTPUT"; echo "$TAG n'est pas le plus haut ($plusHaut) → latest NON touché"; fi
+          test "$TAG" = "v$(node -p 'require("./package.json").version')" \
+            || { echo "::error::tag $TAG != v$(node -p 'require(\"./package.json\").version')"; exit 1; }
 
+      # ⚠️ Le plus haut tag n'est PAS calculé ici : un contrôle avant build ne suffit pas (onzième
+      # audit) — un vieux build lent pourrait promouvoir `latest` après avoir été dépassé. Il est
+      # recalculé JUSTE AVANT la promotion, après le build (étape « Promote latest »).
       - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
@@ -71,18 +76,38 @@ jobs:
           push: true
           sbom: true
           provenance: mode=max
-          tags: ${{ steps.dernier.outputs.latest == 'true' && format('{0}:{1}\n{0}:latest', steps.img.outputs.ref, env.TAG) || format('{0}:{1}', steps.img.outputs.ref, env.TAG) }}
+          # ⚠️ SEULEMENT le tag versionné, immuable. `latest` se promeut APRÈS, par retag atomique
+          # (étape suivante) — jamais poussé pendant le build, ce qui évite qu'un vieux build lent
+          # l'écrase, et la promotion recalcule le plus haut tag JUSTE AVANT.
+          tags: ${{ steps.img.outputs.ref }}:${{ env.TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # ⚠️ GARDE DIFFÉRÉE (P3) : depuis que l'image ne bloque plus la publication npm, Release peut
-      # réussir pendant que l'image échoue. On vérifie ICI, à la fin du build, que le manifeste du
-      # tag est réellement servi par GHCR — sinon on échoue en le NOMMANT (une alerte visible, pas
-      # un silence). La provenance/SBOM sont attachées par build-push ; leur présence suit celle du
-      # manifeste.
-      - name: The pushed image manifest is really served
+      # ⚠️ LE MANIFESTE DU TAG EST-IL SERVI, ET MULTI-ARCH ? (P1 onzième audit — la garde différée
+      # avait bien rougi sur l'image 0.1.81 cassée, mais elle vérifiait après un push déjà foireux.)
+      # On confirme le tag versionné ET la présence des deux architectures AVANT de toucher latest.
+      - name: The versioned image is served, amd64 + arm64
         run: |
-          jeton=$(curl -s "https://ghcr.io/token?scope=repository:$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]'):pull" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.stdout.write(JSON.parse(d).token||''))")
-          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $jeton" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')/manifests/${TAG}")
-          [ "$code" = "200" ] || { echo "::error::l'image ${TAG} n'est PAS servie par GHCR (HTTP $code) — publication d'image incomplète"; exit 1; }
-          echo "image ${TAG} servie par GHCR (200)"
+          depot=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
+          jeton=$(curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.stdout.write(JSON.parse(d).token||''))")
+          index=$(curl -s -H "Authorization: Bearer $jeton" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/$depot/manifests/${TAG}")
+          echo "$index" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const m=JSON.parse(d);const arch=(m.manifests||[]).map(x=>x.platform&&x.platform.architecture).filter(Boolean);if(!arch.includes('amd64')||!arch.includes('arm64')){console.error('::error::image '+process.env.TAG+' incomplète — arches: '+arch.join(',')||'aucune');process.exit(1)}console.log('image '+process.env.TAG+' servie, arches: '+arch.join(', '))})"
+
+      # ⚠️ PROMOTION DE `latest` PAR RETAG ATOMIQUE, APRÈS un build réussi — jamais pendant. On
+      # RECALCULE le plus haut tag ICI (pas avant le build) : un vieux build lent ne peut plus
+      # promouvoir `latest` s'il a été dépassé entre-temps. `imagetools create` retague sans
+      # reconstruire, en préservant la liste multi-arch et les attestations.
+      - name: Promote latest only if this is the highest tag
+        run: |
+          git fetch --tags --quiet
+          plusHaut=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          if [ "$TAG" != "$plusHaut" ]; then echo "$TAG n'est pas le plus haut ($plusHaut) — latest NON touché"; exit 0; fi
+          docker buildx imagetools create --tag "${{ steps.img.outputs.ref }}:latest" "${{ steps.img.outputs.ref }}:${TAG}"
+          echo "latest promu vers $TAG (retag atomique)"
+          # Vérifier que latest et le tag pointent le MÊME digest.
+          depot=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
+          jeton=$(curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.stdout.write(JSON.parse(d).token||''))")
+          dtag=$(curl -sI -H "Authorization: Bearer $jeton" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/$depot/manifests/${TAG}" | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}')
+          dlat=$(curl -sI -H "Authorization: Bearer $jeton" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/$depot/manifests/latest" | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}')
+          [ -n "$dtag" ] && [ "$dtag" = "$dlat" ] || { echo "::error::latest ($dlat) ne pointe pas le digest de $TAG ($dtag)"; exit 1; }
+          echo "latest et $TAG partagent le digest $dtag"

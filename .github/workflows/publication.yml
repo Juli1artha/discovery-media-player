@@ -104,3 +104,28 @@ jobs:
           else
             gh issue create --title "$TITRE" --body "$corps"
           fi
+
+      # ⚠️ npm PUBLIÉ MAIS IMAGE VERSIONNÉE MANQUANTE (P1 onzième audit — l'image 0.1.81 a manqué
+      # parce que son workflow a échoué en silence, non bloquant). Le contrôle horaire vérifie donc
+      # AUSSI que la version servie par npm a son image sur GHCR ; sinon, il ouvre/entretient une
+      # issue. Une image manquante ne casse pas un consommateur npm, mais casse un consommateur
+      # Docker — et rien d'autre ne le disait.
+      - name: The published npm version has its container image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          publiee=$(npm view discovery-media-player version 2>/dev/null || echo "")
+          [ -n "$publiee" ] || { echo "registre npm injoignable — on ne conclut rien"; exit 0; }
+          depot=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
+          jeton=$(curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.stdout.write(JSON.parse(d).token||''))")
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $jeton" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/$depot/manifests/v$publiee")
+          TITRE="Image de conteneur manquante pour la version publiée"
+          existante=$(gh issue list --state open --search "$TITRE in:title" --json number --jq '.[0].number // empty')
+          if [ "$code" = "200" ]; then
+            echo "image v$publiee servie (200)"
+            [ -n "$existante" ] && gh issue close "$existante" --comment "L'image v$publiee est servie. Rien à faire." || true
+          else
+            echo "::warning::npm sert $publiee mais l'image v$publiee répond $code sur GHCR"
+            corps="npm sert **$publiee**, mais \`ghcr.io/$depot:v$publiee\` répond **$code** — l'image de cette version n'est pas publiée. Relancer le workflow Image pour \`v$publiee\` (dispatch), puis vérifier le manifeste et les deux architectures. _Se referme seule quand l'image apparaît._"
+            if [ -n "$existante" ]; then gh issue comment "$existante" --body "$corps"; else gh issue create --title "$TITRE" --body "$corps"; fi
+          fi
