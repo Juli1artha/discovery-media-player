@@ -574,14 +574,46 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     await page.close();
   }, 60_000);
 
-  it("la page d'audience ne porte aucune violation grave WCAG A/AA", async () => {
+  // ⚠️ DEUX ÉTATS, DEUX MESURES — le second hôte a lu ce que notre inventaire cachait : « ouvrir,
+  // attendre, mesurer » attrape l'état d'ACCUEIL (la carte Rejoindre) en croyant attraper la page.
+  // L'état par défaut d'un écran n'est pas l'état où l'on passe son temps — c'est pourtant celui
+  // que tout banc mesure spontanément, puisque ne rien faire est le chemin le plus court. Le
+  // régime établi se GAGNE : on rejoint par le vrai geste (nom, bouton), puis l'arbitre repasse.
+  // Symétrique des loaders : eux disparaissaient trop vite, celui-ci apparaissait trop tôt.
+  it("la page d'audience ne porte aucune violation grave — l'ACCUEIL puis le RÉGIME ÉTABLI", async () => {
     const { page } = await ouvrirPageSurveillee(`/present/${SLUG_DIRECT}`);
     await page.waitForFunction(
       () => typeof window.Player === "object" && typeof window.supabase === "object",
       null, { timeout: 15_000 });
-    const violations = await mesurerAxe(page);
-    imprimer("audience", violations);
-    expect(graves(violations), "le DOM final de la page d'audience refuse une technologie d'assistance").toEqual([]);
+    await page.waitForSelector(".join-card", { timeout: 15_000 });
+    const accueil = await mesurerAxe(page);
+    imprimer("audience-accueil", accueil);
+    expect(graves(accueil), "l'état d'accueil refuse une technologie d'assistance").toEqual([]);
+
+    await page.fill("#jName", "Essai Banc");
+    await page.click("#jGo");
+    await page.waitForFunction(() => !document.querySelector(".join"), null, { timeout: 15_000 });
+    // La carte disparue ne PROUVE pas le régime : on exige le document affiché ET la barre de
+    // pagination renseignée — sinon l'arbitre mesurerait un écran vide en le croyant établi.
+    await page.waitForFunction(
+      () => { const i = document.querySelector("#page img"); return !!i && i.naturalWidth > 0 && document.querySelector("#tot").textContent !== "—"; },
+      null, { timeout: 15_000 });
+    const etabli = await mesurerAxe(page);
+    imprimer("audience-regime", etabli);
+    expect(graves(etabli), "l'état où l'audience passe la présentation refuse une technologie d'assistance").toEqual([]);
+
+    // Et le fil OUVERT : fermé il est display:none — un état qu'axe ne voit pas n'est pas mesuré.
+    // ⚠️ Le GESTE qui l'ouvre (le fab) ne s'allume qu'à la connexion realtime, que ce banc n'a
+    // pas : l'état est inatteignable par l'interface ici, mais ses pixels sont réels. On
+    // l'affiche donc directement — mesurer un rendu n'exige pas d'avoir gagné le droit de le
+    // voir, et le dire vaut mieux que de ne pas le mesurer (même règle que le mur visiteur).
+    await page.evaluate(() => document.querySelector("#chatPanel").classList.remove("hidden"));
+    await page.waitForFunction(
+      () => { const c = document.querySelector("#chatPanel"); return !!c && getComputedStyle(c).display !== "none"; },
+      null, { timeout: 15_000 });
+    const fil = await mesurerAxe(page);
+    imprimer("audience-chat", fil);
+    expect(graves(fil), "le fil ouvert refuse une technologie d'assistance").toEqual([]);
     await page.close();
   }, 60_000);
 
