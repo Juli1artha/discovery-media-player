@@ -10,6 +10,25 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.84] — 2026-08-20
+
+### Fixed
+
+- **Chat beyond 300 messages: new messages now reach everyone.** `order=created_at.asc&limit=300`
+  returned the 300 OLDEST — past the 301st, a participant re-reading never saw new messages (only
+  the author saw them, via the POST response). Now the 300 MOST RECENT (desc), rendered
+  chronologically. Test at 301 messages.
+- **External telemetry is bounded and rate-limited.** `upsertSession` stored `pages_time` raw
+  (unlike the already-bounded internal path): a single call could write an unbounded JSON. Bounding
+  is now a shared helper applied to both paths (entry cap, numeric keys/values, capped totals). And
+  the external analytics path wrote with NO quota — a public slug allowed unlimited writes; it now
+  has a per-IP flood cap (writes are skipped over quota, the reader still gets 200).
+- **Presence quota sized for a real audience.** 1,000 beats/h/IP covered only ~6 participants (one
+  emits ~144/h); the 7th behind a shared IP got 429s. The quota is now derived from the cadence
+  constants targeting 250 participants/IP; `recordAttendance` reuses the presentation the route
+  already loaded (one fewer DB round-trip per beat); and the heartbeat is jittered ±15% to avoid
+  synchronized bursts.
+
 ## [0.1.83] — 2026-08-19
 
 ### Fixed
