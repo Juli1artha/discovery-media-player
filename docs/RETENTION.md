@@ -115,6 +115,13 @@ Parcours guidé par l'agent : **purge 13 mois** après `last_at`.
   contexte hôte fournit `storage.remove` (capacité optionnelle). Sans elle, l'URL devient
   introuvable depuis le produit mais l'objet survit dans le bucket — c'est dit ici plutôt que
   simulé.
+- **Le plafond des présentations est GLOBAL** : messages et présences partagent chacun un budget
+  `plafond` réparti sur toutes les présentations d'une exécution — pas un plafond par présentation
+  (sinon 500 × 5000 = 2,5 M de lignes possibles). La boucle s'arrête quand les budgets sont
+  épuisés, sans supprimer les présentations restantes.
+- **Le rapport dryRun est complet pour les présentations** : `messagesExaminees`,
+  `presencesExaminees` et `fichiersCandidats` disent ce que la VRAIE purge ferait — même parcours
+  de sélection, suppression no-op, `efface.* = 0`.
 - **La purge avance par LOTS bornés** (200 lignes, plafond 5000 par table et 500 présentations
   par exécution) : elle sélectionne un lot d'identifiants, les supprime par `id=in.(…)`, et
   recommence. Le rapport (`r.rapport`) porte, par table : `examinees`, `supprimees`, `tronque`
