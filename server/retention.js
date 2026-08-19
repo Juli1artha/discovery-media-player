@@ -95,33 +95,85 @@ const guill = (v) => '"' + String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"')
 // DELETE non borné qui ramènerait tout l'historique d'un coup (mémoire, WAL, verrous, timeout).
 // `dryRun` sélectionne sans supprimer. Le rapport remplace la liste d'identifiants : examinées,
 // supprimées, tronqué (il reste à faire au prochain passage).
+// ⚠️ Pagination par CURSEUR KEYSET (`colId=gt.<dernier>`), pas par `offset` — la garde de
+// portabilité de la forge interdit `offset=`, et un curseur est de toute façon stable sous
+// suppression concurrente. En dry-run le pool ne rétrécit pas : sans curseur, on relisait le
+// même premier lot à chaque tour (P2 neuvième audit : 120 lignes comptées 300). Le lot est rogné
+// au RESTE du plafond (`min(taille, plafond - examinees)`) pour ne jamais le dépasser. Et on
+// compte les lignes RENDUES par le DELETE (`return=representation&select=id`), pas les ids
+// présélectionnés : deux exécutions concurrentes n'annoncent pas deux fois la même suppression.
 async function purgerParLots(table, filtre, colId, { dryRun = false, taille = LOT, plafond = PLAFOND } = {}) {
-  let examinees = 0, supprimees = 0;
-  const maxTours = Math.max(1, Math.ceil(plafond / taille));
-  let tours = 0, tronque = false;
+  let examinees = 0, supprimees = 0, tronque = false, curseur = null;
   for (;;) {
-    if (tours >= maxTours) { tronque = true; break; }
-    tours += 1;
-    const lot = await PLAYER.db.request(`${table}?${filtre}&select=${colId}&order=${colId}.asc&limit=${taille}`);
+    const reste = plafond - examinees;
+    if (reste <= 0) { tronque = await resteEncore(table, filtre, colId, curseur, dryRun); break; }
+    const limite = Math.min(taille, reste);
+    const borneCur = curseur != null ? `&${colId}=gt.${enc(String(curseur))}` : "";
+    const lot = await PLAYER.db.request(`${table}?${filtre}${borneCur}&select=${colId}&order=${colId}.asc&limit=${limite}`);
     if (!Array.isArray(lot) || !lot.length) break;
     examinees += lot.length;
+    curseur = lot[lot.length - 1][colId];
     if (!dryRun) {
       const ids = lot.map((r) => r[colId]).filter((v) => v != null).map(guill);
       if (ids.length) {
-        await PLAYER.db.request(`${table}?${colId}=in.(${ids.join(",")})`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
-        supprimees += ids.length;
+        const del = await PLAYER.db.request(`${table}?${colId}=in.(${ids.join(",")})&select=${colId}`, { method: "DELETE", headers: { Prefer: "return=representation" } });
+        supprimees += Array.isArray(del) ? del.length : 0;
       }
     }
-    if (lot.length < taille) break;   // dernier lot
-    if (dryRun) { tronque = tours >= maxTours; if (tours >= maxTours) break; }
+    if (lot.length < limite) break;   // dernier lot (moins que demandé → plus rien après)
   }
   return { examinees, supprimees, tronque };
+}
+
+// « Reste-t-il une ligne au-delà du curseur ? » — sonde d'UNE ligne. Départage « on s'est arrêté
+// pile au plafond mais tout est parti » de « il reste à faire ». En run réel les lignes lues ont
+// été supprimées : la fenêtre a avancé, on relit depuis le début du filtre (curseur non requis).
+async function resteEncore(table, filtre, colId, curseur, dryRun) {
+  const borneCur = dryRun && curseur != null ? `&${colId}=gt.${enc(String(curseur))}` : "";
+  const sonde = await PLAYER.db.request(`${table}?${filtre}${borneCur}&select=${colId}&order=${colId}.asc&limit=1`);
+  return Array.isArray(sonde) && sonde.length > 0;
 }
 
 // ⚠️ REVALIDATION À LA SUPPRESSION — le MÊME validateur que l'écriture (server/presentations.js),
 // avec le slug de la présentation purgée. Une validation d'écriture n'est jamais la seule barrière
 // d'un delete : les lignes déjà en base d'avant le correctif peuvent porter une URL piégée.
 const { cheminPieceJointe: cheminSurSlug } = require("./presentations");
+
+// Purge des messages d'une présentation morte, par lots bornés qui lisent id+attachment ENSEMBLE :
+// on retire les fichiers du bucket du lot (si l'hôte sait), puis on supprime le lot. Rend `tronque`
+// pour que l'appelant décide de garder ou non la présentation. Compte les lignes RENDUES.
+async function purgerMessagesPresentation(slug, opts, retirer, base) {
+  const { dryRun, taille, plafond } = opts;
+  let supprimees = 0, fichiers = 0, fichiersErreur = 0, examinees = 0, tronque = false, curseur = null;
+  for (;;) {
+    const reste = plafond - examinees;
+    if (reste <= 0) { tronque = await resteEncore("doc_presentation_messages", `slug=eq.${enc(slug)}`, "id", curseur, dryRun); break; }
+    const limite = Math.min(taille, reste);
+    const borneCur = curseur != null ? `&id=gt.${enc(String(curseur))}` : "";
+    const lot = await PLAYER.db.request(`doc_presentation_messages?slug=eq.${enc(slug)}${borneCur}&select=id,attachment&order=id.asc&limit=${limite}`);
+    if (!Array.isArray(lot) || !lot.length) break;
+    examinees += lot.length;
+    curseur = lot[lot.length - 1].id;
+    if (!dryRun) {
+      if (retirer) {
+        for (const j of lot) {
+          const url = j.attachment && (typeof j.attachment === "object" ? j.attachment.url : j.attachment);
+          const chemin = cheminSurSlug(url, slug, base);
+          if (!chemin) continue;   // hors du dossier du slug → jamais supprimé (barrière 2)
+          try { if (await retirer("present-attachments", chemin)) fichiers += 1; else fichiersErreur += 1; }   // false = échec compté aussi
+          catch { fichiersErreur += 1; }
+        }
+      }
+      const ids = lot.map((r) => r.id).filter((v) => v != null).map(guill);
+      if (ids.length) {
+        const del = await PLAYER.db.request(`doc_presentation_messages?id=in.(${ids.join(",")})&select=id`, { method: "DELETE", headers: { Prefer: "return=representation" } });
+        supprimees += Array.isArray(del) ? del.length : 0;
+      }
+    }
+    if (lot.length < limite) break;
+  }
+  return { supprimees, fichiers, fichiersErreur, examinees, tronque };
+}
 
 async function purgerRetention(now, optsBrutes = {}) {
   let f, opts;
@@ -156,20 +208,19 @@ async function purgerRetention(now, optsBrutes = {}) {
   for (const p of (Array.isArray(mortes) ? mortes : [])) {
     const slug = p && p.slug; if (!slug) continue;
     presRapport.examinees += 1;
-    if (retirer && !opts.dryRun) {
-      const jointes = await PLAYER.db.request(`doc_presentation_messages?slug=eq.${enc(slug)}&attachment=not.is.null&select=attachment`);
-      for (const j of (Array.isArray(jointes) ? jointes : [])) {
-        const url = j && j.attachment && (typeof j.attachment === "object" ? j.attachment.url : j.attachment);
-        const chemin = cheminSurSlug(url, slug, base);
-        if (!chemin) continue;   // hors du dossier du slug → jamais supprimé (barrière 2)
-        try { if (await retirer("present-attachments", chemin)) presRapport.fichiers += 1; } catch { presRapport.fichiersErreur += 1; /* le fichier survit, la ligne part */ }
-      }
-    }
-    if (!opts.dryRun) {
-      presRapport.messages += (await purgerParLots("doc_presentation_messages", `slug=eq.${enc(slug)}`, "id", opts)).supprimees;
-      presRapport.presences += (await purgerParLots("doc_presentation_attendees", `slug=eq.${enc(slug)}`, "attendee_key", opts)).supprimees;
-    }
-    if (!opts.dryRun) {
+    // Messages : lot borné qui lit id ET attachment ENSEMBLE (la lecture des pièces jointes n'est
+    // plus une requête globale non bornée — P2), retire les fichiers du lot, puis supprime le lot.
+    const msgs = await purgerMessagesPresentation(slug, opts, retirer, base);
+    presRapport.messages += msgs.supprimees;
+    presRapport.fichiers += msgs.fichiers;
+    presRapport.fichiersErreur += msgs.fichiersErreur;
+    const pres = opts.dryRun ? { supprimees: 0, tronque: false } : await purgerParLots("doc_presentation_attendees", `slug=eq.${enc(slug)}`, "attendee_key", opts);
+    presRapport.presences += pres.supprimees;
+    // ⚠️ LA PRÉSENTATION N'EST SUPPRIMÉE QUE SI TOUS SES ENFANTS SONT PARTIS (P2 neuvième audit) :
+    // sinon 5 000 messages partent, le parent aussi, et 1 000 orphelins restent que le balayage
+    // suivant ne peut plus rattacher à leur présentation. Tronqués → on garde le parent inactif
+    // pour le passage suivant.
+    if (!opts.dryRun && !msgs.tronque && !pres.tronque) {
       presRapport.supprimees += (await purgerParLots("doc_presentations", `slug=eq.${enc(slug)}`, "slug", opts)).supprimees;
     }
   }

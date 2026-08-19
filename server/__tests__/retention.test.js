@@ -26,20 +26,30 @@ function harnais({ colonneDate = true, remove = null, lignes = {} } = {}) {
           return [];
         }
         if (methode === "DELETE") {
-          // Vider le pool des ids présents dans in.(…)
+          // Vider le pool des ids présents dans in.(…) ET RENDRE les lignes parties (le moteur
+          // compte les lignes rendues par le DELETE, pas les ids présélectionnés).
+          let rendues = [];
           for (const [prefixe, pool] of Object.entries(pools)) {
             const tablePrefixe = prefixe.split("?")[0];
             if (chemin.startsWith(tablePrefixe + "?") && chemin.includes("=in.(")) {
               const dedans = chemin.slice(chemin.indexOf("in.(") + 4, chemin.lastIndexOf(")"));
-              pools[prefixe] = pool.filter((r) => !dedans.includes('"' + String(r.id ?? r.session_id ?? r.key) + '"'));
+              const dedans2 = (r) => dedans.includes('"' + String(r.id ?? r.session_id ?? r.key) + '"');
+              rendues = pool.filter(dedans2);
+              pools[prefixe] = pool.filter((r) => !dedans2(r));
             }
           }
-          return [];
+          return chemin.includes("select=") ? rendues : [];
         }
-        // Sélection d'un lot (SELECT id … limit N) : servir le pool borné à la limite.
+        // Sélection d'un lot (SELECT … limit N) : curseur keyset + limite.
         const lim = Number(/limit=(\d+)/.exec(chemin)?.[1] || 999);
+        const gt = /[?&][a-z_]+=gt\.([^&]+)/.exec(chemin);
         for (const [prefixe, pool] of Object.entries(pools)) {
-          if (chemin.startsWith(prefixe)) return pool.slice(0, lim);
+          if (chemin.startsWith(prefixe)) {
+            const cle = "id" in (pool[0] || {}) ? "id" : ("session_id" in (pool[0] || {}) ? "session_id" : "key");
+            let res = pool;
+            if (gt) { const c = decodeURIComponent(gt[1]); res = res.filter((r) => String(r[cle]) > c); }
+            return res.slice(0, lim);
+          }
         }
         for (const [prefixe, reponse] of Object.entries(lignes)) {
           if (pools[prefixe]) continue;
@@ -93,10 +103,10 @@ describe("rétention au double", () => {
       remove: async (bucket, chemin) => { retires.push({ bucket, chemin }); return true; },
       lignes: {
         "doc_presentations?active=eq.false": [{ slug: "morte" }],
-        "doc_presentation_messages?slug=eq.morte&attachment": [
-          { attachment: "https://x.supabase.co/storage/v1/object/public/present-attachments/morte/photo.png?v=1" },
-          { attachment: "https://ailleurs.exemple.fr/pas-a-nous.png" },
-          { attachment: "https://x.supabase.co/storage/v1/object/public/present-attachments/../autre-bucket/secret.pdf" },
+        "doc_presentation_messages?slug=eq.morte": [
+          { id: "m1", attachment: "https://x.supabase.co/storage/v1/object/public/present-attachments/morte/photo.png?v=1" },
+          { id: "m2", attachment: "https://ailleurs.exemple.fr/pas-a-nous.png" },
+          { id: "m3", attachment: "https://x.supabase.co/storage/v1/object/public/present-attachments/../autre-bucket/secret.pdf" },
         ],
       },
     });
