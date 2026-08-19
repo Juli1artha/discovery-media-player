@@ -10,7 +10,24 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
-## [0.1.84] — 2026-08-20
+## [0.1.85] — 2026-08-20
+
+### Changed (performance — réduction de charge)
+
+- **Local rate limiter is now O(1) per decision.** The in-memory counter kept an ARRAY of
+  timestamps per key and re-filtered it on every call — quadratic once a key accumulated (measured
+  18.7 s for 100k decisions on one key; now a few ms). And the 5,000-key cap only evicted EXPIRED
+  keys, so 5,001 active keys stayed resident. Replaced by a fixed-window `{ start, count }` counter
+  with a hard LRU cap (oldest key evicted past the ceiling). A fixed window admits at most 2×max at
+  the seam of two windows — acceptable for an anti-flood ceiling.
+- **Session persistence is adaptive: 30 s cadence + dirty flag.** The browser net re-emitted an
+  identical session on every 12 s tick — a hidden tab, an idle reader, a document left open kept
+  writing the same row, one DB write per tick for zero new information. The base cadence is now 30 s
+  (2.5× fewer writes even for a fully active reader; the hourly quota still derives from it), and a
+  tick now writes ONLY when the signature (`totalSeconds`, `maxPage`, `numPages`) changed since the
+  last send. A hidden tab writes once, not every tick. The dirty flag can only fall BELOW the quota
+  ceiling — it never raises it, so the quota calculation is unaffected.
+
 
 ### Fixed
 
