@@ -159,16 +159,27 @@ function creerLimites(db, journal) {
   let partageDisponible = null;   // null = pas encore demandé
   let signale = false;
 
-  /** Le compteur local : sert de refus rapide, et de repli complet quand la table manque. */
+  // ⚠️ FENÊTRE FIXE, O(1) PAR DÉCISION (P1 performance). L'ancien compteur gardait un TABLEAU de
+  // timestamps par clé et le re-filtrait à chaque appel — quadratique quand une clé accumule (une
+  // clé à 88 400 entrées scannait 88 400 valeurs même pour un REFUS). Ici, par clé : { debut,
+  // compte }. La fenêtre écoulée remet le compteur à zéro ; sinon on compare et on incrémente.
+  // Une fenêtre fixe laisse au pire 2×max au JOINT de deux fenêtres — acceptable pour un plafond
+  // anti-inondation, et c'est le compromis explicitement recommandé.
+  const PLAFOND_CLES = 5000;
   function localAutorise(cle, max, fenetreSecondes) {
     const maintenant = Date.now();
-    const debut = maintenant - fenetreSecondes * 1000;
-    const vus = (seaux.get(cle) || []).filter((t) => t > debut);
-    if (vus.length >= max) { seaux.set(cle, vus); return false; }
-    vus.push(maintenant);
-    seaux.set(cle, vus);
-    if (seaux.size > 5000) for (const [k, v] of seaux) if (!v.some((t) => t > debut)) seaux.delete(k);
-    return true;
+    const fenetreMs = fenetreSecondes * 1000;
+    let e = seaux.get(cle);
+    if (!e || maintenant - e.debut >= fenetreMs) e = { debut: maintenant, compte: 0 };
+    // LRU : re-poser la clé la remet en fin d'ordre d'insertion (la Map préserve cet ordre).
+    seaux.delete(cle);
+    const permis = e.compte < max;
+    if (permis) e.compte += 1;
+    seaux.set(cle, e);
+    // ⚠️ PLAFOND DUR : on évince la plus ANCIENNE (tête de la Map) tant qu'on dépasse — l'ancien
+    // code n'enlevait que les clés expirées, donc 5 001 clés actives restaient en mémoire.
+    while (seaux.size > PLAFOND_CLES) seaux.delete(seaux.keys().next().value);
+    return permis;
   }
 
   let deja = "";
@@ -624,4 +635,4 @@ function createStandaloneContext(env = process.env) {
   };
 }
 
-module.exports = { createStandaloneContext };
+module.exports = { createStandaloneContext, creerLimites };
