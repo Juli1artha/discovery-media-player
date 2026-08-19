@@ -731,9 +731,12 @@ async function toggleReaction(slug, msgId, emoji, reactor, etat) {
 // Heartbeat d'un participant : upsert de sa ligne d'assistance. On accumule le temps de présence (intervalles
 // < 60 s → un aller-retour ne gonfle pas total_ms) et l'ensemble des pages vues (page courante de la présentation).
 const ATTEND_MAX_GAP_MS = 60 * 1000;
-async function recordAttendance(slug, { key, name, email, avatar, isMember, isPresenter }) {
+async function recordAttendance(slug, presDejaCharge, { key, name, email, avatar, isMember, isPresenter }) {
   if (!slug || !key) return { ok: false, status: 400 };
-  const pres = await getPresentation(slug);
+  // ⚠️ La route vient DÉJÀ de charger la présentation (contrôle présentateur) : on la reçoit plutôt
+  // que d'en refaire une lecture par battement (P1 performance — un battement = un aller-retour DB
+  // de moins). Repli sur une lecture si l'appelant ne la fournit pas.
+  const pres = presDejaCharge || await getPresentation(slug);
   if (!pres) return { ok: false, status: 404 };
   // ⚠️ La lecture est DÉJÀ faite ici : on s'en sert plutôt que d'en refaire une. Un battement de
   // présence sur une session close n'a rien à mettre à jour — et il en arrive à chaque onglet

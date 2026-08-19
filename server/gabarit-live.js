@@ -568,7 +568,11 @@ var Live=(function(){
       ch.on('broadcast',{event:'map'},function(){if(_onMap)_onMap();});
       ch.subscribe(function(st){if(st==='SUBSCRIBED'){REFPRETE.then(function(){ME.ref=MOIREF;ch.track({name:me.name,ref:MOIREF,avatar:me.avatar,role:me.role,member:!!me.member,uid:presId()});sendAttend();});}});
       _tyIv=setInterval(renderTyping,1500);
-      _atIv=setInterval(sendAttend,25000);
+      // ⚠️ Battement JITTERÉ (±15 %), pas un setInterval fixe (P1 performance) : 250 onglets
+      // ouverts à la même seconde produiraient une rafale synchronisée toutes les 25 s. Un
+      // setTimeout qui se replanifie avec un délai varié étale la charge. clearInterval(_atIv)
+      // efface aussi un id de setTimeout (même espace de timers dans le navigateur).
+      (function planAttend(){ _atIv=setTimeout(function(){ try{sendAttend();}catch(e){} planAttend(); }, 25000*(0.85+Math.random()*0.30)); })();
       // Filet de sécurité : au déchargement de la page/iframe (fermeture, reload, switch), on retire la présence
       // → évite les fantômes (« je me vois deux fois » au retour). Une seule fois.
       if(!_phWired){_phWired=true;window.addEventListener('pagehide',function(){try{clearInterval(_filet);_ordEtat.arreter();_ordChat.arreter();}catch(e){}try{if(ch){ch.untrack();ch.unsubscribe();ch=null;}}catch(e){}});}
