@@ -12,6 +12,8 @@ const FICHIERS = [
   "../handler.js", "../gabarit-live.js", "../gabarit-carte.js",
   "../gabarit-agent.js", "../gabarit-legal.js", "../tiers.js", "../texte.js",
   "../session-cles.js", "../page-mur.js", "../page-visionneuse.js", "../page-audience.js",
+  "../appelant.js", "../routes-visiteur.js", "../routes-direct.js", "../routes-agent.js",
+  "../routes-liens.js",
 ];
 
 const SOURCE_PAGES = FICHIERS.map((f) => fs.readFileSync(require.resolve(f), "utf8")).join("\n");

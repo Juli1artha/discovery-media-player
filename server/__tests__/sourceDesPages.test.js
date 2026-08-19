@@ -7,7 +7,7 @@ const { SOURCE_PAGES, FICHIERS } = require("./sourceDesPages.cjs");
 
 describe("la source des pages couvre tout ce qui existe", () => {
   it("chaque gabarit-*.js du disque est dans la liste", () => {
-    const surDisque = fs.readdirSync(path.join(__dirname, "..")).filter((f) => /^(gabarit-|page-|tiers\.|texte\.|session-cles\.).*\.js$/.test(f) || /^(gabarit|page)-.*\.js$/.test(f));
+    const surDisque = fs.readdirSync(path.join(__dirname, "..")).filter((f) => /^(gabarit-|page-|routes-|tiers\.|texte\.|session-cles\.|appelant\.).*\.js$/.test(f));
     expect(surDisque.length).toBeGreaterThanOrEqual(3);
     for (const f of surDisque) {
       expect(FICHIERS, `${f} existe sur le disque et échappe aux gardes de texte`).toContain(`../${f}`);

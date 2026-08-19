@@ -60,7 +60,7 @@ describe("toute action d'autorisation demandée est écrite dans le contrat", ()
   // seul passait, alors qu'elle retire à l'hôte le choix d'ouvrir l'historique à toute l'équipe en
   // réservant les participants. La séparation est une décision de contrat, pas un détail de code.
   it("l'historique et les participants demandent deux droits distincts", () => {
-    const src = fs.readFileSync(path.join(RACINE, "server", "handler.js"), "utf8");
+    const src = require("./sourceDesPages.cjs").SOURCE_PAGES;
     const droit = (action) => {
       // ⚠️ On vise la branche qui EXÉCUTE (`else if`), pas la liste de garde en tête de groupe où
       // les mêmes noms apparaissent d'abord. La première version lisait cette liste et rendait donc

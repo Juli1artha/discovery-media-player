@@ -29,14 +29,14 @@ describe("les deux côtés lisent le même contrat de cadence", () => {
   });
 
   it("le serveur non plus, et il déduit son quota", () => {
-    const src = lire("server/handler.js");
+    const src = require("./sourceDesPages.cjs").SOURCE_PAGES;
     expect(src).toContain("SESSION_QUOTA_PER_HOUR");
     expect(src, "le quota écrit à la main est ce qui a produit le défaut")
       .not.toMatch(/intsess:\$\{ipInt\}`,\s*\d+/);
   });
 
   it("le refus de quota se dit, il ne se devine pas", () => {
-    const src = lire("server/handler.js");
+    const src = require("./sourceDesPages.cjs").SOURCE_PAGES;
     expect(src).toContain("intsess:quota-avert");
     // ⚠️ Le signalement doit précéder le `return`, sinon il ne s'exécute jamais.
     const i = src.indexOf("intsess:quota-avert");
