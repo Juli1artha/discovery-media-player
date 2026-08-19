@@ -181,7 +181,7 @@ describe("la fenêtre du cache se déduit de celle de l'ordonnanceur", () => {
   });
 
   it("le gabarit navigateur n'écrit plus le nombre à la main", () => {
-    const src = fs.readFileSync(path.join(__dirname, "..", "handler.js"), "utf8");
+    const src = require("./sourceDesPages.cjs").SOURCE_PAGES;
     const i = src.indexOf("function relireAvec(");
     expect(src.slice(i, i + 900), "deux nombres séparés finissent toujours par diverger")
       .toContain("PRESENT_READ_COALESCE_MS");

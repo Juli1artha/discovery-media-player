@@ -108,7 +108,7 @@ describe("la présence ne publie plus d'adresse", () => {
   // et la question posée ici — « qu'est-ce que la page ANNONCE » — se lit dans le texte qu'elle
   // exécute. Le dire ainsi vaut mieux que d'affirmer qu'on a observé le réseau.
   it("ni la charge de présence ni la clé du canal ne portent d'adresse", () => {
-    const source = require("node:fs").readFileSync(require.resolve("../handler.js"), "utf8");
+    const source = require("./sourceDesPages.cjs").SOURCE_PAGES;
     const sansCommentaires = source.split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
 
     const track = /ch\.track\(\{[^}]*\}\)/.exec(sansCommentaires);

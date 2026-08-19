@@ -60,7 +60,7 @@ describe("les actifs pdf.js sortent de notre origine, octet pour octet", () => {
 // ⚠️ LE GABARIT NE DOIT PLUS JAMAIS POINTER UN CDN POUR PDF.JS — garde sur la règle, comme pour
 // jsonPourScript : une URL cdnjs réintroduite demain serait nommée ici avant d'être servie.
 describe("pdf.js ne sort plus de notre origine", () => {
-  const src = require("node:fs").readFileSync(require.resolve("../handler.js"), "utf8")
+  const src = require("./sourceDesPages.cjs").SOURCE_PAGES
     .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
 
   it("zéro cdnjs hors commentaires, et les CSP portent 'self'", () => {

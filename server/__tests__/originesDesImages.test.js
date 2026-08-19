@@ -20,7 +20,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const SRC = fs.readFileSync(path.join(__dirname, "..", "handler.js"), "utf8");
+const SRC = require("./sourceDesPages.cjs").SOURCE_PAGES;
 
 /**
  * Le corps de la fonction qui rassemble les origines autorisées, COMMENTAIRES RETIRÉS.

@@ -16,7 +16,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const SRC = fs.readFileSync(path.join(__dirname, "..", "handler.js"), "utf8");
+const SRC = require("./sourceDesPages.cjs").SOURCE_PAGES;
 
 describe("le coût du motif d'adresse", () => {
   // On mesure le motif lui-même : c'est lui l'objet du test, et sa forme n'a pas changé — seule

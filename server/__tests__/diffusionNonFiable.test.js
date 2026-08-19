@@ -25,7 +25,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const SRC = fs.readFileSync(path.join(__dirname, "..", "handler.js"), "utf8");
+const SRC = require("./sourceDesPages.cjs").SOURCE_PAGES;
 
 /** Le corps du gestionnaire d'un événement de diffusion, tel qu'il part dans la page. */
 function gestionnaire(evenement) {

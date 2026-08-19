@@ -18,7 +18,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const SRC = fs.readFileSync(path.join(__dirname, "..", "handler.js"), "utf8");
+const SRC = require("./sourceDesPages.cjs").SOURCE_PAGES;
 const SECRET = "un-secret-partage-de-32-caracteres-minimum";
 const signer = (charge) => {
   const c = Buffer.from(JSON.stringify(charge)).toString("base64url");

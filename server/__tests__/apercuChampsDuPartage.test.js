@@ -24,7 +24,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const SRC = fs.readFileSync(path.join(__dirname, "..", "handler.js"), "utf8");
+const SRC = require("./sourceDesPages.cjs").SOURCE_PAGES;
 
 /** Ce que le gabarit de la visionneuse lit sur son partage. */
 function champsLus() {

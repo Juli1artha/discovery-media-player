@@ -84,7 +84,7 @@ describe("le défaut est fermé, pas pratique", () => {
 // du membre connecté. Chez nous les deux diffèrent déjà — mais par heureux hasard, et une topologie
 // peut changer.
 describe("le client Realtime range sa session sous son propre nom", () => {
-  const SRC = fs.readFileSync(path.join(__dirname, "..", "handler.js"), "utf8");
+  const SRC = require("./sourceDesPages.cjs").SOURCE_PAGES;
 
   it("createClient déclare un storageKey", () => {
     const i = SRC.indexOf("supabase.createClient(LIVECFG.supaUrl");

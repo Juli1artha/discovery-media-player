@@ -44,7 +44,7 @@ describe("la sérialisation vers un <script> neutralise ce que le parseur HTML l
 // champ par champ, la forme sous laquelle il était né.
 describe("aucune interpolation nue ne subsiste ni ne revient", () => {
   it("zéro ${JSON.stringify dans les gabarits du handler", () => {
-    const src = require("node:fs").readFileSync(require.resolve("../handler.js"), "utf8");
+    const src = require("./sourceDesPages.cjs").SOURCE_PAGES;
     const nues = src.match(/\$\{JSON\.stringify/g) || [];
     expect(nues, "une donnée serveur entre dans un <script> sans passer par jsonPourScript").toEqual([]);
   });
@@ -54,7 +54,7 @@ describe("aucune interpolation nue ne subsiste ni ne revient", () => {
     // commentaire de `jsonPourScript` qui DÉCRIT l'ancien défaut. Une sonde qui lit du commentaire
     // invente des coupables, et la seule issue serait de dégrader l'explication pour la satisfaire.
     // Même correction que la garde de portabilité de la forge, pour la même raison.
-    const src = require("node:fs").readFileSync(require.resolve("../handler.js"), "utf8")
+    const src = require("./sourceDesPages.cjs").SOURCE_PAGES
       .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
     expect(src.includes('cfg.replace(/</g'), "un .replace à l'interpolation est un correctif qu'on oublie d'appliquer au champ suivant").toBe(false);
   });
@@ -109,7 +109,7 @@ describe("une page rendue avec un titre hostile reste une page", () => {
 // l'écart entre la description et le code ; cet essai rend la propriété STRUCTURELLE — elle ne
 // dépend plus de ce qu'on met dedans, il n'y a plus de dedans.
 describe("le broadcast du chat est un signal, structurellement", () => {
-  const src = require("node:fs").readFileSync(require.resolve("../handler.js"), "utf8")
+  const src = require("./sourceDesPages.cjs").SOURCE_PAGES
     .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
 
   it("msg et msg-upd partent avec une charge VIDE", () => {
