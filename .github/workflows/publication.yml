@@ -129,3 +129,29 @@ jobs:
             corps="npm sert **$publiee**, mais \`ghcr.io/$depot:v$publiee\` répond **$code** — l'image de cette version n'est pas publiée. Relancer le workflow Image pour \`v$publiee\` (dispatch), puis vérifier le manifeste et les deux architectures. _Se referme seule quand l'image apparaît._"
             if [ -n "$existante" ]; then gh issue comment "$existante" --body "$corps"; else gh issue create --title "$TITRE" --body "$corps"; fi
           fi
+
+      # ⚠️ `latest` POINTE-T-IL BIEN LA VERSION PUBLIÉE ? (P2 treizième audit — filet du cas où une
+      # promotion aurait été perdue et personne ne pointe latest sur le plus haut.) On compare le
+      # digest de `latest` à celui de `v${version npm}` ; s'ils diffèrent, on ouvre une issue — un
+      # `docker buildx imagetools create --tag …:latest …:v$publiee` la ferme.
+      - name: latest points at the published version's digest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          publiee=$(npm view discovery-media-player version 2>/dev/null || echo "")
+          [ -n "$publiee" ] || { echo "registre npm injoignable — on ne conclut rien"; exit 0; }
+          depot=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
+          jeton() { curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.stdout.write(JSON.parse(d).token||''))"; }
+          digest() { curl -sI -H "Authorization: Bearer $(jeton)" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/$depot/manifests/$1" | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}'; }
+          dver=$(digest "v$publiee"); dlat=$(digest latest)
+          [ -n "$dver" ] || { echo "image v$publiee absente — déjà couvert par l'étape précédente"; exit 0; }
+          TITRE="latest ne pointe pas la dernière version"
+          existante=$(gh issue list --state open --search "$TITRE in:title" --json number --jq '.[0].number // empty')
+          if [ "$dver" = "$dlat" ]; then
+            echo "latest pointe bien v$publiee ($dver)"
+            [ -n "$existante" ] && gh issue close "$existante" --comment "latest pointe v$publiee. Rien à faire." || true
+          else
+            echo "::warning::latest ($dlat) != v$publiee ($dver)"
+            corps="\`latest\` pointe **$dlat**, mais la version publiée **v$publiee** a le digest **$dver** — une promotion a été perdue. Réconcilier : \`docker buildx imagetools create --tag ghcr.io/$depot:latest ghcr.io/$depot:v$publiee\`. _Se referme seule quand les digests convergent._"
+            if [ -n "$existante" ]; then gh issue comment "$existante" --body "$corps"; else gh issue create --title "$TITRE" --body "$corps"; fi
+          fi
