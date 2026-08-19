@@ -43,6 +43,8 @@ function harnais({ pools = [], remove = null, dryRun, taille, plafond } = {}) {
         const lim = Number(/limit=(\d+)/.exec(chemin)?.[1] || 999);
         const gt = /[?&][a-z_]+=gt\.([^&]+)/.exec(chemin);
         let res = p.lignes;
+        const slugF = /[?&]slug=eq\.([^&]+)/.exec(chemin);
+        if (slugF) { const sv = decodeURIComponent(slugF[1]); res = res.filter((l) => l.slug === undefined || l.slug === sv); }
         if (gt) { const c = decodeURIComponent(gt[1]); res = res.filter((l) => String(l[p.col]) > c); }
         res = [...res].sort((a, b) => (a[p.col] < b[p.col] ? -1 : 1));
         return res.slice(0, lim).map((l) => ({ ...l }));
@@ -120,5 +122,44 @@ describe("parent et enfants — jamais d'orphelin", () => {
     expect(r2.rapport.presentations.messages, "les 1 000 restants partent").toBe(1000);
     expect(h.parTable.doc_presentations.lignes.length, "le parent part une fois vidé").toBe(0);
     expect(h.parTable.doc_presentation_messages.lignes.length, "zéro message orphelin").toBe(0);
+  });
+});
+
+describe("le plafond est GLOBAL aux présentations, pas par présentation", () => {
+  function harnaisPlusieurs(nParImages) {
+    const pres = poolTable("doc_presentations", "slug", 0);
+    pres.lignes = nParImages.map((_, i) => ({ slug: `p${i}` }));
+    const msgs = [];
+    nParImages.forEach((n, i) => { for (let k = 0; k < n; k++) msgs.push({ id: `p${i}-m${String(k).padStart(4, "0")}`, slug: `p${i}` }); });
+    const poolMsgs = { table: "doc_presentation_messages", col: "id", lignes: msgs };
+    const att = { table: "doc_presentation_attendees", col: "attendee_key", lignes: [] };
+    // Le harnais filtre les messages par slug via le curseur ; on ajoute un filtre slug.
+    const h = harnais({ pools: [pres, poolMsgs, att] });
+    return h;
+  }
+
+  it("3 présentations, plafond 1 → UN SEUL message supprimé au total (budget global)", async () => {
+    const h = harnaisPlusieurs([5, 5, 5]);
+    // Le harnais doit filtrer les messages par slug — on patche le pool pour le respecter.
+    const r = await retention.purgerRetention(Date.now(), { taille: 1, plafond: 1 });
+    const total = (h.supprimesIds.doc_presentation_messages || []).length;
+    expect(total, "le plafond 1 est global : un seul message, pas un par présentation").toBe(1);
+  });
+});
+
+describe("le rapport dryRun est complet pour les présentations", () => {
+  it("1 présentation, 3 messages, 2 présences → examinés remontés, zéro DELETE", async () => {
+    const pres = poolTable("doc_presentations", "slug", 0); pres.lignes = [{ slug: "p-d" }];
+    const msgs = { table: "doc_presentation_messages", col: "id", lignes: [
+      { id: "p-d-m1", slug: "p-d" }, { id: "p-d-m2", slug: "p-d" }, { id: "p-d-m3", slug: "p-d" }] };
+    const att = { table: "doc_presentation_attendees", col: "attendee_key", lignes: [
+      { attendee_key: "p-d-a1", slug: "p-d" }, { attendee_key: "p-d-a2", slug: "p-d" }] };
+    const h = harnais({ pools: [pres, msgs, att] });
+    const r = await retention.purgerRetention(Date.now(), { dryRun: true });
+    const pr = r.rapport.presentations;
+    expect(pr.messagesExaminees, "le dry-run dit combien de messages partiraient").toBe(3);
+    expect(pr.presencesExaminees, "et combien de présences").toBe(2);
+    expect((h.supprimesIds.doc_presentation_messages || []).length, "zéro DELETE en dry-run").toBe(0);
+    expect(r.efface.doc_presentation_messages, "efface.* reste 0 en simulation").toBe(0);
   });
 });

@@ -120,7 +120,8 @@ async function retirerFichier(chemin, opts) {
 // au RESTE du plafond (`min(taille, plafond - examinees)`) pour ne jamais le dépasser. Et on
 // compte les lignes RENDUES par le DELETE (`return=representation&select=id`), pas les ids
 // présélectionnés : deux exécutions concurrentes n'annoncent pas deux fois la même suppression.
-async function purgerParLots(table, filtre, colId, { dryRun = false, taille = LOT, plafond = PLAFOND } = {}) {
+async function purgerParLots(table, filtre, colId, { dryRun = false, taille = LOT, plafond = PLAFOND } = {}, plafondForce) {
+  if (plafondForce !== undefined) plafond = plafondForce;
   let examinees = 0, supprimees = 0, tronque = false, curseur = null;
   for (;;) {
     const reste = plafond - examinees;
@@ -154,9 +155,9 @@ const { cheminPieceJointe: cheminSurSlug } = require("./presentations");
 // Purge des messages d'une présentation morte, par lots bornés qui lisent id+attachment ENSEMBLE :
 // on retire les fichiers du bucket du lot (si l'hôte sait), puis on supprime le lot. Rend `tronque`
 // pour que l'appelant décide de garder ou non la présentation. Compte les lignes RENDUES.
-async function purgerMessagesPresentation(slug, opts, base) {
-  const { dryRun, taille, plafond } = opts;
-  let supprimees = 0, fichiers = 0, fichiersErreur = 0, examinees = 0, tronque = false, curseur = null;
+async function purgerMessagesPresentation(slug, opts, base, plafond) {
+  const { dryRun, taille } = opts;
+  let supprimees = 0, fichiers = 0, fichiersErreur = 0, fichiersCandidats = 0, examinees = 0, tronque = false, curseur = null;
   for (;;) {
     const reste = plafond - examinees;
     if (reste <= 0) { tronque = await resteEncore("doc_presentation_messages", `slug=eq.${enc(slug)}`, "id", curseur, dryRun); break; }
@@ -169,13 +170,14 @@ async function purgerMessagesPresentation(slug, opts, base) {
     for (const j of lot) {
       const url = j.attachment && (typeof j.attachment === "object" ? j.attachment.url : j.attachment);
       const chemin = cheminSurSlug(url, slug, base);   // hors du dossier du slug → null → jamais retiré (barrière 2)
+      if (chemin) fichiersCandidats += 1;              // compté même en dry-run (ce que la vraie purge tenterait)
       const issue = await retirerFichier(chemin, { dryRun });
       if (issue === true) fichiers += 1; else if (issue === false) fichiersErreur += 1;   // false = échec compté
     }
     supprimees += await effacerParIds("doc_presentation_messages", "id", lot.map((r) => r.id).filter((v) => v != null), { dryRun });
     if (lot.length < limite) break;
   }
-  return { supprimees, fichiers, fichiersErreur, examinees, tronque };
+  return { supprimees, fichiers, fichiersErreur, fichiersCandidats, examinees, tronque };
 }
 
 async function purgerRetention(now, optsBrutes = {}) {
@@ -206,22 +208,32 @@ async function purgerRetention(now, optsBrutes = {}) {
   // ses présences — et les fichiers du bucket si storage.remove est fourni (OPTIONNELLE).
   const bPres = borne(now, f.presentationsMois);
   const mortes = await PLAYER.db.request(`doc_presentations?active=eq.false&updated_at=lt.${enc(bPres)}&select=slug&order=slug.asc&limit=${PLAFOND_PRESENTATIONS}`);
-  const presRapport = { examinees: 0, supprimees: 0, messages: 0, presences: 0, fichiers: 0, fichiersErreur: 0, tronque: Array.isArray(mortes) && mortes.length >= PLAFOND_PRESENTATIONS };
+  // ⚠️ BUDGET GLOBAL AUX PRÉSENTATIONS (P2 dixième audit). Le plafond n'était appliqué qu'À CHAQUE
+  // présentation : 500 présentations × 5 000 = 2,5 M de messages en une exécution, timeout et
+  // contention avec le chat. Deux budgets partagés — messages et présences — décrémentés au fil
+  // des présentations ; la boucle s'arrête quand ils sont épuisés (tronque), sans supprimer les
+  // parents restants. En dry-run, on parcourt quand même pour REMONTER ce que la vraie purge
+  // ferait (examinés), sans jamais détruire.
+  const presRapport = { examinees: 0, supprimees: 0, messages: 0, presences: 0, messagesExaminees: 0, presencesExaminees: 0, fichiers: 0, fichiersErreur: 0, fichiersCandidats: 0, tronque: Array.isArray(mortes) && mortes.length >= PLAFOND_PRESENTATIONS };
+  let budgetMessages = opts.plafond, budgetPresences = opts.plafond;
   for (const p of (Array.isArray(mortes) ? mortes : [])) {
     const slug = p && p.slug; if (!slug) continue;
+    if (budgetMessages <= 0 && budgetPresences <= 0) { presRapport.tronque = true; break; }   // budgets épuisés
     presRapport.examinees += 1;
-    // Messages : lot borné qui lit id ET attachment ENSEMBLE (la lecture des pièces jointes n'est
-    // plus une requête globale non bornée — P2), retire les fichiers du lot, puis supprime le lot.
-    const msgs = await purgerMessagesPresentation(slug, opts, base);
+    const msgs = await purgerMessagesPresentation(slug, opts, base, budgetMessages);
     presRapport.messages += msgs.supprimees;
+    presRapport.messagesExaminees += msgs.examinees;
     presRapport.fichiers += msgs.fichiers;
     presRapport.fichiersErreur += msgs.fichiersErreur;
-    const pres = opts.dryRun ? { supprimees: 0, tronque: false } : await purgerParLots("doc_presentation_attendees", `slug=eq.${enc(slug)}`, "attendee_key", opts);
+    presRapport.fichiersCandidats += msgs.fichiersCandidats;
+    budgetMessages -= opts.dryRun ? msgs.examinees : msgs.supprimees;
+    // Présences : interrogées AUSSI en dry-run (pour remonter presencesExaminees), suppression
+    // no-op via effacerParIds. Budget global partagé.
+    const pres = await purgerParLots("doc_presentation_attendees", `slug=eq.${enc(slug)}`, "attendee_key", opts, Math.max(0, budgetPresences));
     presRapport.presences += pres.supprimees;
-    // ⚠️ LA PRÉSENTATION N'EST SUPPRIMÉE QUE SI TOUS SES ENFANTS SONT PARTIS (P2 neuvième audit) :
-    // sinon 5 000 messages partent, le parent aussi, et 1 000 orphelins restent que le balayage
-    // suivant ne peut plus rattacher à leur présentation. Tronqués → on garde le parent inactif
-    // pour le passage suivant.
+    presRapport.presencesExaminees += pres.examinees;
+    budgetPresences -= opts.dryRun ? pres.examinees : pres.supprimees;
+    // La présentation n'est supprimée que si TOUS ses enfants sont partis (9e audit).
     if (!opts.dryRun && !msgs.tronque && !pres.tronque) {
       presRapport.supprimees += (await purgerParLots("doc_presentations", `slug=eq.${enc(slug)}`, "slug", opts)).supprimees;
     }
