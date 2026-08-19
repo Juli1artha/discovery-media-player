@@ -227,6 +227,13 @@ function lireCorps(req) {
 // défaut d'une couche qu'il ne simule pas ; il n'est pas incomplet, il est dans un autre monde.
 // Cette liste dit OÙ il ne peut PAS trouver — donc où il faut un banc RÉEL (base/*.test.js). Un
 // essai (couchesAbsentes.test.js) exige qu'elle existe et ne soit pas vide.
+//
+// ⚠️ ELLE EST EN RETARD PAR CONSTRUCTION, ET IL FAUT LE LIRE COMME TEL (second hôte, 11e audit).
+// On ne peut pas énumérer automatiquement les mondes où un double n'est pas ; cette liste ne peut
+// donc que NOMMER LES COUCHES QUI ONT DÉJÀ COÛTÉ quelque chose — `encodage-url` y figure parce
+// qu'un bug l'a désignée. La huitième s'y ajoutera le jour où elle aura mordu, jamais avant. C'est
+// un REGISTRE D'ACCIDENTS, pas la carte des risques : sa valeur est rétrospective. La prendre pour
+// une garantie de couverture serait l'erreur exacte que la garde de portabilité évite ailleurs.
 const COUCHES_ABSENTES = [
   "transactions",            // un verrou optimiste concurrent, un rollback → banc réel
   "contraintes",             // unicité, clés étrangères, NOT NULL → banc réel
