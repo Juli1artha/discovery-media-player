@@ -10,6 +10,24 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.80] — 2026-08-19
+
+### Added
+
+- **A single destruction gate, guarded by form AND by execution.** The three recent P1s were the
+  same class — an option defined and validated but not honored on every write path. Following the
+  second host's refinement (*defined / transmitted / honored* — the last is proven by enumerating
+  paths, not by reading one point, and a reading-window guard would fall into the very perimeter
+  trap it guards against), retention.js now routes every delete through one `effacerParIds` and
+  every file removal through one `retirerFichier`, each short-circuiting `dryRun` on its first
+  line. Two guards: a **form** guard (exactly one `method: "DELETE"` and one `.remove(`, each
+  dominated by `dryRun` — it grows with the file, so a third write path must pass through the gate)
+  and an **execution** guard (a dry-run emits zero destructive calls on any path).
+- **`retentionSweep` in the identity card** — whether the automatic purge is *armed*
+  (`config.retention.balayage === true`), beside `internalStrict`. The `retention` capability says
+  the instance *can* purge; this says whether it *does*. A cockpit can now read if an instance is
+  subject to automatic deletion instead of inferring it from a log.
+
 ## [0.1.79] — 2026-08-19
 
 ### Security / Safety
