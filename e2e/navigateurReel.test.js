@@ -694,6 +694,31 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     }, 60_000);
   }
 
+  // ⚠️ UN role=dialog SANS PIÈGE DE FOCUS EST UNE DÉCLARATION SANS EFFET (septième audit).
+  // Piloté au clavier réel : Tab boucle entre les deux boutons, Maj+Tab boucle à rebours,
+  // Échap ferme ET rend le focus à l'élément qui l'avait — les cinq exigences du lot.
+  it("le dialogue de confirmation piège le focus, boucle, et le REND à la fermeture", async () => {
+    const { page } = await ouvrirPageSurveillee(`/present/${SLUG_DIRECT}`);
+    await page.waitForFunction(() => typeof window.__confirmDialog === "function", null, { timeout: 15_000 });
+    await page.evaluate(() => { document.getElementById("jName").focus(); window.__confirmDialog({ title: "Essai banc", desc: "d" }); });
+    const actif = () => page.evaluate(() => (document.activeElement || {}).id || "");
+    expect(await actif(), "à l'ouverture, le focus entre dans le dialogue").toBe("lModalYes");
+    await page.keyboard.press("Tab");
+    expect(await actif(), "Tab reste DANS le dialogue").toBe("lModalNo");
+    await page.keyboard.press("Tab");
+    expect(await actif(), "Tab boucle").toBe("lModalYes");
+    await page.keyboard.press("Shift+Tab");
+    expect(await actif(), "Maj+Tab boucle à rebours").toBe("lModalNo");
+    await page.keyboard.press("Escape");
+    const apres = await page.evaluate(() => ({
+      ouvert: document.getElementById("lModal").classList.contains("open"),
+      focus: (document.activeElement || {}).id || "",
+    }));
+    expect(apres.ouvert, "Échap ferme").toBe(false);
+    expect(apres.focus, "le focus REVIENT à l'élément qui l'avait — sinon l'utilisateur clavier repart de zéro").toBe("jName");
+    await page.close();
+  }, 60_000);
+
   it("l'arbitre refuse une page volontairement infirme — sinon ses zéros ne valent rien", async () => {
     const page = await navigateur.newPage();
     await page.goto(`data:text/html,<html><body><img src="x"><input type="text"></body></html>`, { waitUntil: "load" });

@@ -453,10 +453,21 @@ var Live=(function(){
     var t=document.getElementById('lModalT'),d=document.getElementById('lModalD'),y=document.getElementById('lModalYes'),n=document.getElementById('lModalNo');
     if(t)t.textContent=opts.title||'Confirmer ?';if(d){d.textContent=opts.desc||'';d.style.display=opts.desc?'block':'none';}
     if(y)y.textContent=opts.ok||'Confirmer';
-    function close(){m.classList.remove('open');if(y)y.onclick=null;if(n)n.onclick=null;m.onclick=null;document.removeEventListener('keydown',key);}
-    function key(e){if(e.key==='Escape'){close();}else if(e.key==='Enter'){close();if(onOk)onOk();}}
+    // ⚠️ UN role=dialog SANS PIÈGE DE FOCUS EST UNE DÉCLARATION SANS EFFET (septième audit) :
+    // Tab sortait vers la page derrière, et à la fermeture le focus tombait sur <body> — un
+    // utilisateur clavier repartait de zéro. Le piège boucle entre les DEUX boutons, Échap et
+    // Entrée existaient déjà, et l'élément qui avait le focus à l'ouverture le RETROUVE.
+    var avant=document.activeElement;
+    function close(){m.classList.remove('open');if(y)y.onclick=null;if(n)n.onclick=null;m.onclick=null;document.removeEventListener('keydown',key);
+      if(avant&&avant.focus)try{avant.focus();}catch(e){}}
+    function key(e){if(e.key==='Escape'){close();}else if(e.key==='Enter'){close();if(onOk)onOk();}
+      else if(e.key==='Tab'){var f=[n,y].filter(function(x){return x;});if(!f.length)return;e.preventDefault();
+        var i=f.indexOf(document.activeElement);var j=e.shiftKey?(i<=0?f.length-1:i-1):(i>=f.length-1?0:i+1);try{f[j].focus();}catch(err){}}}
     if(y)y.onclick=function(){close();if(onOk)onOk();};if(n)n.onclick=close;m.onclick=function(e){if(e.target===m)close();};
     document.addEventListener('keydown',key);m.classList.add('open');if(y)try{y.focus();}catch(e){}}
+  // Crochet interne (même famille que __presRelireEtat) : le piège de focus ne se PROUVE que
+  // piloté clavier dans un vrai navigateur, et la seule voie UI passe par un message à soi.
+  try{window.__confirmDialog=confirmDialog;}catch(e){}
   function history(){fetch('/api/doc?present='+encodeURIComponent(SLUG)+'&chat=1').then(function(r){return r.json();}).then(function(d){var box=document.getElementById('chatMsgs');if(d&&d.messages&&d.messages.length){d.messages.forEach(function(m){addMsg(m);});}else if(box&&!box.children.length){box.innerHTML='<div class=chat-empty>Aucun message. Lancez la discussion.</div>';}if(d&&typeof d.locked!=='undefined')applyLock(d.locked);_histDone=true;}).catch(function(){_histDone=true;});}
   function react(id,e){if(!ME||!id||!e)return;
     // ⚠️ ON ENVOIE L'ÉTAT VOULU, PAS « INVERSE ». Basculer n'a de sens qu'une fois : un renvoi
