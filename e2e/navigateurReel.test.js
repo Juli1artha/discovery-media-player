@@ -269,6 +269,10 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
    */
   async function ouvrirPageSurveillee(chemin) {
     const page = await navigateur.newPage();
+    // ⚠️ MESURER L'ÉTAT STABLE, PAS UNE TRANSITION (P2 onzième audit — l'E2E a échoué une fois sur
+    // le contraste de `.page` en `reprise`, vert au second passage : une transition d'overlay
+    // mesurée à mi-course fabrique un faux contraste). On coupe les animations pour axe.
+    await page.emulateMedia({ reducedMotion: "reduce" });
     const violations = [];
     await page.exposeFunction("__violation", (d) => { violations.push(d); });
     await page.addInitScript(() => {
@@ -568,6 +572,12 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     }))));
   }
   const graves = (violations) => violations.filter((v) => v.impact === "serious" || v.impact === "critical");
+  // Attendre que les transitions/animations en cours soient TERMINÉES avant de mesurer — même avec
+  // reducedMotion, une classe qu'on vient d'ajouter peut n'avoir pas encore été peinte.
+  const attendreStable = (page) => page.evaluate(() => new Promise((resolve) => {
+    const fini = () => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {})));
+    requestAnimationFrame(() => fini().then(() => requestAnimationFrame(() => resolve())));
+  }));
   const imprimer = (nom, violations) => {
     for (const v of violations) console.log(`[a11y] ${nom} — ${v.impact} — ${v.regle} : ${v.aide} → ${v.noeuds.join(" | ")}`);
   };
@@ -745,8 +755,13 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     ];
     for (const [nom, montrer, cacher] of etats) {
       await page.evaluate(montrer);
+      await attendreStable(page);
       const violations = await mesurerAxe(page);
       imprimer(`etat-${nom}`, violations);
+      if (graves(violations).length) {   // capture DOM+image à l'échec, pour qu'un flake soit diagnosticable
+        try { await page.screenshot({ path: `/tmp/a11y-etat-${nom}.png` }); } catch { /* best effort */ }
+        console.log(`[a11y] DOM de l'état « ${nom} » :`, (await page.content()).slice(0, 2000));
+      }
       expect(graves(violations), `l'état « ${nom} » refuse une technologie d'assistance`).toEqual([]);
       await page.evaluate(cacher);
     }
