@@ -77,5 +77,8 @@
     "typescript": "^5.5.4",
     "typescript-eslint": "^8.46.4",
     "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "pdfjs-dist": "6.2.108"
   }
 }
