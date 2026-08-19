@@ -326,6 +326,20 @@ async function traiter(req, res, body, slug) {
         // jamais.
         return j(200, { ok: true, slug: out.slug, sent, ...(refusEnvoi ? { sendRefused: refusEnvoi } : {}) });
       }
+      // ⚠️ CE REPLI NE COUVRE QUE LES ÉVÉNEMENTS ANALYTIQUES (P2 huitième audit). Une action POST
+      // qu'aucune famille n'a reconnue tombait ici et repartait `{"ok":true}` — une faute de
+      // frappe (`present-pgae`) passait pour un succès, parfois même journalisée. Un `action`
+      // présent mais inconnu est donc REFUSÉ ; sans action, il faut un `event` autorisé. Jamais un
+      // événement absent ou invalide transformé en ouverture.
+      const EVENEMENTS = new Set(["open", "page", "heartbeat", "session"]);
+      if (typeof body.action === "string" && body.action.trim()) {
+        res.statusCode = 400; res.setHeader("Content-Type", "application/json"); res.end('{"ok":false,"error":"unknown-action"}');
+        return true;
+      }
+      if (!EVENEMENTS.has(body.event)) {
+        res.statusCode = 400; res.setHeader("Content-Type", "application/json"); res.end('{"ok":false,"error":"bad-event"}');
+        return true;
+      }
       const ua0 = req.headers["user-agent"];
       const ip0 = adresseAppelant(req);
       // ⚠️ CONSULTATION INTERNE : L'IDENTITÉ EST AFFIRMÉE PAR LE NAVIGATEUR, PAS PROUVÉE.
