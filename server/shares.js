@@ -10,6 +10,17 @@ function init(ctx) { PLAYER = ctx; }
 
 
 const enc = encodeURIComponent;
+
+// ⚠️ LA CLÉ D'IDEMPOTENCE EST UNE EMPREINTE, PAS UNE CONCATÉNATION (sixième audit). La forme
+// historique `hote:<docId>|<email>` portait trois défauts : tronquée à 300 caractères à
+// l'ÉCRITURE mais relue ENTIÈRE après un 409 — le perdant légitime finissait en 500 faute de
+// trouver son gagnant ; deux docId partageant le préfixe se volaient leur lien ; et un `|` dans
+// une composante déplaçait la frontière. JSON.stringify fixe les frontières, sha256 fixe la
+// longueur (genre + 65 caractères, loin de toute limite). Une seule fonction pour ÉCRIRE et
+// RELIRE : les deux exemplaires du fait ne peuvent plus diverger. Les clés ancien format en
+// base s'éteignent d'elles-mêmes — le réemploi passe par doc_id et re-pose la clé canonique.
+const cleIdempotence = (genre, composants) =>
+  genre + ":" + crypto.createHash("sha256").update(JSON.stringify(composants)).digest("hex");
 const low = (s) => String(s || "").trim().toLowerCase();
 function newSlug() { return crypto.randomBytes(9).toString("base64url"); } // ~12 chars URL-safe
 
@@ -23,7 +34,7 @@ async function createShare({ docId, docTitle, fileUrl, fileName, recipientEmail,
   // CRÉATION de liens. Même sonde que la clé des messages (0005).
   const cleDispo = idemKey ? await require("./schema").attendue("liensUniques") : false;
   const row = {
-    ...(cleDispo ? { idem_key: String(idemKey).slice(0, 300) } : {}),
+    ...(cleDispo ? { idem_key: String(idemKey) } : {}),
     slug, doc_id: String(docId), doc_title: docTitle || null, file_url: String(fileUrl), file_name: fileName || null,
     recipient_email: low(recipientEmail) || null, recipient_name: (recipientName || "").trim() || null, created_by: low(createdBy) || null,
     // ⚠️ DEUX CHAMPS, DEUX FAITS. `recipient_email` dit qui a le droit d'EXPÉDIER en son nom au
@@ -450,4 +461,5 @@ async function internalStatsForDoc(docId) {
   return { opens: list.length, readers: users.length, lastAt: list[0]?.last_at || null, users };
 }
 
-module.exports = { init, createShare, createReshare, sendReshareEmail, getShareBySlug, logView, upsertSession, listSharesForDoc, listSessionsForDoc, revokeShare, setShareAuth, overview, upsertInternalSession, internalStatsForDoc };
+module.exports = {
+  cleIdempotence, init, createShare, createReshare, sendReshareEmail, getShareBySlug, logView, upsertSession, listSharesForDoc, listSessionsForDoc, revokeShare, setShareAuth, overview, upsertInternalSession, internalStatsForDoc };
