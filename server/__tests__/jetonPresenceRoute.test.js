@@ -6,8 +6,9 @@
 
 const schema = require("../schema.js");
 
-function joueur({ strict = false, jetonEntrant = null } = {}) {
+function joueur({ strict = false, jetonEntrant = null, reclamees = [] } = {}) {
   const rpc = [];
+  const lignesReclamees = new Set(reclamees);
   const ctx = {
     plugins: {}, has: () => false,
     storage: { isAllowedUrl: () => true, async fetchFile() { return null; }, async put() {} },
@@ -15,7 +16,14 @@ function joueur({ strict = false, jetonEntrant = null } = {}) {
       async request(chemin, o) {
         const m = (o && o.method) || "GET";
         if (chemin.startsWith("doc_presentations?") && m === "GET") return [{ slug: "s", active: true, current_page: 1, control_hash: "h" }];
-        if (chemin.startsWith("rpc/player_attendance_bump") && m === "POST") { rpc.push(o.body); return [{ ok: true, created: true, capped: false }]; }
+        if (chemin.startsWith("rpc/player_attendance_bump") && m === "POST") {
+          rpc.push(o.body);
+          // Double fidèle de 0018 : un bootstrap sur une ligne DÉJÀ RÉCLAMÉE n'écrit rien.
+          if (o.body.p_only_if_unclaimed === true && lignesReclamees.has(o.body.p_key)) {
+            return [{ ok: false, created: false, capped: false, usurpe: true }];
+          }
+          return [{ ok: true, created: true, capped: false, usurpe: false }];
+        }
         if (chemin.startsWith("doc_presentation_attendees")) return [];
         return [];
       },
@@ -80,6 +88,32 @@ describe("present-attend — protocole du jeton de présence", () => {
     const r = await attendre(j.p, { key: "k", pt: "peu-importe" });
     expect(r.statut).toBe(200);
     expect(j.rpc[0].p_key).toBe("anon-prouve");
+  });
+
+  // ⚠️ LE DURCISSEMENT (0018), et le dernier verrou avant STRICT. `wantToken` est AUTO-DÉCLARÉ : sans
+  // ce contrôle, un attaquant le déclarait, posait la clé d'un participant enregistré, et écrasait sa
+  // ligne. Le second hôte a EXÉCUTÉ l'attaque sur sa prod avant qu'on la ferme.
+  it("bootstrap sur une ligne DÉJÀ RÉCLAMÉE : refusé (409), aucune écriture", async () => {
+    const j = joueur({ reclamees: ["anon-victime"] });
+    const r = await attendre(j.p, { key: "anon-victime", wantToken: "1" });
+    expect(r.statut).toBe(409);
+    expect(r.corps.usurpe).toBe(true);
+    expect(j.rpc[0].p_only_if_unclaimed, "un bootstrap DEMANDE le contrôle").toBe(true);
+    expect(r.corps.pt, "et n'obtient surtout pas de jeton sur la clé d'autrui").toBeUndefined();
+  });
+
+  it("bootstrap sur une clé LIBRE : accepté (c'est le chemin de montée normal)", async () => {
+    const j = joueur({ reclamees: ["anon-autre"] });
+    const r = await attendre(j.p, { key: "anon-neuve", wantToken: "1" });
+    expect(r.statut).toBe(200);
+    expect(r.corps.pt).toMatch(/^JETON\(s\|/);
+  });
+
+  it("un PORTEUR DE JETON n'est pas soumis au contrôle (il est déjà prouvé)", async () => {
+    const j = joueur({ reclamees: ["anon-prouve"], jetonEntrant: { slug: "s", key: "anon-prouve" } });
+    const r = await attendre(j.p, { key: "anon-prouve", pt: "peu-importe" });
+    expect(r.statut, "sa propre ligne réclamée est la sienne").toBe(200);
+    expect(j.rpc[0].p_only_if_unclaimed, "pas de contrôle de bootstrap pour un jeton valide").toBeUndefined();
   });
 
   it("jeton d'un AUTRE slug : ignoré (le battement retombe en legacy)", async () => {

@@ -141,15 +141,26 @@ async function traiter(req, res, body, _slug) {
             email: profil ? profil.email : body.email,
             avatar: (profil && profil.avatar) || body.avatar,
             isMember: !!profil, isPresenter: estPresentateur,
-          }, { presentation: pres, ipHash, anonCap, hasToken });
+            // ⚠️ UN BOOTSTRAP NE PEUT PAS S'EMPARER D'UNE PRÉSENCE DÉJÀ RÉCLAMÉE (0018). `wantToken`
+            // est AUTO-DÉCLARÉ : sans ce verrou, un attaquant le déclarait, posait la clé d'un
+            // participant enregistré, et écrasait sa ligne — l'usurpation même que l'étape 2 ferme
+            // pour les battements ordinaires. Le second hôte l'a EXÉCUTÉE sur sa prod. Le contrôle ne
+            // vaut que pour un bootstrap : un porteur de jeton est déjà prouvé, un membre aussi.
+          }, { presentation: pres, ipHash, anonCap, hasToken, onlyIfUnclaimed: bootstrap });
           // On ÉMET (ou ré-émet) un jeton pour l'anonyme dont l'écriture a réussi : le client le garde
           // et le renvoie aux battements suivants. `exp` court (6 h), ré-émis à chaque battement — pas
           // de table anti-rejeu (le scellé d'archive et l'exp bornent déjà le rejeu, cf. 0007). Un
           // membre n'en a pas besoin (son JWT le prouve). Sans PLAYER_PRESENCE_SECRET, `signPresenceToken`
           // rend "" → aucun champ `pt`, le client reste en mode legacy. Rien ne casse.
+          // ⚠️ SEPT JOURS, ET C'EST LA PERSISTANCE QUI FIXE LE CHIFFRE. Le jeton vit maintenant dans le
+          // stockage du visiteur, à côté de sa clé de participant : sa durée de vie doit couvrir un
+          // RETOUR, sinon l'expiration relance un bootstrap sur une ligne réclamée, qui sera refusé, et
+          // le visiteur repart sur une ligne neuve — une présence coupée en deux dans les statistiques
+          // pour rien. Le rejeu reste borné par le scellé d'archive (0007, il porte aussi sur la table
+          // des présences) : une présentation close refuse toute écriture, jeton valide ou non.
           let pt = "";
           if (!profil && r.ok && typeof PLAYER.identity.signPresenceToken === "function") {
-            pt = PLAYER.identity.signPresenceToken(slug, cleAnon, 6 * 3600);
+            pt = PLAYER.identity.signPresenceToken(slug, cleAnon, 7 * 24 * 3600);
           }
           return jp(r.ok ? 200 : (r.status || 400), pt ? { ...r, pt } : r);
         } catch { return jp(500, { ok: false }); }

@@ -768,7 +768,48 @@ let _avertRpcPresence = false;
 // D'OPTIONS, pas dans un slot positionnel : la ranger en 2e position (ce que faisait 0.1.84) déplaçait
 // le vrai paramètre et faisait jeter `Cannot destructure property 'key'` sur un appel à deux arguments
 // (P1a audit CODEX 5.6). `participant || {}` : un appel sans participant tombe en 400, jamais en throw.
-async function recordAttendance(slug, participant, { presentation = null, ipHash = null, anonCap = null, hasToken = null } = {}) {
+/**
+ * Appelle la RPC de présence en RÉESSAYANT le contrat plus ancien si la signature n'existe pas.
+ *
+ * ⚠️ POURQUOI UN RÉESSAI PLUTÔT QU'UNE SONDE. Une sonde de colonne est un indice INDIRECT de ce qu'on
+ * veut savoir (la signature de la fonction) ; ici on interroge exactement ce dont on dépend. C'est
+ * indispensable pour 0018, qui n'ajoute AUCUNE colonne — il n'y aurait rien à sonder.
+ *
+ * ⚠️ ET LE VERDICT SE MÉMORISE. Sans mémo, chaque battement d'un hôte non migré paierait un
+ * aller-retour perdu ; le chemin de la présence est chaud (un battement toutes les 25 s par
+ * participant). On retient donc l'ensemble d'arguments qui a marché, pour le processus.
+ */
+let _bumpSansDurcissement = false;   // 0018 absente : ne plus demander p_only_if_unclaimed
+async function appelerBump(corps, durcissementVoulu) {
+  const appel = (b) => PLAYER.db.request("rpc/player_attendance_bump", { method: "POST", body: b });
+  if (durcissementVoulu && _bumpSansDurcissement) {
+    const { p_only_if_unclaimed: _retire, ...sansDurcissement } = corps;
+    return appel(sansDurcissement);
+  }
+  try {
+    return await appel(corps);
+  } catch (erreur) {
+    if (!durcissementVoulu) throw erreur;   // rien à retirer : l'échec est réel
+    // La signature à 12 arguments n'existe pas (0018 non appliquée) : on retire l'argument et on
+    // réessaie. Le durcissement n'est alors PAS appliqué — et ça se dit, une fois, plus bas.
+    _bumpSansDurcissement = true;
+    // ⚠️ CE QUI DISPARAÎT SE DIT. Le durcissement demandé n'est pas appliqué : sous
+    // PLAYER_PRESENCE_STRICT, la porte se fermerait sur les battements legacy tout en laissant un
+    // bootstrap auto-déclaré s'emparer d'une présence réclamée — c'est-à-dire une fermeture qui
+    // rassure sans protéger. On nomme donc le fichier ET la conséquence.
+    try {
+      PLAYER.errors.capture(new Error(
+        "bootstrap de présence NON durci : appliquez supabase/migrations/0018-bootstrap-non-usurpable.sql. "
+        + "Sans elle, un bootstrap auto-déclaré peut écraser une présence déjà réclamée par un porteur "
+        + "de jeton — n'armez pas PLAYER_PRESENCE_STRICT avant de l'avoir appliquée.",
+      ), { route: "present-attend" });
+    } catch { /* jamais bloquant */ }
+    const { p_only_if_unclaimed: _retire, ...sansDurcissement } = corps;
+    return appel(sansDurcissement);
+  }
+}
+
+async function recordAttendance(slug, participant, { presentation = null, ipHash = null, anonCap = null, hasToken = null, onlyIfUnclaimed = false } = {}) {
   const { key, name, email, avatar, isMember, isPresenter } = participant || {};
   if (!slug || !key) return { ok: false, status: 400 };
   // La route vient DÉJÀ de charger la présentation (contrôle présentateur) : elle la fournit dans les
@@ -809,12 +850,23 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
   };
   // true → last_token_at, false → last_no_token_at, null → ni l'un ni l'autre. 0017 seulement.
   if (transitionDispo) corpsRpc.p_has_token = hasToken == null ? null : !!hasToken;
+  // ⚠️ LE DURCISSEMENT DU BOOTSTRAP (0018) N'A PAS DE COLONNE À SONDER — il est fonction-seule. On ne
+  // peut donc pas le déduire d'un indice : on le DEMANDE et on RÉESSAIE le contrat plus ancien si la
+  // signature n'existe pas. C'est la forme que le second hôte préférait (« elle ne peut pas se
+  // tromper, parce qu'elle interroge exactement ce dont elle dépend ») — l'indice indirect de 0017,
+  // lui, resterait vrai si colonne et fonction se désynchronisaient. Le contrat retenu est mémorisé
+  // pour le processus : un hôte non migré ne paie pas deux allers-retours par battement, un seul.
+  const durcissementVoulu = !!onlyIfUnclaimed;
+  if (durcissementVoulu) corpsRpc.p_only_if_unclaimed = true;
   try {
-    const r = await PLAYER.db.request("rpc/player_attendance_bump", { method: "POST", body: corpsRpc });
+    const r = await appelerBump(corpsRpc, durcissementVoulu);
     const ligne = Array.isArray(r) ? r[0] : r;
     if (ligne && typeof ligne.ok === "boolean") {
       // Plafond de création atteint : on ne crée pas ce faux participant. 429 = « trop », pas une panne.
       if (ligne.capped) return { ok: false, status: 429 };
+      // Bootstrap sur une ligne DÉJÀ RÉCLAMÉE par un porteur de jeton : rien n'a été écrit. 409 = « ce
+      // n'est pas à toi » — le client fera tourner sa clé plutôt que de perdre sa présence en silence.
+      if (ligne.usurpe) return { ok: false, status: 409, usurpe: true };
       return { ok: true };
     }
     // Forme inattendue : on n'invente pas de verdict, on laisse la boucle de repli faire l'écriture.

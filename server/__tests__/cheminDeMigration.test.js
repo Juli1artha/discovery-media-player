@@ -123,6 +123,19 @@ describe("toute colonne écrite par le code est déclarée", () => {
       // cherchait tout `body: <ident>` et ramassait des corps de RÉPONSE (`status`, `summary`,
       // `members`…) : sept faux positifs d'un coup. Une garde de schéma qui accuse des non-colonnes se
       // fait desserrer, donc elle doit viser le puits réel, pas la forme syntaxique la plus proche.
+      // ⚠️ ET LES CORPS RELAYÉS PAR UN HELPER LOCAL. Le corps du RPC de présence est passé à
+      // `appelerBump(corps, …)`, qui relaie vers `db.request` : le motif ci-dessous, qui exige un
+      // `body:` littéral au site d'appel, ne le voit plus. C'est une ÉNUMÉRATION — et elle est sûre
+      // ICI, parce que le PLANCHER de couverture déclaré plus haut échoue le jour où elle se périme.
+      // C'est tout l'intérêt du plancher : il rend une liste explicite acceptable, là où sans lui elle
+      // se viderait en silence. (Il a d'ailleurs rougi sur ce refactor même, à la minute où il existait.)
+      const RELAIS = /\bappelerBump\(\s*([A-Za-z_$][\w$]*)/g;
+      for (const relais of src.matchAll(RELAIS)) {
+        const decl = new RegExp(`const ${relais[1]}\\s*=\\s*\\{([^}]*)\\}`, "g");
+        for (const d of src.matchAll(decl)) {
+          for (const c of d[1].matchAll(/\b([a-z][a-z0-9_]{2,})\s*:/g)) noms.add(c[1]);
+        }
+      }
       for (const appel of src.matchAll(/PLAYER\.db\.request\([\s\S]{0,400}?body:\s*\[?\s*([A-Za-z_$][\w$]*)\s*\]?[\s,)]/g)) {
         const nom = appel[1];
         if (nom === "row") continue;   // déjà couvert, et avec un motif plus sûr, juste au-dessus

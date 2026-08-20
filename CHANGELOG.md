@@ -10,6 +10,39 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.101] — 2026-08-20
+
+### Security (P1c step 2 — a bootstrap can no longer seize a claimed presence; STRICT is now safe to arm)
+
+- **Migration 0018: a `wantToken` bootstrap is refused on a row already claimed by a token holder.**
+  `wantToken` is SELF-DECLARED — it is what distinguishes a modern client from a legacy one — so under
+  STRICT an attacker could declare it, post a registered participant's key, and overwrite their row:
+  exactly the takeover step 2 closes for ordinary heartbeats. The second host EXECUTED it on his own
+  production (a participant's name replaced) — this was not hypothetical. A row that has already beaten
+  with a valid token (`last_token_at` set) is CLAIMED; a bootstrap, by definition tokenless, has nothing
+  to write there. It stays free to create a new row, and to adopt a never-claimed legacy row (the normal
+  upgrade path). The check is re-done under the advisory lock, so concurrent bootstraps cannot slip past.
+- **The client now persists its token, which is what makes the refusal possible.** Held in memory only,
+  the token was lost on every page reload, so the client re-bootstrapped with its usual (persisted) key
+  — making "bootstrap on an existing key" routine, and therefore impossible to refuse without breaking
+  every reload. Stored beside the attendee key, it has the same lifetime: a reload resumes with its
+  token. Token TTL raised to 7 days accordingly (replay stays bounded by the archive seal, which covers
+  the attendees table too). **Refused, the client rotates its key** and resumes on a fresh row rather
+  than losing its presence in silence.
+- **The RPC now RETRIES the older contract instead of inferring it.** 0018 adds no column, so there is
+  nothing to probe — the code asks for the hardening and, if the signature does not exist, retries
+  without it (the winning contract is memoised per process, so an un-migrated host pays one round trip,
+  not two per heartbeat). This is the form the second host preferred: it cannot be wrong, because it
+  asks exactly what it depends on. When the hardening is unavailable it is **said**, naming 0018 and the
+  consequence: do not arm `PLAYER_PRESENCE_STRICT` without it.
+
+### Note
+
+- The coverage floor added in 0.1.100 **fired on this very release**, the day it was installed: moving
+  the RPC body behind a helper dropped the scan from 71 to 61 columns — the identical silent erosion of
+  the day before, this time a red test. It also makes the explicit enumeration that fixes it *safe*: a
+  list is acceptable when a floor fails the day it goes stale.
+
 ## [0.1.100] — 2026-08-20
 
 ### Fixed (three scan guards could empty themselves without ever failing)

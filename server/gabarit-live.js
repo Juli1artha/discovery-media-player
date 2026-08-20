@@ -261,12 +261,27 @@ var Live=(function(){
   // hôte sans PLAYER_PRESENCE_SECRET n'en renvoie pas, et tout continue comme avant (legacy).
   // ⚠️ AUCUN BACKTICK DANS CE COMMENTAIRE : ce fichier ÉMET du JS via des template literals — un
   // backtick ici ferme la chaîne et casse tout le module (vu à l'instant, 33 essais rouges d'un coup).
+  // ⚠️ LE JETON SE PERSISTE, ET C'EST CE QUI REND LE DURCISSEMENT POSSIBLE (0018). Gardé en mémoire
+  // seule, il était perdu à CHAQUE rechargement de page : le client repartait alors en BOOTSTRAP avec
+  // sa clé habituelle (elle, persistée), ce qui rendait « bootstrap sur clé existante » banal — donc
+  // impossible à refuser sans casser tout rechargement. Rangé à côté de la clé de participant, il a la
+  // même durée de vie qu'elle : un rechargement repart avec son jeton, et un bootstrap sur une ligne
+  // déjà réclamée redevient franchement anormal. Stockage bridé : on retombe sur la mémoire seule, et
+  // le bootstrap reste possible tant que STRICT est absent.
+  var CLE_PT='3dd-present-pt';
+  function ptLu(){ if(_ptJeton)return _ptJeton; try{var s=_store();var v=s&&s.getItem(CLE_PT+':'+SLUG);if(v)_ptJeton=v;}catch(e){} return _ptJeton; }
+  function ptRange(v){ _ptJeton=v||''; try{var s=_store();if(s&&v)s.setItem(CLE_PT+':'+SLUG,v);}catch(e){} }
+  // Refus d'usurpation : cette clé appartient à quelqu'un qui détient son jeton. On ne perd PAS la
+  // présence en silence — on fait TOURNER notre clé pour repartir sur une ligne neuve au battement
+  // suivant. Une mesure qui s'arrête sans le dire est le pire des deux côtés de cette porte.
+  function rotationCle(){ try{var s=_store();if(s){s.removeItem('3dd-present-attkey');s.removeItem(CLE_PT+':'+SLUG);}}catch(e){} _ptJeton=''; }
   function sendAttend(){ if(!SLUG||!ME)return; try{ var h={'Content-Type':'application/json'};var jw=accessToken();if(jw)h.Authorization='Bearer '+jw;
     var corps={action:'present-attend',slug:SLUG,control:CONTROL,key:attKey(),name:ME.name||'',email:ME.email||'',avatar:ME.avatar||''};
-    if(_ptJeton)corps.pt=_ptJeton;else corps.wantToken='1';
+    var pt=ptLu();
+    if(pt)corps.pt=pt;else corps.wantToken='1';
     fetch('/api/doc',{method:'POST',headers:h,body:JSON.stringify(corps)})
       .then(function(r){return r.json();})
-      .then(function(d){if(d&&d.pt)_ptJeton=d.pt;})
+      .then(function(d){ if(d&&d.pt)ptRange(d.pt); else if(d&&d.usurpe)rotationCle(); })
       .catch(function(){}); }catch(e){} }
   var EMOJIS=['👍','❤️','😂','😮','👏','🎉'];
   var RSVG='<svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2 stroke-linecap=round><circle cx=12 cy=12 r=9 /><path d="M8.5 14.5s1.4 1.7 3.5 1.7 3.5-1.7 3.5-1.7"/><line x1=9 y1=9.2 x2=9.01 y2=9.2 /><line x1=15 y1=9.2 x2=15.01 y2=9.2 /></svg>';
