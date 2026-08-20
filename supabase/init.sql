@@ -240,9 +240,15 @@ drop trigger if exists dpm_bump_modseq on public.doc_presentation_messages;
 create trigger dpm_bump_modseq
   before insert or update on public.doc_presentation_messages
   for each row execute function public.player_bump_message_seq();
-update public.doc_presentation_messages
+-- ⚠️ Le rattrapage EXCLUT les présentations scellées (0007/0010) : le trigger dpm_archive_scellee lève
+-- sur toute écriture dans une présentation gelée, et une seule de ses lignes ferait échouer l'install.
+update public.doc_presentation_messages m
   set mod_seq = nextval('public.doc_presentation_messages_modseq')
-  where mod_seq is null;
+  where m.mod_seq is null
+    and not exists (
+      select 1 from public.doc_presentations p
+      where p.slug = m.slug and p.active = false and p.control_hash is null
+    );
 create index if not exists idx_dpm_slug_modseq
   on public.doc_presentation_messages (slug, mod_seq);
 
