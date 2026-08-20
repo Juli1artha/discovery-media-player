@@ -10,6 +10,27 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.112] — 2026-08-20
+
+### Security / performance (the read cache kept what it no longer served, without limit)
+
+- **Expired entries are now purged on access, and a weight cap bounds the cache in bytes.** The cache
+  capped the NUMBER of entries (500) and never their size, and evicted only under pressure: an expired
+  entry stayed resident until another pushed it out. Since the key carries `chatAfter` — a cursor the
+  visitor varies at will — and a chat response can weigh hundreds of kilobytes, ~500 × 600 KB ≈ 286 MB
+  could be held per process, on demand. A count cap bounds nothing when the caller chooses the size of
+  an entry, so the cap is now also on **weight**, and the weight is *measured* rather than estimated:
+  the cached values are JSON strings. Default caps lowered to 100 entries / 8 MB.
+- **The TTL now starts at resolution, not at request — which is what makes coalescing work at all.**
+  Set at request time, the deadline expired *before the production answered* as soon as it took longer
+  than the TTL, so concurrent callers each started their own: the grouping stopped working for exactly
+  the slow producers it exists for. An in-flight entry never expires and is never evicted — dropping it
+  frees nothing (it is already running) and re-launches the work the cache exists to share.
+- **`chatAfter` is validated as a safe decimal integer.** It enters a cache key, so anything that
+  widens the value space widens the key space of a shared resource.
+- Guards were mutation-tested against the previous cache: four of the six fail on it, including the
+  lost coalescing, which the audit had not named. Reported by an external audit (P1).
+
 ## [0.1.111] — 2026-08-20
 
 ### Security (a transient network error silently disarmed the anti-takeover control)

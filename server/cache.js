@@ -37,10 +37,38 @@
  */
 function creerCache(options) {
   const ttl = Math.max(0, Number(options && options.ttlMs) || 0);
-  const max = Math.max(1, Number(options && options.max) || 500);
+  // ⚠️ DEUX PLAFONDS, ET LE SECOND EST CELUI QUI COMPTE. Un plafond en NOMBRE d'entrées ne borne rien
+  // quand la taille d'une entrée est choisie par l'appelant : 500 réponses de chat à 600 Ko font
+  // ~286 Mo, et la clé porte un curseur (`chatAfter`) que le visiteur fait varier à volonté — chaque
+  // valeur crée une entrée. On borne donc aussi le POIDS, et le poids est MESURÉ, pas estimé : les
+  // valeurs mises en cache ici sont des chaînes JSON. (Relevé par un audit externe.)
+  const max = Math.max(1, Number(options && options.max) || 100);
+  const maxOctets = Math.max(1, Number(options && options.maxOctets) || 8 * 1024 * 1024);
   const now = (options && options.now) || (() => Date.now());
-  /** @type {Map<string, { echeance: number, promesse: Promise<unknown> }>} */
+  /** @type {Map<string, { echeance: number, promesse: Promise<unknown>, poids: number, enVol: boolean }>} */
   const entrees = new Map();
+  let poidsTotal = 0;
+
+  const oublier = (k) => {
+    const e = entrees.get(k);
+    if (!e) return;
+    poidsTotal -= e.poids;
+    entrees.delete(k);
+  };
+
+  // ⚠️ ON N'ÉVINCE JAMAIS UNE PROMESSE EN VOL. L'éviction sert à borner la mémoire des RÉSULTATS ;
+  // retirer une demande en cours ne libère rien (elle est déjà lancée) et casse le regroupement : les
+  // appelants suivants relanceraient la même production, ce que ce cache existe pour éviter.
+  const borner = () => {
+    for (const [k, e] of entrees) {
+      if (entrees.size <= max && poidsTotal <= maxOctets) break;
+      if (!e.enVol) oublier(k);
+    }
+  };
+
+  const purger = (t) => {
+    for (const [k, e] of entrees) if (!e.enVol && e.echeance <= t) oublier(k);
+  };
 
   return {
     /**
@@ -50,32 +78,46 @@ function creerCache(options) {
     async lire(cle, produire) {
       const k = String(cle);
       const t = now();
+      // ⚠️ PURGE À CHAQUE ACCÈS. Sans elle, une entrée périmée restait en mémoire jusqu'à ce qu'une
+      // AUTRE la pousse dehors : le cache gardait indéfiniment ce qu'il ne servait plus.
+      purger(t);
       const vue = entrees.get(k);
-      if (vue && vue.echeance > t) return vue.promesse;
+      // Une entrée en vol se partage toujours : c'est tout l'objet du regroupement.
+      if (vue && (vue.enVol || vue.echeance > t)) return vue.promesse;
 
       const promesse = Promise.resolve().then(produire);
-      entrees.set(k, { echeance: t + ttl, promesse });
+      // ⚠️ L'ÉCHÉANCE PART DE LA RÉSOLUTION, PAS DE LA DEMANDE. Posée à la demande, elle expirait
+      // AVANT que la production ne réponde dès que celle-ci dépassait le TTL — et le regroupement ne
+      // servait alors plus à rien pour exactement les producteurs lents, les seuls qu'il valait la
+      // peine de mutualiser. Tant qu'elle est en vol, l'entrée ne périme pas.
+      entrees.set(k, { echeance: 0, promesse, poids: 0, enVol: true });
 
-      // ⚠️ On oublie une promesse ROMPUE, jamais une promesse tenue : sinon un hoquet de base
-      // resterait servi pendant toute la fenêtre, et le rétablissement attendrait pour rien.
-      promesse.catch(() => {
-        const courante = entrees.get(k);
-        if (courante && courante.promesse === promesse) entrees.delete(k);
-      });
-
-      // Éviction : la plus ancienne d'abord (Map conserve l'ordre d'insertion). La clé venant de
-      // l'appelant, une table sans borne serait une fuite mémoire commandée depuis l'extérieur.
-      if (entrees.size > max) {
-        for (const vieille of entrees.keys()) {
-          entrees.delete(vieille);
-          if (entrees.size <= max) break;
-        }
-      }
+      promesse.then(
+        (valeur) => {
+          const courante = entrees.get(k);
+          if (!courante || courante.promesse !== promesse) return;
+          courante.enVol = false;
+          courante.echeance = now() + ttl;
+          // Le poids réel : ces valeurs sont des chaînes JSON. Une valeur d'une autre forme compte
+          // pour un poids nominal — mieux vaut sous-estimer que prétendre mesurer ce qu'on ignore.
+          courante.poids = typeof valeur === "string" ? valeur.length : 1;
+          poidsTotal += courante.poids;
+          borner();
+        },
+        () => {
+          // ⚠️ On oublie une promesse ROMPUE, jamais une promesse tenue : sinon un hoquet de base
+          // resterait servi pendant toute la fenêtre, et le rétablissement attendrait pour rien.
+          const courante = entrees.get(k);
+          if (courante && courante.promesse === promesse) oublier(k);
+        },
+      );
       return promesse;
     },
 
     /** Pour les tests et l'exploitation : ce que la table contient réellement. */
     taille: () => entrees.size,
+    /** Poids cumulé des résultats retenus, en caractères. */
+    poids: () => poidsTotal,
   };
 }
 

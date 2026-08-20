@@ -728,7 +728,15 @@ async function handler(req, res) {
       // requête base). Il entre dans la CLÉ DE CACHE : deux clients au même curseur — le cas normal,
       // toute une salle à jour du même message — partagent la même lecture ; seuls ceux qui ont pris
       // du retard divergent. Absent → relecture complète (client ancien, ou hôte non migré).
-      const chatAfter = (Number.isFinite(+q.chatAfter) && +q.chatAfter > 0) ? String(Math.trunc(+q.chatAfter)) : null;
+      // ⚠️ ENTIER DÉCIMAL SÛR, ET RIEN D'AUTRE. Cette valeur entre dans une CLÉ DE CACHE : tout ce qui
+      // élargit l'espace des valeurs élargit l'espace des clés, et le cache est une ressource
+      // partagée. `+"1e20"` est fini et passait, produisant une clé qu'aucun message n'atteindra
+      // jamais ; `Number.isSafeInteger` ferme la plage, et le motif décimal ferme les écritures
+      // équivalentes (« 0x10 », « 1e3 », espaces). La normalisation par `String(...)` reste ce qui
+      // fait que « 05 » et « 5 » ne créent pas deux entrées pour la même question.
+      const brutAfter = String(q.chatAfter == null ? "" : q.chatAfter).trim();
+      const nAfter = /^[0-9]{1,15}$/.test(brutAfter) ? Number(brutAfter) : NaN;
+      const chatAfter = (Number.isSafeInteger(nAfter) && nAfter > 0) ? String(nAfter) : null;
       const LECTURES_PARTAGEES = [
         { param: "state", produire: async (p) => ({ ok: true, state: {
           active: p.active !== false,
