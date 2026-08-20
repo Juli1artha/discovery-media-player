@@ -236,6 +236,11 @@ create table if not exists public.doc_presentation_attendees (
   primary key (slug, attendee_key)
 );
 create index if not exists doc_presentation_attendees_slug_idx on public.doc_presentation_attendees (slug);
+-- ⚠️ RÈGLE (sixième audit) : un index sur une colonne apparue APRÈS un init publié est précédé de son
+-- ALTER, ICI MÊME — sur une base d'hier, `create table if not exists` saute le corps de table et
+-- `creator_ip_hash` n'existerait qu'au rattrapage de fin de fichier, trop tard pour cet index.
+alter table public.doc_presentation_attendees
+  add column if not exists creator_ip_hash text;
 -- Compter les créations anonymes par (slug, empreinte) sans scanner toute la table. Cf. migration 0015.
 create index if not exists idx_attendees_slug_creator
   on public.doc_presentation_attendees (slug, creator_ip_hash)
