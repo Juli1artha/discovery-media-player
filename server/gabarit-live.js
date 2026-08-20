@@ -179,7 +179,7 @@ var Live=(function(){
   // battait deux fois. On les déclare au niveau du CYCLE DE VIE : ce qui doit être arrêté doit
   // être visible depuis l'endroit qui arrête.
   var _ordEtat=null,_ordChat=null,_filet=null;
-  var sb=null,ch=null,ME=null,SLUG=null,CONTROL=null,LOCKED=false,AUTHTOK=null,PRESENT=[],PRESNAME='',seen=Object.create(null),msgEls=Object.create(null),msgData=Object.create(null),replyCtx=null,typers=Object.create(null),pdfCache=Object.create(null),_tyT=0,_tyIv=0,_atIv=0,unread=0,autoOpened=false,_histDone=false,_phWired=false,_onMap=null,_onState=null,_peekT=0,MUTED=false;
+  var sb=null,ch=null,ME=null,SLUG=null,CONTROL=null,LOCKED=false,AUTHTOK=null,PRESENT=[],PRESNAME='',seen=Object.create(null),msgEls=Object.create(null),msgData=Object.create(null),replyCtx=null,typers=Object.create(null),pdfCache=Object.create(null),_tyT=0,_tyIv=0,_atIv=0,unread=0,autoOpened=false,_histDone=false,_phWired=false,_onMap=null,_onState=null,_peekT=0,MUTED=false,_maxSeq=0;
   try{ MUTED=localStorage.getItem('3dd-present-mute')==='1'; }catch(e){}
   // Couper/rétablir les notifications du chat (cloche) : coupé = plus de ticker ni de pulse (badge silencieux gardé).
   function applyMute(){ var b=document.getElementById('chatMute'); if(b){b.classList.toggle('muted',MUTED);b.title=MUTED?'Réactiver les notifications du chat':'Couper les notifications du chat';} setBadge(); }
@@ -317,7 +317,7 @@ var Live=(function(){
   // Crochet interne (même famille que __presRelireEtat) : le piège de focus ne se PROUVE que
   // piloté clavier dans un vrai navigateur, et la seule voie UI passe par un message à soi.
   try{window.__confirmDialog=confirmDialog;}catch(e){}
-  function history(){fetch('/api/doc?present='+encodeURIComponent(SLUG)+'&chat=1').then(function(r){return r.json();}).then(function(d){var box=document.getElementById('chatMsgs');if(d&&d.messages&&d.messages.length){d.messages.forEach(function(m){addMsg(m);});}else if(box&&!box.children.length){box.innerHTML='<div class=chat-empty>Aucun message. Lancez la discussion.</div>';}if(d&&typeof d.locked!=='undefined')applyLock(d.locked);_histDone=true;}).catch(function(){_histDone=true;});}
+  function history(){fetch('/api/doc?present='+encodeURIComponent(SLUG)+'&chat=1').then(function(r){return r.json();}).then(function(d){var box=document.getElementById('chatMsgs');if(d&&d.messages&&d.messages.length){d.messages.forEach(function(m){if(typeof m.mod_seq==='number'&&m.mod_seq>_maxSeq)_maxSeq=m.mod_seq;addMsg(m);});}else if(box&&!box.children.length){box.innerHTML='<div class=chat-empty>Aucun message. Lancez la discussion.</div>';}if(d&&typeof d.locked!=='undefined')applyLock(d.locked);_histDone=true;}).catch(function(){_histDone=true;});}
   function react(id,e){if(!ME||!id||!e)return;
     // ⚠️ ON ENVOIE L'ÉTAT VOULU, PAS « INVERSE ». Basculer n'a de sens qu'une fois : un renvoi
     // réseau, un double-clic, une reprise de requête, et la réaction que le participant vient
@@ -497,7 +497,7 @@ var Live=(function(){
       // arrive en retard, jamais à côté.
       function relireAvec(url,applique){
         var ord=Player.live.createScheduler(function(fini){
-          Player.live.fetchBorne('/api/doc?present='+encodeURIComponent(SLUG)+url)
+          Player.live.fetchBorne('/api/doc?present='+encodeURIComponent(SLUG)+((typeof url==='function')?url():url))
             .then(function(r){return r.json();})
             .then(function(d){if(d&&d.ok)applique(d);})
             .catch(function(){})
@@ -523,13 +523,13 @@ var Live=(function(){
       window.__presRelireEtat=function(){_ordEtat.signaler();};
       function relireEtat(){_ordEtat.signaler();}
       function relireChat(){_ordChat.signaler();}
-      _ordChat=relireAvec('&chat=1',function(d){
+      _ordChat=relireAvec(function(){return '&chat=1'+(_maxSeq>0?('&chatAfter='+_maxSeq):'');},function(d){
           // ⚠️ NOTIFIER CE QUI VIENT D'ARRIVER, ET SEULEMENT ÇA. 'addMsg' rend faux pour un
           // message déjà connu — la relecture ramène tout l'historique, donc sans cette condition
           // la pastille de non-lus compterait chaque message à chaque relecture. Et sans l'appel,
           // elle ne compte plus rien : c'est la régression que le test d'un hôte a attrapée en
           // lisant le source de ce paquet, à travers la frontière de deux dépôts.
-          if(d.messages)d.messages.forEach(function(m){if(addMsg(m))notifyMsg(m);else updateMsg(m);});
+          if(d.messages)d.messages.forEach(function(m){if(typeof m.mod_seq==='number'&&m.mod_seq>_maxSeq)_maxSeq=m.mod_seq;if(addMsg(m))notifyMsg(m);else updateMsg(m);});
           if(typeof d.locked!=='undefined')applyLock(d.locked);
       });
 

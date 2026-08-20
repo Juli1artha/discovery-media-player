@@ -411,6 +411,9 @@ const CHAMPS_PUBLICS = [
   "id", "author_name", "author_avatar", "is_presenter", "is_member",
   "body", "attachment", "reactions", "reply_to", "reply_name", "reply_text",
   "deleted", "edited", "created_at",
+  // Rang de changement (migration 0016) : le client garde le plus grand vu et le renvoie pour relire
+  // en différentiel. Absent chez un hôte non migré → le client reste en relecture complète.
+  "mod_seq",
 ];
 
 /**
@@ -581,12 +584,32 @@ async function addMessage(slug, { name, email, avatar, isPresenter, isMember, bo
  * même chose — un `select` étroit et une projection — dont une seule était appliquée ici. Une
  * garde qui dépend de ce qu'on n'a pas demandé cède au premier champ qu'on demande.
  */
-async function listMessages(slug) {
-  // ⚠️ LES 300 PLUS RÉCENTS, PAS LES 300 PLUS ANCIENS (P1 performance). Avec `asc&limit=300`, au
-  // 301e message les nouveaux ne revenaient JAMAIS à ceux qui relisaient — seul l'auteur le voyait,
-  // par la réponse du POST. On trie `desc` (id départage created_at à la milliseconde) puis on
-  // REND en ordre chronologique, comme l'affichage l'attend.
-  const rows = await PLAYER.db.request(`doc_presentation_messages?slug=eq.${enc(String(slug || ""))}&select=id,author_name,author_avatar,author_hash,is_presenter,is_member,body,attachment,reactions,reply_to,reply_name,reply_text,deleted,edited,created_at&order=created_at.desc,id.desc&limit=300`);
+const CHAMPS_MSG = "id,author_name,author_avatar,author_hash,is_presenter,is_member,body,attachment,reactions,reply_to,reply_name,reply_text,deleted,edited,created_at";
+
+async function listMessages(slug, { after } = {}) {
+  const s = enc(String(slug || ""));
+  // Le chat différentiel repose sur la colonne `seq` (migration 0016), bumpée à CHAQUE écriture. On la
+  // sonde : présente → différentiel possible ; absente (hôte non migré) → on sert les 300 derniers et
+  // on n'ajoute pas `seq` au select (PostgREST rejetterait la requête ENTIÈRE sur une colonne inconnue).
+  const seqDispo = await require("./schema").attendue("chatDifferentiel");
+
+  // ⚠️ DIFFÉRENTIEL : le client donne le plus grand `mod_seq` déjà vu ; on ne rend QUE ce qui a changé
+  // depuis — nouveaux messages ET anciens mutés (réaction, édition, suppression), le trigger ayant
+  // avancé leur `mod_seq`. En ordre de `mod_seq` : le client fusionne par id (addMsg/updateMsg), l'ordre
+  // d'affichage tenant à created_at qu'il porte déjà. `limit=300` borne un rattrapage après longue
+  // coupure — le curseur avance, le signal suivant prend la suite.
+  if (after != null && seqDispo) {
+    const curseur = Math.max(0, Math.trunc(Number(after)) || 0);
+    const rows = await PLAYER.db.request(`doc_presentation_messages?slug=eq.${s}&mod_seq=gt.${curseur}&select=${CHAMPS_MSG},mod_seq&order=mod_seq.asc&limit=300`);
+    return Array.isArray(rows) ? rows.map(messagePublic) : [];
+  }
+
+  // ⚠️ CHARGE INITIALE (ou hôte non migré) : LES 300 PLUS RÉCENTS, PAS LES 300 PLUS ANCIENS (P1). Avec
+  // `asc&limit=300`, au 301e message les nouveaux ne revenaient JAMAIS à ceux qui relisaient — seul
+  // l'auteur, par la réponse du POST. On trie `desc` (id départage created_at à la ms) puis on REND en
+  // ordre chronologique. On renvoie `mod_seq` quand il est là : c'est ce qui amorce le curseur du client.
+  const select = seqDispo ? `${CHAMPS_MSG},mod_seq` : CHAMPS_MSG;
+  const rows = await PLAYER.db.request(`doc_presentation_messages?slug=eq.${s}&select=${select}&order=created_at.desc,id.desc&limit=300`);
   return Array.isArray(rows) ? rows.slice().reverse().map(messagePublic) : [];
 }
 

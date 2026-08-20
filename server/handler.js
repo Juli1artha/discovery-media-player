@@ -693,6 +693,13 @@ async function handler(req, res) {
       // Le cache englobe la LECTURE ET la sérialisation : sous rafale, une seule des deux se paie.
       // `file=1` ne figure pas dans cette table, et c'est délibéré : il relaie des octets avec des
       // en-têtes de plage propres à l'appelant — ce n'est pas une charge partagée.
+      //
+      // ⚠️ CURSEUR DU CHAT DIFFÉRENTIEL. `chatAfter` = le plus grand `seq` que le client a déjà vu ;
+      // borné à un entier positif (sinon une valeur libre exploserait les clés de cache et l'URL de la
+      // requête base). Il entre dans la CLÉ DE CACHE : deux clients au même curseur — le cas normal,
+      // toute une salle à jour du même message — partagent la même lecture ; seuls ceux qui ont pris
+      // du retard divergent. Absent → relecture complète (client ancien, ou hôte non migré).
+      const chatAfter = (Number.isFinite(+q.chatAfter) && +q.chatAfter > 0) ? String(Math.trunc(+q.chatAfter)) : null;
       const LECTURES_PARTAGEES = [
         { param: "state", produire: async (p) => ({ ok: true, state: {
           active: p.active !== false,
@@ -723,12 +730,12 @@ async function handler(req, res) {
           // Signalé par la seconde passe d'audit (P0-4) ; la fuite n'y était pas.
           presenter_name: String(p.presenter_name || "") || null,
         } }) },
-        { param: "chat", produire: async (p, slug) => ({ ok: true, messages: await listMessages(slug), locked: !!p.chat_locked }) },
+        { param: "chat", suffixeCle: () => (chatAfter != null ? `:a${chatAfter}` : ""), produire: async (p, slug) => ({ ok: true, messages: await listMessages(slug, { after: chatAfter }), locked: !!p.chat_locked }) },
       ];
       for (const lecture of LECTURES_PARTAGEES) {
         if (String(q[lecture.param] || "") !== "1") continue;
         const slugLu = String(q.present);
-        const corps = await cacheLecture.lire(`${lecture.param}:${slugLu}`, async () => {
+        const corps = await cacheLecture.lire(`${lecture.param}:${slugLu}${lecture.suffixeCle ? lecture.suffixeCle() : ""}`, async () => {
           const p = await getPresentation(slugLu);
           return p ? JSON.stringify(await lecture.produire(p, slugLu)) : null;
         });
