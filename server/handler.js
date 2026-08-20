@@ -599,6 +599,25 @@ async function handler(req, res) {
         // qu'internalStrict : un cockpit doit voir l'état des DEUX hôtes sans lire un journal — c'est
         // ce booléen, lu avec `presence: { avecJeton, sansJeton }` de la carte, qui dit quand fermer.
         presenceStrict: !!(PLAYER.config && PLAYER.config.presenceStrict),
+        // ⚠️ LES JETONS DE PRÉSENCE SONT-ILS RÉELLEMENT ÉMIS ? Sans ce booléen, un exploitant qui vient
+        // de poser `PLAYER_PRESENCE_SECRET` n'a AUCUN moyen de vérifier que son réglage a pris : la
+        // carte affiche `presence: {0,0}` aussi bien quand le secret est actif que quand la variable est
+        // mal nommée, posée sur le mauvais environnement, ou non redéployée. Un réglage qu'on ne peut
+        // pas observer est un réglage qu'on CROIT avoir fait. (Constaté en le posant pour de vrai : il a
+        // fallu monter une présentation jetable sur la prod pour s'en assurer.)
+        //
+        // ⚠️ ON MESURE, ON NE DÉCLARE PAS. Demander à l'hôte un `config.presenceTokens` créerait un fait
+        // en DEUX exemplaires — ce qu'il annonce et ce qu'il fait — qui finiraient par diverger. On
+        // appelle donc la fonction et on regarde si un jeton sort : la carte rend une capacité
+        // CONSTATÉE, et aucun hôte n'a rien à ajouter pour en bénéficier. Le jeton fabriqué ici n'est ni
+        // rendu ni stocké, et la signature ne touche ni la base ni le réseau — cette route doit répondre
+        // quand rien d'autre ne répond.
+        presenceTokens: (() => {
+          try {
+            const signer = PLAYER.identity && PLAYER.identity.signPresenceToken;
+            return typeof signer === "function" && !!signer("carte-sonde", "carte-sonde", 60);
+          } catch { return false; }
+        })(),
         // ⚠️ LE BALAYAGE DE RÉTENTION EST-IL ARMÉ ? La capacité `retention` dit que l'instance PEUT
         // purger ; ce booléen dit si le balayage automatique TOURNE (`config.retention.balayage`).
         // Sans lui, une instance armée est indiscernable d'une instance éteinte — et une purge qui
