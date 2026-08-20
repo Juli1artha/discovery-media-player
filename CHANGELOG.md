@@ -10,6 +10,21 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.91] — 2026-08-20
+
+### Fixed (migration 0016 backfill vs the archive seal — cross-migration hazard)
+
+- **0016's one-time backfill now skips messages of sealed presentations.** The backfill runs an
+  `UPDATE` on every message row; the archive-seal trigger (0007/0010) raises on any write to a sealed
+  presentation (`active = false AND control_hash IS NULL`). A single message in a sealed presentation
+  would have made the standalone migration fail entirely. The backfill now excludes those rows — a
+  sealed presentation is frozen, including its rank; its messages keep a null `mod_seq` (historical,
+  never live-resynced). Two individually-correct guards — the seal and the backfill — whose
+  composition would block, which neither file could foresee alone. Reported by the second host, who
+  measured it before applying. `init.sql` is unaffected in practice (its backfill runs before the seal
+  trigger is created) but carries the same exclusion for consistency. No schema change; hosts that
+  already applied 0016 need nothing.
+
 ## [0.1.90] — 2026-08-20
 
 ### Changed (performance — differential chat, audit CODEX 5.6 "scalable architecture")

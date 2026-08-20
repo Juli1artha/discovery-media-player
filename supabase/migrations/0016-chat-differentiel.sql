@@ -47,10 +47,20 @@ create trigger dpm_bump_modseq
   for each row execute function public.player_bump_message_seq();
 
 -- Rattrapage des lignes déjà présentes : sans `mod_seq`, elles seraient invisibles au différentiel.
--- Une seule fois, dans l'ordre d'insertion, pour donner à chacune un rang cohérent.
-update public.doc_presentation_messages
+-- ⚠️ IL RESPECTE LE SCELLÉ D'ARCHIVE (0007/0010). Cet update écrit CHAQUE ligne — or le trigger
+-- dpm_archive_scellee LÈVE sur toute écriture dans une présentation scellée (active=false ET
+-- control_hash IS NULL). Une seule ligne d'une présentation scellée ferait échouer la migration
+-- ENTIÈRE. On exclut donc ces lignes — une présentation scellée est GELÉE, y compris son rang : ses
+-- messages restent sans mod_seq (historiques, jamais resynchronisés en direct, servis par la charge
+-- complète). Deux gardes correctes — le scellé (0007) et ce rattrapage — dont la COMPOSITION
+-- bloquerait sans cette exclusion, et qu'aucun des deux fichiers ne pouvait prévoir seul.
+update public.doc_presentation_messages m
   set mod_seq = nextval('public.doc_presentation_messages_modseq')
-  where mod_seq is null;
+  where m.mod_seq is null
+    and not exists (
+      select 1 from public.doc_presentations p
+      where p.slug = m.slug and p.active = false and p.control_hash is null
+    );
 
 -- La lecture différentielle `slug=eq.X&mod_seq=gt.N&order=mod_seq.asc` doit rester rapide.
 create index if not exists idx_dpm_slug_modseq
