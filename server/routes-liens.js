@@ -3,7 +3,7 @@
 
 const { adresseAppelant } = require("./appelant");
 const { createShare, createReshare, sendReshareEmail, revokeShare, setShareAuth, listSharesForDoc, listSessionsForDoc, internalStatsForDoc, cleIdempotence, getShareBySlug, logView, upsertSession, upsertInternalSession, overview: docOverview } = require("./shares");
-const { SESSION_QUOTA_PER_HOUR } = require("./shared.generated.js");
+const { SESSION_QUOTA_PER_HOUR, VIEW_QUOTA_PER_HOUR } = require("./shared.generated.js");
 
 let PLAYER = null;
 const init = (ctx) => { PLAYER = ctx; };
@@ -442,20 +442,37 @@ async function traiter(req, res, body, slug) {
         res.statusCode = 200; res.setHeader("Content-Type", "application/json"); res.end('{"ok":true}');
         return;
       }
-      const share = await getShareBySlug(body.slug || slug);
-      // ⚠️ PLAFOND ANTI-INONDATION PAR IP (P1 performance). Le chemin analytique externe écrivait
-      // SANS quota : un slug public permettait des écritures illimitées (base gonflée, stats
-      // faussées). Même quota dérivé de la cadence que l'interne (SESSION_QUOTA_PER_HOUR par IP).
-      // Dépassé : on n'écrit pas — mais on répond 200, car une mesure ne doit pas casser une lecture.
+      // ⚠️ PLAFOND ANTI-INONDATION PAR IP, EN DEUX SEAUX, ET VÉRIFIÉ AVANT DE LIRE LE LIEN (P1
+      // performance + P1b audit 5.6). Deux corrections à l'origine SESSION_QUOTA-pour-tout :
+      //   • DEUX SEAUX. La session est un `upsert` riche → `sess:`, quota dérivé des écritures de
+      //     session. open/page/heartbeat sont un `logView` bien meilleur marché → `view:`, leur
+      //     propre quota. Les garder ensemble faisait vider le quota des sessions par les open/page :
+      //     25 lecteurs derrière une IP le dépassaient avant même d'avoir écrit une session.
+      //   • QUOTA AVANT LA LECTURE DU LIEN. `getShareBySlug` est une lecture base ; la placer avant
+      //     le quota faisait payer une lecture à CHAQUE requête, y compris hors quota — exactement ce
+      //     qu'un plafond anti-inondation doit éviter. On tranche d'abord, on lit ensuite.
+      // Dépassé : on n'écrit pas, on ne lit pas le lien — mais on répond 200 (une mesure ne casse pas
+      // une lecture). La lecture de TEST reste exemptée d'ÉCRITURE, pas de quota (rare, interne).
       const ipTrack = ip0 || "anon";
-      const sousQuota = await PLAYER.limits.allow(`sess:${ipTrack}`, SESSION_QUOTA_PER_HOUR, 3600);
-      if (share && !share.is_test && !sousQuota) {
-        try { if (await PLAYER.limits.allow("sess:quota-avert", 1, 3600)) PLAYER.errors.capture(new Error(`télémétrie externe refusée : quota horaire atteint (${SESSION_QUOTA_PER_HOUR}/h par adresse)`), { route: "track" }); } catch { /* jamais bloquant */ }
+      const estSession = body.event === "session";
+      const cleQuota = estSession ? `sess:${ipTrack}` : `view:${ipTrack}`;
+      const quotaTrack = estSession ? SESSION_QUOTA_PER_HOUR : VIEW_QUOTA_PER_HOUR;
+      if (!(await PLAYER.limits.allow(cleQuota, quotaTrack, 3600))) {
+        // ⚠️ UN REFUS MUET EST UNE TABLE QUI NE MONTE PAS SANS CAUSE NOMMÉE. Une fois par heure et
+        // par classe, on NOMME l'abandon (`abandon: true`) — c'est le signal d'abandon de télémétrie
+        // que l'exploitant peut relier à un quota, plutôt qu'une mesure qui stagne sans explication.
+        try {
+          const avert = estSession ? "sess:quota-avert" : "view:quota-avert";
+          if (await PLAYER.limits.allow(avert, 1, 3600)) PLAYER.errors.capture(new Error(`télémétrie externe abandonnée (${body.event}) : quota horaire atteint (${quotaTrack}/h par adresse)`), { route: "track", abandon: true });
+        } catch { /* jamais bloquant */ }
+        res.statusCode = 200; res.setHeader("Content-Type", "application/json"); res.end('{"ok":true}');
+        return;
       }
-      if (share && !share.is_test && sousQuota) { // répétition générale : la lecture de test ne compte pas dans les stats
+      const share = await getShareBySlug(body.slug || slug);
+      if (share && !share.is_test) { // répétition générale : la lecture de test ne compte pas dans les stats
         try {
           // 'session' = résumé riche (temps par page, appareil) → upsert ; open/page/heartbeat → journal léger (funnel/overview).
-          if (body.event === "session") await upsertSession(share, { sessionId: body.sessionId, numPages: body.numPages, maxPage: body.maxPage, totalSeconds: body.totalSeconds, pagesTime: body.pagesTime }, { ip: ip0, ua: ua0 });
+          if (estSession) await upsertSession(share, { sessionId: body.sessionId, numPages: body.numPages, maxPage: body.maxPage, totalSeconds: body.totalSeconds, pagesTime: body.pagesTime }, { ip: ip0, ua: ua0 });
           else await logView(share, { event: body.event, page: body.page, maxPage: body.maxPage, seconds: body.seconds, sessionId: body.sessionId, ua: ua0 });
         } catch (e) {
           // ⚠️ LE MÊME `catch` MUET, SUR LE CHEMIN EXTERNE. Trouvé par la garde écrite pour

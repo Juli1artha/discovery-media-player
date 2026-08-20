@@ -10,6 +10,22 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.87] — 2026-08-20
+
+### Changed (performance — telemetry quota, audit CODEX 5.6 P1b)
+
+- **External telemetry quota is split into two buckets, and checked before the link is read.** The
+  single `sess:${ip}` bucket metered every external event (open, page, session) while its quota was
+  derived from SESSION writes alone — so 25 readers behind one IP drained the session budget with
+  their open/page events before writing a single session, and the rest was silently dropped. Now the
+  session (a rich `upsert`) keeps `SESSION_QUOTA_PER_HOUR` on `sess:`, while the light open/page/
+  heartbeat events (a cheap `logView`) get their own `view:` bucket with `VIEW_QUOTA_PER_HOUR`
+  (derived from a per-reader budget, generous because `logView` is cheap). And the quota is now
+  checked BEFORE `getShareBySlug`: an over-quota request no longer costs a DB read. Over-quota drops
+  still return 200 (a measurement must not break a read) and now name the dropped class once per hour
+  (`abandon: true`) so an operator can tie a stalled table to a quota. Test-link reads stay exempt
+  from writing, not from the quota.
+
 ## [0.1.86] — 2026-08-20
 
 ### Fixed (reliability — two regressions from this cycle)
