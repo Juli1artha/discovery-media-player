@@ -10,6 +10,20 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.108] — 2026-08-20
+
+### Added (`presentationsActives`, so the sign of life can be read on its own)
+
+- **`presence` now carries `presentationsActives`.** Once the door is closed, `avecJeton` becomes the
+  sign of life — but it is legitimately zero outside a presentation, which is the resting state of any
+  instance, and the card did not carry the one number that tells the two apart. The caveat was written
+  ("zero *during* a live presentation means something is broken"), and "during" is exactly the word a
+  hurried reader skips — that reader being us, in six months, with `{avecJeton: 0}` on screen. So the
+  disambiguating number now travels with it, the way `dontScellees` does for `sansRang`: *N active and
+  0 `avecJeton` is an anomaly; 0 active and 0 `avecJeton` is rest.* The `couvre` text states the rule
+  with the current figure in it, in both regimes. Reported by the second host, who pointed out that a
+  relay you cannot read alone is a relay that gets read wrong.
+
 ## [0.1.107] — 2026-08-20
 
 ### Changed (`presence.couvre` now follows the state of the door — because the counter expires)

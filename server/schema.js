@@ -394,6 +394,17 @@ async function ajouterPresence(etat) {
     const sans = await PLAYER.db.request(`doc_presentation_attendees?last_no_token_at=gt.${encodeURIComponent(depuis)}&select=slug${bornee}`);
     const nAvec = Array.isArray(avec) ? avec.length : 0;
     const nSans = Array.isArray(sans) ? sans.length : 0;
+    // ⚠️ LE RELAIS NE SE LIT PAS SEUL — ET C'EST CE NOMBRE-LÀ QUI LE REND LISIBLE. Une fois la porte
+    // fermée, `avecJeton` devient le signe de vie… mais il vaut ZÉRO LÉGITIMEMENT hors présentation,
+    // ce qui est l'état permanent d'une instance au repos. « avecJeton: 0 » est donc ambigu tant qu'on
+    // ne sait pas si quelque chose tourne — et la carte ne portait pas cette information : il fallait
+    // aller la chercher ailleurs, c'est-à-dire ne pas la chercher. Le texte disait bien « nul PENDANT
+    // une présentation », mais « pendant » est exactement le mot qu'un lecteur pressé saute — et ce
+    // lecteur, dans six mois, c'est nous. On adjoint donc le nombre qui désambiguïse, comme
+    // `dontScellees` l'a fait pour `sansRang` : 0 actives + 0 avecJeton = repos ; N actives + 0
+    // avecJeton = ANOMALIE. (Précision du second hôte.)
+    const actives = await PLAYER.db.request(`doc_presentations?active=eq.true&select=slug${bornee}`);
+    const nActives = Array.isArray(actives) ? actives.length : 0;
     // ⚠️ `couvre` VOYAGE AVEC LES NOMBRES, ET C'EST LE POINT. Le commentaire ci-dessus protège celui
     // qui lit la SOURCE ; celui qui court un risque, lui, lit le JSON — dans six mois, dans un cockpit,
     // sans ce fichier sous les yeux. `avecJeton: 40, sansJeton: 0` se lira alors « 40 participants
@@ -419,14 +430,17 @@ async function ajouterPresence(etat) {
       // veut alors dire que quelque chose est cassé.
       couvre: (PLAYER.config && PLAYER.config.presenceStrict)
         ? "jauge de transition PÉRIMÉE — porte fermée : sansJeton est structurellement nul et ne mesure "
-          + "plus rien. Le signe de vie est avecJeton (nul pendant une présentation en cours = anomalie). "
+          + "plus rien. Le signe de vie est avecJeton, À CROISER AVEC presentationsActives : "
+          + nActives + " active(s) et 0 avecJeton = ANOMALIE ; 0 active et 0 avecJeton = repos normal. "
           + "avecJeton inclut les bootstraps auto-déclarés — pas une preuve d'identité."
         : "jauge-de-migration — sansJeton dit combien de clients ANCIENS battent encore (0 = on peut "
-          + "fermer). Instrument de TRANSITION : après fermeture il vaudra 0 quoi qu'il arrive. "
+          + "fermer). Instrument de TRANSITION : après fermeture il vaudra 0 quoi qu'il arrive, et le "
+          + "relais sera avecJeton croisé avec presentationsActives. "
           + "avecJeton inclut les bootstraps auto-déclarés — pas une preuve d'identité.",
+      presentationsActives: nActives,
       avecJeton: nAvec,
       sansJeton: nSans,
-      tronque: nAvec >= PLAFOND_SANS_RANG || nSans >= PLAFOND_SANS_RANG,
+      tronque: nAvec >= PLAFOND_SANS_RANG || nSans >= PLAFOND_SANS_RANG || nActives >= PLAFOND_SANS_RANG,
     };
   } catch { /* best-effort */ }
 }
