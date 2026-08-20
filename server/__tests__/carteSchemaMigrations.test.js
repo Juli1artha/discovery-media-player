@@ -23,7 +23,11 @@ const DOSSIER = path.join(RACINE, "supabase", "migrations");
 // les écrit SANS dégradation conditionnelle (pas de repli à nommer). Vide aujourd'hui : toute colonne
 // ajoutée jusqu'ici est un point de dégradation. Une addition future qui n'en est pas une s'inscrit
 // ICI, avec sa raison en commentaire — c'est ce qui fait rougir la liste à l'ajout.
-const NON_SONDEES = new Set([]);
+const NON_SONDEES = new Set([
+  // Voyage avec `last_token_at` dans la MÊME migration (0017) : sonder l'une suffit à savoir que 0017
+  // est appliquée, l'autre est écrite au même endroit et n'a pas de dégradation distincte à signaler.
+  "last_no_token_at",
+]);
 
 const colonnesATTENDUES = new Set([...SCHEMA.matchAll(/colonne:\s*"([a-z_]+)"/g)].map((m) => m[1]));
 

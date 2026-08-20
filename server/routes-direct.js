@@ -102,7 +102,30 @@ async function traiter(req, res, body, _slug) {
           const anonCap = (PLAYER.config && Number(PLAYER.config.presenceAnonCap) > 0)
             ? Math.trunc(Number(PLAYER.config.presenceAnonCap))
             : Math.ceil(ATTENDEES_PER_EGRESS * 1.3);
-          const r = await recordAttendance(String(body.slug || ""), {
+          // ⚠️ JETON DE PRÉSENCE (P1c étape 2). Pour un ANONYME, la clé de sa ligne ne vient plus du
+          // corps quand il porte un jeton VALIDE : elle vient du jeton PROUVÉ (que l'hôte a émis pour
+          // lui), donc un tiers ne peut plus poster sa clé pour écraser sa présence. `wantToken` =
+          // premier battement d'un client moderne (pas encore de jeton) — le distinguer d'un client
+          // legacy est ce qui permet à `sansJeton` de retomber à zéro. Un MEMBRE est prouvé par son JWT.
+          const slug = String(body.slug || "");
+          const jetonEntrant = (typeof PLAYER.identity.verifyPresenceToken === "function")
+            ? PLAYER.identity.verifyPresenceToken(String(body.pt || "")) : null;
+          const jetonValide = !!(jetonEntrant && jetonEntrant.slug === slug && jetonEntrant.key);
+          const bootstrap = !profil && !jetonValide && String(body.wantToken || "") === "1";
+          const cleAnon = jetonValide ? String(jetonEntrant.key) : cleAnonyme(body.key);
+          // Le compteur de transition : true = moderne/prouvé (membre, jeton, ou bootstrap moderne) ;
+          // false = legacy (anonyme, ni jeton ni wantToken). Deux champs distincts en base (0017).
+          const hasToken = !!(profil || jetonValide || bootstrap);
+          // ⚠️ PORTE STRICTE : une fois la transition finie (sansJeton===0) et PLAYER_PRESENCE_STRICT
+          // posé, un battement LEGACY (anonyme, sans jeton ni bootstrap) n'est plus enregistré. Off par
+          // défaut → aucun effet pendant la transition. ⚠️ RÉSIDU CONNU (à durcir en suivant) : un
+          // bootstrap `wantToken` portant la clé d'un anonyme EXISTANT pourrait l'écraser sous strict —
+          // exploitabilité faible (l'attaquant doit connaître un uid anonyme aléatoire, jamais exposé) ;
+          // le fermer proprement demande à la RPC de refuser un bootstrap sur une clé déjà existante.
+          if (PLAYER.config && PLAYER.config.presenceStrict && !profil && !jetonValide && !bootstrap) {
+            return jp(403, { ok: false, error: "presence-token" });
+          }
+          const r = await recordAttendance(slug, {
             // ⚠️ MINUSCULÉE, ET CE DÉTAIL EST UNE LIGNE DE PRÉSENCE. La clé cliente que 0.1.42 a
             // remplacée l'était (`me.email.toLowerCase()`) ; la clé dérivée ne l'était pas, et la
             // ligne se retrouve par `attendee_key=eq.` — une correspondance EXACTE. Un hôte dont
@@ -113,13 +136,22 @@ async function traiter(req, res, body, _slug) {
             // Sans effet là où les adresses sont déjà normalisées — c'est le cas des deux hôtes
             // actuels, et c'est pour ça que rien ne l'aurait signalé. Un contrat ouvert ne se
             // repose pas sur ce que ses deux premiers hôtes font.
-            key: profil ? lcMembre(profil.email) : cleAnonyme(body.key),
+            key: profil ? lcMembre(profil.email) : cleAnon,
             name: (profil && profil.name) || body.name,
             email: profil ? profil.email : body.email,
             avatar: (profil && profil.avatar) || body.avatar,
             isMember: !!profil, isPresenter: estPresentateur,
-          }, { presentation: pres, ipHash, anonCap });
-          return jp(r.ok ? 200 : (r.status || 400), r);
+          }, { presentation: pres, ipHash, anonCap, hasToken });
+          // On ÉMET (ou ré-émet) un jeton pour l'anonyme dont l'écriture a réussi : le client le garde
+          // et le renvoie aux battements suivants. `exp` court (6 h), ré-émis à chaque battement — pas
+          // de table anti-rejeu (le scellé d'archive et l'exp bornent déjà le rejeu, cf. 0007). Un
+          // membre n'en a pas besoin (son JWT le prouve). Sans PLAYER_PRESENCE_SECRET, `signPresenceToken`
+          // rend "" → aucun champ `pt`, le client reste en mode legacy. Rien ne casse.
+          let pt = "";
+          if (!profil && r.ok && typeof PLAYER.identity.signPresenceToken === "function") {
+            pt = PLAYER.identity.signPresenceToken(slug, cleAnon, 6 * 3600);
+          }
+          return jp(r.ok ? 200 : (r.status || 400), pt ? { ...r, pt } : r);
         } catch { return jp(500, { ok: false }); }
       }
       // Gestion des présentations (membre AUTHENTIFIÉ requis) : liste / reprise / transfert / stats / historique doc.

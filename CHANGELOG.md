@@ -10,6 +10,27 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.97] — 2026-08-20
+
+### Added (P1c step 2, increment 2 — presence-token protocol, migration, transition counter)
+
+- **An anonymous participant's key now comes from a proven token, and a transition counter shows when
+  to close the door.** Migration 0017 adds `last_token_at` / `last_no_token_at` to
+  `doc_presentation_attendees` and extends the `player_attendance_bump` RPC with an 11th parameter
+  `p_has_token boolean DEFAULT null` — a 10-argument call from older code still resolves via the
+  default, so the contract is not broken. On `present-attend`: a valid presence token (bound to the
+  slug) provides the row's key, so a third party can no longer post someone else's key to overwrite
+  their presence; the server re-issues a short-lived token in the response (no anti-replay table — the
+  archive seal on attendees and `exp` already bound replay). `PLAYER_PRESENCE_STRICT`, off by default,
+  rejects a legacy heartbeat (anonymous, no token, no `wantToken`) once the transition is done. The
+  card's `?schema=1` now carries `presence: { avecJeton, sansJeton, tronque }` over 24h (bounded-
+  ordered-flagged, like `sansRang`): `sansJeton === 0` means no legacy client is still beating. **The
+  two sets deliberately overlap** — a participant who beat both ways counts in both; the measure is in
+  max, the decision in *any*, which is why there are two fields, not one. No behaviour change until a
+  host sets the secret and clients send tokens (the client is the next increment). A known residual:
+  a `wantToken` bootstrap carrying an existing anon key could overwrite it under strict — low
+  exploitability (a random, unexposed uid), to be hardened next.
+
 ## [0.1.96] — 2026-08-20
 
 ### Added (P1c step 2, increment 1 — signed presence-token foundation)
