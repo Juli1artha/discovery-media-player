@@ -48,7 +48,7 @@ const PORTES = [
   ["supprimer un message", (p) => p.deleteMessage("s", 1, { authorToken: "j" })],
   ["verrouiller le chat", (p) => p.setChatLock("s", CONTROL, true)],
   ["signer un envoi de fichier", (p) => p.createUploadUrl("s", "x.pdf", "application/pdf")],
-  ["s'annoncer présent", (p) => p.recordAttendance("s", null, { key: "k", name: "L" })],
+  ["s'annoncer présent", (p) => p.recordAttendance("s", { key: "k", name: "L" })],
 ];
 
 describe("après la clôture, plus rien ne s'écrit", () => {

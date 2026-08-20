@@ -85,3 +85,47 @@ describe("tracking adaptatif — le filet ne réémet que ce qui a changé", () 
     expect(h.sessions()).toBe(apres + 1);
   });
 });
+
+// ⚠️ P2 audit CODEX 5.6 — RÉGRESSION DE 0.1.85, LA MIENNE. La signature « déjà envoyée » était
+// mémorisée AVANT l'appel au transport, et `post()` avale les exceptions comme `sendBeacon` peut
+// renvoyer `false` sans lever. Un envoi raté verrouillait donc la mesure : le tick suivant, à mesure
+// identique, était sauté. Pour un lecteur actif ça se rattrape (le temps avance) ; s'il passe inactif
+// ou ferme juste après, la DERNIÈRE mesure disparaît. La signature ne doit être retenue QUE si
+// l'envoi est parti — un `false` explicite ou une exception = non parti, on réessaiera.
+describe("tracking adaptatif — un envoi qui échoue est réessayé, pas verrouillé", () => {
+  // On ne compte que les `session` — `start()` émet aussi un `open`, hors sujet ici.
+  const nbSessions = (recus: Array<Record<string, unknown>>) => recus.filter((p) => p.event === "session").length;
+
+  it("transport qui JETTE : le tick suivant réémet la même mesure", () => {
+    let jette = true;
+    const recus: Array<Record<string, unknown>> = [];
+    const h = harness({ slug: "s", send: (p) => { if (jette) throw new Error("réseau coupé"); recus.push(p); } });
+    h.tracker.start();
+    h.advance(30_000); h.tickSession();          // 1re tentative : le transport jette
+    expect(nbSessions(recus), "l'exception est avalée, rien n'est parti").toBe(0);
+    jette = false;
+    h.tickSession();                              // même mesure → DOIT réessayer
+    expect(nbSessions(recus), "un envoi raté n'est pas verrouillé").toBe(1);
+  });
+
+  it("sendBeacon renvoie false (file pleine) : idem, réessai", () => {
+    let ok = false;
+    const recus: Array<Record<string, unknown>> = [];
+    const h = harness({ slug: "s", send: (p) => { if (!ok) return false; recus.push(p); return true; } });
+    h.tracker.start();
+    h.advance(30_000); h.tickSession();
+    expect(nbSessions(recus)).toBe(0);
+    ok = true;
+    h.tickSession();
+    expect(nbSessions(recus), "un false explicite = non parti").toBe(1);
+  });
+
+  it("un envoi RÉUSSI reste sauté au tick suivant (le dirty tient toujours)", () => {
+    const recus: Array<Record<string, unknown>> = [];
+    const h = harness({ slug: "s", send: (p) => { recus.push(p); return true; } });
+    h.tracker.start();
+    h.advance(30_000); h.tickSession();
+    h.tickSession();                              // même mesure, envoi précédent réussi → sauté
+    expect(nbSessions(recus)).toBe(1);
+  });
+});

@@ -34,7 +34,7 @@ require.cache[require.resolve("../presentations.js")] = {
   exports: {
     ...vraies,
     getPresentation: async () => ({ slug: "s1", control_hash: HASH, current_page: 1, chat_locked: false, active: true, presenter_name: "Camille" }),
-    recordAttendance: async (_slug, _pres, p) => { recu = p; return { ok: true }; },
+    recordAttendance: async (_slug, p) => { recu = p; return { ok: true }; },
     addMessage: async (_slug, p) => { messageRecu = p; return { ok: true, message: { id: 1 } }; },
     listMessages: async () => [],
   },

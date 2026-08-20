@@ -47,7 +47,7 @@ function table({ pageDeLaPresentation = () => 3, refusInsert = 0 } = {}) {
   return etat;
 }
 
-const battre = (page) => presentations.recordAttendance("s", null, { key: "onglet", name: "Visiteur" });
+const battre = (page) => presentations.recordAttendance("s", { key: "onglet", name: "Visiteur" });
 
 describe("deux battements simultanés du même participant survivent tous les deux", () => {
   it("la page vue par le perdant du verrou n'est pas perdue", async () => {

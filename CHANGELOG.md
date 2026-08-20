@@ -10,6 +10,25 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.86] — 2026-08-20
+
+### Fixed (reliability — two regressions from this cycle)
+
+- **`recordAttendance(slug, participant)` is callable again at two arguments.** 0.1.84 slipped the
+  "presentation already loaded" optimization into the SECOND positional slot, displacing the real
+  parameter — an external host calling the published `./presentations` export with the old two-arg
+  contract got `TypeError: Cannot destructure property 'key' of 'undefined'`. The optimization now
+  lives in an options bag: `recordAttendance(slug, participant, { presentation })`. Two args = the
+  old contract (presentation is re-read); the internal route passes `{ presentation }` and still
+  avoids the extra read. New test exercises the public two-arg call.
+- **Adaptive session net no longer locks a measurement behind a failed send.** 0.1.85 recorded the
+  "already sent" signature BEFORE calling the transport, and `post()` swallows exceptions while
+  `sendBeacon` can return `false` without throwing. A failed send therefore made the next tick — at
+  an identical measurement — skip, losing the last measurement if the reader went idle or closed
+  right after. The signature is now retained ONLY when the send actually left (transport returns
+  `boolean | void`; an explicit `false` or a thrown error counts as "not sent" and the next tick
+  retries). Tests for transport-throws, `sendBeacon === false`, and successful-still-skipped.
+
 ## [0.1.85] — 2026-08-20
 
 ### Changed (performance — réduction de charge)
