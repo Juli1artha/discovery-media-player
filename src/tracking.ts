@@ -16,10 +16,11 @@
 /** Transport d'un événement. Injectable pour les tests ; par défaut `sendBeacon`, repli `fetch`. */
 import { SESSION_IDLE_MS, SESSION_INTERVAL_MS } from "./cadence";
 
-// ⚠️ Le transport rend `false` UNIQUEMENT s'il sait que l'envoi n'est PAS parti (sendBeacon file
-// pleine, exception). `void`/`true`/toute autre valeur = « parti, ou on n'en sait rien » → traité
-// comme un succès, pour rester compatible avec les transports existants qui ne renvoient rien.
-export type TrackerTransport = (payload: Record<string, unknown>) => boolean | void;
+// ⚠️ Le transport signale un ÉCHEC en rendant exactement `false` (sendBeacon file pleine, exception).
+// Toute autre valeur — `void`, `true`, ou même le retour fortuit d'un `Array.push` — vaut « parti, ou
+// on n'en sait rien » → succès. Le type reste donc permissif (`unknown`) pour ne rien imposer aux
+// transports existants ; seule la comparaison `=== false` porte le sens.
+export type TrackerTransport = (payload: Record<string, unknown>) => unknown;
 
 export interface TrackerOptions {
   /** Lien tracé public. Absent en aperçu interne. */
