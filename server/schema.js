@@ -394,7 +394,19 @@ async function ajouterPresence(etat) {
     const sans = await PLAYER.db.request(`doc_presentation_attendees?last_no_token_at=gt.${encodeURIComponent(depuis)}&select=slug${bornee}`);
     const nAvec = Array.isArray(avec) ? avec.length : 0;
     const nSans = Array.isArray(sans) ? sans.length : 0;
-    etat.presence = { avecJeton: nAvec, sansJeton: nSans, tronque: nAvec >= PLAFOND_SANS_RANG || nSans >= PLAFOND_SANS_RANG };
+    // ⚠️ `couvre` VOYAGE AVEC LES NOMBRES, ET C'EST LE POINT. Le commentaire ci-dessus protège celui
+    // qui lit la SOURCE ; celui qui court un risque, lui, lit le JSON — dans six mois, dans un cockpit,
+    // sans ce fichier sous les yeux. `avecJeton: 40, sansJeton: 0` se lira alors « 40 participants
+    // prouvés », alors que les 40 peuvent n'avoir RIEN prouvé : un bootstrap auto-déclaré (`wantToken`)
+    // pose `last_token_at` sans qu'aucun jeton n'ait été vérifié — c'est voulu, et même NÉCESSAIRE pour
+    // que `sansJeton` puisse atteindre zéro. Le mot est donc collé au nombre, comme `couvre` l'est déjà
+    // au verdict du schéma : c'est une JAUGE DE MIGRATION, pas une métrique de sécurité. (relevé 2e hôte)
+    etat.presence = {
+      couvre: "jauge-de-migration (avecJeton inclut les bootstraps auto-déclarés — pas une preuve)",
+      avecJeton: nAvec,
+      sansJeton: nSans,
+      tronque: nAvec >= PLAFOND_SANS_RANG || nSans >= PLAFOND_SANS_RANG,
+    };
   } catch { /* best-effort */ }
 }
 
