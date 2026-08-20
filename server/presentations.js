@@ -6,7 +6,25 @@ const crypto = require("crypto");
 // ⚠️ Le contexte est REÇU, pas construit. Ce module ne doit pas savoir d'où il vient : c'est ce
 // qui lui permettra de partir dans le dépôt du player sans emporter le studio avec lui.
 let PLAYER = null;
-function init(ctx) { PLAYER = ctx; _bumpSansDurcissementJusqua = 0; _avertRpcPresence = false; }
+function init(ctx) { PLAYER = ctx; _bumpSansDurcissementJusqua = 0; _avertRpcPresence = false; _bumpDurcissementTente = false; }
+
+/**
+ * L'état OBSERVÉ du durcissement des bootstraps — pas sa configuration.
+ *
+ * ⚠️ LA CARTE RAPPORTAIT UNE CONFIGURATION, PAS UN COMPORTEMENT, et c'est le second hôte qui l'a
+ * nommé : `presenceStrict` pouvait dire « la porte refuse » alors que le contrôle anti-usurpation
+ * était désarmé — 0018 absente, ou (avant 0.1.111) un simple hoquet réseau. On a fermé cet écart sur
+ * `presenceJetons` en MESURANT plutôt qu'en déclarant, et on l'avait laissé ouvert sur le champ voisin.
+ *
+ * On ne peut pas sonder la fonction sans l'appeler — elle écrit. Ce qu'on peut rendre, c'est ce que le
+ * processus a CONSTATÉ en s'en servant : « degrade » = la dernière tentative a trouvé la signature
+ * absente ; « actif » = une tentative a abouti ; « inconnu » = on n'a pas encore essayé, et c'est un
+ * état à part entière, pas un feu vert.
+ */
+function etatDurcissementBootstrap() {
+  if (Date.now() < _bumpSansDurcissementJusqua) return "degrade";
+  return _bumpDurcissementTente ? "actif" : "inconnu";
+}
 
 
 const enc = encodeURIComponent;
@@ -811,12 +829,18 @@ function signatureAbsente(erreur) {
 // silence. Un « oui » (la signature existe) n'a pas besoin d'expirer : une fonction ne disparaît pas.
 let _bumpSansDurcissementJusqua = 0;
 const MEMO_SANS_DURCISSEMENT_MS = 60 * 1000;
+// ⚠️ A-T-ON SEULEMENT ESSAYÉ ? « Pas dégradé » n'est pas « vérifié » : un processus qui vient de
+// démarrer n'a rien tenté, et rendre `true` reviendrait à annoncer une garde active sur la foi d'une
+// absence d'observation. Trois états, donc — la même règle que le verdict du schéma, où « rien de
+// manquant » se lisait « tout va bien » tant qu'on ne distinguait pas « rien demandé ».
+let _bumpDurcissementTente = false;
 async function appelerBump(corps, durcissementVoulu) {
   const appel = (b) => PLAYER.db.request("rpc/player_attendance_bump", { method: "POST", body: b });
   if (durcissementVoulu && Date.now() < _bumpSansDurcissementJusqua) {
     const { p_only_if_unclaimed: _retire, ...sansDurcissement } = corps;
     return appel(sansDurcissement);
   }
+  if (durcissementVoulu) _bumpDurcissementTente = true;
   try {
     return await appel(corps);
   } catch (erreur) {
@@ -1183,4 +1207,4 @@ async function listPresentationsForDoc(docId, email, isAdmin, autoriseLarge) {
 module.exports = {
   reacteurDepuisJeton,
   purgerPerimees,
-  messagePublic, CHAMPS_PUBLICS, cheminPieceJointe, init, createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent , STALE_MS};
+  messagePublic, CHAMPS_PUBLICS, etatDurcissementBootstrap, cheminPieceJointe, init, createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent , STALE_MS};

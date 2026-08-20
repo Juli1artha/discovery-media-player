@@ -223,6 +223,14 @@ cap stays on regardless.
 3. Only then set `PLAYER_PRESENCE_STRICT=1`. From that point a heartbeat with no proven token is
    refused (`403 presence-token`) instead of being recorded.
 
+⚠️ **The card reports what it observed, not what is configured.** Alongside `presenceStrict` (the door
+refuses) sits `presenceDurcissement`, the *observed* state of the anti-takeover check on bootstraps:
+`actif` — an attempt succeeded; `degrade` — the last attempt found migration 0018 missing, so bootstraps
+are currently unchecked; `inconnu` — nothing has been attempted yet in this process, which is a state of
+its own and **not** a green light. The check cannot be probed without calling the function (it writes),
+so what is reported is what using it revealed. A transient network failure does not move it to
+`degrade`: it proves nothing about 0018.
+
 ⚠️ **`PLAYER_PRESENCE_STRICT` is inert without `PLAYER_PRESENCE_SECRET`, on purpose.** With no secret
 nobody *can* obtain a token, so enforcing it would refuse 100% of anonymous participants — a
 self-inflicted outage. The card therefore reports the **effective** value: `presenceStrict` reads

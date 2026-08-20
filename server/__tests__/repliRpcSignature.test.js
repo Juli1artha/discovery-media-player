@@ -91,3 +91,31 @@ describe("repli RPC — seule une signature absente le déclenche", () => {
     expect(r.ok, "forme inconnue : on n'invente pas de verdict, la boucle écrit").toBe(true);
   });
 });
+
+// ⚠️ LA CARTE DOIT DIRE CE QU'ELLE A CONSTATÉ, PAS CE QUI EST CONFIGURÉ. Le second hôte l'a nommé :
+// `presenceStrict` pouvait annoncer une porte qui refuse alors que le contrôle anti-usurpation était
+// désarmé. Et « pas dégradé » n'est pas « vérifié » — un processus qui n'a rien tenté ne sait rien.
+describe("état OBSERVÉ du durcissement", () => {
+  it("inconnu tant qu'aucun bootstrap n'a été servi — l'absence d'observation n'est pas un feu vert", () => {
+    joueur(null);
+    expect(presentations.etatDurcissementBootstrap()).toBe("inconnu");
+  });
+
+  it("actif après un bootstrap qui a abouti", async () => {
+    joueur(null);
+    await bootstrap();
+    expect(presentations.etatDurcissementBootstrap()).toBe("actif");
+  });
+
+  it("degrade quand la signature est absente — et le rapport le dit, pas seulement le journal", async () => {
+    joueur(pgrst202Details);
+    await bootstrap();
+    expect(presentations.etatDurcissementBootstrap()).toBe("degrade");
+  });
+
+  it("une PANNE ne fait pas passer en degrade : elle n'a rien constaté sur la signature", async () => {
+    joueur(() => Object.assign(new Error("ECONNRESET"), { code: "ECONNRESET" }));
+    await bootstrap();
+    expect(presentations.etatDurcissementBootstrap(), "un hoquet réseau ne prouve rien sur 0018").toBe("actif");
+  });
+});
