@@ -303,7 +303,35 @@ async function vraimentSonderTout() {
   for (const [cle] of quandNegatif) { connues.delete(cle); reponses.delete(cle); }
   quandNegatif.clear();
   for (const nom of Object.keys(ATTENDUES)) await attendue(nom);
-  return etatDuSchema();
+  const etat = etatDuSchema();
+  await ajouterSansRang(etat);
+  return etat;
+}
+
+/**
+ * ⚠️ `mod_seq` NUL EST AMBIGU, ET UN NOMBRE AMBIGU NE MESURE RIEN. Le rattrapage de 0016 laisse
+ * DÉLIBÉRÉMENT sans rang les messages des présentations scellées (le scellé refuse de les écrire). Mais
+ * rien ne distingue « nul par décision » de « nul parce que le rattrapage n'a jamais tourné » : les
+ * deux se lisent « ligne sans rang ». On rend donc les DEUX nombres — total, et la part qui est
+ * légitimement scellée. Égaux ⇒ tout nul est un scellé attendu ; divergents ⇒ le rattrapage a laissé
+ * des lignes NON scellées derrière lui, anomalie à corriger. C'est la classe « une garde qu'on n'a pas
+ * vue refuser ne garde rien » appliquée à un compteur : le compteur devient un verdict. (relevé 2e hôte)
+ *
+ * Seulement si la colonne est là (sinon la question n'a pas de sens), et JAMAIS bloquant : un
+ * diagnostic ne doit pas casser la carte qu'il enrichit — mieux vaut pas de compteur qu'une carte muette.
+ */
+async function ajouterSansRang(etat) {
+  const r = reponses.get("doc_presentation_messages.mod_seq");
+  if (!r || !r.present) return;
+  try {
+    const scellees = await PLAYER.db.request("doc_presentations?active=eq.false&control_hash=is.null&select=slug");
+    const setScellees = new Set((Array.isArray(scellees) ? scellees : []).map((p) => p.slug));
+    // `limit` borne un diagnostic sur une base gravement cassée : au-delà, la divergence suffit déjà à
+    // alerter, le compte exact n'ajoute rien. `is.null` et `eq` restent de la syntaxe portable.
+    const nuls = await PLAYER.db.request("doc_presentation_messages?mod_seq=is.null&select=slug&limit=1000");
+    const liste = Array.isArray(nuls) ? nuls : [];
+    etat.sansRang = { total: liste.length, dontScellees: liste.filter((m) => setScellees.has(m.slug)).length };
+  } catch { /* best-effort : un compteur absent vaut mieux qu'une carte en échec */ }
 }
 
 /** La réponse, retenue pour qui la demandera — sans repasser par la base. */

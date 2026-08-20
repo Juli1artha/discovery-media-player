@@ -10,6 +10,19 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.92] — 2026-08-20
+
+### Added (schema card makes the `mod_seq` null-count interpretable)
+
+- **`?contract=1&schema=1` now reports `sansRang: { total, dontScellees }`.** 0.1.91's fix leaves
+  `mod_seq` null on the messages of sealed presentations *by decision* — but a null rank is
+  indistinguishable from "the backfill never ran", and the column-presence probe cannot tell them
+  apart. So the on-demand card now counts the messages without a rank, and how many of those belong to
+  a sealed presentation. Equal ⇒ every null is a legitimately-frozen sealed message; divergent ⇒ the
+  backfill left non-sealed rows behind, an anomaly to fix. A counter nobody can interpret measures
+  nothing; this turns it into a verdict. Two cheap queries on the probe path only, best-effort (a
+  missing count never breaks the card). Reported by the second host on 0.1.91.
+
 ## [0.1.91] — 2026-08-20
 
 ### Fixed (migration 0016 backfill vs the archive seal — cross-migration hazard)
