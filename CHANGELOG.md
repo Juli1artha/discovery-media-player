@@ -10,6 +10,23 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.100] — 2026-08-20
+
+### Fixed (three scan guards could empty themselves without ever failing)
+
+- **Coverage floors are now asserted at their real level.** Three source-scanning guards declared
+  floors of `> 10`, `> 3` and `> 10` while actually covering 71, 10 and 34 items — so coverage could
+  fall by two thirds without a single red. That is not hypothetical: one of them silently dropped from
+  71 to 61 columns when a request body moved into a variable, and it was caught by a reading habit
+  (diffing two test counts while working on that code), not by a mechanism. A month later, on an
+  unrelated refactor, nobody compares — and **a guard with zero coverage passes all its tests**: it
+  does not lie, it stops saying anything, and silence reads as success. The floors are now the
+  measured values, so a refactor that moves the write site fails the guard instead of shrinking it,
+  and lowering a floor becomes a deliberate act visible in a diff. This also makes *loosening* visible
+  — the very move that empties a guard, and the one we reached for when this scan produced seven false
+  positives. Mutation-tested: raising a floor above the real count does turn it red. Reported by the
+  second host, who refused to let the episode be treated as an anecdote.
+
 ## [0.1.99] — 2026-08-20
 
 ### Fixed (code-new-on-old-base lost 0015's cap — and the warning named the wrong file)

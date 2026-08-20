@@ -143,8 +143,35 @@ describe("toute colonne écrite par le code est déclarée", () => {
   // Clés de protocole PostgREST et champs internes, qui ne sont pas des colonnes.
   const HORS_SCHEMA = new Set(["method", "headers", "prefer", "body", "signal", "range"]);
 
-  it("le balayage trouve bien des colonnes", () => {
-    expect(colonnesEcrites().length).toBeGreaterThan(10);
+  // ⚠️ PLANCHER DE COUVERTURE — LA GARDE QUI GARDE LA GARDE.
+  //
+  // Ce test disait `> 10` alors que le balayage voit 71 colonnes : la couverture pouvait donc tomber de
+  // 71 à 11 sans un seul rouge. Ce n'est pas hypothétique — elle EST tombée à 61 en sortant un corps de
+  // requête dans une variable, et rien n'a échoué. Elle a été rattrapée par une HABITUDE DE LECTURE
+  // (j'ai comparé deux comptes parce que je venais de toucher ce code), pas par un mécanisme. Un mois
+  // plus tard, sur un refactor sans rapport, personne ne compare — et **une garde à couverture nulle
+  // passe tous ses tests** : elle ne ment pas, elle ne dit plus rien, et le silence se lit comme un
+  // succès.
+  //
+  // D'où un plancher AFFIRMÉ, au niveau réel. Le jour où un refactor déplace le puits d'écriture, ce
+  // test échoue au lieu de rétrécir, et son auteur voit immédiatement ce qu'il vient de rendre
+  // invisible. Baisser ce nombre est alors un geste DÉLIBÉRÉ, écrit dans un diff — pas une érosion.
+  //
+  // ⚠️ Et il rend visible le DESSERRAGE, qui est le geste qui vide une garde : quand celle-ci a accusé
+  // sept non-colonnes (`status`, `summary`, `members`…), le réflexe correct — la resserrer — pouvait
+  // tout aussi bien la vider. Le plancher est ce qui distingue « resserrée » de « désarmée ».
+  // (relevé du second hôte, qui a refusé que je traite l'épisode comme une anecdote)
+  const PLANCHER_COLONNES = 71;
+
+  it("le balayage couvre au moins autant de colonnes qu'au jour où on l'a mesuré", () => {
+    const vues = colonnesEcrites().length;
+    expect(vues,
+      `le balayage ne voit plus que ${vues} colonnes, contre ${PLANCHER_COLONNES} attendues.\n`
+      + "Un puits d'écriture a probablement changé de FORME (littéral sorti dans une variable, helper\n"
+      + "nouveau, fichier déplacé) et cette garde a cessé de le voir — SANS échouer sur le fond.\n"
+      + "Étendez le balayage à la forme nouvelle. Si la baisse est légitime (colonnes réellement\n"
+      + "retirées), baissez PLANCHER_COLONNES dans le même diff : le geste doit être délibéré.")
+      .toBeGreaterThanOrEqual(PLANCHER_COLONNES);
   });
 
   it.each(colonnesEcrites().filter((c) => !new Set(["method", "headers", "prefer", "body", "signal", "range"]).has(c)))(

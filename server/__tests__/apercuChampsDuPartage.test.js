@@ -75,8 +75,19 @@ describe("l'aperçu ne perd aucun champ par accident", () => {
   const lus = champsLus();
   const fournis = champsFournis();
 
-  it("la page lit bien des champs du partage", () => {
-    expect(lus.length, "sans lecture, cette garde ne prouverait rien").toBeGreaterThan(10);
+  // ⚠️ PLANCHER DE COUVERTURE, au niveau RÉEL (raisonnement complet dans cheminDeMigration.test.js).
+  // `> 10` sur un balayage qui lit 34 champs autorisait une chute des deux tiers sans un seul rouge —
+  // et c'est exactement ainsi qu'une garde de ce type s'est vidée ailleurs dans ce dépôt, rattrapée
+  // par une habitude de lecture et non par un mécanisme. Une garde à couverture nulle passe tous ses
+  // tests. Baisser ce nombre doit être un geste délibéré, visible dans un diff.
+  const PLANCHER_CHAMPS = 34;
+
+  it("la page lit au moins autant de champs du partage qu'au jour où on l'a mesuré", () => {
+    expect(lus.length,
+      `le balayage ne lit plus que ${lus.length} champs, contre ${PLANCHER_CHAMPS} attendus — la page a\n`
+      + "probablement changé de FORME de lecture et cette garde a cessé de la voir. Étendez le balayage,\n"
+      + "ou baissez PLANCHER_CHAMPS dans le même diff si la baisse est légitime.")
+      .toBeGreaterThanOrEqual(PLANCHER_CHAMPS);
   });
 
   // ⚠️ LE CŒUR : chaque champ lu est fourni, ou déclaré absent AVEC SA RAISON.
