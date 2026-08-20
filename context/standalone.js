@@ -69,7 +69,16 @@ function creerDb(env) {
       // début. Tronqué : c'est un message d'erreur, pas un relais de données.
       let detail = "";
       try { detail = (await r.text()).slice(0, 300); } catch { /* le statut restera seul */ }
-      throw new Error(`Supabase ${methode} ${chemin} → ${r.status}${detail ? ` — ${detail}` : ""}`);
+      // ⚠️ LE MESSAGE NE CHANGE PAS — du code appelant y cherche « 409 ». On AJOUTE seulement de quoi
+      // décider sans lire une phrase : le statut, et le corps PostgREST analysé quand il l'est. Sans
+      // ça, distinguer « cette fonction n'existe pas » (PGRST202) d'un hoquet réseau obligeait à
+      // deviner sur du texte — et l'appelant concluait « migration absente » par défaut, ce qui lui
+      // faisait retirer une protection sur une simple panne. L'autre contexte (studio) expose déjà
+      // `statusCode`/`details` : les deux formes convergent enfin.
+      const erreur = new Error(`Supabase ${methode} ${chemin} → ${r.status}${detail ? ` — ${detail}` : ""}`);
+      erreur.statusCode = r.status;
+      try { erreur.details = JSON.parse(detail); } catch { /* corps non JSON : le message suffit */ }
+      throw erreur;
     }
     const texte = await r.text();
     return texte ? JSON.parse(texte) : null;

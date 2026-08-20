@@ -6,7 +6,7 @@ const crypto = require("crypto");
 // ⚠️ Le contexte est REÇU, pas construit. Ce module ne doit pas savoir d'où il vient : c'est ce
 // qui lui permettra de partir dans le dépôt du player sans emporter le studio avec lui.
 let PLAYER = null;
-function init(ctx) { PLAYER = ctx; }
+function init(ctx) { PLAYER = ctx; _bumpSansDurcissementJusqua = 0; _avertRpcPresence = false; }
 
 
 const enc = encodeURIComponent;
@@ -779,10 +779,41 @@ let _avertRpcPresence = false;
  * aller-retour perdu ; le chemin de la présence est chaud (un battement toutes les 25 s par
  * participant). On retient donc l'ensemble d'arguments qui a marché, pour le processus.
  */
-let _bumpSansDurcissement = false;   // 0018 absente : ne plus demander p_only_if_unclaimed
+/**
+ * Cette erreur dit-elle « CETTE SIGNATURE N'EXISTE PAS », et rien d'autre ?
+ *
+ * ⚠️ C'EST LA QUESTION QUI MANQUAIT, ET SON ABSENCE RETIRAIT UNE PROTECTION. Le repli vers l'ancien
+ * contrat se déclenchait sur N'IMPORTE QUELLE exception : un `ECONNRESET`, un 500, un délai dépassé
+ * valaient « migration 0018 absente », et le processus restait dégradé — sans contrôle anti-usurpation
+ * — jusqu'à son redémarrage. Une panne réseau d'une seconde désarmait une garde de sécurité sur une
+ * base pourtant entièrement migrée.
+ *
+ * C'est la règle du jour appliquée au code de production : **un mécanisme qui ne peut pas mesurer doit
+ * refuser de conclure, pas conclure par défaut.** Ici, ne pas savoir distinguer PGRST202 d'un timeout
+ * ne rendait pas le repli prudent — il le rendait automatique.
+ *
+ * PostgREST rend `PGRST202` quand aucune fonction ne correspond au jeu d'arguments nommés. On accepte
+ * les DEUX formes que nos contextes produisent (code analysé, ou message contenant le code / la phrase
+ * de PostgREST) — et RIEN d'autre : un statut 404 seul ne suffit pas, il peut venir d'ailleurs.
+ */
+function signatureAbsente(erreur) {
+  if (!erreur) return false;
+  const code = erreur.details && (erreur.details.code || (erreur.details.error && erreur.details.error.code));
+  if (code === "PGRST202") return true;
+  const texte = String((erreur && erreur.message) || "");
+  return texte.includes("PGRST202") || /Could not find the function/i.test(texte);
+}
+
+// ⚠️ LE MÉMO EXPIRE — UN « NON » N'A PAS LA DURÉE DE VIE D'UN « OUI ». C'est la doctrine que schema.js
+// applique déjà à ses sondes, et elle vaut ici pour la même raison : « 0018 absente » est un état que
+// l'exploitant peut RÉPARER pendant que le processus tourne. Mémorisé pour toujours, il aurait exigé un
+// redémarrage pour que le durcissement reprenne — une migration appliquée serait restée sans effet, en
+// silence. Un « oui » (la signature existe) n'a pas besoin d'expirer : une fonction ne disparaît pas.
+let _bumpSansDurcissementJusqua = 0;
+const MEMO_SANS_DURCISSEMENT_MS = 60 * 1000;
 async function appelerBump(corps, durcissementVoulu) {
   const appel = (b) => PLAYER.db.request("rpc/player_attendance_bump", { method: "POST", body: b });
-  if (durcissementVoulu && _bumpSansDurcissement) {
+  if (durcissementVoulu && Date.now() < _bumpSansDurcissementJusqua) {
     const { p_only_if_unclaimed: _retire, ...sansDurcissement } = corps;
     return appel(sansDurcissement);
   }
@@ -790,9 +821,12 @@ async function appelerBump(corps, durcissementVoulu) {
     return await appel(corps);
   } catch (erreur) {
     if (!durcissementVoulu) throw erreur;   // rien à retirer : l'échec est réel
+    // ⚠️ ON NE SE REPLIE QUE SUR LA PREUVE. Toute autre erreur remonte telle quelle : l'appelant
+    // refusera le battement plutôt que de l'écrire sans le contrôle qu'il avait demandé.
+    if (!signatureAbsente(erreur)) throw erreur;
     // La signature à 12 arguments n'existe pas (0018 non appliquée) : on retire l'argument et on
     // réessaie. Le durcissement n'est alors PAS appliqué — et ça se dit, une fois, plus bas.
-    _bumpSansDurcissement = true;
+    _bumpSansDurcissementJusqua = Date.now() + MEMO_SANS_DURCISSEMENT_MS;
     // ⚠️ CE QUI DISPARAÎT SE DIT. Le durcissement demandé n'est pas appliqué : sous
     // PLAYER_PRESENCE_STRICT, la porte se fermerait sur les battements legacy tout en laissant un
     // bootstrap auto-déclaré s'emparer d'une présence réclamée — c'est-à-dire une fermeture qui
@@ -871,6 +905,21 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
     }
     // Forme inattendue : on n'invente pas de verdict, on laisse la boucle de repli faire l'écriture.
   } catch (erreur) {
+    // ⚠️ UN DURCISSEMENT DEMANDÉ QUI N'A PAS PU S'EXÉCUTER NE SE CONTOURNE PAS. Le repli en boucle
+    // lire-modifier-réécrire écrit SANS le contrôle anti-usurpation : l'emprunter ici reviendrait à
+    // faire par la porte de service ce que le chemin principal vient de refuser. On rend 503 — « je
+    // n'ai pas pu vérifier », pas « c'est refusé » ni « c'est écrit » — et le battement suivant
+    // réessaiera dans quelques secondes. Fail-closed sur le contrôle, jamais sur la disponibilité des
+    // battements ORDINAIRES, qui continuent de se replier normalement.
+    if (onlyIfUnclaimed) {
+      try {
+        PLAYER.errors.capture(new Error(
+          "bootstrap de présence refusé : le contrôle anti-usurpation n'a pas pu s'exécuter — "
+          + ((erreur && erreur.message) || erreur),
+        ), { route: "present-attend" });
+      } catch { /* jamais bloquant */ }
+      return { ok: false, status: 503 };
+    }
     if (!_avertRpcPresence) {
       _avertRpcPresence = true;
       try {
