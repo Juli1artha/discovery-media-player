@@ -11,12 +11,15 @@ function joueur({ scellees = [], nuls = [] } = {}) {
   const ctx = {
     errors: { capture() {} },
     db: {
+      // Les sondes de colonnes (témoin + ATTENDUES) passent par `request` : toutes présentes.
       async request(chemin) {
-        // Toutes les sondes de colonnes (témoin + ATTENDUES) : présentes.
         if (/select=[a-z_]+&limit=0/.test(chemin)) return [];
-        // Présentations scellées.
+        return [];
+      },
+      // ⚠️ Le bilan `sansRang` passe par `selectAll` (listes COMPLÈTES, pas de troncature) — c'est le
+      // correctif du relevé 2e hôte. Le double rend la liste entière d'un coup.
+      async selectAll(chemin) {
         if (/doc_presentations\?active=eq\.false&control_hash=is\.null/.test(chemin)) return scellees.map((slug) => ({ slug }));
-        // Messages sans rang.
         if (/doc_presentation_messages\?mod_seq=is\.null/.test(chemin)) return nuls.map((slug) => ({ slug }));
         return [];
       },

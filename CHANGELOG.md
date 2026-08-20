@@ -10,6 +10,24 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.93] — 2026-08-20
+
+### Fixed (sansRang could lie through its own bounds — one of them backwards)
+
+- **`sansRang` now uses `selectAll` (complete, paginated) instead of bounded lists.** 0.1.92 fetched
+  two lists and crossed them in JS, and both were silently bounded — in OPPOSITE directions. The
+  null-message list was capped at 1000 with no truncation flag: PostgREST without `order=` returns
+  physical order (grouped by presentation), so the first 1000 nulls could all be sealed → total =
+  dontScellees → a false "all clear" on a base where non-sealed rows were missed — the exact false
+  negative the counter existed to remove. The sealed-slug list had no `limit` at all, which does NOT
+  mean "all": PostgREST's implicit `db-max-rows` cap (often 1000) truncates it silently → an
+  incomplete sealed set → dontScellees under-counted → a permanent false ALARM on a healthy host with
+  >1000 archived presentations. Both fixed by paginating to the end with `selectAll`; transport stays
+  bounded to the real problem size (zero on a healthy host), and the counter can no longer lie by
+  truncation. Reported by the second host on 0.1.92 — removing an ambiguity of meaning had introduced
+  an ambiguity of completeness, which is harder to see because a truncated list has the shape of a
+  complete one.
+
 ## [0.1.92] — 2026-08-20
 
 ### Added (schema card makes the `mod_seq` null-count interpretable)

@@ -258,9 +258,9 @@ describe("un « non » n'a pas la même durée de vie qu'un « oui »", () => {
     // figé : un compte en dur avait rougi à la simple arrivée d'une quatrième attente — la garde
     // accusait alors l'inventaire d'avoir grandi, ce qui n'est pas un défaut.
     const couts = b.requetes - avant;
-    // +2 = le bilan `sansRang` que sonderTout mesure AUSSI quand `mod_seq` est là : présentations
-    // scellées, puis messages sans rang. Deux requêtes fixes, indépendantes de l'inventaire des sondes.
-    expect(couts, "un oui a été re-sondé, ou un non ne l'a pas été").toBe(1 + Object.keys(schema.ATTENDUES).length - 1 + 2);
+    // (Le bilan `sansRang` passe par `db.selectAll`, absent de ce double minimal → il no-ope
+    // proprement et ne compte AUCUNE `request` ici. Il est éprouvé à part, dans sansRang.test.js.)
+    expect(couts, "un oui a été re-sondé, ou un non ne l'a pas été").toBe(1 + Object.keys(schema.ATTENDUES).length - 1);
   });
 });
 
@@ -281,9 +281,9 @@ describe("la sonde publique ne se laisse pas jouer en boucle", () => {
   it("deux appels simultanés partagent UNE sonde", async () => {
     const b = baseComptee();
     await Promise.all([schema.sonderTout(), schema.sonderTout()]);
-    // témoin + une sonde par attente + 2 (le bilan sansRang : scellées, puis messages sans rang) —
-    // une seule fois, pas deux : les appels simultanés partagent la sonde.
-    expect(b.requetes).toBe(1 + Object.keys(schema.ATTENDUES).length + 2);
+    // témoin + une sonde par attente — une seule fois, pas deux : les appels simultanés partagent la
+    // sonde. (Le bilan sansRang passe par selectAll, absent de ce double → il ne compte aucune request.)
+    expect(b.requetes).toBe(1 + Object.keys(schema.ATTENDUES).length);
   });
 
   it("dans la fenêtre, le résultat resservi ne coûte RIEN à la base", async () => {

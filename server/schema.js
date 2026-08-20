@@ -324,11 +324,19 @@ async function ajouterSansRang(etat) {
   const r = reponses.get("doc_presentation_messages.mod_seq");
   if (!r || !r.present) return;
   try {
-    const scellees = await PLAYER.db.request("doc_presentations?active=eq.false&control_hash=is.null&select=slug");
+    // ⚠️ `selectAll`, JAMAIS un `limit` — ET C'ÉTAIT LE DÉFAUT DE LA PREMIÈRE VERSION (relevé 2e hôte).
+    // Un compteur borné qui ne dit pas qu'il est borné redevient le nombre ambigu qu'il remplaçait, et
+    // une liste tronquée a EXACTEMENT la forme d'une liste complète. Les deux bornes mentaient en sens
+    // OPPOSÉS : une liste de nuls coupée (l'ordre physique groupe par présentation) pouvait ne voir que
+    // des scellées → total = dontScellees → faux « tout va bien » sur une base où des non-scellées ont
+    // été oubliées ; et la liste de scellées, sans `limit`, tombait sous le plafond IMPLICITE de
+    // PostgREST (db-max-rows) → setScellees incomplet → dontScellees sous-compté → fausse ALERTE
+    // permanente sur un hôte à >1000 archives. `selectAll` pagine jusqu'au bout : le transport reste
+    // borné à la taille RÉELLE du problème (zéro sur un hôte sain), et le compteur ne peut plus mentir
+    // par troncature. `is.null`/`eq` restent de la syntaxe portable.
+    const scellees = await PLAYER.db.selectAll("doc_presentations?active=eq.false&control_hash=is.null&select=slug");
     const setScellees = new Set((Array.isArray(scellees) ? scellees : []).map((p) => p.slug));
-    // `limit` borne un diagnostic sur une base gravement cassée : au-delà, la divergence suffit déjà à
-    // alerter, le compte exact n'ajoute rien. `is.null` et `eq` restent de la syntaxe portable.
-    const nuls = await PLAYER.db.request("doc_presentation_messages?mod_seq=is.null&select=slug&limit=1000");
+    const nuls = await PLAYER.db.selectAll("doc_presentation_messages?mod_seq=is.null&select=slug");
     const liste = Array.isArray(nuls) ? nuls : [];
     etat.sansRang = { total: liste.length, dontScellees: liste.filter((m) => setScellees.has(m.slug)).length };
   } catch { /* best-effort : un compteur absent vaut mieux qu'une carte en échec */ }
