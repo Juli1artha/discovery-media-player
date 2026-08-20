@@ -10,6 +10,21 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.94] — 2026-08-20
+
+### Fixed (sansRang: the fix removed the bound and lost the order — a lie traded for a crash)
+
+- **`sansRang` is now bounded, ordered, and flags its bound.** 0.1.93 replaced the silent cap with
+  `selectAll` — but the worst case a rank-counter exists to diagnose is "the backfill never ran": every
+  message null, which passes the presence gate and then paginates the ENTIRE messages table on the card
+  route, exhausting maxDuration — and a function timeout kills the whole invocation, not the promise, so
+  the try/catch can't degrade. The bound was never the defect; its silence was. And the two `selectAll`
+  calls had no `order=` (the three existing ones in the codebase all do): Range pagination without an
+  ORDER BY has no stable order, so two pages can double or skip rows on a live base — and a presentation
+  in use is a live base. Now each side is one request, `order=slug.asc`, `limit=1000`, and if the bound
+  is reached `sansRang` carries `tronque: true` so equality is no longer readable as "all clear". A
+  bounded counter must say it's bounded — reported by the second host across three passes.
+
 ## [0.1.93] — 2026-08-20
 
 ### Fixed (sansRang could lie through its own bounds — one of them backwards)
