@@ -10,6 +10,17 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.95] — 2026-08-20
+
+### Documented (tronque's validity condition)
+
+- **`sansRang.tronque` is only reliable while `PLAFOND_SANS_RANG <= db-max-rows`.** An explicit `limit`
+  does not beat the server's implicit cap: PostgREST returns `min(limit, db-max-rows)`. If an operator
+  lowers `db-max-rows` below the ceiling, a genuinely-cut list returns fewer rows, `>= PLAFOND` is false,
+  and `tronque` silently becomes a false negative again — the mirror of "an absent limit is not all".
+  Clean detection needs the Content-Range header, out of reach of `db.request` (body only). Documented
+  as a stated validity condition rather than a guard believed unconditional. Reported by the second host.
+
 ## [0.1.94] — 2026-08-20
 
 ### Fixed (sansRang: the fix removed the bound and lost the order — a lie traded for a crash)
