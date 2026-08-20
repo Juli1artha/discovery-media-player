@@ -10,6 +10,20 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.109] — 2026-08-20
+
+### Fixed (the reading rule contradicted itself in the case that was actually live)
+
+- **`presence.couvre` branches on the real state instead of interpolating a number into a generic
+  sentence.** 0.1.108 stuffed `presentationsActives` into a phrase written for N > 0, so at N = 0 the
+  card read: *"0 active and 0 avecJeton = ANOMALY; 0 active and 0 avecJeton = normal rest"* — a
+  contradiction inside one line. Formally constructed, false in the case that was on screen: exactly
+  the defect this field exists to prevent, produced while adding the field. The text now branches — at
+  rest it says rest and announces what a null will mean once something runs; with presentations live it
+  states whether presences are being recorded or not, using the figures at hand. A guard now forbids
+  the text from ever asserting an anomaly and a rest at once, across four regimes; it was mutation-
+  tested against the exact broken sentence.
+
 ## [0.1.108] — 2026-08-20
 
 ### Added (`presentationsActives`, so the sign of life can be read on its own)

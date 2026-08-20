@@ -78,12 +78,39 @@ describe("compteur de présence (transition du jeton)", () => {
     joueur({ avec: [], sans: [], actives: [], strict: true });
     const repos = await schema.sonderTout();
     expect(repos.presence.presentationsActives, "rien ne tourne : 0 avecJeton est NORMAL").toBe(0);
+    expect(repos.presence.couvre, "au repos, le texte dit REPOS").toMatch(/repos NORMAL/);
 
     joueur({ avec: [], sans: [], actives: ["p1", "p2"], strict: true });
     const anomalie = await schema.sonderTout();
     expect(anomalie.presence.presentationsActives, "deux présentations tournent…").toBe(2);
     expect(anomalie.presence.avecJeton, "…et personne n'est enregistré : ANOMALIE").toBe(0);
-    expect(anomalie.presence.couvre, "le texte donne la règle de lecture avec le chiffre du moment").toMatch(/2 active\(s\) et 0 avecJeton = ANOMALIE/);
+    expect(anomalie.presence.couvre, "le texte nomme l'anomalie du moment").toMatch(/ANOMALIE/);
+
+    joueur({ avec: ["a", "b"], sans: [], actives: ["p1"], strict: true });
+    const sain = await schema.sonderTout();
+    expect(sain.presence.couvre, "présentation en cours ET des présences : rien d'anormal").toMatch(/les présences s'enregistrent/);
+    expect(sain.presence.couvre).not.toMatch(/ANOMALIE/);
+  });
+
+  // ⚠️ LA GARDE QUI COMPTE, ET ELLE EST NÉE D'UNE VRAIE FAUTE. Une première version injectait
+  // `presentationsActives` dans une phrase écrite pour N > 0, et rendait à N = 0 : « 0 active et 0
+  // avecJeton = ANOMALIE ; 0 active et 0 avecJeton = repos normal » — les deux dans la même ligne.
+  // Formellement construite, FAUSSE dans le cas du moment. Une phrase de diagnostic ne doit jamais
+  // pouvoir affirmer une chose et son contraire : ce test l'interdit dans les trois régimes.
+  it("le texte ne se CONTREDIT jamais : anomalie et repos ne coexistent pas", async () => {
+    for (const cas of [
+      { avec: [], sans: [], actives: [] },
+      { avec: [], sans: [], actives: ["p1"] },
+      { avec: ["a"], sans: [], actives: ["p1"] },
+      { avec: ["a"], sans: ["b"], actives: ["p1", "p2"] },
+    ]) {
+      joueur({ ...cas, strict: true });
+      const t = (await schema.sonderTout()).presence.couvre;
+      const diagnostiqueUneAnomalie = /ANOMALIE/.test(t);
+      const diagnostiqueUnRepos = /repos NORMAL/.test(t);
+      expect(diagnostiqueUneAnomalie && diagnostiqueUnRepos,
+        `le texte affirme À LA FOIS une anomalie et un repos : « ${t} »`).toBe(false);
+    }
   });
 
   it("porte ouverte : le texte annonce déjà le relais à venir", async () => {

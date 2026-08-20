@@ -429,10 +429,20 @@ async function ajouterPresence(etat) {
       // `avecJeton` qui prend le relais comme SIGNE DE VIE — nul pendant une présentation en cours
       // veut alors dire que quelque chose est cassé.
       couvre: (PLAYER.config && PLAYER.config.presenceStrict)
+        // ⚠️ LA RÈGLE PORTE SUR LE CAS PRÉSENT, PAS SUR UN GABARIT. Une première version injectait
+        // `nActives` dans une phrase écrite pour N > 0 et rendait, à N = 0 : « 0 active et 0 avecJeton
+        // = ANOMALIE ; 0 active et 0 avecJeton = repos normal » — une contradiction dans la même ligne.
+        // Formellement construite, fausse dans le cas du moment : exactement le défaut que ce champ
+        // existe pour éviter. On BRANCHE donc sur l'état réel plutôt que d'interpoler un nombre dans un
+        // texte générique — et au repos on annonce ce que le nombre voudra dire quand ça tournera.
         ? "jauge de transition PÉRIMÉE — porte fermée : sansJeton est structurellement nul et ne mesure "
-          + "plus rien. Le signe de vie est avecJeton, À CROISER AVEC presentationsActives : "
-          + nActives + " active(s) et 0 avecJeton = ANOMALIE ; 0 active et 0 avecJeton = repos normal. "
-          + "avecJeton inclut les bootstraps auto-déclarés — pas une preuve d'identité."
+          + "plus rien. Le signe de vie est avecJeton, à croiser avec presentationsActives. "
+          + (nActives > 0
+            ? nActives + " présentation(s) en cours : avecJeton DOIT être non nul — " + nAvec + " observé"
+              + (nAvec > 0 ? ", donc les présences s'enregistrent." : " : ANOMALIE, les présences ne s'enregistrent plus.")
+            : "aucune présentation en cours : avecJeton nul est le repos NORMAL. Le jour où une "
+              + "présentation tournera, un avecJeton nul voudra dire que les présences ne s'enregistrent plus.")
+          + " avecJeton inclut les bootstraps auto-déclarés — pas une preuve d'identité."
         : "jauge-de-migration — sansJeton dit combien de clients ANCIENS battent encore (0 = on peut "
           + "fermer). Instrument de TRANSITION : après fermeture il vaudra 0 quoi qu'il arrive, et le "
           + "relais sera avecJeton croisé avec presentationsActives. "
