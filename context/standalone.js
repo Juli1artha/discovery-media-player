@@ -511,6 +511,48 @@ function createStandaloneContext(env = process.env) {
         } catch { return null; }
       },
 
+      /**
+       * JETON DE PRÉSENCE (P1c étape 2) — lie `slug + key + exp`, signé par l'hôte.
+       *
+       * ⚠️ CE QU'IL PROUVE, ET CE QU'IL NE PROUVE PAS. Il prouve que l'hôte a ÉMIS ce couple
+       * (slug, key) : un battement qui le porte prouve donc que son porteur détient la clé que l'hôte
+       * lui a donnée — assez pour empêcher un TIERS d'écraser une présence déjà enregistrée. Il ne
+       * prouve PAS qu'il y a une vraie personne derrière (un visiteur peut demander plusieurs jetons) :
+       * le plafond de création de l'étape 1 reste nécessaire.
+       *
+       * ⚠️ SECRET PAR INSTANCE, PAS PAR MARQUE. `PLAYER_PRESENCE_SECRET` est partagé par toutes les
+       * marques d'une même instance : un jeton émis sur l'une valide sur l'autre. Inoffensif — la vraie
+       * portée est le `slug`, qui est DANS la charge signée et vérifié à l'usage. Même comparaison à
+       * temps constant et même `exp` obligatoire que le jeton interne.
+       */
+      signPresenceToken(slug, key, ttlSeconds) {
+        const secret = String(env.PLAYER_PRESENCE_SECRET || "");
+        if (!secret || !slug || !key) return "";
+        const exp = Math.floor(Date.now() / 1000) + Math.max(60, Math.trunc(Number(ttlSeconds)) || 3600);
+        const corps = Buffer.from(JSON.stringify({ slug: String(slug), key: String(key), exp }), "utf8").toString("base64url");
+        const sig = crypto.createHmac("sha256", secret).update(corps).digest("base64url");
+        return `${corps}.${sig}`;
+      },
+      verifyPresenceToken(jeton) {
+        const secret = String(env.PLAYER_PRESENCE_SECRET || "");
+        const brut = String(jeton || "");
+        if (!secret || !brut) return null;
+        const sep = brut.lastIndexOf(".");
+        if (sep <= 0) return null;
+        const corps = brut.slice(0, sep);
+        const signature = brut.slice(sep + 1);
+        try {
+          const attendue = crypto.createHmac("sha256", secret).update(corps).digest("base64url");
+          const a = Buffer.from(attendue, "utf8"); const b = Buffer.from(signature, "utf8");
+          if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+          const d = JSON.parse(Buffer.from(corps, "base64url").toString("utf8"));
+          if (!d || typeof d !== "object") return null;
+          if (!Number.isFinite(d.exp) || d.exp * 1000 < Date.now()) return null;
+          if (!d.slug || !d.key) return null;
+          return { slug: String(d.slug), key: String(d.key) };
+        } catch { return null; }
+      },
+
       // ⚠️ Le rôle vient d'`app_metadata`, JAMAIS d'`user_metadata` : ce dernier est modifiable par
       // l'utilisateur lui-même. S'y fier revient à laisser chacun choisir ses droits.
       roleOf: (user) => String(((user || {}).app_metadata || {}).role || "").trim().toLowerCase(),
@@ -631,6 +673,9 @@ function createStandaloneContext(env = process.env) {
       hostMail: !!String(env.PLAYER_HOST_MAIL_URL || "").trim(),
       // Porte fermée : sans jeton de l'hôte, aucune session interne n'est écrite.
       internalStrict: String(env.PLAYER_INTERNAL_STRICT || "") === "1",
+      // Une fois les bundles déployés des deux côtés ET `presence.sansJeton` retombé à zéro : un
+      // battement sans jeton de présence valide cesse d'être enregistré. Off par défaut (transition).
+      presenceStrict: String(env.PLAYER_PRESENCE_STRICT || "") === "1",
     },
   };
 }

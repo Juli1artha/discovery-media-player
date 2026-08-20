@@ -10,6 +10,21 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.96] — 2026-08-20
+
+### Added (P1c step 2, increment 1 — signed presence-token foundation)
+
+- **Signed presence tokens: `signPresenceToken` / `verifyPresenceToken`, plus `PLAYER_PRESENCE_STRICT`
+  and a `presenceStrict` capability.** First rails for P1c step 2: a token binding `slug + key + exp`,
+  HMAC-signed with `PLAYER_PRESENCE_SECRET` (per-INSTANCE — shared across a multi-brand instance's
+  domains; the real scope is the `slug`, which is inside the signed payload). It proves the host issued
+  a `(slug, key)` pair — enough to stop a third party from overwriting an already-registered presence —
+  and does NOT prove a real person (the step-1 anonymous-creation cap stays). Same constant-time compare
+  and mandatory `exp` as the internal token. `presenceStrict` is exposed in the capabilities so a cockpit
+  can see both hosts' transition state alongside the upcoming `presence: { avecJeton, sansJeton }` counter.
+  Nothing calls the helpers yet and `PLAYER_PRESENCE_STRICT` is off by default — no behaviour change; the
+  protocol, counter, and client follow in the next increments.
+
 ## [0.1.95] — 2026-08-20
 
 ### Documented (tronque's validity condition)

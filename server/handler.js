@@ -595,6 +595,10 @@ async function handler(req, res) {
         // MESURABLE : un cockpit peut refuser une instance non stricte, au lieu de le découvrir en
         // lisant un journal. Demandé par le second hôte (cinquième audit, P1-4).
         internalStrict: !!(PLAYER.config && PLAYER.config.internalStrict),
+        // ⚠️ La porte du jeton de présence (P1c étape 2) est-elle fermée ? Même raison
+        // qu'internalStrict : un cockpit doit voir l'état des DEUX hôtes sans lire un journal — c'est
+        // ce booléen, lu avec `presence: { avecJeton, sansJeton }` de la carte, qui dit quand fermer.
+        presenceStrict: !!(PLAYER.config && PLAYER.config.presenceStrict),
         // ⚠️ LE BALAYAGE DE RÉTENTION EST-IL ARMÉ ? La capacité `retention` dit que l'instance PEUT
         // purger ; ce booléen dit si le balayage automatique TOURNE (`config.retention.balayage`).
         // Sans lui, une instance armée est indiscernable d'une instance éteinte — et une purge qui
