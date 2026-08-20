@@ -10,6 +10,22 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.89] — 2026-08-20
+
+### Fixed (schema health card no longer over-reports "complete")
+
+- **The schema health card now covers migration 0015, and a guard keeps it honest.** `ATTENDUES` in
+  `server/schema.js` is a hand-maintained list, and nothing linked it to the migrations folder — so
+  0015's conditional column (`creator_ip_hash`) was never added, and `?contract=1&schema=1` reported
+  `verdict: complet` to a host that had NOT applied 0015 while its presence ran without the atomic
+  path or the anonymous-creation cap. This is the second-source-of-truth class we removed three times
+  this cycle. Fixed two ways: (1) 0015 is now in `ATTENDUES` (a report-only entry — presence degrades
+  on the RPC being absent, not on probing the column, but column and function ship together in 0015,
+  so the probeable column is the witness that 0015 is applied); (2) a new guard
+  (`carteSchemaMigrations.test.js`) asserts every `add column if not exists` in a migration is either
+  probed (`ATTENDUES`) or explicitly exempted — so the list reddens on a future omission instead of
+  being completed from memory. Reported by the second host on 0.1.88.
+
 ## [0.1.88] — 2026-08-20
 
 ### Changed (presence — atomic upsert + anonymous creation cap, audit CODEX 5.6 P1c step 1)

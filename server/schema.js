@@ -57,6 +57,18 @@ const ATTENDUES = {
     migration: "supabase/migrations/0006-reactions-ordonnees.sql",
     fonction: "empêcher deux réactions simultanées de s'écraser",
   },
+  // ⚠️ ENTRÉE DE REPORT, PAS DE GATE D'ÉCRITURE. Les six ci-dessus sont sondées par les chemins
+  // d'écriture (`attendue()`) pour décider s'ils écrivent la colonne. Celle-ci ne l'est que par la
+  // carte (`sonderTout`, `?schema=1`) : la présence dégrade sur l'ABSENCE DE LA RPC
+  // `player_attendance_bump` (repli sur la boucle, cf. presentations.js), pas sur cette colonne. Mais
+  // colonne et fonction voyagent ENSEMBLE dans la 0015 : la colonne est donc le témoin PROBEABLE que
+  // la 0015 est appliquée — une RPC, elle, ne se sonde pas proprement en REST sans l'appeler. Sans
+  // cette entrée, la carte annonçait « complet » à un hôte sans la 0015, présence dégradée (relevé ADV).
+  presenceAtomique: {
+    table: "doc_presentation_attendees", colonne: "creator_ip_hash",
+    migration: "supabase/migrations/0015-presence-atomique.sql",
+    fonction: "écrire la présence atomiquement et plafonner la création de faux participants anonymes",
+  },
 };
 
 /**
