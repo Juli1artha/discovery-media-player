@@ -66,7 +66,7 @@ jobs:
           npm init -y >/dev/null
           npm i --silent "$GITHUB_WORKSPACE"/discovery-media-player-*.tgz
           cd node_modules/discovery-media-player
-          for banc in test test:e2e test:base; do
+          for banc in test test:e2e test:base test:charge; do
             if sortie=$(npm run "$banc" 2>&1); then
               echo "::error::npm run $banc a RÉUSSI depuis une installation consommatrice — il n'a rien pu mesurer"
               exit 1
@@ -555,6 +555,13 @@ jobs:
         env:
           PLAYER_TEST_POSTGREST_URL: http://127.0.0.1:3002
         run: npm run test:base
+
+      # ⚠️ LE BANC DE CHARGE COMPTE, IL NE CHRONOMÈTRE PAS — il tourne donc ici, sans base ni service :
+      # ce qu'il mesure (le nombre d'allers-retours qu'un geste coûte) est déterministe. Sa SORTIE est
+      # son produit : le relevé s'affiche dans le journal de la forge, et c'est là qu'on verra un geste
+      # passer de 3 à 4 avant que quiconque ne s'en plaigne en production.
+      - name: What each gesture costs the database
+        run: npm run test:charge
 
       # ── LA SECONDE MOITIÉ DU CONTRAT DE RÉTENTION : LE RECENSEMENT INDÉPENDANT ───────────────
       # Le banc base vient de semer des lignes vieilles et de lancer la purge. Ce recensement — un
