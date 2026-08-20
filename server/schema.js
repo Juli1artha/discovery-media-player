@@ -322,6 +322,15 @@ async function vraimentSonderTout() {
  */
 // Plafond du diagnostic : borné, ET qui le dit. Voir ci-dessous — la borne n'était jamais le défaut,
 // son SILENCE l'était.
+//
+// ⚠️ CONDITION DE VALIDITÉ DE `tronque` : elle ne tient que tant que `PLAFOND_SANS_RANG <= db-max-rows`.
+// Un `limit` explicite NE BAT PAS le plafond implicite du serveur : PostgREST rend `min(limit,
+// db-max-rows)`. Si un exploitant abaisse `db-max-rows` sous ce plafond — durcissement légitime — une
+// liste réellement coupée reviendrait à moins de PLAFOND, `>= PLAFOND` serait faux, et `tronque`
+// redeviendrait un faux négatif SILENCIEUX. C'est le miroir de la leçon des bornes : la PRÉSENCE d'un
+// `limit` n'est pas plus la borne réelle que son ABSENCE n'était « tout ». La détection propre passe par
+// l'en-tête Content-Range, hors de portée de `db.request` (corps seul) — d'où un garde-fou dont on
+// DÉCLARE la condition de validité, plutôt qu'un qu'on croirait inconditionnel. (relevé 2e hôte)
 const PLAFOND_SANS_RANG = 1000;
 
 async function ajouterSansRang(etat) {
