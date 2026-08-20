@@ -274,15 +274,29 @@ var Live=(function(){
   // Refus d'usurpation : cette clé appartient à quelqu'un qui détient son jeton. On ne perd PAS la
   // présence en silence — on fait TOURNER notre clé pour repartir sur une ligne neuve au battement
   // suivant. Une mesure qui s'arrête sans le dire est le pire des deux côtés de cette porte.
+  // Jeter le jeton SEULEMENT — la clé reste valide, c'est la nôtre ; seule la preuve est périmée.
+  function ptOublie(){ _ptJeton=''; try{var s=_store();if(s)s.removeItem(CLE_PT+':'+SLUG);}catch(e){} }
   function rotationCle(){ try{var s=_store();if(s){s.removeItem('3dd-present-attkey');s.removeItem(CLE_PT+':'+SLUG);}}catch(e){} _ptJeton=''; }
-  function sendAttend(){ if(!SLUG||!ME)return; try{ var h={'Content-Type':'application/json'};var jw=accessToken();if(jw)h.Authorization='Bearer '+jw;
+  // ⚠️ UN SEUL BATTEMENT EN VOL. Le filet périodique, l'arrivée, le changement de page et la fermeture
+  // peuvent tomber ensemble : deux battements concurrents sur la même clé font que la réponse la plus
+  // ANCIENNE peut arriver la dernière et réinstaller un jeton périmé par-dessus le frais.
+  var _attEnVol=false;
+  function sendAttend(){ if(!SLUG||!ME||_attEnVol)return; try{ var h={'Content-Type':'application/json'};var jw=accessToken();if(jw)h.Authorization='Bearer '+jw;
     var corps={action:'present-attend',slug:SLUG,control:CONTROL,key:attKey(),name:ME.name||'',email:ME.email||'',avatar:ME.avatar||''};
     var pt=ptLu();
     if(pt)corps.pt=pt;else corps.wantToken='1';
     fetch('/api/doc',{method:'POST',headers:h,body:JSON.stringify(corps)})
       .then(function(r){return r.json();})
-      .then(function(d){ if(d&&d.pt)ptRange(d.pt); else if(d&&d.usurpe)rotationCle(); })
-      .catch(function(){}); }catch(e){} }
+      .then(function(d){ if(d&&d.pt)ptRange(d.pt);
+        // ⚠️ UN JETON REFUSÉ SE JETTE, SINON ON LE RENVOIE POUR TOUJOURS. Expiré, ou signé avec un
+        // secret que l'hôte a changé, il produit un 403 presence-token à CHAQUE battement — et le
+        // client, qui ne réagissait qu'à pt ou usurpe, le gardait en stockage et le représentait
+        // indéfiniment : la présence cessait d'être enregistrée sans que rien ne reparte. On jette le
+        // JETON (pas la clé : elle est encore la nôtre) et le battement suivant redemande une émission.
+        else if(d&&d.error==='presence-token')ptOublie();
+        else if(d&&d.usurpe)rotationCle(); })
+      .catch(function(){})
+      .then(function(){_attEnVol=false;},function(){_attEnVol=false;}); _attEnVol=true; }catch(e){_attEnVol=false;} }
   var EMOJIS=['👍','❤️','😂','😮','👏','🎉'];
   var RSVG='<svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2 stroke-linecap=round><circle cx=12 cy=12 r=9 /><path d="M8.5 14.5s1.4 1.7 3.5 1.7 3.5-1.7 3.5-1.7"/><line x1=9 y1=9.2 x2=9.01 y2=9.2 /><line x1=15 y1=9.2 x2=15.01 y2=9.2 /></svg>';
   function esc(s){return Player.live.escapeHtml(s);}

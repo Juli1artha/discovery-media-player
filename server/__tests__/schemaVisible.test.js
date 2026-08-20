@@ -353,6 +353,18 @@ describe("la carte dit si l'identité interne est signée", () => {
     expect(cassee.contract, "la carte répond quand même").toBe(1);
   });
 
+  // ⚠️ STRICT DÉCLARÉ MAIS INERTE NE DOIT PAS SE LIRE « FERMÉ ». Sans capacité d'émettre, le refuser
+  // vraiment expulserait tous les anonymes : la porte reste ouverte, et la carte doit le dire — c'est
+  // ce booléen qu'un cockpit lit pour décider.
+  it("presenceStrict est EFFECTIF : posé sans capacité d'émettre, il se lit false", async () => {
+    const inerte = await carte({ presenceStrict: true }, { signPresenceToken: () => "" });
+    expect(inerte.presenceStrict, "annoncer fermé quand c'est ouvert est le pire des deux").toBe(false);
+    expect(inerte.presenceJetons, "et la carte dit pourquoi").toBe(false);
+
+    const arme = await carte({ presenceStrict: true }, { signPresenceToken: () => "j" });
+    expect(arme.presenceStrict).toBe(true);
+  });
+
   it("strict configuré : true — non configuré : false, jamais absent", async () => {
     expect((await carte({ internalStrict: true })).internalStrict).toBe(true);
     const nue = await carte({});

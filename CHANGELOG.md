@@ -10,6 +10,35 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.113] — 2026-08-20
+
+### Fixed (without a secret, a participant was refused by their own presence — and refused forever)
+
+- **The token is now signed BEFORE the write, so a bootstrap is only declared when one can actually be
+  issued.** It used to be minted *after*: the row was marked claimed while no token could be produced
+  (no `PLAYER_PRESENCE_SECRET`), so the next heartbeat bootstrapped again, hit its own claimed row
+  (`409`), and the client rotated its key — one extra participant per beat, up to the cap of 325. A
+  protection producing exactly what it forbids. Neither bench saw it: the client test always simulated
+  `{ok:true}`, the server test always had a working signer — and the state they missed is the most
+  ordinary one, a modern client deployed *before* the host sets the secret.
+- **`p_has_token` now has three states, not two.** Proven (member or valid token) → claims the row;
+  no proof → counts as legacy; **bootstrap → neither**. A bootstrap proves nothing, so it must not
+  claim the row (or a client that loses its token refuses itself) nor count as legacy (or `sansJeton`
+  never reaches zero, each new visitor producing one). The row is created free and claimed by the next
+  beat — the one carrying the token. On a host with no secret, beats count as *without* token, which is
+  honest and is what stops `sansJeton` from ever reaching zero there.
+- **`PLAYER_PRESENCE_STRICT` is inert without the ability to issue tokens, and the card says so.**
+  Enforcing it with no secret would refuse every anonymous participant. `presenceStrict` is now the
+  **effective** value, not the declared one — announcing a closed door that is wide open is the worse
+  of the two failures — and it is logged once an hour.
+- **A refused token is discarded by the client instead of being resent forever.** Expired, or signed
+  with a rotated secret, it produced `403 presence-token` on every beat while the client kept it in
+  storage: presence silently stopped being recorded with no path back. The client now drops the *token*
+  (keeping its key, which is still its own) and asks for a new one. Heartbeats are also single-flight,
+  so an older response cannot reinstate a stale token over a fresh one.
+- Guards mutation-tested against the previous code: four of the five no-secret tests fail on it,
+  reproducing the loop exactly ("beat 2: 409"). Reported by an external audit (P1).
+
 ## [0.1.112] — 2026-08-20
 
 ### Security / performance (the read cache kept what it no longer served, without limit)

@@ -111,18 +111,51 @@ async function traiter(req, res, body, _slug) {
           const jetonEntrant = (typeof PLAYER.identity.verifyPresenceToken === "function")
             ? PLAYER.identity.verifyPresenceToken(String(body.pt || "")) : null;
           const jetonValide = !!(jetonEntrant && jetonEntrant.slug === slug && jetonEntrant.key);
-          const bootstrap = !profil && !jetonValide && String(body.wantToken || "") === "1";
           const cleAnon = jetonValide ? String(jetonEntrant.key) : cleAnonyme(body.key);
-          // Le compteur de transition : true = moderne/prouvé (membre, jeton, ou bootstrap moderne) ;
-          // false = legacy (anonyme, ni jeton ni wantToken). Deux champs distincts en base (0017).
-          const hasToken = !!(profil || jetonValide || bootstrap);
+          // ⚠️ ON SIGNE AVANT D'ÉCRIRE, ET C'EST CE QUI FERMAIT UNE BOUCLE. Le jeton était fabriqué
+          // APRÈS l'écriture : on déclarait donc un bootstrap « moderne » sans savoir si un jeton
+          // pourrait seulement sortir. Sans `PLAYER_PRESENCE_SECRET`, la ligne était marquée réclamée
+          // et AUCUN jeton n'était renvoyé — le battement suivant repartait en bootstrap, tombait sur
+          // sa propre ligne réclamée (409), et le client faisait tourner sa clé. Chaque battement
+          // créait alors un participant de plus, jusqu'au plafond de 325. Une protection qui produit
+          // exactement ce qu'elle interdit. (Relevé par un audit externe.)
+          const jetonCandidat = (!profil && typeof PLAYER.identity.signPresenceToken === "function")
+            ? PLAYER.identity.signPresenceToken(slug, cleAnon, 7 * 24 * 3600) : "";
+          const peutEmettre = !!jetonCandidat;
+          // Un bootstrap n'est un bootstrap que si l'hôte peut RÉELLEMENT émettre. Sinon ce battement
+          // ne porte aucune preuve et n'en portera jamais : c'est un battement sans jeton, et le
+          // compteur doit le dire — c'est même ce qui empêche d'armer STRICT sur un hôte sans secret,
+          // puisque `sansJeton` n'y retombera jamais à zéro.
+          const bootstrap = !profil && !jetonValide && String(body.wantToken || "") === "1" && peutEmettre;
+          // ⚠️ TROIS ÉTATS, PAS DEUX. true = PROUVÉ (membre ou jeton valide) → last_token_at, la ligne
+          // devient réclamée. false = sans preuve (legacy, ou moderne sur un hôte sans secret) →
+          // last_no_token_at. null = BOOTSTRAP : ni l'un ni l'autre. Un bootstrap ne prouve rien — il
+          // ne doit donc pas réclamer la ligne (sinon un client qui perd son jeton se refuse lui-même)
+          // ni compter comme legacy (sinon `sansJeton` ne retomberait jamais à zéro, chaque nouveau
+          // visiteur en produisant un). La ligne est créée LIBRE ; elle sera réclamée au battement
+          // suivant, celui qui portera le jeton.
+          const hasToken = (profil || jetonValide) ? true : (bootstrap ? null : false);
           // ⚠️ PORTE STRICTE : une fois la transition finie (sansJeton===0) et PLAYER_PRESENCE_STRICT
           // posé, un battement LEGACY (anonyme, sans jeton ni bootstrap) n'est plus enregistré. Off par
           // défaut → aucun effet pendant la transition. ⚠️ RÉSIDU CONNU (à durcir en suivant) : un
           // bootstrap `wantToken` portant la clé d'un anonyme EXISTANT pourrait l'écraser sous strict —
           // exploitabilité faible (l'attaquant doit connaître un uid anonyme aléatoire, jamais exposé) ;
           // le fermer proprement demande à la RPC de refuser un bootstrap sur une clé déjà existante.
-          if (PLAYER.config && PLAYER.config.presenceStrict && !profil && !jetonValide && !bootstrap) {
+          // ⚠️ STRICT EST INERTE SANS CAPACITÉ D'ÉMETTRE — sinon il refuserait 100 % des participants
+          // anonymes, une panne auto-infligée : sans secret, personne ne PEUT obtenir de jeton. On
+          // dégrade donc, et on le DIT (la carte rend `presenceStrict` effectif, pas déclaré).
+          if (PLAYER.config && PLAYER.config.presenceStrict && !peutEmettre && !profil) {
+            try {
+              if (await PLAYER.limits.allow("presence:strict-inerte", 1, 3600)) {
+                PLAYER.errors.capture(new Error(
+                  "PLAYER_PRESENCE_STRICT est posé mais AUCUN jeton ne peut être émis "
+                  + "(PLAYER_PRESENCE_SECRET absent) : la porte reste OUVERTE. Armé tel quel, elle "
+                  + "refuserait tous les participants anonymes.",
+                ), { route: "present-attend" });
+              }
+            } catch { /* jamais bloquant */ }
+          }
+          if (PLAYER.config && PLAYER.config.presenceStrict && peutEmettre && !profil && !jetonValide && !bootstrap) {
             return jp(403, { ok: false, error: "presence-token" });
           }
           const r = await recordAttendance(slug, {
@@ -158,10 +191,7 @@ async function traiter(req, res, body, _slug) {
           // le visiteur repart sur une ligne neuve — une présence coupée en deux dans les statistiques
           // pour rien. Le rejeu reste borné par le scellé d'archive (0007, il porte aussi sur la table
           // des présences) : une présentation close refuse toute écriture, jeton valide ou non.
-          let pt = "";
-          if (!profil && r.ok && typeof PLAYER.identity.signPresenceToken === "function") {
-            pt = PLAYER.identity.signPresenceToken(slug, cleAnon, 7 * 24 * 3600);
-          }
+          const pt = (r.ok && jetonCandidat) ? jetonCandidat : "";
           return jp(r.ok ? 200 : (r.status || 400), pt ? { ...r, pt } : r);
         } catch { return jp(500, { ok: false }); }
       }

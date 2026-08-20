@@ -92,6 +92,31 @@ describe("client — le battement porte le jeton de présence", () => {
     expect(c.jeton()).toBe("");
   });
 
+  // ⚠️ Un jeton expiré, ou signé avec un secret que l'hôte a fait tourner, produit un 403
+  // presence-token à CHAQUE battement. Le client ne réagissait qu'à `pt` et `usurpe` : il gardait donc
+  // le jeton mort en stockage et le représentait indéfiniment — la présence cessait d'être
+  // enregistrée sans que rien ne reparte jamais.
+  it("jeton REFUSÉ (expiré / secret changé) : on jette le jeton, PAS la clé", async () => {
+    const c = monter({ reponse: { ok: false, error: "presence-token" } });
+    c.boite.set("3dd-present-attkey", "anon-a-moi");
+    c.boite.set("3dd-present-pt:s-1", "JETON-MORT");
+    c.envoyer();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(c.boite.has("3dd-present-pt:s-1"), "le jeton mort doit partir").toBe(false);
+    expect(c.boite.get("3dd-present-attkey"), "la clé reste : elle est encore la nôtre").toBe("anon-a-moi");
+    expect(c.jeton()).toBe("");
+  });
+
+  it("un seul battement EN VOL : un second appel pendant le premier ne part pas", async () => {
+    const c = monter({ reponse: { ok: true } });
+    c.envoyer();
+    c.envoyer();
+    expect(c.envois.length, "sinon une réponse ancienne peut réinstaller un jeton périmé").toBe(1);
+    await new Promise((r) => setTimeout(r, 0));
+    c.envoyer();
+    expect(c.envois.length, "une fois le premier retombé, le suivant repart").toBe(2);
+  });
+
   it("une réponse illisible ne casse pas le battement suivant", async () => {
     const envois = [];
     const debut = SRC.indexOf("var CLE_PT=");
