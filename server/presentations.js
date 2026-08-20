@@ -731,12 +731,19 @@ async function toggleReaction(slug, msgId, emoji, reactor, etat) {
 // Heartbeat d'un participant : upsert de sa ligne d'assistance. On accumule le temps de présence (intervalles
 // < 60 s → un aller-retour ne gonfle pas total_ms) et l'ensemble des pages vues (page courante de la présentation).
 const ATTEND_MAX_GAP_MS = 60 * 1000;
-async function recordAttendance(slug, presDejaCharge, { key, name, email, avatar, isMember, isPresenter }) {
+// ⚠️ SIGNATURE : `(slug, participant, { presentation })`. Le participant reste en 2e position — c'est
+// le contrat d'export PUBLIC (`./presentations`), un hôte tiers appelle `recordAttendance(slug,
+// participant)` à DEUX arguments. L'optimisation « présentation déjà chargée » vit dans un SAC
+// D'OPTIONS, pas dans un slot positionnel : la ranger en 2e position (ce que faisait 0.1.84) déplaçait
+// le vrai paramètre et faisait jeter `Cannot destructure property 'key'` sur un appel à deux arguments
+// (P1a audit CODEX 5.6). `participant || {}` : un appel sans participant tombe en 400, jamais en throw.
+async function recordAttendance(slug, participant, { presentation = null } = {}) {
+  const { key, name, email, avatar, isMember, isPresenter } = participant || {};
   if (!slug || !key) return { ok: false, status: 400 };
-  // ⚠️ La route vient DÉJÀ de charger la présentation (contrôle présentateur) : on la reçoit plutôt
-  // que d'en refaire une lecture par battement (P1 performance — un battement = un aller-retour DB
-  // de moins). Repli sur une lecture si l'appelant ne la fournit pas.
-  const pres = presDejaCharge || await getPresentation(slug);
+  // La route vient DÉJÀ de charger la présentation (contrôle présentateur) : elle la fournit dans les
+  // options plutôt que de la faire relire par battement (un battement = un aller-retour DB de moins).
+  // Repli sur une lecture si l'appelant ne la fournit pas — c'est le cas de l'appel public à 2 args.
+  const pres = presentation || await getPresentation(slug);
   if (!pres) return { ok: false, status: 404 };
   // ⚠️ La lecture est DÉJÀ faite ici : on s'en sert plutôt que d'en refaire une. Un battement de
   // présence sur une session close n'a rien à mettre à jour — et il en arrive à chaque onglet

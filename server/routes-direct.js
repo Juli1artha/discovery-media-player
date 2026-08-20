@@ -94,7 +94,7 @@ async function traiter(req, res, body, _slug) {
           // On dérive donc la clé de ce qui est prouvé, et jamais de ce qui est affirmé. Un anonyme,
           // lui, ne peut rien prouver : sa clé reste la sienne, mais enfermée dans un espace de noms
           // dont elle ne peut pas sortir — elle ne pourra jamais ressembler à l'e-mail d'un membre.
-          const r = await recordAttendance(String(body.slug || ""), pres, {
+          const r = await recordAttendance(String(body.slug || ""), {
             // ⚠️ MINUSCULÉE, ET CE DÉTAIL EST UNE LIGNE DE PRÉSENCE. La clé cliente que 0.1.42 a
             // remplacée l'était (`me.email.toLowerCase()`) ; la clé dérivée ne l'était pas, et la
             // ligne se retrouve par `attendee_key=eq.` — une correspondance EXACTE. Un hôte dont
@@ -110,7 +110,7 @@ async function traiter(req, res, body, _slug) {
             email: profil ? profil.email : body.email,
             avatar: (profil && profil.avatar) || body.avatar,
             isMember: !!profil, isPresenter: estPresentateur,
-          });
+          }, { presentation: pres });
           return jp(r.ok ? 200 : (r.status || 400), r);
         } catch { return jp(500, { ok: false }); }
       }

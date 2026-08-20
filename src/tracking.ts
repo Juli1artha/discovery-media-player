@@ -16,7 +16,11 @@
 /** Transport d'un événement. Injectable pour les tests ; par défaut `sendBeacon`, repli `fetch`. */
 import { SESSION_IDLE_MS, SESSION_INTERVAL_MS } from "./cadence";
 
-export type TrackerTransport = (payload: Record<string, unknown>) => void;
+// ⚠️ Le transport signale un ÉCHEC en rendant exactement `false` (sendBeacon file pleine, exception).
+// Toute autre valeur — `void`, `true`, ou même le retour fortuit d'un `Array.push` — vaut « parti, ou
+// on n'en sait rien » → succès. Le type reste donc permissif (`unknown`) pour ne rien imposer aux
+// transports existants ; seule la comparaison `=== false` porte le sens.
+export type TrackerTransport = (payload: Record<string, unknown>) => unknown;
 
 export interface TrackerOptions {
   /** Lien tracé public. Absent en aperçu interne. */
@@ -114,16 +118,20 @@ function defaultTransport(endpoint: string, win: Window): TrackerTransport {
       const body = JSON.stringify(payload);
       const nav = win.navigator;
       if (nav && typeof nav.sendBeacon === "function") {
-        nav.sendBeacon(endpoint, new Blob([body], { type: "application/json" }));
-      } else {
-        win.fetch(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body,
-          keepalive: true,
-        });
+        // sendBeacon rend `false` quand le navigateur REFUSE la mise en file (quota dépassé) : on le
+        // propage tel quel pour que le traceur sache qu'il faudra réessayer.
+        return nav.sendBeacon(endpoint, new Blob([body], { type: "application/json" }));
       }
-    } catch { /* le suivi ne doit jamais empêcher de lire le document */ }
+      win.fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+        keepalive: true,
+      });
+      // fetch keepalive : on ne saura de l'échec qu'à la résolution, trop tard pour ce tick. On
+      // considère l'envoi parti (best-effort) — c'est le comportement d'avant, préservé.
+      return true;
+    } catch { return false; /* le suivi ne doit jamais empêcher de lire le document */ }
   };
 }
 
@@ -155,11 +163,13 @@ export function createTracker(options: TrackerOptions = {}): Tracker {
   // Ni slug ni contexte interne : rien à rattacher, on n'envoie rien (aperçu d'un membre non identifié).
   const canReport = () => !!slug || !!internal;
 
-  const post = (payload: Record<string, unknown>) => {
-    if (!canReport()) return;
-    // Le suivi ne doit JAMAIS empêcher de lire le document : réseau coupé, `sendBeacon` refusé,
-    // transport tiers qui lève — on perd la mesure, jamais la lecture.
-    try { send(payload); } catch { /* best-effort */ }
+  // Rend `true` si l'envoi est PARTI (ou supposé parti), `false` s'il a explicitement échoué. Le
+  // suivi ne doit JAMAIS empêcher de lire le document : réseau coupé, `sendBeacon` refusé, transport
+  // tiers qui lève — on perd la mesure de ce tick, jamais la lecture, et l'appelant décidera de
+  // réessayer. Un `send` qui ne renvoie rien (`void`) est traité comme un succès (compat).
+  const post = (payload: Record<string, unknown>): boolean => {
+    if (!canReport()) return false;
+    try { return send(payload) !== false; } catch { return false; }
   };
 
   /**
@@ -277,11 +287,11 @@ export function createTracker(options: TrackerOptions = {}): Tracker {
     } else {
       payload.slug = slug;
     }
-    // La signature n'est retenue que quand l'envoi part réellement (le transport est best-effort ;
-    // s'il jette, `post` avale — on n'aggrave pas en oubliant qu'on a « envoyé »). Un tick suivant
-    // à mesure inchangée sera alors sauté ; un tick à mesure nouvelle repartira quoi qu'il arrive.
-    derniereSignatureEnvoyee = signature;
-    post(payload);
+    // ⚠️ SIGNATURE RETENUE SEULEMENT SI L'ENVOI EST PARTI (P2 audit 5.6, ma régression de 0.1.85).
+    // La retenir avant l'envoi verrouillait la mesure : un `post` raté (sendBeacon refusé, exception
+    // avalée) faisait sauter le tick suivant à mesure identique — dernière mesure perdue si le
+    // lecteur ferme après. Ratée → signature inchangée → le prochain tick réessaie.
+    if (post(payload)) derniereSignatureEnvoyee = signature;
   };
 
   const on = (
