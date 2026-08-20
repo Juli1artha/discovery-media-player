@@ -398,27 +398,42 @@ create or replace function public.player_attendance_bump(
   p_is_presenter boolean,
   p_max_gap_ms   integer,
   p_anon_cap     integer,
-  p_has_token    boolean default null
+  p_has_token    boolean default null,
+  p_only_if_unclaimed boolean default null
 )
-returns table (ok boolean, created boolean, capped boolean)
+returns table (ok boolean, created boolean, capped boolean, usurpe boolean)
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
   v_exists boolean;
+  v_claimed boolean;
   v_count  integer;
   v_page   integer := greatest(1, coalesce(p_page, 1));
 begin
-  select true into v_exists
+  -- On lit l'existence ET l'état « réclamée » en un seul geste : un bootstrap n'a rien à écrire sur
+  -- une ligne dont un porteur de jeton s'est déjà servi.
+  select true, (last_token_at is not null) into v_exists, v_claimed
     from public.doc_presentation_attendees
     where slug = p_slug and attendee_key = p_key;
 
+  if p_only_if_unclaimed is true and coalesce(v_exists, false) and coalesce(v_claimed, false) then
+    return query select false, false, false, true;   -- usurpation : on n'écrit RIEN
+    return;
+  end if;
+
   if not coalesce(v_exists, false) and not p_is_member and not p_is_presenter then
     perform pg_advisory_xact_lock(hashtextextended(p_slug || '|' || coalesce(p_ip_hash, ''), 0));
-    select true into v_exists
+    -- Re-lire sous le verrou : la ligne a pu naître entre-temps — et si elle est née RÉCLAMÉE, un
+    -- bootstrap concurrent ne doit pas davantage l'écraser ici qu'au premier contrôle.
+    select true, (last_token_at is not null) into v_exists, v_claimed
       from public.doc_presentation_attendees
       where slug = p_slug and attendee_key = p_key;
+    if p_only_if_unclaimed is true and coalesce(v_exists, false) and coalesce(v_claimed, false) then
+      return query select false, false, false, true;
+      return;
+    end if;
     if not coalesce(v_exists, false) then
       select count(*) into v_count
         from public.doc_presentation_attendees
@@ -426,7 +441,7 @@ begin
           and creator_ip_hash is not distinct from p_ip_hash
           and is_member = false and is_presenter = false;
       if v_count >= p_anon_cap then
-        return query select false, false, true;
+        return query select false, false, true, false;
         return;
       end if;
     end if;
@@ -456,17 +471,17 @@ begin
         last_token_at    = case when p_has_token is true  then now() else l.last_token_at    end,
         last_no_token_at = case when p_has_token is false then now() else l.last_no_token_at end;
 
-  return query select true, not coalesce(v_exists, false), false;
+  return query select true, not coalesce(v_exists, false), false, false;
 end;
 $$;
-revoke all on function public.player_attendance_bump(text, text, text, integer, text, text, boolean, boolean, integer, integer, boolean) from public;
+revoke all on function public.player_attendance_bump(text, text, text, integer, text, text, boolean, boolean, integer, integer, boolean, boolean) from public;
 do $$
 declare
   r text;
 begin
   foreach r in array array['anon', 'authenticated'] loop
     if exists (select 1 from pg_roles where rolname = r) then
-      execute format('revoke all on function public.player_attendance_bump(text, text, text, integer, text, text, boolean, boolean, integer, integer, boolean) from %I', r);
+      execute format('revoke all on function public.player_attendance_bump(text, text, text, integer, text, text, boolean, boolean, integer, integer, boolean, boolean) from %I', r);
     end if;
   end loop;
 end
@@ -474,7 +489,7 @@ $$;
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'service_role') then
-    grant execute on function public.player_attendance_bump(text, text, text, integer, text, text, boolean, boolean, integer, integer, boolean) to service_role;
+    grant execute on function public.player_attendance_bump(text, text, text, integer, text, text, boolean, boolean, integer, integer, boolean, boolean) to service_role;
   end if;
 end
 $$;
