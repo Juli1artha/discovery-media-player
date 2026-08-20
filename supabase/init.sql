@@ -206,7 +206,10 @@ create table if not exists public.doc_presentation_messages (
   client_key    text,
   -- Rang de la dernière écriture de réactions acceptée : deux réactions simultanées ne
   -- s'écrasent plus — l'écriture conditionnée à un rang dépassé ne modifie rien, le serveur rejoue.
-  reactions_seq bigint not null default 0
+  reactions_seq bigint not null default 0,
+  -- Rang GLOBAL bumpé à chaque écriture (insert/update) par le trigger dpm_bump_modseq : le client
+  -- relit `mod_seq > curseur` au lieu des 300 derniers à chaque signal. Cf. migration 0016.
+  mod_seq       bigint
 );
 create index if not exists dpm_slug_idx on public.doc_presentation_messages (slug, created_at);
 -- ⚠️ Portée sur (slug, client_key), pas sur la clé seule : deux présentations n'ont aucune raison
@@ -217,6 +220,31 @@ alter table public.doc_presentation_messages
 create unique index if not exists dpm_client_key_uniq
   on public.doc_presentation_messages (slug, client_key)
   where client_key is not null;
+
+-- Chat différentiel (migration 0016) : rang global monotone bumpé à chaque écriture par un trigger.
+-- ⚠️ RÈGLE (sixième audit) : la colonne est assurée par un ALTER AVANT son index — sur une base d'hier,
+-- `create table if not exists` saute le corps et `mod_seq` n'existerait qu'ici.
+alter table public.doc_presentation_messages
+  add column if not exists mod_seq bigint;
+create sequence if not exists public.doc_presentation_messages_modseq;
+create or replace function public.player_bump_message_seq()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.mod_seq := nextval('public.doc_presentation_messages_modseq');
+  return new;
+end;
+$$;
+drop trigger if exists dpm_bump_modseq on public.doc_presentation_messages;
+create trigger dpm_bump_modseq
+  before insert or update on public.doc_presentation_messages
+  for each row execute function public.player_bump_message_seq();
+update public.doc_presentation_messages
+  set mod_seq = nextval('public.doc_presentation_messages_modseq')
+  where mod_seq is null;
+create index if not exists idx_dpm_slug_modseq
+  on public.doc_presentation_messages (slug, mod_seq);
 
 create table if not exists public.doc_presentation_attendees (
   slug         text not null,

@@ -69,6 +69,14 @@ const ATTENDUES = {
     migration: "supabase/migrations/0015-presence-atomique.sql",
     fonction: "écrire la présence atomiquement et plafonner la création de faux participants anonymes",
   },
+  // Chat différentiel : la colonne `mod_seq` (bumpée par trigger) est ce que le code sonde AVANT de
+  // servir en différentiel. Absente → on sert les 300 derniers comme avant (cf. listMessages). Ici la
+  // colonne EST le vrai signal de dégradation (le code la sonde), pas seulement un témoin — cas franc.
+  chatDifferentiel: {
+    table: "doc_presentation_messages", colonne: "mod_seq",
+    migration: "supabase/migrations/0016-chat-differentiel.sql",
+    fonction: "relire le chat en différentiel (mod_seq > curseur) au lieu des 300 derniers à chaque signal",
+  },
 };
 
 /**

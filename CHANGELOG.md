@@ -10,6 +10,23 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.90] — 2026-08-20
+
+### Changed (performance — differential chat, audit CODEX 5.6 "scalable architecture")
+
+- **The chat no longer re-reads its last 300 messages on every resync — only what changed since.**
+  Each audience resync re-fetched the 300 most recent messages; for a room of N viewers that is N×300
+  rows moved while almost nothing changed between two signals. A chat is mutable (an old message gets
+  a reaction, is edited, is deleted), so an `id` cursor would miss those. Migration 0016 adds `mod_seq`
+  — a global rank bumped on EVERY write (insert and update) by a trigger from a sequence (the IMAP
+  CONDSTORE pattern). The client keeps the highest `mod_seq` it has seen and asks `mod_seq > cursor`:
+  it gets new messages AND older ones that changed, nothing else. The client's existing merge
+  (`addMsg`/`updateMsg`, by id) already handles both. The 400 ms shared read-cache keys on the cursor,
+  so a whole room caught up to the same message still shares one DB read. **Degrades if the migration
+  is absent**: the server probes the `mod_seq` column and, when missing, serves the last 300 as before
+  (the client stays on full refresh) — no `mod_seq` in the select, so PostgREST never rejects the
+  query. Trigger behaviour proven under real Postgres in `base/`.
+
 ## [0.1.89] — 2026-08-20
 
 ### Fixed (schema health card no longer over-reports "complete")
