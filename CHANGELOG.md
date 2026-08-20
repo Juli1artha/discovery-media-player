@@ -10,6 +10,29 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.102] — 2026-08-20
+
+### Fixed (the coverage floors were set to fail on normal housekeeping — which is how a guard dies)
+
+- **Floors are now collapse detectors with a dated witness, not coverage measurements.** 0.1.100 pinned
+  each floor to the day's exact reading, which detects the smallest erosion — and also reddens on the
+  first legitimate removal. At the third false positive someone lowers it, with no principled place to
+  stop, because nothing in the file says what the number protects. That is the exact gesture that
+  empties a guard: **a guard that cries wolf gets loosened, and nobody then checks that it still guards
+  anything** — this repo has the proof, since the same scan produced seven false positives and the
+  correct reflex (tightening it) could just as easily have disarmed it. Thresholds are now wide enough
+  that no normal housekeeping reaches them and a collapse crosses them at once, with the dated reading
+  written beside them as a witness. Reported and designed by the second host, after applying the same
+  remedy to their own guard.
+- **Each floor is now reasoned per guard rather than by blanket rule.** The migrations `add column`
+  count is **strictly monotonic** — a migration is never deleted, and another guard forbids `drop
+  column` — so no legitimate housekeeping can lower it: there the exact value has no false-positive
+  cost and maximum sensitivity, and it stays exact, with the reason written down.
+- **A per-file floor now backs the global one.** A file that grows must not mask a file that empties.
+  This is not theoretical: mutation-testing showed a broken write-pattern draining `routes-liens.js` to
+  zero **while the global total stayed above its threshold** — that mutation passes without the
+  per-file assertion. Both floors were seen to refuse before committing.
+
 ## [0.1.101] — 2026-08-20
 
 ### Security (P1c step 2 — a bootstrap can no longer seize a claimed presence; STRICT is now safe to arm)

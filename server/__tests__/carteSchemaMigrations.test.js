@@ -42,9 +42,15 @@ function colonnesAjouteesParMigration() {
 }
 
 describe("la carte de schéma suit les migrations qui ajoutent une colonne", () => {
-  // ⚠️ MÊME PLANCHER, MÊME RAISON (cf. cheminDeMigration.test.js) : `> 3` sur un balayage qui voit 10
-  // `add column` laissait la couverture tomber des deux tiers sans un rouge. Un plancher affirmé fait
-  // échouer un balayage qui cesse de voir, au lieu de le laisser rétrécir en silence.
+  // ⚠️ PLANCHER — ET ICI, CONTRAIREMENT AUX AUTRES, IL EST EXACT. Le raisonnement général (seuil large,
+  // cf. cheminDeMigration.test.js) vient de ce qu'un plancher qui rougit sur un ménage normal finit
+  // desserré. Mais ce balayage-ci compte les `add column` du dossier des migrations, et ce nombre est
+  // STRICTEMENT MONOTONE par construction : une migration n'est jamais supprimée (elle a déjà tourné
+  // chez des hôtes), et une autre garde de ce fichier interdit `drop column`. Il n'existe donc AUCUN
+  // ménage légitime qui le fasse baisser — l'exactitude n'a pas de coût en faux positifs, et donne la
+  // sensibilité maximale. Une règle s'applique en raisonnant sur ce qu'elle protège, pas en bloc.
+  //
+  // RELEVÉ DU JOUR — témoin daté : 10 ajouts de colonnes le 2026-08-20.
   const PLANCHER_AJOUTS = 10;
 
   it("le balayage voit au moins autant d'ajouts de colonnes qu'au jour où on l'a mesuré", () => {
@@ -52,7 +58,8 @@ describe("la carte de schéma suit les migrations qui ajoutent une colonne", () 
     expect(vus,
       `le balayage ne voit plus que ${vus} ajouts de colonnes, contre ${PLANCHER_AJOUTS} attendus.\n`
       + "Une migration a probablement écrit son ALTER sous une forme que ce motif ne reconnaît pas.\n"
-      + "Étendez le motif, ou baissez PLANCHER_AJOUTS dans le même diff si la baisse est légitime.")
+      + "Ce nombre est monotone (aucune migration ne disparaît) : une BAISSE est donc toujours une\n"
+      + "perte de vue du balayage, jamais un ménage. Étendez le motif ; ne baissez pas le plancher.")
       .toBeGreaterThanOrEqual(PLANCHER_AJOUTS);
   });
 

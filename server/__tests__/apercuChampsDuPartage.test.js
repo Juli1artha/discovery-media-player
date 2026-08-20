@@ -75,18 +75,21 @@ describe("l'aperçu ne perd aucun champ par accident", () => {
   const lus = champsLus();
   const fournis = champsFournis();
 
-  // ⚠️ PLANCHER DE COUVERTURE, au niveau RÉEL (raisonnement complet dans cheminDeMigration.test.js).
-  // `> 10` sur un balayage qui lit 34 champs autorisait une chute des deux tiers sans un seul rouge —
-  // et c'est exactement ainsi qu'une garde de ce type s'est vidée ailleurs dans ce dépôt, rattrapée
-  // par une habitude de lecture et non par un mécanisme. Une garde à couverture nulle passe tous ses
-  // tests. Baisser ce nombre doit être un geste délibéré, visible dans un diff.
-  const PLANCHER_CHAMPS = 34;
+  // ⚠️ PLANCHER — DÉTECTEUR D'EFFONDREMENT, PAS MESURE DE COUVERTURE (raisonnement complet dans
+  // cheminDeMigration.test.js). `> 10` sur un balayage qui lit 34 champs autorisait une chute des deux
+  // tiers sans un rouge. Mais le coller à 34 le ferait rougir au premier champ légitimement retiré de
+  // l'aperçu — et une garde qui crie à tort se fait desserrer, ce qui la vide pour de bon. Un champ
+  // d'aperçu se retire vraiment de temps en temps (contrairement aux migrations, qui ne disparaissent
+  // jamais) : le seuil est donc LARGE, et le relevé du jour vit à côté, daté, comme témoin.
+  //
+  // RELEVÉ DU JOUR — témoin daté : 34 champs lus le 2026-08-20.
+  const PLANCHER_CHAMPS = 25;
 
   it("la page lit au moins autant de champs du partage qu'au jour où on l'a mesuré", () => {
     expect(lus.length,
-      `le balayage ne lit plus que ${lus.length} champs, contre ${PLANCHER_CHAMPS} attendus — la page a\n`
-      + "probablement changé de FORME de lecture et cette garde a cessé de la voir. Étendez le balayage,\n"
-      + "ou baissez PLANCHER_CHAMPS dans le même diff si la baisse est légitime.")
+      `le balayage ne lit plus que ${lus.length} champs (34 le 2026-08-20) — la page a\n`
+      + "probablement changé de FORME de lecture et cette garde a cessé de la voir. Ce seuil est large\n"
+      + "exprès : le franchir n'est pas un ménage, c'est un effondrement. Étendez le balayage.")
       .toBeGreaterThanOrEqual(PLANCHER_CHAMPS);
   });
 
