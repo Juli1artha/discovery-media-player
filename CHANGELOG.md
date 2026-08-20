@@ -10,6 +10,30 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.99] — 2026-08-20
+
+### Fixed (code-new-on-old-base lost 0015's cap — and the warning named the wrong file)
+
+- **The RPC call no longer sends `p_has_token` when migration 0017 is absent.** PostgREST resolves an
+  RPC by its NAMED ARGUMENT SET: an extra argument does not "take its default", it matches no function
+  at all — 404. The `DEFAULT null` in 0017 makes a NEW base compatible with OLD code; it can do nothing
+  for the reverse — new code, old base — which is exactly the order a real deployment happens in (code
+  ships before the migration). So between 0.1.97 and applying 0017, an up-to-date host fell through to
+  the read-modify-write fallback and **lost the anonymous-creation cap that 0015 introduced**: not "the
+  presence keeps working", but a guard vanishing silently between two migrations. The code now probes
+  the `last_token_at` column (the answer already existed) and calls with 10 arguments when it is
+  missing — the old contract, valid on both bases. Degradation is now what we claim: no transition
+  counter, nothing else.
+- **The fallback warning names the migration actually attempted.** It hard-coded 0015, so an operator
+  hitting the 0017 failure verified 0015, found it applied, and concluded false positive. A wrong name
+  is worse than no name because it is actionable: "name the file, not the error" only holds while ONE
+  file can cause the failure. Both reported by the second host, who measured the intermediate state on
+  his base instead of assuming it.
+- **The schema guard sees named request bodies again.** Moving the RPC body into a variable made nine
+  columns vanish from the guard's enumeration with no red — caught by diffing the test counts (994 →
+  985), not by a failure. The scan now follows identifiers passed as `body:` to `PLAYER.db.request`,
+  so a guard's coverage no longer shrinks when the code it guards improves.
+
 ## [0.1.98] — 2026-08-20
 
 ### Added (P1c step 2, increment 3 — the client carries the token; the loop is closed)

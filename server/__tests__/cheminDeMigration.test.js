@@ -113,6 +113,28 @@ describe("toute colonne écrite par le code est déclarée", () => {
       for (const m of src.matchAll(/const row = \{([^}]*)\}/g)) {
         for (const c of m[1].matchAll(/\b([a-z][a-z0-9_]{2,})\s*:/g)) noms.add(c[1]);
       }
+      // ⚠️ ET LES CORPS NOMMÉS — `const corps = {…}` puis `body: corps`. TROISIÈME fois que la
+      // couverture de cette garde RÉTRÉCIT quand le code s'améliore : sortir un littéral dans une
+      // variable (pour le construire conditionnellement) le rendait invisible, et neuf colonnes ont
+      // disparu de l'énumération SANS un seul rouge — vu au diff des comptes (994 → 985), pas à un
+      // échec. On ne code pas un nom en dur : on lit les identifiants réellement passés en `body:`,
+      // puis on va chercher leur déclaration. La garde suit le code au lieu de se vider avec lui.
+      // ⚠️ On ne lit QUE les corps passés à `PLAYER.db.request` — une écriture BASE. Un premier essai
+      // cherchait tout `body: <ident>` et ramassait des corps de RÉPONSE (`status`, `summary`,
+      // `members`…) : sept faux positifs d'un coup. Une garde de schéma qui accuse des non-colonnes se
+      // fait desserrer, donc elle doit viser le puits réel, pas la forme syntaxique la plus proche.
+      for (const appel of src.matchAll(/PLAYER\.db\.request\([\s\S]{0,400}?body:\s*\[?\s*([A-Za-z_$][\w$]*)\s*\]?[\s,)]/g)) {
+        const nom = appel[1];
+        if (nom === "row") continue;   // déjà couvert, et avec un motif plus sûr, juste au-dessus
+        // ⚠️ `[^}]*` — ARRÊT À LA PREMIÈRE ACCOLADE, comme les motifs voisins. Un `[\s\S]*?` non gourmand
+        // paraissait plus général : il enjambait en réalité des blocs entiers et ramassait des mots de
+        // COMMENTAIRE comme s'ils étaient des colonnes (« vol », « pas », « plus »…). Une garde de
+        // schéma qui invente des coupables se fait desserrer — c'est la note du balayage d'origine.
+        const decl = new RegExp(`const ${nom}\\s*=\\s*\\{([^}]*)\\}`, "g");
+        for (const d of src.matchAll(decl)) {
+          for (const c of d[1].matchAll(/\b([a-z][a-z0-9_]{2,})\s*:/g)) noms.add(c[1]);
+        }
+      }
     }
     return [...noms];
   }

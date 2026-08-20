@@ -787,20 +787,30 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
   // lire-modifier-réécrire ci-dessous — toujours correcte, mais SANS le plafond — et on le dit une
   // fois. Même patron que player_rate_limit_bump : dégrader, jamais casser, jamais en silence.
   const capAnon = Number(anonCap) > 0 ? Math.trunc(Number(anonCap)) : PLAFOND_CREATION_ANON_DEFAUT;
+  // ⚠️ ON N'ENVOIE `p_has_token` QUE SI 0017 EST LÀ — ET C'EST LA MOITIÉ MANQUANTE DE LA COMPATIBILITÉ.
+  //
+  // PostgREST résout une RPC par JEU D'ARGUMENTS NOMMÉS : un argument en trop ne « prend pas son
+  // défaut », il ne correspond à AUCUNE fonction → 404. Le `DEFAULT null` de 0017 rend donc la base
+  // NEUVE compatible avec du CODE ANCIEN ; il ne peut rien pour le sens INVERSE — code neuf, base
+  // ancienne — qui est précisément l'ordre d'un déploiement réel : le code part avant la migration.
+  //
+  // Sans cette garde, un hôte à jour mais pas encore migré tombait dans le repli lire-modifier-
+  // réécrire, c'est-à-dire PERDAIT LE PLAFOND de création de faux participants apporté par 0015 : une
+  // garde disparaissait en silence entre deux migrations. On sonde donc la colonne (la réponse existe
+  // déjà) et on appelle à 10 arguments quand elle manque — l'ancien contrat, valide sur les DEUX bases.
+  // La dégradation redevient alors ce qu'on annonce : pas de compteur de transition, rien d'autre.
+  // (relevé du second hôte, qui l'a MESURÉ sur sa base au lieu de le supposer)
+  const transitionDispo = await require("./schema").attendue("jetonPresence");
+  const corpsRpc = {
+    p_slug: String(slug), p_key: String(key), p_ip_hash: ipHash || null, p_page: page,
+    p_name: (name || "").slice(0, 120), p_avatar: (avatar || "").slice(0, 600),
+    p_is_member: !!isMember, p_is_presenter: !!isPresenter,
+    p_max_gap_ms: ATTEND_MAX_GAP_MS, p_anon_cap: capAnon,
+  };
+  // true → last_token_at, false → last_no_token_at, null → ni l'un ni l'autre. 0017 seulement.
+  if (transitionDispo) corpsRpc.p_has_token = hasToken == null ? null : !!hasToken;
   try {
-    const r = await PLAYER.db.request("rpc/player_attendance_bump", {
-      method: "POST",
-      body: {
-        p_slug: String(slug), p_key: String(key), p_ip_hash: ipHash || null, p_page: page,
-        p_name: (name || "").slice(0, 120), p_avatar: (avatar || "").slice(0, 600),
-        p_is_member: !!isMember, p_is_presenter: !!isPresenter,
-        p_max_gap_ms: ATTEND_MAX_GAP_MS, p_anon_cap: capAnon,
-        // Transition du jeton (0017) : true → last_token_at, false → last_no_token_at, null → ni l'un ni
-        // l'autre. La RPC 11-args (p_has_token DEFAULT null) accepte l'appel même sans la 0017 côté code
-        // ancien ; sans la 0017 côté base, la 11-args n'existe pas → on tombe dans le repli ci-dessous.
-        p_has_token: hasToken == null ? null : !!hasToken,
-      },
-    });
+    const r = await PLAYER.db.request("rpc/player_attendance_bump", { method: "POST", body: corpsRpc });
     const ligne = Array.isArray(r) ? r[0] : r;
     if (ligne && typeof ligne.ok === "boolean") {
       // Plafond de création atteint : on ne crée pas ce faux participant. 429 = « trop », pas une panne.
@@ -812,8 +822,17 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
     if (!_avertRpcPresence) {
       _avertRpcPresence = true;
       try {
+        // ⚠️ ON NOMME LE FICHIER QU'ON VIENT VRAIMENT D'ESSAYER — un nom FAUX est pire qu'un nom
+        // absent, parce qu'il est ACTIONNABLE : l'exploitant vérifie la migration nommée, la trouve
+        // appliquée, et conclut au faux positif. C'est ce qui arrivait quand ce message accusait 0015
+        // alors que l'échec venait de l'argument `p_has_token` de 0017 (relevé du second hôte). La
+        // règle « on nomme le fichier, pas l'erreur » ne tient que tant qu'UN SEUL fichier peut causer
+        // l'échec ; dès qu'un second emprunte le même chemin, le nom doit se DÉDUIRE de la tentative.
+        const fichier = transitionDispo
+          ? "supabase/migrations/0017-jeton-presence.sql (ou 0015-presence-atomique.sql)"
+          : "supabase/migrations/0015-presence-atomique.sql";
         PLAYER.errors.capture(new Error(
-          "présence non atomique : appliquez supabase/migrations/0015-presence-atomique.sql. "
+          "présence non atomique : appliquez " + fichier + ". "
           + "Sans elle, la présence est écrite par lire-modifier-réécrire (correct) mais le plafond "
           + "de création de faux participants anonymes n'est pas appliqué. "
           + "(" + ((erreur && erreur.message) || erreur) + ")",
