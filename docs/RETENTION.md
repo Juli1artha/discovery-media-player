@@ -93,6 +93,7 @@ Une présentation **inactive** (terminée ou abandonnée) est une archive : **pu
 | `doc_presentation_attendees.name` / `doc_presentation_attendees.email` / `doc_presentation_attendees.avatar` | identité du participant | purgées avec la présentation |
 | `doc_presentation_attendees.attendee_key` | identifiant de présence | idem |
 | `doc_presentation_attendees.creator_ip_hash` | **empreinte tronquée** de l'IP qui a créé la ligne (jamais l'IP en clair) — sert au plafond de création anonyme (migration 0015) | purgée avec la présentation |
+| `doc_presentation_attendees.last_token_at` / `doc_presentation_attendees.last_no_token_at` | horodatage du dernier battement avec / sans jeton de présence — sert au compteur de transition (migration 0017), aucune donnée d'identité | purgés avec la présentation |
 | `doc_presentation_attendees.pages` | pages vues par le participant | idem |
 
 ## Sessions d'agent (`doc_bot_sessions`)
