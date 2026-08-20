@@ -20,6 +20,8 @@ function harnais() {
     errors: { capture() {} },
     db: {
       async request(chemin, o) {
+        // Ce banc éprouve le CONTRAT d'appel (2 vs 3 args) via la boucle de repli : RPC 0015 absente.
+        if (chemin.startsWith("rpc/player_attendance_bump")) throw new Error("404 : Could not find the function");
         if (chemin.startsWith("doc_presentations?")) {
           etat.lecturesPres += 1;
           return [{ slug: "s", active: true, control_hash: "h", current_page: 2 }];

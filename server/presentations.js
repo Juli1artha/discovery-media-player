@@ -731,13 +731,21 @@ async function toggleReaction(slug, msgId, emoji, reactor, etat) {
 // Heartbeat d'un participant : upsert de sa ligne d'assistance. On accumule le temps de présence (intervalles
 // < 60 s → un aller-retour ne gonfle pas total_ms) et l'ensemble des pages vues (page courante de la présentation).
 const ATTEND_MAX_GAP_MS = 60 * 1000;
+// Plafond de création de participants ANONYMES par (présentation, IP). Défaut = ATTENDEES_PER_EGRESS
+// (250, la cible de mutualisation par sortie internet) × 1,3 = 325 ; l'hôte peut le passer autrement.
+// Ne borne QUE les nouvelles clés anon — jamais l'actualisation d'une clé déjà enregistrée, ni les
+// membres/le présentateur (identité prouvée). Appliqué atomiquement par le RPC `player_attendance_bump`.
+const PLAFOND_CREATION_ANON_DEFAUT = 325;
+// L'avertissement « RPC de présence absente » ne se dit qu'UNE fois par processus : répété à chaque
+// battement, il noierait le journal (un battement toutes les 25 s par participant).
+let _avertRpcPresence = false;
 // ⚠️ SIGNATURE : `(slug, participant, { presentation })`. Le participant reste en 2e position — c'est
 // le contrat d'export PUBLIC (`./presentations`), un hôte tiers appelle `recordAttendance(slug,
 // participant)` à DEUX arguments. L'optimisation « présentation déjà chargée » vit dans un SAC
 // D'OPTIONS, pas dans un slot positionnel : la ranger en 2e position (ce que faisait 0.1.84) déplaçait
 // le vrai paramètre et faisait jeter `Cannot destructure property 'key'` sur un appel à deux arguments
 // (P1a audit CODEX 5.6). `participant || {}` : un appel sans participant tombe en 400, jamais en throw.
-async function recordAttendance(slug, participant, { presentation = null } = {}) {
+async function recordAttendance(slug, participant, { presentation = null, ipHash = null, anonCap = null } = {}) {
   const { key, name, email, avatar, isMember, isPresenter } = participant || {};
   if (!slug || !key) return { ok: false, status: 400 };
   // La route vient DÉJÀ de charger la présentation (contrôle présentateur) : elle la fournit dans les
@@ -750,6 +758,43 @@ async function recordAttendance(slug, participant, { presentation = null } = {})
   // resté ouvert, longtemps après la fin.
   if (pres.active === false && pres.control_hash == null) return REFUS_ARCHIVE;
   const page = Math.max(1, Math.trunc(Number(pres.current_page) || 1));
+
+  // ⚠️ CHEMIN ATOMIQUE (migration 0015) : upsert ET plafond de création anonyme en UN geste, à l'abri
+  // des créations concurrentes. Absent (404, migration non appliquée) → on retombe sur la boucle
+  // lire-modifier-réécrire ci-dessous — toujours correcte, mais SANS le plafond — et on le dit une
+  // fois. Même patron que player_rate_limit_bump : dégrader, jamais casser, jamais en silence.
+  const capAnon = Number(anonCap) > 0 ? Math.trunc(Number(anonCap)) : PLAFOND_CREATION_ANON_DEFAUT;
+  try {
+    const r = await PLAYER.db.request("rpc/player_attendance_bump", {
+      method: "POST",
+      body: {
+        p_slug: String(slug), p_key: String(key), p_ip_hash: ipHash || null, p_page: page,
+        p_name: (name || "").slice(0, 120), p_avatar: (avatar || "").slice(0, 600),
+        p_is_member: !!isMember, p_is_presenter: !!isPresenter,
+        p_max_gap_ms: ATTEND_MAX_GAP_MS, p_anon_cap: capAnon,
+      },
+    });
+    const ligne = Array.isArray(r) ? r[0] : r;
+    if (ligne && typeof ligne.ok === "boolean") {
+      // Plafond de création atteint : on ne crée pas ce faux participant. 429 = « trop », pas une panne.
+      if (ligne.capped) return { ok: false, status: 429 };
+      return { ok: true };
+    }
+    // Forme inattendue : on n'invente pas de verdict, on laisse la boucle de repli faire l'écriture.
+  } catch (erreur) {
+    if (!_avertRpcPresence) {
+      _avertRpcPresence = true;
+      try {
+        PLAYER.errors.capture(new Error(
+          "présence non atomique : appliquez supabase/migrations/0015-presence-atomique.sql. "
+          + "Sans elle, la présence est écrite par lire-modifier-réécrire (correct) mais le plafond "
+          + "de création de faux participants anonymes n'est pas appliqué. "
+          + "(" + ((erreur && erreur.message) || erreur) + ")",
+        ), { route: "present-attend" });
+      } catch { /* jamais bloquant */ }
+    }
+    // On continue vers la boucle de repli.
+  }
   // ⚠️ LE DERNIER LIRE-MODIFIER-RÉÉCRIRE DU DÉPÔT, fermé comme les autres — mais SANS migration :
   // `last_seen` change à chaque battement accepté, c'est un verrou optimiste gratuit. L'écriture
   // est conditionnée à la valeur LUE ; zéro ligne = quelqu'un d'autre a battu entre-temps (l'autre

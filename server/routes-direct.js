@@ -94,6 +94,14 @@ async function traiter(req, res, body, _slug) {
           // On dérive donc la clé de ce qui est prouvé, et jamais de ce qui est affirmé. Un anonyme,
           // lui, ne peut rien prouver : sa clé reste la sienne, mais enfermée dans un espace de noms
           // dont elle ne peut pas sortir — elle ne pourra jamais ressembler à l'e-mail d'un membre.
+          // ⚠️ L'IP NE PART PAS EN CLAIR VERS LA BASE : le plafond de création anonyme compte par
+          // (slug, empreinte d'IP), et une empreinte tronquée suffit à mesurer la pression d'un même
+          // appelant sans conserver de donnée personnelle. Le plafond lui-même est configurable par
+          // l'hôte, défaut ATTENDEES_PER_EGRESS × 1,3 (325) — la même cible que le quota de battement.
+          const ipHash = require("crypto").createHash("sha256").update("att:" + ip).digest("hex").slice(0, 32);
+          const anonCap = (PLAYER.config && Number(PLAYER.config.presenceAnonCap) > 0)
+            ? Math.trunc(Number(PLAYER.config.presenceAnonCap))
+            : Math.ceil(ATTENDEES_PER_EGRESS * 1.3);
           const r = await recordAttendance(String(body.slug || ""), {
             // ⚠️ MINUSCULÉE, ET CE DÉTAIL EST UNE LIGNE DE PRÉSENCE. La clé cliente que 0.1.42 a
             // remplacée l'était (`me.email.toLowerCase()`) ; la clé dérivée ne l'était pas, et la
@@ -110,7 +118,7 @@ async function traiter(req, res, body, _slug) {
             email: profil ? profil.email : body.email,
             avatar: (profil && profil.avatar) || body.avatar,
             isMember: !!profil, isPresenter: estPresentateur,
-          }, { presentation: pres });
+          }, { presentation: pres, ipHash, anonCap });
           return jp(r.ok ? 200 : (r.status || 400), r);
         } catch { return jp(500, { ok: false }); }
       }
