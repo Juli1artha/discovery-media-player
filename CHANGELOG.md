@@ -10,6 +10,25 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.88] — 2026-08-20
+
+### Changed (presence — atomic upsert + anonymous creation cap, audit CODEX 5.6 P1c step 1)
+
+- **Presence is now written in one atomic gesture, and fake anonymous participants are capped.**
+  `recordAttendance` did a read-modify-write with an optimistic lock and up to four retries per
+  heartbeat. A new `player_attendance_bump` RPC (migration 0015, same pattern as
+  `player_rate_limit_bump`) does the same in ONE gesture — capped time accumulation, page union,
+  strictly-increasing `last_seen` — and, in the same atomic statement, enforces a cap on NEW
+  anonymous participant rows per `(presentation, IP fingerprint)`. Because an `anon-*` key is chosen
+  by the browser, one visitor could otherwise fabricate thousands of fake participants. The cap
+  (default `ATTENDEES_PER_EGRESS × 1.3` = 325, host-configurable via `presenceAnonCap`) never blocks
+  a heartbeat of an already-registered key, and never counts authenticated members or the presenter.
+  Creation and count are serialized by a per-`(slug, IP)` advisory lock so concurrent creations
+  cannot overshoot together (proven under real Postgres concurrency in `base/`). The IP is stored
+  only as a truncated hash, never in clear. **Degrades if the migration is absent**: the code falls
+  back to the read-modify-write loop (still correct, without the creation cap) and says so once,
+  naming the file — same doctrine as the rate-limit RPC.
+
 ## [0.1.87] — 2026-08-20
 
 ### Changed (performance — telemetry quota, audit CODEX 5.6 P1b)

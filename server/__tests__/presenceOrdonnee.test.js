@@ -18,6 +18,9 @@ function table({ pageDeLaPresentation = () => 3, refusInsert = 0 } = {}) {
     errors: { capture(e, ctx) { if (ctx && ctx.benin) etat.benins.push(String(e.message)); } },
     db: {
       async request(chemin, o) {
+        // ⚠️ Ce banc éprouve la BOUCLE lire-modifier-réécrire (concurrence, verrou optimiste) : on
+        // simule la migration 0015 ABSENTE pour que le code y retombe, comme chez un hôte pas encore migré.
+        if (chemin.startsWith("rpc/player_attendance_bump")) throw new Error("404 : Could not find the function");
         if (chemin.startsWith("doc_presentations?")) return [{ slug: "s", active: true, control_hash: "h", current_page: pageDeLaPresentation() }];
         if (!o || !o.method) return etat.ligne ? [{ ...etat.ligne, pages: etat.ligne.pages.slice() }] : [];
         if (o.method === "POST") {
