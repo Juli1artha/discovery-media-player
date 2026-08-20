@@ -10,6 +10,20 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.98] — 2026-08-20
+
+### Added (P1c step 2, increment 3 — the client carries the token; the loop is closed)
+
+- **The audience heartbeat now carries its presence token.** `sendAttend` sends `wantToken: "1"` on the
+  first beat (marking a modern BOOTSTRAP, which is what lets `sansJeton` fall to zero rather than
+  conflating it with a legacy client), reads the response, stores the issued token, and sends it as `pt`
+  on every following beat — so the server derives the row's key from something proven, not from the
+  body. A host with no `PLAYER_PRESENCE_SECRET` returns no token and everything continues as before.
+  With this, the protocol is complete end to end: a host can set the secret, watch
+  `presence: { avecJeton, sansJeton }` on the card until `sansJeton` reaches zero, and only then set
+  `PLAYER_PRESENCE_STRICT`. The client half is tested by executing the real template source (not a
+  copy): bootstrap, storage-and-resend, no-secret host, and an unreadable response.
+
 ## [0.1.97] — 2026-08-20
 
 ### Added (P1c step 2, increment 2 — presence-token protocol, migration, transition counter)
