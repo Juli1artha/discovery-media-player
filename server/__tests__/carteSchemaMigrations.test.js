@@ -42,8 +42,18 @@ function colonnesAjouteesParMigration() {
 }
 
 describe("la carte de schéma suit les migrations qui ajoutent une colonne", () => {
-  it("le balayage trouve bien des colonnes ajoutées", () => {
-    expect(colonnesAjouteesParMigration().length).toBeGreaterThan(3);
+  // ⚠️ MÊME PLANCHER, MÊME RAISON (cf. cheminDeMigration.test.js) : `> 3` sur un balayage qui voit 10
+  // `add column` laissait la couverture tomber des deux tiers sans un rouge. Un plancher affirmé fait
+  // échouer un balayage qui cesse de voir, au lieu de le laisser rétrécir en silence.
+  const PLANCHER_AJOUTS = 10;
+
+  it("le balayage voit au moins autant d'ajouts de colonnes qu'au jour où on l'a mesuré", () => {
+    const vus = colonnesAjouteesParMigration().length;
+    expect(vus,
+      `le balayage ne voit plus que ${vus} ajouts de colonnes, contre ${PLANCHER_AJOUTS} attendus.\n`
+      + "Une migration a probablement écrit son ALTER sous une forme que ce motif ne reconnaît pas.\n"
+      + "Étendez le motif, ou baissez PLANCHER_AJOUTS dans le même diff si la baisse est légitime.")
+      .toBeGreaterThanOrEqual(PLANCHER_AJOUTS);
   });
 
   it("chaque `add column` d'une migration est SONDÉ (ATTENDUES) ou exempté explicitement", () => {
