@@ -403,7 +403,20 @@ async function ajouterPresence(etat) {
     // lecteur, dans six mois, c'est nous. On adjoint donc le nombre qui désambiguïse, comme
     // `dontScellees` l'a fait pour `sansRang` : 0 actives + 0 avecJeton = repos ; N actives + 0
     // avecJeton = ANOMALIE. (Précision du second hôte.)
-    const actives = await PLAYER.db.request(`doc_presentations?active=eq.true&select=slug${bornee}`);
+    // ⚠️ « ACTIVE » N'EST PAS « VIVANTE », ET LE DÉNOMINATEUR A BESOIN DE LA SECONDE. Une présentation
+    // dont le présentateur a fermé l'onglet sans clôturer reste `active = true` : la compter ferait
+    // annoncer « N actives et 0 avecJeton = ANOMALIE » alors que personne n'est parti nulle part. La
+    // fiabilité de ce nombre dépendrait alors de la DISCIPLINE DE CLÔTURE — et le second hôte, dont la
+    // clôture a été impossible trois jours durant (0008), est bien placé pour le dire : ses sept
+    // présentations sont inactives mais gardent toutes leur control_hash, donc aucune n'a été close
+    // proprement. Un dénominateur qui dépend d'une discipline humaine produit des anomalies fantômes.
+    //
+    // On réutilise donc LE seuil qui définit déjà « vivante » ailleurs dans le code — `STALE_MS`, le
+    // même que celui du balayage des présentations orphelines — plutôt que d'inventer un second
+    // nombre qui divergerait. Le présentateur bat toutes les 30 s (`present-touch`) : une présentation
+    // sans battement depuis trois minutes est abandonnée, pas silencieuse. (Relevé du second hôte.)
+    const vivantDepuis = new Date(Date.now() - require("./presentations").STALE_MS).toISOString();
+    const actives = await PLAYER.db.request(`doc_presentations?active=eq.true&last_seen=gt.${encodeURIComponent(vivantDepuis)}&select=slug${bornee}`);
     const nActives = Array.isArray(actives) ? actives.length : 0;
     // ⚠️ `couvre` VOYAGE AVEC LES NOMBRES, ET C'EST LE POINT. Le commentaire ci-dessus protège celui
     // qui lit la SOURCE ; celui qui court un risque, lui, lit le JSON — dans six mois, dans un cockpit,

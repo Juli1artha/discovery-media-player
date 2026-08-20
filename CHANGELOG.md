@@ -10,6 +10,21 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.110] — 2026-08-20
+
+### Fixed (`presentationsActives` counted flagged-active, not live — a phantom-anomaly generator)
+
+- **The denominator now counts LIVE presentations.** A presenter who closes their tab without ending
+  the session leaves `active = true` behind, so the card would report *"N active and 0 avecJeton =
+  ANOMALY"* with nobody having gone anywhere. The reliability of the number would then rest on closure
+  discipline — and the second host, whose closure was outright impossible for three days, is well
+  placed to say what that is worth: their seven presentations are inactive yet all still carry their
+  `control_hash`, so none was ever closed cleanly. A denominator that depends on human discipline
+  manufactures phantom anomalies. The count now reuses **the** staleness threshold the rest of the code
+  already uses to decide "live" (the presenter beats every 30 s via `present-touch`) rather than
+  inventing a second number that would drift from it. The test double now *requires* the liveness
+  filter, so removing it turns the test red. Reported by the second host.
+
 ## [0.1.109] — 2026-08-20
 
 ### Fixed (the reading rule contradicted itself in the case that was actually live)
