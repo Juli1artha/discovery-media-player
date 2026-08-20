@@ -598,7 +598,18 @@ async function handler(req, res) {
         // ⚠️ La porte du jeton de présence (P1c étape 2) est-elle fermée ? Même raison
         // qu'internalStrict : un cockpit doit voir l'état des DEUX hôtes sans lire un journal — c'est
         // ce booléen, lu avec `presence: { avecJeton, sansJeton }` de la carte, qui dit quand fermer.
-        presenceStrict: !!(PLAYER.config && PLAYER.config.presenceStrict),
+        // ⚠️ EFFECTIF, PAS DÉCLARÉ. Posé sans capacité d'émettre (pas de secret), STRICT est INERTE :
+        // le refuser vraiment expulserait 100 % des participants anonymes, puisque aucun ne peut
+        // obtenir de jeton. Annoncer `true` dans ce cas serait dire qu'une porte est fermée quand elle
+        // est grande ouverte — et c'est ce booléen qu'un cockpit lit pour décider. On rend donc ce qui
+        // s'applique RÉELLEMENT ; `presenceJetons` juste en dessous dit pourquoi, quand les deux
+        // divergent. (Même famille que la carte qui disait « complet » sans couvrir une migration.)
+        presenceStrict: !!(PLAYER.config && PLAYER.config.presenceStrict) && (() => {
+          try {
+            const signer = PLAYER.identity && PLAYER.identity.signPresenceToken;
+            return typeof signer === "function" && !!signer("carte-sonde", "carte-sonde", 60);
+          } catch { return false; }
+        })(),
         // ⚠️ LES JETONS DE PRÉSENCE SONT-ILS RÉELLEMENT ÉMIS ? Sans ce booléen, un exploitant qui vient
         // de poser `PLAYER_PRESENCE_SECRET` n'a AUCUN moyen de vérifier que son réglage a pris : la
         // carte affiche `presence: {0,0}` aussi bien quand le secret est actif que quand la variable est

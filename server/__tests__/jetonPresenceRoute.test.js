@@ -66,7 +66,13 @@ describe("present-attend — protocole du jeton de présence", () => {
     const j = joueur();
     const r = await attendre(j.p, { key: "k", wantToken: "1" });
     expect(r.corps.pt, "le jeton émis est renvoyé au client").toMatch(/^JETON\(s\|/);
-    expect(j.rpc[0].p_has_token, "bootstrap = moderne, compte avecJeton").toBe(true);
+    // ⚠️ UN BOOTSTRAP NE PROUVE RIEN — il ne réclame donc pas la ligne. Ce test exigeait `true`, et
+    // c'est cette sémantique qui produisait la boucle : la ligne était marquée réclamée avant que le
+    // client détienne quoi que ce soit, et un client qui repartait en bootstrap se refusait lui-même.
+    // `null` = ni last_token_at ni last_no_token_at : la ligne est créée LIBRE, réclamée au battement
+    // suivant, celui qui portera le jeton. Et elle ne compte pas non plus en sansJeton, sans quoi il
+    // ne retomberait jamais à zéro.
+    expect(j.rpc[0].p_has_token, "un bootstrap ne réclame pas la ligne et ne compte pas comme legacy").toBeNull();
   });
 
   it("legacy (ni jeton ni wantToken), strict OFF : enregistré, compté sansJeton", async () => {

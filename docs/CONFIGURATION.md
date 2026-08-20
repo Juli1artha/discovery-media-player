@@ -222,6 +222,18 @@ cap stays on regardless.
 3. Only then set `PLAYER_PRESENCE_STRICT=1`. From that point a heartbeat with no proven token is
    refused (`403 presence-token`) instead of being recorded.
 
+⚠️ **`PLAYER_PRESENCE_STRICT` is inert without `PLAYER_PRESENCE_SECRET`, on purpose.** With no secret
+nobody *can* obtain a token, so enforcing it would refuse 100% of anonymous participants — a
+self-inflicted outage. The card therefore reports the **effective** value: `presenceStrict` reads
+`false` while the instance cannot issue tokens, and `presenceJetons` says why. The player also logs it
+once an hour. Announcing a closed door that is wide open would be the worse of the two failures.
+
+⚠️ **Rotating the secret** costs each participant exactly one refused heartbeat. A token signed with
+the previous secret gets `403 presence-token`; the client discards that token (keeping its key) and
+asks for a new one at the next beat, ~25 s later. There is deliberately no `kid` / current+previous
+list: it would add a payload field and a two-secret configuration to save one refused beat, and the
+self-healing path has to exist anyway — for expiry, which no key list can prevent.
+
 ⚠️ **`sansJeton` is an instrument of transition, and it expires.** The audience page is served
 `no-store` and the client code is interpolated into the HTML, so there is no stale bundle anywhere:
 every new visitor is modern by construction, and the only old population is tabs opened before the
