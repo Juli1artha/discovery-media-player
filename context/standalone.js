@@ -685,6 +685,13 @@ function createStandaloneContext(env = process.env) {
       // Une fois les bundles déployés des deux côtés ET `presence.sansJeton` retombé à zéro : un
       // battement sans jeton de présence valide cesse d'être enregistré. Off par défaut (transition).
       presenceStrict: String(env.PLAYER_PRESENCE_STRICT || "") === "1",
+      // ⚠️ SEL DU HACHAGE D'IP. Un SHA-256 d'adresse IPv4 n'anonymise rien : l'espace entier se
+      // recalcule en quelques minutes, et la CNIL considère une IP hachée comme une donnée
+      // PSEUDONYMISÉE — toujours personnelle. Avec un sel secret, elle cesse d'être recalculable par
+      // qui obtient la base. Dédié si l'hôte en pose un ; à défaut on réutilise le secret de présence
+      // avec une SÉPARATION DE DOMAINE (préfixe distinct) — il est déjà requis par la fonctionnalité
+      // qui produit ce hachage, ce qui évite une variable obligatoire de plus.
+      ipHashSecret: String(env.PLAYER_IP_HASH_SECRET || env.PLAYER_PRESENCE_SECRET || ""),
     },
   };
 }

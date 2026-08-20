@@ -10,6 +10,30 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.114] — 2026-08-20
+
+### Privacy (the IP fingerprint was not anonymous, and the comment said it was)
+
+- **The attendance IP fingerprint is now a salted HMAC bound to the presentation.** The code wrote
+  `sha256("att:" + ip)` under a comment claiming it avoided keeping personal data. That was false: the
+  whole IPv4 space recomputes in minutes, so the fingerprint leads back to the address, and the CNIL is
+  explicit that a hashed IP is **pseudonymised** data, still covered by the GDPR — a description
+  stronger than the implementation, the very class tracked elsewhere in this repo. It is now
+  `HMAC-SHA-256(secret, "attendance-ip\0" + slug + "\0" + ip)`: the salt makes a stolen table
+  non-recomputable, and the `slug` prevents correlating one address across presentations (the cap
+  already counted per `(slug, fingerprint)`, so nothing changes for it). The salt is
+  `PLAYER_IP_HASH_SECRET`, falling back to `PLAYER_PRESENCE_SECRET` with domain separation — no new
+  mandatory variable — and, absent both, the old unsalted fingerprint remains: the feature works, the
+  protection is weaker, and that is written down rather than discovered later. `RETENTION.md` corrected.
+
+### Note
+
+- The salted branch was **not exercised by any test double**, none of which configured a secret — and a
+  declaration-order fault slipped through it: green on the bench, `ReferenceError` on every heartbeat in
+  production, where the secret *is* set. Caught before shipping, and the new bench now fails on it. A
+  double that never configures an option never exercises the code that option turns on — the mirror of
+  the P1 blind spot, whose doubles always had a working signer.
+
 ## [0.1.113] — 2026-08-20
 
 ### Fixed (without a secret, a participant was refused by their own presence — and refused forever)

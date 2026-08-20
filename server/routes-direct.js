@@ -94,11 +94,6 @@ async function traiter(req, res, body, _slug) {
           // On dérive donc la clé de ce qui est prouvé, et jamais de ce qui est affirmé. Un anonyme,
           // lui, ne peut rien prouver : sa clé reste la sienne, mais enfermée dans un espace de noms
           // dont elle ne peut pas sortir — elle ne pourra jamais ressembler à l'e-mail d'un membre.
-          // ⚠️ L'IP NE PART PAS EN CLAIR VERS LA BASE : le plafond de création anonyme compte par
-          // (slug, empreinte d'IP), et une empreinte tronquée suffit à mesurer la pression d'un même
-          // appelant sans conserver de donnée personnelle. Le plafond lui-même est configurable par
-          // l'hôte, défaut ATTENDEES_PER_EGRESS × 1,3 (325) — la même cible que le quota de battement.
-          const ipHash = require("crypto").createHash("sha256").update("att:" + ip).digest("hex").slice(0, 32);
           const anonCap = (PLAYER.config && Number(PLAYER.config.presenceAnonCap) > 0)
             ? Math.trunc(Number(PLAYER.config.presenceAnonCap))
             : Math.ceil(ATTENDEES_PER_EGRESS * 1.3);
@@ -112,6 +107,26 @@ async function traiter(req, res, body, _slug) {
             ? PLAYER.identity.verifyPresenceToken(String(body.pt || "")) : null;
           const jetonValide = !!(jetonEntrant && jetonEntrant.slug === slug && jetonEntrant.key);
           const cleAnon = jetonValide ? String(jetonEntrant.key) : cleAnonyme(body.key);
+          // ⚠️ L'IP NE PART PAS EN CLAIR VERS LA BASE — mais NE PRÉTENDONS PAS QUE C'EST ANONYME.
+          //
+          // Ce commentaire disait « sans conserver de donnée personnelle », et c'était FAUX : un
+          // SHA-256 d'adresse IPv4 se recalcule intégralement (quatre milliards de valeurs, quelques
+          // minutes), donc l'empreinte se remonte à l'adresse par qui obtient la base. La CNIL est
+          // explicite : une IP hachée reste une donnée PSEUDONYMISÉE, soumise au RGPD. La description
+          // était plus forte que l'implémentation — la classe même qu'on traque ailleurs.
+          //
+          // Avec un SEL SECRET, la table cesse d'être recalculable sans lui. Le `slug` entre dans
+          // l'empreinte pour qu'on ne puisse pas CORRÉLER la présence d'une même adresse d'une
+          // présentation à l'autre — le plafond, lui, compte déjà par (slug, empreinte), donc rien ne
+          // change pour lui. Le préfixe de domaine sépare cet usage de toute autre signature faite
+          // avec le même secret. Sans sel (hôte qui n'en pose aucun), on retombe sur l'ancienne
+          // empreinte : la fonction marche, la protection est moindre, et c'est écrit ici plutôt que
+          // découvert plus tard. Le plafond reste configurable, défaut ATTENDEES_PER_EGRESS × 1,3.
+          const sel = String((PLAYER.config && PLAYER.config.ipHashSecret) || "");
+          const ipHash = sel
+            ? require("crypto").createHmac("sha256", sel).update("attendance-ip\0" + slug + "\0" + ip).digest("hex").slice(0, 32)
+            : require("crypto").createHash("sha256").update("att:" + ip).digest("hex").slice(0, 32);
+
           // ⚠️ ON SIGNE AVANT D'ÉCRIRE, ET C'EST CE QUI FERMAIT UNE BOUCLE. Le jeton était fabriqué
           // APRÈS l'écriture : on déclarait donc un bootstrap « moderne » sans savoir si un jeton
           // pourrait seulement sortir. Sans `PLAYER_PRESENCE_SECRET`, la ligne était marquée réclamée

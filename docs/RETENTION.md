@@ -92,7 +92,7 @@ Une présentation **inactive** (terminée ou abandonnée) est une archive : **pu
 | `doc_presentation_messages.client_key` | clé d'idempotence d'envoi | idem |
 | `doc_presentation_attendees.name` / `doc_presentation_attendees.email` / `doc_presentation_attendees.avatar` | identité du participant | purgées avec la présentation |
 | `doc_presentation_attendees.attendee_key` | identifiant de présence | idem |
-| `doc_presentation_attendees.creator_ip_hash` | **empreinte tronquée** de l'IP qui a créé la ligne (jamais l'IP en clair) — sert au plafond de création anonyme (migration 0015) | purgée avec la présentation |
+| `doc_presentation_attendees.creator_ip_hash` | **empreinte tronquée** de l'IP qui a créé la ligne (jamais l'IP en clair) — sert au plafond de création anonyme (migration 0015). ⚠️ **Donnée PSEUDONYMISÉE, pas anonyme** : une IP hachée reste une donnée personnelle au sens du RGPD, et un SHA-256 non salé se recalcule intégralement sur l'espace IPv4. Depuis 0.1.114 l'empreinte est un HMAC salé par `PLAYER_IP_HASH_SECRET` (à défaut `PLAYER_PRESENCE_SECRET`, avec séparation de domaine) et liée au `slug`, ce qui empêche de corréler une même adresse d'une présentation à l'autre. Sans sel configuré, l'ancienne empreinte non salée subsiste. | purgée avec la présentation |
 | `doc_presentation_attendees.last_token_at` / `doc_presentation_attendees.last_no_token_at` | horodatage du dernier battement avec / sans jeton de présence — sert au compteur de transition (migration 0017), aucune donnée d'identité | purgés avec la présentation |
 | `doc_presentation_attendees.pages` | pages vues par le participant | idem |
 

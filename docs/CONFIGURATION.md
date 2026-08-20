@@ -176,6 +176,7 @@ we had told them to write a file they did not need. Code you don't write cannot 
 | `PLAYER_HOST_BRAND_URL` | resolves a client's brand from the key carried by a link |
 | `PLAYER_HOST_MAIL_URL` + `PLAYER_HOST_MAIL_SECRET` | your route that **sends** the re-share email |
 | `PLAYER_INTERNAL_STRICT` | `1` ⇒ an internal reading session is written **only** with a token your server signed |
+| `PLAYER_IP_HASH_SECRET` | salts the attendance IP fingerprint — falls back to `PLAYER_PRESENCE_SECRET` |
 | `PLAYER_PRESENCE_SECRET` | signs **presence tokens** — set it to start issuing them (see below) |
 | `PLAYER_PRESENCE_STRICT` | `1` ⇒ a presence heartbeat is recorded **only** with a proven token |
 | `PLAYER_TRUSTED_PROXY_HOPS` | how many **trusted** proxies sit in front of this instance |
