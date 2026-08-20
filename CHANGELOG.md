@@ -10,6 +10,20 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.103] — 2026-08-20
+
+### Changed (`presence` now states what it measures, next to the numbers)
+
+- **`presence` carries a `couvre` field: it is a migration gauge, not a security metric.** `avecJeton`
+  counts self-declared `wantToken` bootstraps too — a bootstrap sets `last_token_at` without any token
+  having been verified. That is correct for what the counter answers ("are there still old clients?")
+  and even necessary for `sansJeton` to be able to reach zero. But the NAME promises something else:
+  someone reading `{avecJeton: 40, sansJeton: 0}` in six months, in a cockpit, without this file in
+  front of them, will read "40 proven participants" — and all 40 may have proven nothing. The caveat
+  now travels WITH the numbers, the way `couvre` already travels with the schema verdict, rather than
+  living only in a source comment that the person at risk never reads. Same remedy as the documented
+  overlap of the two sets. Reported by the second host, who saw such a row in their own database.
+
 ## [0.1.102] — 2026-08-20
 
 ### Fixed (the coverage floors were set to fail on normal housekeeping — which is how a guard dies)

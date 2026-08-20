@@ -29,7 +29,10 @@ describe("compteur de présence (transition du jeton)", () => {
   it("compte séparément avecJeton et sansJeton", async () => {
     joueur({ avec: ["a", "b", "c"], sans: ["x"] });
     const etat = await schema.sonderTout();
-    expect(etat.presence).toEqual({ avecJeton: 3, sansJeton: 1, tronque: false });
+    expect(etat.presence).toMatchObject({ avecJeton: 3, sansJeton: 1, tronque: false });
+    // ⚠️ Le nombre voyage avec ce qu'il COUVRE : `avecJeton` inclut les bootstraps auto-déclarés, donc
+    // ce n'est pas une preuve. Sans ce mot collé au nombre, « avecJeton: 40 » se lira « 40 prouvés ».
+    expect(etat.presence.couvre, "la portée est collée au nombre, pas seulement en commentaire").toMatch(/jauge-de-migration/);
   });
 
   it("sansJeton === 0 : la porte peut se fermer", async () => {
