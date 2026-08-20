@@ -10,6 +10,23 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.107] — 2026-08-20
+
+### Changed (`presence.couvre` now follows the state of the door — because the counter expires)
+
+- **`sansJeton` is an instrument of transition, and it has an expiry date.** The audience page is
+  served `no-store` and the client code is interpolated into the HTML, so no stale bundle can exist:
+  every new visitor is modern by construction, and the only old population is tabs opened before the
+  client shipped. Once those are gone, `sansJeton` can never be non-zero again — it will read 0 whether
+  the mechanism works or is entirely broken. **A counter that can no longer vary has stopped measuring,
+  even while it still shows the right value**, and here it is *time* that does it, not a defect: no
+  commit to blame, no mutation to catch, no guilty refactor. It simply becomes true for the wrong
+  reason. So the card's `couvre` text now follows the door: before closing it names `sansJeton` as the
+  gauge that says when to close (and warns it will expire); after closing it says the gauge is spent
+  and names what takes over — `avecJeton` as the sign of life, zero *during a live presentation*
+  meaning something is broken. The card knows which regime it is in; making the reader derive it is
+  what produces the misreading. Reported by the second host.
+
 ## [0.1.106] — 2026-08-20
 
 ### Fixed (the new card field tripped a host guard — renamed, guard untouched)

@@ -402,7 +402,28 @@ async function ajouterPresence(etat) {
     // que `sansJeton` puisse atteindre zéro. Le mot est donc collé au nombre, comme `couvre` l'est déjà
     // au verdict du schéma : c'est une JAUGE DE MIGRATION, pas une métrique de sécurité. (relevé 2e hôte)
     etat.presence = {
-      couvre: "jauge-de-migration (avecJeton inclut les bootstraps auto-déclarés — pas une preuve)",
+      // ⚠️ CE QUE CES NOMBRES MESURENT CHANGE AVEC L'ÉTAT DE LA PORTE — et la carte, elle, le SAIT.
+      //
+      // La page d'audience part en `no-store` et le code client est interpolé DANS le HTML : il n'existe
+      // donc aucun bundle périmé, et tout nouveau visiteur est moderne par construction. Conséquence que
+      // personne n'avait écrite : une fois les vieux onglets éteints, `sansJeton` ne peut PLUS jamais
+      // être non nul. Il vaudra 0 pour toujours — que le mécanisme marche ou qu'il soit entièrement
+      // cassé. **Un compteur qui ne peut plus varier a cessé de mesurer, même s'il continue d'afficher
+      // la bonne valeur.** Et c'est le TEMPS qui le périme, pas un défaut : aucun commit à blâmer,
+      // aucune mutation à détecter, aucun refactor coupable — il devient simplement vrai pour la
+      // mauvaise raison. (Relevé du second hôte ; cinquième variante de la famille.)
+      //
+      // Le texte suit donc l'état plutôt que de laisser le lecteur le déduire : avant fermeture,
+      // `sansJeton` est l'instrument de transition ; après, il est structurellement nul et c'est
+      // `avecJeton` qui prend le relais comme SIGNE DE VIE — nul pendant une présentation en cours
+      // veut alors dire que quelque chose est cassé.
+      couvre: (PLAYER.config && PLAYER.config.presenceStrict)
+        ? "jauge de transition PÉRIMÉE — porte fermée : sansJeton est structurellement nul et ne mesure "
+          + "plus rien. Le signe de vie est avecJeton (nul pendant une présentation en cours = anomalie). "
+          + "avecJeton inclut les bootstraps auto-déclarés — pas une preuve d'identité."
+        : "jauge-de-migration — sansJeton dit combien de clients ANCIENS battent encore (0 = on peut "
+          + "fermer). Instrument de TRANSITION : après fermeture il vaudra 0 quoi qu'il arrive. "
+          + "avecJeton inclut les bootstraps auto-déclarés — pas une preuve d'identité.",
       avecJeton: nAvec,
       sansJeton: nSans,
       tronque: nAvec >= PLAFOND_SANS_RANG || nSans >= PLAFOND_SANS_RANG,

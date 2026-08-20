@@ -222,6 +222,18 @@ cap stays on regardless.
 3. Only then set `PLAYER_PRESENCE_STRICT=1`. From that point a heartbeat with no proven token is
    refused (`403 presence-token`) instead of being recorded.
 
+⚠️ **`sansJeton` is an instrument of transition, and it expires.** The audience page is served
+`no-store` and the client code is interpolated into the HTML, so there is no stale bundle anywhere:
+every new visitor is modern by construction, and the only old population is tabs opened before the
+client shipped. Once those are gone, `sansJeton` can never be non-zero again — it will read 0 whether
+the mechanism works or is completely broken. **A counter that can no longer vary has stopped
+measuring, even while it still shows the right value**, and it is *time* that does this, not a defect:
+no commit to blame, no mutation to catch. After closing, read `sansJeton: 0` as "the transition is
+over", never as "all is well" — those are different statements. **What takes over as the sign of life
+is `avecJeton`**: non-zero means presences really are being recorded; zero *during a live presentation*
+means something is broken. The card says which of the two regimes it is in, in its own `couvre` field,
+so the caveat travels with the numbers rather than living here alone.
+
 Setting the flag before `sansJeton` reaches zero closes the door on audiences that are still in the
 room, and the failure is silent on the wrong side: their presence simply stops being recorded, and
 the presentation merely looks poorly attended.

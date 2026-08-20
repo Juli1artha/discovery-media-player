@@ -7,9 +7,10 @@
 
 const schema = require("../schema.js");
 
-function joueur({ avec = [], sans = [] } = {}) {
+function joueur({ avec = [], sans = [], strict = false } = {}) {
   const ctx = {
     errors: { capture() {} },
+    config: { presenceStrict: strict },
     db: {
       async request(chemin) {
         if (/select=[a-z_]+&limit=0/.test(chemin)) return [];                       // sondes de colonnes présentes
@@ -47,6 +48,25 @@ describe("compteur de présence (transition du jeton)", () => {
     const etat = await schema.sonderTout();
     expect(etat.presence.avecJeton).toBe(1);
     expect(etat.presence.sansJeton, "le recouvrement est voulu — sansJeton reste vrai").toBe(1);
+  });
+
+  // ⚠️ LA PLUS SUBTILE DE LA SÉRIE : le TEMPS périme ce compteur, sans qu'aucun commit soit coupable.
+  // La page d'audience n'est jamais mise en cache et le code client est interpolé dedans → tout nouveau
+  // visiteur est moderne par construction → une fois les vieux onglets éteints, `sansJeton` ne peut plus
+  // JAMAIS être non nul. Il vaudra 0 que le mécanisme marche ou qu'il soit cassé. Un compteur qui ne peut
+  // plus varier a cessé de mesurer, même s'il affiche encore la bonne valeur. Le texte doit donc le DIRE,
+  // et il ne peut le dire qu'en suivant l'état de la porte — que la carte connaît.
+  it("le texte SUIT l'état de la porte : instrument de transition avant, périmé après", async () => {
+    joueur({ avec: ["a"], sans: ["b"], strict: false });
+    const avant = await schema.sonderTout();
+    expect(avant.presence.couvre, "porte ouverte : sansJeton est l'instrument qui dit quand fermer").toMatch(/jauge-de-migration/);
+    expect(avant.presence.couvre, "et on prévient déjà qu'il se périmera").toMatch(/après fermeture il vaudra 0/);
+
+    joueur({ avec: ["a"], sans: [], strict: true });
+    const apres = await schema.sonderTout();
+    expect(apres.presence.couvre, "porte fermée : le compteur ne mesure plus").toMatch(/PÉRIMÉE/);
+    expect(apres.presence.couvre, "et on nomme ce qui prend le relais").toMatch(/signe de vie est avecJeton/);
+    expect(apres.presence.couvre).not.toMatch(/0 = on peut fermer/);
   });
 
   it("borne atteinte : tronque=true", async () => {
