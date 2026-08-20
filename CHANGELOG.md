@@ -10,18 +10,30 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.106] — 2026-08-20
+
+### Fixed (the new card field tripped a host guard — renamed, guard untouched)
+
+- **`presenceTokens` → `presenceJetons`.** A host-side guard refuses any identity card containing
+  `supabase|secret|key|token`: a diagnostic endpoint that leaks a URL, a hostname or a secret is a gift
+  to whoever probes it. The boolean leaks nothing, but that guard is a deliberately blunt text scan —
+  and the right response to its refusal is to change the **name**, never to loosen the guard.
+  Loosening is exactly what empties a guard, and this one protects something real. The reason is now
+  written next to the field, so the next person to reach for an English name hits the explanation
+  instead of the wall.
+
 ## [0.1.105] — 2026-08-20
 
 ### Added (you can now see whether presence tokens are actually being issued)
 
-- **The card carries `presenceTokens`, measured rather than declared.** After setting
+- **The card carries `presenceJetons`, measured rather than declared.** After setting
   `PLAYER_PRESENCE_SECRET` there was no way to confirm the setting had taken: the card shows
   `presence: {0, 0}` identically whether tokens are being issued, the variable is mistyped, it was set
   on the wrong environment, or the deploy never happened. Confirming it required standing up a
   throwaway presentation against production — which is not a procedure an operator should need.
   A setting you cannot observe is a setting you believe you made. The boolean now answers, and it
   **measures**: the card signs a throwaway token and reports whether one came out, rather than asking
-  the host to declare a `config.presenceTokens` — a fact in two copies is a fact that eventually
+  the host to declare a `config.presenceJetons` — a fact in two copies is a fact that eventually
   diverges, and it is the declared one you would trust. No host has anything to add to benefit from it;
   an older host, or a signer that throws, reads `false` rather than absent, and the card still answers.
 

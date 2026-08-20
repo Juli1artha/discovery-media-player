@@ -208,7 +208,7 @@ cap stays on regardless.
 
 1. Set `PLAYER_PRESENCE_SECRET` and redeploy. The server starts issuing tokens; nothing breaks, and
    clients that do not understand them simply ignore them. **Check it took effect**: the card carries
-   `presenceTokens: true` once tokens are actually being issued. It is *measured*, not declared — the
+   `presenceJetons: true` once tokens are actually being issued. It is *measured*, not declared — the
    card signs a throwaway token and reports whether one came out — so `presence: {0, 0}` alone never
    has to be read as proof: a mistyped variable, the wrong environment, or a missing redeploy all look
    identical without it.

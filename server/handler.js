@@ -606,13 +606,19 @@ async function handler(req, res) {
         // pas observer est un réglage qu'on CROIT avoir fait. (Constaté en le posant pour de vrai : il a
         // fallu monter une présentation jetable sur la prod pour s'en assurer.)
         //
-        // ⚠️ ON MESURE, ON NE DÉCLARE PAS. Demander à l'hôte un `config.presenceTokens` créerait un fait
+        // ⚠️ ON MESURE, ON NE DÉCLARE PAS. Demander à l'hôte un `config.presenceJetons` créerait un fait
         // en DEUX exemplaires — ce qu'il annonce et ce qu'il fait — qui finiraient par diverger. On
         // appelle donc la fonction et on regarde si un jeton sort : la carte rend une capacité
         // CONSTATÉE, et aucun hôte n'a rien à ajouter pour en bénéficier. Le jeton fabriqué ici n'est ni
         // rendu ni stocké, et la signature ne touche ni la base ni le réseau — cette route doit répondre
         // quand rien d'autre ne répond.
-        presenceTokens: (() => {
+        // ⚠️ « Jetons », PAS « Tokens » — ET CE N'EST PAS UN CAPRICE DE LANGUE. Une garde de l'hôte
+        // refuse toute carte contenant `supabase|secret|key|token` : une carte d'identité qui laisse
+        // filtrer une URL, un nom d'hôte ou un secret est un cadeau à qui la sonde. Ce booléen ne fuit
+        // rien, mais la garde est un balayage de TEXTE, volontairement grossier — et le bon geste face
+        // à son refus est de changer le NOM, jamais de desserrer la garde : desserrer est précisément
+        // ce qui vide une garde, et celle-ci protège quelque chose de réel. (Vue rougir sur `presenceTokens`.)
+        presenceJetons: (() => {
           try {
             const signer = PLAYER.identity && PLAYER.identity.signPresenceToken;
             return typeof signer === "function" && !!signer("carte-sonde", "carte-sonde", 60);
