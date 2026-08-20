@@ -176,7 +176,58 @@ we had told them to write a file they did not need. Code you don't write cannot 
 | `PLAYER_HOST_BRAND_URL` | resolves a client's brand from the key carried by a link |
 | `PLAYER_HOST_MAIL_URL` + `PLAYER_HOST_MAIL_SECRET` | your route that **sends** the re-share email |
 | `PLAYER_INTERNAL_STRICT` | `1` ⇒ an internal reading session is written **only** with a token your server signed |
+| `PLAYER_PRESENCE_SECRET` | signs **presence tokens** — set it to start issuing them (see below) |
+| `PLAYER_PRESENCE_STRICT` | `1` ⇒ a presence heartbeat is recorded **only** with a proven token |
 | `PLAYER_TRUSTED_PROXY_HOPS` | how many **trusted** proxies sit in front of this instance |
+
+### Presence tokens, and how to close the door safely
+
+An anonymous participant's presence row is keyed by a value **their browser chooses**. Without a
+token, anyone who learns that key can post it and overwrite that participant's row — their name,
+their time, their pages. A presence token binds `slug + key + expiry`, signed with
+`PLAYER_PRESENCE_SECRET`: the server then derives the row's key from what it **proved**, not from
+what the caller claims.
+
+Generate the secret yourself:
+
+```
+openssl rand -base64 48
+```
+
+**It is per INSTANCE, not per brand.** One instance serving several domains shares one secret, and a
+token issued on one domain validates on another. That is harmless — the real scope is the `slug`,
+which is inside the signed payload and checked on use — but it should not be a surprise, so it is
+written here rather than left to be inferred.
+
+**What the token proves, and what it does not.** It proves this instance issued that `(slug, key)`
+pair, which is enough to stop a third party from taking over a registered presence. It does **not**
+prove a real person is behind it — a visitor can ask for several. That is why the anonymous-creation
+cap stays on regardless.
+
+**Closing the door is a three-step move, and the middle step is not optional:**
+
+1. Set `PLAYER_PRESENCE_SECRET` and redeploy. The server starts issuing tokens; nothing breaks, and
+   clients that do not understand them simply ignore them.
+2. **Watch the counter.** `GET /api/doc?contract=1&schema=1` carries
+   `presence: { avecJeton, sansJeton }` over a 24-hour window. `sansJeton` is how many participants
+   still beat **without** a token — old clients, cached bundles. Wait for it to reach zero. ⚠️ Read it
+   **twice, more than 30 seconds apart**: the whole card is cached for 30 s.
+   ⚠️ The two sets **overlap on purpose** (a participant who beat both ways counts in both), so their
+   sum is not the number of participants. And `avecJeton` counts self-declared bootstraps too — it is
+   a migration gauge, not a security metric; the response says so in its own `couvre` field.
+3. Only then set `PLAYER_PRESENCE_STRICT=1`. From that point a heartbeat with no proven token is
+   refused (`403 presence-token`) instead of being recorded.
+
+Setting the flag before `sansJeton` reaches zero closes the door on audiences that are still in the
+room, and the failure is silent on the wrong side: their presence simply stops being recorded, and
+the presentation merely looks poorly attended.
+
+⚠️ **Apply `supabase/migrations/0018-bootstrap-non-usurpable.sql` before arming step 3.** A client
+with no token yet announces itself as a bootstrap — a self-declared marker. Without 0018, an attacker
+can declare it too, post a registered participant's key, and overwrite their row: the door would be
+shut on old clients while staying open to the takeover it exists to prevent. With 0018, a bootstrap
+on a row already claimed by a token holder is refused, and the client rotates its own key rather than
+losing its presence in silence. The player says so in its logs if the migration is missing.
 
 ### Internal reading sessions
 
