@@ -10,6 +10,21 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.105] — 2026-08-20
+
+### Added (you can now see whether presence tokens are actually being issued)
+
+- **The card carries `presenceTokens`, measured rather than declared.** After setting
+  `PLAYER_PRESENCE_SECRET` there was no way to confirm the setting had taken: the card shows
+  `presence: {0, 0}` identically whether tokens are being issued, the variable is mistyped, it was set
+  on the wrong environment, or the deploy never happened. Confirming it required standing up a
+  throwaway presentation against production — which is not a procedure an operator should need.
+  A setting you cannot observe is a setting you believe you made. The boolean now answers, and it
+  **measures**: the card signs a throwaway token and reports whether one came out, rather than asking
+  the host to declare a `config.presenceTokens` — a fact in two copies is a fact that eventually
+  diverges, and it is the declared one you would trust. No host has anything to add to benefit from it;
+  an older host, or a signer that throws, reads `false` rather than absent, and the card still answers.
+
 ## [0.1.104] — 2026-08-20
 
 ### Fixed (the one exact floor was justified by another guard — now that condition is checked, not assumed)

@@ -309,7 +309,7 @@ describe("la sonde publique ne se laisse pas jouer en boucle", () => {
 // appelant peut fabriquer « tel collègue a consulté tel document ». Un cockpit ne peut refuser que
 // ce qu'il peut mesurer. Cinquième audit, P1-4 — champ demandé par le second hôte.
 describe("la carte dit si l'identité interne est signée", () => {
-  async function carte(config) {
+  async function carte(config, identity) {
     delete require.cache[require.resolve("../handler.js")];
     const player = require("../handler.js");
     player.init({
@@ -317,7 +317,7 @@ describe("la carte dit si l'identité interne est signée", () => {
       storage: { isAllowedUrl: () => true, async fetchFile() { return null; }, async put() {} },
       db: { async request() { return []; }, async selectAll() { return []; } },
       mail: { async send() {} },
-      identity: { async verifyToken() { return null; }, roleOf: () => "", isAdmin: () => false, async canManageShares() { return false; } },
+      identity: { async verifyToken() { return null; }, roleOf: () => "", isAdmin: () => false, async canManageShares() { return false; }, ...(identity || {}) },
       limits: { async allow() { return true; } },
       branding: { async logo() { return ""; }, name: "", poweredBy: "", loaderName: "", async forKey() { return null; }, title: (b) => b },
       errors: { async capture() {} },
@@ -328,6 +328,30 @@ describe("la carte dit si l'identité interne est signée", () => {
     await player.handler({ method: "GET", headers: {}, socket: {}, query: { contract: "1" } }, res);
     return JSON.parse(res.body);
   }
+
+  // ⚠️ UN RÉGLAGE QU'ON NE PEUT PAS OBSERVER EST UN RÉGLAGE QU'ON CROIT AVOIR FAIT. Après avoir posé
+  // PLAYER_PRESENCE_SECRET, la carte affichait `presence: {0,0}` — exactement pareil que si la variable
+  // avait été mal nommée, posée sur le mauvais environnement, ou non redéployée. Il a fallu monter une
+  // présentation jetable EN PROD pour savoir. Ce booléen répond à la place, et il MESURE (il appelle la
+  // fonction) au lieu de DÉCLARER (un `config.presenceTokens` que l'hôte annoncerait) : un fait en deux
+  // exemplaires finirait par diverger, et c'est celui qu'on annonce qu'on croirait.
+  it("presenceTokens MESURE l'émission : true si un jeton sort, false sinon", async () => {
+    const avecSecret = await carte({}, { signPresenceToken: () => "un.jeton" });
+    expect(avecSecret.presenceTokens, "un jeton sort → l'émission est en service").toBe(true);
+
+    // Secret absent : le contexte rend "" (c'est ce que font les deux contextes réels sans secret).
+    const sansSecret = await carte({}, { signPresenceToken: () => "" });
+    expect(sansSecret.presenceTokens, "aucun jeton ne sort → l'exploitant doit le VOIR").toBe(false);
+
+    // Hôte trop ancien pour connaître la fonction : false, jamais absent ni une exception.
+    const vieilHote = await carte({});
+    expect(vieilHote.presenceTokens).toBe(false);
+
+    // Une fonction qui lève ne doit pas emporter la carte — elle doit répondre quand rien ne répond.
+    const cassee = await carte({}, { signPresenceToken: () => { throw new Error("boum"); } });
+    expect(cassee.presenceTokens).toBe(false);
+    expect(cassee.contract, "la carte répond quand même").toBe(1);
+  });
 
   it("strict configuré : true — non configuré : false, jamais absent", async () => {
     expect((await carte({ internalStrict: true })).internalStrict).toBe(true);

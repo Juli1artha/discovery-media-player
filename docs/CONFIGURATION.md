@@ -207,7 +207,11 @@ cap stays on regardless.
 **Closing the door is a three-step move, and the middle step is not optional:**
 
 1. Set `PLAYER_PRESENCE_SECRET` and redeploy. The server starts issuing tokens; nothing breaks, and
-   clients that do not understand them simply ignore them.
+   clients that do not understand them simply ignore them. **Check it took effect**: the card carries
+   `presenceTokens: true` once tokens are actually being issued. It is *measured*, not declared — the
+   card signs a throwaway token and reports whether one came out — so `presence: {0, 0}` alone never
+   has to be read as proof: a mistyped variable, the wrong environment, or a missing redeploy all look
+   identical without it.
 2. **Watch the counter.** `GET /api/doc?contract=1&schema=1` carries
    `presence: { avecJeton, sansJeton }` over a 24-hour window. `sansJeton` is how many participants
    still beat **without** a token — old clients, cached bundles. Wait for it to reach zero. ⚠️ Read it
