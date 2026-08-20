@@ -179,7 +179,7 @@ var Live=(function(){
   // battait deux fois. On les déclare au niveau du CYCLE DE VIE : ce qui doit être arrêté doit
   // être visible depuis l'endroit qui arrête.
   var _ordEtat=null,_ordChat=null,_filet=null;
-  var sb=null,ch=null,ME=null,SLUG=null,CONTROL=null,LOCKED=false,AUTHTOK=null,PRESENT=[],PRESNAME='',seen=Object.create(null),msgEls=Object.create(null),msgData=Object.create(null),replyCtx=null,typers=Object.create(null),pdfCache=Object.create(null),_tyT=0,_tyIv=0,_atIv=0,unread=0,autoOpened=false,_histDone=false,_phWired=false,_onMap=null,_onState=null,_peekT=0,MUTED=false,_maxSeq=0;
+  var sb=null,ch=null,ME=null,SLUG=null,CONTROL=null,LOCKED=false,AUTHTOK=null,PRESENT=[],PRESNAME='',seen=Object.create(null),msgEls=Object.create(null),msgData=Object.create(null),replyCtx=null,typers=Object.create(null),pdfCache=Object.create(null),_tyT=0,_tyIv=0,_atIv=0,unread=0,autoOpened=false,_histDone=false,_phWired=false,_onMap=null,_onState=null,_peekT=0,MUTED=false,_maxSeq=0,_ptJeton='';
   try{ MUTED=localStorage.getItem('3dd-present-mute')==='1'; }catch(e){}
   // Couper/rétablir les notifications du chat (cloche) : coupé = plus de ticker ni de pulse (badge silencieux gardé).
   function applyMute(){ var b=document.getElementById('chatMute'); if(b){b.classList.toggle('muted',MUTED);b.title=MUTED?'Réactiver les notifications du chat':'Couper les notifications du chat';} setBadge(); }
@@ -253,8 +253,21 @@ var Live=(function(){
   // Le serveur ne croit plus 'isMember' ni 'isPresenter' sur parole : l'appartenance se prouve par
   // le jeton d'acces de la session, le titre de presentateur par le control_token. Ce qui part d'ici
   // n'est plus qu'une AFFIRMATION, et le serveur la remplace par ce qu'il a verifie.
+  // ⚠️ JETON DE PRÉSENCE (P1c étape 2, incrément 3). Le battement PORTE le jeton reçu au précédent
+  // (champ pt) : le serveur en dérive la clé de la ligne, donc un tiers ne peut plus poster notre clé
+  // pour écraser notre présence. Tant qu'on n'en a pas, on demande l'émission (wantToken) — ce marqueur
+  // distingue un BOOTSTRAP moderne d'un client LEGACY, sans quoi sansJeton ne retomberait jamais à
+  // zéro et la porte ne pourrait jamais se fermer. La réponse est lue pour ranger le jeton émis ; un
+  // hôte sans PLAYER_PRESENCE_SECRET n'en renvoie pas, et tout continue comme avant (legacy).
+  // ⚠️ AUCUN BACKTICK DANS CE COMMENTAIRE : ce fichier ÉMET du JS via des template literals — un
+  // backtick ici ferme la chaîne et casse tout le module (vu à l'instant, 33 essais rouges d'un coup).
   function sendAttend(){ if(!SLUG||!ME)return; try{ var h={'Content-Type':'application/json'};var jw=accessToken();if(jw)h.Authorization='Bearer '+jw;
-    fetch('/api/doc',{method:'POST',headers:h,body:JSON.stringify({action:'present-attend',slug:SLUG,control:CONTROL,key:attKey(),name:ME.name||'',email:ME.email||'',avatar:ME.avatar||''})}); }catch(e){} }
+    var corps={action:'present-attend',slug:SLUG,control:CONTROL,key:attKey(),name:ME.name||'',email:ME.email||'',avatar:ME.avatar||''};
+    if(_ptJeton)corps.pt=_ptJeton;else corps.wantToken='1';
+    fetch('/api/doc',{method:'POST',headers:h,body:JSON.stringify(corps)})
+      .then(function(r){return r.json();})
+      .then(function(d){if(d&&d.pt)_ptJeton=d.pt;})
+      .catch(function(){}); }catch(e){} }
   var EMOJIS=['👍','❤️','😂','😮','👏','🎉'];
   var RSVG='<svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2 stroke-linecap=round><circle cx=12 cy=12 r=9 /><path d="M8.5 14.5s1.4 1.7 3.5 1.7 3.5-1.7 3.5-1.7"/><line x1=9 y1=9.2 x2=9.01 y2=9.2 /><line x1=15 y1=9.2 x2=15.01 y2=9.2 /></svg>';
   function esc(s){return Player.live.escapeHtml(s);}
