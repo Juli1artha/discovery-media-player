@@ -320,25 +320,33 @@ async function vraimentSonderTout() {
  * Seulement si la colonne est là (sinon la question n'a pas de sens), et JAMAIS bloquant : un
  * diagnostic ne doit pas casser la carte qu'il enrichit — mieux vaut pas de compteur qu'une carte muette.
  */
+// Plafond du diagnostic : borné, ET qui le dit. Voir ci-dessous — la borne n'était jamais le défaut,
+// son SILENCE l'était.
+const PLAFOND_SANS_RANG = 1000;
+
 async function ajouterSansRang(etat) {
   const r = reponses.get("doc_presentation_messages.mod_seq");
   if (!r || !r.present) return;
   try {
-    // ⚠️ `selectAll`, JAMAIS un `limit` — ET C'ÉTAIT LE DÉFAUT DE LA PREMIÈRE VERSION (relevé 2e hôte).
-    // Un compteur borné qui ne dit pas qu'il est borné redevient le nombre ambigu qu'il remplaçait, et
-    // une liste tronquée a EXACTEMENT la forme d'une liste complète. Les deux bornes mentaient en sens
-    // OPPOSÉS : une liste de nuls coupée (l'ordre physique groupe par présentation) pouvait ne voir que
-    // des scellées → total = dontScellees → faux « tout va bien » sur une base où des non-scellées ont
-    // été oubliées ; et la liste de scellées, sans `limit`, tombait sous le plafond IMPLICITE de
-    // PostgREST (db-max-rows) → setScellees incomplet → dontScellees sous-compté → fausse ALERTE
-    // permanente sur un hôte à >1000 archives. `selectAll` pagine jusqu'au bout : le transport reste
-    // borné à la taille RÉELLE du problème (zéro sur un hôte sain), et le compteur ne peut plus mentir
-    // par troncature. `is.null`/`eq` restent de la syntaxe portable.
-    const scellees = await PLAYER.db.selectAll("doc_presentations?active=eq.false&control_hash=is.null&select=slug");
-    const setScellees = new Set((Array.isArray(scellees) ? scellees : []).map((p) => p.slug));
-    const nuls = await PLAYER.db.selectAll("doc_presentation_messages?mod_seq=is.null&select=slug");
+    // ⚠️ BORNÉ, ORDONNÉ, ET QUI DIT QU'IL EST BORNÉ — trois défauts corrigés en un (relevé 2e hôte,
+    // trois passes). (1) `selectAll` sans borne (0.1.93) : sur un hôte dont le backfill n'a JAMAIS
+    // tourné, toutes les lignes sont nulles → il paginait la table ENTIÈRE sur la route de la carte,
+    // épuisant maxDuration — que le try/catch NE rattrape PAS (un dépassement tue la fonction, pas la
+    // promesse). La carte TOMBE au lieu de dégrader, ce que la ligne d'à côté interdit. La borne
+    // n'était pas le défaut ; son silence l'était. (2) Sans `order=`, la pagination par Range n'a
+    // aucune stabilité — deux pages doublent ou sautent des lignes sur une base vivante (une
+    // présentation en cours EST une base vivante). Les trois autres selectAll du dépôt ont toutes un
+    // `order=` ; ce code était le seul à y déroger. (3) On rend donc en UNE requête bornée à PLAFOND,
+    // triée, et si la borne est atteinte on pose `tronque: true` : l'égalité total/dontScellees n'est
+    // alors plus lisible comme « tout va bien ». Un compteur borné DOIT dire qu'il l'est.
+    const bornee = `&order=slug.asc&limit=${PLAFOND_SANS_RANG}`;
+    const scellees = await PLAYER.db.request(`doc_presentations?active=eq.false&control_hash=is.null&select=slug${bornee}`);
+    const listeScellees = Array.isArray(scellees) ? scellees : [];
+    const setScellees = new Set(listeScellees.map((p) => p.slug));
+    const nuls = await PLAYER.db.request(`doc_presentation_messages?mod_seq=is.null&select=slug${bornee}`);
     const liste = Array.isArray(nuls) ? nuls : [];
-    etat.sansRang = { total: liste.length, dontScellees: liste.filter((m) => setScellees.has(m.slug)).length };
+    const tronque = liste.length >= PLAFOND_SANS_RANG || listeScellees.length >= PLAFOND_SANS_RANG;
+    etat.sansRang = { total: liste.length, dontScellees: liste.filter((m) => setScellees.has(m.slug)).length, tronque };
   } catch { /* best-effort : un compteur absent vaut mieux qu'une carte en échec */ }
 }
 
