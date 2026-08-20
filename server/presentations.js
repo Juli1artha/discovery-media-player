@@ -768,7 +768,7 @@ let _avertRpcPresence = false;
 // D'OPTIONS, pas dans un slot positionnel : la ranger en 2e position (ce que faisait 0.1.84) déplaçait
 // le vrai paramètre et faisait jeter `Cannot destructure property 'key'` sur un appel à deux arguments
 // (P1a audit CODEX 5.6). `participant || {}` : un appel sans participant tombe en 400, jamais en throw.
-async function recordAttendance(slug, participant, { presentation = null, ipHash = null, anonCap = null } = {}) {
+async function recordAttendance(slug, participant, { presentation = null, ipHash = null, anonCap = null, hasToken = null } = {}) {
   const { key, name, email, avatar, isMember, isPresenter } = participant || {};
   if (!slug || !key) return { ok: false, status: 400 };
   // La route vient DÉJÀ de charger la présentation (contrôle présentateur) : elle la fournit dans les
@@ -795,6 +795,10 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
         p_name: (name || "").slice(0, 120), p_avatar: (avatar || "").slice(0, 600),
         p_is_member: !!isMember, p_is_presenter: !!isPresenter,
         p_max_gap_ms: ATTEND_MAX_GAP_MS, p_anon_cap: capAnon,
+        // Transition du jeton (0017) : true → last_token_at, false → last_no_token_at, null → ni l'un ni
+        // l'autre. La RPC 11-args (p_has_token DEFAULT null) accepte l'appel même sans la 0017 côté code
+        // ancien ; sans la 0017 côté base, la 11-args n'existe pas → on tombe dans le repli ci-dessous.
+        p_has_token: hasToken == null ? null : !!hasToken,
       },
     });
     const ligne = Array.isArray(r) ? r[0] : r;

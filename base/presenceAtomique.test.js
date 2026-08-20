@@ -49,11 +49,42 @@ decrire("le plafond de création anonyme est atomique (RPC 0015)", () => {
   const battre = (slug, key, opts = {}) => presentations.recordAttendance(
     slug,
     { key, name: "V", isMember: !!opts.isMember, isPresenter: !!opts.isPresenter },
-    { ipHash: opts.ip || "hA", anonCap: opts.cap ?? 325 },
+    { ipHash: opts.ip || "hA", anonCap: opts.cap ?? 325, hasToken: opts.hasToken },
   );
 
   const nbAnon = async (slug) =>
     (await base.request(`doc_presentation_attendees?slug=eq.${encodeURIComponent(slug)}&is_member=is.false&is_presenter=is.false&select=attendee_key`)).length;
+
+  const ligne = async (slug, key) =>
+    (await base.request(`doc_presentation_attendees?slug=eq.${encodeURIComponent(slug)}&attendee_key=eq.${encodeURIComponent(key)}&select=last_token_at,last_no_token_at&limit=1`))[0];
+
+  // ⚠️ P1c étape 2 : la RPC 11-args pose les colonnes de transition selon p_has_token.
+  it("hasToken pose last_token_at ; sans jeton pose last_no_token_at ; les deux se cumulent", async () => {
+    const p = await nouvellePresentation();
+    await battre(p.slug, "k-tok", { hasToken: true });
+    const a = await ligne(p.slug, "k-tok");
+    expect(a.last_token_at, "un battement avec jeton pose last_token_at").not.toBeNull();
+    expect(a.last_no_token_at, "et ne touche pas l'autre").toBeNull();
+
+    await battre(p.slug, "k-tok", { hasToken: false });   // même clé, battement legacy
+    const b = await ligne(p.slug, "k-tok");
+    expect(b.last_no_token_at, "un battement sans jeton pose last_no_token_at").not.toBeNull();
+    expect(b.last_token_at, "sans effacer la trace du battement avec jeton (max, pas remplacement)").not.toBeNull();
+  }, 30000);
+
+  // ⚠️ COMPATIBILITÉ DE CONTRAT : un appel à 10 arguments (ancien code) se résout sur la 11-args via le
+  // DEFAULT du 11e paramètre — pas de fonction fantôme, pas de surcharge ambiguë.
+  it("la RPC accepte encore un appel à 10 arguments (p_has_token par défaut)", async () => {
+    const p = await nouvellePresentation();
+    const r = await base.request("rpc/player_attendance_bump", {
+      method: "POST",
+      body: { p_slug: p.slug, p_key: "k-10", p_ip_hash: "h", p_page: 1, p_name: "V", p_avatar: "", p_is_member: false, p_is_presenter: false, p_max_gap_ms: 60000, p_anon_cap: 325 },
+    });
+    expect((Array.isArray(r) ? r[0] : r).ok, "l'ancien contrat à 10 args passe toujours").toBe(true);
+    const a = await ligne(p.slug, "k-10");
+    expect(a.last_token_at, "p_has_token absent → ni l'une").toBeNull();
+    expect(a.last_no_token_at, "ni l'autre").toBeNull();
+  }, 30000);
 
   // ⚠️ EN CONCURRENCE, PAS À LA SUITE. Enchaînées, une lecture-puis-insertion naïve tiendrait le
   // compte ; c'est la course qui distingue le verrou atomique du reste.

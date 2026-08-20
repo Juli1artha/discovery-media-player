@@ -77,6 +77,15 @@ const ATTENDUES = {
     migration: "supabase/migrations/0016-chat-differentiel.sql",
     fonction: "relire le chat en différentiel (mod_seq > curseur) au lieu des 300 derniers à chaque signal",
   },
+  // Jeton de présence (P1c étape 2). `last_token_at` est sondée AVANT d'écrire les colonnes de
+  // transition et de servir le compteur `presence`. `last_no_token_at` voyage avec elle dans 0017 (elle
+  // est donc exemptée de sonde séparée, cf. NON_SONDEES du test carteSchemaMigrations). Absentes → on
+  // n'écrit pas les colonnes et le compteur n'apparaît pas ; la présence continue de fonctionner.
+  jetonPresence: {
+    table: "doc_presentation_attendees", colonne: "last_token_at",
+    migration: "supabase/migrations/0017-jeton-presence.sql",
+    fonction: "mesurer la transition du jeton de présence (avecJeton / sansJeton) pour savoir quand fermer",
+  },
 };
 
 /**
@@ -305,6 +314,7 @@ async function vraimentSonderTout() {
   for (const nom of Object.keys(ATTENDUES)) await attendue(nom);
   const etat = etatDuSchema();
   await ajouterSansRang(etat);
+  await ajouterPresence(etat);
   return etat;
 }
 
@@ -357,6 +367,35 @@ async function ajouterSansRang(etat) {
     const tronque = liste.length >= PLAFOND_SANS_RANG || listeScellees.length >= PLAFOND_SANS_RANG;
     etat.sansRang = { total: liste.length, dontScellees: liste.filter((m) => setScellees.has(m.slug)).length, tronque };
   } catch { /* best-effort : un compteur absent vaut mieux qu'une carte en échec */ }
+}
+
+/**
+ * ⚠️ COMPTEUR DE TRANSITION DU JETON DE PRÉSENCE (P1c étape 2). `presence: { avecJeton, sansJeton }`
+ * sur 24 h : `sansJeton === 0` ⇒ plus aucun client legacy ne bat → on peut poser PLAYER_PRESENCE_STRICT.
+ * Sans ce compteur, poser le drapeau reviendrait à fermer la porte sans regarder qui est derrière.
+ *
+ * ⚠️ LES DEUX ENSEMBLES SE RECOUVRENT VOLONTAIREMENT. Un participant qui a envoyé les DEUX sortes de
+ * battements dans la fenêtre (deux onglets, l'un en cache legacy, l'autre à jour) compte dans les DEUX
+ * — c'est le cœur du correctif à deux champs. Donc `avecJeton + sansJeton ≠ nombre de participants` :
+ * quelqu'un qui « corrigerait » l'apparente incohérence en rendant les deux exclusifs ferait revenir le
+ * défaut d'origine (un seul battement moderne effacerait la trace legacy). Le critère est en ANY :
+ * `sansJeton` = « a battu sans jeton dans les 24 h », vrai quoi qu'aient fait ses autres battements.
+ *
+ * Même patron borné-ordonné-parlant que `sansRang`, et pour les mêmes raisons — `doc_presentation_attendees`
+ * est la plus grosse table et la seule écrite pendant qu'on la lit.
+ */
+async function ajouterPresence(etat) {
+  const r = reponses.get("doc_presentation_attendees.last_token_at");
+  if (!r || !r.present) return;
+  try {
+    const depuis = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    const bornee = `&order=slug.asc&limit=${PLAFOND_SANS_RANG}`;
+    const avec = await PLAYER.db.request(`doc_presentation_attendees?last_token_at=gt.${encodeURIComponent(depuis)}&select=slug${bornee}`);
+    const sans = await PLAYER.db.request(`doc_presentation_attendees?last_no_token_at=gt.${encodeURIComponent(depuis)}&select=slug${bornee}`);
+    const nAvec = Array.isArray(avec) ? avec.length : 0;
+    const nSans = Array.isArray(sans) ? sans.length : 0;
+    etat.presence = { avecJeton: nAvec, sansJeton: nSans, tronque: nAvec >= PLAFOND_SANS_RANG || nSans >= PLAFOND_SANS_RANG };
+  } catch { /* best-effort */ }
 }
 
 /** La réponse, retenue pour qui la demandera — sans repasser par la base. */
