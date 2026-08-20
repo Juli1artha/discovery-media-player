@@ -83,9 +83,10 @@ describe("le chemin de migration existe et dit ses règles", () => {
 // n'arrive sans être déclarée quelque part — ni dans l'installation, ni dans une migration.
 describe("toute colonne écrite par le code est déclarée", () => {
   /** Les noms de colonnes que le serveur écrit dans un corps de requête. */
-  function colonnesEcrites() {
+  function colonnesEcrites(parFichier = null) {
     const noms = new Set();
     for (const f of fs.readdirSync(path.join(RACINE, "server"))) {
+      const avant = noms.size;
       if (!f.endsWith(".js") || f.includes(".generated.") || f.startsWith("__")) continue;
       // ⚠️ ON RETIRE LES COMMENTAIRES AVANT DE LIRE, ET C'EST UNE DÉTECTION QUI L'A EXIGÉ. La
       // première version accusait une colonne « ligne » qui n'existe pas : elle lisait la phrase
@@ -148,6 +149,7 @@ describe("toute colonne écrite par le code est déclarée", () => {
           for (const c of d[1].matchAll(/\b([a-z][a-z0-9_]{2,})\s*:/g)) noms.add(c[1]);
         }
       }
+      if (parFichier) parFichier[f] = noms.size - avant;
     }
     return [...noms];
   }
@@ -158,33 +160,55 @@ describe("toute colonne écrite par le code est déclarée", () => {
 
   // ⚠️ PLANCHER DE COUVERTURE — LA GARDE QUI GARDE LA GARDE.
   //
-  // Ce test disait `> 10` alors que le balayage voit 71 colonnes : la couverture pouvait donc tomber de
-  // 71 à 11 sans un seul rouge. Ce n'est pas hypothétique — elle EST tombée à 61 en sortant un corps de
+  // Ce test disait `> 10` alors que le balayage voit 71 colonnes : la couverture pouvait tomber de 71 à
+  // 11 sans un seul rouge. Ce n'est pas hypothétique — elle EST tombée à 61 en sortant un corps de
   // requête dans une variable, et rien n'a échoué. Elle a été rattrapée par une HABITUDE DE LECTURE
-  // (j'ai comparé deux comptes parce que je venais de toucher ce code), pas par un mécanisme. Un mois
-  // plus tard, sur un refactor sans rapport, personne ne compare — et **une garde à couverture nulle
-  // passe tous ses tests** : elle ne ment pas, elle ne dit plus rien, et le silence se lit comme un
-  // succès.
+  // (comparer deux comptes en travaillant sur ce code), pas par un mécanisme. Un mois plus tard,
+  // personne ne compare — et une garde à couverture nulle passe tous ses tests : elle ne ment pas,
+  // elle ne dit plus rien, et le silence se lit comme un succès.
   //
-  // D'où un plancher AFFIRMÉ, au niveau réel. Le jour où un refactor déplace le puits d'écriture, ce
-  // test échoue au lieu de rétrécir, et son auteur voit immédiatement ce qu'il vient de rendre
-  // invisible. Baisser ce nombre est alors un geste DÉLIBÉRÉ, écrit dans un diff — pas une érosion.
+  // ⚠️ ET LE SEUIL EST LARGE, EXPRÈS — c'est le point de conception, et il est contre-intuitif.
   //
-  // ⚠️ Et il rend visible le DESSERRAGE, qui est le geste qui vide une garde : quand celle-ci a accusé
-  // sept non-colonnes (`status`, `summary`, `members`…), le réflexe correct — la resserrer — pouvait
-  // tout aussi bien la vider. Le plancher est ce qui distingue « resserrée » de « désarmée ».
-  // (relevé du second hôte, qui a refusé que je traite l'épisode comme une anecdote)
-  const PLANCHER_COLONNES = 71;
+  // Le coller au relevé du jour (71) détecterait la plus petite érosion… et rougirait au premier
+  // retrait LÉGITIME de colonne. Au troisième faux positif, quelqu'un le baisserait — sans aucune
+  // raison de s'arrêter à un nombre plutôt qu'un autre, puisque rien ne dirait ce que le nombre
+  // protège. C'est le geste exact qui vide une garde : une garde qui crie à tort SE FAIT DESSERRER, et
+  // personne ne vérifie ensuite qu'elle garde encore quelque chose. (Ce dépôt en a la preuve : ce
+  // balayage a accusé sept non-colonnes, et le réflexe correct — le resserrer — pouvait tout aussi
+  // bien le désarmer.)
+  //
+  // Donc : un seuil qu'aucun ménage normal n'atteint et qu'un EFFONDREMENT franchit tout de suite, avec
+  // le relevé DATÉ écrit à côté pour que le prochain lecteur sache de quoi il s'écarte. Le plancher ne
+  // mesure pas la couverture — il détecte son EFFONDREMENT. Deux objectifs différents, et le second est
+  // le seul qui tienne dans la durée : il ne dépend de personne qui compare deux nombres tous les mois.
+  // (Conception affinée par le second hôte, après l'avoir appliquée chez lui.)
+  //
+  // RELEVÉ DU JOUR — témoin daté : 71 colonnes le 2026-08-20 (presentations 37, shares 21, liens 8).
+  const PLANCHER_COLONNES = 55;
+  // ⚠️ ET UN PLANCHER PAR FICHIER, sans quoi un fichier qui GROSSIT masquerait un fichier VIDÉ : le
+  // total ne dit rien de la répartition. (Troisième assertion, reprise du second hôte.)
+  const PLANCHER_PAR_FICHIER = { "presentations.js": 25, "shares.js": 14, "routes-liens.js": 5 };
 
-  it("le balayage couvre au moins autant de colonnes qu'au jour où on l'a mesuré", () => {
+  it("le balayage ne s'est pas EFFONDRÉ (seuil large, relevé daté en commentaire)", () => {
     const vues = colonnesEcrites().length;
     expect(vues,
-      `le balayage ne voit plus que ${vues} colonnes, contre ${PLANCHER_COLONNES} attendues.\n`
-      + "Un puits d'écriture a probablement changé de FORME (littéral sorti dans une variable, helper\n"
-      + "nouveau, fichier déplacé) et cette garde a cessé de le voir — SANS échouer sur le fond.\n"
-      + "Étendez le balayage à la forme nouvelle. Si la baisse est légitime (colonnes réellement\n"
-      + "retirées), baissez PLANCHER_COLONNES dans le même diff : le geste doit être délibéré.")
+      `le balayage ne voit plus que ${vues} colonnes (71 le 2026-08-20).\n`
+      + "Ce seuil n'est PAS la couverture du jour : il est large exprès, pour ne jamais rougir sur un\n"
+      + "ménage normal. Le franchir signifie qu'un puits d'écriture ENTIER a cessé d'être vu — un\n"
+      + "littéral sorti dans une variable, un helper nouveau, un fichier déplacé. Étendez le balayage à\n"
+      + "la forme nouvelle plutôt que de baisser ce nombre.")
       .toBeGreaterThanOrEqual(PLANCHER_COLONNES);
+  });
+
+  it("aucun FICHIER écrivain ne s'est vidé (un fichier qui grossit ne doit pas en masquer un autre)", () => {
+    const parFichier = {};
+    colonnesEcrites(parFichier);
+    for (const [fichier, plancher] of Object.entries(PLANCHER_PAR_FICHIER)) {
+      expect(parFichier[fichier] || 0,
+        `« ${fichier} » n'apporte plus que ${parFichier[fichier] || 0} colonnes au balayage.\n`
+        + "Le total peut rester bon pendant qu'un fichier cesse d'être lu : c'est ce que ce test refuse.")
+        .toBeGreaterThanOrEqual(plancher);
+    }
   });
 
   it.each(colonnesEcrites().filter((c) => !new Set(["method", "headers", "prefer", "body", "signal", "range"]).has(c)))(
