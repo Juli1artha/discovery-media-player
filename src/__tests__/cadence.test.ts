@@ -25,6 +25,8 @@ import {
   SESSION_INTERVAL_MS,
   SESSION_QUOTA_PER_HOUR,
   SESSION_WRITES_PER_HOUR,
+  VIEW_EVENTS_PER_READER_HOUR,
+  VIEW_QUOTA_PER_HOUR,
 } from "../cadence";
 
 describe("le quota se déduit de la cadence", () => {
@@ -63,5 +65,22 @@ describe("le quota se déduit de la cadence", () => {
     expect(SESSION_QUOTA_PER_HOUR,
       "un plafond qu'aucun usage réel n'atteint ne protège plus de rien")
       .toBeLessThanOrEqual(50_000);
+  });
+});
+
+// ⚠️ P1b : open/page/heartbeat ont leur PROPRE seau, sinon ils vidaient le quota des sessions. Même
+// discipline — le quota se DÉDUIT du budget par lecteur, il ne s'écrit pas à la main — et il reste borné.
+describe("le quota des vues légères est séparé et déduit", () => {
+  it("il se déduit du budget par lecteur, jamais écrit à la main", () => {
+    expect(VIEW_QUOTA_PER_HOUR).toBe(VIEW_EVENTS_PER_READER_HOUR * READERS_PER_EGRESS);
+  });
+
+  it("il est distinct de celui des sessions (c'est tout l'objet de la correction)", () => {
+    expect(VIEW_QUOTA_PER_HOUR).not.toBe(SESSION_QUOTA_PER_HOUR);
+  });
+
+  it("il tient plusieurs lecteurs et reste borné", () => {
+    expect(VIEW_QUOTA_PER_HOUR).toBeGreaterThan(VIEW_EVENTS_PER_READER_HOUR);
+    expect(VIEW_QUOTA_PER_HOUR).toBeLessThanOrEqual(50_000);
   });
 });

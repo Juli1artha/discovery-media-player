@@ -54,8 +54,27 @@ export const SESSION_WRITES_PER_HOUR = Math.ceil(3_600_000 / SESSION_INTERVAL_MS
  */
 export const READERS_PER_EGRESS = 25;
 
-/** Le quota horaire, déduit — jamais écrit à la main. */
+/** Le quota horaire des SESSIONS (upsert riche), déduit — jamais écrit à la main. */
 export const SESSION_QUOTA_PER_HOUR = SESSION_WRITES_PER_HOUR * READERS_PER_EGRESS;
+
+// ── Les événements analytiques LÉGERS : open / page / heartbeat ────────────────────────────────────
+//
+// ⚠️ P1b (audit CODEX 5.6). Le chemin externe gardait open, page ET session dans le MÊME seau, dont
+// le quota ne comptait que les sessions : 25 lecteurs derrière une IP le dépassaient par leurs
+// open/page avant même leurs sessions, et la mesure était abandonnée en silence. On sépare : la
+// session (un `upsert`) garde `SESSION_QUOTA_PER_HOUR` ; open/page/heartbeat (un `logView`, bien
+// meilleur marché) ont leur propre seau.
+//
+// Le budget par lecteur suit la même échelle que celui d'une présentation VIVANTE — une action
+// toutes les 5 s pendant une heure (PRESENTER_ACTIONS_PER_HOUR = 720). C'est très au-dessus d'un
+// lecteur réel (open une fois, une page par page NOUVELLE atteinte), donc généreux, et c'est
+// assumé : logView est bon marché, le seau ne sert qu'à borner une inondation, pas à arbitrer un
+// usage. Un événement `page` ne compte QUE la première atteinte d'une page ; le rejeu, lui, tombe
+// sous ce plafond.
+export const VIEW_EVENTS_PER_READER_HOUR = 720;
+
+/** Le quota horaire des vues légères, par adresse, déduit — jamais écrit à la main. */
+export const VIEW_QUOTA_PER_HOUR = VIEW_EVENTS_PER_READER_HOUR * READERS_PER_EGRESS;
 
 /**
  * Au bout de combien de temps sans le moindre signe cesse-t-on de compter ?
