@@ -10,6 +10,27 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.104] — 2026-08-20
+
+### Fixed (the one exact floor was justified by another guard — now that condition is checked, not assumed)
+
+- **The exact floor on migration `add column` counts now verifies its own justification.** It is exact
+  because no legitimate housekeeping can lower it — migrations are never deleted and `drop column` is
+  forbidden. But that monotonicity is not a property of the world: it holds **because another guard
+  enforces it**, and a mechanism can empty out, which is this whole family's subject. If that guard ever
+  shrank, the exact threshold would silently become an arbitrary one. The test now asserts that the
+  `drop column` interdiction still exists, and says what to do if it does not (widen this floor, or
+  restore the interdiction). Mutation-tested: removing the interdiction turns this red. A stated
+  condition of validity beats an assumed one; a **checked** one beats a stated one — and unlike
+  `tronque`'s condition (which would need response headers, out of reach), this one is checkable in
+  three lines. Reported by the second host, applying our own doctrine to our exception.
+
+### Note
+
+- The refined rule, worth keeping: **a threshold should be as tight as legitimate housekeeping allows —
+  and sometimes legitimate housekeeping is nil.** Neither "always exact" nor "always wide": the question
+  is what churn the measured quantity really admits.
+
 ## [0.1.103] — 2026-08-20
 
 ### Changed (`presence` now states what it measures, next to the numbers)
