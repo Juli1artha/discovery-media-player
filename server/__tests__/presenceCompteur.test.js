@@ -16,7 +16,11 @@ function joueur({ avec = [], sans = [], strict = false, actives = [] } = {}) {
         if (/select=[a-z_]+&limit=0/.test(chemin)) return [];                       // sondes de colonnes présentes
         if (/last_token_at=gt\./.test(chemin)) return avec.map((slug) => ({ slug }));
         if (/last_no_token_at=gt\./.test(chemin)) return sans.map((slug) => ({ slug }));
-        if (/doc_presentations\?active=eq\.true/.test(chemin)) return actives.map((slug) => ({ slug }));
+        if (/doc_presentations\?active=eq\.true/.test(chemin)) {
+          // ⚠️ le double EXIGE le filtre de vivacité : sans lui, une présentation abandonnée compterait.
+          expect(chemin, "le dénominateur doit filtrer sur last_seen (vivante ≠ active)").toMatch(/last_seen=gt\./);
+          return actives.map((slug) => ({ slug }));
+        }
         return [];
       },
     },
