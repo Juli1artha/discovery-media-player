@@ -50,6 +50,14 @@ describe("la carte de schéma suit les migrations qui ajoutent une colonne", () 
   // ménage légitime qui le fasse baisser — l'exactitude n'a pas de coût en faux positifs, et donne la
   // sensibilité maximale. Une règle s'applique en raisonnant sur ce qu'elle protège, pas en bloc.
   //
+  // ⚠️ ET LA CONDITION DE VALIDITÉ DE CETTE EXACTITUDE EST UNE AUTRE GARDE — donc elle se nomme, et
+  // ici elle se CONTRÔLE. La monotonie n'est pas une propriété du monde : elle tient parce que
+  // `cheminDeMigration.test.js` interdit `drop column`. Un mécanisme peut se vider — c'est tout le
+  // sujet de ces gardes — et le jour où celui-là rétrécirait, ce seuil exact deviendrait un seuil
+  // ARBITRAIRE sans que rien ne rougisse. Une condition ÉCRITE vaut mieux qu'une condition supposée ;
+  // une condition CONTRÔLÉE vaut mieux qu'une condition écrite — et contrairement à celle de `tronque`
+  // (qui exigerait des en-têtes hors de portée), celle-ci est vérifiable en trois lignes. (relevé 2e hôte)
+  //
   // RELEVÉ DU JOUR — témoin daté : 10 ajouts de colonnes le 2026-08-20.
   const PLANCHER_AJOUTS = 10;
 
@@ -61,6 +69,17 @@ describe("la carte de schéma suit les migrations qui ajoutent une colonne", () 
       + "Ce nombre est monotone (aucune migration ne disparaît) : une BAISSE est donc toujours une\n"
       + "perte de vue du balayage, jamais un ménage. Étendez le motif ; ne baissez pas le plancher.")
       .toBeGreaterThanOrEqual(PLANCHER_AJOUTS);
+  });
+
+  it("le plancher EXACT reste justifié : `drop column` est toujours interdit ailleurs", () => {
+    const gardeAdditive = fs.readFileSync(
+      path.join(RACINE, "server", "__tests__", "cheminDeMigration.test.js"), "utf8");
+    expect(gardeAdditive.includes('"drop column"'),
+      "PLANCHER_AJOUTS est EXACT parce qu'aucun ménage légitime ne peut le faire baisser — et ça ne\n"
+      + "tient que tant que `drop column` est interdit par cheminDeMigration.test.js. Cette interdiction\n"
+      + "a disparu : la monotonie n'est plus garantie, donc ce seuil exact n'est plus justifié. Rendez-le\n"
+      + "large (comme les autres planchers) ou rétablissez l'interdiction.")
+      .toBe(true);
   });
 
   it("chaque `add column` d'une migration est SONDÉ (ATTENDUES) ou exempté explicitement", () => {
