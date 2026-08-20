@@ -10,6 +10,30 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.111] — 2026-08-20
+
+### Security (a transient network error silently disarmed the anti-takeover control)
+
+- **The RPC fallback now requires proof, not merely failure.** `appelerBump` caught *any* exception and
+  concluded "migration 0018 is missing", retried without `p_only_if_unclaimed`, and **memoised the
+  degradation for the life of the process**. A one-second `ECONNRESET`, a 500 or a timeout therefore
+  removed the anti-takeover control on a fully migrated database, until restart. It now falls back only
+  on the exact signature-not-found evidence (`PGRST202`, in either of the shapes our two contexts
+  produce), and rethrows everything else. This is the day's own rule applied to production code: *a
+  mechanism that cannot measure must refuse to conclude, not conclude by default* — not knowing how to
+  tell `PGRST202` from a timeout did not make the fallback cautious, it made it automatic.
+- **A hardened bootstrap that could not run its check is refused (`503`), never written through the
+  loop.** The read-modify-write fallback writes *without* the anti-takeover check; taking it here would
+  have done by the back door what the main path had just refused. Ordinary heartbeats still degrade to
+  the loop as before — fail-closed on the control, never on availability.
+- **The "0018 missing" memo now expires (60 s) and resets with the context.** It was permanent, so an
+  operator applying 0018 to a running instance would have seen no effect until restart — a migration
+  silently ignored. Same doctrine `schema.js` already applies to its probes: a "no" does not have the
+  lifetime of a "yes".
+- **Errors from the standalone DB client now carry `statusCode` and the parsed PostgREST body**, so
+  deciding no longer means matching on a sentence. The message is unchanged (callers match `409` on it);
+  the studio context already exposed both. Reported by an external audit (P1).
+
 ## [0.1.110] — 2026-08-20
 
 ### Fixed (`presentationsActives` counted flagged-active, not live — a phantom-anomaly generator)
