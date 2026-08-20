@@ -362,12 +362,18 @@ declare
   v_count  integer;
   v_page   integer := greatest(1, coalesce(p_page, 1));
 begin
+  -- Chemin rapide : la ligne existe déjà → c'est une ACTUALISATION, jamais soumise au plafond.
   select true into v_exists
     from public.doc_presentation_attendees
     where slug = p_slug and attendee_key = p_key;
 
+  -- Création d'une ligne ANONYME : on sérialise par (slug, ip) et on compte sous le verrou, pour que
+  -- deux créations concurrentes ne franchissent pas le plafond ensemble. Membres et présentateur en
+  -- sont exemptés (leur identité est prouvée, ils ne gonflent pas de faux participants).
   if not coalesce(v_exists, false) and not p_is_member and not p_is_presenter then
     perform pg_advisory_xact_lock(hashtextextended(p_slug || '|' || coalesce(p_ip_hash, ''), 0));
+    -- Re-lire sous le verrou : la ligne a pu naître entre la première lecture et ici (même clé,
+    -- deux onglets). Si elle existe désormais, ce n'est plus une création → pas de plafond.
     select true into v_exists
       from public.doc_presentation_attendees
       where slug = p_slug and attendee_key = p_key;
@@ -378,12 +384,15 @@ begin
           and creator_ip_hash is not distinct from p_ip_hash
           and is_member = false and is_presenter = false;
       if v_count >= p_anon_cap then
-        return query select false, false, true;
+        return query select false, false, true;   -- plafond atteint : on ne crée pas
         return;
       end if;
     end if;
   end if;
 
+  -- L'écriture, en UN geste, pour la création comme pour l'actualisation. `last_seen` strictement
+  -- croissant ; le temps ajouté est le trou depuis le dernier battement, ignoré au-delà de MAX_GAP
+  -- (un onglet resté ouvert ne gonfle pas la présence) ; la page vue rejoint l'ensemble sans doublon.
   insert into public.doc_presentation_attendees as l
     (slug, attendee_key, name, email, avatar, is_member, is_presenter,
      first_seen, last_seen, total_ms, pages, creator_ip_hash)
