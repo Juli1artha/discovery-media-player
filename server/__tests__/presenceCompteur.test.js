@@ -7,7 +7,7 @@
 
 const schema = require("../schema.js");
 
-function joueur({ avec = [], sans = [], strict = false } = {}) {
+function joueur({ avec = [], sans = [], strict = false, actives = [] } = {}) {
   const ctx = {
     errors: { capture() {} },
     config: { presenceStrict: strict },
@@ -16,6 +16,7 @@ function joueur({ avec = [], sans = [], strict = false } = {}) {
         if (/select=[a-z_]+&limit=0/.test(chemin)) return [];                       // sondes de colonnes présentes
         if (/last_token_at=gt\./.test(chemin)) return avec.map((slug) => ({ slug }));
         if (/last_no_token_at=gt\./.test(chemin)) return sans.map((slug) => ({ slug }));
+        if (/doc_presentations\?active=eq\.true/.test(chemin)) return actives.map((slug) => ({ slug }));
         return [];
       },
     },
@@ -67,6 +68,29 @@ describe("compteur de présence (transition du jeton)", () => {
     expect(apres.presence.couvre, "porte fermée : le compteur ne mesure plus").toMatch(/PÉRIMÉE/);
     expect(apres.presence.couvre, "et on nomme ce qui prend le relais").toMatch(/signe de vie est avecJeton/);
     expect(apres.presence.couvre).not.toMatch(/0 = on peut fermer/);
+  });
+
+  // ⚠️ LE RELAIS NE SE LIT PAS SEUL. Porte fermée, `avecJeton` devient le signe de vie — mais il vaut
+  // zéro LÉGITIMEMENT hors présentation, l'état permanent d'une instance au repos. Sans le nombre de
+  // présentations actives, « avecJeton: 0 » est indécidable, et le lecteur pressé saute le mot
+  // « pendant ». On adjoint donc le nombre qui tranche, comme dontScellees l'a fait pour sansRang.
+  it("presentationsActives rend avecJeton interprétable seul", async () => {
+    joueur({ avec: [], sans: [], actives: [], strict: true });
+    const repos = await schema.sonderTout();
+    expect(repos.presence.presentationsActives, "rien ne tourne : 0 avecJeton est NORMAL").toBe(0);
+
+    joueur({ avec: [], sans: [], actives: ["p1", "p2"], strict: true });
+    const anomalie = await schema.sonderTout();
+    expect(anomalie.presence.presentationsActives, "deux présentations tournent…").toBe(2);
+    expect(anomalie.presence.avecJeton, "…et personne n'est enregistré : ANOMALIE").toBe(0);
+    expect(anomalie.presence.couvre, "le texte donne la règle de lecture avec le chiffre du moment").toMatch(/2 active\(s\) et 0 avecJeton = ANOMALIE/);
+  });
+
+  it("porte ouverte : le texte annonce déjà le relais à venir", async () => {
+    joueur({ avec: ["a"], sans: ["b"], actives: ["p1"], strict: false });
+    const etat = await schema.sonderTout();
+    expect(etat.presence.couvre).toMatch(/relais sera avecJeton croisé avec presentationsActives/);
+    expect(etat.presence.presentationsActives).toBe(1);
   });
 
   it("borne atteinte : tronque=true", async () => {

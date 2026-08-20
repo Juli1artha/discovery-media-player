@@ -230,8 +230,11 @@ the mechanism works or is completely broken. **A counter that can no longer vary
 measuring, even while it still shows the right value**, and it is *time* that does this, not a defect:
 no commit to blame, no mutation to catch. After closing, read `sansJeton: 0` as "the transition is
 over", never as "all is well" — those are different statements. **What takes over as the sign of life
-is `avecJeton`**: non-zero means presences really are being recorded; zero *during a live presentation*
-means something is broken. The card says which of the two regimes it is in, in its own `couvre` field,
+is `avecJeton`** — but never read alone: it is legitimately zero outside a presentation, which is the
+resting state of any instance. So the card carries `presentationsActives` beside it, and the pair is
+decidable on its own: *N active and 0 `avecJeton` is an anomaly; 0 active and 0 `avecJeton` is rest.*
+Without that second number the reader has to remember the word "during", and "during" is exactly the
+word a hurried reader skips. The card says which of the two regimes it is in, in its own `couvre` field,
 so the caveat travels with the numbers rather than living here alone.
 
 Setting the flag before `sansJeton` reaches zero closes the door on audiences that are still in the
