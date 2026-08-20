@@ -92,6 +92,7 @@ Une présentation **inactive** (terminée ou abandonnée) est une archive : **pu
 | `doc_presentation_messages.client_key` | clé d'idempotence d'envoi | idem |
 | `doc_presentation_attendees.name` / `doc_presentation_attendees.email` / `doc_presentation_attendees.avatar` | identité du participant | purgées avec la présentation |
 | `doc_presentation_attendees.attendee_key` | identifiant de présence | idem |
+| `doc_presentation_attendees.creator_ip_hash` | **empreinte tronquée** de l'IP qui a créé la ligne (jamais l'IP en clair) — sert au plafond de création anonyme (migration 0015) | purgée avec la présentation |
 | `doc_presentation_attendees.pages` | pages vues par le participant | idem |
 
 ## Sessions d'agent (`doc_bot_sessions`)
