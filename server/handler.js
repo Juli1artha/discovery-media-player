@@ -610,6 +610,20 @@ async function handler(req, res) {
             return typeof signer === "function" && !!signer("carte-sonde", "carte-sonde", 60);
           } catch { return false; }
         })(),
+        // ⚠️ LA PORTE REFUSE-T-ELLE, OU EST-ELLE SEULEMENT CONFIGURÉE POUR REFUSER ? `presenceStrict`
+        // au-dessus dit que la porte refuse les battements sans preuve — vrai, et mesuré (il exige de
+        // pouvoir émettre). Mais le contrôle anti-usurpation des BOOTSTRAPS, lui, peut être désarmé
+        // sans que rien ne le dise : 0018 absente, ou — avant 0.1.111 — un simple hoquet réseau. On
+        // avait fermé cet écart sur `presenceJetons` en mesurant plutôt qu'en déclarant, et laissé le
+        // champ voisin ouvert. (Nommé par le second hôte.)
+        //
+        // ⚠️ TROIS ÉTATS. « inconnu » n'est pas « actif » : un processus qui n'a pas encore servi de
+        // bootstrap n'a rien constaté, et annoncer une garde active sur une absence d'observation est
+        // exactement ce qu'on refuse ailleurs. On ne peut pas sonder la fonction sans l'appeler — elle
+        // écrit — donc on rend ce qui a été CONSTATÉ à l'usage, jamais une déduction.
+        presenceDurcissement: (() => {
+          try { return require("./presentations").etatDurcissementBootstrap(); } catch { return "inconnu"; }
+        })(),
         // ⚠️ LES JETONS DE PRÉSENCE SONT-ILS RÉELLEMENT ÉMIS ? Sans ce booléen, un exploitant qui vient
         // de poser `PLAYER_PRESENCE_SECRET` n'a AUCUN moyen de vérifier que son réglage a pris : la
         // carte affiche `presence: {0,0}` aussi bien quand le secret est actif que quand la variable est

@@ -10,6 +10,23 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.115] — 2026-08-20
+
+### Added (the card said the door was configured to refuse, not that it refuses)
+
+- **`presenceDurcissement` reports the *observed* state of the bootstrap anti-takeover check.**
+  `presenceStrict` says the door refuses unproven heartbeats — true, and measured. But the check that
+  stops a bootstrap from seizing a claimed row could be disarmed with nothing saying so: migration 0018
+  missing, or — before 0.1.111 — any transient network error. We closed exactly this gap on
+  `presenceJetons` by *measuring* rather than declaring, and left it open on the neighbouring field. The
+  card now carries what the process actually observed while using the check: `actif`, `degrade`, or
+  `inconnu`.
+- **Three states, because "not degraded" is not "verified".** A process that has not yet served a
+  bootstrap has observed nothing, and announcing an active guard on an absence of observation is what
+  this card refuses elsewhere — the same rule as `verdict: non-sonde` for the schema. The check cannot
+  be probed without calling the function, which writes; and a network failure does not move it to
+  `degrade`, since it proves nothing about 0018. Named by the second host.
+
 ## [0.1.114] — 2026-08-20
 
 ### Privacy (the IP fingerprint was not anonymous, and the comment said it was)
