@@ -778,7 +778,7 @@ jobs:
 
       # ⚠️ Le banc REFUSE de s'esquiver quand `CI` est posé : si PostgREST ne démarrait pas, une
       # esquive silencieuse rendrait cette étape verte sans que rien n'ait été éprouvé.
-      - name: The three properties the in-memory double cannot simulate
+      - name: What the in-memory double cannot simulate — against a real Postgres
         env:
           PLAYER_TEST_POSTGREST_URL: http://127.0.0.1:3002
         run: npm run test:base

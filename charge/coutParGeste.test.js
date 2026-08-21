@@ -70,10 +70,30 @@ const lire = async (p, query) => {
   return res.statusCode;
 };
 
-// RELEVÉ DU JOUR — témoins datés (2026-08-20), à lire avec les budgets larges ci-dessous.
-//   battement anonyme (jeton porté) : 2   |  battement bootstrap : 2
-//   changement de page (présentateur) : 2 |  resynchronisation d'état : 1
-//   resynchronisation de chat (différentielle) : 2
+// RELEVÉ DU JOUR — témoins datés (2026-08-21), et CONFRONTÉS par le banc lui-même.
+//
+// ⚠️ CE RELEVÉ ÉTAIT DE LA PROSE, ET IL AVAIT DÉRIVÉ SUR QUATRE LIGNES SUR CINQ. Daté du 20/08, il
+// annonçait « battement : 2 » quand le banc en imprimait 3, « changement de page : 2 » pour 1,
+// « resynchronisation d'état : 1 » pour 0, « resynchronisation de chat : 2 » pour 0. Personne ne
+// mentait : le banc a évolué (le compteur de débit, longtemps stubbé, est devenu comptable) et la
+// prose est restée. Un fait écrit à deux endroits diverge tant que personne ne les confronte — c'est
+// la règle qui vaut déjà pour init.sql et pour docs/API.md.
+//
+// ⚠️ ET LA DÉRIVE ÉTAIT DU MAUVAIS CÔTÉ : elle annonçait le coût PLUS BAS qu'il n'était. Le relevé
+// qui rassure est celui qu'on ne relit jamais. Le témoin est donc devenu une DONNÉE que le banc
+// compare à ce qu'il vient de mesurer : le mettre à jour redevient une décision, pas un oubli.
+//
+// Les budgets restent, plus larges, et disent autre chose : ce qu'on TOLÉRERAIT. Le témoin dit ce
+// qui EST. Un geste qui bouge rougit ici même en restant sous son budget — c'est exactement
+// l'érosion que la trace imprimée voulait rendre visible, désormais gardée.
+const TEMOIN = {
+  "battement (jeton porté)": 2,
+  "battement (bootstrap)": 2,
+  "changement de page": 1,
+  "resync état × 20 spectateurs": 0,
+  "resync chat × 20, même curseur": 0,
+  "100 battements / 10 battements": 10,
+};
 const BUDGET_BATTEMENT = 4;
 const BUDGET_PAGE = 5;
 const BUDGET_RESYNC = 4;
@@ -172,5 +192,29 @@ describe("coût par geste, en allers-retours base", () => {
     noter("100 battements / 10 battements", Number(facteur.toFixed(1)), `(${cent} contre ${dix})`);
     expect(facteur, `100 battements coûtent ${cent} appels contre ${dix} pour 10 — facteur ${facteur.toFixed(1)}, attendu ~10`)
       .toBeLessThanOrEqual(12);
+  });
+
+  // ⚠️ LA CONFRONTATION, EN DERNIER — parce qu'elle lit ce que les essais précédents ont noté. Sans
+  // elle, le relevé en tête de fichier est de la prose : il a dérivé sur quatre lignes sur cinq
+  // avant que quiconque ne s'en aperçoive, et toujours vers le BAS.
+  //
+  // ⚠️ ELLE VÉRIFIE AUSSI QUE CHAQUE TÉMOIN A ÉTÉ MESURÉ. Un essai renommé ou retiré ferait
+  // disparaître son geste du relevé, et une comparaison qui ne parcourt que ce qui est présent
+  // resterait verte sur un banc qui ne mesure plus rien — la vacuité classique.
+  it("le relevé daté en tête de fichier dit ce que le banc vient de mesurer", () => {
+    const mesure = new Map(releve.map((r) => [r.geste, r.n]));
+    const ecarts = [];
+    for (const [geste, attendu] of Object.entries(TEMOIN)) {
+      if (!mesure.has(geste)) { ecarts.push(`${geste} : PLUS MESURÉ (témoin ${attendu})`); continue; }
+      const n = mesure.get(geste);
+      if (n !== attendu) ecarts.push(`${geste} : ${n} mesuré, ${attendu} au témoin`);
+    }
+    for (const { geste, n } of releve) {
+      if (!(geste in TEMOIN)) ecarts.push(`${geste} : ${n} mesuré, ABSENT du témoin`);
+    }
+    expect(ecarts,
+      "le témoin daté et la mesure divergent. Si le changement est voulu, mettez le témoin à jour "
+      + "AVEC sa date — c'est une décision, pas un ajustement")
+      .toEqual([]);
   });
 });
