@@ -10,6 +10,31 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.121] — 2026-08-21
+
+### Security
+- **The strict door reopened on the second bootstrap** (P1, external audit). 0.1.119 refused the
+  unprotected fallback under `PLAYER_PRESENCE_STRICT` — but only in the `catch`, the path where the
+  RPC has just failed. There is a **second path to the same write**: once the 60 s memo is armed,
+  `appelerBump` returns early without calling the RPC at all, strips `p_only_if_unclaimed` and
+  writes. So the first bootstrap was refused with `503` and the next ones, for the following minute,
+  wrote **without the anti-takeover check**. The property we advertised — *strict means no
+  unprotected fallback* — was false. Both paths now share a single refusal constructor: two messages
+  written separately would drift, and drift is what produced the defect. Only reachable on a host
+  that armed the strict door without migration 0018.
+- ⚠️ **Our bench could not see it: it called once.** A guard that only exercises the first pass says
+  nothing about the regime — and here the regime took the other door. The regression tests repeat the
+  bootstrap 100 times and assert that no request body ever lacks `p_only_if_unclaimed`.
+
+### Fixed
+- **`schema.durcissementBase` disappeared when the database was entirely mute** (P2, external audit).
+  The early return — taken when even the witness query fails — dropped the field, while the contract
+  says it always holds one of three values. A host testing `durcissementBase !== "applique"` before
+  deploying then read `undefined !== "applique"`: true by accident. **An absent field is more
+  dangerous than a cautious one** — it is indistinguishable from an older player that never had it.
+  The field and its scope description are now returned on that path too, from a single shared
+  constant.
+
 ## [0.1.120] — 2026-08-21
 
 ### Added
@@ -3357,7 +3382,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.120...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.121...HEAD
+[0.1.121]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.120...v0.1.121
 [0.1.120]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.119...v0.1.120
 [0.1.119]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.118...v0.1.119
 [0.1.118]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.117...v0.1.118

@@ -304,7 +304,16 @@ async function vraimentSonderTout() {
   } catch {
     // On rend ce qu'on savait déjà — un manque constaté plus tôt reste un fait — mais le verdict
     // dit que cette mesure-ci n'a pas eu lieu. Taire l'un ou l'autre serait mentir d'un côté.
-    return { ...etatDuSchema(), verdict: "indetermine" };
+    // ⚠️ LE CHAMP DOIT ÊTRE LÀ MÊME ICI. Le contrat annonce que `durcissementBase` vaut toujours
+    // l'une des trois valeurs ; ce retour anticipé le faisait DISPARAÎTRE quand la base ne répond
+    // pas du tout. Un hôte qui teste `durcissementBase !== "applique"` avant de déployer lisait
+    // alors `undefined !== "applique"` — vrai par accident, donc juste par accident. Un champ
+    // absent est plus dangereux qu'un champ prudent : il ne se distingue pas d'un contrat plus
+    // ancien. (P2 audit externe.)
+    return {
+      ...etatDuSchema(), verdict: "indetermine",
+      durcissementBase: "indetermine", durcissementBaseCouvre: PORTEE_DURCISSEMENT,
+    };
   }
   // ⚠️ LE TÉMOIN VIENT DE RÉPONDRE : tout « non » encore en cache est SUSPECT — il peut dater
   // d'une panne guérie. On le jette et on repose la question, sinon ce diagnostic rendrait la
@@ -360,6 +369,14 @@ const PLAFOND_SANS_RANG = 1000;
 // être un slug réel (contrat `^[A-Za-z0-9_-]{1,64}$`), et ne peut pas heurter une vraie présence.
 // Un test de base (Postgres réel) vérifie qu'aucune ligne n'apparaît.
 const SLUG_SONDE_DURCISSEMENT = "sonde durcissement";
+// ⚠️ UNE SEULE DESCRIPTION, PARCE QU'IL Y A DEUX SORTIES. Le champ se pose aussi sur le retour
+// ANTICIPÉ (base muette) ; deux textes écrits séparément divergeraient, et c'est exactement ce qui
+// vient de se produire un cran plus haut avec le refus du mode strict.
+const PORTEE_DURCISSEMENT =
+  "propriété de la BASE (migration 0018), globale à toutes les instances — à ne pas confondre avec "
+  + "presenceDurcissement, qui est ce que CE processus a constaté en servant des bootstraps. "
+  + "C'est ce champ-ci qu'on lit AVANT un déploiement ; « indetermine » = la question n'a pas pu "
+  + "être posée, ce n'est ni un oui ni un non.";
 
 async function ajouterDurcissement(etat) {
   const corps = {
@@ -396,11 +413,7 @@ async function ajouterDurcissement(etat) {
       }
     } catch { /* jamais bloquant */ }
   }
-  etat.durcissementBaseCouvre =
-    "propriété de la BASE (migration 0018), globale à toutes les instances — à ne pas confondre avec "
-    + "presenceDurcissement, qui est ce que CE processus a constaté en servant des bootstraps. "
-    + "C'est ce champ-ci qu'on lit AVANT un déploiement ; « indetermine » = la question n'a pas pu "
-    + "être posée, ce n'est ni un oui ni un non.";
+  etat.durcissementBaseCouvre = PORTEE_DURCISSEMENT;
 }
 
 async function ajouterSansRang(etat) {
