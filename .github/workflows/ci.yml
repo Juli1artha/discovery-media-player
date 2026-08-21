@@ -371,21 +371,49 @@ jobs:
       # publication.yml (horaire, après plus d'une heure de divergence) ouvre une issue, puis une
       # personne agit. C'est la même fenêtre que la démo, décrite dans release.yml, et c'est un
       # arbitrage accepté — pas une propriété.
-      # La preversion de la demo, elle, installe le TARBALL DU COMMIT (examples/demo/vercel.json) :
-      # elle n attend donc pas que la version soit publiee, et elle montre le code de la PR au lieu
-      # du dernier player publie. Le pin ci-dessous reste ce qu un COPIEUR doit voir.
-      - name: Examples pin the version main declares
+      # ⚠️ DEUX VERSIONS SONT ACCEPTABLES, ET C'EST LA FENÊTRE CI-DESSUS QUI L'IMPOSE.
+      #
+      # Exiger la SEULE version de main rendait une PR de montée de version rouge PAR CONSTRUCTION :
+      # cette version n'existe pas encore sur npm, donc le déploiement de la démo (qui installe
+      # depuis le registre) échoue à chaque fois. Un contrôle qui échoue par construction cesse
+      # d'être lu — il a été vu rouge et ignoré trois fois de suite le jour où on l'a corrigé, et le
+      # rouge de déploiement sert aussi à autre chose. Une garde absente est un état connu ; une
+      # garde qui crie faux contamine le canal.
+      #
+      # On accepte donc la version de main OU la dernière PUBLIÉE. Ce que la garde protège reste
+      # intact : un exemple oublié plusieurs versions en arrière n'est ni l'une ni l'autre, donc il
+      # rougit. Seule la fenêtre entre la fusion et la publication cesse d'être une fausse alerte.
+      #
+      # Si le registre est injoignable, on retombe sur la règle stricte : ne pas savoir ne doit pas
+      # élargir ce qu'on autorise.
+      #
+      # ⚠️ CONSÉQUENCE SUR LA PROCÉDURE DE SORTIE, et c'est le piège du geste habituel : les exemples
+      # s'épinglent sur la DERNIÈRE PUBLIÉE, PAS sur la version qu'on est en train de publier. Les
+      # monter dans la PR de sortie repasserait la garde (ils vaudraient la version de main) mais
+      # ferait de nouveau ÉCHOUER le déploiement de la démo, qui installe depuis le registre : on
+      # aurait déplacé le rouge du contrôle vers le déploiement sans rien gagner. Ils se montent donc
+      # tout seuls à la sortie SUIVANTE — leur retard d'une version est la propriété recherchée, pas
+      # un oubli.
+      - name: Examples pin a version that exists
         if: matrix.node == '22'
         run: |
           V=$(node -p 'require("./package.json").version')
+          P=$(npm view discovery-media-player version 2>/dev/null || true)
+          if [ -z "$P" ]; then
+            echo "::notice::registre injoignable — on exige la version de main ($V), sans tolérance"
+            P="$V"
+          fi
           echec=0
           for ex in examples/*/package.json; do
             dep=$(node -p "require('./$ex').dependencies['discovery-media-player']")
-            [ "$dep" = "$V" ] || { echo "::error::$ex épingle $dep, main déclare $V — un copieur recevrait un player périmé"; echec=1; }
+            if [ "$dep" != "$V" ] && [ "$dep" != "$P" ]; then
+              echo "::error::$ex épingle $dep — ni la version de main ($V) ni la dernière publiée ($P). Un copieur recevrait un player périmé."
+              echec=1
+            fi
           done
           [ "$echec" = "0" ] || exit 1
           grep -q '">=22"' examples/demo/package.json || { echo "::error::examples must declare node >=22"; exit 1; }
-          echo "exemples : les trois épinglent $V"
+          echo "exemples : épinglés sur $V (main) ou $P (publiée) — les deux sont servables"
 
       # ⚠️ UN EXEMPLE QUI N'EST JAMAIS EXÉCUTÉ EST UNE AFFIRMATION, PAS UN EXEMPLE. Celui-ci
       # s'installe comme un copieur le ferait — sauf le player lui-même, pris depuis le tarball du
