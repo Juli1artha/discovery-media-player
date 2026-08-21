@@ -11,6 +11,11 @@
 
 import { describe, it, expect } from "vitest";
 import { comparerVersions, acceptables, ecartsExemples, versionsPubliees, exemplesDuDepot } from "../exemples-epingles.mjs";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const RACINE = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 const trois = (v) => [
   { fichier: "examples/demo/package.json", version: v },
@@ -132,7 +137,28 @@ describe("le dépôt réel", () => {
     for (const e of exemples) expect(e.version, e.fichier).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
-  it("⚠️ ils passent la règle contre les versions réellement publiées ce jour-là", () => {
-    expect(ecartsExemples("0.1.126", PUBLIEES, exemplesDuDepot())).toEqual([]);
+  // ⚠️ CE TEST DISAIT « contre les versions réellement publiées ce jour-là », ET C'ÉTAIT FAUX. Il
+  // comparait à une LISTE FIGÉE, écrite le jour de sa naissance. Deux sorties plus tard elle
+  // décrivait le passé : le test a rougi sur un dépôt parfaitement correct — et, plus grave, il
+  // aurait pu VERDIR sur un dépôt en retard, puisque la liste ne bouge plus. C'est la même classe
+  // que le relevé daté du banc de coût, trouvé le même jour : un fait figé à côté d'un fait vivant.
+  //
+  // ⚠️ UN TEST HORS LIGNE NE PEUT PAS SAVOIR CE QUE NPM SERT — et il ne doit pas essayer. Ce qu'il
+  // peut vérifier, c'est l'invariant qui ne dépend que du dépôt : un exemple épingle l'une des DEUX
+  // dernières versions que le CHANGELOG déclare. C'est la même fenêtre que la règle en forge, avec
+  // une source qui VIEILLIT AVEC LE DÉPÔT au lieu d'être recopiée. La vérification contre le
+  // registre, elle, reste en forge — c'est là que le réseau est légitime.
+  it("les exemples épinglent l'une des deux dernières versions du CHANGELOG", () => {
+    const changelog = readFileSync(join(RACINE, "CHANGELOG.md"), "utf8");
+    const versions = [...changelog.matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)].map((m) => m[1]);
+    // ⚠️ ANTI-VACUITÉ : sans versions lues, la comparaison ci-dessous serait vraie pour tout le
+    // monde. Un test qui ne peut pas mesurer doit refuser de conclure, pas conclure au vert.
+    expect(versions.length, "aucune version lue dans le CHANGELOG : la sonde vise à côté")
+      .toBeGreaterThanOrEqual(2);
+    const fenetre = versions.slice(0, 2);
+    const retard = exemplesDuDepot()
+      .filter((e) => !fenetre.includes(e.version))
+      .map((e) => `${e.fichier} épingle ${e.version}, hors des deux dernières (${fenetre.join(", ")})`);
+    expect(retard, "un intégrateur qui copie recevrait un player périmé").toEqual([]);
   });
 });

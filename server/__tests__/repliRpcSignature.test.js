@@ -357,3 +357,92 @@ describe("porte fermée : le MÉMO ne doit pas rouvrir ce que le refus vient de 
       "et le mémo fait bien son travail : le second appel part SANS durcissement").toBeGreaterThan(0);
   });
 });
+
+// ⚠️ L'ÉTAT OBSERVÉ DU CHEMIN FUSIONNÉ (0019) — MÊME DISCIPLINE, MÊME PIÈGE.
+//
+// Sans ce champ, un hôte à qui 0019 manque retombe en silence à trois allers-retours par battement :
+// correct, deux fois plus cher sur le chemin le plus chaud du produit, et rien ne le dirait. Une
+// dégradation qu'on ne peut pas observer se découvre à la facture — ou jamais.
+//
+// ⚠️ Et « inconnu » n'est pas « actif ». Un processus qui n'a servi aucun battement n'a rien
+// constaté ; le promouvoir serait exactement le défaut qu'il a fallu trois versions pour retirer du
+// champ voisin. La question d'avant-déploiement se pose à la BASE (schema.fusionBase), pas ici.
+describe("état OBSERVÉ du chemin fusionné", () => {
+  /** Un faux qui SERT la présentation en lecture : sans ça, le repli rendrait 404 et ne dirait rien. */
+  function joueurFusion(panne) {
+    const appels = [];
+    const ctx = {
+      errors: { capture() {} },
+      db: {
+        async request(chemin, o) {
+          if (/select=[a-z_]+&limit=0/.test(chemin)) return [];
+          if (chemin.startsWith("rpc/player_attendance_bump")) {
+            appels.push(o.body);
+            if (appels.length === 1 && panne) throw panne();
+            return [{ ok: true, created: true, capped: false, usurpe: false, introuvable: false, archivee: false, page: 1 }];
+          }
+          if (chemin.startsWith("doc_presentations?")) return [PRES];
+          return [];
+        },
+      },
+    };
+    schema.oublier(); schema.init(ctx); presentations.init(ctx);
+    return { appels };
+  }
+
+  // Un battement ORDINAIRE : aucune présentation fournie, donc le chemin fusionné est tenté.
+  const battre = (p = presentations) => p.recordAttendance(
+    "s", { key: "anon-k", name: "V" },
+    { ipHash: "h", anonCap: 325, hasToken: true, controlHash: "h" },
+  );
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.advanceTimersByTime(61_000);   // tout mémo hérité d'un essai précédent a expiré
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  // ⚠️ MODULE NEUF, ET C'EST NÉCESSAIRE : l'état vit dans le module. Le lire après d'autres essais
+  // mesurerait leur héritage, pas la valeur initiale — un essai qui dépend de son rang dans le
+  // fichier ne prouve pas ce qu'il annonce.
+  it("inconnu sur un processus qui n'a servi aucun battement — l'absence d'observation n'est pas un feu vert", async () => {
+    vi.resetModules();
+    const neuf = require("../presentations.js");
+    expect(neuf.etatFusionBattement()).toBe("inconnu");
+  });
+
+  it("actif après un battement fusionné qui a abouti", async () => {
+    const { appels } = joueurFusion(null);
+    await battre();
+    expect(appels[0].p_page, "c'est bien le contrat fusionné qui est parti").toBe(null);
+    expect(presentations.etatFusionBattement()).toBe("actif");
+  });
+
+  it("degrade quand la signature à 13 arguments manque — et le battement reste EXACT", async () => {
+    const { appels } = joueurFusion(pgrst202Details);
+    const r = await battre();
+    expect(presentations.etatFusionBattement()).toBe("degrade");
+    // ⚠️ LA DÉGRADATION EST UN COÛT, PAS UNE PANNE. Le battement passe quand même, par le chemin
+    // d'avant : deux appels au lieu d'un, et la page vient de la présentation relue.
+    expect(r.ok, "0019 absente ne casse rien — c'est tout l'objet du repli").toBe(true);
+    expect(appels[1].p_page, "le second appel a lu la présentation, donc il fournit la page").toBe(1);
+  });
+
+  it("mémo EXPIRÉ : retombe en inconnu, JAMAIS en actif", async () => {
+    joueurFusion(pgrst202Details);
+    await battre();
+    expect(presentations.etatFusionBattement()).toBe("degrade");
+    vi.advanceTimersByTime(61_000);
+    expect(presentations.etatFusionBattement(),
+      "le repli d'une preuve périmée est l'IGNORANCE, jamais la confiance")
+      .toBe("inconnu");
+  });
+
+  it("un succès CONSTATÉ après l'échec fait bien passer en actif", async () => {
+    joueurFusion(pgrst202Details);
+    await battre();
+    vi.advanceTimersByTime(61_000);
+    await battre();
+    expect(presentations.etatFusionBattement()).toBe("actif");
+  });
+});

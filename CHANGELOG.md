@@ -10,6 +10,38 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.128] — 2026-08-21
+
+### Added
+- **The card now says whether the fused heartbeat is active.** `0.1.127` made a heartbeat cost two
+  database round trips instead of three — but a host missing migration `0019` fell back **silently**
+  to three: correct, twice as expensive on the hottest path of the product, and nothing said so. A
+  degradation you cannot observe is one you find on the invoice, or never.
+  - `presenceFusion` (identity card) is what **this process** observed while serving heartbeats:
+    `actif`, `degrade`, `inconnu`. Same three states, same reading rule as `presenceDurcissement` —
+    at rest it says `inconnu`, meaning *nobody looked*, so it must **not** be used as a pre-flight
+    check. An expired negative proof falls back to ignorance, never to confidence.
+  - `schema.fusionBase` asks the **database**, so it answers at rest — that is the field to read
+    before a deployment. Values mirror `durcissementBase`.
+  - ⚠️ **One call in the normal case.** `0019` succeeds `0018` and its argument set *contains* it, so
+    a call the long contract accepts proves both at once. The short contract is asked again only
+    when the long one is missing — i.e. exactly on the host that is behind. A failure proves nothing
+    about either and triggers **no** second call: hitting a struggling database teaches nothing.
+  - ⚠️ **The probe writes nothing, for two independent reasons**: `p_page = null` on a slug that does
+    not exist leaves through the *introuvable* branch, and `p_anon_cap = 0` already left through
+    *capped*. Two reasons rather than one, because a diagnostic probe is the worst place to discover
+    a regression. Asserted against a real Postgres.
+  - A host missing `0019` is logged once an hour with the exact figures — nothing breaks, a
+    heartbeat simply costs 3 round trips instead of 2.
+
+### Fixed
+- **The silent-write guard followed no indirection.** It rejected a `catch` that calls a logging
+  helper — not out of zeal: it only reads *direct* forms, so it accused the code that factors out.
+  Adding the helper's **name** to its list of speaking forms would have emptied the guard at the
+  first silent helper — satisfied by an identifier. It now follows **one hop** and reads the *body*
+  of the called function. Proven by mutation: a helper that keeps its name while ceasing to speak
+  still goes red.
+
 ## [0.1.127] — 2026-08-21
 
 ### Changed
@@ -3520,7 +3552,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.127...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.128...HEAD
+[0.1.128]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.127...v0.1.128
 [0.1.127]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.126...v0.1.127
 [0.1.126]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.125...v0.1.126
 [0.1.125]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.124...v0.1.125

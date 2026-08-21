@@ -313,6 +313,11 @@ async function vraimentSonderTout() {
     return {
       ...etatDuSchema(), verdict: "indetermine",
       durcissementBase: "indetermine", durcissementBaseCouvre: PORTEE_DURCISSEMENT,
+      // ⚠️ LE CHAMP DOIT ÊTRE LÀ ICI AUSSI, pour la raison qui a valu son correctif au voisin : un
+      // champ ABSENT ne se distingue pas d'un contrat plus ancien, et `undefined !== "applique"`
+      // est vrai par accident. Un hôte qui teste avant de déployer mérite un « je ne sais pas »
+      // explicite plutôt qu'un silence qui ressemble à un non.
+      fusionBase: "indetermine", fusionBaseCouvre: PORTEE_FUSION,
     };
   }
   // ⚠️ LE TÉMOIN VIENT DE RÉPONDRE : tout « non » encore en cache est SUSPECT — il peut dater
@@ -324,7 +329,7 @@ async function vraimentSonderTout() {
   const etat = etatDuSchema();
   await ajouterSansRang(etat);
   await ajouterPresence(etat);
-  await ajouterDurcissement(etat);
+  await ajouterMigrationsDePresence(etat);
   return etat;
 }
 
@@ -378,12 +383,81 @@ const PORTEE_DURCISSEMENT =
   + "C'est ce champ-ci qu'on lit AVANT un déploiement ; « indetermine » = la question n'a pas pu "
   + "être posée, ce n'est ni un oui ni un non.";
 
-async function ajouterDurcissement(etat) {
-  const corps = {
-    p_slug: SLUG_SONDE_DURCISSEMENT, p_key: "sonde", p_ip_hash: null, p_page: 1,
+// ⚠️ MÊME DISTINCTION, POUR 0019 : `fusionBase` est une propriété de la BASE, `presenceFusion` (la
+// carte) est ce que CE processus a constaté en servant des battements. Le second vaut « inconnu » au
+// repos — c'est-à-dire « personne n'a regardé » — et ne peut donc pas servir de contrôle avant
+// déploiement. On a déjà écrit une consigne de pré-vol sur un champ qui refuse de se prononcer sans
+// observation ; celui-ci existe pour qu'on n'ait pas à recommencer.
+const PORTEE_FUSION =
+  "propriété de la BASE (migration 0019), globale à toutes les instances — à ne pas confondre avec "
+  + "presenceFusion, qui est ce que CE processus a constaté en servant des battements. Sans 0019, "
+  + "rien ne casse : un battement coûte 3 allers-retours au lieu de 2. « indetermine » = la question "
+  + "n'a pas pu être posée, ce n'est ni un oui ni un non.";
+
+// ⚠️ DEUX MIGRATIONS, UNE SEULE SONDE DANS LE CAS NORMAL. 0019 succède à 0018 et son jeu
+// d'arguments CONTIENT le sien : un appel qui passe le contrat à 13 arguments prouve donc les deux
+// d'un coup. On ne repose la question du durcissement que si le contrat long n'existe pas — c'est-
+// à-dire sur un hôte en retard, qui est exactement celui à qui l'on doit une réponse précise.
+//
+// ⚠️ ET LA SONDE N'ÉCRIT TOUJOURS RIEN, POUR DEUX RAISONS INDÉPENDANTES. `p_page: null` sur un slug
+// qui n'existe pas sort par la branche « introuvable » de 0019, avant l'insert ; et `p_anon_cap: 0`
+// sortait déjà par la branche « capped » du contrat précédent. Deux raisons plutôt qu'une, parce
+// qu'une sonde de diagnostic qui écrirait serait le pire endroit où découvrir une régression.
+// ⚠️ UN SEUL ENDROIT QUI PARLE, PARCE QU'IL Y A PLUSIEURS RAISONS DE PARLER. La carte est publique
+// donc appelable en boucle : un journal sans frein deviendrait une arme. Une fois par heure et par
+// motif — et jamais bloquant, un diagnostic qui tombe en panne en diagnostiquant ne diagnostique
+// plus rien.
+async function journaliser(cle, message) {
+  try {
+    if (await PLAYER.limits.allow(cle, 1, 3600)) PLAYER.errors.capture(new Error(message), { route: "schema" });
+  } catch { /* jamais bloquant */ }
+}
+
+async function ajouterMigrationsDePresence(etat) {
+  const commun = {
+    p_slug: SLUG_SONDE_DURCISSEMENT, p_key: "sonde", p_ip_hash: null,
     p_name: "", p_avatar: "", p_is_member: false, p_is_presenter: false,
     p_max_gap_ms: 0, p_anon_cap: 0, p_has_token: null, p_only_if_unclaimed: true,
   };
+  const estSignatureAbsente = (erreur) => {
+    try { return require("./presentations.js").signatureAbsente(erreur); } catch { return false; }
+  };
+
+  etat.fusionBaseCouvre = PORTEE_FUSION;
+  try {
+    await PLAYER.db.request("rpc/player_attendance_bump",
+      { method: "POST", body: { ...commun, p_page: null, p_control_hash: null } });
+    // Le contrat long a répondu : 0019 est là, donc 0018 aussi — elle la précède et 0019 reprend
+    // ses arguments. On ne repose pas une question dont la réponse vient d'être prouvée.
+    etat.fusionBase = "applique";
+    etat.durcissementBase = "applique";
+    etat.durcissementBaseCouvre = PORTEE_DURCISSEMENT;
+    return;
+  } catch (erreur) {
+    if (!estSignatureAbsente(erreur)) {
+      // ⚠️ UNE PANNE NE PROUVE RIEN — NI POUR L'UNE NI POUR L'AUTRE. Insister avec un second appel
+      // ne ferait que frapper une base déjà en difficulté pour en tirer la même absence de réponse.
+      etat.fusionBase = "indetermine";
+      etat.durcissementBase = "indetermine";
+      etat.durcissementBaseCouvre = PORTEE_DURCISSEMENT;
+      await journaliser("schema:sonde-presence-muette",
+        "sonde des migrations de présence (0018/0019) sans réponse exploitable : ni confirmées, ni "
+        + "infirmées — " + ((erreur && erreur.message) || erreur));
+      return;
+    }
+    etat.fusionBase = "absente";
+    // ⚠️ ET ON LE DIT. C'est même toute la raison d'être de cette sonde : sans elle, un hôte à qui
+    // 0019 manque paie deux fois le chemin le plus chaud du produit sans que rien ne le signale.
+    // Le message dit la dégradation EXACTE — pas « ça ne marche pas », qui n'aide personne à
+    // décider si ça vaut une migration.
+    await journaliser("schema:fusion-absente",
+      "migration 0019-presence-lit-la-presentation.sql ABSENTE : rien ne casse, mais chaque "
+      + "battement de présence coûte 3 allers-retours base au lieu de 2 — soit environ 30 op/s au "
+      + "lieu de 20 pour 250 participants. L'appliquer ne demande aucun redéploiement.");
+    // On ne sait toujours rien de 0018 : le contrat court se demande à part, ci-dessous.
+  }
+
+  const corps = { ...commun, p_page: 1 };
   try {
     await PLAYER.db.request("rpc/player_attendance_bump", { method: "POST", body: corps });
     etat.durcissementBase = "applique";
@@ -391,8 +465,7 @@ async function ajouterDurcissement(etat) {
     // ⚠️ TROIS ISSUES, ET LA TROISIÈME N'EST PAS UNE DES DEUX AUTRES. Seule la signature absente
     // prouve que 0018 manque ; une panne réseau ou un 500 ne prouvent RIEN, et les compter comme
     // « absente » serait le défaut qu'on a mis trois versions à retirer d'ailleurs.
-    let absente = false;
-    try { absente = require("./presentations.js").signatureAbsente(erreur); } catch { /* module absent */ }
+    const absente = estSignatureAbsente(erreur);
     etat.durcissementBase = absente ? "absente" : "indetermine";
     // ⚠️ ET ON LE DIT, PAS SEULEMENT DANS LA CARTE. Une garde de ce dépôt refuse qu'une écriture soit
     // rattrapée en silence, et elle a raison ici pour une raison qu'elle ne pouvait pas connaître :
