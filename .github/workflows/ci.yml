@@ -108,6 +108,17 @@ jobs:
         if: matrix.node == '22'
         run: node tools/surface-publique.mjs
 
+      # ⚠️ `docs/RETENTION.md` PARTAIT EN FRANÇAIS DANS LE TARBALL (P1, audit externe du 21/08) :
+      # le document qu'un DPO consulte, exposé en plus comme `discovery-media-player/retention`,
+      # pendant que tout le reste de ce qu'un intégrateur lit — README, contrat d'hôte, API,
+      # configuration — est en anglais. La règle du dépôt existait (dehors en anglais, traces
+      # internes en français), mais seulement dans les têtes : elle a donc été respectée jusqu'au
+      # jour où elle ne l'a plus été, sans que rien ne le voie. Le périmètre se DÉRIVE de
+      # `package.json#files` — ce qui voyage, se lit — plutôt que d'être une liste de plus à tenir.
+      - name: Documents that ship in the package are in English
+        if: matrix.node == '22'
+        run: node tools/langue-publiee.mjs
+
       # ⚠️ UN `.d.ts` PARFAIT DANS LE CLONE PEUT ÊTRE ABSENT DU PAQUET PUBLIÉ — il suffit que
       # `files` ne l'embarque pas, et c'est exactement ce qui était arrivé au contrat et à la
       # rétention. On compile donc un consommateur RÉEL contre le TARBALL, en mode strict et
