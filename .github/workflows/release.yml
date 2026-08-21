@@ -13,26 +13,51 @@ on:
         description: "Tag existant à rejouer (ex. v0.1.69)"
         required: true
 
-permissions:
-  contents: write        # créer la Release GitHub
-  id-token: write        # OIDC : publication npm sans jeton stocké
-  # ⚠️ L'image de conteneur (packages/attestations) a migré dans .github/workflows/image.yml —
-  # elle se construit sur le même tag, EN PARALLÈLE, hors du chemin critique de la publication npm.
+# ⚠️ RIEN PAR DÉFAUT. CHAQUE JOB DEMANDE CE QU'IL LUI FAUT, ET RIEN D'AUTRE (P1, revue externe
+# du 21/08). Avant ce découpage, un job unique portait `contents: write` + `id-token: write` du
+# premier `checkout` à la dernière étape — donc AUSSI pendant celle qui télécharge le paquet
+# fraîchement publié depuis npm et l'EXÉCUTE (`require`, `player.init`, `player.handler`).
+#
+# Ce n'est pas une inquiétude de principe : cette étape existe justement parce qu'une version
+# publiée s'est révélée cassée à l'exécution (0.1.25). Faire tourner du code venu du registre dans
+# un environnement capable de frapper un jeton de publication npm et d'écrire dans le dépôt est le
+# contraire du deny-by-default que ce dépôt applique partout ailleurs.
+#
+# Les quatre jeux ci-dessous sont DISJOINTS, et c'est la propriété qui compte — pas leur nombre.
+# Fusionner deux jobs quelconques rendrait un droit élevé à une étape qui n'en a pas besoin :
+#
+#   verifier  contents:read + actions:read  → ne publie rien, ne modifie rien
+#   publier   contents:read + id-token:write → SEUL à pouvoir frapper l'identité npm
+#   eprouver  contents:read                  → exécute du code TÉLÉCHARGÉ, donc le moins de droits
+#   annoncer  contents:write                 → SEUL à écrire, et n'exécute rien de téléchargé
+#
+# ⚠️ L'image de conteneur (packages/attestations) a migré dans .github/workflows/image.yml —
+# elle se construit sur le même tag, EN PARALLÈLE, hors du chemin critique de la publication npm.
+permissions: {}
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
-  publish:
+  # ── 1. VÉRIFIER — rien n'est publié tant que tout ceci n'est pas vrai ────────────────────────
+  verifier:
     runs-on: ubuntu-latest
-    env:
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    permissions:
+      contents: read
+      # ⚠️ `gh run list` interroge l'API Actions. Le dépôt étant public, la lecture passait jusqu'ici
+      # sans que le droit soit déclaré — elle cesserait le jour où il deviendrait privé, et
+      # l'échec serait imputé à la CI plutôt qu'aux permissions. On le déclare.
+      actions: read
+    outputs:
+      notes: ${{ steps.notes.outputs.body }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          # ⚠️ npm ≥ 11.5 est la version minimale qui sait s'authentifier auprès de npm par OIDC.
-          # Sur une version antérieure, npm ignore le jeton d'identité et cherche un NODE_AUTH_TOKEN
-          # qui n'existe plus — l'échec serait imputé à l'éditeur de confiance.
+          # La même majeure que `publier`, pour que les tests qui autorisent la sortie tournent sur
+          # le runtime qui la fera. La raison du 24 est écrite là où elle contraint : job `publier`.
           node-version: "24"
           cache: npm
       - run: npm ci
@@ -97,6 +122,37 @@ jobs:
           test -s /tmp/notes.md || { echo "::error::no CHANGELOG section for $V — pas de notes, pas de sortie"; exit 1; }
           { echo "body<<EOFNOTES"; cat /tmp/notes.md; echo "EOFNOTES"; } >> "$GITHUB_OUTPUT"
 
+  # ── 2. PUBLIER — le SEUL job capable de frapper l'identité npm ───────────────────────────────
+  #
+  # ⚠️ IL NE FAIT QUE ÇA. `id-token: write` autorise à obtenir, par OIDC, une identité qui publie
+  # sous ce nom sur le registre. Chaque étape supplémentaire dans ce job serait une étape de plus
+  # à s'exécuter à portée de ce droit. Les contrôles sont AVANT (`verifier`), les constats APRÈS
+  # (`eprouver`), et aucun des deux n'a besoin d'être ici.
+  #
+  # ⚠️ CE QUI RESTE, ET QU'ON NE PEUT PAS SORTIR : `npm publish` déclenche `prepublishOnly`
+  # (`npm run build && npm test`), et `npm ci` installe l'arbre de développement. Ce code-là tourne
+  # donc encore à portée du jeton — mais c'est le code du dépôt, au commit exact que `verifier`
+  # vient de déclarer vert, et des dépendances figées par le lockfile. C'est une autre nature de
+  # risque que d'exécuter un tarball fraîchement téléchargé du registre, qui, lui, part d'ici.
+  publier:
+    needs: verifier
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write        # OIDC : publication npm sans jeton stocké
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          # ⚠️ npm ≥ 11.5 est la version minimale qui sait s'authentifier auprès de npm par OIDC.
+          # Sur une version antérieure, npm ignore le jeton d'identité et cherche un NODE_AUTH_TOKEN
+          # qui n'existe plus — l'échec serait imputé à l'éditeur de confiance.
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+
       # Rejouable : une sortie fait plusieurs choses, et si l'une échoue après la publication npm,
       # relancer buterait sur « cette version existe déjà » — un échec qui masque le vrai.
       - name: Publish to npm (skip if already there)
@@ -107,6 +163,26 @@ jobs:
           else
             npm publish --provenance --access public
           fi
+
+  # ── 3. ÉPROUVER — le job qui exécute du code VENU DU REGISTRE, donc celui qui a le moins ─────
+  #
+  # ⚠️ C'EST LE JOB QUI MOTIVAIT LE DÉCOUPAGE. Sa dernière étape installe `discovery-media-player`
+  # depuis npm et l'exécute pour rendre une page. Il lui faut lire le dépôt, rien de plus : ni
+  # écrire, ni publier. Avant, ces mêmes lignes tournaient avec les deux.
+  eprouver:
+    needs: publier
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
 
       # ⚠️ La démo épingle une version EXACTE (le contrat l'exige pour tout le monde, elle
       # comprise). Elle ne suit donc pas toute seule, et personne ne regarde une démo qui marche :
@@ -217,11 +293,39 @@ jobs:
               console.log("page rendue : " + res.body.length + " octets, " + blocs.length + " scripts, tous compilables");
             })();'
 
+  # ── 4. ANNONCER — le SEUL job qui écrit dans le dépôt, et il n'exécute rien de téléchargé ────
+  #
+  # ⚠️ EN DERNIER, ET C'EST DÉLIBÉRÉ. La Release n'apparaît qu'une fois le paquet publié ÉPROUVÉ :
+  # une annonce qui précède la preuve est exactement la sortie « à moitié faite qui s'annonçait
+  # faite » que ce workflow a déjà connue trois fois (0.1.67 → 0.1.69).
+  #
+  # Les notes ne sont pas relues ici : `verifier` les a extraites AVANT toute publication, et les
+  # passe en sortie de job. C'est ce qui garantit qu'une section de CHANGELOG manquante arrête la
+  # sortie au lieu de la laisser à moitié faite — le contrôle qui conditionne une publication se
+  # place avant elle, sinon il ne conditionne rien.
+  #
+  # ⚠️ LE `checkout` EST GARDÉ, ET C'EST UN CHOIX DE PRUDENCE ASSUMÉ. Ce job n'a besoin que du tag
+  # et des notes, donc un clone serait en principe superflu. Mais le comportement de
+  # `action-gh-release` sans espace de travail n'a pas pu être vérifié ici, et ce chemin ne
+  # s'exerce qu'au moment d'une sortie : une erreur y resterait invisible jusqu'au pire moment.
+  # Un clone n'EXÉCUTE rien — c'était l'exécution de code téléchargé, pas la présence des sources,
+  # que le découpage visait. `persist-credentials: false` évite au passage de laisser un jeton
+  # capable d'écrire dans le `.git/config` du seul job qui peut écrire.
+  annoncer:
+    needs: [verifier, eprouver]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # créer la Release GitHub
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+          persist-credentials: false
       - name: GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           tag_name: ${{ env.TAG }}
           name: ${{ env.TAG }}
-          body: ${{ steps.notes.outputs.body }}
+          body: ${{ needs.verifier.outputs.notes }}
           generate_release_notes: false
           make_latest: true
