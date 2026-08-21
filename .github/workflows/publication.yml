@@ -155,3 +155,42 @@ jobs:
             corps="\`latest\` pointe **$dlat**, mais la version publiée **v$publiee** a le digest **$dver** — une promotion a été perdue. Réconcilier : \`docker buildx imagetools create --tag ghcr.io/$depot:latest ghcr.io/$depot:v$publiee\`. _Se referme seule quand les digests convergent._"
             if [ -n "$existante" ]; then gh issue comment "$existante" --body "$corps"; else gh issue create --title "$TITRE" --body "$corps"; fi
           fi
+
+      # ⚠️ LES EXEMPLES DEVIENNENT ROUGES SANS QUE PERSONNE N'AIT RIEN POUSSÉ (P1, revue externe
+      # du 21/08). `tools/exemples-epingles.mjs` compare les exemples au REGISTRE VIVANT et tolère
+      # les deux dernières versions servies. Donc le jour où une publication sort, un exemple resté
+      # sur l'avant-dernière bascule hors fenêtre — et la CI rougit sur TOUTES LES PR OUVERTES,
+      # dont aucune n'a touché aux exemples. C'est arrivé à deux PR pendant que 0.1.127 puis
+      # 0.1.128 sortaient.
+      #
+      # Le refus est juste, et on ne le desserre pas : fusionner une de ces branches laisserait
+      # `main` deux versions derrière. Ce qui manquait, c'est l'avertissement pendant le SURSIS —
+      # la publication de marge entre « plus la dernière » et « plus dans les deux dernières ».
+      #
+      # La décision vit dans `tools/exemples-en-retard.mjs`, avec son banc, et importe la règle de
+      # la garde plutôt que d'en garder un second exemplaire. Cette étape ne fait que la rapporter.
+      - id: retard
+        name: Are the examples one publication away from turning every PR red?
+        run: node tools/exemples-en-retard.mjs
+
+      - name: Speak up while there is still slack, or shut up
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SIGNALER: ${{ steps.retard.outputs.signaler }}
+          DERNIERE: ${{ steps.retard.outputs.derniere }}
+          CORPS: ${{ steps.retard.outputs.corps }}
+        run: |
+          TITRE="Les exemples prennent du retard sur le registre"
+          existante=$(gh issue list --state open --search "$TITRE in:title" --json number --jq '.[0].number // empty')
+
+          # ⚠️ Registre injoignable ⇒ on ne touche à RIEN : ni ouvrir, ni fermer. Fermer sur une
+          # absence de réponse effacerait une alerte encore vraie.
+          [ "$SIGNALER" = "indetermine" ] && exit 0
+
+          if [ "$SIGNALER" = "non" ]; then
+            # Se taire fait partie du travail : une alarme qu'il faut éteindre à la main reste allumée.
+            [ -n "$existante" ] && gh issue close "$existante" --comment "Les exemples sont sur $DERNIERE. Rien à faire." || true
+            exit 0
+          fi
+
+          if [ -n "$existante" ]; then gh issue comment "$existante" --body "$CORPS"; else gh issue create --title "$TITRE" --body "$CORPS"; fi
