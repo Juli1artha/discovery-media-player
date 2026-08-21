@@ -237,11 +237,30 @@ self-inflicted outage. The card therefore reports the **effective** value: `pres
 `false` while the instance cannot issue tokens, and `presenceJetons` says why. The player also logs it
 once an hour. Announcing a closed door that is wide open would be the worse of the two failures.
 
-⚠️ **Rotating the secret** costs each participant exactly one refused heartbeat. A token signed with
-the previous secret gets `403 presence-token`; the client discards that token (keeping its key) and
-asks for a new one at the next beat, ~25 s later. There is deliberately no `kid` / current+previous
-list: it would add a payload field and a two-secret configuration to save one refused beat, and the
-self-healing path has to exist anyway — for expiry, which no key list can prevent.
+⚠️ **Rotating the secret** costs each participant **two** refused heartbeats and **a new attendance
+row**. The exact sequence, since the first version of this paragraph got it wrong by claiming one
+refused beat:
+
+1. the token signed with the previous secret gets `403 presence-token`; the client discards the
+   token but **keeps its key** — the key is still legitimately its own, only the proof expired;
+2. the next beat asks for a new token with that same key. The row is already *claimed* (it has a
+   `last_token_at` from before the rotation), so the anti-takeover check refuses it: `409 usurpe`;
+3. the client then rotates its key and starts a fresh row on the third beat, ~50 s after the first
+   refusal.
+
+**The consequence that matters is step 3, not the beat count**: the participant's accumulated
+presence time restarts from zero, and the operator sees the same person as two attendees. Rotate the
+secret when nobody is presenting.
+
+Discarding the key at step 1 instead would save one beat, and it is deliberately not done: the
+attendee key is shared across presentations (`3dd-present-attkey` is a single storage entry), so
+rotating it on one presentation's refusal would also change the viewer's identity on any other
+presentation they have open — and a 403 is precisely the situation in which we cannot tell whether
+the row is theirs.
+
+There is deliberately no `kid` / current+previous list: it would add a payload field and a two-secret
+configuration, and the self-healing path has to exist anyway — for expiry, which no key list can
+prevent.
 
 ⚠️ **`sansJeton` is an instrument of transition, and it expires.** The audience page is served
 `no-store` and the client code is interpolated into the HTML, so there is no stale bundle anywhere:
