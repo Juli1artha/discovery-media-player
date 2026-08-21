@@ -1,7 +1,7 @@
 # Documentation
 
-Nine documents, three readers. Start with the one that matches what you are trying to do —
-none of them assumes you have read the others.
+Three readers, one section each. Start with the one that matches what you are trying to do —
+no document assumes you have read the others.
 
 ## You are integrating the player into an application
 
@@ -37,6 +37,7 @@ tracked version by version in the [CHANGELOG](../CHANGELOG.md).
 |---|---|
 | [`SPEC-MEMBRE-INJECTE.md`](SPEC-MEMBRE-INJECTE.md) | A specification sent to a host for agreement **before** the contract moves. Nothing in it is implemented. (French.) |
 
-Documents marked *(French)* are internal working documents; everything an integrator or an
-operator needs day to day is in English. The reasoning behind that split is at the end of the
+Public entry points are in English. Documents that remain in French — audit traces, and the
+operational documents marked *(French)* above — are labelled explicitly, so nobody discovers
+the language after clicking. The reasoning behind the split is at the end of the
 [README](../README.md#contributing).

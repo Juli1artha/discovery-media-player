@@ -1,7 +1,7 @@
 > ⚠️ **Document HISTORIQUE — état au 15/08/2026 (version `0.1.26`).** Rien ici ne décrit l'état
-> courant : les constats de cette passe ont été traités dans les versions qui ont suivi, et les
-> passes d'audit ultérieures sont tracées version par version dans le
-> [CHANGELOG](../CHANGELOG.md). Le rapport reste tel qu'il a été reçu.
+> courant : les constats de cette passe ont été suivis dans les versions qui ont suivi — leur
+> état et les corrections associées se retracent version par version dans le
+> [CHANGELOG](../CHANGELOG.md), qui fait foi. Le rapport reste tel qu'il a été reçu.
 
 # Audit technique complet — seconde passe
 
