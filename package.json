@@ -32,6 +32,7 @@
     "dist",
     "server",
     "supabase",
+    "types",
     "README.md",
     "LICENSE",
     "LICENSE-MIT",
@@ -40,13 +41,19 @@
     "!**/__tests__"
   ],
   "exports": {
-    ".": "./server/handler.js",
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./server/handler.js"
+    },
     "./shares": "./server/shares.js",
     "./presentations": "./server/presentations.js",
     "./brands": "./server/brands.js",
     "./contrat": "./docs/HOST-CONTRACT.md",
     "./retention": "./docs/RETENTION.md",
-    "./context/standalone": "./context/standalone.js",
+    "./context/standalone": {
+      "types": "./types/standalone.d.ts",
+      "default": "./context/standalone.js"
+    },
     "./context/storage": "./context/storage.js",
     "./bridge": {
       "types": "./dist/bridge.d.ts",

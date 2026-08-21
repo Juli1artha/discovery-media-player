@@ -108,6 +108,23 @@ jobs:
         if: matrix.node == '22'
         run: node tools/surface-publique.mjs
 
+      # ⚠️ UN `.d.ts` PARFAIT DANS LE CLONE PEUT ÊTRE ABSENT DU PAQUET PUBLIÉ — il suffit que
+      # `files` ne l'embarque pas, et c'est exactement ce qui était arrivé au contrat et à la
+      # rétention. On compile donc un consommateur RÉEL contre le TARBALL, en mode strict et
+      # avec `types: []` : ce qui prouve du même coup que lire nos types n'oblige personne à
+      # installer ceux de Node.
+      #
+      # ⚠️ ET COMPILER NE SUFFIT PAS : des types trop permissifs compilent aussi. Le banc MUTE la
+      # fixture (champ obligatoire retiré, signature fausse, requête sans en-têtes) et EXIGE le
+      # rouge à chaque fois. Une garde qu'on n'a jamais vue échouer n'est pas une garde.
+      - name: A TypeScript consumer compiles against the tarball, and the types bite
+        if: matrix.node == '22'
+        run: |
+          rm -rf /tmp/fixture && mkdir -p /tmp/fixture && cp tools/fixture-types/* /tmp/fixture/
+          cd /tmp/fixture && npm init -y >/dev/null
+          npm i --silent "$GITHUB_WORKSPACE"/discovery-media-player-*.tgz typescript >/dev/null
+          node "$GITHUB_WORKSPACE/tools/fixture-types/eprouver.mjs" /tmp/fixture
+
       # ⚠️ ET LA PROMESSE SE TIENT DEPUIS UNE INSTALLATION CONSOMMATRICE, PAS DEPUIS LE CLONE.
       # Un sous-chemin peut être déclaré, documenté, et pourtant irrésolvable chez qui installe :
       # il suffit que `files` ne l'embarque pas. C'est exactement ce qui est arrivé au contrat et

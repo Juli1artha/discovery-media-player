@@ -94,6 +94,23 @@ export function ecartsExports(exportsPaquet) {
  */
 export const formeImportee = (sousChemin) => "discovery-media-player" + sousChemin.replace(/^\./, "");
 
+/**
+ * ⚠️ UN EXPORT STABLE SANS TYPES EST UNE PROMESSE À MOITIÉ TENUE. Un consommateur TypeScript qui
+ * importe ce paquet en mode strict reçoit un `any` implicite — donc soit une erreur de
+ * compilation, soit, pire, un silence qui laisse passer n'importe quel appel. « Stable » engage
+ * la forme de la surface ; sans type, cette forme n'est écrite nulle part que la machine puisse
+ * lire. Les EXPÉRIMENTAUX n'en ont pas, et c'est cohérent : leur forme n'est pas figée.
+ */
+export function ecartsTypes(exportsPaquet) {
+  return Object.entries(SURFACE)
+    .filter(([, d]) => d.statut === "stable")
+    .filter(([sousChemin]) => {
+      const cible = (exportsPaquet || {})[sousChemin];
+      return !cible || typeof cible === "string" || !cible.types;
+    })
+    .map(([sousChemin]) => `« ${sousChemin} » est stable et n'annonce aucun type dans package.json#exports — un consommateur TypeScript strict reçoit un any implicite`);
+}
+
 export function ecartsDoc(txtDoc) {
   return publics()
     .filter((e) => !txtDoc.includes("`" + formeImportee(e) + "`"))
@@ -122,6 +139,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const paquet = JSON.parse(readFileSync("package.json", "utf8"));
   const soucis = [
     ...ecartsExports(paquet.exports),
+    ...ecartsTypes(paquet.exports),
     ...ecartsDoc(readFileSync("docs/API.md", "utf8")),
   ];
   for (const [sousChemin, cible] of Object.entries(SURFACE)) {

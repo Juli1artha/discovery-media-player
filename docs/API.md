@@ -18,7 +18,7 @@ export that is not classified here, and a classification that no longer matches 
 | Import | Status | What it gives you |
 |---|---|---|
 | `discovery-media-player` | **stable** | the request handler and its `init(context)` — the entry point |
-| `discovery-media-player/bridge` | **stable** | the `postMessage` message contract a host imports. MIT, and the only typed export today |
+| `discovery-media-player/bridge` | **stable** | the `postMessage` message contract a host imports. MIT |
 | `discovery-media-player/context/standalone` | **stable** | `createStandaloneContext(env)` — a complete context built from the environment |
 | `discovery-media-player/context/storage` | *experimental* | the file relay's decisions: allowed origins, local root, displayable extensions |
 | `discovery-media-player/shares` | *experimental* | the tracked-link layer: creation, re-share, reading sessions |
@@ -37,6 +37,32 @@ you learn that here rather than on an upgrade.
 ⚠️ **Nothing is being removed.** The four experimental subpaths lack a documented use, which is a
 reason to label them honestly — not to drop them: removing one would break a host importing it
 today without our knowing. If a removal ever comes, it comes in a version that says so.
+
+### Types
+
+The three **stable** exports ship TypeScript declarations, and CI keeps that promise honest: a
+stable export with no `types` entry fails the build, and a consumer fixture is installed from
+`npm pack` into an empty project and compiled in strict mode — because a `.d.ts` that is perfect
+in the clone but missing from the tarball helps nobody. That fixture is also **mutated** (a
+required context field removed, a wrong authorisation signature, a request without headers) and
+each mutation must be rejected: types that accept anything verify nothing.
+
+`ContextePlayer` is the one worth importing — it is the shape *you* implement, field by field:
+
+```ts
+import { init, handler } from "discovery-media-player";
+import type { ContextePlayer } from "discovery-media-player";
+import { createStandaloneContext } from "discovery-media-player/context/standalone";
+
+init(createStandaloneContext(process.env));
+```
+
+The declarations require **no `@types/node`**: a type that drags a dependency behind it is a
+hidden tax on whoever reads it. They describe the boundary — `docs/HOST-CONTRACT.md` remains the
+contract, and when the two disagree, the contract wins and the declarations are what gets fixed.
+
+The four *experimental* subpaths are deliberately untyped: "not frozen" and "here is its exact
+shape" would contradict each other.
 
 ⚠️ **`__`-prefixed symbols are not part of any of this.** `require("discovery-media-player")`
 hands back `__relayerFichier` and `__jsonPourScript` — the prefix *says* internal, it prevents
