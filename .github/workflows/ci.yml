@@ -358,6 +358,16 @@ jobs:
           n=$(grep -rhoE 'uses: [a-zA-Z0-9_./-]+@[0-9a-f]{40}' .github/workflows/ | wc -l | tr -d ' ')
           echo "actions : $n références, toutes épinglées sur un commit"
 
+      # ⚠️ LA MÊME RÈGLE, ET ELLE NE S'APPLIQUAIT QU'À MOITIÉ. Le contrôle ci-dessus refuse
+      # `uses: machin@v3` depuis longtemps ; `FROM node:24-alpine` disait exactement la même chose
+      # — une étiquette que son auteur redéplace quand il veut — et rien ne le regardait (P1, audit
+      # externe, 21/08). Deux constructions du MÊME commit rendaient deux images : celle qu'on
+      # éprouve ici, et celle qu'un auto-hébergeur obtient trois semaines plus tard. Aucune n'est
+      # fausse ; rien ne disait laquelle tourne.
+      - name: Container base images are pinned to a digest
+        if: matrix.node == '22'
+        run: node tools/images-epinglees.mjs Dockerfile
+
       # ⚠️ EXACTE NE SUFFIT PAS : IL FAUT AUSSI LA NÔTRE. Cette garde n'interdisait que les plages
       # (`^`, `~`) — et pendant ce temps la démo épinglait 0.1.20 et les exemples Express et Vercel
       # 0.1.7, cent onze versions en arrière, sans qu'aucune étape ne rougisse (constat d'un audit
@@ -806,6 +816,24 @@ jobs:
           for i in $(seq 1 30); do curl -fsS localhost:3000/healthz && break || sleep 1; done
           curl -fsS "localhost:3000/api/doc?contract=1" | grep -q '"contract":1'
           docker rm -f player-ci
+
+      # ⚠️ L'ÉTIQUETTE ET LE CONDENSAT SONT DEUX EXEMPLAIRES DU MÊME FAIT, et ce dépôt sait ce que
+      # deviennent les exemplaires que rien ne confronte. `node:24-alpine@sha256:…` dont le
+      # condensat pointe une image Node 26 est valide pour Docker, se construit, répond, passe tout
+      # ce qui précède — et raconte faux à chaque relecteur, y compris à celui qui décidera la
+      # montée suivante sur le calendrier LTS. On demande donc à l'image CE QU'ELLE EMBARQUE.
+      - name: The tag says what the digest contains
+        run: |
+          V=$(docker run --rm --entrypoint node player:ci --version)
+          echo "l'image répond $V"
+          node -e '
+            const { readFileSync } = require("node:fs");
+            import("./tools/images-epinglees.mjs").then(({ ecartMajeur }) => {
+              const souci = ecartMajeur(readFileSync("Dockerfile", "utf8"), process.argv[1]);
+              if (souci) { console.error("::error::" + souci); process.exit(1); }
+              console.log("étiquette et condensat désignent la même majeure de Node");
+            });
+          ' "$V"
 
   # ⚠️ TROISIÈME FOIS QUE LA PUBLICATION EST LE POINT DE RUPTURE.
   #
