@@ -7,8 +7,8 @@ const crypto = require("crypto");
 const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const { getShareBySlug } = require("./shares");
-const { PRESENT_QUOTA_PER_HOUR, PRESENT_CACHE_MS } = require("./shared.generated.js");
-const { creerCache } = require("./cache.js");
+const { PRESENT_QUOTA_PER_HOUR, PRESENT_CACHE_MS, estSlug } = require("./shared.generated.js");
+const { creerCache, CODE_SATURATION } = require("./cache.js");
 
 // ⚠️ UN SEUL CACHE POUR TOUT LE PROCESSUS, ET C'EST LE POINT. Le créer par requête reviendrait à
 // n'en avoir aucun : chaque appelant repartirait d'une table vide, et l'effondrement qu'on
@@ -797,10 +797,31 @@ async function handler(req, res) {
       for (const lecture of LECTURES_PARTAGEES) {
         if (String(q[lecture.param] || "") !== "1") continue;
         const slugLu = String(q.present);
-        const corps = await cacheLecture.lire(`${lecture.param}:${slugLu}${lecture.suffixeCle ? lecture.suffixeCle() : ""}`, async () => {
-          const p = await getPresentation(slugLu);
-          return p ? JSON.stringify(await lecture.produire(p, slugLu)) : null;
-        });
+        // ⚠️ LE CONTRAT S'APPLIQUE AVANT LE CACHE ET AVANT LA BASE. Le slug vient de l'URL : non
+        // validé, il entrait tel quel dans une CLÉ DE CACHE et dans une requête base. Un lecteur
+        // faisait donc varier les clés à volonté — c'est ce qui rendait l'admission du cache
+        // actionnable de l'extérieur. Le motif vit dans `shared.ts`, en un seul exemplaire.
+        if (!estSlug(slugLu)) return sendRefusal(res, "ended", embed);
+        let corps;
+        try {
+          corps = await cacheLecture.lire(`${lecture.param}:${slugLu}${lecture.suffixeCle ? lecture.suffixeCle() : ""}`, async () => {
+            const p = await getPresentation(slugLu);
+            return p ? JSON.stringify(await lecture.produire(p, slugLu)) : null;
+          });
+        } catch (e) {
+          // ⚠️ « NOUS REFUSONS D'ADMETTRE UNE DEMANDE DE PLUS » N'EST PAS « LA BASE A ÉCHOUÉ ». Un
+          // 503 réessayable dit à l'appelant d'attendre une seconde ; un 500 lui dit d'abandonner.
+          // Les confondre ferait renoncer une requête que le prochain battement aurait servie.
+          if (e && e.code === CODE_SATURATION) {
+            res.statusCode = 503;
+            res.setHeader("Retry-After", String(e.retryAfter || 1));
+            res.setHeader("Cache-Control", "no-store");
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ ok: false, error: "busy" }));
+            return;
+          }
+          throw e;
+        }
         if (!corps) return sendRefusal(res, "ended", embed);
         res.statusCode = 200; res.setHeader("Content-Type", "application/json"); res.setHeader("Cache-Control", "no-store");
         res.end(corps);

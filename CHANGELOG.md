@@ -10,6 +10,30 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.117] — 2026-08-21
+
+### Fixed
+- **The cache admitted an unbounded number of pending requests** (P1, external audit). Entries in
+  flight are never evicted — evicting one would break the request coalescing that is the cache's
+  whole purpose — so the `max` ceiling only ever applied to *resolved* results. Measured, not
+  assumed: 10 000 distinct keys against a database that never answers produced **10 000 entries and
+  10 000 producers** with `max: 100`, i.e. that many open requests, sockets and promises. A separate
+  hard ceiling now bounds **admission** (`maxEnVol`, default 128): a key already in flight is still
+  always shared — even at the ceiling, so a legitimate burst is never punished — while a new distinct
+  key is refused **without calling the producer**, through a typed error the route turns into
+  `503` + `Retry-After`, never a `500`.
+- **Cache weight was measured in UTF-16 units, not bytes.** `"界"` counted as 1 and weighs 3, so
+  non-Latin content under-reported its weight threefold: an "8 MB" ceiling let 24 MB through. Now
+  `Buffer.byteLength(value, "utf8")`.
+- **The slug contract is now enforced server-side, before the cache and before the database.** It
+  existed only in the browser (`bridge.ts`), so a reader could vary the cache key at will — the very
+  lever that made cache admission reachable from outside. The pattern moves to `shared.ts`; the copy
+  in `bridge.ts` stays on purpose (it is the only MIT file in an AGPL package, so importing the core
+  would dissolve that boundary) and a guard now compares the two.
+- **PostgREST requests in the standalone context abort for real** (`AbortSignal.timeout`, 15 s by
+  default, overridable per call). Without it a slow database held its admission slot until the
+  platform killed the function — which would have turned the new ceiling into a permanent refusal.
+
 ## [0.1.116] — 2026-08-21
 
 ### Fixed

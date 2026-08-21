@@ -53,8 +53,18 @@ function creerDb(env) {
       );
     }
     const methode = String(options.method || "GET").toUpperCase();
+    // ⚠️ UN ABANDON RÉEL, PAS UNE COURSE DE PROMESSES. Sans signal, une base qui ne répond pas
+    // immobilise la requête, sa socket ET la place d'admission du cache jusqu'à ce que la plateforme
+    // tue la fonction : le plafond d'admission se remplit alors et n'est jamais rendu, ce qui
+    // transforme un ralentissement en refus général. Une course `Promise.race` ne suffirait pas —
+    // elle rendrait la main sans ANNULER le fetch, donc sans libérer quoi que ce soit. L'hôte peut
+    // fournir son propre `signal` (opérations longues : purges, transferts). (Audit externe.)
+    const delai = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 15000;
+    const signal = options.signal || (typeof AbortSignal !== "undefined" && AbortSignal.timeout
+      ? AbortSignal.timeout(delai) : undefined);
     const r = await fetch(`${url}/rest/v1/${chemin}`, {
       method: methode,
+      ...(signal ? { signal } : {}),
       headers: {
         apikey: cle,
         Authorization: `Bearer ${cle}`,

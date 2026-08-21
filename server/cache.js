@@ -24,6 +24,14 @@
 // 3. UN ÉCHEC NE SE MÉMORISE PAS. Servir une erreur pendant toute la fenêtre transformerait un
 //    hoquet en panne visible, et retarderait le rétablissement. On oublie la promesse rompue.
 //
+// 4. ⚠️ LE PLAFOND DES RÉSULTATS NE BORNE PAS LES DEMANDES EN VOL — et c'est par là que ça cédait.
+//    Le piège 2 était traité pour les valeurs RETENUES, mais une entrée en vol n'est jamais évincée
+//    (piège 1 : l'évincer casserait le regroupement). Tant que la base ne répond pas, RIEN ne
+//    bornait donc l'admission : 10 000 clés distinctes pendantes donnaient 10 000 entrées ET 10 000
+//    producteurs — donc 10 000 requêtes, sockets et promesses ouvertes, avec `max: 100`. Mesuré, pas
+//    supposé. Il faut un plafond SÉPARÉ sur les demandes en vol, et un REFUS quand il est atteint :
+//    borner l'admission est la seule chose qui borne une base lente. (Relevé par un audit externe.)
+//
 // ⚠️ CE QUE CE CACHE NE FAIT PAS : il vit dans la mémoire du PROCESSUS. En serverless, plusieurs
 // instances servent en parallèle et démarrent à froid — l'effondrement est donc « une lecture par
 // fenêtre ET PAR INSTANCE », pas « une lecture ». C'est la même limite que celle d'un compteur de
@@ -35,6 +43,21 @@
  *
  * @param {{ ttlMs: number, max?: number, now?: () => number }} options
  */
+/**
+ * ⚠️ UNE ERREUR TYPÉE, PAS UN `null` NI UN THROW ANONYME. La route doit pouvoir distinguer « la base
+ * a échoué » (500) de « nous refusons d'admettre une demande de plus » (503, réessayable) : ce sont
+ * deux situations opposées pour l'appelant, et les confondre lui ferait abandonner une requête qui
+ * n'attendait qu'une seconde.
+ */
+const CODE_SATURATION = "cache-sature";
+function erreurSaturation(plafond) {
+  const e = new Error(`cache saturé : ${plafond} demandes déjà en vol`);
+  e.code = CODE_SATURATION;
+  e.statusCode = 503;
+  e.retryAfter = 1;
+  return e;
+}
+
 function creerCache(options) {
   const ttl = Math.max(0, Number(options && options.ttlMs) || 0);
   // ⚠️ DEUX PLAFONDS, ET LE SECOND EST CELUI QUI COMPTE. Un plafond en NOMBRE d'entrées ne borne rien
@@ -44,15 +67,25 @@ function creerCache(options) {
   // valeurs mises en cache ici sont des chaînes JSON. (Relevé par un audit externe.)
   const max = Math.max(1, Number(options && options.max) || 100);
   const maxOctets = Math.max(1, Number(options && options.maxOctets) || 8 * 1024 * 1024);
+  // ⚠️ LE TROISIÈME PLAFOND, ET C'EST LUI QUI TIENT SOUS UNE BASE LENTE. Les deux autres ne bornent
+  // que ce qui est RÉSOLU ; celui-ci borne ce qui est ADMIS. Une valeur volontairement basse devant
+  // `max` : une entrée en vol coûte une requête, une socket et une promesse, bien plus cher qu'un
+  // résultat en mémoire.
+  const maxEnVol = Math.max(1, Number(options && options.maxEnVol) || 128);
   const now = (options && options.now) || (() => Date.now());
-  /** @type {Map<string, { echeance: number, promesse: Promise<unknown>, poids: number, enVol: boolean }>} */
+  /** @type {Map<string, { echeance: number, promesse: Promise<unknown>, poids: number, enVol: boolean, rendrePlace?: () => void }>} */
   const entrees = new Map();
   let poidsTotal = 0;
+  let nEnVol = 0;      // tenu à jour à chaque transition — compter la Map à la demande serait O(n)
 
   const oublier = (k) => {
     const e = entrees.get(k);
     if (!e) return;
     poidsTotal -= e.poids;
+    // Une entrée en vol qu'on retire (promesse rompue) libère sa place d'admission — sans quoi le
+    // plafond se remplirait définitivement au premier incident de base. Le rendu passe par le verrou
+    // de la promesse : c'est lui qui garantit qu'une place n'est rendue qu'une fois.
+    if (e.enVol && typeof e.rendrePlace === "function") e.rendrePlace();
     entrees.delete(k);
   };
 
@@ -82,25 +115,41 @@ function creerCache(options) {
       // AUTRE la pousse dehors : le cache gardait indéfiniment ce qu'il ne servait plus.
       purger(t);
       const vue = entrees.get(k);
-      // Une entrée en vol se partage toujours : c'est tout l'objet du regroupement.
+      // ⚠️ UNE CLÉ DÉJÀ EN VOL SE PARTAGE TOUJOURS, MÊME AU PLAFOND. C'est l'ordre de ces deux tests
+      // qui décide : refuser d'abord ferait échouer des appelants que le regroupement pouvait servir
+      // gratuitement — la saturation punirait alors la rafale légitime, exactement ce que ce cache
+      // existe pour absorber. On ne refuse que ce qui coûterait une requête DE PLUS.
       if (vue && (vue.enVol || vue.echeance > t)) return vue.promesse;
 
+      if (nEnVol >= maxEnVol) throw erreurSaturation(maxEnVol);
+
       const promesse = Promise.resolve().then(produire);
+      // ⚠️ UN DÉCOMPTE IDEMPOTENT PAR PROMESSE. Deux chemins libèrent la place (résolution, et
+      // `oublier` sur rejet) : sans ce verrou, une place pouvait être rendue DEUX fois, `nEnVol`
+      // passait sous zéro et le plafond cessait silencieusement de refuser — un plafond qui ne peut
+      // plus être atteint ne se distingue pas d'un plafond absent.
+      let placeRendue = false;
+      const rendrePlace = () => { if (!placeRendue) { placeRendue = true; nEnVol -= 1; } };
+      nEnVol += 1;
       // ⚠️ L'ÉCHÉANCE PART DE LA RÉSOLUTION, PAS DE LA DEMANDE. Posée à la demande, elle expirait
       // AVANT que la production ne réponde dès que celle-ci dépassait le TTL — et le regroupement ne
       // servait alors plus à rien pour exactement les producteurs lents, les seuls qu'il valait la
       // peine de mutualiser. Tant qu'elle est en vol, l'entrée ne périme pas.
-      entrees.set(k, { echeance: 0, promesse, poids: 0, enVol: true });
+      entrees.set(k, { echeance: 0, promesse, poids: 0, enVol: true, rendrePlace });
 
       promesse.then(
         (valeur) => {
           const courante = entrees.get(k);
+          rendrePlace();
           if (!courante || courante.promesse !== promesse) return;
           courante.enVol = false;
           courante.echeance = now() + ttl;
-          // Le poids réel : ces valeurs sont des chaînes JSON. Une valeur d'une autre forme compte
-          // pour un poids nominal — mieux vaut sous-estimer que prétendre mesurer ce qu'on ignore.
-          courante.poids = typeof valeur === "string" ? valeur.length : 1;
+          // ⚠️ DES OCTETS, PAS DES CARACTÈRES. `.length` compte des unités UTF-16 : « 界 » y vaut 1
+          // et pèse 3 octets en mémoire comme sur le fil. Un contenu non latin sous-estimait donc le
+          // poids d'un facteur 3 — un plafond « 8 Mo » en laissait passer 24. La valeur d'une autre
+          // forme compte pour un poids nominal : mieux vaut sous-estimer que prétendre mesurer ce
+          // qu'on ignore. (Relevé par un audit externe.)
+          courante.poids = typeof valeur === "string" ? Buffer.byteLength(valeur, "utf8") : 1;
           poidsTotal += courante.poids;
           borner();
         },
@@ -109,6 +158,7 @@ function creerCache(options) {
           // resterait servi pendant toute la fenêtre, et le rétablissement attendrait pour rien.
           const courante = entrees.get(k);
           if (courante && courante.promesse === promesse) oublier(k);
+          rendrePlace();   // idempotent : `oublier` a pu le faire, ou l'entrée avoir été remplacée
         },
       );
       return promesse;
@@ -116,9 +166,11 @@ function creerCache(options) {
 
     /** Pour les tests et l'exploitation : ce que la table contient réellement. */
     taille: () => entrees.size,
-    /** Poids cumulé des résultats retenus, en caractères. */
+    /** Poids cumulé des résultats retenus, en OCTETS UTF-8. */
     poids: () => poidsTotal,
+    /** Demandes actuellement en vol — ce que le plafond d'admission borne. */
+    enVol: () => nEnVol,
   };
 }
 
-module.exports = { creerCache };
+module.exports = { creerCache, CODE_SATURATION };
