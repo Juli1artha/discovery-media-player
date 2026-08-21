@@ -10,6 +10,33 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.126] — 2026-08-21
+
+### Fixed
+- **The viewer's memory bound missed three paths** (P1 completion, external audit). 0.1.123 bounded
+  scrolling mode only.
+  - **Single-page mode evicted nothing.** The comment said why — *"only one page is displayed, so
+    there is nothing to evict"* — and it was wrong: one page is *displayed*, but `showPage()` renders
+    the current page **and the next** on every move, and all previous ones stay in the DOM. A guided
+    100-page presentation still ended with close to 100 canvases. ⚠️ A false claim written
+    confidently made the defect look like a decision.
+  - **The pixel budget did not hold at maximum zoom.** The render factor was never allowed below 1,
+    yet at 300 % the CSS size alone exceeds the budget: a 4110×5319 CSS page came to **21.9 M pixels
+    — about 83 MB of buffer for a single page**, ×5.5 the announced ceiling. The factor is now
+    derived from the CSS size and bounded by three things at once (density cap, the screen's *real*
+    density, and the pixel budget), so it can go below 1. Verified by computation over five
+    configurations before being written.
+  - **In-flight work was never evicted.** Eviction walked `rendered` only, ignoring pending
+    `getPage()` calls and text layers under construction: a released page could receive its text
+    layer later and reappear as selectable text floating on an empty frame. Eviction now walks the
+    union of the three registries, and a **per-page generation** invalidates late callbacks.
+
+### Tests
+- Three real-Chromium cases the previous bench could not produce: 40 pages in **single-page** mode,
+  zoom driven to **300 %** through the actual button, and an orphan text layer after very fast
+  navigation. Each is mutation-verified against its own defect. ⚠️ They drive the viewer through
+  `PlayerBot.init(VIEWER)` — a seam that already existed — so no production line changed for them.
+
 ## [0.1.125] — 2026-08-21
 
 ### Fixed
@@ -3450,7 +3477,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.125...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.126...HEAD
+[0.1.126]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.125...v0.1.126
 [0.1.125]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.124...v0.1.125
 [0.1.124]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.123...v0.1.124
 [0.1.123]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.122...v0.1.123
