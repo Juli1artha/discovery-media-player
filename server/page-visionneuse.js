@@ -309,8 +309,23 @@ ${LEGAL_CSS}
       get onePage(){return onePage;},
       get soloOffered(){return soloOffered;},set soloOffered(v){soloOffered=!!v;}};
     var pdfDoc=null, zoom=1, firstAspect=1.35, rendered={}, io=null, ioCur=null;
+    // ATTENTION : LE LECTEUR GARDAIT TOUTES LES PAGES RENDUES (P1 audit externe).
+    //
+    // rendered[n] n etait jamais evince, les canvas restaient dans le DOM, et un build() de refit
+    // n annulait pas les taches deja lancees. Sur un ecran haute densite un seul canvas pese
+    // plusieurs dizaines de mega-octets : un document long parcouru en entier faisait exploser la
+    // memoire de l onglet. rendered[n] etait aussi pose AVANT le succes — un echec laissait donc la
+    // page definitivement consideree comme rendue, sans nouvelle tentative possible.
+    //
+    // Note de forme : ce script vit dans un litteral de gabarit — pas d accent grave ici.
+    var renderGen=0;          // invalide les callbacks d un build() precedent
+    var taches={};            // n -> RenderTask, pour pouvoir ANNULER
+    var enCours={};           // n -> 1 tant que la page n a pas abouti
+    var MARGE_PAGES=2;        // on garde la page courante et deux de chaque cote
+    var DPR_MAX=2;            // au-dela, le gain visuel est nul et le cout quadratique
+    var PIXELS_MAX=4e6;       // plafond par canvas : ~4 M pixels = ~16 Mo de tampon
     var onePage=false, soloOffered=false; // mode « une seule page » (présentation guidée) + offre de découverte solo
-    function setCur(p){ if(!p||p===cur)return; cur=p; T.setPage(p); try{ if(window.__soloEnd)window.__soloEnd(p); }catch(e){} var pg=document.getElementById('pg'); if(pg&&numPages)pg.textContent='Page '+p+' / '+numPages; if(PRES) pushPage(); }
+    function setCur(p){ if(!p||p===cur)return; cur=p; try{ evincerLoin(p); }catch(e){} T.setPage(p); try{ if(window.__soloEnd)window.__soloEnd(p); }catch(e){} var pg=document.getElementById('pg'); if(pg&&numPages)pg.textContent='Page '+p+' / '+numPages; if(PRES) pushPage(); }
     // Bouton « Partager » : re-partage tracé (forward) → crée un lien ENFANT et propose de l'envoyer par email.
     function wireShare(){
       var pop=document.getElementById('pop'), btn=document.getElementById('shareBtn'), err=document.getElementById('shErr');
@@ -690,7 +705,12 @@ ${LEGAL_CSS}
       }).catch(function(){ loadError("Impossible d'afficher ce document."); });
     }
     function build(){
-      rendered={};
+      // Une nouvelle construction invalide tout ce qui etait en vol : sans cela, les rendus lances
+      // par la precedente peignent dans des elements DETACHES (pagesEl a ete vide) et le travail est
+      // fait deux fois. C est le meme mecanisme de generation que la page audience.
+      renderGen++;
+      annulerTout();
+      rendered={}; enCours={};
       if(io) io.disconnect();
       if(ioCur) ioCur.disconnect();
       // PRÉ-RENDU : marge de 500px → on rend les pages un peu avant qu'elles arrivent (fluide).
@@ -727,27 +747,78 @@ ${LEGAL_CSS}
         var top=avg(2,3), bot=avg(Math.max(0,h-5),3);
         scrollEl.style.background='linear-gradient(180deg,'+top+' 0%,'+top+' 42%,'+bot+' 58%,'+bot+' 100%)';
       }catch(e){ /* canvas indisponible → fond par défaut */ } }
-    function renderPage(n,el){ if(rendered[n])return; rendered[n]=1;
+    function annulerTout(){
+      for(var k in taches){ try{ taches[k].cancel(); }catch(e){} }
+      taches={};
+    }
+    // Rend une page a l etat de reserve : on retire le canvas et la couche texte, on remet la boite
+    // avec sa hauteur estimee. Le defilement ne bouge pas, et la page se re-rendra si on y revient.
+    function libererPage(n){
+      var el=pagesEl.querySelector('.page[data-p="'+n+'"]'); if(!el)return;
+      if(taches[n]){ try{ taches[n].cancel(); }catch(e){} delete taches[n]; }
+      var w=Math.round(targetWidth());
+      el.innerHTML=''; el.className='page ph'; el.textContent='Page '+n;
+      el.style.width=w+'px'; el.style.height=Math.round(w*firstAspect)+'px';
+      delete rendered[n]; delete enCours[n];
+    }
+    // ATTENTION : ON BORNE PAR UN BUDGET DE PIXELS, PAS SEULEMENT PAR UN NOMBRE DE PAGES.
+    // Deux pages A4 sur un ecran ×3 pesent plus que dix vignettes : compter les pages laisserait
+    // passer le cas qui fait tomber l onglet. On garde donc la fenetre courante, et on evince
+    // au-dela — le nombre de canvas reste borne quel que soit le parcours du document.
+    function evincerLoin(centre){
+      if(onePage) return;                       // une seule page affichee : rien a evincer
+      for(var k in rendered){
+        var n=+k;
+        if(n<centre-MARGE_PAGES || n>centre+MARGE_PAGES) libererPage(n);
+      }
+    }
+    function renderPage(n,el){
+      if(rendered[n]||enCours[n])return;
+      // ATTENTION : ON NE MARQUE PAS « RENDUE » AVANT DE L AVOIR FAIT. rendered[n]=1 etait pose ici,
+      // donc un echec de getPage ou de render laissait la page marquee pour toujours : elle ne se
+      // retentait jamais et restait vide. On distingue « en cours » de « aboutie ».
+      enCours[n]=1;
+      var gen=renderGen;
       if(IS_IMG){
         var w=Math.round(targetWidth());
         var im=document.createElement('img');
         im.src=imgSrc; im.alt=''; im.style.width=w+'px'; im.style.display='block';
         el.style.height=''; el.classList.remove('ph'); el.textContent=''; el.style.width=w+'px';
         el.appendChild(im);
-        im.onload=function(){ hideLoader(); };
-        if(im.complete) hideLoader();
+        im.onload=function(){ if(gen!==renderGen)return; delete enCours[n]; rendered[n]=1; hideLoader(); };
+        im.onerror=function(){ delete enCours[n]; };      // reessayable
+        if(im.complete){ delete enCours[n]; rendered[n]=1; hideLoader(); }
         return;
       }
       pdfDoc.getPage(n).then(function(page){
-      var dpr=window.devicePixelRatio||1;
+      if(gen!==renderGen){ delete enCours[n]; return; }   // un build() est passe : ce rendu n est plus attendu
+      // ATTENTION : LE DPR N ETAIT PAS PLAFONNE. Sur un ecran ×3, une page de 900 px de large fait
+      // pres de 10 M pixels, soit environ 39 Mo de tampon pour UNE page — le gain visuel au-dela de
+      // ×2 est nul, le cout est quadratique. On plafonne le DPR, puis on plafonne le NOMBRE DE
+      // PIXELS du canvas : deux bornes, parce que le zoom peut faire grandir la page independamment
+      // de la densite de l ecran.
+      var dpr=Math.min(DPR_MAX, window.devicePixelRatio||1);
       var scale=Math.min(5,targetWidth()/page.getViewport({scale:1}).width);
       var v=page.getViewport({scale:scale});
+      var pixels=Math.floor(v.width*dpr)*Math.floor(v.height*dpr);
+      if(pixels>PIXELS_MAX) dpr=Math.max(1, dpr*Math.sqrt(PIXELS_MAX/pixels));
       var c=document.createElement('canvas');
       c.setAttribute('role','img'); c.setAttribute('aria-label','Page '+n);
       c.width=Math.floor(v.width*dpr); c.height=Math.floor(v.height*dpr);   // backing store HD → net comme du natif
       c.style.width=v.width+'px'; c.style.height=v.height+'px';
       el.style.height=''; el.classList.remove('ph'); el.textContent=''; el.style.width=v.width+'px'; el.appendChild(c); // classList.remove (PAS className=) : ne pas écraser .cur — en mode une-page la page disparaissait une fois rendue (refit après réduction/réouverture du chat)
-      page.render({canvasContext:c.getContext('2d'),viewport:v,transform:dpr!==1?[dpr,0,0,dpr,0,0]:null}).promise.then(function(){ hideLoader(); if(n===cur)setTimeout(vsplitTint,60); });
+      var tache=page.render({canvasContext:c.getContext('2d'),viewport:v,transform:dpr!==1?[dpr,0,0,dpr,0,0]:null});
+      taches[n]=tache;
+      tache.promise.then(function(){
+        if(taches[n]===tache) delete taches[n];
+        if(gen!==renderGen){ delete enCours[n]; return; }
+        delete enCours[n]; rendered[n]=1;                  // AVEREE, pas seulement demandee
+        hideLoader(); if(n===cur)setTimeout(vsplitTint,60);
+      },function(){
+        // Annule ou en echec : on retire la marque pour que la page puisse etre retentee.
+        if(taches[n]===tache) delete taches[n];
+        delete enCours[n];
+      });
       // Couche texte (sélection). En pdf.js v3, les spans utilisent font-size:calc(var(--scale-factor)*Npx)
       // → SANS --scale-factor, taille nulle = pas de sélection. On le pose sur le conteneur.
       try{ page.getTextContent().then(function(tc){
@@ -758,7 +829,7 @@ ${LEGAL_CSS}
         catch(e){ try{ pdfjsLib.renderTextLayer({textContentSource:tc,container:tl,viewport:v}); }
         catch(e2){ try{ pdfjsLib.renderTextLayer({textContent:tc,container:tl,viewport:v}); }catch(e3){} } }
       }); }catch(e){}
-    }); }
+    },function(){ delete enCours[n]; }); }
     // ── Assistant IA « présentateur » : chat requête/réponse (bot-start/bot-say) + saut de page piloté ──
 ${botOn && botBrowser ? botBrowser.botViewerJs(ICONS) : ""}
   })();
