@@ -128,3 +128,48 @@ describe("ce que le contexte accepte comme URL publique", () => {
     expect(ctx("")).toBe("");
   });
 });
+
+// ⚠️ LE COMPORTEMENT A CHANGÉ, LES TEXTES SONT RESTÉS — PENDANT DES SEMAINES.
+//
+// La 0.1.21 posait un repli sur `Host` et le signalait ; la seconde passe d'audit l'a fermé
+// (P1-1) et le code refuse désormais l'envoi. Mais `docs/CONFIGURATION.md`, `.env.example` et le
+// commentaire de `context/standalone.js` ont continué à promettre le repli, jusqu'à ce qu'un
+// troisième audit externe les relise (21/08). Un exploitant qui lit la doc conclut que son
+// instance enverra quand même : il ne pose pas la variable, et découvre le refus le jour d'un
+// envoi qui compte.
+//
+// ⚠️ CETTE GARDE EST POSITIVE, ET C'EST DÉLIBÉRÉ. Interdire la formule « repli sur Host » se
+// serait retourné contre nous : les textes corrigés CITENT l'ancien comportement pour expliquer
+// pourquoi il a été retiré, et une garde par interdiction accuse la citation autant que la
+// promesse — elle pousse alors à effacer l'explication pour la satisfaire. On exige donc la
+// présence de ce que le code fait VRAIMENT, en prenant le motif de refus DANS le code : les
+// textes ne peuvent plus décrire un comportement qui n'existe pas sans qu'il leur manque celui
+// qui existe. Même formule que partout ici — un fait en deux exemplaires, quelqu'un les
+// confronte, et « quelqu'un » peut être un test.
+describe("les textes qui décrivent PLAYER_PUBLIC_URL disent ce que le code fait", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const racine = path.join(__dirname, "..", "..");
+
+  // La source du fait : le motif que la route rend réellement quand l'URL publique manque.
+  // ⚠️ On ancre sur le préfixe `public-url-`, pas sur le premier `refusEnvoi` venu : la route en
+  // rend plusieurs (`no-recipient` la précède), et prendre le premier ferait porter la garde sur
+  // un autre refus — elle passerait au vert en surveillant la mauvaise chose. Renommer le motif
+  // fait rougir ici : c'est voulu, les textes doivent suivre le code.
+  const motif = (() => {
+    const src = fs.readFileSync(path.join(racine, "server", "routes-liens.js"), "utf8");
+    return (src.match(/refusEnvoi = "(public-url-[a-z-]+)"/) || [])[1];
+  })();
+
+  it("le code nomme son refus — sans quoi il n'y a rien à confronter", () => {
+    expect(motif).toBe("public-url-unconfigured");
+  });
+
+  for (const fichier of ["docs/CONFIGURATION.md", ".env.example", "context/standalone.js"]) {
+    it(`${fichier} cite le refus que le code applique`, () => {
+      const texte = fs.readFileSync(path.join(racine, fichier), "utf8");
+      expect(texte, `${fichier} décrit PLAYER_PUBLIC_URL sans jamais nommer « ${motif} » — ` +
+        "le lecteur ne peut pas savoir que rien ne partira").toContain(motif);
+    });
+  }
+});

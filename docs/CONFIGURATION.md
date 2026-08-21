@@ -51,8 +51,13 @@ expect a brand. Three identities meet on that page — see [API.md](API.md#brand
 ⚠️ **`PLAYER_PUBLIC_URL` is a security setting, not a convenience.** Links that leave by email are
 built from it. The `Host` header will not do: the client chooses it, so a reader could have a
 message sent — signed by you, carrying your brand and your sender reputation — whose button points
-at their own domain. Unset, the player falls back to `Host` so no running instance breaks, and
-says so in the logs.
+at their own domain.
+
+⚠️ **Unset, no mail goes out.** The re-share route answers `sendRefused: "public-url-unconfigured"`
+and logs the reason; the tracked link itself is still created and returned, so you can pass it on
+yourself. Version 0.1.21 did fall back to `Host` and merely logged it — a log does not stop a
+phishing mail, and the operator learned about it from an abuse report. The fallback was removed;
+what is refused is the **send**, never the link, so nothing that matters breaks.
 
 Two obligations, different in nature. **The source**: AGPL makes it owed to whoever *uses* the
 software over a network, not only to whoever distributes it — a reader of `/doc/:slug` qualifies.

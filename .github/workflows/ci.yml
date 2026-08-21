@@ -123,13 +123,17 @@ jobs:
       # CODE : toute variable que le runtime lit doit être dans CONFIGURATION.md — et la parité
       # existante la propage dans .env.example.
       #
-      # ⚠️ ELLE NE LIT QUE DU CODE DÉPOUILLÉ. Sa première version cherchait dans le texte brut :
-      # un commentaire citant une variable la faisait rougir (contre-audit, 21/08) — une sonde qui
-      # lit du commentaire invente des coupables, leçon déjà écrite sur la garde PostgREST
-      # ci-dessous. L'extracteur vit dans tools/env-lues.mjs, retire commentaires/chaînes/texte de
-      # gabarit (les interpolations ${…} restent du code), a ses PROPRES tests
-      # (tools/__tests__/envLues.test.js), déclare ses angles morts, et INTERDIT les formes qu'il
-      # ne sait pas suivre : accès dynamique, déstructuration, alias hors `env`.
+      # ⚠️ ELLE LIT L'AST, APRÈS DEUX GÉNÉRATIONS TEXTUELLES QUI ONT ÉCHOUÉ. La v1 (grep) rougissait
+      # sur un COMMENTAIRE citant une variable — une sonde qui lit du commentaire invente des
+      # coupables, leçon déjà écrite sur la garde PostgREST ci-dessous. La v2 (lexer artisanal) a
+      # tenu une demi-journée : un troisième audit externe (21/08) a montré qu'une regex contenant
+      # un guillemet, après une parenthèse fermante, masquait TOUT le reste du fichier — un faux
+      # négatif silencieux, pire qu'une garde absente puisqu'il fait croire au contrôle.
+      # L'extracteur (tools/env-lues.mjs) parse désormais avec `typescript`, déjà présent pour le
+      # typecheck : un commentaire, une chaîne, une regex ne sont pas des nœuds exécutés, la
+      # question ne se pose plus. Il a ses PROPRES tests (tools/__tests__/envLues.test.js, dont un
+      # sur du code réel), déclare ses angles morts, et REFUSE ce dont il ne peut pas lire le nom
+      # — `process.env[cle]`, capture par reste, propriété calculée — au lieu de le rater.
       - name: Every variable the code reads is documented
         if: matrix.node == '22'
         run: node tools/env-lues.mjs
