@@ -298,6 +298,16 @@ jobs:
           annonce=$(grep -oE '\| Call sites \| \*\*[0-9]+\*\*' docs/API.md | grep -oE '[0-9]+')
           echo "surface base : $n appels — docs/API.md annonce $annonce"
           [ "$n" = "$annonce" ] || { echo "::error::docs/API.md annonce $annonce appels, le code en compte $n. Mettez le document à jour."; exit 1; }
+          # ⚠️ ET LA MOITIÉ QU'ON NE COMPARAIT PAS. La même ligne du document annonce aussi un nombre
+          # de FICHIERS, et lui n'était gardé par rien : il disait « five » quand le code en comptait
+          # SEPT — la dérive exacte que cette étape a été écrite pour empêcher, revenue par le membre
+          # de phrase resté hors du périmètre. Une garde dit AUSSI où elle regarde ; celle-ci
+          # regardait la moitié de sa propre ligne.
+          f=$(grep -l 'PLAYER\.db\.\(request\|selectAll\)' server/*.js | wc -l | tr -d ' ')
+          annonceF=$(grep -oE '\| Call sites \|.*in \*\*[0-9]+\*\* files' docs/API.md | grep -oE '[0-9]+' | tail -1)
+          echo "surface base : $f fichiers — docs/API.md annonce $annonceF"
+          [ -n "$annonceF" ] || { echo "::error::docs/API.md n'annonce plus de nombre de fichiers sous la forme « in **N** files » — la garde ne peut plus comparer"; exit 1; }
+          [ "$f" = "$annonceF" ] || { echo "::error::docs/API.md annonce $annonceF fichiers, le code en compte $f. Mettez le document à jour."; exit 1; }
 
       # ⚠️ UN SCRIPT TIERS ENTRE DANS LA PAGE AVEC NOS DROITS. Version exacte + empreinte, sinon
       # ce qui s'exécute chez le visiteur est décidé par quelqu'un d'autre, sans déploiement.
@@ -778,7 +788,7 @@ jobs:
 
       # ⚠️ Le banc REFUSE de s'esquiver quand `CI` est posé : si PostgREST ne démarrait pas, une
       # esquive silencieuse rendrait cette étape verte sans que rien n'ait été éprouvé.
-      - name: The three properties the in-memory double cannot simulate
+      - name: What the in-memory double cannot simulate — against a real Postgres
         env:
           PLAYER_TEST_POSTGREST_URL: http://127.0.0.1:3002
         run: npm run test:base

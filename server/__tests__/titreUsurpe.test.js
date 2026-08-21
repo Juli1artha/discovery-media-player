@@ -27,6 +27,7 @@ const CONTROL = "jeton-de-controle-du-presentateur";
 const HASH = crypto.createHash("sha256").update(CONTROL).digest("hex");
 
 let recu = null;
+let recuOptions = null;
 let messageRecu = null;
 const vraies = require("../presentations.js");
 require.cache[require.resolve("../presentations.js")] = {
@@ -34,7 +35,7 @@ require.cache[require.resolve("../presentations.js")] = {
   exports: {
     ...vraies,
     getPresentation: async () => ({ slug: "s1", control_hash: HASH, current_page: 1, chat_locked: false, active: true, presenter_name: "Camille" }),
-    recordAttendance: async (_slug, p) => { recu = p; return { ok: true }; },
+    recordAttendance: async (_slug, p, o) => { recu = p; recuOptions = o || {}; return { ok: true }; },
     addMessage: async (_slug, p) => { messageRecu = p; return { ok: true, message: { id: 1 } }; },
     listMessages: async () => [],
   },
@@ -76,7 +77,7 @@ function contexte() {
 }
 
 async function poster(corps, autorisation) {
-  recu = null; messageRecu = null;
+  recu = null; recuOptions = null; messageRecu = null;
   player.init(contexte());
   const res = { statusCode: 0, body: "", setHeader() {}, end(b) { this.body = String(b || ""); } };
   const headers = { "content-type": "application/json" };
@@ -96,13 +97,34 @@ describe("qui décide qu'un participant est le présentateur", () => {
     expect(recu.isPresenter, "le corps de la requête ne décide plus du titre").toBe(false);
   });
 
-  it("le prouver suffit", async () => {
+  // ⚠️ LA DÉCISION A CHANGÉ DE CAMP — CE TEST NE PEUT PLUS PROUVER LA MOITIÉ QUI EST PARTIE.
+  //
+  // Depuis 0019, la route ne lit plus la présentation : elle transmet l'EMPREINTE du jeton et c'est
+  // la base qui compare, dans la transaction d'écriture. Ce fichier garde donc la moitié qu'il peut
+  // encore observer — la route transmet une preuve et n'accorde plus rien elle-même — et la seconde
+  // moitié, « l'empreinte juste accorde le titre, la fausse ne l'accorde pas », est mesurée contre un
+  // vrai Postgres dans base/presenceFusionnee.test.js.
+  //
+  // ⚠️ ÉCRIT ICI PARCE QU'UNE PREUVE COUPÉE EN DEUX SE PERD : chaque moitié reste verte toute seule
+  // pendant que la propriété, elle, ne tient plus. Les deux fichiers se nomment l'un l'autre.
+  it("le prouver, c'est transmettre la preuve — pas se déclarer", async () => {
     await assister({ control: CONTROL });
-    expect(recu.isPresenter).toBe(true);
+    expect(recuOptions.controlHash, "l'empreinte du jeton monte jusqu'à la base").toBe(HASH);
+    expect(recu.isPresenter, "la route n'accorde plus le titre elle-même").toBe(false);
+  });
+
+  // ⚠️ LE JETON LUI-MÊME NE DOIT PAS DESCENDRE. C'est ce qui distingue « transmettre une preuve » de
+  // « faire circuler un secret » : la base reçoit de quoi comparer, jamais de quoi se faire passer
+  // pour le présentateur ailleurs. Le jeton de contrôle pilote la présentation — il vaut le mot de
+  // passe de la session.
+  it("le jeton de contrôle ne descend jamais, seulement son empreinte", async () => {
+    await assister({ control: CONTROL });
+    expect(JSON.stringify(recuOptions).includes(CONTROL)).toBe(false);
   });
 
   it("un mauvais jeton de contrôle ne donne rien", async () => {
     await assister({ control: "pas-le-bon", isPresenter: true });
+    expect(recuOptions.controlHash, "une empreinte fausse reste fausse").not.toBe(HASH);
     expect(recu.isPresenter).toBe(false);
   });
 });
