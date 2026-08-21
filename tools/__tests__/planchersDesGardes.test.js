@@ -20,7 +20,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, cpSync, rmSync, writeFileSync, readFileSync, readdirSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, cpSync, rmSync, readFileSync, writeFileSync, readdirSync, symlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -53,22 +53,54 @@ const EXEMPTES = {
   },
 };
 
-let vide;
+let vide, muet;
+
+/** Monte un arbre qui a la FORME du dépôt, et le rend au chemin où il vit. */
+function arbre(garnir) {
+  const d = mkdtempSync(join(tmpdir(), "planchers-"));
+  for (const sous of ["tools", "server", "docs", "examples", "charge", "base", ".github/workflows", "src"]) {
+    mkdirSync(join(d, sous), { recursive: true });
+  }
+  cpSync(join(RACINE, "tools"), join(d, "tools"), { recursive: true });
+  try { symlinkSync(join(RACINE, "node_modules"), join(d, "node_modules")); } catch { /* déjà là */ }
+  if (garnir) garnir(d);
+  return d;
+}
+
+/** Lance un outil dans un arbre et rend son code de sortie. */
+function lancer(nom, ou) {
+  try {
+    execFileSync(process.execPath, [join("tools", nom)], { cwd: ou, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    return { code: 0, sortie: "" };
+  } catch (e) {
+    return { code: e.status ?? 1, sortie: String(e.stdout || "") + String(e.stderr || "") };
+  }
+}
 
 beforeAll(() => {
   // Un dépôt qui a la FORME du nôtre et n'a RIEN dedans : c'est exactement l'état où une sonde qui
   // vise à côté est indiscernable d'un dépôt sain, et donc le seul endroit où la question se pose.
-  vide = mkdtempSync(join(tmpdir(), "planchers-"));
-  for (const d of ["tools", "server", "docs", "examples", "charge", "base", ".github/workflows", "src"]) {
-    mkdirSync(join(vide, d), { recursive: true });
-  }
-  cpSync(join(RACINE, "tools"), join(vide, "tools"), { recursive: true });
-  cpSync(join(RACINE, "package.json"), join(vide, "package.json"));
-  writeFileSync(join(vide, "CHANGELOG.md"), "# Changelog\n");
-  try { symlinkSync(join(RACINE, "node_modules"), join(vide, "node_modules")); } catch { /* déjà là */ }
+  // ⚠️ NI package.json NI CHANGELOG — ET LA PREMIÈRE ÉPROUVETTE LES COPIAIT, CE QUI BROUILLAIT LA
+  // QUESTION. Avec un package.json valide, `release-preflight` POUVAIT regarder : il trouvait de
+  // vraies violations et rendait 1, à juste titre. L'éprouvette mesurait donc « que fait la garde
+  // sur un dépôt à moitié là », alors que la propriété visée est « que fait-elle quand elle ne peut
+  // RIEN lire ». Vidée pour de bon, la réponse devient nette : les dix outils rendent 2.
+  vide = arbre(null);
+
+  // ⚠️ ET UNE SECONDE ÉPROUVETTE, PARCE QU'UNE MUTATION A MONTRÉ UN TROU. Dans l'arbre totalement
+  // vide, `CHANGELOG.md` est ABSENT : la lecture lève, et la branche « le fichier est là et ne dit
+  // rien » n'est jamais atteinte. Transformer sa classification en « violation » passait donc au
+  // vert. Ici les fichiers EXISTENT et sont muets — c'est l'autre façon, plus insidieuse, dont une
+  // sonde ne trouve rien : sans exception pour la trahir.
+  muet = arbre((d) => {
+    writeFileSync(join(d, "package.json"), JSON.stringify({ name: "vide", version: "0.0.0" }, null, 2));
+    writeFileSync(join(d, "CHANGELOG.md"), "# Changelog\n\nRien.\n");
+  });
 });
 
-afterAll(() => { try { rmSync(vide, { recursive: true, force: true }); } catch { /* rien */ } });
+afterAll(() => {
+  for (const d of [vide, muet]) { try { rmSync(d, { recursive: true, force: true }); } catch { /* rien */ } }
+});
 
 const outils = () => readdirSync(join(RACINE, "tools")).filter((f) => f.endsWith(".mjs"));
 
@@ -94,13 +126,7 @@ describe("aucune garde ne déclare victoire sur un dépôt vide", () => {
   for (const nom of readdirSync(join(RACINE, "tools")).filter((f) => f.endsWith(".mjs"))) {
     if (EXEMPTES[nom]) continue;
     it(`${nom} refuse plutôt que de conclure au vert`, () => {
-      let code = 0, sortie = "";
-      try {
-        sortie = execFileSync(process.execPath, [join("tools", nom)], { cwd: vide, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-      } catch (e) {
-        code = e.status ?? 1;
-        sortie = String(e.stdout || "") + String(e.stderr || "");
-      }
+      const { code, sortie } = lancer(nom, vide);
       // ⚠️ CE QU'ON AFFIRME EST LE REFUS, PAS SA POLITESSE. Un outil qui plante sur un fichier absent
       // refuse aussi — mal, mais il ne ment pas. Nommer la cause est une qualité SÉPARÉE : l'exiger
       // de tous obligerait à réécrire des outils qui tiennent déjà la propriété qui compte.
@@ -121,6 +147,23 @@ describe("aucune garde ne déclare victoire sur un dépôt vide", () => {
       }
     });
   }
+
+  // ⚠️ UN CAS NOMMÉ, ET LA RAISON DE LE NOMMER EST UNE MUTATION QUI EST PASSÉE. Dans l'arbre
+  // totalement vide, `CHANGELOG.md` est ABSENT : la lecture lève, et la branche « le fichier est là
+  // et ne dit rien » n'est jamais atteinte — transformer sa classification en « violation » restait
+  // vert. C'est l'autre façon dont une sonde ne trouve rien, la plus insidieuse : sans exception
+  // pour la trahir.
+  //
+  // ⚠️ ET IL RESTE NOMMÉ PLUTÔT QUE GÉNÉRALISÉ, PARCE QUE LA MESURE L'INTERDIT. Dans cette seconde
+  // éprouvette, `release-preflight` rend 1 — il PEUT regarder, et la version manque vraiment au
+  // changelog : c'est une violation, pas une cécité. Et `langue-publiee` rend 0 — il a trouvé un
+  // document et a conclu. Une règle uniforme ici serait fausse pour deux outils sur dix ; on écrit
+  // donc ce qu'on mesure, et on dit pourquoi on ne l'étend pas.
+  it("un CHANGELOG présent mais SANS SECTION est une cécité, pas une violation", () => {
+    const { code, sortie } = lancer("changelog.mjs", muet);
+    expect(code, "le fichier est là et ne dit rien : la sonde n'a pas pu conclure, la branche n'y est pour rien").toBe(2);
+    expect(sortie).toMatch(/GARDE NON CONCLUANTE/);
+  });
 
   // ⚠️ PAS DE RELEVÉ IMPRIMÉ ICI, ET C'EST UNE DÉCISION PLUTÔT QU'UN OUBLI. La première écriture
   // affichait « combien de refus nomment leur cause » — et ne s'imprimait JAMAIS : `npm test`

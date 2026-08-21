@@ -27,6 +27,7 @@
 
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { conclure, conforme, violation, inconclusif } from "./resultat-garde.mjs";
 
 export const SURFACE = {
   ".": {
@@ -136,27 +137,45 @@ export function ecartsInternes(sousChemin, symboles) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const paquet = JSON.parse(readFileSync("package.json", "utf8"));
-  const soucis = [
-    ...ecartsExports(paquet.exports),
-    ...ecartsTypes(paquet.exports),
-    ...ecartsDoc(readFileSync("docs/API.md", "utf8")),
-  ];
-  for (const [sousChemin, cible] of Object.entries(SURFACE)) {
-    if (!["stable", "experimental"].includes(cible.statut)) continue;
-    const chemin = paquet.exports[sousChemin];
-    const fichier = typeof chemin === "string" ? chemin : chemin?.default;
-    if (!fichier || !fichier.endsWith(".js")) continue;
+  // ⚠️ UNE EXCEPTION EST UN RÉSULTAT NON CONCLUANT, PAS UNE VIOLATION. `docs/API.md` absent ou
+  // `package.json` déplacé faisaient remonter l'erreur jusqu'à Node, qui sortait 1 : le refus
+  // prudent de la garde prenait l'apparence d'un dépôt fautif, avec une trace de pile pour
+  // toute explication. Ce qui vaut pour un YAML illisible vaut pour un fichier qui manque.
+  try {
+    // ⚠️ SANS CE PLANCHER, LA GARDE COMPARE LE VIDE AU VIDE. `ecartsExports` parcourt ce que
+    // `package.json#exports` déclare : s'il est absent, elle ne trouve aucun écart et la garde se
+    // félicite — sur un paquet qui n'expose plus rien. Ce n'est pas la branche qui est fautive dans
+    // ce cas, c'est la sonde : « non concluant », pas « violation ».
+    let paquet = null;
     try {
-      const { createRequire } = await import("node:module");
-      const mod = createRequire(pathToFileURL("./package.json"))(fichier);
-      soucis.push(...ecartsInternes(sousChemin, Object.keys(mod)));
-    } catch { /* un module qui ne se charge pas hors contexte n'est pas le sujet de cette garde */ }
+      paquet = JSON.parse(readFileSync("package.json", "utf8"));
+    } catch (e) {
+      conclure(inconclusif(`package.json illisible — ${(e && e.message) || e}`));
+    }
+    if (!paquet || !paquet.exports || !Object.keys(paquet.exports).length) {
+      conclure(inconclusif("package.json ne déclare aucun « exports » — la sonde n'a rien à comparer"));
+    }
+    const soucis = [
+      ...ecartsExports(paquet.exports),
+      ...ecartsTypes(paquet.exports),
+      ...ecartsDoc(readFileSync("docs/API.md", "utf8")),
+    ];
+    for (const [sousChemin, cible] of Object.entries(SURFACE)) {
+      if (!["stable", "experimental"].includes(cible.statut)) continue;
+      const chemin = paquet.exports[sousChemin];
+      const fichier = typeof chemin === "string" ? chemin : chemin?.default;
+      if (!fichier || !fichier.endsWith(".js")) continue;
+      try {
+        const { createRequire } = await import("node:module");
+        const mod = createRequire(pathToFileURL("./package.json"))(fichier);
+        soucis.push(...ecartsInternes(sousChemin, Object.keys(mod)));
+      } catch { /* un module qui ne se charge pas hors contexte n'est pas le sujet de cette garde */ }
+    }
+    const parStatut = Object.values(SURFACE).reduce((a, d) => ({ ...a, [d.statut]: (a[d.statut] || 0) + 1 }), {});
+    conclure(soucis.length
+      ? violation(soucis)
+      : conforme("surface publique : " + Object.entries(parStatut).map(([s, n]) => `${n} ${s}`).join(", ") + " — manifeste, package.json et documentation d'accord"));
+  } catch (e) {
+    conclure(inconclusif(`la surface publique n'a pas pu être lue — ${(e && e.message) || e}`));
   }
-  if (soucis.length) {
-    for (const s of soucis) console.error("::error::" + s);
-    process.exit(1);
-  }
-  const parStatut = Object.values(SURFACE).reduce((a, d) => ({ ...a, [d.statut]: (a[d.statut] || 0) + 1 }), {});
-  console.log("surface publique : " + Object.entries(parStatut).map(([s, n]) => `${n} ${s}`).join(", ") + " — manifeste, package.json et documentation d'accord");
 }
