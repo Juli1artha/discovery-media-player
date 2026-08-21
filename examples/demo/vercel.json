@@ -1,34 +1,19 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "//": [
-    "ON INSTALLE LE PLAYER DEPUIS LE DEPOT, PAS DEPUIS npm — et ce n est pas un detail de confort.",
-    "",
-    "Le package.json de cet exemple epingle la version publiee, ce qui est juste pour un COPIEUR :",
-    "il doit voir ce qu il taperait lui-meme. Mais la PREVERSION, elle, installait cette version",
-    "depuis le registre. Deux consequences, et la seconde est la pire :",
-    "",
-    "1. Sur une PR de montee de version, la version n existe pas encore sur npm : le deploiement",
-    "   ECHOUAIT a chaque fois. Un controle qui echoue par construction cesse d etre lu — il a ete",
-    "   vu rouge et ignore trois fois de suite le jour ou on l a corrige.",
-    "2. Le reste du temps, la preversion deployait le player PUBLIE, jamais le code de la PR. Elle",
-    "   ressemblait a une verification sans en etre une : verte quoi que la PR change au player.",
-    "",
-    "En installant le dossier racine, la preversion montre le code du commit — c est la CI qui fait",
-    "deja ce choix pour l exemple express (installe depuis le tarball du commit, pas du registre).",
-    "--ignore-scripts : le crochet prepare du depot installe des hooks git, inutile ici.",
-    "",
-    "ET C EST UN TARBALL, PAS UN CHEMIN. Premier essai : npm install ../.. — npm cree alors un LIEN",
-    "SYMBOLIQUE, et Node resout les dependances du player depuis le DEPOT, qui n a pas de",
-    "node_modules ici. Chargement casse net sur pdfjs-dist. Le tarball, lui, est deballe dans",
-    "node_modules comme un paquet ordinaire et ses dependances se resolvent normalement. Mesure",
-    "faite en local avant de pousser : handler charge, pdfjs-dist resolu."
-  ],
   "installCommand": "cd ../.. && npm pack --silent && cd examples/demo && npm install --silent --ignore-scripts ../../discovery-media-player-*.tgz",
   "rewrites": [
-    { "source": "/", "destination": "/api/doc?demo=1" },
-    { "source": "/preview/:name", "destination": "/api/doc?doc=:name" }
+    {
+      "source": "/",
+      "destination": "/api/doc?demo=1"
+    },
+    {
+      "source": "/preview/:name",
+      "destination": "/api/doc?doc=:name"
+    }
   ],
   "functions": {
-    "api/doc.js": { "includeFiles": "documents/**" }
+    "api/doc.js": {
+      "includeFiles": "documents/**"
+    }
   }
 }
