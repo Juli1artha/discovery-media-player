@@ -77,9 +77,23 @@ git tag -a v<version> -m "<version>" && git push origin v<version>
 
 ## After the tag
 
-The [Release workflow](../.github/workflows/release.yml) takes over: it demands the exact commit's
-CI be entirely green (0.1.68 was published on red), runs the tests again, extracts the changelog
-section, publishes to npm with provenance, and builds the container image.
+The [Release workflow](../.github/workflows/release.yml) takes over. It runs as **four jobs whose
+permissions are deliberately disjoint** — so if one fails, its name already tells you where you
+are:
+
+| job | what it does | what it may do |
+| --- | --- | --- |
+| `verifier` | demands the exact commit's CI be entirely green (0.1.68 was published on red), runs the tests again, checks the tag matches `package.json`, extracts the changelog section | read only |
+| `publier` | `npm publish --provenance` — nothing else | mint the npm identity (OIDC) |
+| `eprouver` | installs the **published** package from the registry, renders a page, compiles every inline script (0.1.25 was published and broken); summarises what actually changed in the tarball | read only |
+| `annoncer` | creates the GitHub Release from the notes `verifier` extracted | write to the repo |
+
+The split is not cosmetic: `eprouver` executes code downloaded from the registry, and it is the
+job with the fewest rights. Before it existed, those same lines ran with both `contents: write`
+and `id-token: write`.
+
+The container image is **not** built here — [`image.yml`](../.github/workflows/image.yml) builds it
+from the same tag, in parallel, off the critical path of the npm publication.
 
 **Check that it finished.** Three releases in a row (0.1.67 → 0.1.69) published to npm and then
 failed on the notes: GitHub Release, image, SBOM and provenance skipped, three times, without
