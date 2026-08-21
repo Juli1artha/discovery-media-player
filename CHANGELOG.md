@@ -3357,7 +3357,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.119...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.120...HEAD
+[0.1.120]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.119...v0.1.120
 [0.1.119]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.118...v0.1.119
 [0.1.118]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.117...v0.1.118
 [0.1.117]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.116...v0.1.117
