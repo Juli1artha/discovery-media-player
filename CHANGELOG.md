@@ -10,6 +10,20 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.122] — 2026-08-21
+
+### Fixed
+- **Local files are now streamed instead of being allocated whole** (P1, external audit).
+  `readLocal` did `Buffer.alloc(end - start + 1)`: up to 60 MiB per request, *under* the relay
+  ceiling and therefore perfectly "allowed". Twenty concurrent range-less requests for a 50 MiB file
+  reserved about 1 GiB at once. **The ceiling bounded one read; nothing bounded its product with
+  concurrency — and the product is what memory experiences.** The local path now returns a readable
+  `body`, so it goes through the *same* streaming code as the remote relay and inherits its
+  backpressure and its byte counter. Measured: 152 MiB reserved before, under the threshold after.
+- The file descriptor now belongs to the stream (`autoClose`), so a client hanging up destroys the
+  source and releases it. It is closed explicitly on the paths that read nothing (416, 413, error).
+  `206`, `Content-Range`, `Content-Length`, `413` and the stat/read race protection are unchanged.
+
 ## [0.1.121] — 2026-08-21
 
 ### Security
@@ -3382,7 +3396,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.121...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.122...HEAD
+[0.1.122]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.121...v0.1.122
 [0.1.121]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.120...v0.1.121
 [0.1.120]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.119...v0.1.120
 [0.1.119]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.118...v0.1.119

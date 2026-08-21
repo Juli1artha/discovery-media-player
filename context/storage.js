@@ -12,6 +12,7 @@
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
+const { Readable } = require("node:stream");
 
 /** Chemin canonique des objets PUBLICS du Storage Supabase. */
 const PUBLIC_OBJECT_PREFIX = "/storage/v1/object/public/";
@@ -150,12 +151,17 @@ async function readLocal(cible, range) {
   // `fh.read()`, quoi qu'il advienne du chemin entre-temps.
   let fh;
   try { fh = await fsp.open(cible, "r"); } catch { return null; }
+  // ⚠️ PLUS DE `finally { close() }` : LE DESCRIPTEUR APPARTIENT DÉSORMAIS AU FLUX. Le fermer ici
+  // reviendrait à le fermer AVANT que le relais n'ait lu un octet. `lireDepuis` en prend la
+  // propriété : soit il le rend au flux (qui le referme en fin ou à l'annulation, `autoClose`),
+  // soit il le referme lui-même sur les chemins qui ne lisent rien (416, 413, erreur).
   try {
     const stat = await fh.stat();
-    if (!stat.isFile()) return null;
+    if (!stat.isFile()) { await fh.close(); return null; }
     return await lireDepuis(fh, stat, cible, range);
-  } finally {
-    await fh.close();
+  } catch (e) {
+    await fh.close().catch(() => {});
+    throw e;
   }
 }
 
@@ -168,6 +174,7 @@ async function lireDepuis(fh, stat, cible, range) {
     if (m[1]) { debut = Number(m[1]); fin = m[2] ? Math.min(Number(m[2]), total - 1) : total - 1; }
     else { debut = Math.max(0, total - Number(m[2])); }         // `bytes=-500` : les 500 derniers
     if (!(debut >= 0 && fin >= debut && debut < total)) {
+      await fh.close().catch(() => {});
       return reponse(416, {}, Buffer.alloc(0));                  // borne absurde : on le dit
     }
     statut = 206;
@@ -180,16 +187,61 @@ async function lireDepuis(fh, stat, cible, range) {
   // fabrique son contexte à l'import, avant que l'exploitant ait pu poser la variable.
   const plafond = Number(process.env.PLAYER_MAX_RELAY_BYTES || 0) || 60 * 1024 * 1024;
   if (fin - debut + 1 > plafond) {
+    await fh.close().catch(() => {});
     return reponse(413, {}, Buffer.alloc(0));
   }
-  const buf = Buffer.alloc(fin - debut + 1);
-  const { bytesRead } = await fh.read(buf, 0, buf.length, debut);
-  const corps = bytesRead === buf.length ? buf : buf.subarray(0, bytesRead);
-  // La taille est connue d'un `stat` sur le descripteur ouvert : l'annoncer permet au relais de
-  // la refuser avant d'allouer, et à la visionneuse d'afficher une progression.
-  const entetes = { "content-type": type, "content-length": String(corps.length) };
+
+  // ⚠️ ON DIFFUSE, ON N'ALLOUE PLUS — et le plafond ne suffisait pas à rendre l'allocation sûre.
+  //
+  // `Buffer.alloc(fin - debut + 1)` réservait la plage DEMANDÉE en une fois : jusqu'à 60 Mio par
+  // requête, sous le plafond, donc parfaitement « autorisé ». Un visiteur qui connaît un lien
+  // public envoie vingt requêtes SANS `Range` sur un fichier de 50 Mio : environ 1 Gio d'un coup,
+  // avant même les surcoûts de Node. Le plafond bornait la taille d'UNE lecture ; rien ne bornait
+  // leur PRODUIT par la concurrence, qui est ce que la mémoire subit. (P1 audit externe.)
+  //
+  // Le relais distant diffuse déjà (`Readable.fromWeb(r.body)`) et compte les octets qui passent :
+  // en rendant un `body`, le chemin local emprunte le MÊME code et hérite de sa contre-pression —
+  // la mémoire devient fonction de la taille des morceaux, plus de celle du fichier.
+  //
+  // `autoClose` referme le descripteur en fin de flux ET à la destruction : si le client raccroche,
+  // le relais détruit la source et le descripteur part avec elle. C'est pourquoi personne ne le
+  // ferme plus en amont.
+  const flux = fh.createReadStream({ start: debut, end: fin, autoClose: true });
+  // La taille vient d'un `stat` sur le descripteur OUVERT : elle décrit bien ce qu'on envoie, et
+  // permet au relais de refuser avant de lire, à la visionneuse d'afficher une progression.
+  const entetes = { "content-type": type, "content-length": String(fin - debut + 1) };
   if (statut === 206) entetes["content-range"] = `bytes ${debut}-${fin}/${total}`;
-  return reponse(statut, entetes, corps);
+  return reponseFlux(statut, entetes, flux);
+}
+
+/**
+ * Même forme qu'une réponse `fetch`, mais avec un CORPS LISIBLE : `body` est un flux web, ce que le
+ * relais sait consommer. `arrayBuffer()` reste disponible pour un appelant qui ne connaît que lui —
+ * il consomme alors le flux, donc il réalloue : c'est le chemin de repli, pas celui qu'on emprunte.
+ */
+function reponseFlux(status, entetes, fluxNode) {
+  const h = new Map(Object.entries(entetes));
+  const fluxWeb = Readable.toWeb(fluxNode);
+  return {
+    ok: status < 400,
+    status,
+    headers: { get: (k) => (h.has(String(k).toLowerCase()) ? h.get(String(k).toLowerCase()) : null) },
+    // ⚠️ UNE SEULE SOURCE, DONC UNE SEULE CONSOMMATION. `Readable.toWeb` prend possession du flux
+    // Node : itérer celui-ci en parallèle de `body` lirait deux fois la même chose, ou rien. On
+    // construit donc le flux web UNE fois et `arrayBuffer()` lit depuis LUI — même sémantique que
+    // `fetch`, où un corps ne se consomme qu'une fois.
+    body: fluxWeb,
+    arrayBuffer: async () => {
+      const lecteur = fluxWeb.getReader();
+      const morceaux = [];
+      for (;;) {
+        const { done, value } = await lecteur.read();
+        if (done) break;
+        morceaux.push(Buffer.from(value));
+      }
+      return Buffer.concat(morceaux);
+    },
+  };
 }
 
 function reponse(status, entetes, corps) {
