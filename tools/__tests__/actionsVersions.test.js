@@ -11,7 +11,8 @@
 
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-import { depotDe, annonceDe, entrees, ecartVersion, tagsDuDepot, verdict } from "../actions-versions.mjs";
+import { depotDe, ecartVersion, tagsDuDepot, verdict } from "../actions-versions.mjs";
+import { usesDe, usesDuDepot } from "../workflows-yaml.mjs";
 
 const V4 = "ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd"; // github/codeql-action v4.37.7
 const V3 = "f3712979fa5f215279b101dd0a2e3bdfb4353324"; // github/codeql-action v3.37.7
@@ -31,46 +32,9 @@ describe("le dépôt qui porte l'action", () => {
   });
 });
 
-describe("ce que la ligne annonce", () => {
-  it("prend le premier mot du commentaire", () => {
-    expect(annonceDe("      - uses: a/b@" + V4 + " # v3")).toBe("v3");
-    expect(annonceDe("      - uses: a/b@" + V4 + " # v7  (dernière LTS)")).toBe("v7");
-  });
-
-  it("rend null quand il n'y a pas de commentaire", () => {
-    expect(annonceDe("      - uses: a/b@" + V4)).toBeNull();
-  });
-});
-
-describe("le relevé des couples action/annonce", () => {
-  it("attrape la ligne exacte de l'incident", () => {
-    const txt = `      - uses: github/codeql-action/init@${V4} # v3\n`;
-    expect(entrees(txt, "codeql.yml")).toEqual([{
-      fichier: "codeql.yml", reference: `github/codeql-action/init@${V4}`,
-      depot: "github/codeql-action", sha: V4, annonce: "v3",
-    }]);
-  });
-
-  it("⚠️ ne reproche rien à une ligne SANS commentaire — il n'y a rien à confronter", () => {
-    expect(entrees(`      - uses: a/b@${V4}\n`)).toEqual([]);
-  });
-
-  it("ignore ce qui n'est pas épinglé sur un SHA — c'est l'autre garde qui s'en occupe", () => {
-    expect(entrees("      - uses: a/b@v3 # v3\n")).toEqual([]);
-    expect(entrees("      - uses: ./locale # maison\n")).toEqual([]);
-  });
-
-  it("hérite du découpage YAML de la garde voisine : ni commentaires, ni blocs `run: |`", () => {
-    const txt = [
-      "      # exemple dans un commentaire : uses: a/b@" + V4 + " # v9",
-      "      - name: garde",
-      "        run: |",
-      "          uses: c/d@" + V4 + " # v9",
-      "      - uses: e/f@" + V4 + " # v1",
-    ].join("\n") + "\n";
-    expect(entrees(txt).map((e) => e.depot)).toEqual(["e/f"]);
-  });
-});
+// ⚠️ L'EXTRACTION DE L'ÉTIQUETTE N'EST PLUS ÉPROUVÉE ICI. Ce fichier la faisait lui-même, à
+// partir des lignes brutes du lexer voisin — donc il héritait de ses angles morts. Elle vit
+// maintenant dans `tools/workflows-yaml.mjs`, et son banc la couvre sur un arbre YAML.
 
 describe("⚠️ LE CAS #253 — une majeure déguisée en correctif", () => {
   const entree = { reference: `github/codeql-action/init@${V4}`, annonce: "v3" };
@@ -169,23 +133,24 @@ describe("⚠️ un « non vérifié » ne se confond jamais avec un vert", () =
 });
 
 describe("les workflows réellement présents", () => {
-  const fichiers = ["codeql.yml", "ci.yml", "image.yml", "scorecard.yml", "release.yml", "cla.yml"]
-    .map((f) => ".github/workflows/" + f);
+  const epinglees = usesDuDepot().filter((u) => u.annonce && /@[0-9a-f]{40}$/.test(u.reference));
 
-  it("chaque action épinglée y annonce une étiquette lisible", () => {
-    const toutes = fichiers.flatMap((f) => entrees(readFileSync(f, "utf8"), f));
-    expect(toutes.length).toBeGreaterThan(0);
-    for (const e of toutes) {
-      expect(e.depot, e.reference).toBeTruthy();
-      expect(e.sha, e.reference).toMatch(/^[0-9a-f]{40}$/);
-      expect(e.annonce, e.reference).toBeTruthy();
+  it("chaque action épinglée y annonce une étiquette lisible, et un dépôt", () => {
+    expect(epinglees.length).toBeGreaterThan(0);
+    for (const u of epinglees) {
+      expect(depotDe(u.reference), u.reference).toBeTruthy();
+      expect(u.annonce, u.reference).toBeTruthy();
     }
   });
 
   it("⚠️ codeql-action n'annonce plus v3 — la ligne qui a motivé cette garde", () => {
-    const codeql = entrees(readFileSync(".github/workflows/codeql.yml", "utf8"))
-      .filter((e) => e.depot === "github/codeql-action");
+    const codeql = epinglees.filter((u) => depotDe(u.reference) === "github/codeql-action");
     expect(codeql.length).toBeGreaterThan(0);
-    for (const e of codeql) expect(e.annonce).not.toBe("v3");
+    for (const u of codeql) expect(u.annonce).not.toBe("v3");
+  });
+
+  it("la lecture par arbre YAML retrouve bien les annonces", () => {
+    const u = usesDe(`steps:\n  - uses: a/b@${"c".repeat(40)} # v9\n`, "w.yml")[0];
+    expect(u.annonce).toBe("v9");
   });
 });
