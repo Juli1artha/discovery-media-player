@@ -17,11 +17,18 @@
 // qu'un banc qui a tenu 250 appelants — c'est la classe qui a laissé passer deux mutations aujourd'hui.
 // Les premières assertions portent donc sur le fait que la charge a EU LIEU.
 //
-// CE QU'IL NE FAIT PAS, et il faut le dire : pas de 1 000 appelants (le temps de forge n'est pas
-// gratuit), pas de base ralentie artificiellement, pas de relais PDF, pas de multi-processus. Ce sont
-// les postes suivants de la campagne, et leur absence n'est pas une propriété vérifiée.
+// CE QU'IL FAIT : jusqu'à 250 appelants, 20 présentations simultanées, et le relais de fichiers
+// sous concurrence — c'est-à-dire tout ce que la forge actuelle permet d'atteindre.
+//
+// ⚠️ CE QU'IL NE FAIT PAS, et il faut le dire aussi précisément : pas de 1 000 appelants, pas de base
+// RALENTIE artificiellement (+250 ms, +2 s), pas de MULTI-PROCESSUS. Ces trois-là demandent une
+// infrastructure que la forge n'a pas, pas seulement plus de temps — et leur absence n'est pas une
+// propriété vérifiée. Un banc qui tait ce qu'il ne couvre pas se lit comme s'il couvrait tout.
 
 const crypto = require("node:crypto");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 
 const BASE = process.env.PLAYER_TEST_POSTGREST_URL || "";
 const SECRET = process.env.PLAYER_TEST_JWT_SECRET || "";
@@ -58,12 +65,25 @@ function mesureRetardBoucle() {
   return { arreter() { actif = false; clearInterval(battement); return Math.max(0, Math.round(pire)); }, get actif() { return actif; } };
 }
 
-let presentations, player, base;
+let presentations, player, base, racine, fichierPdf;
 
 decrire("campagne de charge contre une vraie base", () => {
   beforeAll(() => {
     process.env.SUPABASE_URL = BASE;
     process.env.SUPABASE_SERVICE_ROLE_KEY = jeton();
+    // ⚠️ Une racine locale RÉELLE : c'est le seul moyen d'éprouver le relais de fichiers sans
+    // dépendre d'un amont distant. `realpathSync` parce que `resolveLocal` compare des chemins
+    // réels des deux côtés (sur macOS, /var mène à /private/var) — une racine non normalisée fait
+    // tout refuser, et le banc passerait alors sans rien relayer.
+    racine = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "charge-")));
+    process.env.PLAYER_LOCAL_ROOT = racine;
+    fichierPdf = path.join(racine, "charge.pdf");
+    // ⚠️ QUATRE MÉGA-OCTETS, ET LA TAILLE EST LE TEST. À 512 Kio, l'assertion mémoire ne
+    // DISCRIMINAIT PAS : 23 Mo en flux contre 30 Mo en tampon, les deux sous le seuil — le surcoût
+    // de découpage de Node écrasait la différence. Vingt lectures de 4 Mio font 80 Mio si l'on
+    // alloue, et presque rien si l'on diffuse : là, aucune ambiguïté. Un jeu d'essai doit produire
+    // un ÉCART, pas seulement le phénomène.
+    fs.writeFileSync(fichierPdf, Buffer.alloc(4 * 1024 * 1024, 0x25));
     const contexte = require("../context/standalone.js").createStandaloneContext(process.env);
     player = require("../server/handler.js");
     player.init(contexte);
@@ -71,18 +91,46 @@ decrire("campagne de charge contre une vraie base", () => {
     base = contexte.db;
   });
 
+  afterAll(() => { try { fs.rmSync(racine, { recursive: true, force: true }); } catch { /* déjà parti */ } });
+
   const nouvellePresentation = () => presentations.createPresentation({
     docId: "charge-" + crypto.randomBytes(4).toString("hex"),
-    fileUrl: "https://exemple.test/doc.pdf", fileName: "doc.pdf",
+    fileUrl: new URL("file://" + fichierPdf).href, fileName: "charge.pdf",
     docTitle: "Charge", presenterName: "Banc", owner: { email: "banc@exemple.test", name: "Banc" },
   });
 
-  /** Un appel HTTP réel à travers le handler, chronométré. */
+  /**
+   * Un appel HTTP réel à travers le handler, chronométré.
+   *
+   * ⚠️ LA RÉPONSE EST UN VRAI FLUX INSCRIPTIBLE, et ce n'est pas du zèle. Ma première version ne
+   * savait que `end(corps)` — or une réponse DIFFUSÉE (le relais de fichiers) passe par `res.write`,
+   * qui était donc jeté : les vingt relais rendaient un corps vide, comptés comme des succès. Un
+   * double qui ignore la moitié du contrat de son sujet ne mesure pas ce sujet.
+   */
   function appeler(requete) {
-    const res = { statusCode: 0, headers: {}, body: "", setHeader(k, v) { this.headers[k.toLowerCase()] = v; }, end(b) { this.body = String(b == null ? "" : b); } };
+    // ⚠️ ON COMPTE LES OCTETS, ON NE LES GARDE PAS — parce que le mesureur consommait ce qu'il
+    // mesure. En retenant les vingt corps pour pouvoir les affirmer, le banc réservait lui-même
+    // 10 Mio, et le relevé annonçait 50 Mo là où le relais n'en gardait presque aucun. Un banc qui
+    // s'ajoute à la grandeur qu'il surveille mesure sa propre présence.
+    // On garde une TÊTE, assez pour les assertions sur du JSON, jamais assez pour peser.
+    const TETE_MAX = 8 * 1024;
+    const tete = [];
+    let octetsVus = 0, tailleTete = 0;
+    const res = new (require("node:stream").Writable)({
+      write(m, _e, cb) {
+        octetsVus += m.length;
+        if (tailleTete < TETE_MAX) { tete.push(Buffer.from(m)); tailleTete += m.length; }
+        cb();
+      },
+    });
+    res.statusCode = 0;
+    res.headers = {};
+    res.setHeader = function (k, v) { this.headers[String(k).toLowerCase()] = v; };
+    res.getHeader = function (k) { return this.headers[String(k).toLowerCase()]; };
+    Object.defineProperty(res, "body", { get: () => Buffer.concat(tete).toString("latin1") });
     const t0 = process.hrtime.bigint();
     return player.handler(requete, res).then(
-      () => ({ ms: Number(process.hrtime.bigint() - t0) / 1e6, statut: res.statusCode, corps: res.body }),
+      () => ({ ms: Number(process.hrtime.bigint() - t0) / 1e6, statut: res.statusCode, corps: res.body, octets: octetsVus }),
       (e) => ({ ms: Number(process.hrtime.bigint() - t0) / 1e6, statut: 599, erreur: String((e && e.message) || e) }),
     );
   }
@@ -157,6 +205,77 @@ decrire("campagne de charge contre une vraie base", () => {
     const corps = new Set(ok.map((r) => r.corps));
     expect(corps.size, "des spectateurs simultanés ont reçu des états DIFFÉRENTS du même instant").toBe(1);
     expect(retard, `retard de boucle de ${retard} ms`).toBeLessThan(2000);
+  });
+
+  // ⚠️ VINGT PRÉSENTATIONS SIMULTANÉES — et ce que ça éprouve n'est PAS la charge.
+  //
+  // Le cache de lecture est mutualisé par clé, et la clé contient le slug. Vingt présentations qui
+  // tournent ensemble, chacune sur une page différente, c'est le seul scénario où une confusion de
+  // clé se verrait : un spectateur recevrait l'état d'une AUTRE présentation. Ce n'est pas une
+  // hypothèse gratuite — le curseur du chat est entré dans cette clé récemment, et une clé qui
+  // oublie une dimension ne se signale jamais autrement que par un contenu qui vient d'ailleurs.
+  it("20 présentations simultanées : chacune rend SON état, jamais celui d'une autre", async () => {
+    const N = 20;
+    const pres = [];
+    for (let i = 0; i < N; i++) {
+      const p = await nouvellePresentation();
+      await presentations.setPage(p.slug, p.control, i + 1);        // une page DIFFÉRENTE par XP
+      pres.push(p);
+    }
+    const horloge = mesureRetardBoucle();
+    // Chaque présentation reçoit plusieurs lecteurs, tous mêlés.
+    const taches = [];
+    for (let tour = 0; tour < 5; tour++) for (let i = 0; i < N; i++) taches.push(lireEtat(pres[i].slug, i).then((r) => ({ i, r })));
+    const resultats = await Promise.all(taches);
+    const retard = horloge.arreter();
+    relever("20 présentations × 5 lecteurs", resultats.map((x) => x.r), retard);
+
+    expect(resultats.length, "aucun appel : ce banc ne mesure rien").toBe(N * 5);
+    const mauvais = [];
+    for (const { i, r } of resultats) {
+      if (r.statut !== 200) { mauvais.push(`XP ${i} : statut ${r.statut}`); continue; }
+      let corps; try { corps = JSON.parse(r.corps); } catch { mauvais.push(`XP ${i} : corps illisible`); continue; }
+      const vue = corps.state && corps.state.current_page;
+      if (vue !== i + 1) mauvais.push(`XP ${i} attendait la page ${i + 1}, a reçu ${vue}`);
+    }
+    expect(mauvais,
+      "un spectateur a reçu l'état d'une AUTRE présentation : la clé de cache confond deux slugs")
+      .toEqual([]);
+    expect(retard, `retard de boucle de ${retard} ms sur 20 présentations`).toBeLessThan(2000);
+  });
+
+  // ⚠️ LE RELAIS DE FICHIERS SOUS CONCURRENCE — le chemin corrigé en 0.1.122 et 0.1.125, jamais
+  // éprouvé sous charge. C'est celui où la mémoire suivait taille × concurrence avant le passage au
+  // flux : vingt lectures d'un fichier de 512 Kio ne doivent pas réserver vingt fois sa taille.
+  it("relais de fichiers : 20 lectures concurrentes, diffusées et non allouées", async () => {
+    const p = await nouvellePresentation();
+    global.gc?.();
+    const avant = process.memoryUsage();
+    const horloge = mesureRetardBoucle();
+    const resultats = await Promise.all(Array.from({ length: 20 }, (_, i) => appeler({
+      method: "GET", headers: {}, socket: { remoteAddress: "10.0.2." + i }, query: { present: p.slug, file: "1" },
+    })));
+    const retard = horloge.arreter();
+    const croissance = process.memoryUsage().arrayBuffers - avant.arrayBuffers;
+    relever("relais de fichiers", resultats, retard);
+    // eslint-disable-next-line no-console
+    console.log(`    ${"réservé (Mo)".padEnd(28)}${Math.round(croissance / 1048576)}`);
+
+    const ok = resultats.filter((r) => r.statut >= 200 && r.statut < 400);
+    expect(ok.length, "les vingt relais doivent aboutir").toBe(20);
+    expect(resultats.every((r) => r.octets > 0),
+      "des relais vides comptés comme des succès : le banc mesurerait du néant").toBe(true);
+    expect(Math.min(...resultats.map((r) => r.octets)),
+      "un relais a rendu moins que le fichier : le flux a été tronqué").toBe(4 * 1024 * 1024);
+    // RELEVÉS DATÉS, les deux mesurés le 2026-08-21 sur ce banc :
+    //   flux    →  52 Mo      tampon (mutation) → 168 Mo
+    // Le seuil se pose ENTRE les deux, large des deux côtés — c'est un détecteur d'effondrement, pas
+    // une cible de consommation. Ma première valeur (40 Mo) était sous la mesure du flux : elle
+    // rougissait sur du code CORRECT, ce qui est la façon la plus sûre de faire desserrer un seuil.
+    expect(croissance,
+      `${Math.round(croissance / 1048576)} Mo réservés pour 20 relais de 4 Mio : la plage est de\n`
+      + "nouveau allouée d'avance, et la mémoire suit taille × concurrence.")
+      .toBeLessThan(100 * 1024 * 1024);
   });
 
   // ⚠️ LA PROPRIÉTÉ QUI DÉCIDE DE L'ÉCHELLE : le coût doit croître LINÉAIREMENT, pas plus vite. Une
