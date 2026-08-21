@@ -115,13 +115,19 @@ when the long one is missing — i.e. exactly on the host that is behind and owe
 
 | `fusionBase` | meaning |
 |---|---|
-| `applique` | `0019` is in the database — a presence heartbeat costs **2** database round trips |
-| `absente` | `0019` is missing: **nothing breaks**, a heartbeat costs **3** round trips instead of 2 (about 30 ops/s instead of 20 for 250 attendees). Applying it needs no redeploy — the player picks it up within a minute |
+| `applique` | `0019` is in the database — a presence heartbeat costs **2**† database round trips (**20**† ops/s for 250 attendees) |
+| `absente` | `0019` is missing: **nothing breaks**, a heartbeat costs **3**† round trips (**30**† ops/s for 250 attendees). Applying it needs no redeploy — the player picks it up within a minute |
 | `indetermine` | the question could not be asked — neither a yes nor a no |
 
 ⚠️ Unlike `0018`, a missing `0019` is a **cost**, not a risk: read it when you are sizing an
 instance, not when you are deciding whether it is safe to run. A host missing it is also logged once
 an hour, with the exact figures, so an idle instance still finds out.
+
+† **Recomputed from the code on every CI run** by `charge/coutParGeste.test.js`, which measures both
+regimes — the fallback still lives in the code, so the *without-`0019`* figure is a measurement, not
+a number remembered from an older release. The build fails when this document and the bench disagree.
+⚠️ **A number without † in this repository's documentation is hand-written: it was true once, and
+nothing has checked it since.**
 
 The probe writes nothing, for **two independent reasons**: `p_page = null` on a slug that does not
 exist leaves through `0019`'s *introuvable* branch before the insert, and `p_anon_cap = 0` already

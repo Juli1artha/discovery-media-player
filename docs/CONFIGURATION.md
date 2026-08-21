@@ -253,13 +253,18 @@ so what is reported is what using it revealed. A transient network failure does 
 
 ⚠️ **Next to it, `presenceFusion` reports the *cost* of a heartbeat.** Same three values, same reading
 rule — `actif`, `degrade` (migration `0019` is missing), `inconnu` (no heartbeat served yet in this
-process). A missing `0019` breaks nothing: a heartbeat simply costs **3** database round trips instead
-of **2** — about 30 ops/s instead of 20 for 250 attendees. It is the one number worth knowing before
+process). A missing `0019` breaks nothing: a heartbeat simply costs **3**† database round trips
+(**30**† ops/s for 250 attendees) where a migrated host costs **2**† (**20**† ops/s). It is the one
+number worth knowing before
 you size an instance, and it used to be invisible: a host without the migration paid double on the
 hottest path of the product with nothing to say so. Applying it needs no redeploy; the player picks it
 up within a minute. For the question *"is it applied?"* — asked before a deployment, when no heartbeat
 has run — read `schema.fusionBase` from `GET /api/doc?contract=1&schema=1` instead: it asks the
 database rather than this process.
+
+† **Recomputed from the code on every CI run** by `charge/coutParGeste.test.js`, which measures both
+regimes and fails the build when this document and the bench disagree. ⚠️ **A number without † in
+this repository's documentation is hand-written: it was true once, and nothing has checked it since.**
 
 ⚠️ **On a serverless host, `inconnu` is the normal answer — not a sign that nothing is happening.**
 The second host measured it: a real presentation ran on their instance, with a participant, on the
