@@ -276,13 +276,22 @@ estimated:
 
 | | |
 |---|---|
-| Call sites | **66**, in **7** files |
-| Tables | **9** |
+| Call sites | **65**, in **7** files |
+| Tables | **10**, plus **6** call sites that build their path at run time — their tables are named literally by the caller, and are counted above |
 | Verbs | `GET`, `POST`, `PATCH`, one `HEAD`, and `DELETE` only in `server/retention.js` — every one bounded by an age filter (`docs/RETENTION.md`) |
 | Embedded selects (`select=*,other(*)`) | **0** |
 | `or=()`, `and=()`, `offset=` | **0** |
-| `in.(…)` | **2** — translates to `WHERE column IN (…)`, so it costs a port nothing |
+| `in.(…)` | **3** — translates to `WHERE column IN (…)`, so it costs a port nothing |
 | Used beyond plain filters | `order=`, `Prefer: return=…`, `Range` for pagination |
+
+⚠️ **Every number in that table is derived from the code by `tools/surface-base.mjs`, not written by
+hand.** Three of the five had drifted before it existed — *Tables* said 9 where the code touches 10,
+`in.(…)` said 2 where there are 3, and the guarded call-site count itself was one too high because it
+counted a mention inside a *comment* as a call. Two guarded rows out of five made the table read as
+verified, which is worse than no guard at all: a reader weighing a port had no way to tell which line
+had a check behind it. The count of run-time-built paths is published next to the rest for the same
+reason — the day a seventh appears, the guard goes red and someone checks whether a table escaped the
+count.
 
 Every query is of the shape `table?column=eq.value&select=*&limit=1`. **Nothing needs PostgREST
 semantics** — the coupling is syntactic, not semantic, and a guard keeps it that way: CI refuses
