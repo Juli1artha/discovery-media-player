@@ -33,6 +33,16 @@
 // comme le commentaire l'affirmait déjà. Deux versions de retard restent rouges — ce que la garde
 // protège (« un intégrateur qui copie reçoit un player périmé ») est intact.
 //
+// ⚠️ CETTE GARDE DÉPEND DE L'INSTANT OÙ ELLE TOURNE, ET IL FAUT LE SAVOIR. Elle compare les
+// exemples au REGISTRE VIVANT, pas au contenu de la branche. Une PR ouverte à travers deux sorties
+// rougit donc sans que son auteur ait touché à quoi que ce soit — constaté ce soir sur deux PR,
+// pendant que 0.1.127 puis 0.1.128 partaient.
+//
+// Ce n'est PAS un défaut : fusionner cette branche telle quelle laisserait `main` deux versions en
+// arrière, donc le refus est juste. Et ce dépôt exige déjà qu'une branche soit à jour avant de
+// fusionner : la garde ne fait que le dire plus tôt, avec un message qui nomme les deux versions
+// permises. Le geste est le même — reprendre `main`.
+//
 // ⚠️ ON DEMANDE AU REGISTRE, PAS AU DÉPÔT. C'est ce que npm SERT qui compte : un exemple épingle
 // ce qu'un copieur peut installer. La version de `package.json` n'entre pas dans la règle — si elle
 // n'est pas encore publiée, l'épingler casserait le déploiement de la démo, qui installe depuis npm.
@@ -47,7 +57,18 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-/** Compare deux versions x.y.z numériquement — « 0.1.9 » est AVANT « 0.1.10 », pas après. */
+/** Une version STABLE : trois nombres, rien d'autre. `0.2.0-beta.1` n'en est pas une. */
+export const estStable = (v) => /^\d+\.\d+\.\d+$/.test(String(v).trim());
+
+/**
+ * Compare deux versions x.y.z numériquement — « 0.1.9 » est AVANT « 0.1.10 », pas après.
+ *
+ * ⚠️ IL NE COMPARE QUE DES VERSIONS STABLES, ET C'EST POURQUOI `acceptables` LES FILTRE D'ABORD
+ * (revue externe, 21/08). `"0.2.0-beta.1".split(".")` rend `["0","2","0-beta","1"]`, dont
+ * `Number("0-beta")` vaut NaN : toute comparaison devient fausse, et le tri prend un ordre
+ * indéfini. Le dépôt n'a jamais publié de préversion — mais une garde qui se casse à la première
+ * n'attend pas qu'on le lui dise, elle attend qu'on la lise.
+ */
 export function comparerVersions(a, b) {
   const na = String(a).split(".").map(Number), nb = String(b).split(".").map(Number);
   for (let i = 0; i < Math.max(na.length, nb.length); i++) {
@@ -62,8 +83,13 @@ export function comparerVersions(a, b) {
  * Sans registre, la seule que main déclare — ne pas savoir ne doit pas élargir ce qu'on autorise.
  */
 export function acceptables(versionDeMain, publiees) {
-  if (!publiees || !publiees.length) return [versionDeMain];
-  return [...publiees].sort(comparerVersions).slice(-2).reverse();
+  // ⚠️ LES PRÉVERSIONS NE COMPTENT PAS. Un exemple est ce qu'un intégrateur RECOPIE : il l'installe
+  // et attend que ça marche. `0.2.0-beta.2` n'est pas ce qu'on lui propose, et deux bêta publiées
+  // à la suite deviendraient « les deux dernières » — la garde recommanderait alors une version
+  // que personne ne devrait épingler.
+  const stables = (publiees || []).filter(estStable);
+  if (!stables.length) return [versionDeMain];
+  return [...stables].sort(comparerVersions).slice(-2).reverse();
 }
 
 export function ecartsExemples(versionDeMain, publiees, exemples) {

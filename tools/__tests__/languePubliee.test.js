@@ -7,27 +7,38 @@
 
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-import { compte, prose, ecartLangue, markdownsPublies } from "../langue-publiee.mjs";
+import { compte, prose, ecartLangue, markdownsDuTarball } from "../langue-publiee.mjs";
 
 const paquet = JSON.parse(readFileSync("package.json", "utf8"));
 
-describe("le périmètre se DÉRIVE de package.json#files", () => {
-  it("ne retient que les Markdown qui voyagent", () => {
-    const m = markdownsPublies(paquet);
-    expect(m).toContain("README.md");
-    expect(m).toContain("docs/RETENTION.md");
-    expect(m.every((f) => f.endsWith(".md"))).toBe(true);
+describe("⚠️ LE PÉRIMÈTRE SE DEMANDE À npm, PAS À package.json#files", () => {
+  // `files` n'est pas la liste de ce qui part : npm ajoute des fichiers et développe les dossiers.
+  // Constaté sur la 0.1.127 — le tarball contenait `docs/README.md`, que `files` ne nomme pas.
+  // Il voyageait sans être contrôlé, et la garde annonçait « 3 documents » en en regardant 3 sur 4.
+  const pack = (chemins) => JSON.stringify([{ files: chemins.map((path) => ({ path })) }]);
+
+  it("prend les Markdown du TARBALL, pas ceux du manifeste", () => {
+    const vus = markdownsDuTarball(() => pack(["README.md", "docs/README.md", "bin/serve.js"]));
+    expect(vus).toEqual(["README.md", "docs/README.md"]);
   });
 
-  it("⚠️ ne liste rien en dur — un document ajouté au tarball entre dans le périmètre tout seul", () => {
-    expect(markdownsPublies({ files: ["bin", "docs/NOUVEAU.md"] })).toEqual(["docs/NOUVEAU.md"]);
+  it("⚠️ voit le fichier que `files` ne nomme pas — le trou d'origine", () => {
+    expect(markdownsDuTarball(() => pack(["README.md", "docs/README.md"]))).toContain("docs/README.md");
   });
 
-  it("ne regarde pas ce qui ne voyage pas", () => {
-    // Les audits et les migrations sont des traces internes : elles restent dans la langue où
-    // elles ont été pensées, et elles ne partent pas dans le paquet.
-    expect(markdownsPublies(paquet)).not.toContain("docs/AUDIT-2026-08-14-RAPPORT.md");
-    expect(markdownsPublies(paquet)).not.toContain("docs/MIGRATIONS.md");
+  it("refuse un inventaire vide plutôt que de conclure dessus", () => {
+    expect(() => markdownsDuTarball(() => pack([]))).toThrow(/aucun fichier/);
+  });
+
+  it("accepte la forme objet comme la forme tableau", () => {
+    expect(markdownsDuTarball(() => JSON.stringify({ files: [{ path: "a.md" }] }))).toEqual(["a.md"]);
+  });
+
+  it("le tarball réel contient bien les documents attendus", () => {
+    const vus = markdownsDuTarball();
+    expect(vus).toContain("README.md");
+    expect(vus).toContain("docs/RETENTION.md");
+    expect(vus).toContain("docs/README.md");
   });
 });
 
@@ -74,17 +85,15 @@ describe("le verdict", () => {
 });
 
 describe("les documents réellement publiés", () => {
-  for (const f of markdownsPublies(paquet)) {
-    it(`${f} est en anglais`, () => {
+  for (const f of markdownsDuTarball()) {
+    it(`${f} n'est pas majoritairement français`, () => {
       expect(ecartLangue(f, readFileSync(f, "utf8"))).toBeNull();
     });
   }
 
-  it("⚠️ la garde rougissait sur RETENTION.md tel qu'il était publié — c'est ce qu'elle existe pour dire", () => {
-    // 220 mots-outils français contre 0 anglais : deux ordres de grandeur de marge, l'heuristique
-    // n'a jamais eu à trancher un cas serré.
+  it("⚠️ la garde rougissait sur RETENTION.md tel qu'il était publié", () => {
     const avant = "# Rétention des données\n\nCe document est le périmètre déclaré de la rétention : chaque colonne du schéma dont la forme peut porter une donnée personnelle y a une politique. Une garde de forge énumère les colonnes du schéma vivant et refuse toute colonne qui n'est pas dans cette page.";
-    expect(ecartLangue("docs/RETENTION.md", avant)).toMatch(/pas en anglais/);
+    expect(ecartLangue("docs/RETENTION.md", avant)).toMatch(/pas en anglais|français/);
     expect(compte(avant).en).toBe(0);
   });
 });

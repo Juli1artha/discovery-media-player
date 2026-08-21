@@ -7,10 +7,38 @@
 
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-import { froms, ecartsEpinglage, majeurAnnonce, majeurAttendu, ecartMajeur } from "../images-epinglees.mjs";
+import { froms, imagesDe, ecartsEpinglage, majeurAnnonce, majeurAttendu, ecartMajeur } from "../images-epinglees.mjs";
 
 const REEL = readFileSync("Dockerfile", "utf8");
 const CONDENSAT = "sha256:" + "a".repeat(64);
+
+describe("⚠️ LA SYNTAXE OFFICIELLE QUE LA VERSION LIGNE-À-LIGNE NE VOYAIT PAS", () => {
+  // Le motif exigeait `FROM <image> [AS <nom>]` et rien d'autre. Sur un Dockerfile dont TOUS les
+  // `FROM` portaient `--platform`, la garde rendait « 0 référence(s), toutes épinglées » et
+  // sortait 0 — une garde qui déclare la victoire sur zéro (revue externe, 21/08).
+  it("voit un FROM avec --platform", () => {
+    const txt = "FROM --platform=$BUILDPLATFORM node:24-alpine AS build\n";
+    expect(imagesDe(txt).map((i) => i.reference)).toEqual(["node:24-alpine"]);
+    expect(ecartsEpinglage(txt)).toHaveLength(1);
+  });
+
+  it("⚠️ voit une image qui entre par COPY --from", () => {
+    // Une dépendance qui entre par une autre porte reste une dépendance.
+    const txt = `FROM node:24-alpine@${CONDENSAT} AS build\nCOPY --from=nginx:latest /o /o\n`;
+    expect(ecartsEpinglage(txt).join(" ")).toMatch(/COPY --from nginx:latest.*n'est pas épinglé/);
+  });
+
+  it("ne reproche rien à un COPY --from qui désigne une étape, ni un index", () => {
+    const txt = `FROM node:24-alpine@${CONDENSAT} AS build\nCOPY --from=build /a /a\nCOPY --from=0 /b /b\n`;
+    expect(ecartsEpinglage(txt)).toEqual([]);
+  });
+
+  it("survit aux continuations de ligne et aux commentaires", () => {
+    const txt = `# un commentaire : FROM pas/une-image\nFROM \\\n  node:24-alpine@${CONDENSAT}\n`;
+    expect(ecartsEpinglage(txt)).toEqual([]);
+    expect(imagesDe(txt)).toHaveLength(1);
+  });
+});
 
 describe("le relevé des FROM", () => {
   it("distingue une image du registre d'une étape interne", () => {

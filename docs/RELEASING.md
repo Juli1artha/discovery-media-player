@@ -59,7 +59,9 @@ Read-only — it creates nothing, pushes nothing. It refuses when:
 - the version has **no changelog section**, or an empty one — the GitHub Release publishes that
   section, so writing it is part of the release, not documentation for afterwards;
 - a comparison link is missing or wrong;
-- an example pins another version;
+- an example pins something other than one of the last two **published** versions — in
+  particular the one you are about to publish, which npm does not serve yet and which would
+  break the demo deployment;
 - the tag already exists, locally or on `origin`.
 
 ⚠️ **A "not verified" is never a pass.** Without `gh`, the tool cannot see the forge, so it reports

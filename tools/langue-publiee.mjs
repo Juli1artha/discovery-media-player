@@ -27,6 +27,7 @@
 // Usage : node tools/langue-publiee.mjs
 
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 // Des mots-outils SANS RECOUVREMENT entre les deux langues : « on », « a », « as » ou « sur »
@@ -65,16 +66,35 @@ export function ecartLangue(fichier, txt) {
   return null;
 }
 
-/** Le périmètre : les Markdown que `package.json#files` fait voyager. Dérivé, jamais listé. */
-export function markdownsPublies(paquet) {
-  return (paquet.files || []).filter((f) => f.endsWith(".md"));
+/**
+ * ⚠️ LE PÉRIMÈTRE SE DEMANDE À npm, PAS À `package.json#files` (revue externe, 21/08).
+ *
+ * `files` n'est pas la liste de ce qui part : npm AJOUTE des fichiers de lui-même et DÉVELOPPE les
+ * dossiers et les motifs. Constaté sur la 0.1.127 : le tarball contenait QUATRE Markdown —
+ * README.md, docs/HOST-CONTRACT.md, docs/RETENTION.md, et `docs/README.md` que `files` ne nomme
+ * pas. Ce quatrième voyageait sans être contrôlé.
+ *
+ * Il se trouve qu'il était en anglais, donc il n'y avait pas de violation. LE DÉFAUT ÉTAIT
+ * AILLEURS : la garde annonçait « 3 documents publiés, tous en anglais » alors qu'elle en
+ * regardait trois sur quatre. Une couverture affirmée plus large qu'elle n'est vaut moins que pas
+ * de couverture du tout — on cesse de vérifier ce qu'on croit déjà tenu.
+ *
+ * `npm pack --dry-run --json` dit exactement ce que le registre servira. C'est la source de
+ * vérité, et npm le recommande comme telle.
+ */
+export function markdownsDuTarball(executer = () =>
+  execFileSync("npm", ["pack", "--dry-run", "--json"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 120000 })) {
+  const brut = JSON.parse(executer());
+  const entree = Array.isArray(brut) ? brut[0] : brut;
+  const fichiers = (entree?.files || []).map((f) => f.path).filter((p) => typeof p === "string");
+  if (!fichiers.length) throw new Error("npm pack n'a rendu aucun fichier — on ne conclut pas sur un inventaire vide");
+  return fichiers.filter((f) => f.toLowerCase().endsWith(".md")).sort();
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const paquet = JSON.parse(readFileSync("package.json", "utf8"));
-  const fichiers = markdownsPublies(paquet);
+  const fichiers = markdownsDuTarball();
   if (!fichiers.length) {
-    console.error("::error::aucun Markdown dans package.json#files — la sonde vise à côté, ou le README a cessé d'être publié");
+    console.error("::error::aucun Markdown dans le tarball — la sonde vise à côté, ou le README a cessé d'être publié");
     process.exit(1);
   }
   const soucis = fichiers.map((f) => ecartLangue(f, readFileSync(f, "utf8"))).filter(Boolean);
@@ -82,5 +102,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     for (const s of soucis) console.error("::error::" + s);
     process.exit(1);
   }
-  console.log(`langue : ${fichiers.length} document(s) publié(s), tous en anglais — ${fichiers.join(", ")}`);
+  console.log(`langue : ${fichiers.length} document(s) DU TARBALL, aucun majoritairement français — ${fichiers.join(", ")}`);
 }

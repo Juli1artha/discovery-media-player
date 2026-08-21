@@ -10,7 +10,7 @@
 // recherchée ». Le texte et le contrôle se contredisaient, et c'est le contrôle qui gagne.
 
 import { describe, it, expect } from "vitest";
-import { comparerVersions, acceptables, ecartsExemples, versionsPubliees, exemplesDuDepot } from "../exemples-epingles.mjs";
+import { comparerVersions, estStable, acceptables, ecartsExemples, versionsPubliees, exemplesDuDepot } from "../exemples-epingles.mjs";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,6 +34,31 @@ describe("comparer des versions", () => {
     expect(comparerVersions("1.0.0", "0.9.9")).toBeGreaterThan(0);
     expect(comparerVersions("0.2.0", "0.1.99")).toBeGreaterThan(0);
     expect(comparerVersions("0.1.126", "0.1.126")).toBe(0);
+  });
+});
+
+describe("⚠️ LES PRÉVERSIONS NE SONT PAS « LES DEUX DERNIÈRES »", () => {
+  // `"0.2.0-beta.1".split(".")` rend `["0","2","0-beta","1"]`, et `Number("0-beta")` vaut NaN :
+  // le comparateur maison devenait faux et le tri indéfini. Deux bêta publiées à la suite
+  // seraient devenues les deux versions recommandées (revue externe, 21/08).
+  it("reconnaît une version stable", () => {
+    expect(estStable("0.1.128")).toBe(true);
+    expect(estStable("0.2.0-beta.1")).toBe(false);
+    expect(estStable("0.1")).toBe(false);
+  });
+
+  it("les écarte du calcul, même quand elles sont les plus récentes", () => {
+    expect(acceptables("x", ["0.1.126", "0.1.127", "0.2.0-beta.1", "0.2.0-beta.2"]))
+      .toEqual(["0.1.127", "0.1.126"]);
+  });
+
+  it("un exemple épinglé sur une préversion est refusé", () => {
+    const ex = [{ fichier: "examples/demo/package.json", version: "0.2.0-beta.2" }];
+    expect(ecartsExemples("x", ["0.1.127", "0.2.0-beta.2"], ex)).toHaveLength(1);
+  });
+
+  it("retombe sur la version de main si le registre ne sert QUE des préversions", () => {
+    expect(acceptables("0.1.0", ["0.1.0-rc.1"])).toEqual(["0.1.0"]);
   });
 });
 

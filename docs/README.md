@@ -17,7 +17,7 @@ no document assumes you have read the others.
 |---|---|
 | [`CONFIGURATION.md`](CONFIGURATION.md) | Every environment variable. An instance is described entirely by its environment — there is no configuration file, on purpose. |
 | [`MIGRATIONS.md`](MIGRATIONS.md) | What happens to a database **already in service** when the player expects a newer schema. (French.) |
-| [`RETENTION.md`](RETENTION.md) | The declared perimeter of data retention: every personal-data column has a written policy, and CI enforces that the list is complete. Also an export of the package: `require.resolve("discovery-media-player/retention")`. (French.) |
+| [`RETENTION.md`](RETENTION.md) | The declared perimeter of data retention: every personal-data column has a written policy, and CI enforces that the list is complete. Also an export of the package: `require.resolve("discovery-media-player/retention")`. |
 
 ## You are contributing, or publishing a version
 
