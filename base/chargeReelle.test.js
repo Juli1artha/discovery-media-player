@@ -69,6 +69,12 @@ let presentations, player, base, racine, fichierPdf;
 
 decrire("campagne de charge contre une vraie base", () => {
   beforeAll(() => {
+    // ⚠️ LE VOLUME CONFIGURÉ SE DIT UNE FOIS, EN TÊTE — c'est un réglage de campagne, pas une
+    // propriété de chaque bloc. Il était répété dans CHAQUE en-tête de relevé, où il devenait faux
+    // dès que le bloc n'appelait pas autant : « relais de fichiers — 20 appels, 1000 appelants ».
+    // eslint-disable-next-line no-console
+    console.log(`\n  CAMPAGNE DE CHARGE — volume configuré : ${SPECTATEURS} spectateurs `
+      + "(PLAYER_CHARGE_SPECTATEURS). Chaque bloc ci-dessous dit le nombre d'appels QU'IL a émis.");
     process.env.SUPABASE_URL = BASE;
     process.env.SUPABASE_SERVICE_ROLE_KEY = jeton();
     // ⚠️ Une racine locale RÉELLE : c'est le seul moyen d'éprouver le relais de fichiers sans
@@ -153,7 +159,12 @@ decrire("campagne de charge contre une vraie base", () => {
     const ligne = (n, v) => `    ${String(n).padEnd(28)}${v}`;
     // eslint-disable-next-line no-console
     console.log([
-      `\n  ── ${nom} — ${resultats.length} appels, ${SPECTATEURS} appelants ──`,
+      // ⚠️ CE LIBELLÉ ANNONÇAIT `SPECTATEURS` APPELANTS POUR CHAQUE BLOC, Y COMPRIS CEUX QUI N'EN
+      // ONT PAS TANT. « relais de fichiers — 20 appels, 1000 appelants » : le second nombre était
+      // faux pour cinq blocs sur sept. Il l'était déjà à 250 ; passer à 1 000 l'a rendu criant. Un
+      // relevé qui annonce un volume qu'il n'a pas atteint est la forme la plus discrète de
+      // surpromesse — celui qui le lit en tire une confiance que la mesure ne porte pas.
+      `\n  ── ${nom} — ${resultats.length} appels ──`,
       ligne("réussis", `${ok.length}/${resultats.length}`),
       ligne("erreurs serveur (5xx)", erreurs.length),
       ligne("p50 / p95 / p99 (ms)", tries.length ? `${Math.round(pourcentile(tries, 50))} / ${Math.round(pourcentile(tries, 95))} / ${Math.round(pourcentile(tries, 99))}` : "—"),
