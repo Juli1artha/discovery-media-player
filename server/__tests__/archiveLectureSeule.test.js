@@ -23,7 +23,18 @@ function base(ligne) {
     db: {
       async request(chemin, o) {
         if (!o || !o.method) return [{ ...ligne }];
-        ecritures.push(chemin);
+        ecritures.push({ chemin, corps: (o && o.body) || null });
+        // ⚠️ CE FAUX RÉPOND COMME 0019, SINON IL NE MESURE PAS CE QU'IL PRÉTEND. Depuis la fusion,
+        // c'est la BASE qui oppose le refus d'archive à un battement de présence — un faux muet
+        // ferait retomber le player dans son repli, et le test montrerait vert un chemin que la
+        // production ne prend jamais. Le signal est `p_page: null` : « je n'ai pas lu, tranche ».
+        if (chemin === "rpc/player_attendance_bump" && o.body && o.body.p_page === null) {
+          const close = ligne.active === false && ligne.control_hash == null;
+          return [{
+            ok: !close, created: false, capped: false, usurpe: false,
+            introuvable: false, archivee: close, page: Math.max(1, Number(ligne.current_page) || 1),
+          }];
+        }
         return [{ ...ligne }];
       },
     },
@@ -48,8 +59,12 @@ const PORTES = [
   ["supprimer un message", (p) => p.deleteMessage("s", 1, { authorToken: "j" })],
   ["verrouiller le chat", (p) => p.setChatLock("s", CONTROL, true)],
   ["signer un envoi de fichier", (p) => p.createUploadUrl("s", "x.pdf", "application/pdf")],
-  ["s'annoncer présent", (p) => p.recordAttendance("s", { key: "k", name: "L" })],
 ];
+
+// ⚠️ LA PRÉSENCE A QUITTÉ CETTE LISTE, ET CE N'EST PAS UN ABANDON. Les six portes ci-dessus se
+// refusent ICI, avant tout appel : « aucune écriture ne part » y reste donc mesurable en JavaScript.
+// Depuis 0019, la présence se refuse EN BASE — un appel part forcément, c'est lui qui porte la
+// question. Elle a son propre énoncé plus bas, qui dit ce qui part et ce qui n'en sort pas.
 
 describe("après la clôture, plus rien ne s'écrit", () => {
   for (const [quoi, appel] of PORTES) {
@@ -58,9 +73,34 @@ describe("après la clôture, plus rien ne s'écrit", () => {
       const r = await appel(presentations);
       expect(r.ok).toBe(false);
       expect(r.status).toBe(409);
-      expect(ecritures, "aucune écriture ne doit partir en base").toEqual([]);
+      expect(ecritures.map((e) => e.chemin), "aucune écriture ne doit partir en base").toEqual([]);
     });
   }
+
+  // ⚠️ LA MOITIÉ QUE CE FICHIER PEUT ENCORE PROUVER. L'autre — « la base n'écrit AUCUNE ligne quand
+  // elle refuse » — se mesure contre un vrai Postgres dans base/presenceFusionnee.test.js. Une
+  // preuve coupée en deux se perd si les moitiés ne se nomment pas : elles se nomment.
+  it("refuse : s'annoncer présent — un seul appel part, et c'est celui que la base refuse", async () => {
+    const ecritures = base(CLOSE);
+    const r = await presentations.recordAttendance("s", { key: "k", name: "L" });
+    expect(r.ok).toBe(false);
+    expect(r.status).toBe(409);
+    expect(ecritures.map((e) => e.chemin)).toEqual(["rpc/player_attendance_bump"]);
+    expect(ecritures[0].corps.p_page, "le signal qui fait trancher la base").toBe(null);
+  });
+});
+
+describe("et la présence, elle, se refuse en base", () => {
+  // ⚠️ SI LE REPLI REVENAIT, IL FAUDRAIT QUE ÇA SE VOIE. Un hôte sans 0019 relit la présentation et
+  // refuse en JavaScript, comme avant : c'est le chemin `presentation` fourni, éprouvé ici pour que
+  // la porte reste fermée des DEUX côtés de la migration — celui d'avant n'est pas mort, il attend.
+  it("un appelant qui a déjà lu la présentation refuse sans rien demander à la base", async () => {
+    const ecritures = base(CLOSE);
+    const r = await presentations.recordAttendance("s", { key: "k", name: "L" }, { presentation: CLOSE });
+    expect(r.ok).toBe(false);
+    expect(r.status).toBe(409);
+    expect(ecritures.map((e) => e.chemin), "il a lu : plus rien n'a à partir").toEqual([]);
+  });
 });
 
 describe("mais une présentation seulement PÉRIMÉE reste vivante", () => {

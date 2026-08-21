@@ -839,6 +839,12 @@ function signatureAbsente(erreur) {
 // silence. Un « oui » (la signature existe) n'a pas besoin d'expirer : une fonction ne disparaît pas.
 let _bumpSansDurcissementJusqua = 0;
 const MEMO_SANS_DURCISSEMENT_MS = 60 * 1000;
+// ⚠️ MÉMO DU CONTRAT FUSIONNÉ (0019), MÊME PATRON QUE 0018. La fusion est FONCTION-SEULE : aucune
+// colonne à sonder, donc on la DEMANDE et on retient l'échec, sinon un hôte non migré paierait un
+// aller-retour perdu à chaque battement. Soixante secondes : assez pour ne pas insister, assez court
+// pour qu'appliquer la migration se voie sans redémarrer le processus.
+let _bumpSansFusionJusqua = 0;
+const MEMO_SANS_FUSION_MS = 60 * 1000;
 // ⚠️ LE DERNIER MOT OBSERVÉ, ÉCRIT — pas déduit. Un booléen « on a essayé » ne pouvait pas dire si
 // ce mot fut un succès ou un échec, et c'est lui qui décide. Comparer deux instants le disait, au
 // prix d'une égalité possible à la milliseconde. On écrit donc l'état : « actif » (un appel durci
@@ -860,6 +866,29 @@ function erreurDurcissementAbsent() {
   );
   e.code = "durcissement-absent";
   return e;
+}
+
+// ⚠️ L'APPEL FUSIONNÉ NE PASSE PAS PAR `appelerBump`, ET CE N'EST PAS UN OUBLI. `appelerBump` lit
+// une signature absente comme « 0018 manque » : c'est vrai tant qu'UN SEUL fichier peut causer cet
+// échec. Avec 0019, deux le peuvent — et le diagnostic se tromperait de fichier, exactement le défaut
+// qu'on a retiré du message d'alerte quelques versions plus tôt (un nom FAUX est pire qu'absent :
+// l'exploitant vérifie la migration nommée, la trouve appliquée, et conclut au faux positif).
+//
+// Ici on ne diagnostique donc RIEN : l'échec de signature arme le mémo et rend la main au chemin
+// classique, qui refera le diagnostic avec un seul fichier possible. Le succès, lui, prouve que 0019
+// est là — donc 0018 aussi, elle la précède — et le durcissement est bien celui qu'on a demandé.
+async function appelerBumpFusionne(corps, durcissementVoulu) {
+  const reponse = await PLAYER.db.request("rpc/player_attendance_bump", { method: "POST", body: corps });
+  if (durcissementVoulu) _etatDurcissement = "actif";
+  // ⚠️ ON PROJETTE PLUTÔT QUE DE RENDRE LA LIGNE TELLE QUELLE — une garde de ce dépôt l'exige, et
+  // elle a raison ici : le jour où la RPC rendra une colonne de plus, elle ne traversera pas cette
+  // fonction sans que quelqu'un l'ait décidé. Les sept champs sont ceux que 0019 déclare.
+  const l = Array.isArray(reponse) ? reponse[0] : reponse;
+  if (!l || typeof l.ok !== "boolean") return null;   // forme inattendue : aucun verdict inventé
+  return {
+    ok: !!l.ok, created: !!l.created, capped: !!l.capped, usurpe: !!l.usurpe,
+    introuvable: !!l.introuvable, archivee: !!l.archivee, page: Math.max(0, Math.trunc(Number(l.page) || 0)),
+  };
 }
 
 async function appelerBump(corps, durcissementVoulu) {
@@ -920,19 +949,36 @@ async function appelerBump(corps, durcissementVoulu) {
   }
 }
 
-async function recordAttendance(slug, participant, { presentation = null, ipHash = null, anonCap = null, hasToken = null, onlyIfUnclaimed = false } = {}) {
+async function recordAttendance(slug, participant, { presentation = null, ipHash = null, anonCap = null, hasToken = null, onlyIfUnclaimed = false, controlHash = null, sansFusion = false } = {}) {
   const { key, name, email, avatar, isMember, isPresenter } = participant || {};
   if (!slug || !key) return { ok: false, status: 400 };
-  // La route vient DÉJÀ de charger la présentation (contrôle présentateur) : elle la fournit dans les
-  // options plutôt que de la faire relire par battement (un battement = un aller-retour DB de moins).
-  // Repli sur une lecture si l'appelant ne la fournit pas — c'est le cas de l'appel public à 2 args.
-  const pres = presentation || await getPresentation(slug);
-  if (!pres) return { ok: false, status: 404 };
-  // ⚠️ La lecture est DÉJÀ faite ici : on s'en sert plutôt que d'en refaire une. Un battement de
-  // présence sur une session close n'a rien à mettre à jour — et il en arrive à chaque onglet
-  // resté ouvert, longtemps après la fin.
-  if (pres.active === false && pres.control_hash == null) return REFUS_ARCHIVE;
-  const page = Math.max(1, Math.trunc(Number(pres.current_page) || 1));
+  // ⚠️ CHEMIN FUSIONNÉ (migration 0019) : C'EST LA BASE QUI LIT LA PRÉSENTATION, PLUS NOUS. Un
+  // battement coûtait TROIS allers-retours — débit par IP, lecture de la présentation, écriture. La
+  // lecture servait à trois choses, et à trois seulement : l'existence, la page courante, et
+  // l'identification du présentateur par son jeton de contrôle. Les trois se font désormais DANS la
+  // transaction d'écriture. Mesuré à 250 participants avant d'être engagé, pas supposé.
+  //
+  // On n'y va pas si l'appelant nous a DÉJÀ fourni la présentation : il l'a lue pour autre chose, la
+  // refaire lire ne ferait rien gagner. `sansFusion` est le repli explicite — il ne dépend pas du
+  // mémo, donc la reprise ci-dessous ne peut pas boucler même si l'horloge se comporte mal.
+  const fusion = presentation == null && !sansFusion && Date.now() >= _bumpSansFusionJusqua;
+  let pres = presentation;
+  if (!fusion) {
+    pres = presentation || await getPresentation(slug);
+    if (!pres) return { ok: false, status: 404 };
+    // ⚠️ La lecture est DÉJÀ faite ici : on s'en sert plutôt que d'en refaire une. Un battement de
+    // présence sur une session close n'a rien à mettre à jour — et il en arrive à chaque onglet
+    // resté ouvert, longtemps après la fin.
+    if (pres.active === false && pres.control_hash == null) return REFUS_ARCHIVE;
+  }
+  // `null` en mode fusionné : la base prendra sa propre `current_page`. C'est aussi le SIGNAL qu'elle
+  // attend pour appliquer les deux refus à notre place (cf. 0019) — un appelant qui a lu envoie
+  // toujours une page, un appelant qui n'a pas lu n'en a pas.
+  const page = fusion ? null : Math.max(1, Math.trunc(Number(pres.current_page) || 1));
+  // ⚠️ LA COMPARAISON DE JETON RESTE ICI HORS FUSION, sinon le présentateur perdrait son titre en
+  // silence sur un hôte non migré : la décision a changé de camp, elle n'a pas disparu d'ici.
+  const presentateurPreuve = !!isPresenter
+    || (!fusion && !!pres && controlHash != null && pres.control_hash != null && controlHash === pres.control_hash);
 
   // ⚠️ CHEMIN ATOMIQUE (migration 0015) : upsert ET plafond de création anonyme en UN geste, à l'abri
   // des créations concurrentes. Absent (404, migration non appliquée) → on retombe sur la boucle
@@ -956,7 +1002,7 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
   const corpsRpc = {
     p_slug: String(slug), p_key: String(key), p_ip_hash: ipHash || null, p_page: page,
     p_name: (name || "").slice(0, 120), p_avatar: (avatar || "").slice(0, 600),
-    p_is_member: !!isMember, p_is_presenter: !!isPresenter,
+    p_is_member: !!isMember, p_is_presenter: presentateurPreuve,
     p_max_gap_ms: ATTEND_MAX_GAP_MS, p_anon_cap: capAnon,
   };
   // true → last_token_at, false → last_no_token_at, null → ni l'un ni l'autre. 0017 seulement.
@@ -969,10 +1015,40 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
   // pour le processus : un hôte non migré ne paie pas deux allers-retours par battement, un seul.
   const durcissementVoulu = !!onlyIfUnclaimed;
   if (durcissementVoulu) corpsRpc.p_only_if_unclaimed = true;
+  // ⚠️ EN MODE FUSIONNÉ, `p_control_hash` PART TOUJOURS — MÊME NULL, ET C'EST ESSENTIEL. PostgREST
+  // résout une RPC par jeu d'arguments NOMMÉS : omettre l'argument quand le visiteur n'a pas de jeton
+  // de contrôle ferait résoudre l'appel vers le contrat COURT, qui existe encore sur une base non
+  // migrée et qui lit `p_page` null comme « page 1 ». On enregistrerait alors la page 1 pour tout le
+  // monde, sans aucun refus, et RIEN ne le dirait. L'argument explicite est précisément ce qui fait
+  // ÉCHOUER l'appel là où 0019 manque — donc ce qui déclenche le repli au lieu d'un faux succès.
+  if (fusion) corpsRpc.p_control_hash = controlHash || null;
   try {
-    const r = await appelerBump(corpsRpc, durcissementVoulu);
+    let r;
+    if (fusion) {
+      try {
+        r = await appelerBumpFusionne(corpsRpc, durcissementVoulu);
+      } catch (erreurFusion) {
+        // Toute autre erreur est une vraie panne : elle suit le chemin d'erreur commun ci-dessous.
+        if (!signatureAbsente(erreurFusion)) throw erreurFusion;
+        // 0019 n'est pas appliquée. On arme le mémo et on recommence par le chemin classique, qui
+        // lira la présentation et décidera du présentateur ici — SANS rien perdre. Rien à signaler à
+        // l'exploitant : le battement reste exact, il coûte simplement l'aller-retour d'avant.
+        _bumpSansFusionJusqua = Date.now() + MEMO_SANS_FUSION_MS;
+        return recordAttendance(slug, participant,
+          { presentation, ipHash, anonCap, hasToken, onlyIfUnclaimed, controlHash, sansFusion: true });
+      }
+    } else {
+      r = await appelerBump(corpsRpc, durcissementVoulu);
+    }
     const ligne = Array.isArray(r) ? r[0] : r;
     if (ligne && typeof ligne.ok === "boolean") {
+      // ⚠️ LES DEUX REFUS QUE LA ROUTE OPPOSAIT AVANT D'APPELER, RENDUS PAR LA BASE (0019). Ils ne
+      // sont pas décoratifs : sans eux, la fusion aurait supprimé un 404 et un refus d'archive en
+      // déplaçant la décision. Ils arrivent DISTINCTS plutôt que fondus dans un `ok:false`, pour que
+      // le client garde les mêmes codes qu'avant — 404 « cette présentation n'existe pas », 409
+      // « elle est finie ». Un appelant qui a fourni la présentation ne les verra jamais.
+      if (ligne.introuvable) return { ok: false, status: 404 };
+      if (ligne.archivee) return REFUS_ARCHIVE;
       // Plafond de création atteint : on ne crée pas ce faux participant. 429 = « trop », pas une panne.
       if (ligne.capped) return { ok: false, status: 429 };
       // Bootstrap sur une ligne DÉJÀ RÉCLAMÉE par un porteur de jeton : rien n'a été écrit. 409 = « ce
@@ -1024,6 +1100,20 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
   // est conditionnée à la valeur LUE ; zéro ligne = quelqu'un d'autre a battu entre-temps (l'autre
   // onglet du même participant) — on relit et on rejoue. Sans ça, deux onglets qui battent dans la
   // même seconde perdaient une page vue : la seconde réécriture emportait la première.
+  // ⚠️ LE REPLI A BESOIN DE LA PAGE, ET EN MODE FUSIONNÉ NOUS NE L'AVONS PAS. L'économie de 0019 ne
+  // vaut que sur le chemin qui RÉUSSIT : ici la RPC a échoué (ou rendu une forme inattendue), donc on
+  // paie la lecture qu'on avait évitée. Sans ça on écrirait `pages: [null]` et un présentateur
+  // perdrait son titre — deux dégâts silencieux, au moment précis où l'on est déjà en difficulté.
+  let pageEcrite = page;
+  let presentateurEcrit = presentateurPreuve;
+  if (pageEcrite == null) {
+    const relu = await getPresentation(slug);
+    if (!relu) return { ok: false, status: 404 };
+    if (relu.active === false && relu.control_hash == null) return REFUS_ARCHIVE;
+    pageEcrite = Math.max(1, Math.trunc(Number(relu.current_page) || 1));
+    presentateurEcrit = presentateurEcrit
+      || (controlHash != null && relu.control_hash != null && controlHash === relu.control_hash);
+  }
   let cur = null;
   for (let essai = 0; essai < 4; essai += 1) {
     if (cur === null) {
@@ -1032,7 +1122,7 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
     }
     if (!cur) {
       const now = Date.now();
-      const row = { slug: String(slug), attendee_key: String(key).slice(0, 200), name: (name || "").slice(0, 120) || null, email: lc(email) || null, avatar: (avatar || "").slice(0, 600) || null, is_member: !!isMember, is_presenter: !!isPresenter, first_seen: new Date(now).toISOString(), last_seen: new Date(now).toISOString(), total_ms: 0, pages: [page] };
+      const row = { slug: String(slug), attendee_key: String(key).slice(0, 200), name: (name || "").slice(0, 120) || null, email: lc(email) || null, avatar: (avatar || "").slice(0, 600) || null, is_member: !!isMember, is_presenter: presentateurEcrit, first_seen: new Date(now).toISOString(), last_seen: new Date(now).toISOString(), total_ms: 0, pages: [pageEcrite] };
       try {
         await PLAYER.db.request("doc_presentation_attendees", { method: "POST", headers: { Prefer: "return=minimal" }, body: [row] });
         return { ok: true };
@@ -1059,7 +1149,7 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
     const gap = now - lu;
     const addMs = gap > 0 && gap <= ATTEND_MAX_GAP_MS ? gap : 0;
     const pages = Array.isArray(cur.pages) ? cur.pages.slice() : [];
-    if (!pages.includes(page)) pages.push(page);
+    if (!pages.includes(pageEcrite)) pages.push(pageEcrite);
     const ecrit = await ecrireSiEncoreVrai(
       `doc_presentation_attendees?slug=eq.${enc(slug)}&attendee_key=eq.${enc(String(key))}&last_seen=eq.${enc(String(cur.last_seen))}`,
       { last_seen: new Date(now).toISOString(), total_ms: Number(cur.total_ms || 0) + addMs, pages, name: (name || cur.name || "").slice(0, 120) || null, avatar: (avatar || cur.avatar || "").slice(0, 600) || null,
@@ -1067,7 +1157,7 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
         // première ligne : un transfert de présentation change qui porte le titre, et une session qui
         // s'authentifie en cours de route devient un membre. Figés, ils décriraient l'instant de
         // l'arrivée et non la réalité — et le premier arrivé aurait raison pour toujours.
-        is_member: !!isMember, is_presenter: !!isPresenter },
+        is_member: !!isMember, is_presenter: presentateurEcrit },
     );
     if (ecrit) return { ok: true };
     cur = null;   // battu en vol : on relira l'état frais au tour suivant
