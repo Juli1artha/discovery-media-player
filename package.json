@@ -1,6 +1,6 @@
 {
   "name": "discovery-media-player",
-  "version": "0.1.123",
+  "version": "0.1.124",
   "description": "Self-hosted document viewer: per-recipient tracked links, reading analytics, live presentation. The core knows nothing about the application hosting it — everything it borrows arrives through an injected context.",
   "keywords": [
     "pdf-viewer",

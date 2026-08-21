@@ -321,7 +321,84 @@ var Live=(function(){
   function renderMsgInner(m){return Player.chat.renderMessage(m,{me:ME,reactIcon:RSVG});}
   function cmClass(m){return Player.chat.messageClassName(m,ME,isMentioned(m));}
   function hydratePdf(d,m){if(m&&m.attachment&&m.attachment.kind==='pdf'&&!m.deleted){var ph=d.querySelector('.cm-att-ph');if(ph)pdfThumb(m.attachment.url,ph);}}
-  function pdfThumb(url,ph){if(!ph)return;if(pdfCache[url]){ph.innerHTML='<img src="'+pdfCache[url]+'" alt="">';return;}if(!window.pdfjsLib)return;try{pdfjsLib.getDocument({url:url,isEvalSupported:false}).promise.then(function(pdf){return pdf.getPage(1);}).then(function(pg){var v0=pg.getViewport({scale:1}),sc=Math.min(1.6,208/v0.width),vp=pg.getViewport({scale:sc}),cv=document.createElement('canvas');cv.width=Math.ceil(vp.width);cv.height=Math.ceil(vp.height);return pg.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise.then(function(){var u=cv.toDataURL('image/jpeg',0.8);pdfCache[url]=u;ph.innerHTML='<img src="'+u+'" alt="">';});}).catch(function(){});}catch(e){}}
+  // LES VIGNETTES DU CHAT NE SONT PLUS SANS BORNE (audit externe, perf navigateur).
+  //
+  // L ancienne version tenait en une ligne et cumulait quatre defauts : le cache etait SANS LIMITE
+  // et gardait des data-URL (du base64 en memoire, environ 1,33 fois le binaire) ; deux messages
+  // portant le meme PDF lancaient DEUX chargements ; le PDFDocumentProxy n etait jamais detruit,
+  // donc son worker gardait le document entier pour une vignette de 208 px ; et tout etait charge
+  // AU RENDU, pas a l affichage — un fil de deux cents pieces jointes chargeait deux cents PDF.
+  //
+  // Note de forme : ce fichier est un litteral de gabarit — pas d accent grave ici.
+  var VIGN_MAX=24, VIGN_PARALLELE=2;
+  var vignUrl=Object.create(null), vignOrdre=[], vignEnVol=Object.create(null), vignFile=[], vignActifs=0, vignIO=null;
+  // ATTENTION : REVOQUER UNE URL ENCORE AFFICHEE VIDE L IMAGE. L eviction ne peut pas se contenter
+  // de liberer : elle doit REMETTRE en reserve les vignettes qui utilisaient l URL revoquee, et les
+  // re-observer, sinon le lecteur voit des cases blanches en remontant le fil.
+  function vignRendre(ph){ if(!ph)return; ph.innerHTML=''; if(vignIO&&ph.dataset&&ph.dataset.pdfUrl)vignIO.observe(ph); }
+  function vignEvincer(){
+    while(vignOrdre.length>VIGN_MAX){
+      var vieux=vignOrdre.shift(), u=vignUrl[vieux];
+      delete vignUrl[vieux];
+      if(!u)continue;
+      try{
+        var imgs=document.querySelectorAll('.cm-att-ph img');
+        for(var i=0;i<imgs.length;i++){ if(imgs[i].src===u) vignRendre(imgs[i].parentNode); }
+      }catch(e){}
+      try{ URL.revokeObjectURL(u); }catch(e){}
+    }
+  }
+  function vignPoser(url,u){ if(!u)return; vignUrl[url]=u; vignOrdre.push(url); vignEvincer(); }
+  function vignAfficher(ph,u){ if(ph&&u) ph.innerHTML='<img src="'+u+'" alt="">'; }
+  // File de concurrence : deux vignettes a la fois. Sans elle, ouvrir un fil charge autant de PDF
+  // que de pieces jointes visibles d un coup — la vignette est un confort, pas une priorite.
+  function vignSuivante(){
+    if(vignActifs>=VIGN_PARALLELE||!vignFile.length)return;
+    var t=vignFile.shift(); vignActifs++;
+    t().catch(function(){}).then(function(){ vignActifs--; vignSuivante(); });
+  }
+  function vignCharger(url){
+    if(vignEnVol[url])return vignEnVol[url];              // meme URL deja en vol : on partage
+    var p=new Promise(function(resoudre,rejeter){
+      vignFile.push(function(){
+        if(!window.pdfjsLib)return Promise.reject(new Error('pdf.js absent'));
+        return pdfjsLib.getDocument({url:url,isEvalSupported:false}).promise.then(function(pdf){
+          return pdf.getPage(1).then(function(pg){
+            var v0=pg.getViewport({scale:1}), sc=Math.min(1.6,208/v0.width), vp=pg.getViewport({scale:sc});
+            var cv=document.createElement('canvas'); cv.width=Math.ceil(vp.width); cv.height=Math.ceil(vp.height);
+            return pg.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise.then(function(){
+              // toBlob plutot que toDataURL : une URL objet pointe le binaire, une data-URL en garde
+              // une copie base64 dans le tas — et rien ne la libere jamais.
+              return new Promise(function(ok){ cv.toBlob(function(b){ ok(b?URL.createObjectURL(b):''); },'image/jpeg',0.8); });
+            });
+          }).then(function(u){ try{ pdf.destroy(); }catch(e){} return u; },
+                  function(e){ try{ pdf.destroy(); }catch(e2){} throw e; });
+        }).then(function(u){ vignPoser(url,u); resoudre(u); },function(e){ rejeter(e); });
+      });
+      vignSuivante();
+    });
+    vignEnVol[url]=p;
+    p.catch(function(){}).then(function(){ delete vignEnVol[url]; });
+    return p;
+  }
+  function pdfThumb(url,ph){
+    if(!ph||!url)return;
+    if(vignUrl[url]){ vignAfficher(ph,vignUrl[url]); return; }
+    try{ ph.dataset.pdfUrl=url; }catch(e){}
+    // Chargement PARESSEUX : on ne fabrique la vignette que lorsque la piece jointe approche du
+    // viewport. Un fil ancien de deux cents pieces jointes ne charge plus deux cents documents.
+    if(typeof IntersectionObserver!=='function'){ vignCharger(url).then(function(u){ vignAfficher(ph,u); },function(){}); return; }
+    if(!vignIO) vignIO=new IntersectionObserver(function(es){
+      for(var i=0;i<es.length;i++){
+        if(!es[i].isIntersecting)continue;
+        var el=es[i].target, u2=(el.dataset&&el.dataset.pdfUrl)||''; vignIO.unobserve(el);
+        if(!u2)continue;
+        if(vignUrl[u2]){ vignAfficher(el,vignUrl[u2]); continue; }
+        (function(cible){ vignCharger(u2).then(function(u){ vignAfficher(cible,u); },function(){}); })(el);
+      }
+    },{rootMargin:'200px'});
+    vignIO.observe(ph);
+  }
   // Renvoie true seulement si le message a réellement été AJOUTÉ. Pendant la transition, il
   // arrive par deux voies (diffusion et lecture de table) : sans cette réponse, l'affichage était
   // bien dédoublonné mais le compteur de non-lus comptait deux fois — une pastille à 2 pour un

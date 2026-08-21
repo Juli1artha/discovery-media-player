@@ -10,6 +10,23 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.124] — 2026-08-21
+
+### Fixed
+- **Chat PDF thumbnails were unbounded, unshared, eager, and never released** (performance, external
+  audit) — four defects in a single line. The cache had **no limit** and held `toDataURL` strings
+  (base64 kept in the JS heap, about 1.33× the binary); two messages carrying the **same** PDF each
+  triggered their own load; the `PDFDocumentProxy` was **never destroyed**, so its worker retained
+  the whole document to show a 208 px thumbnail; and loading happened at **render** time, so opening
+  a thread with two hundred attachments loaded two hundred documents.
+  Now: lazy via `IntersectionObserver` (200 px margin), one shared promise per URL, a concurrency
+  queue of 2, `toBlob` + object URL instead of base64, `pdf.destroy()` once the thumbnail is made,
+  and an LRU of 24 whose evicted object URLs are revoked.
+- ⚠️ **Revoking an object URL that is still displayed would blank the image.** Eviction therefore
+  puts the affected thumbnails back to placeholder and re-observes them, so they reload when they
+  return into view — a case the naive "evict and revoke" would have shipped as white gaps in the
+  thread.
+
 ## [0.1.123] — 2026-08-21
 
 ### Fixed
@@ -3415,7 +3432,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.123...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.124...HEAD
+[0.1.124]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.123...v0.1.124
 [0.1.123]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.122...v0.1.123
 [0.1.122]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.121...v0.1.122
 [0.1.121]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.120...v0.1.121
