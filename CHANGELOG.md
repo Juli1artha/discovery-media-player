@@ -10,6 +10,49 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.127] — 2026-08-21
+
+### Changed
+- **A presence heartbeat costs two database round trips instead of three** (last quantified item of
+  the external audit — and the only one that demanded to be *measured* before being committed to).
+  At 250 attendees a heartbeat cost three round trips — rate limit, presentation read, write — about
+  **30 ops/s**. The read is gone: **20 ops/s**. Both figures come from the same cost bench, taken on
+  both branches.
+  - The route read the presentation for **three** things and three only: does it exist, is it
+    closed, does the caller hold the control token. All three now happen inside the write
+    transaction (migration `0019-presence-lit-la-presentation.sql`).
+  - ⚠️ **Moving a decision is where a guard gets lost on the way.** The first draft of `0019` gated
+    both refusals on *"does the caller carry a control token"*. An **anonymous** attendee carries
+    none — that is the vast majority of heartbeats — so they would have silently lost the 404 and
+    the archive refusal. The right signal is *"did the caller read the presentation"*, i.e.
+    `p_page is null`. Fixed before the migration served a single call, and measured on both sides.
+  - ⚠️ **In fused mode `p_control_hash` is always sent — even `null`.** PostgREST resolves an RPC by
+    its set of *named* arguments: omitting it would resolve to the short contract, which reads a
+    null `p_page` as "page 1". Page 1 would then be recorded for everyone, with no refusals and
+    nothing to say so. The explicit argument is exactly what makes the call **fail** where `0019` is
+    missing — so what triggers the fallback instead of a false success.
+  - The proof of "who is the presenter" is now **split in two**: `titreUsurpe.test.js` proves the
+    route forwards the token's *fingerprint* without granting anything itself (and that the token
+    never travels), while `base/presenceFusionnee.test.js` proves against a **real Postgres** that
+    the fingerprint grants — or does not — the title, and that both refusals write **no row**. The
+    two files name each other: without that, each half stays green while the property has stopped
+    holding.
+  - Backward compatible **in both directions, measured**: a caller that does not pass
+    `p_control_hash` keeps exactly its previous behaviour, including on an absent slug. Hosts
+    without the migration keep the three round trips and lose nothing.
+
+### Fixed
+- **The cost bench carried a dated reading that had drifted on four lines out of five** — and always
+  *downwards*. It announced a 2-round-trip heartbeat while printing 3, page turn 2 for 1, state
+  resync 1 for 0. Nobody lied: the bench gained a counter and the prose stayed. The reading is now a
+  **witness the bench confronts**, in both directions — a number that moves goes red, and so does a
+  gesture that *disappears* from the reading.
+- **`docs/API.md` guard only compared half of its own line.** Call sites were guarded; the **file
+  count** on the same line was not, and said *five* where the code had **seven** — the very drift
+  this step was written to prevent, back through the clause left outside its scope. Both halves are
+  compared now, and the guard refuses when the comparable *form* disappears rather than concluding
+  green.
+
 ## [0.1.126] — 2026-08-21
 
 ### Fixed
