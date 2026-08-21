@@ -373,6 +373,18 @@ jobs:
         if: matrix.node == '22'
         run: node tools/actions-epinglees.mjs
 
+      # ⚠️ ET L'ÉTIQUETTE ÉCRITE À CÔTÉ DIT-ELLE LA VÉRITÉ ? La garde ci-dessus vérifie que le SHA
+      # EST un SHA. Elle ne dit rien de ce que le commentaire ANNONCE — et #253 a posé trois SHA de
+      # `github/codeql-action` tagués v4.37.7 en laissant `# v3` intact. Le fichier annonçait un
+      # correctif là où il posait une MAJEURE sur l'outil d'analyse de sécurité du dépôt, et la CI
+      # était verte. C'est la confrontation étiquette↔condensat du Dockerfile (même PR, #274), qui
+      # n'avait pas été portée du côté des actions : le raisonnement était écrit, le contrôle
+      # manquait. Il faut le réseau ; si un dépôt ne répond pas, on le DIT sans rougir — une panne
+      # et un mensonge ne se disent pas avec le même silence.
+      - name: The tag beside each SHA tells the truth
+        if: matrix.node == '22'
+        run: node tools/actions-versions.mjs
+
       # ⚠️ LA MÊME RÈGLE, ET ELLE NE S'APPLIQUAIT QU'À MOITIÉ. Le contrôle ci-dessus refuse
       # `uses: machin@v3` depuis longtemps ; `FROM node:24-alpine` disait exactement la même chose
       # — une étiquette que son auteur redéplace quand il veut — et rien ne le regardait (P1, audit
