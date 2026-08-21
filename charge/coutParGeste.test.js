@@ -19,7 +19,7 @@ const schema = require("../server/schema.js");
  * (`db.request`). Il répond de façon plausible : ce banc mesure un COÛT, pas une correction — les
  * propriétés sont éprouvées par les autres bancs.
  */
-function compteur({ strict = false, avecSecret = true } = {}) {
+function compteur({ strict = false, avecSecret = true, sans0019 = false } = {}) {
   const appels = [];
   const ctx = {
     plugins: {}, has: () => false,
@@ -30,7 +30,16 @@ function compteur({ strict = false, avecSecret = true } = {}) {
         const m = (o && o.method) || "GET";
         if (/select=[a-z_]+&limit=0/.test(chemin)) return [];
         if (chemin.startsWith("doc_presentations?") && m === "GET") return [{ slug: "s", active: true, current_page: 3, control_hash: "h", chat_locked: false }];
-        if (chemin.startsWith("rpc/player_attendance_bump")) return [{ ok: true, created: false, capped: false, usurpe: false }];
+        if (chemin.startsWith("rpc/player_attendance_bump")) {
+          // ⚠️ UN HÔTE SANS 0019 REFUSE LE CONTRAT LONG, ET C'EST MESURABLE PLUTÔT QU'HISTORIQUE.
+          // Le régime dégradé vit encore dans le code (le repli) : on n'a donc pas à le tenir d'une
+          // mesure prise sur une ancienne version, qu'aucun banc ne reprendrait jamais. PostgREST
+          // résout par jeu d'arguments nommés — l'argument en trop ne correspond à aucune fonction.
+          if (sans0019 && o && o.body && "p_control_hash" in o.body) {
+            throw Object.assign(new Error("Supabase"), { statusCode: 404, details: { code: "PGRST202" } });
+          }
+          return [{ ok: true, created: false, capped: false, usurpe: false, introuvable: false, archivee: false, page: 3 }];
+        }
         if (chemin.startsWith("doc_presentation_messages")) return [];
         if (chemin.startsWith("doc_presentation_attendees")) return [];
         return [];
@@ -54,8 +63,27 @@ function compteur({ strict = false, avecSecret = true } = {}) {
     legal: { sourceUrl: "", legalUrl: "", privacyUrl: "", trackingNotice: "" },
     config: { supabaseUrl: "https://x.supabase.co", supabasePublishableKey: "k", mapsKey: "", extraFrameAncestors: [], presenceStrict: strict, ipHashSecret: "sel" },
   };
-  delete require.cache[require.resolve("../server/handler.js")];
-  const p = require("../server/handler.js"); p.init(ctx); schema.init(ctx);
+  // ⚠️ ON REPART D'UN MODULE NEUF, ET CE BANC VIENT DE PROUVER POURQUOI. Seul `handler.js` était
+  // vidé du cache ; `presentations.js` gardait donc son état — dont le mémo « cet hôte n'a pas
+  // 0019 », armé de 60 s. L'essai du régime dégradé, ajouté juste au-dessus, a fait passer l'essai
+  // de MISE À L'ÉCHELLE en régime dégradé sans un mot : son relevé annonçait 300 appels au lieu de
+  // 200, et le témoin ne l'a pas vu parce qu'il n'épinglait que le RATIO, lequel ne bouge pas.
+  //
+  // Un banc dont les essais se transmettent un état ne mesure pas ce que son titre annonce, et
+  // l'ordre des essais devient une dépendance invisible. Le témoin épingle désormais aussi le
+  // nombre ABSOLU, pour que ce déplacement de régime ne puisse plus passer.
+  // ⚠️ TOUS LES MODULES SERVEUR, PAS UN SEUL — ET LA PREMIÈRE TENTATIVE L'A PROUVÉ EN CASSANT. En
+  // ne vidant que `presentations.js`, les modules DÉJÀ chargés (routes-direct, schema) gardaient
+  // une référence vers l'ancienne instance, celle que plus personne n'initialisait : les routes
+  // levaient en silence et le relevé PERDAIT un appel partout. Un banc de coût qui mesure moins
+  // parce qu'il est cassé annonce une amélioration — c'est le pire sens possible pour une panne.
+  for (const cle of Object.keys(require.cache)) {
+    if (cle.includes(`${require("node:path").sep}server${require("node:path").sep}`)) delete require.cache[cle];
+  }
+  const p = require("../server/handler.js");
+  // Le module de schéma doit être LE MÊME que celui qu'utilise le handler fraîchement requis.
+  const schemaFrais = require("../server/schema.js");
+  p.init(ctx); schemaFrais.init(ctx);
   return { p, appels, remettreAZero: () => { appels.length = 0; } };
 }
 
@@ -89,6 +117,8 @@ const lire = async (p, query) => {
 const TEMOIN = {
   "battement (jeton porté)": 2,
   "battement (bootstrap)": 2,
+  "battement (hôte sans 0019)": 3,
+  "100 battements (appels)": 200,
   "changement de page": 1,
   "resync état × 20 spectateurs": 0,
   "resync chat × 20, même curseur": 0,
@@ -129,6 +159,28 @@ describe("coût par geste, en allers-retours base", () => {
     c.remettreAZero();
     await poster(c.p, { action: "present-attend", slug: "s", key: "anon-neuf2", wantToken: "1" });
     expect(noter("battement (bootstrap)", c.appels.length)).toBeLessThanOrEqual(BUDGET_BATTEMENT);
+  });
+
+  // ⚠️ LE RÉGIME DÉGRADÉ SE MESURE, IL NE SE RACONTE PAS. Nos documents annoncent « 3 allers-retours
+  // au lieu de 2 » pour un hôte sans 0019 : ce 3 venait d'une mesure prise sur la v0.1.126, donc d'un
+  // passé que plus aucun banc ne rejouerait. Le repli vit pourtant toujours dans le code — il est
+  // donc mesurable AUJOURD'HUI, et c'est ce qui permet aux documents d'être confrontés plus bas.
+  //
+  // ⚠️ ON MESURE LE RÉGIME ÉTABLI, PAS LE PREMIER APPEL. Le tout premier battement d'un hôte non
+  // migré en coûte QUATRE : il tente le contrat long, se le fait refuser, puis relit et écrit. Le
+  // mémo évite ensuite cette tentative pendant une minute. C'est le régime qui compte pour une salle
+  // de 250 personnes — mais le pic initial existe, et l'ignorer serait mesurer ce qui arrange.
+  it("BATTEMENT sur un hôte SANS 0019 : le repli coûte ce que coûtait l'ancien code, pas davantage", async () => {
+    const c = compteur({ sans0019: true });
+    await poster(c.p, { action: "present-attend", slug: "s", key: "anon-porteur", pt: "JETON-VALIDE" });
+    c.remettreAZero();
+    await poster(c.p, { action: "present-attend", slug: "s", key: "anon-porteur", pt: "JETON-VALIDE" });
+    const n = noter("battement (hôte sans 0019)", c.appels.length, "→ 30 op/s à 250 participants");
+    expect(n, `un hôte non migré paie ${n} allers-retours par battement`).toBeLessThanOrEqual(BUDGET_BATTEMENT);
+    // ⚠️ ANTI-VACUITÉ : sans cette ligne, le test resterait vert si le faux cessait de refuser le
+    // contrat long — il mesurerait alors le régime FUSIONNÉ en croyant mesurer le dégradé.
+    expect(c.appels.some((a) => a.chemin.startsWith("doc_presentations?")),
+      "le repli relit la présentation : c'est ce qui distingue les deux régimes").toBe(true);
   });
 
   it("CHANGEMENT DE PAGE : le geste du présentateur, payé une fois pour toute l'audience", async () => {
@@ -190,6 +242,9 @@ describe("coût par geste, en allers-retours base", () => {
     const cent = await mesurer(100);
     const facteur = cent / dix;
     noter("100 battements / 10 battements", Number(facteur.toFixed(1)), `(${cent} contre ${dix})`);
+    // ⚠️ LE RATIO NE SUFFIT PAS : il vaut 10 en régime fusionné comme en régime dégradé. C'est
+    // exactement ce qui a laissé cet essai basculer d'un régime à l'autre sans que rien ne rougisse.
+    noter("100 battements (appels)", cent);
     expect(facteur, `100 battements coûtent ${cent} appels contre ${dix} pour 10 — facteur ${facteur.toFixed(1)}, attendu ~10`)
       .toBeLessThanOrEqual(12);
   });
@@ -201,6 +256,56 @@ describe("coût par geste, en allers-retours base", () => {
   // ⚠️ ELLE VÉRIFIE AUSSI QUE CHAQUE TÉMOIN A ÉTÉ MESURÉ. Un essai renommé ou retiré ferait
   // disparaître son geste du relevé, et une comparaison qui ne parcourt que ce qui est présent
   // resterait verte sur un banc qui ne mesure plus rien — la vacuité classique.
+  // ⚠️ LES DOCUMENTS AUSSI PORTENT CE CHIFFRE, ET PERSONNE NE LES CONFRONTAIT. Nous avons écrit
+  // « 2 allers-retours », « 3 sans la migration », « 20 op/s », « 30 op/s » dans HOST-CONTRACT.md et
+  // CONFIGURATION.md — quatre copies à la main d'un fait que ce banc MESURE, dans les documents
+  // qu'un hôte lit précisément pour dimensionner son instance. Un fait vivant recopié se démode ;
+  // c'est le troisième cas de la semaine, et celui-là nous l'avions créé nous-mêmes la veille.
+  //
+  // ⚠️ LE MARQUEUR † EST EXIGÉ, comme pour docs/API.md : le retirer en laissant le chiffre ferait
+  // croire au lecteur que ce nombre est écrit à la main. Et la légende est exigée avec lui — un
+  // marqueur sans légende ne marque rien, et c'est SA SECONDE PHRASE qui protège les autres
+  // documents en disant ce que l'absence de † veut dire.
+  it("les documents disent le coût que le banc vient de mesurer", () => {
+    const fs = require("node:fs"), path = require("node:path");
+    const RACINE = path.join(__dirname, "..");
+    const mesure = new Map(releve.map((r) => [r.geste, r.n]));
+    const fusionne = mesure.get("battement (jeton porté)");
+    const degrade = mesure.get("battement (hôte sans 0019)");
+    expect(fusionne, "le banc n'a pas mesuré le régime fusionné : rien à confronter").toBeGreaterThan(0);
+    expect(degrade, "le banc n'a pas mesuré le régime dégradé : rien à confronter").toBeGreaterThan(0);
+    // 250 participants, un battement toutes les 25 s → le débit est le coût × 10.
+    const attendus = new Set([`**${fusionne}**†`, `**${degrade}**†`, `**${fusionne * 10}**†`, `**${degrade * 10}**†`]);
+
+    // ⚠️ ET LE SENS INVERSE, QU'UNE MUTATION A RÉVÉLÉ MANQUANT. La première écriture vérifiait que
+    // tout chiffre MARQUÉ est une mesure — mais pas que toute mesure est marquée. Retirer un † en
+    // laissant le chiffre passait donc au vert : le nombre sortait du périmètre comparé, et
+    // redevenait libre de dériver, dans le silence exact que le marqueur existe pour rompre. Une
+    // garde qui n'inspecte que ce qu'on lui présente se vide quand on cesse de lui présenter.
+    //
+    // Le COMPTE est donc épinglé, comme le témoin des gestes : en retirer un rougit, en ajouter un
+    // rougit aussi et quelqu'un décide. C'est un nombre écrit à la main — mais confronté à chaque
+    // exécution, ce qui est précisément la différence qu'on passe la semaine à établir.
+    const MARQUES_ATTENDUES = { "docs/HOST-CONTRACT.md": 4, "docs/CONFIGURATION.md": 4 };
+
+    const fautes = [];
+    for (const doc of ["docs/HOST-CONTRACT.md", "docs/CONFIGURATION.md"]) {
+      const texte = fs.readFileSync(path.join(RACINE, doc), "utf8");
+      if (!/† \*\*Recomputed from the code/.test(texte)) fautes.push(`${doc} : plus de légende du marqueur †`);
+      // ⚠️ LA PHRASE PEUT ÊTRE COUPÉE PAR UN RETOUR À LA LIGNE — le point ne traverse pas un saut de
+      // ligne, et la première écriture de cette garde accusait un document parfaitement correct.
+      if (!/without †[\s\S]{0,160}hand-written/.test(texte)) fautes.push(`${doc} : la légende ne dit plus ce que l'ABSENCE de † signifie`);
+      const marques = [...texte.matchAll(/\*\*(\d+)\*\*†/g)].map((m) => m[0]);
+      if (marques.length !== MARQUES_ATTENDUES[doc]) {
+        fautes.push(`${doc} : ${marques.length} chiffres marqués, ${MARQUES_ATTENDUES[doc]} attendus — un † retiré sort le nombre du périmètre comparé, un † ajouté demande une décision`);
+      }
+      for (const m of marques) {
+        if (!attendus.has(m)) fautes.push(`${doc} : ${m} n'est aucune des mesures du banc (${[...attendus].join(", ")})`);
+      }
+    }
+    expect(fautes, "un document annonce un coût que le banc ne mesure pas").toEqual([]);
+  });
+
   it("le relevé daté en tête de fichier dit ce que le banc vient de mesurer", () => {
     const mesure = new Map(releve.map((r) => [r.geste, r.n]));
     const ecarts = [];

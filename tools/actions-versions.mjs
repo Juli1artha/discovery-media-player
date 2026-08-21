@@ -25,6 +25,7 @@
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { usesDuDepot } from "./workflows-yaml.mjs";
+import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 
 /**
  * Le dépôt qui porte l'action. `github/codeql-action/init` vit dans `github/codeql-action` : le
@@ -104,25 +105,32 @@ export function verdict(toutes, tagsParDepot) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const toutes = usesDuDepot(process.argv[2] || ".github/workflows")
-    // Une action sans commentaire n'annonce rien : il n'y a rien à confronter, et rien à
-    // reprocher. Une action non épinglée sur un SHA est le sujet de la garde VOISINE.
-    .filter((u) => u.annonce && /@[0-9a-f]{40}$/.test(u.reference))
-    .map((u) => ({ ...u, depot: depotDe(u.reference), sha: u.reference.slice(-40) }));
-  if (!toutes.length) {
-    console.error("::error::aucune action épinglée avec une étiquette — la sonde vise à côté");
-    process.exit(1);
-  }
-  const depots = [...new Set(toutes.map((e) => e.depot))];
-  const tagsParDepot = new Map(depots.map((d) => [d, tagsDuDepot(d)]));
+  const dossier = process.argv[2] || ".github/workflows";
+  conclure(tenter(() => {
+    const toutes = usesDuDepot(dossier)
+      // Une action sans commentaire n'annonce rien : il n'y a rien à confronter, et rien à
+      // reprocher. Une action non épinglée sur un SHA est le sujet de la garde VOISINE.
+      .filter((u) => u.annonce && /@[0-9a-f]{40}$/.test(u.reference))
+      .map((u) => ({ ...u, depot: depotDe(u.reference), sha: u.reference.slice(-40) }));
+    if (!toutes.length) return inconclusif(`aucune action épinglée avec une étiquette dans ${dossier} — la sonde vise à côté`);
 
-  const { ecarts, nonVus } = verdict(toutes, tagsParDepot);
-  for (const n of nonVus) console.error("::warning::" + n);
-  if (ecarts.length) {
-    for (const e of ecarts) console.error("::error::" + e);
-    process.exit(1);
-  }
-  const vues = toutes.length - nonVus.length;
-  console.log(`étiquettes : ${vues}/${toutes.length} confrontées à leur SHA sur ${depots.length} dépôts, toutes exactes`
-    + (nonVus.length ? ` — ⚠️ ${nonVus.length} NON VÉRIFIÉE(S), voir ci-dessus` : ""));
+    const depots = [...new Set(toutes.map((e) => e.depot))];
+    const tagsParDepot = new Map(depots.map((d) => [d, tagsDuDepot(d)]));
+    const { ecarts, nonVus } = verdict(toutes, tagsParDepot);
+
+    // ⚠️ UN DÉPÔT INJOIGNABLE N'EST PAS UNE VIOLATION, MAIS CE N'EST PAS RIEN NON PLUS. Tant qu'il
+    // en reste à confronter, on confronte et on DIT ce qu'on n'a pas vu (avertissement). Si plus
+    // AUCUNE n'a pu l'être, il n'y a plus de vérification du tout : c'est non concluant, et le
+    // prétendre vert serait la garde muette que ce dépôt refuse.
+    if (ecarts.length) return violation(ecarts, nonVus);
+    if (nonVus.length === toutes.length) {
+      return inconclusif(`aucun des ${depots.length} dépôts n'a répondu — pas une seule étiquette n'a été confrontée`, nonVus);
+    }
+    const vues = toutes.length - nonVus.length;
+    return conforme(
+      `étiquettes : ${vues}/${toutes.length} confrontées à leur SHA sur ${depots.length} dépôts, toutes exactes`
+        + (nonVus.length ? ` — ⚠️ ${nonVus.length} NON VÉRIFIÉE(S), voir ci-dessus` : ""),
+      nonVus,
+    );
+  }));
 }

@@ -70,3 +70,19 @@ coverage's sake, and coverage is deliberately not measured.
 Read its message: every CI step here names the incident that created it and what to do. The fix
 is almost never to weaken the guard — if you believe a guard is wrong, the bar is the one the
 repo always uses: show the case, with evidence, in the PR.
+
+**First, read the exit code — the two failures are not the same failure.** The guards in
+`tools/` answer with three, defined once in [`tools/resultat-garde.mjs`](tools/resultat-garde.mjs):
+
+| code | meaning | who fixes it |
+| --- | --- | --- |
+| `0` | the rule was checked, and it holds | — |
+| `1` | the rule was checked, and **this repository violates it** | you, in your branch |
+| `2` | the rule **could not be checked** — the probe found nothing to read, an input was unparseable, a network call failed | the guard or its environment, **not your branch** |
+
+A `2` prints `GARDE NON CONCLUANTE` and says so in as many words. It still fails CI, and that is
+deliberate: nothing was verified, so nothing is proven — a guard that fails quietly is worse than
+no guard. What the code buys is not severity but *legibility*. Before this split, both reds were
+`1`, and a contributor who once traced a red back to a misfiring probe had learned that this
+guard's red is sometimes noise. The next red — the real one — meets a reader who already knows
+the gesture for clicking past it.
