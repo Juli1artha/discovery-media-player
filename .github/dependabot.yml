@@ -23,12 +23,37 @@ updates:
       - dependency-name: typescript
         update-types: ["version-update:semver-major"]
 
+  # ⚠️ UNE MAJEURE NE VOYAGE PLUS AVEC DES CORRECTIFS, ET ELLE A FAILLI PASSER INAPERÇUE.
+  #
+  # #253 groupait quatre montées dans une PR intitulée « Bump the actions group with 4 updates ».
+  # Trois d'entre elles faisaient passer `github/codeql-action` de v3.37.7 à **v4.37.7** — une
+  # MAJEURE sur l'outil d'analyse de sécurité du dépôt — et le commentaire du SHA disait encore
+  # `# v3`. Il n'y avait donc RIEN dans le diff qui ressemble à une majeure : ni le titre, ni les
+  # étiquettes, ni la description groupée. Elle est passée, et il a fallu une revue externe pour
+  # le voir (21/08).
+  #
+  # ⚠️ ON NE LES INTERDIT PAS POUR AUTANT, et c'est un arbitrage réfléchi. Une règle `ignore` sur
+  # les majeures les GÈLERAIT : personne ne propose plus la montée, personne ne la remarque, et
+  # les actions pourrissent sans correctif — un risque d'approvisionnement en soi, échangé contre
+  # l'autre. C'est différent de Node ci-dessus, dont la majeure se décide sur un calendrier LTS
+  # public : celle d'une action se décide sur ses notes de version, qu'il faut lire.
+  #
+  # On les SÉPARE donc : les correctifs et les mineures continuent d'arriver groupés et se
+  # relisent d'un coup d'œil ; une majeure arrive SEULE, avec le nom de l'action dans le titre.
+  # Elle ne peut plus se cacher dans un lot, et la garde `tools/actions-versions.mjs` l'oblige en
+  # plus à dire la vérité sur son étiquette — le diff montre alors `# v3` → `# v4`.
+  #
+  # ⚠️ PAS DE `labels:` ICI. La tentation était d'étiqueter `major` : le label `github-actions`
+  # n'EXISTE PAS sur ce dépôt (vérifié par l'API), et Dependabot échoue sur un label absent —
+  # on aurait cassé la mise à jour des actions pour gagner une étiquette. `dependencies`, lui,
+  # existe et est déjà posé par défaut : l'écrire n'ajoutait rien.
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: monthly }
     groups:
       actions:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
     commit-message: { prefix: "chore(ci)" }
 
   - package-ecosystem: docker
