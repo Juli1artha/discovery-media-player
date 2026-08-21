@@ -116,6 +116,21 @@ as far as `SUPABASE_SERVICE_ROLE_KEY` — harmless while the issuer was the play
 and a way to hand a third party the master key to your database the day it is not. A distinct
 issuer requires its own key; without one, the player refuses and says so instead of improvising.
 
+### Detecting a signed-in member on a shared origin
+
+| Variable | |
+|---|---|
+| `PLAYER_HOST_AUTH_STORAGE_KEY` | the `localStorage` key under which **your** application stores its members' session |
+
+Unset by default, and member detection is simply off — no member is recognised, so none can be
+impersonated. This package used to hardcode one host's key: it found nothing on every other host,
+and since the session key became the way membership is *proven*, a wrong key is a security
+question, not a cosmetic one. Name yours explicitly or leave the door closed.
+
+⚠️ **It only works when your application and the player share an origin.** Two subdomains are two
+`localStorage`s; no value here changes that. This is a transition mechanism — the proper channel
+is the host injecting its member when the page is rendered.
+
 ### Links the host owns
 
 | Variable | |
@@ -387,6 +402,17 @@ which has already cost one host half a day.
 | `DOC_FRAME_ANCESTORS` | domains allowed to frame the viewer (`?embed=1`) — **see the warning below** |
 | `PLAYER_PLUGINS_OFF` | disable optional modules: `bot`, `botBrowser`, `avatarClips`, `brandIntro`, `visitors`, `providerQuotas` |
 | `GOOGLE_MAPS_API_KEY` | map and Street View in presentations (restrict it by referrer) |
+| `ELEVENLABS_API_KEY` | gives the `bot` module a voice (ElevenLabs text-to-speech). Absent ⇒ the voice controls disappear and the assistant stays written |
+| `ELEVENLABS_VOICE_ID` | default voice, used when an agent profile does not carry its own. Empty ⇒ a stock ElevenLabs voice |
+| `ELEVENLABS_MODEL` | synthesis model. Empty ⇒ `eleven_multilingual_v2` |
+
+⚠️ **`ELEVENLABS_API_KEY` is a server secret against a paid API.** It never reaches the page: the
+browser asks this instance, which synthesises server-side, stores the clip in the public
+`tts-cache` storage bucket, and returns that URL — a sentence already spoken costs ElevenLabs
+nothing, whoever replays it. The route is rate-limited per caller, and with no key it declines
+quietly (the interface hides its voice buttons rather than erroring). An agent profile may carry
+its own voice; a library voice not yet in your account is added automatically, and if that fails
+the default voice speaks — never a silent presentation.
 
 ⚠️ **Without `DOC_FRAME_ANCESTORS`, nobody can display the viewer in an iframe** — and the failure
 is the worst kind. Only a same-origin page and `*.vercel.app` may frame it by default; any other

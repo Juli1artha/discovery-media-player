@@ -1,3 +1,10 @@
+> ⚠️ **Document HISTORIQUE — premier audit externe, état au 14/08/2026 (version `0.1.17`).**
+> Rien ici ne décrit l'état courant. Chaque constat a été suivi un à un dans
+> [`AUDIT-2026-08-14-SUIVI.md`](AUDIT-2026-08-14-SUIVI.md), une seconde passe a eu lieu le
+> lendemain ([`AUDIT-2026-08-15-SECONDE-PASSE.md`](AUDIT-2026-08-15-SECONDE-PASSE.md)), et les
+> passes suivantes sont tracées version par version dans le [CHANGELOG](../CHANGELOG.md).
+> Le rapport reste tel qu'il a été reçu : un audit qu'on réécrit après coup n'est plus une trace.
+
 # Audit technique complet — Discovery Media Player
 
 Date : 14 août 2026  

@@ -1,8 +1,9 @@
+# ⚠️ Le lien « Question » pointait vers Discussions — une fonctionnalité DÉSACTIVÉE sur ce dépôt
+# (has_discussions=false, constaté par API le 21/08, relevé par un audit externe). Celui qui
+# cliquait tombait sur un 404, depuis la page même qui promet de l'aide. Les questions sont un
+# FORMULAIRE d'issue (question.yml) : si Discussions est activé un jour, refaire le chemin inverse.
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability
     url: https://github.com/Juli1artha/discovery-media-player/security/policy
     about: Do not open an issue. Email security@3d-discovery.fr — see SECURITY.md.
-  - name: Question or integration help
-    url: https://github.com/Juli1artha/discovery-media-player/discussions
-    about: Ask in Discussions. Integration questions often turn into documentation fixes.

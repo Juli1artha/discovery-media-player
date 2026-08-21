@@ -14,6 +14,8 @@ and live presentation — for teams who would rather not hand their commercial d
 to a third-party SaaS.
 
 [![CI](https://github.com/Juli1artha/discovery-media-player/actions/workflows/ci.yml/badge.svg)](https://github.com/Juli1artha/discovery-media-player/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/Juli1artha/discovery-media-player/actions/workflows/codeql.yml/badge.svg)](https://github.com/Juli1artha/discovery-media-player/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Juli1artha/discovery-media-player/badge)](https://scorecard.dev/viewer/?uri=github.com/Juli1artha/discovery-media-player)
 [![npm](https://img.shields.io/npm/v/discovery-media-player?logo=npm&color=cb3837)](https://www.npmjs.com/package/discovery-media-player)
 [![Container](https://img.shields.io/badge/ghcr.io-discovery--media--player-2496ed?logo=docker&logoColor=white)](https://github.com/Juli1artha/discovery-media-player/pkgs/container/discovery-media-player)
 [![Node](https://img.shields.io/node/v/discovery-media-player?logo=node.js&color=5fa04e)](package.json)
@@ -160,6 +162,11 @@ The file proxy denies by default. It accepts three sources and nothing else: a p
 on an allow-listed storage origin, one explicitly configured route of your own application,
 or a file under a configured local root. No credentials in URLs, no redirect following into
 your private network.
+
+The project has been through repeated external audits. The reports are published in the
+repository, unedited, with their follow-up ledgers — findings, fixes, and what was rejected
+with its reason: see [`docs/`](docs/README.md). Fixes are traced version by version in the
+[CHANGELOG](CHANGELOG.md).
 
 Found a hole? [`SECURITY.md`](SECURITY.md) — please do not open a public issue.
 

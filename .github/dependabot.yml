@@ -1,8 +1,11 @@
 version: 2
 updates:
-  # ⚠️ Groupé et mensuel, délibérément. Ce paquet n'a AUCUNE dépendance de production : tout ce
-  # qui suit est de l'outillage de test. Une PR par mise à jour et par semaine noierait les vraies
-  # contributions sous du bruit, et personne ne relirait plus rien.
+  # ⚠️ Groupé et mensuel, délibérément. Ce paquet a UNE dépendance de production — pdfjs-dist,
+  # épinglée exacte, dont la montée se DÉCIDE (c'est le moteur de rendu) — et le reste est de
+  # l'outillage. Une PR par mise à jour et par semaine noierait les vraies contributions sous du
+  # bruit, et personne ne relirait plus rien. (Ce commentaire a affirmé « aucune dépendance de
+  # production » après que pdfjs-dist en était devenue une : un fait écrit là où rien ne le
+  # confronte au manifeste — relevé par un audit externe, 21/08.)
   - package-ecosystem: npm
     directory: /
     schedule: { interval: monthly }

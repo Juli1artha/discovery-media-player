@@ -126,5 +126,6 @@ fine in discussion — write in whichever you are more precise in.
 
 ## Conduct
 
-Be straightforward and assume competence. Technical disagreement is welcome and is settled with
-evidence — a failing test, a log, a spec. Personal attacks are not, and get you removed.
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) — the whole of it fits on one screen. The short
+version: be straightforward, assume competence, settle disagreement with evidence. Personal
+attacks get you removed.

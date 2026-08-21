@@ -1,0 +1,28 @@
+name: Question or integration help
+description: You are wiring the player into something and a piece does not click.
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Questions are welcome as issues — integration questions often turn into documentation
+        fixes, so asking one helps the next person too. Two minutes in
+        [`docs/README.md`](https://github.com/Juli1artha/discovery-media-player/blob/main/docs/README.md)
+        first may save you the wait: it maps which document answers what.
+  - type: textarea
+    id: question
+    attributes:
+      label: What are you trying to do, and where does it stop?
+      description: The goal and the exact point it breaks down — an error, a blank page, a value you did not expect. Redact slugs and URLs; never paste a secret.
+    validations: { required: true }
+  - type: input
+    id: contract
+    attributes:
+      label: Output of GET /api/doc?contract=1
+      description: Version, contract number and plugin state. Contains no secrets by design. Leave empty if you are not running an instance yet.
+  - type: dropdown
+    id: how
+    attributes:
+      label: How are you running it?
+      options: [Not running yet — evaluating, Docker image, npm + bin/serve.js, Serverless (Vercel or similar), Embedded in another app, Other]
+    validations: { required: true }

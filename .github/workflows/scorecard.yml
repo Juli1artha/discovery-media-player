@@ -1,0 +1,36 @@
+# ⚠️ CE DÉPÔT AFFIRME SA RIGUEUR PARTOUT — actions épinglées au commit, CodeQL, provenance npm,
+# permissions minimales. Une affirmation jamais éprouvée n'est pas une propriété (c'est la règle
+# d'init.sql, retournée sur nos pratiques elles-mêmes). Scorecard est le tiers qui recompte :
+# l'OpenSSF mesure ces pratiques de l'extérieur, chaque semaine, et PUBLIE le résultat — le badge
+# du README pointe vers le détail, pas vers une auto-déclaration. Une pratique qui se dégrade
+# (une action dé-épinglée, un jeton trop large) fait bouger un score public au lieu de s'installer.
+name: Scorecard
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Hebdomadaire même sans commit : le score dépend aussi de l'écosystème (dépendances,
+    # règles de la forge), qui bouge sans nous.
+    - cron: "17 6 * * 1"
+
+permissions: read-all
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write # déposer le SARIF dans l'onglet Sécurité
+      id-token: write # signer le résultat publié (publish_results)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+      - uses: github/codeql-action/upload-sarif@f3712979fa5f215279b101dd0a2e3bdfb4353324 # v3
+        with:
+          sarif_file: results.sarif

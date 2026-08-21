@@ -19,7 +19,9 @@ COPY package*.json ./
 # ⚠️ `--ignore-scripts` : le `prepare` de ce paquet installe le hook git, et il n'a rien à faire
 # ici — une image n'a ni dépôt ni poussée. Sans ce drapeau, `npm ci` échoue, parce que les
 # dépendances s'installent AVANT que les sources soient copiées : le script n'existe pas encore.
-# Sans effet par ailleurs — ce paquet n'a aucune dépendance de production.
+# Sans effet par ailleurs — la seule dépendance de production, pdfjs-dist, ne déclare aucun
+# script d'installation (vérifié sur son manifeste ; ce commentaire disait « aucune dépendance
+# de production », ce qui a cessé d'être vrai sans que rien ne le confronte).
 RUN npm ci --ignore-scripts
 COPY . .
 RUN npm run build

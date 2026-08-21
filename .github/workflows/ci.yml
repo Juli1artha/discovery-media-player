@@ -115,6 +115,67 @@ jobs:
           diff=$(comm -3 /tmp/doc.txt /tmp/env.txt) || true
           [ -z "$diff" ] || { echo "::error::.env.example and docs/CONFIGURATION.md disagree:"; echo "$diff"; exit 1; }
 
+      # ⚠️ LA PARITÉ DOC↔EXEMPLE NE VOIT PAS LE CODE. Les deux textes ci-dessus peuvent être
+      # parfaitement d'accord… sur une liste incomplète : ELEVENLABS_API_KEY, _VOICE_ID, _MODEL et
+      # PLAYER_HOST_AUTH_STORAGE_KEY ont vécu des semaines lus par le code et absents des deux —
+      # un exploitant ne les découvrait qu'en lisant la source (constat d'un audit externe, 21/08 ;
+      # même trou que PLAYER_AUTH_URL en son temps, un cran plus haut). Cette garde part donc du
+      # CODE : toute variable que le runtime lit doit être dans CONFIGURATION.md — et la parité
+      # existante la propage dans .env.example. Les exceptions sont NOMMÉES, avec leur raison :
+      # une liste d'exclusions fondue dans une regex deviendrait la règle.
+      - name: Every variable the code reads is documented
+        if: matrix.node == '22'
+        run: |
+          node -e '
+            const fs = require("node:fs"), path = require("node:path");
+            // Outillage de forge, jamais lu par une instance : documenter serait mentir sur la surface.
+            const HORS_SURFACE = new Set(["PREFIXE_REST_AMONT", "PREFIXE_REST_PORT"]);
+            const lues = new Set();
+            const visiter = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+              const p = path.join(d, e.name);
+              if (e.isDirectory()) { if (e.name !== "__tests__") visiter(p); continue; }
+              if (!p.endsWith(".js") || p.endsWith(".generated.js")) continue;
+              const src = fs.readFileSync(p, "utf8");
+              // Deux motifs réels du dépôt : process.env.X direct, et env.X via
+              // createStandaloneContext(env = process.env).
+              for (const m of src.matchAll(/\b(?:process\.)?env\.([A-Z][A-Z0-9_]{2,})\b/g)) lues.add(m[1]);
+            } };
+            for (const d of ["bin", "context", "server"]) visiter(d);
+            const doc = fs.readFileSync("docs/CONFIGURATION.md", "utf8");
+            const oubliees = [...lues].filter((v) => !HORS_SURFACE.has(v) && !doc.includes("`" + v + "`")).sort();
+            if (oubliees.length) {
+              console.error("::error::variable(s) lue(s) par le code, absente(s) de docs/CONFIGURATION.md : " + oubliees.join(", ") + " — pour un exploitant, une variable non documentée n existe pas");
+              process.exit(1);
+            }
+            console.log("environnement : " + lues.size + " variables lues, toutes documentées");
+          '
+
+      # ⚠️ LES LIENS DU CHANGELOG SE SONT ARRÊTÉS À LA 0.1.41 PENDANT 77 VERSIONS. Chaque titre
+      # « ## [x.y.z] » promet une référence de comparaison en pied de fichier ; personne n'écrit
+      # ces lignes à la main à chaque sortie, donc elles ont cessé sans que rien ne le dise —
+      # 76 titres pointaient dans le vide (constat d'un audit externe, 21/08). Même formule que
+      # partout : deux exemplaires d'un fait (les titres, les références), une étape qui les
+      # confronte. Le bloc se régénère mécaniquement depuis les titres — c'est ce que cette garde
+      # vérifie, elle n'exige aucun entretien manuel.
+      - name: Every changelog section has its comparison link
+        if: matrix.node == '22'
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const txt = fs.readFileSync("CHANGELOG.md", "utf8");
+            const sections = [...txt.matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)].map((m) => m[1]);
+            const refs = new Set([...txt.matchAll(/^\[(\d+\.\d+\.\d+)\]: /gm)].map((m) => m[1]));
+            const sansRef = sections.filter((v) => !refs.has(v));
+            const sansTitre = [...refs].filter((v) => !sections.includes(v));
+            const unreleased = (txt.match(/^\[Unreleased\]: .*compare\/v(\d+\.\d+\.\d+)\.\.\.HEAD$/m) || [])[1];
+            const echecs = [];
+            if (sansRef.length) echecs.push("titres sans référence : " + sansRef.join(", "));
+            if (sansTitre.length) echecs.push("références sans titre : " + sansTitre.join(", "));
+            if (unreleased !== sections[0]) echecs.push("[Unreleased] compare depuis v" + unreleased + ", la plus récente est v" + sections[0]);
+            if (echecs.length) { console.error("::error::CHANGELOG désaccordé — " + echecs.join(" | ")); process.exit(1); }
+            console.log("changelog : " + sections.length + " sections, chacune sa référence, [Unreleased] à jour");
+          '
+
       # ⚠️ LA CARTE D'IDENTITÉ EST LA SEULE CHOSE QUE LES HÔTES ÉPINGLENT. Le contrat en montrait
       # une version périmée de cinq publications, à laquelle il manquait deux capacités. Un hôte
       # qui teste la présence d'une capacité d'après la doc conclut qu'elle n'existe pas. La
@@ -258,12 +319,46 @@ jobs:
           n=$(grep -rhoE 'uses: [a-zA-Z0-9_./-]+@[0-9a-f]{40}' .github/workflows/ | wc -l | tr -d ' ')
           echo "actions : $n références, toutes épinglées sur un commit"
 
-      - name: Examples pin an exact version
+      # ⚠️ EXACTE NE SUFFIT PAS : IL FAUT AUSSI LA NÔTRE. Cette garde n'interdisait que les plages
+      # (`^`, `~`) — et pendant ce temps la démo épinglait 0.1.20 et les exemples Express et Vercel
+      # 0.1.7, cent onze versions en arrière, sans qu'aucune étape ne rougisse (constat d'un audit
+      # externe, 21/08). Un exemple est le code que les gens RECOPIENT : celui qui copiait recevait
+      # un player d'avant les correctifs P0, depuis un dépôt dont le README vante la fraîcheur.
+      # On compare donc à LA version que main déclare — l'égalité stricte interdit les plages par
+      # construction, l'ancienne garde est un cas particulier de celle-ci. Fenêtre assumée : entre
+      # la fusion d'un bump et sa publication npm, les exemples pointent quelques minutes sur une
+      # version pas encore servie — même fenêtre que la démo, déjà écrite dans release.yml.
+      - name: Examples pin the version main declares
         if: matrix.node == '22'
         run: |
-          bad=$(grep -l '"discovery-media-player": *"[\^~]' examples/*/package.json || true)
-          [ -z "$bad" ] || { echo "::error::a version range in: $bad"; exit 1; }
+          V=$(node -p 'require("./package.json").version')
+          echec=0
+          for ex in examples/*/package.json; do
+            dep=$(node -p "require('./$ex').dependencies['discovery-media-player']")
+            [ "$dep" = "$V" ] || { echo "::error::$ex épingle $dep, main déclare $V — un copieur recevrait un player périmé"; echec=1; }
+          done
+          [ "$echec" = "0" ] || exit 1
           grep -q '">=22"' examples/demo/package.json || { echo "::error::examples must declare node >=22"; exit 1; }
+          echo "exemples : les trois épinglent $V"
+
+      # ⚠️ UN EXEMPLE QUI N'EST JAMAIS EXÉCUTÉ EST UNE AFFIRMATION, PAS UN EXEMPLE. Celui-ci
+      # s'installe comme un copieur le ferait — sauf le player lui-même, pris depuis le tarball du
+      # commit (la version épinglée peut ne pas encore être publiée, cf. la fenêtre ci-dessus) :
+      # c'est le CODE de l'exemple qu'on éprouve contre le CODE courant, pas le registre.
+      - name: The express example actually serves a document
+        if: matrix.node == '22'
+        run: |
+          rm -rf /tmp/exsmoke && cp -r examples/express /tmp/exsmoke && cd /tmp/exsmoke
+          npm i --silent "$GITHUB_WORKSPACE"/discovery-media-player-*.tgz express >/dev/null
+          mkdir -p documents && cp "$GITHUB_WORKSPACE"/examples/demo/documents/sample.pdf documents/
+          # PLAYER_LOCAL_ROOT : sans lui le relais refuse le fichier local — refus par défaut,
+          # constaté en écrivant ce banc. C'est la variable que le README de l'exemple fait poser.
+          PLAYER_LOCAL_ROOT=./documents PORT=4300 node server.js & SRV=$!
+          for i in $(seq 1 20); do curl -fsS "localhost:4300/api/doc?contract=1" >/dev/null 2>&1 && break || sleep 1; done
+          curl -fsS "localhost:4300/api/doc?contract=1" | grep -q '"contract"' || { echo "::error::l'exemple express ne sert pas le contrat"; kill $SRV; exit 1; }
+          curl -fsS "localhost:4300/documents/sample.pdf" | grep -qi "<html\|<!doctype" || { echo "::error::l'exemple express n'ouvre pas un document local"; kill $SRV; exit 1; }
+          kill $SRV
+          echo "exemple express : contrat servi, document ouvert"
 
   # ⚠️ CE QUE `npm test` NE PEUT PAS VOIR. `jsdom` n'applique pas la CSP, et le `res` postiche des
   # essais serveur se contente d'ENREGISTRER les en-têtes. Une politique qui interdit nos propres
