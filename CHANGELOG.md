@@ -10,6 +10,27 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.118] — 2026-08-21
+
+### Fixed
+- **Switching documents mid-presentation broke the image/PDF decision** (P1, external audit).
+  `switchDoc()` updated the file URL but **not** `fileName` — and `fileName` is what decides between
+  an image and a PDF. After a PDF → PNG switch the new PNG was handed to pdf.js; after PNG → PDF the
+  new PDF was loaded with `new Image()`. Both showed the viewer "Document indisponible" on a
+  perfectly valid document. Everything describing the document — URL, name, title, generation — now
+  changes together: there is no moment where the config may describe one document by its URL and
+  another by its name.
+- **Stale callbacks could overwrite the current document or page.** Two independent generations are
+  now tracked. `docGen`: a document abandoned mid-load could finish after the new one and take its
+  place. `renderGen`: pdf.js guarantees no ordering between two `getPage()` calls, so a fast page
+  change left the **slower** one winning, and the audience stayed on a page the presenter had left.
+- **The render task was discarded and the canvas published before the render finished.** The task is
+  now kept and `cancel()`ed when a new render replaces it, and the canvas is appended only once the
+  render for the still-current generation has completed.
+- **Abandoned PDF documents are destroyed** (loading task and document proxy). Chaining switches
+  without destroying grew memory without bound — the failure mode of a long presentation, not of a
+  tested one.
+
 ## [0.1.117] — 2026-08-21
 
 ### Fixed
