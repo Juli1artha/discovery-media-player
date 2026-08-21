@@ -387,13 +387,17 @@ jobs:
       # Si le registre est injoignable, on retombe sur la règle stricte : ne pas savoir ne doit pas
       # élargir ce qu'on autorise.
       #
-      # ⚠️ CONSÉQUENCE SUR LA PROCÉDURE DE SORTIE, et c'est le piège du geste habituel : les exemples
-      # s'épinglent sur la DERNIÈRE PUBLIÉE, PAS sur la version qu'on est en train de publier. Les
-      # monter dans la PR de sortie repasserait la garde (ils vaudraient la version de main) mais
-      # ferait de nouveau ÉCHOUER le déploiement de la démo, qui installe depuis le registre : on
-      # aurait déplacé le rouge du contrôle vers le déploiement sans rien gagner. Ils se montent donc
-      # tout seuls à la sortie SUIVANTE — leur retard d'une version est la propriété recherchée, pas
-      # un oubli.
+      # ⚠️ CONSÉQUENCE SUR LA PROCÉDURE DE SORTIE, ET ELLE EST TENUE PAR LE CONTRÔLE, PAS PAR CE
+      # COMMENTAIRE. Les exemples s'épinglent sur la DERNIÈRE PUBLIÉE, pas sur la version qu'on est
+      # en train de publier : les monter dans la PR de sortie repasserait la première règle (ils
+      # vaudraient la version de main) mais ferait ÉCHOUER le déploiement de la démo, qui installe
+      # depuis le registre — le rouge se déplacerait du contrôle vers le déploiement sans rien
+      # gagner. Leur retard d'une version est la propriété recherchée, pas un oubli.
+      #
+      # Cette règle a d'abord vécu ICI SEULEMENT, en prose. Le second hôte l'a relevé : quelqu'un
+      # qui voudra BIEN FAIRE montera les exemples au bon moment et rallumera le rouge structurel
+      # avec les meilleures intentions, sans que rien ne l'arrête. Elle se caractérise — « la version
+      # épinglée doit déjà être SERVIE par le registre » — donc elle est devenue un contrôle.
       - name: Examples pin a version that exists
         if: matrix.node == '22'
         run: |
@@ -403,11 +407,22 @@ jobs:
             echo "::notice::registre injoignable — on exige la version de main ($V), sans tolérance"
             P="$V"
           fi
+          # ⚠️ V EST-ELLE DÉJÀ SERVIE ? C'est ce que la tolérance ci-dessous doit savoir, et c'est ce
+          # qui transforme une phrase de commentaire en contrôle. Tant que V n'est pas publiée,
+          # l'épingler DANS les exemples repasse la garde mais casse le déploiement de la démo, qui
+          # installe depuis le registre : le rouge se déplacerait du contrôle vers le déploiement.
+          # Quelqu'un qui voudra BIEN FAIRE les montera au moment de la sortie — et rien ne
+          # l'arrêtait. (Relevé par le second hôte : cette règle vivait dans un commentaire.)
+          NEUVE=$(node -e "const a=process.argv[1].split('.').map(Number),b=process.argv[2].split('.').map(Number);for(let i=0;i<3;i++){if(a[i]>b[i]){console.log('1');process.exit(0)}if(a[i]<b[i]){console.log('0');process.exit(0)}}console.log('0')" "$V" "$P")
           echec=0
           for ex in examples/*/package.json; do
             dep=$(node -p "require('./$ex').dependencies['discovery-media-player']")
             if [ "$dep" != "$V" ] && [ "$dep" != "$P" ]; then
               echo "::error::$ex épingle $dep — ni la version de main ($V) ni la dernière publiée ($P). Un copieur recevrait un player périmé."
+              echec=1
+            elif [ "$dep" = "$V" ] && [ "$NEUVE" = "1" ]; then
+              echo "::error::$ex épingle $V, qui n'est pas encore SERVIE par le registre (dernière publiée : $P)."
+              echo "::error::Le déploiement de la démo installe depuis npm : il échouerait. Laissez les exemples sur $P — ils se monteront à la sortie SUIVANTE, et leur retard d'une version est la propriété recherchée."
               echec=1
             fi
           done
