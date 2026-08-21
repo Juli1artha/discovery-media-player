@@ -761,7 +761,7 @@ jobs:
       - name: The load campaign against a real database
         env:
           PLAYER_TEST_POSTGREST_URL: http://127.0.0.1:3002
-          PLAYER_CHARGE_SPECTATEURS: "50"
+          PLAYER_CHARGE_SPECTATEURS: "250"
         run: npm run test:campagne
 
       # ⚠️ LE BANC DE CHARGE COMPTE, IL NE CHRONOMÈTRE PAS — il tourne donc ici, sans base ni service :
