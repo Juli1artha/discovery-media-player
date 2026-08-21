@@ -8,12 +8,27 @@
 # soutient dans la durée. `engines` reste `>=22` : ce que le PAQUET accepte et ce que l'IMAGE
 # embarque sont deux questions différentes, et 22 est encore maintenue jusqu'en avril 2027.
 #
+# ⚠️ ET ELLE EST ÉPINGLÉE PAR CONDENSAT, pas par étiquette. `node:24-alpine` désigne une image
+# différente chaque semaine : deux constructions du MÊME commit produisaient deux images — celle
+# qu'on a éprouvée en CI, et celle qu'un auto-hébergeur obtient en reconstruisant trois semaines
+# plus tard. Aucune n'est fausse, et c'est le problème : rien ne disait laquelle tourne. Ce dépôt
+# exigeait déjà cette règle pour les actions (`uses: …@<sha>`) ; elle vaut mot pour mot ici, et
+# rien ne la vérifiait (P1, audit externe, 21/08). `tools/images-epinglees.mjs` la tient
+# maintenant, et Dependabot monte le condensat comme il monte une dépendance.
+#
+# ⚠️ L'ÉTIQUETTE RESTE À CÔTÉ DU CONDENSAT, ET C'EST UN SECOND EXEMPLAIRE D'UN FAIT.
+# Un condensat nu est illisible — personne ne relit une PR qui remplace soixante-quatre caractères
+# par soixante-quatre autres. Mais « 24-alpine » et le condensat peuvent alors cesser de désigner
+# la même chose, sans que rien ne se casse : l'image se construirait, les tests passeraient, et
+# le fichier raconterait faux. Ils sont donc CONFRONTÉS : le job `docker` de la CI construit
+# l'image, lui demande sa version de Node, et la compare à la majeure écrite sur cette ligne.
+#
 # ⚠️ `server/*.generated.js` sont committés (les plateformes serverless ne construisent rien) —
 # on les REconstruit ici quand même. Une image qui embarquerait un bundle plus ancien que sa
 # source servirait du code périmé sans que rien ne le signale, et c'est exactement le défaut que
 # la CI surveille par ailleurs.
 
-FROM node:24-alpine AS build
+FROM node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43 AS build
 WORKDIR /app
 COPY package*.json ./
 # ⚠️ `--ignore-scripts` : le `prepare` de ce paquet installe le hook git, et il n'a rien à faire
@@ -26,7 +41,7 @@ RUN npm ci --ignore-scripts
 COPY . .
 RUN npm run build
 
-FROM node:24-alpine
+FROM node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43
 WORKDIR /app
 ENV NODE_ENV=production
 # `dumb-init` : sans lui, le processus Node est PID 1 et n'a pas de gestionnaire de signal par
