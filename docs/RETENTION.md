@@ -1,145 +1,144 @@
-# Rétention des données
+# Data retention
 
-Ce document est le **périmètre déclaré** de la rétention : chaque colonne du schéma dont la forme
-peut porter une donnée personnelle y a une politique — *purgée après N* ou *conservée parce que*.
-Une garde de forge énumère les colonnes du schéma **vivant** (`information_schema`, jamais notre
-mémoire du fichier) et refuse toute colonne à forme personnelle absente d'ici : une donnée sans
-politique écrite ne peut pas entrer dans le schéma sans rougir.
+This document is the **declared scope** of retention: every column of the schema whose *shape* can
+carry personal data has a policy here — *purged after N* or *kept because*. A CI guard enumerates
+the columns of the **live** schema (`information_schema`, never our memory of the file) and refuses
+any personal-shaped column missing from this page: data without a written policy cannot enter the
+schema without turning the build red.
 
-Le contrat de vérification a deux moitiés, volontairement **indépendantes** (aucun code partagé —
-ni fonction de périmètre, ni filtre) :
+The verification contract has two halves, deliberately **independent** (no shared code — no scope
+function, no filter):
 
-1. la **purge** (`server/retention.js`) déclare ce qu'elle a effacé, compte par compte ;
-2. le **recensement** (`supabase/recensement-retention.sql`, SQL nu) compte ce qui reste dans le
-   périmètre revendiqué. Les deux nombres doivent se contredire si l'un ment.
+1. the **purge** (`server/retention.js`) declares what it erased, count by count;
+2. the **census** (`supabase/recensement-retention.sql`, plain SQL) counts what remains inside the
+   claimed scope. The two numbers must contradict each other if either one lies.
 
-> ⚠️ **Fenêtres proposées, à valider par l'exploitant.** Les durées ci-dessous sont des défauts
-> raisonnés (journaux analytiques : 13 mois, comparaison année sur année ; archives de
-> présentation : 12 mois après la fin). Un hôte les ajuste via `config.retention` — **entiers de
-> mois dans [1, 120] uniquement**. Toute valeur négative, nulle, non entière, `NaN`, `Infinity`
-> ou chaîne fait ÉCHOUER la purge avant le premier `DELETE`, en nommant la clé fautive : une
-> faute de configuration ne supprime jamais rien. Les bornes sont calculées en UTC, rabattues au
-> dernier jour du mois cible (« 31 mars − 1 mois » = 28 février, pas le 3 mars).
+> ⚠️ **Proposed windows, to be confirmed by the operator.** The durations below are reasoned
+> defaults (analytics logs: 13 months, for year-on-year comparison; presentation archives: 12
+> months after the end). A host adjusts them through `config.retention` — **whole months in
+> [1, 120] only**. Any negative, zero, non-integer, `NaN`, `Infinity` or string value makes the
+> purge FAIL before the first `DELETE`, naming the offending key: a configuration mistake never
+> deletes anything. Bounds are computed in UTC and clamped to the last day of the target month
+> ("31 March − 1 month" = 28 February, not 3 March).
 >
-> ⚠️ **Le balayage automatique est OPT-IN STRICT** : il ne tourne que si l'hôte écrit
-> `config.retention.balayage: true`. Un hôte qui consomme le contexte autonome tel quel hérite de
-> toutes ses capacités par défaut — « rien à brancher parce que rien n'a été débranché » — et une
-> suppression est une décision métier : elle n'agit que là où un exploitant l'a écrite. L'action
-> `retention.run` (hôte de confiance ou admin) reste disponible sans opt-in : l'appeler EST la
-> décision.
+> ⚠️ **The automatic sweep is STRICTLY OPT-IN**: it runs only if the host writes
+> `config.retention.balayage: true`. A host consuming the standalone context as-is inherits all of
+> its capabilities by default — "nothing to wire up because nothing was unwired" — and a deletion is
+> a business decision: it acts only where an operator has written it down. The `retention.run`
+> action (trusted host or admin) stays available without opt-in: calling it IS the decision.
 
-## Journaux de lecture (population externe)
+## Reading logs (external audience)
 
-Finalité : statistiques de lecture d'un document envoyé. **Purge : 13 mois** après l'événement.
+Purpose: reading statistics for a document that was sent out. **Purge: 13 months** after the event.
 
-| colonne | contenu | sort |
+| column | contents | fate |
 |---|---|---|
-| `commercial_doc_views.recipient_email` | à qui la lecture est attribuée | purgée avec la ligne, 13 mois après `at` |
-| `commercial_doc_views.session_id` | corrèle les vues d'une session | idem |
-| `commercial_doc_views.ua` | navigateur (User-Agent brut) | idem |
-| `commercial_doc_sessions.recipient_email` | attribution de la session | purgée avec la ligne, 13 mois après `last_at` |
-| `commercial_doc_sessions.session_id` | identifiant de session | idem |
-| `commercial_doc_sessions.ip` | **adresse IP en clair** | idem — c'est la donnée la plus sensible du schéma |
-| `commercial_doc_sessions.ua` | User-Agent brut | idem |
-| `commercial_doc_sessions.num_pages` / `commercial_doc_sessions.pages_time` | comportement de lecture page par page | idem |
+| `commercial_doc_views.recipient_email` | who the read is attributed to | purged with the row, 13 months after `at` |
+| `commercial_doc_views.session_id` | correlates the views of one session | same |
+| `commercial_doc_views.ua` | browser (raw User-Agent) | same |
+| `commercial_doc_sessions.recipient_email` | session attribution | purged with the row, 13 months after `last_at` |
+| `commercial_doc_sessions.session_id` | session identifier | same |
+| `commercial_doc_sessions.ip` | **IP address in the clear** | same — the most sensitive datum in the schema |
+| `commercial_doc_sessions.ua` | raw User-Agent | same |
+| `commercial_doc_sessions.num_pages` / `commercial_doc_sessions.pages_time` | page-by-page reading behaviour | same |
 
-## Journaux de lecture (équipe interne)
+## Reading logs (internal team)
 
-Même finalité, population interne. **Purge : 13 mois** après `last_at`.
+Same purpose, internal audience. **Purge: 13 months** after `last_at`.
 
-| colonne | sort |
+| column | fate |
 |---|---|
-| `commercial_doc_internal_sessions.user_email` / `commercial_doc_internal_sessions.user_name` | purgées avec la ligne |
-| `commercial_doc_internal_sessions.session_id` | idem |
-| `commercial_doc_internal_sessions.num_pages` / `commercial_doc_internal_sessions.pages_time` | idem |
+| `commercial_doc_internal_sessions.user_email` / `commercial_doc_internal_sessions.user_name` | purged with the row |
+| `commercial_doc_internal_sessions.session_id` | same |
+| `commercial_doc_internal_sessions.num_pages` / `commercial_doc_internal_sessions.pages_time` | same |
 
-## Liens d'envoi (`commercial_doc_shares`)
+## Sending links (`commercial_doc_shares`)
 
-Un lien **vivant** est un enregistrement métier : ses champs restent tant que l'URL distribuée
-doit fonctionner. Un lien **révoqué** ne sert plus personne : **purge 13 mois après révocation**
-(alignée sur les journaux, qui référencent son slug). La révocation est **datée** par
-`commercial_doc_shares.revoked_at` (migration 0013) ; les révoqués d'avant la colonne ont reçu la
-date de la migration — leur horloge démarre là, compter large plutôt qu'inventer. Sans la
-colonne, cette purge-là se tait (sonde de schéma), les autres tournent.
+A **live** link is a business record: its fields stay for as long as the distributed URL must keep
+working. A **revoked** link serves nobody: **purged 13 months after revocation** (aligned with the
+logs, which reference its slug). Revocation is **dated** by `commercial_doc_shares.revoked_at`
+(migration 0013); links revoked before that column existed were given the migration's date — their
+clock starts there, counting generously rather than inventing. Without the column, that particular
+purge stays silent (schema probe); the others still run.
 
-| colonne | contenu | sort |
+| column | contents | fate |
 |---|---|---|
-| `commercial_doc_shares.recipient_email` | qui peut expédier au repartage | conservée tant que le lien vit ; ligne purgée 13 mois après révocation |
-| `commercial_doc_shares.attested_recipient_email` | à qui l'hôte atteste le lien | idem |
-| `commercial_doc_shares.recipient_name` | nom du destinataire | idem |
-| `commercial_doc_shares.created_by` | email du commercial créateur | idem |
-| `commercial_doc_shares.file_name` | nom du fichier (peut porter un nom de personne) | métier, purgé avec la ligne |
+| `commercial_doc_shares.recipient_email` | who may forward on re-share | kept while the link lives; row purged 13 months after revocation |
+| `commercial_doc_shares.attested_recipient_email` | who the host attests the link to | same |
+| `commercial_doc_shares.recipient_name` | recipient's name | same |
+| `commercial_doc_shares.created_by` | email of the salesperson who created it | same |
+| `commercial_doc_shares.file_name` | file name (may carry a person's name) | business data, purged with the row |
 
-## Présentations en direct
+## Live presentations
 
-Une présentation **inactive** (terminée ou abandonnée) est une archive : **purge 12 mois après
-`updated_at`** — la présentation, ses messages, ses présences, et ses pièces jointes du bucket
-`present-attachments` (si l'hôte fournit `storage.remove`, sinon la limite est dite ci-dessous).
+An **inactive** presentation (finished or abandoned) is an archive: **purged 12 months after
+`updated_at`** — the presentation, its messages, its attendance records, and its attachments in the
+`present-attachments` bucket (if the host provides `storage.remove`, otherwise the limit is stated
+below).
 
-| colonne | contenu | sort |
+| column | contents | fate |
 |---|---|---|
-| `doc_presentations.presenter_name` / `doc_presentations.owner_name` | identité du présentateur | purgées avec la ligne, 12 mois après la fin |
-| `doc_presentations.owner_email` / `doc_presentations.owner_user_id` | propriétaire | idem |
-| `doc_presentations.owner_avatar` | URL d'avatar | idem |
-| `doc_presentations.control_hash` | empreinte du jeton de contrôle (pas le jeton) | idem |
-| `doc_presentations.content` | contenu partagé (cartes, médias) | idem |
-| `doc_presentations.file_name` | nom du fichier présenté | idem |
-| `doc_presentation_messages.author_name` / `doc_presentation_messages.author_email` / `doc_presentation_messages.author_avatar` | identité de l'auteur | purgées avec la présentation |
-| `doc_presentation_messages.author_hash` | empreinte du jeton d'auteur | idem |
-| `doc_presentation_messages.body` | corps du message | idem |
-| `doc_presentation_messages.reply_name` / `doc_presentation_messages.reply_text` | citation d'un autre message | idem |
-| `doc_presentation_messages.attachment` | URL de pièce jointe | idem — fichier du bucket inclus quand `storage.remove` existe |
-| `doc_presentation_messages.client_key` | clé d'idempotence d'envoi | idem |
-| `doc_presentation_attendees.name` / `doc_presentation_attendees.email` / `doc_presentation_attendees.avatar` | identité du participant | purgées avec la présentation |
-| `doc_presentation_attendees.attendee_key` | identifiant de présence | idem |
-| `doc_presentation_attendees.creator_ip_hash` | **empreinte tronquée** de l'IP qui a créé la ligne (jamais l'IP en clair) — sert au plafond de création anonyme (migration 0015). ⚠️ **Donnée PSEUDONYMISÉE, pas anonyme** : une IP hachée reste une donnée personnelle au sens du RGPD, et un SHA-256 non salé se recalcule intégralement sur l'espace IPv4. Depuis 0.1.114 l'empreinte est un HMAC salé par `PLAYER_IP_HASH_SECRET` (à défaut `PLAYER_PRESENCE_SECRET`, avec séparation de domaine) et liée au `slug`, ce qui empêche de corréler une même adresse d'une présentation à l'autre. Sans sel configuré, l'ancienne empreinte non salée subsiste. | purgée avec la présentation |
-| `doc_presentation_attendees.last_token_at` / `doc_presentation_attendees.last_no_token_at` | horodatage du dernier battement avec / sans jeton de présence — sert au compteur de transition (migration 0017), aucune donnée d'identité | purgés avec la présentation |
-| `doc_presentation_attendees.pages` | pages vues par le participant | idem |
+| `doc_presentations.presenter_name` / `doc_presentations.owner_name` | presenter's identity | purged with the row, 12 months after the end |
+| `doc_presentations.owner_email` / `doc_presentations.owner_user_id` | owner | same |
+| `doc_presentations.owner_avatar` | avatar URL | same |
+| `doc_presentations.control_hash` | fingerprint of the control token (not the token) | same |
+| `doc_presentations.content` | shared content (cards, media) | same |
+| `doc_presentations.file_name` | name of the presented file | same |
+| `doc_presentation_messages.author_name` / `doc_presentation_messages.author_email` / `doc_presentation_messages.author_avatar` | author's identity | purged with the presentation |
+| `doc_presentation_messages.author_hash` | fingerprint of the author token | same |
+| `doc_presentation_messages.body` | message body | same |
+| `doc_presentation_messages.reply_name` / `doc_presentation_messages.reply_text` | quotation of another message | same |
+| `doc_presentation_messages.attachment` | attachment URL | same — the bucket file included when `storage.remove` exists |
+| `doc_presentation_messages.client_key` | idempotency key for sending | same |
+| `doc_presentation_attendees.name` / `doc_presentation_attendees.email` / `doc_presentation_attendees.avatar` | attendee's identity | purged with the presentation |
+| `doc_presentation_attendees.attendee_key` | presence identifier | same |
+| `doc_presentation_attendees.creator_ip_hash` | **truncated fingerprint** of the IP that created the row (never the IP in the clear) — used for the anonymous-creation ceiling (migration 0015). ⚠️ **PSEUDONYMISED data, not anonymous**: a hashed IP remains personal data under the GDPR, and an unsalted SHA-256 can be recomputed exhaustively over the whole IPv4 space. Since 0.1.114 the fingerprint is an HMAC salted with `PLAYER_IP_HASH_SECRET` (failing that `PLAYER_PRESENCE_SECRET`, with domain separation) and bound to the `slug`, which prevents correlating one address across presentations. With no salt configured, the old unsalted fingerprint survives. | purged with the presentation |
+| `doc_presentation_attendees.last_token_at` / `doc_presentation_attendees.last_no_token_at` | timestamp of the last heartbeat with / without a presence token — feeds the transition counter (migration 0017), carries no identity | purged with the presentation |
+| `doc_presentation_attendees.pages` | pages the attendee viewed | same |
 
-## Sessions d'agent (`doc_bot_sessions`)
+## Agent sessions (`doc_bot_sessions`)
 
-Parcours guidé par l'agent : **purge 13 mois** après `last_at`.
+Agent-guided walkthrough: **purged 13 months** after `last_at`.
 
-| colonne | sort |
+| column | fate |
 |---|---|
-| `doc_bot_sessions.rating` / `doc_bot_sessions.rating_comment` | avis du visiteur — purgés avec la ligne |
-| `doc_bot_sessions.in_tokens` / `doc_bot_sessions.out_tokens` / `doc_bot_sessions.cache_tokens` | volumétrie IA (pas personnelle, mais portée par la ligne) — purgés avec elle |
+| `doc_bot_sessions.rating` / `doc_bot_sessions.rating_comment` | visitor's feedback — purged with the row |
+| `doc_bot_sessions.in_tokens` / `doc_bot_sessions.out_tokens` / `doc_bot_sessions.cache_tokens` | AI volume (not personal, but carried by the row) — purged with it |
 
-## Limites de débit (`player_rate_limits`)
+## Rate limits (`player_rate_limits`)
 
-| colonne | contenu | sort |
+| column | contents | fate |
 |---|---|---|
-| `player_rate_limits.key` | peut contenir une **IP en clair** (`hshare:<ip>`) ou un email | ligne purgée dès `expires_at` dépassé (opportuniste, à chaque passage) |
+| `player_rate_limits.key` | may contain an **IP in the clear** (`hshare:<ip>`) or an email | row purged as soon as `expires_at` has passed (opportunistically, on every pass) |
 
-## Limites dites plutôt que tues
+## Limits stated rather than left unsaid
 
-- **Pièces jointes orphelines** : la purge des lignes n'efface le fichier du bucket que si le
-  contexte hôte fournit `storage.remove` (capacité optionnelle). Sans elle, l'URL devient
-  introuvable depuis le produit mais l'objet survit dans le bucket — c'est dit ici plutôt que
-  simulé.
-- **Le plafond des présentations est GLOBAL** : messages et présences partagent chacun un budget
-  `plafond` réparti sur toutes les présentations d'une exécution — pas un plafond par présentation
-  (sinon 500 × 5000 = 2,5 M de lignes possibles). La boucle s'arrête quand les budgets sont
-  épuisés, sans supprimer les présentations restantes.
-- **Le rapport dryRun est complet pour les présentations** : `messagesExaminees`,
-  `presencesExaminees` et `fichiersCandidats` disent ce que la VRAIE purge ferait — même parcours
-  de sélection, suppression no-op, `efface.* = 0`.
-- **La purge avance par LOTS bornés** (200 lignes, plafond 5000 par table et 500 présentations
-  par exécution) : elle sélectionne un lot d'identifiants, les supprime par `id=in.(…)`, et
-  recommence. Le rapport (`r.rapport`) porte, par table : `examinees`, `supprimees`, `tronque`
-  (il reste à faire au prochain passage). `retention.run` accepte `{ dryRun: true }` : elle
-  compte sans rien effacer — à lancer avant la première vraie purge d'un gros historique.
-- **Index** (migration 0014) : `commercial_doc_sessions(last_at)`, `doc_bot_sessions(last_at)`,
-  `commercial_doc_shares(revoked_at) where revoked`. Sur une installation VOLUMINEUSE déjà en
-  production, créez-les à la main en `CREATE INDEX CONCURRENTLY` hors migration (la migration les
-  pose en index ordinaire, ce qui verrouille brièvement l'écriture — négligeable sur une base
-  jeune, à éviter sur une grosse table active).
-- **Le recensement ne tourne pas tout seul en production** : c'est un SQL qu'un exploitant lance
-  (et que la forge exécute à chaque course sur une base réelle vieillie artificiellement).
-- **« Ce qui existe » a une profondeur temporelle qu'`information_schema` n'a pas** (question du
-  second hôte, sans réponse mécanique) : une colonne supprimée du schéma sort du périmètre des
-  deux textes, mais sa donnée peut survivre dans un dump, une sauvegarde ou une table d'archive.
-  Ce contrat couvre la BASE VIVANTE ; les copies (sauvegardes, exports, dumps de migration) sont
-  le périmètre de l'exploitant, nommé ici plutôt que simulé. Corollaire opératoire : supprimer
-  une colonne à donnée personnelle est un acte de rétention — sa ligne quitte ce document dans
-  le même commit, et les copies antérieures suivent la politique de sauvegarde de l'hôte.
+- **Orphaned attachments**: purging the rows erases the bucket file only if the host context
+  provides `storage.remove` (an optional capability). Without it, the URL becomes unreachable from
+  the product but the object survives in the bucket — said here rather than simulated.
+- **The presentation ceiling is GLOBAL**: messages and attendance records each share one `plafond`
+  budget spread across every presentation of a run — not a ceiling per presentation (otherwise
+  500 × 5000 = 2.5 M possible rows). The loop stops when the budgets are exhausted, without
+  deleting the remaining presentations.
+- **The dryRun report is complete for presentations**: `messagesExaminees`, `presencesExaminees`
+  and `fichiersCandidats` say what the REAL purge would do — same selection walk, no-op deletion,
+  `efface.* = 0`.
+- **The purge advances in BOUNDED BATCHES** (200 rows, a ceiling of 5000 per table and 500
+  presentations per run): it selects a batch of identifiers, deletes them with `id=in.(…)`, and
+  starts again. The report (`r.rapport`) carries, per table: `examinees`, `supprimees`, `tronque`
+  (there is more left for the next pass). `retention.run` accepts `{ dryRun: true }`: it counts
+  without erasing anything — to be run before the first real purge of a large history.
+- **Indexes** (migration 0014): `commercial_doc_sessions(last_at)`, `doc_bot_sessions(last_at)`,
+  `commercial_doc_shares(revoked_at) where revoked`. On a LARGE installation already in production,
+  create them by hand with `CREATE INDEX CONCURRENTLY` outside the migration (the migration lays
+  them down as ordinary indexes, which briefly locks writes — negligible on a young database, to be
+  avoided on a large active table).
+- **The census does not run by itself in production**: it is a piece of SQL an operator runs (and
+  that CI executes on every run against a real, artificially aged database).
+- **"What exists" has a depth in time that `information_schema` does not have** (a question from the
+  second host, with no mechanical answer): a column dropped from the schema leaves the scope of both
+  texts, but its data may survive in a dump, a backup or an archive table. This contract covers the
+  LIVE DATABASE; copies (backups, exports, migration dumps) are the operator's scope, named here
+  rather than simulated. Operational corollary: dropping a column holding personal data is itself a
+  retention act — its row leaves this document in the same commit, and earlier copies follow the
+  host's backup policy.
