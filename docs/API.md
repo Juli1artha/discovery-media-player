@@ -276,13 +276,23 @@ estimated:
 
 | | |
 |---|---|
-| Call sites | **65**, in **7** files |
-| Tables | **10**, plus **6** call sites that build their path at run time — their tables are named literally by the caller, and are counted above |
+| Call sites | **65**†, in **7**† files |
+| Tables | **10**†, plus **6**† call sites that build their path at run time — their tables are named literally by the caller, and are counted above |
 | Verbs | `GET`, `POST`, `PATCH`, one `HEAD`, and `DELETE` only in `server/retention.js` — every one bounded by an age filter (`docs/RETENTION.md`) |
 | Embedded selects (`select=*,other(*)`) | **0** |
 | `or=()`, `and=()`, `offset=` | **0** |
-| `in.(…)` | **3** — translates to `WHERE column IN (…)`, so it costs a port nothing |
+| `in.(…)` | **3**† — translates to `WHERE column IN (…)`, so it costs a port nothing |
 | Used beyond plain filters | `order=`, `Prefer: return=…`, `Range` for pagination |
+
+† **Recomputed from the code on every CI run** by `tools/surface-base.mjs`, which fails the build
+when this document and the code disagree.
+
+⚠️ **A number *without* † anywhere in this repository's documentation is hand-written: it was true
+once, and nothing has checked it since.** The distinction is the whole point — before the marker
+existed, three of the five numbers above had drifted while two were guarded, and a table with two
+guarded rows reads as a guarded table. Deriving one document without marking it would have moved the
+problem up a level rather than solving it: a reader sees homogeneous documentation, part of it alive,
+and trusts all of it. (Named by the second host, 22/08.)
 
 ⚠️ **Every number in that table is derived from the code by `tools/surface-base.mjs`, not written by
 hand.** Three of the five had drifted before it existed — *Tables* said 9 where the code touches 10,
