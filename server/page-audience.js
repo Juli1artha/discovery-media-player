@@ -94,6 +94,17 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
   (function(){
     var CFG=${cfg};
     var PDF=null, total=0, cur=CFG.page||1, ready=false;
+    // ⚠️ DEUX GÉNÉRATIONS, PARCE QU'IL Y A DEUX COURSES DISTINCTES (P1 audit externe).
+    //
+    // docGen : le présentateur change de document pendant qu'un chargement est en cours. Le
+    // callback de l'ANCIEN document arrivait après le nouveau et posait ses pages par-dessus.
+    // renderGen : deux getPage() en vol (changement de page rapide, redimensionnement) peuvent
+    // se résoudre DANS LE DÉSORDRE — pdf.js ne garantit aucun ordre entre deux pages. Le plus lent
+    // gagnait, et l'audience restait sur une page que personne n'avait demandée.
+    //
+    // Une génération par course : les confondre ferait qu'un simple changement de page invaliderait
+    // le document, ou l'inverse.
+    var docGen=0, renderGen=0, tacheRendu=null, chargement=null;
     var stage=document.getElementById('stage'), pageEl=document.getElementById('page');
     function hideLoader(){ var l=document.getElementById('load'); if(l){ l.classList.add('hide'); setTimeout(function(){ if(l.parentNode)l.parentNode.removeChild(l); },450);} }
     function ended(){ document.getElementById('ended').style.display='flex';
@@ -115,7 +126,14 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
         pgi.innerHTML=''; pgi.appendChild(el);
         return;
       }
+      // ⚠️ ON ANNULE LE RENDU PRÉCÉDENT AVANT D'EN LANCER UN AUTRE. Le RenderTask était jeté :
+      // deux rendus peignaient alors en parallèle, et le plus lent finissait par l'emporter.
+      if(tacheRendu){ try{ tacheRendu.cancel(); }catch(e){} tacheRendu=null; }
+      var monDoc=docGen, monRendu=++renderGen;
       PDF.getPage(n).then(function(page){
+        // Le document a changé, ou une page plus récente a été demandée pendant que celle-ci
+        // arrivait : ce résultat n'est plus celui qu'on attend. On ne le pose pas.
+        if(monDoc!==docGen || monRendu!==renderGen) return;
         var availW=Math.max(120, stage.clientWidth-40), availH=Math.max(120, stage.clientHeight-40);
         var v1=page.getViewport({scale:1});
         var scale=Math.min(availW/v1.width, availH/v1.height); // fit entier → une page à l'écran
@@ -123,9 +141,18 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
         var cv=document.createElement('canvas'); cv.width=Math.floor(vp.width*dpr); cv.height=Math.floor(vp.height*dpr);
         cv.setAttribute('role','img'); cv.setAttribute('aria-label','Page '+n+(total>1?' sur '+total:''));
         cv.style.width=vp.width+'px'; cv.style.height=vp.height+'px';
-        page.render({canvasContext:cv.getContext('2d'),viewport:vp,transform:dpr!==1?[dpr,0,0,dpr,0,0]:null});
-        pageEl.innerHTML=''; pageEl.appendChild(cv);
-      });
+        var t=page.render({canvasContext:cv.getContext('2d'),viewport:vp,transform:dpr!==1?[dpr,0,0,dpr,0,0]:null});
+        tacheRendu=t;
+        // ⚠️ ON NE PUBLIE QU'APRÈS LE RENDU. L'ancien code posait le canvas AVANT que pdf.js n'ait
+        // peint : la page apparaissait blanche puis se remplissait, et un rendu périmé pouvait
+        // encore écraser le bon. On revérifie la génération APRÈS l'attente — c'est là qu'elle a pu
+        // changer, pas avant.
+        return t.promise.then(function(){
+          if(monDoc!==docGen || monRendu!==renderGen) return;
+          if(tacheRendu===t) tacheRendu=null;
+          pageEl.innerHTML=''; pageEl.appendChild(cv);
+        });
+      }).catch(function(){ /* rendu annulé ou page illisible : le rendu courant fait foi */ });
     }
     function boot(){
       import(CFG.pdfjs).then(function(m){
@@ -170,35 +197,67 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
     // réponse n est jamais « celui que le banc sait voir » : on garde le champ qui fait foi, puis on
     // rend le banc capable de le distinguer — un cas où l URL ment et où seul le nom dit vrai.
     function estImage(){ return Player.viewer.isImageDocument(CFG.fileName, CFG.docUrl); }
-    function chargerImage(){
+    function chargerImage(monDoc){
       var im=new Image();
       im.alt='Document présenté';
       im.onload=function(){
+        // Le présentateur a pu rebasculer pendant le téléchargement : cette image n'est plus celle
+        // du document courant.
+        if(monDoc!==docGen) return;
         total=1; ready=true; PDF={image:im};
         var tot=document.getElementById('tot'); if(tot)tot.textContent=1;
         show(1); hideLoader();
         if(!CFG.active) ended();
       };
-      im.onerror=function(){ var l=document.getElementById('load'); if(l)l.querySelector('.lsub').textContent="Document indisponible."; };
+      im.onerror=function(){ if(monDoc!==docGen) return; var l=document.getElementById('load'); if(l)l.querySelector('.lsub').textContent="Document indisponible."; };
       im.src=CFG.fileUrl;
     }
+    // ⚠️ ON LIBÈRE L'ANCIEN DOCUMENT. Un PDFDocumentProxy retient ses pages, ses canvas et son
+    // worker : enchaîner les bascules sans détruire faisait croître la mémoire sans borne, et c'est
+    // le mode de panne d'une présentation longue — celle qui dure, pas celle qu'on teste.
+    function libererDocument(){
+      if(tacheRendu){ try{ tacheRendu.cancel(); }catch(e){} tacheRendu=null; }
+      if(chargement){ try{ chargement.destroy(); }catch(e){} chargement=null; }
+      if(PDF && !PDF.image && typeof PDF.destroy==='function'){ try{ PDF.destroy(); }catch(e){} }
+      PDF=null;
+    }
     function load(){
-      if(estImage()){ chargerImage(); return; }
-      pdfjsLib.getDocument({url:CFG.fileUrl,isEvalSupported:false}).promise.then(function(pdf){
+      var monDoc=docGen;
+      if(estImage()){ chargerImage(monDoc); return; }
+      var t=pdfjsLib.getDocument({url:CFG.fileUrl,isEvalSupported:false});
+      chargement=t;
+      t.promise.then(function(pdf){
+        // Une bascule est survenue pendant le chargement : ce document n'est plus attendu, et le
+        // garder fuirait. On le détruit plutôt que de simplement l'ignorer.
+        if(monDoc!==docGen){ try{ pdf.destroy(); }catch(e){} return; }
         PDF=pdf; total=pdf.numPages; ready=true;
         var tot=document.getElementById('tot'); if(tot)tot.textContent=total;
         show(cur); hideLoader();
         if(!CFG.active) ended();
-      }).catch(function(){ var l=document.getElementById('load'); if(l)l.querySelector('.lsub').textContent="Document indisponible."; });
+      }).catch(function(){ if(monDoc!==docGen) return; var l=document.getElementById('load'); if(l)l.querySelector('.lsub').textContent="Document indisponible."; });
     }
     // Le présentateur a changé de document (même session) → recharger le PDF servi par le proxy (URL identique →
     // cache-buster obligatoire), remettre à la page 1, mettre à jour le titre.
+    // ⚠️ TOUT CE QUI DÉCRIT LE DOCUMENT CHANGE ENSEMBLE, fileName COMPRIS — c'était le P1.
+    //
+    // fileName n'était PAS mis à jour, alors que c'est lui qui fait foi pour décider image ou PDF
+    // (estImage, et le commentaire plus bas dit pourquoi). Après une bascule, le nom restait celui
+    // du document précédent : un PDF→PNG envoyait donc le nouveau PNG à pdf.js, et un PNG→PDF
+    // chargeait le nouveau PDF avec new Image(). Dans les deux cas : « Document indisponible ».
+    //
+    // Une mise à jour partielle d'un état qui se lit comme un TOUT est la forme du défaut : il n'y a
+    // pas de moment où CFG doit décrire un document par son URL et un autre par son nom.
     function switchDoc(row){
+      docGen++;                 // invalide tout callback du document précédent
+      libererDocument();
       var t=document.getElementById('ptitle'); if(t) t.textContent=row.doc_title||row.file_name||'Document';
       var pg=document.getElementById('page'); if(pg) pg.innerHTML='';
       cur=1; total=0; ready=false;
       var tot=document.getElementById('tot'); if(tot)tot.textContent='—';
       var cu=document.getElementById('cur'); if(cu)cu.textContent='1';
+      if(row.file_url) CFG.docUrl=row.file_url;
+      CFG.fileName=row.file_name||'';
+      CFG.title=row.doc_title||row.file_name||'Document';
       CFG.fileUrl='/api/doc?present='+encodeURIComponent(CFG.slug)+'&file=1&v='+encodeURIComponent(row.updated_at||String(row.current_page||1));
       load();
     }
@@ -229,7 +288,9 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
         if(a.kind==='ended'){ ended(); return; }
         if(a.kind==='show-map'){ if(window.Map3DD){ if(a.content.kind==='streetview') Map3DD.enterSV(a.content,false); else Map3DD.enter(a.content,false); } return; }
         if(a.kind==='leave-map'){ if(window.Map3DD) Map3DD.exit(); }
-        if(a.kind==='switch-doc'){ CFG.docUrl=a.url; switchDoc(row); return; }
+        // switchDoc pose LUI-MÊME docUrl/fileName/titre : les poser ici, en partie, était
+        // exactement ce qui laissait fileName en arrière.
+        if(a.kind==='switch-doc'){ switchDoc(row); return; }
         if(a.kind==='show-page'){ show(a.page); }
       }
     }
