@@ -1,10 +1,15 @@
+> ⚠️ **Document HISTORIQUE — état au 15/08/2026 (version `0.1.26`).** Rien ici ne décrit l'état
+> courant : les constats de cette passe ont été traités dans les versions qui ont suivi, et les
+> passes d'audit ultérieures sont tracées version par version dans le
+> [CHANGELOG](../CHANGELOG.md). Le rapport reste tel qu'il a été reçu.
+
 # Audit technique complet — seconde passe
 
 Date : 15 août 2026  
 Version auditée : `0.1.26`  
 Commit de référence : `98b76e1dfd91e5a2c59c9b4802a216b4190200e4` (`main`, tag `v0.1.26`)  
 État npm au gel de l'audit : `0.1.26` publiée et intégrité identique au paquet local ; `0.1.25` est à éviter  
-Rapport précédent : `AUDIT_REPORT.md`, version `0.1.17`  
+Rapport précédent : [`AUDIT-2026-08-14-RAPPORT.md`](AUDIT-2026-08-14-RAPPORT.md), version `0.1.17`  
 Suivi examiné : `docs/AUDIT-2026-08-14-SUIVI.md`
 
 ## Synthèse exécutive
