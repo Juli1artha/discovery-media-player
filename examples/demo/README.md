@@ -28,22 +28,41 @@ platform and wrong on the next.
 ## Pourquoi cette démo installe le player depuis le dépôt
 
 `package.json` épingle la version **publiée** — c'est ce qu'un copieur doit voir, la ligne qu'il
-taperait lui-même. Mais `vercel.json` porte un `installCommand` qui installe le **tarball du
-commit** (`npm pack` à la racine, puis installation du `.tgz`). Deux raisons, et la seconde compte
-davantage :
+taperait lui-même. Mais le déploiement, lui, doit installer le **tarball du commit**. Deux raisons,
+et la seconde compte davantage :
 
 1. **Sur une PR de montée de version, la version épinglée n'existe pas encore sur npm.** Le
-   déploiement échouait alors à chaque fois — `No matching version found`. Un contrôle qui échoue
-   par construction cesse d'être lu, et le rouge de déploiement sert aussi à autre chose.
+   déploiement échoue alors — `No matching version found`. Un contrôle qui échoue par construction
+   cesse d'être lu, et le rouge de déploiement sert aussi à autre chose.
 2. **Sans cela, la préversion déploie le player publié, jamais le code de la PR.** Elle ressemble à
    une vérification sans en être une : verte quoi que la PR change au player.
 
+### ⚠️ Le réglage vit dans le tableau de bord Vercel, PAS dans `vercel.json`
+
+Project Settings → Build and Deployment → Framework Settings → **Install Command** :
+
+```
+cd ../.. && npm pack --silent && cd examples/demo && npm install --silent --ignore-scripts ../../discovery-media-player-*.tgz
+```
+
+**Et ce n'est pas un choix de goût.** Poser `installCommand` dans `examples/demo/vercel.json` donne
+le pire des deux mondes, mesuré :
+
+- Vercel **le lit** (il apparaît dans « Production Overrides ») ;
+- sa présence **verrouille** le champ du tableau de bord — Vercel désactive les réglages qu'un
+  `vercel.json` définit ;
+- mais il **ne s'exécute pas sur les préversions**. Éprouvé en épinglant une version qui n'existera
+  jamais (`0.1.999`) : la préversion échoue en `ETARGET`, ce qu'aucune disponibilité npm ne peut
+  expliquer. C'est le seul essai qui départage — trois « verts » et deux « rouges » précédents
+  s'expliquaient tous par la présence ou l'absence du paquet sur le registre, pas par la commande.
+
+Un réglage de **projet**, lui, s'applique aux préversions comme à la production.
+
 ⚠️ **Un tarball, pas un chemin.** `npm install ../..` crée un lien symbolique, et Node résout alors
 les dépendances du player depuis le dépôt — qui n'a pas de `node_modules` sur la plateforme :
-`Cannot find module 'pdfjs-dist/package.json'`. Le tarball, lui, est déballé dans `node_modules`
-comme un paquet ordinaire.
+`Cannot find module 'pdfjs-dist/package.json'`. Le tarball est déballé comme un paquet ordinaire.
 
-⚠️ **Et `vercel.json` n'accepte aucun commentaire** — son schéma est strict, une clé `"//"` fait
-échouer le déploiement avant le build. C'est pourquoi cette explication vit ici et non à côté du
-réglage qu'elle explique. La CI fait déjà ce choix pour l'exemple `express` (installé depuis le
-tarball du commit) ; la démo ne le faisait pas.
+⚠️ **`../..` n'existe pendant le build que si « Include files outside the root directory » est
+activé** (Root Directory = `examples/demo`). Il l'est.
+
+La CI fait déjà ce choix pour l'exemple `express` (installé depuis le tarball du commit).
