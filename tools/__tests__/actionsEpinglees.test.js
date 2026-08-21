@@ -11,67 +11,20 @@
 
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-import { sansCommentaire, lignesDeCle, references, ecartEpinglage, ecarts, workflows } from "../actions-epinglees.mjs";
+import { ecartEpinglage, ecarts } from "../actions-epinglees.mjs";
+import { usesDuDepot } from "../workflows-yaml.mjs";
 
 const SHA = "3d3c42e5aac5ba805825da76410c181273ba90b1";
 
-describe("⚠️ LES TROIS FORMES QUE L'ANCIENNE GARDE LAISSAIT PASSER", () => {
-  // Constaté, pas supposé : ces trois lignes posées dans un workflow de sonde, le `grep` d'origine
-  // (`uses: [a-zA-Z0-9_./-]+@…`) rendait « rien à signaler ». Chacune est une action flottante.
-  const cas = [
-    ['guillemets doubles', '      - uses: "actions/checkout@v4"', "actions/checkout@v4"],
-    ["guillemets simples", "      - uses: 'actions/cache@main'", "actions/cache@main"],
-    ["deux espaces", "      - uses:  actions/setup-node@v3", "actions/setup-node@v3"],
-  ];
-  for (const [nom, ligne, attendue] of cas) {
-    it(`la voit et la refuse — ${nom}`, () => {
-      expect(references(ligne + "\n")).toEqual([attendue]);
-      expect(ecarts(ligne + "\n", "w.yml")[0]).toMatch(/pas sur un commit/);
-    });
-  }
-});
-
-describe("un commentaire n'est pas du code", () => {
-  it("⚠️ documenter la règle ne doit pas la déclencher — le défaut qui a révélé les autres", () => {
-    const txt = "      # le contrôle refuse `uses: machin@v3` depuis longtemps\n";
-    expect(references(txt)).toEqual([]);
-    expect(ecarts(txt, "w.yml")).toEqual([]);
-  });
-
-  it("ne coupe pas sur un # collé à du texte ni dans une chaîne", () => {
-    expect(sansCommentaire('uses: "a#b"')).toBe('uses: "a#b"');
-    expect(sansCommentaire("valeur: rouge#vif")).toBe("valeur: rouge#vif");
-    expect(sansCommentaire("uses: x@" + SHA + " # v7").trim()).toBe("uses: x@" + SHA);
-  });
-
-  it("mais elle voit toujours une action réelle suivie d'un commentaire", () => {
-    expect(references(`      - uses: actions/checkout@${SHA} # v7\n`)).toEqual([`actions/checkout@${SHA}`]);
-  });
-});
-
-describe("⚠️ un bloc `run: |` est du texte, pas du YAML", () => {
-  it("ne prend pas pour une action ce qu'un script ÉCRIT", () => {
-    const txt = [
-      "      - name: garde",
-      "        run: |",
-      "          echo \"::error::action non épinglée\"",
-      "          uses: machin@v1",
-      "      - uses: actions/checkout@" + SHA,
-    ].join("\n") + "\n";
-    expect(references(txt)).toEqual([`actions/checkout@${SHA}`]);
-  });
-
-  it("sort du bloc quand l'indentation redescend, et pas avant", () => {
-    const txt = "  a:\n    run: |\n      texte\n\n      encore\n    uses: x@v1\n";
-    expect(references(txt)).toEqual(["x@v1"]);
-  });
-
-  it("reconnaît les variantes d'ouverture de bloc", () => {
-    for (const ouverture of ["|", "|-", "|+", ">", ">-", "|2"]) {
-      expect(lignesDeCle(`    run: ${ouverture}\n      uses: x@v1\n`), ouverture).toEqual([]);
-    }
-  });
-});
+// ⚠️ LA LECTURE N'EST PLUS ÉPROUVÉE ICI, PARCE QU'ELLE N'EST PLUS FAITE ICI.
+//
+// Ce banc contenait les formes que le `grep` d'origine ratait, puis celles que le lexer qui l'a
+// remplacé ratait à son tour (clé citée, mapping en flow, `|2-`). Deux lecteurs maison, deux
+// cécités. La lecture vit maintenant dans `tools/workflows-yaml.mjs`, sur un analyseur YAML 1.2,
+// et c'est son banc qui porte ces cas — tous, y compris ceux que ce fichier ne savait pas voir.
+//
+// Ce qui reste ici est la DÉCISION : qu'est-ce qui doit être épinglé, et qu'est-ce qui n'a pas
+// à l'être.
 
 describe("ce qui doit être épinglé, et ce qui n'a pas à l'être", () => {
   it("un SHA de 40 caractères passe", () => {
@@ -109,21 +62,19 @@ describe("ce qui doit être épinglé, et ce qui n'a pas à l'être", () => {
 });
 
 describe("les workflows réellement présents", () => {
-  const fichiers = workflows(".github/workflows");
+  const toutes = usesDuDepot();
 
   it("il y en a, et la sonde ne vise pas à côté", () => {
-    expect(fichiers.length).toBeGreaterThan(0);
+    expect(toutes.length).toBeGreaterThan(0);
   });
 
   it("toutes leurs actions sont épinglées sur un commit", () => {
-    expect(fichiers.flatMap((f) => ecarts(readFileSync(f, "utf8"), f))).toEqual([]);
+    expect(ecarts(toutes)).toEqual([]);
   });
 
-  it("⚠️ et on en voit au moins autant que l'ancien grep — remplacer ne doit rien perdre", () => {
-    // L'ancienne garde comptait 28 références épinglées ; la nouvelle en voit 28 aussi, plus les
-    // formes qu'elle ratait. Le seuil est délibérément un plancher : ajouter une action ne doit
-    // pas casser ce banc, en retirer douze si.
-    const vues = fichiers.flatMap((f) => references(readFileSync(f, "utf8")));
-    expect(vues.length).toBeGreaterThanOrEqual(28);
+  it("⚠️ et on en voit au moins autant qu'avant — changer de lecteur ne doit rien perdre", () => {
+    // Le grep comptait 28 références épinglées ; le lexer 28 ; l'analyseur YAML 29 (il voit une
+    // forme que les deux précédents ne voyaient pas). Le seuil est un plancher délibéré.
+    expect(toutes.length).toBeGreaterThanOrEqual(28);
   });
 });

@@ -22,10 +22,9 @@
 //
 // Usage : node tools/actions-versions.mjs [.github/workflows]
 
-import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { lignesDeCleBrutes, sansCommentaire, workflows } from "./actions-epinglees.mjs";
+import { usesDuDepot } from "./workflows-yaml.mjs";
 
 /**
  * Le dépôt qui porte l'action. `github/codeql-action/init` vit dans `github/codeql-action` : le
@@ -43,28 +42,12 @@ export function depotDe(reference) {
   return `${proprietaire}/${depot}`;
 }
 
-/** Ce que la ligne ANNONCE : le premier mot du commentaire. `# v3` → « v3 », `# v7 (…)` → « v7 ». */
-export function annonceDe(ligneBrute) {
-  const commentaire = ligneBrute.slice(sansCommentaire(ligneBrute).length).replace(/^\s*#\s*/, "");
-  const m = /^(\S+)/.exec(commentaire.trim());
-  return m ? m[1] : null;
-}
-
-/** Les couples (action, étiquette annoncée) d'un workflow — seules celles épinglées sur un SHA. */
-export function entrees(txt, fichier = "") {
-  const trouvees = [];
-  for (const brute of lignesDeCleBrutes(txt)) {
-    const m = /^\s*(?:-\s+)?uses\s*:\s*(.+?)\s*$/.exec(sansCommentaire(brute));
-    if (!m) continue;
-    const reference = m[1].replace(/^["'](.*)["']$/, "$1");
-    const at = reference.lastIndexOf("@");
-    if (at <= 0 || !/^[0-9a-f]{40}$/.test(reference.slice(at + 1))) continue;
-    const annonce = annonceDe(brute);
-    if (!annonce) continue; // pas de commentaire : rien à confronter, et rien à reprocher
-    trouvees.push({ fichier, reference, depot: depotDe(reference), sha: reference.slice(at + 1), annonce });
-  }
-  return trouvees;
-}
+// ⚠️ LA LECTURE A DÉMÉNAGÉ, ET C'EST UN DÉFAUT QUI L'A CHASSÉE. Ce fichier extrayait lui-même le
+// commentaire de fin de ligne, à partir des lignes brutes du lexer voisin — donc il héritait de
+// tous ses angles morts : clé citée, mapping en flow, indicateur `|2-`. Une garde qui vérifie
+// l'honnêteté d'une étiquette ne peut pas se permettre de ne pas voir la ligne.
+// `tools/workflows-yaml.mjs` rend maintenant la référence ET son annonce depuis un arbre YAML 1.2.
+// Ce fichier ne garde que la DÉCISION.
 
 /**
  * ⚠️ « v4 » EST UNE ANNONCE HONNÊTE POUR UN SHA TAGUÉ `v4.37.7`. On ne compare pas des chaînes :
@@ -121,13 +104,19 @@ export function verdict(toutes, tagsParDepot) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const fichiers = workflows(process.argv[2] || ".github/workflows");
-  const toutes = fichiers.flatMap((f) => entrees(readFileSync(f, "utf8"), f));
+  const toutes = usesDuDepot(process.argv[2] || ".github/workflows")
+    // Une action sans commentaire n'annonce rien : il n'y a rien à confronter, et rien à
+    // reprocher. Une action non épinglée sur un SHA est le sujet de la garde VOISINE.
+    .filter((u) => u.annonce && /@[0-9a-f]{40}$/.test(u.reference))
+    .map((u) => ({ ...u, depot: depotDe(u.reference), sha: u.reference.slice(-40) }));
+  if (!toutes.length) {
+    console.error("::error::aucune action épinglée avec une étiquette — la sonde vise à côté");
+    process.exit(1);
+  }
   const depots = [...new Set(toutes.map((e) => e.depot))];
   const tagsParDepot = new Map(depots.map((d) => [d, tagsDuDepot(d)]));
 
   const { ecarts, nonVus } = verdict(toutes, tagsParDepot);
-  // ⚠️ Un « non vérifié » ne se glisse pas dans un vert. Il se dit, en haut, avant la conclusion.
   for (const n of nonVus) console.error("::warning::" + n);
   if (ecarts.length) {
     for (const e of ecarts) console.error("::error::" + e);
