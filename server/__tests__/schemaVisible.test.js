@@ -258,10 +258,15 @@ describe("un « non » n'a pas la même durée de vie qu'un « oui »", () => {
     // figé : un compte en dur avait rougi à la simple arrivée d'une quatrième attente — la garde
     // accusait alors l'inventaire d'avoir grandi, ce qui n'est pas un défaut.
     const couts = b.requetes - avant;
-    // +5 = deux bilans de données que sonderTout mesure AUSSI : `sansRang` (scellées + messages sans
-    // rang, +2) et `presence` (avecJeton + sansJeton + présentations actives, +3). Cinq requêtes fixes,
-    // indépendantes de l'inventaire des sondes de colonnes.
-    expect(couts, "un oui a été re-sondé, ou un non ne l'a pas été").toBe(1 + Object.keys(schema.ATTENDUES).length - 1 + 5);
+    // +6 = les bilans de données que sonderTout mesure AUSSI : `sansRang` (scellées + messages sans
+    // rang, +2), `presence` (avecJeton + sansJeton + présentations actives, +3) et la sonde de
+    // DURCISSEMENT (+1). Six requêtes fixes, indépendantes de l'inventaire des sondes de colonnes.
+    //
+    // ⚠️ Le +1 est assumé : 0018 remplace une FONCTION, aucune sonde de colonne ne peut la voir, et
+    // `presenceDurcissement` est un rapport d'exécution qui rend « inconnu » sur toute instance au
+    // repos. La question « la migration est-elle là ? » porte sur la BASE ; elle se pose à la base ou
+    // pas du tout. Opt-in (`?schema=1`) et mutualisée 30 s.
+    expect(couts, "un oui a été re-sondé, ou un non ne l'a pas été").toBe(1 + Object.keys(schema.ATTENDUES).length - 1 + 6);
   });
 });
 
@@ -282,9 +287,9 @@ describe("la sonde publique ne se laisse pas jouer en boucle", () => {
   it("deux appels simultanés partagent UNE sonde", async () => {
     const b = baseComptee();
     await Promise.all([schema.sonderTout(), schema.sonderTout()]);
-    // témoin + une sonde par attente + 5 (les bilans sansRang [+2] et presence [+3]) — une seule fois,
-    // pas deux : les appels simultanés partagent la sonde.
-    expect(b.requetes).toBe(1 + Object.keys(schema.ATTENDUES).length + 5);
+    // témoin + une sonde par attente + 6 (sansRang [+2], presence [+3], durcissement [+1]) — une
+    // seule fois, pas deux : les appels simultanés partagent la sonde.
+    expect(b.requetes).toBe(1 + Object.keys(schema.ATTENDUES).length + 6);
   });
 
   it("dans la fenêtre, le résultat resservi ne coûte RIEN à la base", async () => {
@@ -369,5 +374,80 @@ describe("la carte dit si l'identité interne est signée", () => {
     expect((await carte({ internalStrict: true })).internalStrict).toBe(true);
     const nue = await carte({});
     expect(nue.internalStrict, "absent, un cockpit ne peut pas refuser — false doit être DIT").toBe(false);
+  });
+});
+
+// ⚠️ 0018 EST UNE PROPRIÉTÉ DE LA BASE — ET NOTRE CONSIGNE DE PRÉ-VOL EXIGEAIT UNE RÉPONSE D'UN
+// CHAMP CONSTRUIT POUR N'EN DONNER AUCUNE.
+//
+// Relevé par le second hôte : nous avions écrit « vérifiez presenceDurcissement avant de monter ;
+// s'il rend degrade, appliquez 0018 ». Sur toute instance au repos il rend « inconnu » — jamais
+// « degrade » — et un hôte suivant la consigne à la lettre aurait conclu « je peux monter », pour
+// découvrir le refus à la première présentation. Nous avions bâti un champ qui refuse de se
+// prononcer sans observation, puis placé ce champ au centre d'une procédure qui exige une réponse.
+//
+// La question porte sur la BASE : elle se pose à la base.
+describe("la sonde de durcissement dit une propriété GLOBALE, pas une observation locale", () => {
+  const schema = require("../schema.js");
+
+  function joueur(reponseRpc) {
+    const journal = [];
+    schema.oublier();
+    schema.init({
+      plugins: {}, has: () => false, branding: {}, config: {}, storage: {},
+      errors: { capture(e) { journal.push(String(e && e.message)); } },
+      limits: { async allow() { return true; } },
+      db: {
+        async request(chemin) {
+          if (chemin.startsWith("rpc/player_attendance_bump")) return reponseRpc();
+          return [];
+        },
+      },
+    });
+    return journal;
+  }
+
+  const PGRST202 = () => { throw Object.assign(new Error("Supabase"), { statusCode: 404, details: { code: "PGRST202" } }); };
+
+  it("0018 en base → « applique », même sans aucune présentation", async () => {
+    joueur(() => [{ ok: false, created: false, capped: true, usurpe: false }]);
+    const etat = await schema.sonderTout();
+    expect(etat.durcissementBase,
+      "c'est LE champ qu'on lit avant un déploiement — il doit répondre au repos").toBe("applique");
+  });
+
+  it("0018 absente → « absente », et l'exploitant en est AVERTI sans attendre une présentation", async () => {
+    const journal = joueur(PGRST202);
+    const etat = await schema.sonderTout();
+    expect(etat.durcissementBase).toBe("absente");
+    expect(journal.join(" "), "sans ce journal, un hôte au repos ne saurait rien avant sa 1re présentation")
+      .toMatch(/0018/);
+  });
+
+  it("une PANNE ne dit ni oui ni non : « indetermine »", async () => {
+    joueur(() => { throw Object.assign(new Error("ECONNRESET"), { code: "ECONNRESET" }); });
+    const etat = await schema.sonderTout();
+    expect(etat.durcissementBase,
+      "compter une panne comme « absente » serait le défaut qu'on a mis trois versions à retirer ailleurs")
+      .toBe("indetermine");
+  });
+
+  it("la sonde ne demande AUCUNE création : p_anon_cap vaut 0, la RPC rend avant son insert", async () => {
+    let corps = null;
+    schema.oublier();
+    schema.init({
+      plugins: {}, has: () => false, branding: {}, config: {}, storage: {},
+      errors: { capture() {} }, limits: { async allow() { return true; } },
+      db: { async request(chemin, o) { if (chemin.startsWith("rpc/")) { corps = o.body; return []; } return []; } },
+    });
+    await schema.sonderTout();
+    expect(corps.p_anon_cap, "avec un plafond nul, la branche « capped » rend AVANT l'insert").toBe(0);
+    expect(corps.p_slug, "un slug de sonde qui ne peut pas être un slug réel (une espace)").toMatch(/\s/);
+  });
+
+  it("le champ dit sa PORTÉE, pour qu'on ne le confonde pas avec le rapport d'exécution", async () => {
+    joueur(() => []);
+    const etat = await schema.sonderTout();
+    expect(etat.durcissementBaseCouvre).toMatch(/presenceDurcissement/);
   });
 });

@@ -315,6 +315,7 @@ async function vraimentSonderTout() {
   const etat = etatDuSchema();
   await ajouterSansRang(etat);
   await ajouterPresence(etat);
+  await ajouterDurcissement(etat);
   return etat;
 }
 
@@ -342,6 +343,65 @@ async function vraimentSonderTout() {
 // l'en-tête Content-Range, hors de portée de `db.request` (corps seul) — d'où un garde-fou dont on
 // DÉCLARE la condition de validité, plutôt qu'un qu'on croirait inconditionnel. (relevé 2e hôte)
 const PLAFOND_SANS_RANG = 1000;
+
+// ⚠️ 0018 EST UNE PROPRIÉTÉ DE LA BASE — ELLE DOIT SE DEMANDER À LA BASE.
+//
+// `presenceDurcissement` (carte) est un RAPPORT D'EXÉCUTION : il dit ce que CE processus a constaté
+// en servant des bootstraps. Sur une instance au repos il rend « inconnu », et c'est juste — mais
+// inutilisable comme contrôle avant déploiement, où la question est « la migration est-elle là ? ».
+// Nous avions même écrit une consigne de pré-vol qui l'exigeait : un hôte la suivant à la lettre
+// aurait lu « pas degrade, donc j'y vais » et découvert le refus à la première présentation, c'est-
+// à-dire au pire moment. On avait bâti un champ qui refuse de se prononcer sans observation, puis
+// placé ce champ au centre d'une procédure qui exige une réponse. (Relevé par le second hôte.)
+//
+// ⚠️ LA SONDE N'ÉCRIT RIEN, ET CE N'EST PAS UN ESPOIR : avec `p_anon_cap = 0`, une ligne inexistante
+// part par la branche « capped » de 0018 (`if v_count >= p_anon_cap then return ... ; return; end if;`)
+// et la fonction rend AVANT son `insert`. Le slug de sonde porte une espace — donc il ne peut jamais
+// être un slug réel (contrat `^[A-Za-z0-9_-]{1,64}$`), et ne peut pas heurter une vraie présence.
+// Un test de base (Postgres réel) vérifie qu'aucune ligne n'apparaît.
+const SLUG_SONDE_DURCISSEMENT = "sonde durcissement";
+
+async function ajouterDurcissement(etat) {
+  const corps = {
+    p_slug: SLUG_SONDE_DURCISSEMENT, p_key: "sonde", p_ip_hash: null, p_page: 1,
+    p_name: "", p_avatar: "", p_is_member: false, p_is_presenter: false,
+    p_max_gap_ms: 0, p_anon_cap: 0, p_has_token: null, p_only_if_unclaimed: true,
+  };
+  try {
+    await PLAYER.db.request("rpc/player_attendance_bump", { method: "POST", body: corps });
+    etat.durcissementBase = "applique";
+  } catch (erreur) {
+    // ⚠️ TROIS ISSUES, ET LA TROISIÈME N'EST PAS UNE DES DEUX AUTRES. Seule la signature absente
+    // prouve que 0018 manque ; une panne réseau ou un 500 ne prouvent RIEN, et les compter comme
+    // « absente » serait le défaut qu'on a mis trois versions à retirer d'ailleurs.
+    let absente = false;
+    try { absente = require("./presentations.js").signatureAbsente(erreur); } catch { /* module absent */ }
+    etat.durcissementBase = absente ? "absente" : "indetermine";
+    // ⚠️ ET ON LE DIT, PAS SEULEMENT DANS LA CARTE. Une garde de ce dépôt refuse qu'une écriture soit
+    // rattrapée en silence, et elle a raison ici pour une raison qu'elle ne pouvait pas connaître :
+    // c'est ce journal qui prévient un hôte à qui 0018 manque SANS qu'aucune présentation ne tourne
+    // — exactement le cas où le rapport d'exécution reste muet, et où l'exploitant ne saura rien
+    // avant la première présentation. Une fois par heure : la carte est publique, donc appelable en
+    // boucle, et un journal sans frein deviendrait une arme.
+    try {
+      if (await PLAYER.limits.allow("schema:durcissement-absent", 1, 3600)) {
+        PLAYER.errors.capture(new Error(
+          absente
+            ? "migration 0018-bootstrap-non-usurpable.sql ABSENTE : les bootstraps de présence ne "
+              + "sont pas contrôlés. N'armez pas PLAYER_PRESENCE_STRICT avant de l'appliquer — il "
+              + "refuserait alors les bootstraps en 503."
+            : "sonde de durcissement (0018) sans réponse exploitable : ni confirmée, ni infirmée — "
+              + ((erreur && erreur.message) || erreur),
+        ), { route: "schema" });
+      }
+    } catch { /* jamais bloquant */ }
+  }
+  etat.durcissementBaseCouvre =
+    "propriété de la BASE (migration 0018), globale à toutes les instances — à ne pas confondre avec "
+    + "presenceDurcissement, qui est ce que CE processus a constaté en servant des bootstraps. "
+    + "C'est ce champ-ci qu'on lit AVANT un déploiement ; « indetermine » = la question n'a pas pu "
+    + "être posée, ce n'est ni un oui ni un non.";
+}
 
 async function ajouterSansRang(etat) {
   const r = reponses.get("doc_presentation_messages.mod_seq");

@@ -74,6 +74,23 @@ The three `presence*` fields report what the host has **observed**, not what it 
 | `presenceStrict` | **effective** — `PLAYER_PRESENCE_STRICT` is set *and* tokens can be issued. A closed door announced over an open one would be the worse failure |
 | `presenceDurcissement` | `actif` (a hardened call came back), `degrade` (migration 0018 is missing), `inconnu` (nothing attempted in this process — **not** a green light, and process-local: another instance may have seen otherwise) |
 
+⚠️ **Before you upgrade, do not read `presenceDurcissement`.** It is a *report of execution*: on an
+instance where nothing is running it says `inconnu`, which means *nobody looked* — not *the migration
+is there*. A pre-flight check built on it silently passes on every idle host, and the missing
+migration is then discovered at the first presentation, i.e. at the worst moment. Ask
+`GET /api/doc?contract=1&schema=1` and read **`schema.durcissementBase`** instead: it asks the
+database, so it answers a global fact.
+
+| `durcissementBase` | meaning |
+|---|---|
+| `applique` | migration 0018 is in the database — safe to run with the strict door closed |
+| `absente` | 0018 is missing: apply it **before** setting `PLAYER_PRESENCE_STRICT`, or bootstraps will be refused with `503` |
+| `indetermine` | the question could not be asked — neither a yes nor a no |
+
+The probe writes nothing: it calls the function with `p_anon_cap = 0`, so a non-existent row exits
+through the *capped* branch and returns before the insert. A real-Postgres test asserts that no row
+appears. A host missing 0018 is also logged once an hour, so an idle instance still finds out.
+
 That parameter **is** the one part of this card that needs the database, and only when you ask for
 it. `verdict` is then one of:
 

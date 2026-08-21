@@ -10,6 +10,29 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.120] — 2026-08-21
+
+### Added
+- **`schema.durcissementBase` — whether migration 0018 is in the database, asked *to the database*.**
+  `presenceDurcissement` is a **report of execution**: on an instance where nothing is running it says
+  `inconnu`, meaning *nobody looked*. We had nevertheless written a pre-flight instruction built on it
+  ("check `presenceDurcissement` before upgrading; if it says `degrade`, apply 0018") — which passes
+  silently on every idle host, so the missing migration would be discovered at the first presentation,
+  at the worst possible moment. We had built a field that refuses to answer without an observation,
+  then placed it at the centre of a procedure that requires an answer. Reported by the second host.
+  `durcissementBase` answers `applique` / `absente` / `indetermine` and is a **global** fact.
+  0018 replaces a *function*, so no column probe can see it — the question has to be asked by calling.
+  **The probe writes nothing**: with `p_anon_cap = 0` a non-existent row exits through the *capped*
+  branch and the function returns before its `insert`. Measured against a real Postgres, not deduced —
+  `ok=f created=f capped=t usurpe=f`, zero rows before and after — and pinned by a `base/` test.
+  Costs one extra round-trip, opt-in via `?schema=1` and shared for 30 s.
+- **A host missing 0018 is now logged once an hour**, so an idle instance finds out without waiting
+  for its first presentation — which is the same gap, seen from the operator's side.
+
+### Documentation
+- `docs/HOST-CONTRACT.md` says explicitly **not** to use `presenceDurcissement` as a pre-flight check,
+  and documents `durcissementBase` with the three values.
+
 ## [0.1.119] — 2026-08-21
 
 ### Changed
@@ -3334,7 +3357,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.119...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.120...HEAD
+[0.1.120]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.119...v0.1.120
 [0.1.119]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.118...v0.1.119
 [0.1.118]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.117...v0.1.118
 [0.1.117]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.116...v0.1.117
