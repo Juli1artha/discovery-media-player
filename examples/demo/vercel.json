@@ -1,6 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "cd ../.. && npm pack --silent && cd examples/demo && npm install --silent --ignore-scripts ../../discovery-media-player-*.tgz",
   "rewrites": [
     {
       "source": "/",
