@@ -261,6 +261,14 @@ up within a minute. For the question *"is it applied?"* — asked before a deplo
 has run — read `schema.fusionBase` from `GET /api/doc?contract=1&schema=1` instead: it asks the
 database rather than this process.
 
+⚠️ **On a serverless host, `inconnu` is the normal answer — not a sign that nothing is happening.**
+The second host measured it: a real presentation ran on their instance, with a participant, on the
+very day both `presence*` observation fields read `inconnu`. The presentation had ended, and the
+short-lived process answering `/api/doc` was never the one that served a heartbeat. Read the `schema`
+fields for facts that outlive a process, and treat *"lightly used"* and *"idle"* as the different
+claims they are — a defect that needs traffic to appear had real opportunities the whole time the
+instance was assumed to have none.
+
 ⚠️ **`PLAYER_PRESENCE_STRICT` is inert without `PLAYER_PRESENCE_SECRET`, on purpose.** With no secret
 nobody *can* obtain a token, so enforcing it would refuse 100% of anonymous participants — a
 self-inflicted outage. The card therefore reports the **effective** value: `presenceStrict` reads
