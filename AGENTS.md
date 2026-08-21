@@ -52,8 +52,8 @@ coverage's sake, and coverage is deliberately not measured.
   Issues, PRs and user-facing docs are in English.
 - **Conventional commits** (`feat:`, `fix:`, `docs:`, `test:`, `chore:`), body explaining *why*.
 - **Do not bump the version or add a CHANGELOG section.** Releasing is a separate, deliberate
-  act (`chore(release)` + tag) with its own gated workflow. A code or docs PR ships without
-  touching either.
+  act (`chore(release)` + tag) with its own gated workflow and its own document —
+  [`docs/RELEASING.md`](docs/RELEASING.md). A code or docs PR ships without touching either.
 
 ## Boundaries
 

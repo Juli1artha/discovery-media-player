@@ -119,6 +119,10 @@ If your change requires a newer player version in a host application, say so in 
 ("requires player ≥ x.y") — deploy order is the player first, hosts after. The reverse makes a
 feature disappear everywhere at once, with no error anywhere.
 
+**Do not bump the version, and do not add a `CHANGELOG.md` section.** Your PR ships without
+touching either: publishing is a separate, deliberate act, described in
+[`docs/RELEASING.md`](docs/RELEASING.md).
+
 ## Language
 
 Code comments are in French; issues, PRs and user-facing documentation are in English. Both are

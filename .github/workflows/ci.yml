@@ -186,33 +186,14 @@ jobs:
       # précédant la 0.1.42 est la 0.1.41 (contre-audit, 21/08). L'URL attendue se DÉRIVE de
       # l'ordre réel des sections, jamais de « patch − 1 » : l'historique a au moins une
       # discontinuité (0.1.85 suit 0.1.83), et un calcul naïf l'accuserait à tort.
+      # ⚠️ LA RÈGLE VIT DANS UN MODULE, PLUS EN LIGNE ICI. Le préflight de publication
+      # (tools/release-preflight.mjs) doit poser exactement la même question avant un tag : deux
+      # exemplaires d'une règle divergent, personne ne les confronte, et le jour où l'un se corrige
+      # l'autre continue de bénir — c'est le défaut que ce dépôt traque partout ailleurs. Un seul
+      # module décide (tools/changelog.mjs), il a ses tests, la forge et le préflight l'appellent.
       - name: Every changelog section has its exact comparison link
         if: matrix.node == '22'
-        run: |
-          node -e '
-            const fs = require("node:fs");
-            const txt = fs.readFileSync("CHANGELOG.md", "utf8");
-            const DEPOT = "https://github.com/Juli1artha/discovery-media-player";
-            const sections = [...txt.matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)].map((m) => m[1]);
-            const refs = new Map([...txt.matchAll(/^\[(\d+\.\d+\.\d+)\]: (.+)$/gm)].map((m) => [m[1], m[2].trim()]));
-            const echecs = [];
-            sections.forEach((v, i) => {
-              const attendu = sections[i + 1]
-                ? `${DEPOT}/compare/v${sections[i + 1]}...v${v}`
-                : `${DEPOT}/releases/tag/v${v}`;
-              const reel = refs.get(v);
-              if (reel === undefined) echecs.push(`section ${v} sans référence`);
-              else if (reel !== attendu) echecs.push(`référence ${v} : « ${reel} » au lieu de « ${attendu} »`);
-              refs.delete(v);
-            });
-            for (const orpheline of refs.keys()) echecs.push(`référence ${orpheline} sans section`);
-            const unreleased = [...txt.matchAll(/^\[Unreleased\]: (.+)$/gm)].map((m) => m[1].trim());
-            const unrAttendu = `${DEPOT}/compare/v${sections[0]}...HEAD`;
-            if (unreleased.length !== 1) echecs.push(`${unreleased.length} référence(s) [Unreleased] au lieu de 1`);
-            else if (unreleased[0] !== unrAttendu) echecs.push(`[Unreleased] : « ${unreleased[0]} » au lieu de « ${unrAttendu} »`);
-            if (echecs.length) { console.error("::error::CHANGELOG désaccordé — " + echecs.join(" | ")); process.exit(1); }
-            console.log("changelog : " + sections.length + " sections, chaque référence exacte, [Unreleased] à jour");
-          '
+        run: node tools/changelog.mjs
 
       # ⚠️ LA CARTE D'IDENTITÉ EST LA SEULE CHOSE QUE LES HÔTES ÉPINGLENT. Le contrat en montrait
       # une version périmée de cinq publications, à laquelle il manquait deux capacités. Un hôte

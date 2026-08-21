@@ -1,0 +1,92 @@
+// L'ACCORD ENTRE LES TITRES DU CHANGELOG ET LEURS RÉFÉRENCES DE COMPARAISON.
+//
+// ⚠️ Cette logique vivait EN LIGNE dans ci.yml. Le préflight de publication en a besoin aussi —
+// et deux exemplaires d'une règle sont exactement ce que ce dépôt refuse partout ailleurs : ils
+// divergent, personne ne les confronte, et le jour où l'un se corrige l'autre continue de bénir.
+// Même raison que tools/plus-haut-tag.mjs, écrite après que trois endroits eurent chacun leur
+// regex de tag. Un seul module décide, la forge et le préflight l'appellent.
+//
+// Rappel de ce qui a rendu cette garde nécessaire : les références se sont arrêtées à la 0.1.41
+// pendant 77 versions — 76 titres pointaient dans le vide, et rien ne le disait. Puis une
+// deuxième passe a montré qu'une référence PRÉSENTE pouvait être fausse : `compare/v0.1.40...
+// v0.1.42` passait, alors que la version qui précède la 0.1.42 est la 0.1.41.
+
+import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+export const DEPOT = "https://github.com/Juli1artha/discovery-media-player";
+
+/** Les versions, dans l'ordre du fichier — la plus récente d'abord. */
+export const sections = (txt) => [...txt.matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)].map((m) => m[1]);
+
+/** Les références de bas de page, telles qu'écrites. */
+export const references = (txt) =>
+  new Map([...txt.matchAll(/^\[(\d+\.\d+\.\d+)\]: (.+)$/gm)].map((m) => [m[1], m[2].trim()]));
+
+/**
+ * L'URL qu'une version DOIT porter, dérivée de l'ORDRE RÉEL des sections.
+ *
+ * ⚠️ Jamais « patch − 1 » : l'historique a au moins une discontinuité (la 0.1.85 suit la 0.1.83),
+ * et un calcul naïf accuserait une référence parfaitement juste. La version précédente est celle
+ * que le fichier place en dessous, point.
+ */
+export function urlAttendue(versions, i) {
+  const v = versions[i], precedente = versions[i + 1];
+  return precedente ? `${DEPOT}/compare/v${precedente}...v${v}` : `${DEPOT}/releases/tag/v${v}`;
+}
+
+/** Tout ce qui cloche, en clair. Liste vide = le fichier est d'accord avec lui-même. */
+export function ecarts(txt) {
+  const versions = sections(txt);
+  const refs = references(txt);
+  const soucis = [];
+  if (!versions.length) return ["aucune section de version — ce n'est pas un changelog"];
+
+  versions.forEach((v, i) => {
+    const attendu = urlAttendue(versions, i);
+    const reel = refs.get(v);
+    if (reel === undefined) soucis.push(`section ${v} sans référence`);
+    else if (reel !== attendu) soucis.push(`référence ${v} : « ${reel} » au lieu de « ${attendu} »`);
+    refs.delete(v);
+  });
+  for (const orpheline of refs.keys()) soucis.push(`référence ${orpheline} sans section`);
+
+  const unreleased = [...txt.matchAll(/^\[Unreleased\]: (.+)$/gm)].map((m) => m[1].trim());
+  const unrAttendu = `${DEPOT}/compare/v${versions[0]}...HEAD`;
+  if (unreleased.length !== 1) soucis.push(`${unreleased.length} référence(s) [Unreleased] au lieu de 1`);
+  else if (unreleased[0] !== unrAttendu) soucis.push(`[Unreleased] : « ${unreleased[0]} » au lieu de « ${unrAttendu} »`);
+
+  return soucis;
+}
+
+/** Le bloc de références entier, régénéré depuis les titres. Ce qu'une sortie doit écrire. */
+export function blocReferences(txt) {
+  const versions = sections(txt);
+  return [`[Unreleased]: ${DEPOT}/compare/v${versions[0]}...HEAD`,
+    ...versions.map((_, i) => `[${versions[i]}]: ${urlAttendue(versions, i)}`)].join("\n");
+}
+
+/**
+ * Le corps de la section d'une version — ce que la Release publie. Vide si absente.
+ *
+ * ⚠️ LA DERNIÈRE SECTION S'ARRÊTE AUSSI AU BLOC DE RÉFÉRENCES. Sans cette borne, extraire les
+ * notes de la version la plus ancienne emporte les 125 lignes de liens de bas de page : la
+ * Release publierait un mur d'URL en guise de notes. Trouvé par le test de ce module, pas en
+ * production — la plus ancienne version ne se republie jamais, donc rien ne l'aurait révélé.
+ */
+export function sectionDe(txt, version) {
+  const debut = txt.indexOf(`## [${version}]`);
+  if (debut === -1) return "";
+  const apres = txt.slice(debut);
+  const bornes = [apres.indexOf("\n## ["), apres.search(/\n\[(?:Unreleased|\d+\.\d+\.\d+)\]: /)]
+    .filter((i) => i > 0);
+  const fin = bornes.length ? Math.min(...bornes) : -1;
+  return (fin === -1 ? apres : apres.slice(0, fin)).split("\n").slice(1).join("\n").trim();
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const txt = readFileSync("CHANGELOG.md", "utf8");
+  const soucis = ecarts(txt);
+  if (soucis.length) { console.error("::error::CHANGELOG désaccordé — " + soucis.join(" | ")); process.exit(1); }
+  console.log(`changelog : ${sections(txt).length} sections, chaque référence exacte, [Unreleased] à jour`);
+}
