@@ -252,12 +252,46 @@ jobs:
           n=$(grep -rhoE 'uses: [a-zA-Z0-9_./-]+@[0-9a-f]{40}' .github/workflows/ | wc -l | tr -d ' ')
           echo "actions : $n références, toutes épinglées sur un commit"
 
-      - name: Examples pin an exact version
+      # ⚠️ EXACTE NE SUFFIT PAS : IL FAUT AUSSI LA NÔTRE. Cette garde n'interdisait que les plages
+      # (`^`, `~`) — et pendant ce temps la démo épinglait 0.1.20 et les exemples Express et Vercel
+      # 0.1.7, cent onze versions en arrière, sans qu'aucune étape ne rougisse (constat d'un audit
+      # externe, 21/08). Un exemple est le code que les gens RECOPIENT : celui qui copiait recevait
+      # un player d'avant les correctifs P0, depuis un dépôt dont le README vante la fraîcheur.
+      # On compare donc à LA version que main déclare — l'égalité stricte interdit les plages par
+      # construction, l'ancienne garde est un cas particulier de celle-ci. Fenêtre assumée : entre
+      # la fusion d'un bump et sa publication npm, les exemples pointent quelques minutes sur une
+      # version pas encore servie — même fenêtre que la démo, déjà écrite dans release.yml.
+      - name: Examples pin the version main declares
         if: matrix.node == '22'
         run: |
-          bad=$(grep -l '"discovery-media-player": *"[\^~]' examples/*/package.json || true)
-          [ -z "$bad" ] || { echo "::error::a version range in: $bad"; exit 1; }
+          V=$(node -p 'require("./package.json").version')
+          echec=0
+          for ex in examples/*/package.json; do
+            dep=$(node -p "require('./$ex').dependencies['discovery-media-player']")
+            [ "$dep" = "$V" ] || { echo "::error::$ex épingle $dep, main déclare $V — un copieur recevrait un player périmé"; echec=1; }
+          done
+          [ "$echec" = "0" ] || exit 1
           grep -q '">=22"' examples/demo/package.json || { echo "::error::examples must declare node >=22"; exit 1; }
+          echo "exemples : les trois épinglent $V"
+
+      # ⚠️ UN EXEMPLE QUI N'EST JAMAIS EXÉCUTÉ EST UNE AFFIRMATION, PAS UN EXEMPLE. Celui-ci
+      # s'installe comme un copieur le ferait — sauf le player lui-même, pris depuis le tarball du
+      # commit (la version épinglée peut ne pas encore être publiée, cf. la fenêtre ci-dessus) :
+      # c'est le CODE de l'exemple qu'on éprouve contre le CODE courant, pas le registre.
+      - name: The express example actually serves a document
+        if: matrix.node == '22'
+        run: |
+          rm -rf /tmp/exsmoke && cp -r examples/express /tmp/exsmoke && cd /tmp/exsmoke
+          npm i --silent "$GITHUB_WORKSPACE"/discovery-media-player-*.tgz express >/dev/null
+          mkdir -p documents && cp "$GITHUB_WORKSPACE"/examples/demo/documents/sample.pdf documents/
+          # PLAYER_LOCAL_ROOT : sans lui le relais refuse le fichier local — refus par défaut,
+          # constaté en écrivant ce banc. C'est la variable que le README de l'exemple fait poser.
+          PLAYER_LOCAL_ROOT=./documents PORT=4300 node server.js & SRV=$!
+          for i in $(seq 1 20); do curl -fsS "localhost:4300/api/doc?contract=1" >/dev/null 2>&1 && break || sleep 1; done
+          curl -fsS "localhost:4300/api/doc?contract=1" | grep -q '"contract"' || { echo "::error::l'exemple express ne sert pas le contrat"; kill $SRV; exit 1; }
+          curl -fsS "localhost:4300/documents/sample.pdf" | grep -qi "<html\|<!doctype" || { echo "::error::l'exemple express n'ouvre pas un document local"; kill $SRV; exit 1; }
+          kill $SRV
+          echo "exemple express : contrat servi, document ouvert"
 
   # ⚠️ CE QUE `npm test` NE PEUT PAS VOIR. `jsdom` n'applique pas la CSP, et le `res` postiche des
   # essais serveur se contente d'ENREGISTRER les en-têtes. Une politique qui interdit nos propres
