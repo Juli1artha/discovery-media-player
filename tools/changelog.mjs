@@ -70,8 +70,12 @@ export function blocReferences(txt) {
  * Le corps de la section d'une version — ce que la Release publie. Vide si absente.
  *
  * ⚠️ LA DERNIÈRE SECTION S'ARRÊTE AUSSI AU BLOC DE RÉFÉRENCES. Sans cette borne, extraire les
- * notes de la version la plus ancienne emporte les 125 lignes de liens de bas de page : la
- * Release publierait un mur d'URL en guise de notes. Trouvé par le test de ce module, pas en
+ * notes de la version la plus ancienne emporte TOUT le bloc de liens de bas de page — une ligne
+ * par version publiée, donc il grossit à chaque sortie : la Release publierait un mur d'URL en
+ * guise de notes. (Ce commentaire annonçait un compte de lignes PRÉCIS ; il avait dérivé de
+ * quatre, et il n'apportait rien à ce qu'il explique. Un nombre écrit à côté du code est une
+ * MESURE, pas une explication : il se démode, et il n'a aucun moyen de le dire. Le chiffre exact
+ * n'est pas répété ici — le réécrire ressèmerait le motif que ce correctif retire.) Trouvé par le test de ce module, pas en
  * production — la plus ancienne version ne se republie jamais, donc rien ne l'aurait révélé.
  */
 export function sectionDe(txt, version) {

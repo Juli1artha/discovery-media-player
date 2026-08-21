@@ -72,12 +72,18 @@ export function annonces(markdown) {
     const m = markdown.match(motif);
     return m ? Number(m[1]) : null;
   };
+  // ⚠️ LE MARQUEUR † EST EXIGÉ, ET C'EST CE QUI L'EMPÊCHE DE MENTIR. Sans lui dans le motif, on
+  // pourrait retirer le signe en laissant le chiffre : le lecteur croirait le nombre écrit à la
+  // main alors qu'il est dérivé — ou, bien pire, le lecteur d'un AUTRE document croirait le sien
+  // dérivé parce que tout se ressemble. Le marqueur devient donc lui-même une chose vérifiée :
+  // l'enlever rend cette garde muette, et une garde muette doit refuser, pas conclure au vert.
   return {
-    appels: nombre(/\| Call sites \| \*\*(\d+)\*\*/),
-    fichiers: nombre(/\| Call sites \|.*?in \*\*(\d+)\*\* files/),
-    tables: nombre(/\| Tables \| \*\*(\d+)\*\*/),
-    dynamiques: nombre(/\| Tables \|.*?plus \*\*(\d+)\*\* call sites/),
-    in: nombre(/\| `in\.\(…\)` \| \*\*(\d+)\*\*/),
+    appels: nombre(/\| Call sites \| \*\*(\d+)\*\*†/),
+    fichiers: nombre(/\| Call sites \|.*?in \*\*(\d+)\*\*† files/),
+    tables: nombre(/\| Tables \| \*\*(\d+)\*\*†/),
+    dynamiques: nombre(/\| Tables \|.*?plus \*\*(\d+)\*\*† call sites/),
+    in: nombre(/\| `in\.\(…\)` \| \*\*(\d+)\*\*†/),
+    legende: /† \*\*Recomputed from the code/.test(markdown),
   };
 }
 
@@ -95,6 +101,9 @@ export function ecarts(mesure, dit) {
   cmp("tables", mesure.tables.length, "les tables atteintes");
   cmp("dynamiques", mesure.dynamiques.length, "les chemins construits à l'exécution");
   cmp("in", mesure.in, "les « in.(…) »");
+  // ⚠️ UN MARQUEUR SANS LÉGENDE NE MARQUE RIEN. Le signe ne vaut que par la phrase qui dit ce
+  // qu'il promet — et surtout par celle qui dit ce que son ABSENCE veut dire ailleurs.
+  if (!dit.legende) out.push("docs/API.md ne porte plus la légende du marqueur † — le signe ne dit plus ce qu'il promet, ni ce que son absence veut dire dans les autres documents");
   return out;
 }
 
