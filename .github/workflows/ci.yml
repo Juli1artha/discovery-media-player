@@ -98,6 +98,41 @@ jobs:
               console.log(sub + ' : ' + n + ' octets, promis et tenu');
             }"
 
+      # ⚠️ DIX SOUS-CHEMINS PROMIS, CINQ DOCUMENTÉS NULLE PART (troisième audit externe, 21/08).
+      # `exports` est une promesse publique : un intégrateur qui découvre `discovery-media-player/
+      # shares` ne pouvait savoir ni ce qu'il rend, ni s'il survivrait à la prochaine version. La
+      # surface est désormais DÉCLARÉE une fois (tools/surface-publique.mjs, avec ses statuts) et
+      # cette étape la confronte à package.json et à docs/API.md — un export ajouté sans être
+      # classé rougit, un classement sans export aussi.
+      - name: The public surface is declared, documented, and matches package.json
+        if: matrix.node == '22'
+        run: node tools/surface-publique.mjs
+
+      # ⚠️ ET LA PROMESSE SE TIENT DEPUIS UNE INSTALLATION CONSOMMATRICE, PAS DEPUIS LE CLONE.
+      # Un sous-chemin peut être déclaré, documenté, et pourtant irrésolvable chez qui installe :
+      # il suffit que `files` ne l'embarque pas. C'est exactement ce qui est arrivé au contrat et
+      # à la rétention, deux étapes plus haut — la même vérification, étendue à tout ce que la
+      # surface annonce comme importable.
+      - name: Every public subpath actually resolves for a consumer
+        if: matrix.node == '22'
+        run: |
+          node --input-type=module -e '
+            const { publics, formeImportee } = await import("./tools/surface-publique.mjs");
+            const { execFileSync } = await import("node:child_process");
+            const echecs = [];
+            for (const sousChemin of publics()) {
+              const importe = formeImportee(sousChemin);
+              try {
+                execFileSync(process.execPath, ["-e", "require.resolve(" + JSON.stringify(importe) + ")"],
+                  { cwd: "/tmp/conso", stdio: "pipe" });
+                console.log(importe + " : résolu");
+              } catch {
+                echecs.push(importe + " — déclaré public, irrésolvable pour un consommateur");
+              }
+            }
+            if (echecs.length) { for (const e of echecs) console.error("::error::" + e); process.exit(1); }
+          '
+
       # ⚠️ Le contrat d'hôte demande une version EXACTE — « une plage fait entrer une version que
       # personne n'a décidé de déployer, le jour où quelqu'un lance npm install pour autre chose ».
       # Deux exemples sur trois disaient `^0.1.0` : un intégrateur qui copie l'exemple récolte

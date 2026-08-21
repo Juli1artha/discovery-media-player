@@ -9,6 +9,42 @@ Everything below is served by one handler. Mount it wherever you like; the paths
 
 ---
 
+## What the package exposes
+
+Ten subpaths, and they do not all promise the same thing. The list below is generated from a
+single declaration ([`tools/surface-publique.mjs`](../tools/surface-publique.mjs)); CI refuses an
+export that is not classified here, and a classification that no longer matches `package.json`.
+
+| Import | Status | What it gives you |
+|---|---|---|
+| `discovery-media-player` | **stable** | the request handler and its `init(context)` — the entry point |
+| `discovery-media-player/bridge` | **stable** | the `postMessage` message contract a host imports. MIT, and the only typed export today |
+| `discovery-media-player/context/standalone` | **stable** | `createStandaloneContext(env)` — a complete context built from the environment |
+| `discovery-media-player/context/storage` | *experimental* | the file relay's decisions: allowed origins, local root, displayable extensions |
+| `discovery-media-player/shares` | *experimental* | the tracked-link layer: creation, re-share, reading sessions |
+| `discovery-media-player/presentations` | *experimental* | the live-presentation layer: state, presence, chat, attachments |
+| `discovery-media-player/brands` | *experimental* | resolving a link's brand at display time |
+| `discovery-media-player/contrat` | document | [`HOST-CONTRACT.md`](HOST-CONTRACT.md), resolvable by path |
+| `discovery-media-player/retention` | document | [`RETENTION.md`](RETENTION.md), same |
+| `discovery-media-player/package.json` | manifest | required by npm and by anything reading the version |
+
+**What the two statuses commit us to.** A **stable** export is documented, exercised by the
+examples or by CI, and does not disappear without a version that announces it — build on those.
+An *experimental* export is published because hosts already import it, but its shape is not
+frozen: it can change within a minor version. It is not a contract, and this table exists so that
+you learn that here rather than on an upgrade.
+
+⚠️ **Nothing is being removed.** The four experimental subpaths lack a documented use, which is a
+reason to label them honestly — not to drop them: removing one would break a host importing it
+today without our knowing. If a removal ever comes, it comes in a version that says so.
+
+⚠️ **`__`-prefixed symbols are not part of any of this.** `require("discovery-media-player")`
+hands back `__relayerFichier` and `__jsonPourScript` — the prefix *says* internal, it prevents
+nothing. They exist for the benches; CI now lists them, so a new one has to be decided rather
+than discovered. Do not import them.
+
+---
+
 ## Identify an instance
 
 ```http
