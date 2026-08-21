@@ -17,13 +17,16 @@ import { PHRASE_DE_SIGNATURE, lireRegistre } from "../cla/regles.mjs";
 const b64 = (s) => Buffer.from(s, "utf8").toString("base64");
 
 /** Une forge postiche : elle NOTE ce qu'on lui demande, et rend ce qu'on lui a dit de rendre. */
-function forge({ commits = [], registre = { signedContributors: [] }, commentaires = [], registreAbsent = false } = {}) {
+function forge({ auteurPR = "alice", commits = [], registre = { signedContributors: [] }, commentaires = [], registreAbsent = false, prSansAuteur = false } = {}) {
   const journal = { commentairesPostes: [], commentairesEdites: [], ecrits: [] };
   const appeler = async (url, options = {}) => {
     const methode = options.method || "GET";
     const ok = (corps, status = 200) => ({ ok: true, status, json: async () => corps, text: async () => "" });
 
     if (url.includes("/pulls/") && url.includes("/commits")) return ok(commits);
+    // ⚠️ L'ANCRE : l'auteur AUTHENTIFIÉ de la PR. Sans cette route, la vérification refuse —
+    // c'est ce que le banc doit pouvoir éprouver aussi.
+    if (url.includes("/pulls/")) return ok(prSansAuteur ? {} : { user: { login: auteurPR } });
     if (url.includes("/contents/") && methode === "GET") {
       if (registreAbsent) return { ok: false, status: 404, text: async () => "Not Found" };
       return ok({ content: b64(JSON.stringify(registre)), sha: "sha-registre" });
@@ -50,31 +53,58 @@ const contexte = (extra = {}) => ({
   CLA_TOKEN: "jeton-de-banc", CLA_PR: "42", CLA_EVENEMENT: "pull_request_target", ...extra,
 });
 
-const commit = (login) => ({ sha: "abc12345", author: login ? { login } : null, commit: { author: { name: "Sans compte" } } });
+const commit = (login, message = "un commit") =>
+  ({ sha: "abc12345", author: login ? { login } : null, commit: { author: { name: "Sans compte" }, message } });
+
+describe("⚠️ LE CONTOURNEMENT, JOUÉ À TRAVERS LE FLUX COMPLET", () => {
+  // Le banc des règles prouve la décision ; celui-ci prouve que la MÉCANIQUE va bien chercher
+  // l'auteur authentifié. Sans l'appel à `/pulls/{n}`, les règles seraient justes et la garde
+  // resterait contournable — c'est exactement l'état d'avant la revue du 21/08.
+  it("mallory ne passe plus en usurpant l'adresse d'un dispensé", async () => {
+    const { appeler, journal } = forge({ auteurPR: "mallory", commits: [commit("Juli1artha")] });
+    expect(await executer(contexte(), appeler)).toBe(1);
+    expect(journal.commentairesPostes.join(" ")).toContain("mallory");
+  });
+
+  it("⚠️ refuse quand la forge ne rend pas l'auteur de la PR — on ne devine pas l'ancre", async () => {
+    const { appeler } = forge({ prSansAuteur: true, commits: [commit("alice")] });
+    expect(await executer(contexte(), appeler)).toBe(1);
+  });
+
+  it("un co-auteur non résolvable ferme la porte, même si l'auteur a signé", async () => {
+    const { appeler, journal } = forge({
+      auteurPR: "alice",
+      commits: [commit("alice", "un commit\n\nCo-authored-by: Carol <carol@exemple.test>")],
+      registre: { signedContributors: [{ name: "alice" }] },
+    });
+    expect(await executer(contexte(), appeler)).toBe(1);
+    expect(journal.commentairesPostes.join(" ")).toContain("carol@exemple.test");
+  });
+});
 
 describe("une PR dont tout le monde est en règle", () => {
   it("ouvre la porte quand les auteurs sont dispensés", async () => {
-    const { appeler, journal } = forge({ commits: [commit("Juli1artha"), commit("claude")] });
+    const { appeler, journal } = forge({ auteurPR: "Juli1artha", commits: [commit("Juli1artha"), commit("claude")] });
     expect(await executer(contexte(), appeler)).toBe(0);
     expect(journal.ecrits).toHaveLength(0);   // rien à écrire : personne n'a eu à signer
   });
 
   it("ouvre quand la signature est déjà au registre", async () => {
-    const { appeler } = forge({ commits: [commit("alice")], registre: { signedContributors: [{ name: "alice" }] } });
+    const { appeler } = forge({ auteurPR: "alice", commits: [commit("alice")], registre: { signedContributors: [{ name: "alice" }] } });
     expect(await executer(contexte(), appeler)).toBe(0);
   });
 });
 
 describe("une PR non signée", () => {
   it("FERME et nomme qui doit signer", async () => {
-    const { appeler, journal } = forge({ commits: [commit("alice")] });
+    const { appeler, journal } = forge({ auteurPR: "alice", commits: [commit("alice")] });
     expect(await executer(contexte(), appeler)).toBe(1);
     expect(journal.commentairesPostes[0]).toContain("@alice");
     expect(journal.commentairesPostes[0]).toContain(PHRASE_DE_SIGNATURE);
   });
 
   it("⚠️ ferme sur un commit sans compte GitHub, et le dit", async () => {
-    const { appeler, journal } = forge({ commits: [commit(null)] });
+    const { appeler, journal } = forge({ auteurPR: "alice", commits: [commit(null)] });
     expect(await executer(contexte(), appeler)).toBe(1);
     expect(journal.commentairesPostes[0]).toMatch(/aucun compte GitHub/);
   });
@@ -98,7 +128,7 @@ describe("signer par commentaire", () => {
   });
 
   it("la phrase exacte d'un auteur inscrit la signature ET ouvre la porte", async () => {
-    const { appeler, journal } = forge({ commits: [commit("alice")] });
+    const { appeler, journal } = forge({ auteurPR: "alice", commits: [commit("alice")] });
     expect(await executer(commentaire(PHRASE_DE_SIGNATURE, "alice"), appeler)).toBe(0);
     expect(journal.ecrits).toHaveLength(1);
     expect(lireRegistre(journal.ecrits[0].texte).map((s) => s.name)).toEqual(["alice"]);
@@ -106,19 +136,19 @@ describe("signer par commentaire", () => {
   });
 
   it("⚠️ un TIERS qui poste la phrase ne signe pour personne", async () => {
-    const { appeler, journal } = forge({ commits: [commit("alice")] });
+    const { appeler, journal } = forge({ auteurPR: "alice", commits: [commit("alice")] });
     expect(await executer(commentaire(PHRASE_DE_SIGNATURE, "carol"), appeler)).toBe(1);
     expect(journal.ecrits).toHaveLength(0);
   });
 
   it("une reformulation n'écrit rien", async () => {
-    const { appeler, journal } = forge({ commits: [commit("alice")] });
+    const { appeler, journal } = forge({ auteurPR: "alice", commits: [commit("alice")] });
     expect(await executer(commentaire("ok je signe", "alice"), appeler)).toBe(1);
     expect(journal.ecrits).toHaveLength(0);
   });
 
   it("resigner ne duplique pas et n'écrit pas une seconde fois", async () => {
-    const { appeler, journal } = forge({ commits: [commit("alice")], registre: { signedContributors: [{ name: "alice" }] } });
+    const { appeler, journal } = forge({ auteurPR: "alice", commits: [commit("alice")], registre: { signedContributors: [{ name: "alice" }] } });
     expect(await executer(commentaire(PHRASE_DE_SIGNATURE, "alice"), appeler)).toBe(0);
     expect(journal.ecrits).toHaveLength(0);
   });

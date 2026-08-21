@@ -14,29 +14,95 @@ import {
   signatureDans, avecSignature, ecrireRegistre, verdict,
 } from "../cla/regles.mjs";
 
-const commit = (login, nom = "Quelqu'un") => ({ sha: "abc12345", author: login ? { login } : null, commit: { author: { name: nom } } });
+const commit = (login, nom = "Quelqu'un", message = "un commit") =>
+  ({ sha: "abc12345", author: login ? { login } : null, commit: { author: { name: nom }, message } });
 
-describe("qui a écrit la PR", () => {
-  it("part du login authentifié, pas de l'e-mail du commit", () => {
-    // ⚠️ L'e-mail d'un commit est écrit par qui pousse : n'importe qui peut se dire n'importe qui.
-    // Le login est ce que la forge a vérifié.
-    expect(auteursDe([commit("alice"), commit("alice"), commit("bob")]).logins).toEqual(["alice", "bob"]);
+/** L'appel courant : une PR ouverte par `auteurPR`, dont les commits sont attribués comme dit. */
+const pr = (auteurPR, ...commits) => auteursDe({ auteurPR, commits });
+
+describe("⚠️ QUI DOIT SIGNER — attribution et authentification ne sont pas la même chose", () => {
+  // Ce module confondait les deux, et c'était CONTOURNABLE (P0, revue externe du 21/08). Il ne
+  // partait que de `commit.author.login` en affirmant que « le login est ce que la forge a
+  // authentifié ». C'est faux : GitHub RATTACHE un commit à un compte par l'adresse de l'en-tête
+  // Git, écrite localement par qui fabrique le commit. C'est de l'attribution, pas de la preuve.
+
+  it("⚠️ LE CONTOURNEMENT : usurper l'adresse d'un dispensé n'efface plus sa propre obligation", () => {
+    // `mallory` ouvre la PR ; ses commits portent l'adresse du mainteneur, donc GitHub les
+    // attribue à `Juli1artha`, qui est dispensé. L'ancien code rendait « ouvre: true, manquants: [] »
+    // et `mallory` n'apparaissait nulle part.
+    const a = pr("mallory", commit("Juli1artha", "mallory"));
+    expect(a.authentifie).toBe("mallory");
+    expect(a.attribues).toEqual(["Juli1artha"]);
+    const v = verdict({ ...a, registre: [] });
+    expect(v.ouvre).toBe(false);
+    expect(v.manquants).toEqual(["mallory"]);
   });
 
-  it("SIGNALE un commit sans compte GitHub plutôt que de l'ignorer", () => {
-    // Le silence est ce qui laisse passer : un auteur que la forge ne reconnaît pas ne peut pas
-    // signer, donc il doit apparaître — pas disparaître.
-    const { logins, sansCompte } = auteursDe([commit("alice"), commit(null, "Anonyme")]);
-    expect(logins).toEqual(["alice"]);
-    expect(sansCompte).toEqual(["Anonyme"]);
+  it("l'attribution AJOUTE des obligations, elle n'en retire jamais", () => {
+    const a = pr("alice", commit("bob"), commit("carol"));
+    expect(a.authentifie).toBe("alice");
+    expect(a.attribues).toEqual(["bob", "carol"]);
+    expect(verdict({ ...a, registre: [] }).manquants).toEqual(["alice", "bob", "carol"]);
+  });
+
+  it("l'auteur authentifié n'est pas compté deux fois quand il est aussi attribué", () => {
+    const a = pr("alice", commit("alice"), commit("alice"));
+    expect(a.attribues).toEqual([]);
+    expect(a.logins).toEqual(["alice"]);
+  });
+
+  it("⚠️ sans auteur authentifié, on REFUSE — il n'y a plus d'ancre", () => {
+    const a = pr(null, commit("alice"));
+    expect(a.authentifie).toBeNull();
+    const v = verdict({ ...a, registre: [{ name: "alice" }] });
+    expect(v.ouvre).toBe(false);
+    expect(v.sansCompte.join(" ")).toMatch(/auteur de la pull request n'a pas pu être identifié/);
   });
 
   it("refuse un login qui n'a pas la forme d'un login GitHub", () => {
-    expect(auteursDe([commit("pas un login !")]).logins).toEqual([]);
+    expect(pr("alice", commit("pas un login !")).attribues).toEqual([]);
+    expect(pr("pas un login !", commit("alice")).authentifie).toBeNull();
   });
 
   it("accepte les bots, qui ont des crochets", () => {
-    expect(auteursDe([commit("dependabot[bot]")]).logins).toEqual(["dependabot[bot]"]);
+    expect(pr("alice", commit("dependabot[bot]")).attribues).toEqual(["dependabot[bot]"]);
+  });
+
+  it("SIGNALE un commit sans compte GitHub plutôt que de l'ignorer", () => {
+    const a = pr("alice", commit("alice"), commit(null, "Anonyme"));
+    expect(a.sansCompte).toEqual(["Anonyme"]);
+  });
+});
+
+describe("les co-auteurs — la contribution que le diff ne montre pas", () => {
+  const avecCo = (ligne) => pr("alice", commit("alice", "alice", `un commit\n\n${ligne}`));
+
+  it("résout une adresse noreply GitHub en login, et l'ajoute aux signataires attendus", () => {
+    expect(avecCo("Co-authored-by: Bob <12345+bob@users.noreply.github.com>").attribues).toEqual(["bob"]);
+    expect(avecCo("Co-authored-by: Bob <bob@users.noreply.github.com>").attribues).toEqual(["bob"]);
+  });
+
+  it("est insensible à la casse du trailer, comme git", () => {
+    expect(avecCo("co-authored-by: Bob <bob@users.noreply.github.com>").attribues).toEqual(["bob"]);
+  });
+
+  it("⚠️ BLOQUE sur un co-auteur qu'aucun compte ne porte, en le nommant", () => {
+    // On ne peut pas demander sa signature à quelqu'un qu'on ne sait pas joindre. L'ignorer
+    // serait le laisser passer — c'est exactement le silence que ce fichier refuse.
+    const a = avecCo("Co-authored-by: Carol <carol@exemple.test>");
+    expect(a.sansCompte).toEqual(["Carol <carol@exemple.test> (co-auteur)"]);
+    expect(verdict({ ...a, registre: [{ name: "alice" }] }).ouvre).toBe(false);
+  });
+
+  it("ne réclame rien pour une adresse dispensée — même doctrine que les bots", () => {
+    const a = avecCo("Co-Authored-By: Claude <noreply@anthropic.com>");
+    expect(a.attribues).toEqual([]);
+    expect(a.sansCompte).toEqual([]);
+    expect(verdict({ ...a, registre: [{ name: "alice" }] }).ouvre).toBe(true);
+  });
+
+  it("ne prend pas pour un trailer une ligne qui lui ressemble sans en être un", () => {
+    expect(avecCo("on parle de Co-authored-by dans cette phrase").sansCompte).toEqual([]);
   });
 });
 
@@ -145,15 +211,15 @@ describe("ajouter une signature", () => {
 
 describe("le verdict — la porte s'ouvre, ou elle nomme ce qui manque", () => {
   it("ouvre quand tout le monde a signé", () => {
-    expect(verdict({ auteurs: ["alice"], sansCompte: [], registre: [{ name: "alice" }] }).ouvre).toBe(true);
+    expect(verdict({ authentifie: "alice", attribues: [], sansCompte: [], registre: [{ name: "alice" }] }).ouvre).toBe(true);
   });
 
   it("ouvre pour une PR entièrement dispensée", () => {
-    expect(verdict({ auteurs: ["Juli1artha", "claude"], sansCompte: [], registre: [] }).ouvre).toBe(true);
+    expect(verdict({ authentifie: "Juli1artha", attribues: ["claude"], sansCompte: [], registre: [] }).ouvre).toBe(true);
   });
 
   it("ferme et NOMME qui manque", () => {
-    const v = verdict({ auteurs: ["alice", "bob"], sansCompte: [], registre: [{ name: "alice" }] });
+    const v = verdict({ authentifie: "alice", attribues: ["bob"], sansCompte: [], registre: [{ name: "alice" }] });
     expect(v.ouvre).toBe(false);
     expect(v.manquants).toEqual(["bob"]);
   });
@@ -161,7 +227,7 @@ describe("le verdict — la porte s'ouvre, ou elle nomme ce qui manque", () => {
   it("⚠️ ferme aussi sur un commit sans compte, même si tous les autres ont signé", () => {
     // Un auteur que la forge ne reconnaît pas ne PEUT pas signer. Ouvrir quand même reviendrait
     // à fusionner du code que personne n'a concédé.
-    const v = verdict({ auteurs: ["alice"], sansCompte: ["Anonyme"], registre: [{ name: "alice" }] });
+    const v = verdict({ authentifie: "alice", attribues: [], sansCompte: ["Anonyme"], registre: [{ name: "alice" }] });
     expect(v.ouvre).toBe(false);
     expect(v.sansCompte).toEqual(["Anonyme"]);
   });
