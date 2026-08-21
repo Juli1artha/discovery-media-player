@@ -121,59 +121,58 @@ jobs:
       # un exploitant ne les découvrait qu'en lisant la source (constat d'un audit externe, 21/08 ;
       # même trou que PLAYER_AUTH_URL en son temps, un cran plus haut). Cette garde part donc du
       # CODE : toute variable que le runtime lit doit être dans CONFIGURATION.md — et la parité
-      # existante la propage dans .env.example. Les exceptions sont NOMMÉES, avec leur raison :
-      # une liste d'exclusions fondue dans une regex deviendrait la règle.
+      # existante la propage dans .env.example.
+      #
+      # ⚠️ ELLE NE LIT QUE DU CODE DÉPOUILLÉ. Sa première version cherchait dans le texte brut :
+      # un commentaire citant une variable la faisait rougir (contre-audit, 21/08) — une sonde qui
+      # lit du commentaire invente des coupables, leçon déjà écrite sur la garde PostgREST
+      # ci-dessous. L'extracteur vit dans tools/env-lues.mjs, retire commentaires/chaînes/texte de
+      # gabarit (les interpolations ${…} restent du code), a ses PROPRES tests
+      # (tools/__tests__/envLues.test.js), déclare ses angles morts, et INTERDIT les formes qu'il
+      # ne sait pas suivre : accès dynamique, déstructuration, alias hors `env`.
       - name: Every variable the code reads is documented
         if: matrix.node == '22'
-        run: |
-          node -e '
-            const fs = require("node:fs"), path = require("node:path");
-            // Outillage de forge, jamais lu par une instance : documenter serait mentir sur la surface.
-            const HORS_SURFACE = new Set(["PREFIXE_REST_AMONT", "PREFIXE_REST_PORT"]);
-            const lues = new Set();
-            const visiter = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-              const p = path.join(d, e.name);
-              if (e.isDirectory()) { if (e.name !== "__tests__") visiter(p); continue; }
-              if (!p.endsWith(".js") || p.endsWith(".generated.js")) continue;
-              const src = fs.readFileSync(p, "utf8");
-              // Deux motifs réels du dépôt : process.env.X direct, et env.X via
-              // createStandaloneContext(env = process.env).
-              for (const m of src.matchAll(/\b(?:process\.)?env\.([A-Z][A-Z0-9_]{2,})\b/g)) lues.add(m[1]);
-            } };
-            for (const d of ["bin", "context", "server"]) visiter(d);
-            const doc = fs.readFileSync("docs/CONFIGURATION.md", "utf8");
-            const oubliees = [...lues].filter((v) => !HORS_SURFACE.has(v) && !doc.includes("`" + v + "`")).sort();
-            if (oubliees.length) {
-              console.error("::error::variable(s) lue(s) par le code, absente(s) de docs/CONFIGURATION.md : " + oubliees.join(", ") + " — pour un exploitant, une variable non documentée n existe pas");
-              process.exit(1);
-            }
-            console.log("environnement : " + lues.size + " variables lues, toutes documentées");
-          '
+        run: node tools/env-lues.mjs
 
       # ⚠️ LES LIENS DU CHANGELOG SE SONT ARRÊTÉS À LA 0.1.41 PENDANT 77 VERSIONS. Chaque titre
       # « ## [x.y.z] » promet une référence de comparaison en pied de fichier ; personne n'écrit
       # ces lignes à la main à chaque sortie, donc elles ont cessé sans que rien ne le dise —
       # 76 titres pointaient dans le vide (constat d'un audit externe, 21/08). Même formule que
       # partout : deux exemplaires d'un fait (les titres, les références), une étape qui les
-      # confronte. Le bloc se régénère mécaniquement depuis les titres — c'est ce que cette garde
-      # vérifie, elle n'exige aucun entretien manuel.
-      - name: Every changelog section has its comparison link
+      # confronte. Le bloc se régénère mécaniquement depuis les titres — cette garde vérifie,
+      # elle n'exige aucun entretien manuel.
+      #
+      # ⚠️ LA PRÉSENCE NE SUFFIT PAS : LES BORNES AUSSI. La première version acceptait une URL
+      # présente mais FAUSSE — « compare/v0.1.40...v0.1.42 » passait alors que la version
+      # précédant la 0.1.42 est la 0.1.41 (contre-audit, 21/08). L'URL attendue se DÉRIVE de
+      # l'ordre réel des sections, jamais de « patch − 1 » : l'historique a au moins une
+      # discontinuité (0.1.85 suit 0.1.83), et un calcul naïf l'accuserait à tort.
+      - name: Every changelog section has its exact comparison link
         if: matrix.node == '22'
         run: |
           node -e '
             const fs = require("node:fs");
             const txt = fs.readFileSync("CHANGELOG.md", "utf8");
+            const DEPOT = "https://github.com/Juli1artha/discovery-media-player";
             const sections = [...txt.matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)].map((m) => m[1]);
-            const refs = new Set([...txt.matchAll(/^\[(\d+\.\d+\.\d+)\]: /gm)].map((m) => m[1]));
-            const sansRef = sections.filter((v) => !refs.has(v));
-            const sansTitre = [...refs].filter((v) => !sections.includes(v));
-            const unreleased = (txt.match(/^\[Unreleased\]: .*compare\/v(\d+\.\d+\.\d+)\.\.\.HEAD$/m) || [])[1];
+            const refs = new Map([...txt.matchAll(/^\[(\d+\.\d+\.\d+)\]: (.+)$/gm)].map((m) => [m[1], m[2].trim()]));
             const echecs = [];
-            if (sansRef.length) echecs.push("titres sans référence : " + sansRef.join(", "));
-            if (sansTitre.length) echecs.push("références sans titre : " + sansTitre.join(", "));
-            if (unreleased !== sections[0]) echecs.push("[Unreleased] compare depuis v" + unreleased + ", la plus récente est v" + sections[0]);
+            sections.forEach((v, i) => {
+              const attendu = sections[i + 1]
+                ? `${DEPOT}/compare/v${sections[i + 1]}...v${v}`
+                : `${DEPOT}/releases/tag/v${v}`;
+              const reel = refs.get(v);
+              if (reel === undefined) echecs.push(`section ${v} sans référence`);
+              else if (reel !== attendu) echecs.push(`référence ${v} : « ${reel} » au lieu de « ${attendu} »`);
+              refs.delete(v);
+            });
+            for (const orpheline of refs.keys()) echecs.push(`référence ${orpheline} sans section`);
+            const unreleased = [...txt.matchAll(/^\[Unreleased\]: (.+)$/gm)].map((m) => m[1].trim());
+            const unrAttendu = `${DEPOT}/compare/v${sections[0]}...HEAD`;
+            if (unreleased.length !== 1) echecs.push(`${unreleased.length} référence(s) [Unreleased] au lieu de 1`);
+            else if (unreleased[0] !== unrAttendu) echecs.push(`[Unreleased] : « ${unreleased[0]} » au lieu de « ${unrAttendu} »`);
             if (echecs.length) { console.error("::error::CHANGELOG désaccordé — " + echecs.join(" | ")); process.exit(1); }
-            console.log("changelog : " + sections.length + " sections, chacune sa référence, [Unreleased] à jour");
+            console.log("changelog : " + sections.length + " sections, chaque référence exacte, [Unreleased] à jour");
           '
 
       # ⚠️ LA CARTE D'IDENTITÉ EST LA SEULE CHOSE QUE LES HÔTES ÉPINGLENT. Le contrat en montrait
@@ -325,9 +324,13 @@ jobs:
       # externe, 21/08). Un exemple est le code que les gens RECOPIENT : celui qui copiait recevait
       # un player d'avant les correctifs P0, depuis un dépôt dont le README vante la fraîcheur.
       # On compare donc à LA version que main déclare — l'égalité stricte interdit les plages par
-      # construction, l'ancienne garde est un cas particulier de celle-ci. Fenêtre assumée : entre
-      # la fusion d'un bump et sa publication npm, les exemples pointent quelques minutes sur une
-      # version pas encore servie — même fenêtre que la démo, déjà écrite dans release.yml.
+      # construction, l'ancienne garde est un cas particulier de celle-ci. Fenêtre assumée, SANS
+      # BORNE GARANTIE : entre la fusion d'un bump et sa publication npm, les exemples pointent
+      # sur une version pas encore servie. Quelques minutes quand le tag part aussitôt — mais le
+      # tag est un geste HUMAIN, et s'il ne part pas, rien ici ne le force : la garde autonome de
+      # publication.yml (horaire, après plus d'une heure de divergence) ouvre une issue, puis une
+      # personne agit. C'est la même fenêtre que la démo, décrite dans release.yml, et c'est un
+      # arbitrage accepté — pas une propriété.
       - name: Examples pin the version main declares
         if: matrix.node == '22'
         run: |
