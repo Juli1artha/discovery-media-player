@@ -50,7 +50,7 @@ function poser() {
     this.unobserve = (el) => { const i = observes.findIndex((o) => o.el === el); if (i >= 0) observes.splice(i, 1); };
     this.disconnect = () => { observes.length = 0; };
   };
-  const corps = LIVE_JS.replace(/\n  return \{connect:connect/, CROCHET + "\n  return {connect:connect");
+  const corps = LIVE_JS.replace(/\n {2}return \{connect:connect/, CROCHET + "\n  return {connect:connect");
   window.eval(corps);
   return { journal, observes, api: window.__vignEssai };
 }
