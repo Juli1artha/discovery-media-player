@@ -10,6 +10,24 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.125] — 2026-08-21
+
+### Fixed
+- **A zero-byte local file raised instead of answering** — a regression introduced by the switch to
+  streaming in 0.1.122. With `total === 0` the upper bound is `-1`, so `createReadStream({ start: 0,
+  end: -1 })` dies with `TypeError: Cannot read properties of undefined (reading 'Symbol(kState)')`
+  when the descriptor closes. The buffered version tolerated `Buffer.alloc(0)` silently, so the
+  defect did not exist before the fix — it was born with it. An empty PDF is obviously invalid, but
+  it must produce a **response**: it is the reader's job to say there is nothing to show, and a `500`
+  would say "our fault" instead of "this file is empty". The `Range` case was already correct (416).
+- ⚠️ **The bench could not have seen it**: it only ever built an 8 MiB file, so its data could not
+  produce the phenomenon — the same class as testing a PDF viewer on a one-page document. Size zero
+  is a case, not a detail.
+- **The bench itself leaked a file descriptor** (`DEP0137` on every run). The leak was inside the
+  anti-vacuity assertion added to stop the test passing on nothing — the fix carried its own defect.
+  ⚠️ The instance is closed, the class is not: the warning fires at garbage-collection time, so a
+  deterministic guard is out of reach, and saying so is better than shipping a flaky one.
+
 ## [0.1.124] — 2026-08-21
 
 ### Fixed
@@ -3432,7 +3450,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.124...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.125...HEAD
+[0.1.125]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.124...v0.1.125
 [0.1.124]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.123...v0.1.124
 [0.1.123]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.122...v0.1.123
 [0.1.122]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.121...v0.1.122
