@@ -136,7 +136,7 @@ export function preflight({ racine = ".", reseau = true } = {}) {
     inconnu("la CI du commit est verte", aGh ? "réseau désactivé" : "`gh` n'est pas installé — cet outil ne peut pas voir la forge",
       `gh run list --commit ${tete || "<sha>"} --workflow CI --json status,conclusion`);
   } else {
-    const etat = essaye(() => git === null ? null : execFileSync("gh",
+    const etat = essaye(() => execFileSync("gh",
       ["run", "list", "--commit", tete, "--workflow", "CI", "--json", "status,conclusion", "-q", '.[0] | "\\(.status) \\(.conclusion)"'],
       { encoding: "utf8" }).trim(), null);
     if (!etat) inconnu("la CI du commit est verte", "aucune course CI visible pour ce commit", `gh run list --commit ${tete}`);
