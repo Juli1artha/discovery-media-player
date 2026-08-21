@@ -1,8 +1,9 @@
 # Getting help
 
 **Question, or integration help** →
-[Discussions](https://github.com/Juli1artha/discovery-media-player/discussions). Integration
-questions often turn into documentation fixes, so asking one helps the next person too.
+[open a question issue](https://github.com/Juli1artha/discovery-media-player/issues/new/choose).
+Integration questions often turn into documentation fixes, so asking one helps the next
+person too.
 
 **Something is broken** →
 [open a bug report](https://github.com/Juli1artha/discovery-media-player/issues/new/choose).
