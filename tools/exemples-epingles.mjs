@@ -56,6 +56,7 @@ import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 
 /** Une version STABLE : trois nombres, rien d'autre. `0.2.0-beta.1` n'en est pas une. */
 export const estStable = (v) => /^\d+\.\d+\.\d+$/.test(String(v).trim());
@@ -129,26 +130,26 @@ export function versionsPubliees(executer = () =>
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const version = JSON.parse(readFileSync("package.json", "utf8")).version;
-  const publiees = versionsPubliees();
-  if (!publiees) console.log("::notice::registre injoignable — on exige la version de main, sans tolérance");
+  conclure(tenter(() => {
+    const version = JSON.parse(readFileSync("package.json", "utf8")).version;
+    const publiees = versionsPubliees();
+    // ⚠️ UN REGISTRE INJOIGNABLE DÉGRADE LA GARDE SANS L'AVEUGLER : elle exige alors la version de
+    // `main`, sans tolérance. Elle conclut donc encore — c'est un AVERTISSEMENT, pas un
+    // non-concluant. La distinction compte : ici on vérifie toujours quelque chose.
+    const alertes = publiees ? [] : ["registre injoignable — on exige la version de main, sans tolérance"];
 
-  const exemples = exemplesDuDepot();
-  if (!exemples.length) {
-    console.error("::error::aucun exemple relevé — la sonde vise à côté");
-    process.exit(1);
-  }
-  const soucis = ecartsExemples(version, publiees, exemples);
-  if (soucis.length) {
-    for (const s of soucis) console.error("::error::" + s);
-    process.exit(1);
-  }
-  // ⚠️ Cette exigence-là vivait aussi dans l'ancienne étape, et elle n'a rien à voir avec la
-  // version : un exemple qui ne déclare pas son moteur se copie sur une machine où il ne tourne pas.
-  if (!readFileSync("examples/demo/package.json", "utf8").includes('">=22"')) {
-    console.error("::error::examples/demo/package.json ne déclare pas node >=22");
-    process.exit(1);
-  }
-  const permises = acceptables(version, publiees);
-  console.log(`exemples : ${exemples.length} sur ${permises.join(" ou ")} — servies par le registre, donc installables`);
+    const exemples = exemplesDuDepot();
+    if (!exemples.length) return inconclusif("aucun exemple relevé — la sonde vise à côté", alertes);
+
+    const soucis = ecartsExemples(version, publiees, exemples);
+    // ⚠️ Cette exigence-là vivait aussi dans l'ancienne étape, et elle n'a rien à voir avec la
+    // version : un exemple qui ne déclare pas son moteur se copie sur une machine où il ne tourne pas.
+    if (!readFileSync("examples/demo/package.json", "utf8").includes('">=22"')) {
+      soucis.push("examples/demo/package.json ne déclare pas node >=22");
+    }
+    if (soucis.length) return violation(soucis, alertes);
+
+    const permises = acceptables(version, publiees);
+    return conforme(`exemples : ${exemples.length} sur ${permises.join(" ou ")} — servies par le registre, donc installables`, alertes);
+  }));
 }

@@ -20,6 +20,7 @@
 // Usage : node tools/actions-epinglees.mjs [.github/workflows]
 
 import { usesDuDepot } from "./workflows-yaml.mjs";
+import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 import { pathToFileURL } from "node:url";
 
 const SHA = /^[0-9a-f]{40}$/;
@@ -54,16 +55,16 @@ export const ecarts = (references, fichier) =>
     .filter(Boolean);
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const toutes = usesDuDepot(process.argv[2] || ".github/workflows");
-  if (!toutes.length) {
-    console.error("::error::aucun « uses » relevé dans les workflows — la sonde vise à côté");
-    process.exit(1);
-  }
-  const soucis = ecarts(toutes);
-  if (soucis.length) {
-    for (const s of soucis) console.error("::error::" + s);
-    process.exit(1);
-  }
-  const fichiers = new Set(toutes.map((u) => u.fichier));
-  console.log(`actions : ${toutes.length} référence(s) dans ${fichiers.size} workflows, toutes épinglées sur un commit`);
+  const dossier = process.argv[2] || ".github/workflows";
+  // ⚠️ `tenter` parce que la lecture LÈVE sur un YAML illisible ou un `uses:` en alias — un refus
+  // prudent de la garde, pas une faute du dépôt. Il sortait 1 comme une violation (voir
+  // tools/resultat-garde.mjs).
+  conclure(tenter(() => {
+    const toutes = usesDuDepot(dossier);
+    if (!toutes.length) return inconclusif(`aucun « uses » relevé dans ${dossier} — la sonde vise à côté`);
+    const soucis = ecarts(toutes);
+    if (soucis.length) return violation(soucis);
+    const fichiers = new Set(toutes.map((u) => u.fichier));
+    return conforme(`actions : ${toutes.length} référence(s) dans ${fichiers.size} workflows, toutes épinglées sur un commit`);
+  }));
 }

@@ -13,6 +13,7 @@
 
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 
 export const DEPOT = "https://github.com/Juli1artha/discovery-media-player";
 
@@ -89,8 +90,18 @@ export function sectionDe(txt, version) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const txt = readFileSync("CHANGELOG.md", "utf8");
-  const soucis = ecarts(txt);
-  if (soucis.length) { console.error("::error::CHANGELOG désaccordé — " + soucis.join(" | ")); process.exit(1); }
-  console.log(`changelog : ${sections(txt).length} sections, chaque référence exacte, [Unreleased] à jour`);
+  conclure(tenter(() => {
+    const txt = readFileSync("CHANGELOG.md", "utf8");
+    // ⚠️ « AUCUNE SECTION » N'EST PAS UNE VIOLATION, C'EST UNE SONDE QUI NE VOIT RIEN. Le fichier
+    // peut être illisible, renommé, ou son format d'entête avoir changé : dans les trois cas
+    // l'auteur d'une branche n'y est pour rien, et lui rendre « corrige ta branche » lui apprend
+    // que le rouge de cette garde est parfois du bruit. On le sépare AVANT d'appeler `ecarts`,
+    // plutôt qu'en reconnaissant sa propre phrase d'erreur — une garde qui s'identifie à son
+    // texte se casse au premier reformulage.
+    const vues = sections(txt);
+    if (!vues.length) return inconclusif("aucune section de version dans CHANGELOG.md — la sonde vise à côté, ou le fichier a changé de forme");
+    const soucis = ecarts(txt);
+    if (soucis.length) return violation(soucis.map((s) => "CHANGELOG désaccordé — " + s));
+    return conforme(`changelog : ${vues.length} sections, chaque référence exacte, [Unreleased] à jour`);
+  }));
 }

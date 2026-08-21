@@ -20,6 +20,11 @@
 // où elle a regardé, pas seulement ce qu'elle a trouvé.
 
 import { readFileSync, readdirSync } from "node:fs";
+// ⚠️ DEUX ROUGES DIFFÉRENTS. « Le document a dérivé » est une violation : l'auteur corrige sa
+// branche. « La sonde ne trouve plus rien » n'est PAS de son fait : le correctif est dans la garde
+// ou son environnement. Sortir 1 pour les deux apprend à l'auteur que le rouge de cette garde est
+// parfois du bruit — et il a déjà appris le geste le jour où la violation est réelle.
+import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -87,6 +92,30 @@ export function annonces(markdown) {
   };
 }
 
+// ⚠️ LE PLANCHER — CET OUTIL DÉCLARAIT VICTOIRE SUR ZÉRO, ET IL A FALLU UNE REVUE EXTERNE SUR UNE
+// GARDE SŒUR POUR QUE J'AILLE LE VÉRIFIER ICI. Sur un corpus vide il mesurait 0 partout et ne
+// refusait pas : seule la coïncidence « le document annonce 65 » le sauvait. Une garde sauvée par
+// une coïncidence n'est pas une garde — le jour où le répertoire bouge, où l'extension change ou où
+// une expression régulière casse, elle rend un zéro qui ressemble à un négatif légitime.
+//
+// ⚠️ LE PLANCHER EST LARGE ET PAR PARTIE, PAS COLLÉ AU RELEVÉ DU JOUR. Il ne mesure pas la
+// couverture, il détecte son EFFONDREMENT : collé aux valeurs actuelles (65, 7, 10) il rougirait sur
+// un ménage normal et finirait desserré. Relevé du 22/08 : 65 appels, 7 fichiers, 10 tables.
+//
+// ⚠️ ET « in.(…) » N'A PAS DE PLANCHER, VOLONTAIREMENT : zéro y est le bon résultat — c'est une
+// mesure de couplage qu'on cherche à faire baisser. Un plancher l'y interdirait, et l'exception
+// s'écrit ici plutôt que de se déduire d'un oubli.
+const PLANCHERS = { appels: 20, fichiers: 3, tables: 4 };
+
+export function effondrement(mesure) {
+  const sous = [];
+  for (const [cle, mini] of Object.entries(PLANCHERS)) {
+    const n = cle === "tables" ? mesure.tables.length : mesure[cle];
+    if (n < mini) sous.push(`${cle} : ${n} trouvé(s), plancher ${mini} — la sonde ne trouve presque plus rien, elle vise à côté`);
+  }
+  return sous;
+}
+
 export function ecarts(mesure, dit) {
   const out = [];
   const cmp = (cle, reel, libelle) => {
@@ -115,14 +144,22 @@ export function fichiersServeur(racine = RACINE) {
 }
 
 if (import.meta.url === pathToFileURLSafe(process.argv[1])) {
-  const fichiers = fichiersServeur();
-  const mesure = { ...mesurer(fichiers), in: compterIn(fichiers) };
-  const dit = annonces(readFileSync(join(RACINE, "docs", "API.md"), "utf8"));
-  console.log(`surface base : ${mesure.appels} appels dans ${mesure.fichiers} fichiers, `
-    + `${mesure.tables.length} tables, ${mesure.dynamiques.length} chemins dynamiques, ${mesure.in} « in.(…) »`);
-  const pb = ecarts(mesure, dit);
-  if (pb.length) { for (const l of pb) console.error(`::error::${l}`); process.exit(1); }
-  console.log("docs/API.md dit ce que le code fait — les cinq chiffres, pas deux sur cinq.");
+  conclure(tenter(() => {
+    const fichiers = fichiersServeur();
+    const mesure = { ...mesurer(fichiers), in: compterIn(fichiers) };
+    // ⚠️ LE PLANCHER D'ABORD, ET IL REND « NON CONCLUANT » — PAS « VIOLATION ». Comparer un relevé
+    // vide à un document ne prouve rien, et un accord fortuit sur zéro serait le seul cas où cette
+    // garde se tairait en ayant tout raté. Mais l'auteur d'une branche n'y est pour rien : ce qui
+    // est cassé, c'est la sonde.
+    const effondre = effondrement(mesure);
+    if (effondre.length) return inconclusif(effondre.map((l) => `surface base : ${l}`));
+    const dit = annonces(readFileSync(join(RACINE, "docs", "API.md"), "utf8"));
+    const pb = ecarts(mesure, dit);
+    if (pb.length) return violation(pb);
+    return conforme(`surface base : ${mesure.appels} appels dans ${mesure.fichiers} fichiers, `
+      + `${mesure.tables.length} tables, ${mesure.dynamiques.length} chemins dynamiques, ${mesure.in} « in.(…) » `
+      + "— docs/API.md dit ce que le code fait, les cinq chiffres et pas deux sur cinq");
+  }));
 }
 
 function pathToFileURLSafe(p) {
