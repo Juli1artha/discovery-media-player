@@ -47,6 +47,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 import ts from "typescript";
 
 // Les variables d'environnement de ce dépôt sont en MAJUSCULES, sans exception. Le filtre
@@ -173,18 +174,32 @@ export function inventaire(racine = ".") {
   return { lues, interdits };
 }
 
-// Exécution directe : le contrat de la garde. Sortie 1 = une variable lue sans documentation,
-// ou une forme d'accès dont la garde ne peut pas lire le nom.
+// Exécution directe : le contrat de la garde.
+//   0 — toute variable lue est documentée, et tout accès est lisible ;
+//   1 — le dépôt viole la règle (variable non documentée, accès au nom illisible) ;
+//   2 — la garde n'a pas pu conclure (voir tools/resultat-garde.mjs).
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { lues, interdits } = inventaire();
-  const doc = readFileSync("docs/CONFIGURATION.md", "utf8");
-  const oubliees = [...lues].filter((v) => !HORS_SURFACE.has(v) && !doc.includes("`" + v + "`")).sort();
-  let echec = false;
-  for (const i of interdits) { echec = true; console.error(`::error::${i.fichier} : ${i.raison} (« ${i.extrait} »)`); }
-  if (oubliees.length) {
-    echec = true;
-    console.error("::error::variable(s) lue(s) par le code, absente(s) de docs/CONFIGURATION.md : " + oubliees.join(", ") + " — pour un exploitant, une variable non documentée n'existe pas");
-  }
-  if (echec) process.exit(1);
-  console.log("environnement : " + lues.size + " variables lues (AST), toutes documentées, aucun nom illisible");
+  conclure(tenter(() => {
+    const { lues, interdits } = inventaire();
+
+    // ⚠️ ZÉRO VARIABLE N'EST PAS UN SUCCÈS — LE MÊME DÉFAUT QUE LA GARDE DOCKER, ICI AUSSI.
+    // Ce bloc imprimait « 0 variables lues (AST), toutes documentées » et sortait 0 dès que
+    // l'inventaire ne trouvait rien : un dossier déplacé, un `racine` qui vise à côté, un jour où
+    // `bin/`, `context/` et `server/` ne contiennent plus de `.js` lisible. Ce runtime lit
+    // certainement son environnement ; un relevé vide décrit la sonde, pas le code. Personne
+    // n'avait signalé celui-ci — il a été trouvé en portant le correctif de la garde Docker.
+    if (!lues.size) {
+      return inconclusif("aucune variable d'environnement relevée dans bin/, context/, server/ — la sonde vise à côté : ce runtime en lit forcément");
+    }
+
+    const doc = readFileSync("docs/CONFIGURATION.md", "utf8");
+    const oubliees = [...lues].filter((v) => !HORS_SURFACE.has(v) && !doc.includes("`" + v + "`")).sort();
+
+    const constats = interdits.map((i) => `${i.fichier} : ${i.raison} (« ${i.extrait} »)`);
+    if (oubliees.length) {
+      constats.push("variable(s) lue(s) par le code, absente(s) de docs/CONFIGURATION.md : " + oubliees.join(", ") + " — pour un exploitant, une variable non documentée n'existe pas");
+    }
+    if (constats.length) return violation(constats);
+    return conforme("environnement : " + lues.size + " variables lues (AST), toutes documentées, aucun nom illisible");
+  }));
 }

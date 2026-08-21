@@ -23,6 +23,7 @@
 // Usage : node tools/images-epinglees.mjs [Dockerfile...]
 
 import { DockerfileParser } from "dockerfile-ast";
+import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -123,19 +124,21 @@ export function ecartMajeur(txt, versionObservee) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const fichiers = process.argv.slice(2).length ? process.argv.slice(2) : ["Dockerfile"];
-  const externes = fichiers.flatMap((f) => imagesDe(readFileSync(f, "utf8"))).filter((i) => !i.interne);
+  // ⚠️ `tenter` : un Dockerfile absent ou illisible ne dit rien de l'épinglage. Il sortait 1, avec
+  // une trace de pile ENOENT en guise de verdict.
+  conclure(tenter(() => {
+    const textes = fichiers.map((f) => [f, readFileSync(f, "utf8")]);
+    const externes = textes.flatMap(([, t]) => imagesDe(t)).filter((i) => !i.interne);
 
-  // ⚠️ ZÉRO IMAGE N'EST PAS UN SUCCÈS. C'est ce que rendait la version précédente sur un
-  // Dockerfile dont tous les `FROM` portaient `--platform` : « 0 référence(s), toutes épinglées ».
-  // Une garde qui déclare la victoire sur rien est verte, vide, et muette sur les deux.
-  if (!externes.length) {
-    console.error(`::error::aucune image externe trouvée dans ${fichiers.join(", ")} — la sonde vise à côté, ou le fichier n'est pas celui qu'on croit`);
-    process.exit(1);
-  }
-  const soucis = fichiers.flatMap((f) => ecartsEpinglage(readFileSync(f, "utf8"), f));
-  if (soucis.length) {
-    for (const s of soucis) console.error("::error::" + s);
-    process.exit(1);
-  }
-  console.log(`images de base : ${externes.length} référence(s) externe(s), toutes épinglées sur un condensat`);
+    // ⚠️ ZÉRO IMAGE N'EST PAS UN SUCCÈS — et ce n'est pas une violation non plus. C'est ce que
+    // rendait la version précédente sur un Dockerfile dont tous les `FROM` portaient `--platform` :
+    // « 0 référence(s), toutes épinglées ». Verte, vide, muette sur les deux. Le fichier n'est pas
+    // fautif : c'est la sonde qui ne l'a pas lu.
+    if (!externes.length) {
+      return inconclusif(`aucune image externe trouvée dans ${fichiers.join(", ")} — la sonde vise à côté, ou le fichier n'est pas celui qu'on croit`);
+    }
+    const soucis = textes.flatMap(([f, t]) => ecartsEpinglage(t, f));
+    if (soucis.length) return violation(soucis);
+    return conforme(`images de base : ${externes.length} référence(s) externe(s), toutes épinglées sur un condensat`);
+  }));
 }

@@ -29,6 +29,7 @@
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 
 // Des mots-outils SANS RECOUVREMENT entre les deux langues : « on », « a », « as » ou « sur »
 // existent des deux côtés ou dans du code, ils ne comptent pas.
@@ -92,15 +93,16 @@ export function markdownsDuTarball(executer = () =>
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const fichiers = markdownsDuTarball();
-  if (!fichiers.length) {
-    console.error("::error::aucun Markdown dans le tarball — la sonde vise à côté, ou le README a cessé d'être publié");
-    process.exit(1);
-  }
-  const soucis = fichiers.map((f) => ecartLangue(f, readFileSync(f, "utf8"))).filter(Boolean);
-  if (soucis.length) {
-    for (const s of soucis) console.error("::error::" + s);
-    process.exit(1);
-  }
-  console.log(`langue : ${fichiers.length} document(s) DU TARBALL, aucun majoritairement français — ${fichiers.join(", ")}`);
+  // ⚠️ `tenter` : `npm pack` peut échouer (npm absent, manifeste cassé, disque plein) et
+  // `markdownsDuTarball` LÈVE sur un inventaire vide — « on ne conclut pas sur un inventaire vide ».
+  // Aucun de ces cas ne dit quoi que ce soit de la langue des documents.
+  conclure(tenter(() => {
+    const fichiers = markdownsDuTarball();
+    if (!fichiers.length) {
+      return inconclusif("aucun Markdown dans le tarball — la sonde vise à côté, ou le README a cessé d'être publié");
+    }
+    const soucis = fichiers.map((f) => ecartLangue(f, readFileSync(f, "utf8"))).filter(Boolean);
+    if (soucis.length) return violation(soucis);
+    return conforme(`langue : ${fichiers.length} document(s) DU TARBALL, aucun majoritairement français — ${fichiers.join(", ")}`);
+  }));
 }
