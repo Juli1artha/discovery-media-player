@@ -72,13 +72,31 @@ describe("les « in.(…) » se comptent dans le code, pas dans les explications
 describe("l'écart avec ce que le document annonce", () => {
   const dit = (md) => annonces(md);
   const TABLE = [
-    "| Call sites | **65**, in **7** files |",
-    "| Tables | **10**, plus **6** call sites that build their path at run time |",
-    "| `in.(…)` | **3** — translates to … |",
+    "| Call sites | **65**†, in **7**† files |",
+    "| Tables | **10**†, plus **6**† call sites that build their path at run time |",
+    "| `in.(…)` | **3**† — translates to … |",
+    "† **Recomputed from the code on every CI run** by `tools/surface-base.mjs`.",
   ].join("\n");
 
   it("lit les cinq chiffres là où le lecteur les lit", () => {
-    expect(dit(TABLE)).toEqual({ appels: 65, fichiers: 7, tables: 10, dynamiques: 6, in: 3 });
+    expect(dit(TABLE)).toEqual({ appels: 65, fichiers: 7, tables: 10, dynamiques: 6, in: 3, legende: true });
+  });
+
+  // ⚠️ LE MARQUEUR EST EXIGÉ, SINON IL PEUT MENTIR. Le retirer en laissant le chiffre ferait croire
+  // au lecteur que ce nombre est écrit à la main — et, bien pire, ferait croire à celui d'un AUTRE
+  // document que le sien est dérivé, puisque tout se ressemblerait de nouveau.
+  it("un chiffre dont on retire le † fait REFUSER, il ne passe pas pour écrit à la main", () => {
+    const sansMarqueur = TABLE.replace("| Tables | **10**†", "| Tables | **10**");
+    expect(ecarts({ appels: 65, fichiers: 7, tables: new Array(10), dynamiques: new Array(6), in: 3 }, dit(sansMarqueur))
+      .join(" ")).toMatch(/ne peut plus comparer/);
+  });
+
+  // ⚠️ UN MARQUEUR SANS LÉGENDE NE MARQUE RIEN : le signe ne vaut que par la phrase qui dit ce
+  // qu'il promet, et surtout par celle qui dit ce que son ABSENCE veut dire ailleurs.
+  it("la légende retirée fait REFUSER, même si les cinq chiffres sont justes", () => {
+    const sansLegende = TABLE.split("\n").filter((l) => !l.startsWith("†")).join("\n");
+    expect(ecarts({ appels: 65, fichiers: 7, tables: new Array(10), dynamiques: new Array(6), in: 3 }, dit(sansLegende))
+      .join(" ")).toMatch(/légende du marqueur/);
   });
 
   it("aucun écart quand tout concorde", () => {
