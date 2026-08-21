@@ -331,6 +331,9 @@ jobs:
       # publication.yml (horaire, après plus d'une heure de divergence) ouvre une issue, puis une
       # personne agit. C'est la même fenêtre que la démo, décrite dans release.yml, et c'est un
       # arbitrage accepté — pas une propriété.
+      # La preversion de la demo, elle, installe le TARBALL DU COMMIT (examples/demo/vercel.json) :
+      # elle n attend donc pas que la version soit publiee, et elle montre le code de la PR au lieu
+      # du dernier player publie. Le pin ci-dessous reste ce qu un COPIEUR doit voir.
       - name: Examples pin the version main declares
         if: matrix.node == '22'
         run: |
