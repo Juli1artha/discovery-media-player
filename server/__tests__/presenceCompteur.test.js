@@ -8,6 +8,7 @@
 const schema = require("../schema.js");
 
 function joueur({ avec = [], sans = [], strict = false, actives = [] } = {}) {
+  const vues = [];
   const ctx = {
     errors: { capture() {} },
     config: { presenceStrict: strict },
@@ -17,8 +18,12 @@ function joueur({ avec = [], sans = [], strict = false, actives = [] } = {}) {
         if (/last_token_at=gt\./.test(chemin)) return avec.map((slug) => ({ slug }));
         if (/last_no_token_at=gt\./.test(chemin)) return sans.map((slug) => ({ slug }));
         if (/doc_presentations\?active=eq\.true/.test(chemin)) {
-          // ⚠️ le double EXIGE le filtre de vivacité : sans lui, une présentation abandonnée compterait.
-          expect(chemin, "le dénominateur doit filtrer sur last_seen (vivante ≠ active)").toMatch(/last_seen=gt\./);
+          // ⚠️ ON ENREGISTRE, ON N'ASSERTE PAS ICI. Une assertion placée dans une branche de double ne
+          // s'exécute que si le code emprunte cette branche : le jour où il cesse de faire cette
+          // requête, elle disparaît EN SILENCE et le test reste vert. C'est la classe qui m'a coûté
+          // deux mutations passées au vert sur le banc de bascule PDF — une assertion sous condition
+          // ne rougit jamais quand la condition est fausse. On mesure ici, on juge dehors.
+          vues.push(chemin);
           return actives.map((slug) => ({ slug }));
         }
         return [];
@@ -27,9 +32,29 @@ function joueur({ avec = [], sans = [], strict = false, actives = [] } = {}) {
   };
   schema.oublier();
   schema.init(ctx);
+  return { vues };
 }
 
 const mille = () => Array.from({ length: 1000 }, (_, i) => "s" + i);
+
+// ⚠️ CETTE ASSERTION VIVAIT DANS LE DOUBLE, sous un `if` — elle ne s'exécutait donc que si le code
+// empruntait cette branche, et serait devenue MUETTE le jour où il cesserait de faire cette requête.
+// Ici on exige d'abord que la requête ait EU LIEU, puis on juge sa forme : les deux moitiés doivent
+// pouvoir rougir séparément, sinon la disparition se confond avec la conformité.
+describe("le dénominateur des présentations actives est bien filtré sur la vivacité", () => {
+  it("la requête est FAITE, et elle filtre sur last_seen", async () => {
+    const j = joueur({ avec: ["a"], actives: ["s1"] });
+    await schema.sonderTout();
+    const denominateur = j.vues.filter((u) => /doc_presentations\?active=eq\.true/.test(u));
+    expect(denominateur.length,
+      "la requête du dénominateur n'a pas été faite : l'assertion de forme ne prouverait plus rien")
+      .toBeGreaterThan(0);
+    for (const u of denominateur) {
+      expect(u, "sans filtre de vivacité, une présentation abandonnée compterait comme active")
+        .toMatch(/last_seen=gt\./);
+    }
+  });
+});
 
 describe("compteur de présence (transition du jeton)", () => {
   it("compte séparément avecJeton et sansJeton", async () => {
