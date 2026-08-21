@@ -38,6 +38,7 @@ need.
   "presenceStrict": true,
   "presenceJetons": true,
   "presenceDurcissement": "inconnu",
+  "presenceFusion": "inconnu",
   "retentionSweep": false,
   "hostShare": true,
   "hostMail": true,
@@ -73,6 +74,7 @@ The three `presence*` fields report what the host has **observed**, not what it 
 | `presenceJetons` | measured — the host actually signed a throwaway token, so `PLAYER_PRESENCE_SECRET` works |
 | `presenceStrict` | **effective** — `PLAYER_PRESENCE_STRICT` is set *and* tokens can be issued. A closed door announced over an open one would be the worse failure |
 | `presenceDurcissement` | `actif` (a hardened call came back), `degrade` (migration 0018 is missing), `inconnu` (nothing attempted in this process — **not** a green light, and process-local: another instance may have seen otherwise) |
+| `presenceFusion` | `actif` (a heartbeat used the fused contract — one round trip instead of two), `degrade` (migration 0019 is missing: heartbeats cost 3 round trips instead of 2, nothing breaks), `inconnu` (no heartbeat served in this process). Same three states, same trap, same reading rule as the row above |
 
 ⚠️ **Before you upgrade, do not read `presenceDurcissement`.** It is a *report of execution*: on an
 instance where nothing is running it says `inconnu`, which means *nobody looked* — not *the migration
@@ -87,9 +89,26 @@ database, so it answers a global fact.
 | `absente` | 0018 is missing: apply it **before** setting `PLAYER_PRESENCE_STRICT`, or bootstraps will be refused with `503` |
 | `indetermine` | the question could not be asked — neither a yes nor a no |
 
-The probe writes nothing: it calls the function with `p_anon_cap = 0`, so a non-existent row exits
-through the *capped* branch and returns before the insert. A real-Postgres test asserts that no row
-appears. A host missing 0018 is also logged once an hour, so an idle instance still finds out.
+The same answer carries **`schema.fusionBase`**, for migration `0019`, with the same three values.
+Both come from **one** call in the normal case: `0019` succeeds `0018` and its argument set *contains*
+it, so a call the long contract accepts proves both at once. The short contract is only asked again
+when the long one is missing — i.e. exactly on the host that is behind and owes a precise answer.
+
+| `fusionBase` | meaning |
+|---|---|
+| `applique` | `0019` is in the database — a presence heartbeat costs **2** database round trips |
+| `absente` | `0019` is missing: **nothing breaks**, a heartbeat costs **3** round trips instead of 2 (about 30 ops/s instead of 20 for 250 attendees). Applying it needs no redeploy — the player picks it up within a minute |
+| `indetermine` | the question could not be asked — neither a yes nor a no |
+
+⚠️ Unlike `0018`, a missing `0019` is a **cost**, not a risk: read it when you are sizing an
+instance, not when you are deciding whether it is safe to run. A host missing it is also logged once
+an hour, with the exact figures, so an idle instance still finds out.
+
+The probe writes nothing, for **two independent reasons**: `p_page = null` on a slug that does not
+exist leaves through `0019`'s *introuvable* branch before the insert, and `p_anon_cap = 0` already
+left through the previous contract's *capped* branch. Two reasons rather than one, because a
+diagnostic probe is the worst place to discover a regression. A real-Postgres test asserts that no
+row appears. A host missing 0018 is also logged once an hour, so an idle instance still finds out.
 
 That parameter **is** the one part of this card that needs the database, and only when you ask for
 it. `verdict` is then one of:

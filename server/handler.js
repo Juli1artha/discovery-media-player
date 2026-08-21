@@ -624,6 +624,17 @@ async function handler(req, res) {
         presenceDurcissement: (() => {
           try { return require("./presentations").etatDurcissementBootstrap(); } catch { return "inconnu"; }
         })(),
+        // ⚠️ LE CHEMIN FUSIONNÉ EST-IL EMPRUNTÉ ? Sans ce champ, un hôte à qui 0019 manque retombe en
+        // silence à trois allers-retours par battement : correct, mais deux fois plus cher sur le
+        // chemin le plus chaud du produit, et RIEN ne le dirait. Une dégradation qu'on ne peut pas
+        // observer est une dégradation qu'on découvre à la facture — ou jamais.
+        //
+        // ⚠️ Mêmes trois états, même piège : « inconnu » veut dire « personne n'a battu dans ce
+        // processus », pas « la migration manque ». Pour la question d'avant-déploiement, c'est
+        // `schema.fusionBase` qu'il faut lire — elle, elle interroge la base.
+        presenceFusion: (() => {
+          try { return require("./presentations").etatFusionBattement(); } catch { return "inconnu"; }
+        })(),
         // ⚠️ LES JETONS DE PRÉSENCE SONT-ILS RÉELLEMENT ÉMIS ? Sans ce booléen, un exploitant qui vient
         // de poser `PLAYER_PRESENCE_SECRET` n'a AUCUN moyen de vérifier que son réglage a pris : la
         // carte affiche `presence: {0,0}` aussi bien quand le secret est actif que quand la variable est
