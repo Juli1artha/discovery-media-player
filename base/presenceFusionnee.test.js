@@ -141,6 +141,20 @@ decrire("la présence en un seul aller-retour (RPC 0019)", () => {
     expect((await lignes(slug)).length, "aucune ligne créée après la clôture").toBe(avant);
   });
 
+  // ⚠️ LA SONDE DE DIAGNOSTIC, CONTRE LA VRAIE BASE. C'est le champ qu'un exploitant lit AVANT de
+  // déployer : s'il se trompait, il se tromperait au pire moment. Et une sonde qui écrirait serait
+  // le pire endroit où découvrir une régression — on le mesure, on ne le déduit pas du SQL.
+  it("la sonde de schéma répond « applique » et n'écrit AUCUNE ligne", async () => {
+    const schema = require("../server/schema.js");
+    schema.oublier();
+    const etat = await schema.sonderTout();
+    expect(etat.fusionBase, "0019 est bien dans cette base").toBe("applique");
+    expect(etat.durcissementBase, "et 0018 avec, prouvée par le même appel").toBe("applique");
+    const restes = await base.request(
+      "doc_presentation_attendees?slug=eq." + encodeURIComponent("sonde durcissement") + "&select=attendee_key");
+    expect(restes.length, "la sonde de diagnostic n'a créé personne").toBe(0);
+  });
+
   it("un appelant qui fournit la présentation garde EXACTEMENT l'ancien comportement", async () => {
     const { slug, control } = await nouvelle();
     await presentations.setPage(slug, control, 3);

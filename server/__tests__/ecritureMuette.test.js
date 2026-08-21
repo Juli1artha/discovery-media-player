@@ -97,7 +97,27 @@ describe("aucune écriture de mesure n'est rattrapée en silence", () => {
         })();
         // Parler, c'est journaliser OU répondre une erreur à l'appelant. Se taire ET répondre 200,
         // c'est ce qui fait disparaître une mesure sans laisser de trace.
-        const parle = /capture\s*\(|console\.(warn|error)|statusCode\s*=\s*5|\b\w+\(5\d\d\s*,/.test(corps);
+        //
+        // ⚠️ ET ON SUIT UN SAUT, PARCE QUE LA GARDE N'EN SUIVAIT AUCUN. Un `catch` qui appelle un
+        // helper de journalisation du même fichier PARLE — mais cette sonde ne lisait que les
+        // formes directes, et accusait donc le code qui factorise. Quatrième correction de cette
+        // sonde, et la même à chaque fois : elle vaut ce que vaut sa lecture.
+        //
+        // ⚠️ ON RÉSOUT LE CORPS, ON N'ACCEPTE PAS LE NOM. Ajouter « journaliser » à la liste des
+        // formes qui parlent aurait suffi à passer — et aurait vidé la garde le jour où quelqu'un
+        // écrit un `journaliser` muet : elle aurait été satisfaite par un identifiant. On va donc
+        // LIRE la fonction appelée. Un seul saut : deux niveaux d'indirection dans un catch de
+        // rattrapage sont un problème en soi, et une garde qui suit tout finit par tout excuser.
+        const corpsDe = (nom) => {
+          const debut = lignes.findIndex((l) => new RegExp(`^\\s*(async\\s+)?function\\s+${nom}\\s*\\(`).test(l));
+          if (debut < 0) return "";
+          const suite = lignes.slice(debut, debut + 40);
+          const fin = suite.findIndex((l, n) => n > 0 && /^(async\s+)?function\s/.test(l));
+          return (fin > 0 ? suite.slice(0, fin) : suite).join("\n");
+        };
+        const DIT = /capture\s*\(|console\.(warn|error)|statusCode\s*=\s*5|\b\w+\(5\d\d\s*,/;
+        const appeles = [...corps.matchAll(/(?:await\s+)?([A-Za-z_$][\w$]*)\s*\(/g)].map((m) => m[1]);
+        const parle = DIT.test(corps) || appeles.some((nom) => DIT.test(corpsDe(nom)));
         if (!parle) muets.push(`${path.basename(f)}:${i + 1}  ${ligne.trim().slice(0, 70)}`);
       });
     }

@@ -251,6 +251,24 @@ its own and **not** a green light. The check cannot be probed without calling th
 so what is reported is what using it revealed. A transient network failure does not move it to
 `degrade`: it proves nothing about 0018.
 
+⚠️ **Next to it, `presenceFusion` reports the *cost* of a heartbeat.** Same three values, same reading
+rule — `actif`, `degrade` (migration `0019` is missing), `inconnu` (no heartbeat served yet in this
+process). A missing `0019` breaks nothing: a heartbeat simply costs **3** database round trips instead
+of **2** — about 30 ops/s instead of 20 for 250 attendees. It is the one number worth knowing before
+you size an instance, and it used to be invisible: a host without the migration paid double on the
+hottest path of the product with nothing to say so. Applying it needs no redeploy; the player picks it
+up within a minute. For the question *"is it applied?"* — asked before a deployment, when no heartbeat
+has run — read `schema.fusionBase` from `GET /api/doc?contract=1&schema=1` instead: it asks the
+database rather than this process.
+
+⚠️ **On a serverless host, `inconnu` is the normal answer — not a sign that nothing is happening.**
+The second host measured it: a real presentation ran on their instance, with a participant, on the
+very day both `presence*` observation fields read `inconnu`. The presentation had ended, and the
+short-lived process answering `/api/doc` was never the one that served a heartbeat. Read the `schema`
+fields for facts that outlive a process, and treat *"lightly used"* and *"idle"* as the different
+claims they are — a defect that needs traffic to appear had real opportunities the whole time the
+instance was assumed to have none.
+
 ⚠️ **`PLAYER_PRESENCE_STRICT` is inert without `PLAYER_PRESENCE_SECRET`, on purpose.** With no secret
 nobody *can* obtain a token, so enforcing it would refuse 100% of anonymous participants — a
 self-inflicted outage. The card therefore reports the **effective** value: `presenceStrict` reads
