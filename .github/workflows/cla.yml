@@ -16,7 +16,7 @@ name: CLA
 # eu à signer, donc il n'y avait aucune signature à déplacer, donc aucune à perdre. Une dette se
 # rembourse quand elle ne coûte rien.
 #
-# Le remplaçant vit dans tools/cla/ : des règles pures (regles.mjs, 28 tests dans
+# Le remplaçant vit dans tools/cla/ : des règles pures (regles.mjs, éprouvées dans
 # tools/__tests__/cla.test.js) et la mécanique (verifier.mjs). Même sémantique qu'avant : même
 # phrase de signature, même registre, même branche, même dispenses, et toujours BLOQUANT.
 
