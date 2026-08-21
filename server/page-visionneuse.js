@@ -322,6 +322,11 @@ ${LEGAL_CSS}
     var taches={};            // n -> RenderTask, pour pouvoir ANNULER
     var enCours={};           // n -> 1 tant que la page n a pas abouti
     var MARGE_PAGES=2;        // on garde la page courante et deux de chaque cote
+    // ATTENTION : UNE GENERATION PAR PAGE. La generation globale (renderGen) ne bouge qu au build ;
+    // une page liberee PENDANT que son rendu ou sa couche texte est en vol gardait donc la meme
+    // generation, et le resultat tardif se posait sur une page remise en reserve. On incremente
+    // donc a chaque liberation, et chaque callback verifie SA page.
+    var genPage=Object.create(null);
     var DPR_MAX=2;            // au-dela, le gain visuel est nul et le cout quadratique
     var PIXELS_MAX=4e6;       // plafond par canvas : ~4 M pixels = ~16 Mo de tampon
     var onePage=false, soloOffered=false; // mode « une seule page » (présentation guidée) + offre de découverte solo
@@ -754,6 +759,7 @@ ${LEGAL_CSS}
     // Rend une page a l etat de reserve : on retire le canvas et la couche texte, on remet la boite
     // avec sa hauteur estimee. Le defilement ne bouge pas, et la page se re-rendra si on y revient.
     function libererPage(n){
+      genPage[n]=(genPage[n]||0)+1;             // invalide tout callback en vol pour CETTE page
       var el=pagesEl.querySelector('.page[data-p="'+n+'"]'); if(!el)return;
       if(taches[n]){ try{ taches[n].cancel(); }catch(e){} delete taches[n]; }
       var w=Math.round(targetWidth());
@@ -766,10 +772,25 @@ ${LEGAL_CSS}
     // passer le cas qui fait tomber l onglet. On garde donc la fenetre courante, et on evince
     // au-dela — le nombre de canvas reste borne quel que soit le parcours du document.
     function evincerLoin(centre){
-      if(onePage) return;                       // une seule page affichee : rien a evincer
-      for(var k in rendered){
+      // ATTENTION : LE MODE UNE-PAGE EVINCAIT ZERO, ET MON COMMENTAIRE DISAIT POURQUOI — A TORT.
+      //
+      // Il portait « une seule page affichee : rien a evincer ». Une seule est AFFICHEE, mais
+      // showPage() rend la page courante ET la suivante a chaque navigation, et toutes les
+      // precedentes restent dans le DOM. Une presentation guidee de 100 pages finissait donc avec
+      // pres de 100 canvas — exactement le defaut que la fenetre glissante ferme ailleurs.
+      // Un raisonnement faux ecrit avec assurance fait passer un defaut pour une intention.
+      // (Releve par un audit externe.)
+      var marge = onePage ? 1 : MARGE_PAGES;    // une-page : courante, suivante, precedente
+      // ATTENTION : ON PARCOURT L UNION DES TROIS REGISTRES. rendered seul ignore ce qui est EN
+      // VOL : une page eloignee dont le getPage n est pas resolu continuait a travailler, et sa
+      // couche texte pouvait se poser plus tard sur une page deja liberee.
+      var vus = Object.create(null);
+      for(var a in rendered) vus[a]=1;
+      for(var b in enCours) vus[b]=1;
+      for(var c in taches) vus[c]=1;
+      for(var k in vus){
         var n=+k;
-        if(n<centre-MARGE_PAGES || n>centre+MARGE_PAGES) libererPage(n);
+        if(n<centre-marge || n>centre+marge) libererPage(n);
       }
     }
     function renderPage(n,el){
@@ -778,7 +799,7 @@ ${LEGAL_CSS}
       // donc un echec de getPage ou de render laissait la page marquee pour toujours : elle ne se
       // retentait jamais et restait vide. On distingue « en cours » de « aboutie ».
       enCours[n]=1;
-      var gen=renderGen;
+      var gen=renderGen, monGenPage=genPage[n]||0;
       if(IS_IMG){
         var w=Math.round(targetWidth());
         var im=document.createElement('img');
@@ -791,17 +812,28 @@ ${LEGAL_CSS}
         return;
       }
       pdfDoc.getPage(n).then(function(page){
-      if(gen!==renderGen){ delete enCours[n]; return; }   // un build() est passe : ce rendu n est plus attendu
+      // Un build() est passe (generation globale), ou CETTE page a ete liberee entre-temps.
+      if(gen!==renderGen || monGenPage!==(genPage[n]||0)){ delete enCours[n]; return; }
       // ATTENTION : LE DPR N ETAIT PAS PLAFONNE. Sur un ecran ×3, une page de 900 px de large fait
       // pres de 10 M pixels, soit environ 39 Mo de tampon pour UNE page — le gain visuel au-dela de
       // ×2 est nul, le cout est quadratique. On plafonne le DPR, puis on plafonne le NOMBRE DE
       // PIXELS du canvas : deux bornes, parce que le zoom peut faire grandir la page independamment
       // de la densite de l ecran.
-      var dpr=Math.min(DPR_MAX, window.devicePixelRatio||1);
       var scale=Math.min(5,targetWidth()/page.getViewport({scale:1}).width);
       var v=page.getViewport({scale:scale});
-      var pixels=Math.floor(v.width*dpr)*Math.floor(v.height*dpr);
-      if(pixels>PIXELS_MAX) dpr=Math.max(1, dpr*Math.sqrt(PIXELS_MAX/pixels));
+      // ATTENTION : LE PLANCHER A 1 CREVAIT LE BUDGET, ET LE BUDGET ETAIT ANNONCE.
+      //
+      // L ancienne formule reduisait le DPR sans jamais le laisser descendre SOUS 1. Or au zoom
+      // maximal la taille CSS a elle seule depasse le budget : a 300 %, une page de 4110×5319 CSS
+      // faisait 21,9 M pixels — soit ×5,5 le plafond annonce, environ 83 Mo de tampon pour UNE
+      // page. Le plancher visait la nettete ; il annulait la borne exactement quand elle servait.
+      //
+      // Le facteur se calcule donc depuis la taille CSS, borne par trois choses a la fois : le
+      // plafond de densite, la densite REELLE de l ecran (ne jamais sur-rendre), et le budget de
+      // pixels — qui peut le faire descendre sous 1. Verifie par calcul sur cinq configurations
+      // avant d etre ecrit. (Releve par un audit externe.)
+      var pixelsCss=Math.max(1, v.width*v.height);
+      var dpr=Math.min(DPR_MAX, window.devicePixelRatio||1, Math.sqrt(PIXELS_MAX/pixelsCss));
       var c=document.createElement('canvas');
       c.setAttribute('role','img'); c.setAttribute('aria-label','Page '+n);
       c.width=Math.floor(v.width*dpr); c.height=Math.floor(v.height*dpr);   // backing store HD → net comme du natif
@@ -811,7 +843,7 @@ ${LEGAL_CSS}
       taches[n]=tache;
       tache.promise.then(function(){
         if(taches[n]===tache) delete taches[n];
-        if(gen!==renderGen){ delete enCours[n]; return; }
+        if(gen!==renderGen || monGenPage!==(genPage[n]||0)){ delete enCours[n]; return; }
         delete enCours[n]; rendered[n]=1;                  // AVEREE, pas seulement demandee
         hideLoader(); if(n===cur)setTimeout(vsplitTint,60);
       },function(){
@@ -822,6 +854,10 @@ ${LEGAL_CSS}
       // Couche texte (sélection). En pdf.js v3, les spans utilisent font-size:calc(var(--scale-factor)*Npx)
       // → SANS --scale-factor, taille nulle = pas de sélection. On le pose sur le conteneur.
       try{ page.getTextContent().then(function(tc){
+        // ATTENTION : LA COUCHE TEXTE ARRIVE APRES, ET SE POSAIT SUR UNE PAGE LIBEREE. Elle
+        // ressuscitait alors une page remise en reserve — visible comme un bloc de texte
+        // selectionnable flottant sur un cadre vide.
+        if(gen!==renderGen || monGenPage!==(genPage[n]||0)) return;
         var tl=document.createElement('div'); tl.className='textLayer';
         tl.style.width=v.width+'px'; tl.style.height=v.height+'px'; tl.style.setProperty('--scale-factor', scale);
         el.appendChild(tl);

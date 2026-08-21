@@ -460,6 +460,95 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
   // On affirme donc la propriété qui borne vraiment la mémoire — le nombre de pixels — et on note
   // que le plafond de DPR lui est REDONDANT dans cette configuration : il ne sert que là où le
   // budget ne mord pas (petite page, écran très dense).
+  // ⚠️ TROIS CHEMINS QUE LA 0.1.123 NE BORNAIT PAS — et qu'aucun essai d'ici ne pouvait voir, parce
+  // qu'ils ne parcouraient que le défilement à zoom 100 %. Le jeu d'essai ne pouvait pas produire le
+  // phénomène : deuxième fois en deux jours. (Relevé par un audit externe.)
+  //
+  // ⚠️ ON PILOTE LE LECTEUR PAR UNE COUTURE QUI EXISTE DÉJÀ : `PlayerBot.init(VIEWER)` reçoit la
+  // surface du lecteur au démarrage. En déclarant `window.PlayerBot` AVANT le chargement, le banc
+  // récupère cette surface sans qu'une seule ligne de production change pour lui.
+  async function pageAvecLecteur(ctx) {
+    const p = await ctx.newPage();
+    await p.addInitScript(() => {
+      window.PlayerBot = { init: (v) => { window.__viewerEssai = v; } };
+    });
+    await p.goto(`http://127.0.0.1:${port}/doc/${SLUG_PDF_LONG}`, { waitUntil: "load" });
+    await p.waitForFunction(() => !!window.__viewerEssai && window.__viewerEssai.numPages > 1, { timeout: 25_000 });
+    return p;
+  }
+  const canvasVus = (p) => p.evaluate(() => document.querySelectorAll("#pages .page canvas").length);
+
+  it("mode UNE-PAGE, 40 pages parcourues : les canvas restent bornés", async () => {
+    const ctx = await navigateur.newContext({ viewport: { width: 1200, height: 900 } });
+    const p = await pageAvecLecteur(ctx);
+    await p.evaluate(() => window.__viewerEssai.enterOnePage());
+    await p.waitForFunction(() => window.__viewerEssai.onePage === true, { timeout: 10_000 });
+
+    let pire = 0;
+    for (let n = 1; n <= 40; n++) {
+      await p.evaluate((i) => window.__viewerEssai.showPage(i), n);
+      await new Promise((r) => setTimeout(r, 70));
+      const vus = await canvasVus(p);
+      if (vus > pire) pire = vus;
+    }
+    // Fenêtre une-page = courante, suivante, précédente — plus ce qui est en vol.
+    expect(pire,
+      `${pire} canvas simultanés en mode une-page sur 40 pages : les pages précédentes restent dans\n`
+      + "le DOM. Une présentation guidée de 100 pages finirait avec près de 100 canvas — c'est le\n"
+      + "chemin que la fenêtre glissante du défilement ne couvrait pas.")
+      .toBeLessThanOrEqual(6);
+    await p.close(); await ctx.close();
+  });
+
+  it("une page libérée ne porte jamais de couche texte orpheline", async () => {
+    const ctx = await navigateur.newContext({ viewport: { width: 1200, height: 900 } });
+    const p = await pageAvecLecteur(ctx);
+    await p.evaluate(() => window.__viewerEssai.enterOnePage());
+    // Navigation TRÈS rapide : les couches de texte partent et reviennent après la libération.
+    for (let n = 1; n <= 25; n++) await p.evaluate((i) => window.__viewerEssai.showPage(i), n);
+    await new Promise((r) => setTimeout(r, 900));
+    const orphelines = await p.evaluate(() => {
+      let n = 0;
+      for (const el of document.querySelectorAll("#pages .page")) {
+        if (el.querySelector(".textLayer") && !el.querySelector("canvas")) n += 1;
+      }
+      return n;
+    });
+    expect(orphelines,
+      "une couche texte s'est posée sur une page libérée : elle la ressuscite en bloc de texte\n"
+      + "sélectionnable flottant sur un cadre vide.")
+      .toBe(0);
+    await p.close(); await ctx.close();
+  });
+
+  it("zoom poussé au MAXIMUM : aucun canvas ne crève le budget de pixels", async () => {
+    const ctx = await navigateur.newContext({ viewport: { width: 1400, height: 1000 }, deviceScaleFactor: 2 });
+    const p = await pageAvecLecteur(ctx);
+    // On zoome par le VRAI bouton, jusqu'à ce que le libellé cesse de bouger (plafond atteint).
+    let libelle = "";
+    for (let i = 0; i < 20; i++) {
+      await p.click("#zin");
+      await new Promise((r) => setTimeout(r, 60));
+      const l = await p.evaluate(() => document.getElementById("zlbl").textContent);
+      if (l === libelle) break;
+      libelle = l;
+    }
+    await new Promise((r) => setTimeout(r, 600));
+    expect(libelle, "le zoom doit avoir atteint son maximum, sinon ce banc n'éprouve rien").toBe("300%");
+    const pire = await p.evaluate(() => {
+      let m = 0;
+      for (const c of document.querySelectorAll("#pages .page canvas")) m = Math.max(m, c.width * c.height);
+      return m;
+    });
+    expect(pire, "aucun canvas rendu au zoom maximal : la mesure ne mesure rien").toBeGreaterThan(0);
+    expect(pire,
+      `un canvas fait ${(pire / 1e6).toFixed(1)} M pixels au zoom 300 %, soit environ\n`
+      + `${Math.round(pire * 4 / 1048576)} Mo pour UNE page — le plancher du facteur de rendu annule\n`
+      + "le budget exactement quand il devrait mordre.")
+      .toBeLessThanOrEqual(4.2e6);
+    await p.close(); await ctx.close();
+  });
+
   it("un canvas ne dépasse jamais son budget de pixels, quelle que soit la densité d'écran", async () => {
     const ctx = await navigateur.newContext({ deviceScaleFactor: 3, viewport: { width: 1400, height: 1000 } });
     const p3 = await ctx.newPage();
