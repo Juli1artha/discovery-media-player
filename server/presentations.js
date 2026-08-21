@@ -1245,4 +1245,4 @@ async function listPresentationsForDoc(docId, email, isAdmin, autoriseLarge) {
 module.exports = {
   reacteurDepuisJeton,
   purgerPerimees,
-  messagePublic, CHAMPS_PUBLICS, etatDurcissementBootstrap, cheminPieceJointe, init, createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent , STALE_MS};
+  messagePublic, CHAMPS_PUBLICS, etatDurcissementBootstrap, signatureAbsente, cheminPieceJointe, init, createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent , STALE_MS};
