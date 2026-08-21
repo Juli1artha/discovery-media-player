@@ -78,9 +78,18 @@ async function traiter(req, res, body, _slug) {
           // route ne le faisait pas. Et l'appartenance se prouve par le jeton d'accès de la session :
           // cette route est un `fetch`, elle peut porter un en-tête (contrairement au suivi de
           // lecture, qui part par `sendBeacon` et signe donc dans le corps).
-          const pres = await getPresentation(String(body.slug || ""));
-          if (!pres) return jp(404, { ok: false });
-          const estPresentateur = !!(body.control && require("crypto").createHash("sha256").update(String(body.control)).digest("hex") === pres.control_hash);
+          // ⚠️ CETTE ROUTE NE LIT PLUS LA PRÉSENTATION (0019). Elle la lisait pour trois choses —
+          // existe-t-elle, est-elle close, et l'appelant porte-t-il le jeton de contrôle — et les
+          // trois se décident maintenant dans la transaction d'écriture. Le battement passe de trois
+          // allers-retours à deux. Ce qui monte est l'EMPREINTE du jeton, jamais le jeton : la
+          // comparaison est la même qu'ici, faite sur la même donnée, un cran plus bas.
+          //
+          // ⚠️ Le 404 et le refus d'archive n'ont pas disparu, ils REMONTENT : `recordAttendance`
+          // rend { status: 404 } et REFUS_ARCHIVE à partir de ce que la base répond. Un déplacement
+          // de décision est l'endroit où une garde se perd — celles-ci sont mesurées, des deux côtés.
+          const controlHash = body.control
+            ? require("crypto").createHash("sha256").update(String(body.control)).digest("hex")
+            : null;
           // ⚠️ Une identité prouvée REMPLACE celle qu'on affirme — elle ne s'y ajoute pas. Sinon la
           // vérification ne servirait qu'à décorer une affirmation qu'on croit toujours.
           const profil = await profilDuJeton(req);
@@ -188,13 +197,15 @@ async function traiter(req, res, body, _slug) {
             name: (profil && profil.name) || body.name,
             email: profil ? profil.email : body.email,
             avatar: (profil && profil.avatar) || body.avatar,
-            isMember: !!profil, isPresenter: estPresentateur,
+            // ⚠️ ON N'AFFIRME PLUS LE TITRE, ON FOURNIT LA PREUVE (`controlHash`, plus bas) : c'est
+            // la base qui compare. Affirmer `false` ici n'enlève donc rien — le titre vient du jeton.
+            isMember: !!profil, isPresenter: false,
             // ⚠️ UN BOOTSTRAP NE PEUT PAS S'EMPARER D'UNE PRÉSENCE DÉJÀ RÉCLAMÉE (0018). `wantToken`
             // est AUTO-DÉCLARÉ : sans ce verrou, un attaquant le déclarait, posait la clé d'un
             // participant enregistré, et écrasait sa ligne — l'usurpation même que l'étape 2 ferme
             // pour les battements ordinaires. Le second hôte l'a EXÉCUTÉE sur sa prod. Le contrôle ne
             // vaut que pour un bootstrap : un porteur de jeton est déjà prouvé, un membre aussi.
-          }, { presentation: pres, ipHash, anonCap, hasToken, onlyIfUnclaimed: bootstrap });
+          }, { ipHash, anonCap, hasToken, onlyIfUnclaimed: bootstrap, controlHash });
           // On ÉMET (ou ré-émet) un jeton pour l'anonyme dont l'écriture a réussi : le client le garde
           // et le renvoie aux battements suivants. `exp` court (6 h), ré-émis à chaque battement — pas
           // de table anti-rejeu (le scellé d'archive et l'exp bornent déjà le rejeu, cf. 0007). Un
