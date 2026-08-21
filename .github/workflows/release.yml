@@ -67,22 +67,39 @@ jobs:
       # tout ce que la CI vérifie — n'empêchaient RIEN. On ne duplique pas la CI ici : on EXIGE
       # la sienne, celle du commit exact que le tag désigne, entièrement verte. Publier sur du
       # rouge est le trou jumeau d'une fusion sans protection de branche, côté publication.
-      - name: The exact commit's CI is entirely green
+      #
+      # ⚠️ ET CODEQL EN FAIT PARTIE DEPUIS LE 22/08 (P1, audit externe). Il n'était attendu nulle
+      # part : ni dans les contrôles requis de `main`, ni ici, qui n'attendait que le workflow
+      # « CI ». Une alerte de sécurité rouge pouvait donc traverser la fusion PUIS la publication
+      # sans jamais rien bloquer — un contrôle qui tourne, qui s'affiche, et qui n'a aucun pouvoir.
+      # Le vert de CodeQL est cité dans le README ; il vaut mieux qu'il engage à quelque chose.
+      #
+      # ⚠️ CE CONTRÔLE DÉPEND DE LA RÉTENTION DES COURSES DE LA FORGE, comme celui de la CI avant
+      # lui : rejouer par dispatch un tag plus vieux que la fenêtre de rétention ne trouvera plus
+      # de course et refusera. C'est le bon sens de l'erreur — on ne publie pas sans verdict — mais
+      # c'est un refus qu'il faut savoir lire plutôt que découvrir.
+      - name: The exact commit is green on CI and on CodeQL
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           sha=$(git rev-parse HEAD)
-          for i in $(seq 1 40); do
-            etat=$(gh run list --repo "$GITHUB_REPOSITORY" --commit "$sha" --workflow CI --json status,conclusion -q '.[0] | "\(.status) \(.conclusion)"')
-            case "$etat" in
-              "completed success") echo "CI verte sur $sha"; exit 0 ;;
-              "completed "*) echo "::error::la CI du commit $sha a conclu « $etat » — on ne publie pas sur du rouge"; exit 1 ;;
-              "") echo "aucune course CI encore visible pour $sha ($i/40)" ;;
-              *) echo "CI en cours : $etat ($i/40)" ;;
-            esac
-            sleep 45
-          done
-          echo "::error::la CI de $sha ne s'est jamais terminée — on ne publie pas sans verdict"; exit 1
+          attendre() {
+            nom="$1"
+            for i in $(seq 1 40); do
+              etat=$(gh run list --repo "$GITHUB_REPOSITORY" --commit "$sha" --workflow "$nom" --json status,conclusion -q '.[0] | "\(.status) \(.conclusion)"')
+              case "$etat" in
+                "completed success") echo "$nom : verte sur $sha"; return 0 ;;
+                "completed "*) echo "::error::$nom a conclu « $etat » sur $sha — on ne publie pas sur du rouge"; return 1 ;;
+                "") echo "$nom : aucune course encore visible pour $sha ($i/40)" ;;
+                *) echo "$nom : en cours, $etat ($i/40)" ;;
+              esac
+              sleep 45
+            done
+            echo "::error::$nom ne s'est jamais terminée sur $sha — on ne publie pas sans verdict"
+            return 1
+          }
+          attendre CI || exit 1
+          attendre CodeQL || exit 1
 
       - run: npm test
 

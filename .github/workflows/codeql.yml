@@ -14,7 +14,13 @@ permissions:
   security-events: write
 
 jobs:
-  analyze:
+  # ⚠️ CE JOB S'APPELAIT `analyze`, ET `scorecard.yml` AUSSI (P1, audit externe du 22/08).
+  # Deux workflows produisant un contrôle du même nom rendent la liste des contrôles REQUIS
+  # ambiguë : on ne peut pas exiger « analyze » sans dire lequel. Aujourd'hui la collision ne
+  # frappe que les poussées vers `main` — Scorecard ne se déclenche pas sur les PR — mais c'est
+  # une propriété de son `on:`, pas une garantie, et elle disparaîtrait au premier ajout.
+  # Un contrôle qu'on ne peut pas nommer est un contrôle qu'on ne peut pas exiger.
+  codeql:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
