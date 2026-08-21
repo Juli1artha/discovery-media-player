@@ -55,7 +55,7 @@ export function sansCommentaire(ligne) {
  * étape peut écrire `uses: quelque-chose@v1` dans un message, et ce n'est pas une action. On les
  * saute par l'indentation, comme YAML les délimite.
  */
-export function lignesDeCle(txt) {
+export function lignesDeCleBrutes(txt) {
   const lignes = txt.split("\n");
   const gardees = [];
   let blocA = null; // indentation minimale du contenu d'un bloc scalaire en cours
@@ -71,10 +71,13 @@ export function lignesDeCle(txt) {
     if (ligne.trim() === "") continue;
     // `clé: |`, `clé: >-`, `clé: |2` … ouvrent un bloc dont le contenu est plus indenté.
     if (/:\s*[|>][-+]?\d*\s*$/.test(ligne)) { blocA = indent + 1; continue; }
-    gardees.push(ligne);
+    gardees.push(brute);
   }
   return gardees;
 }
+
+/** Les mêmes lignes, commentaire retiré — ce que la garde d'épinglage regarde. */
+export const lignesDeCle = (txt) => lignesDeCleBrutes(txt).map(sansCommentaire);
 
 /** Les valeurs de `uses:`, en position de clé seulement — quotées ou non, espacées ou non. */
 export function references(txt) {
