@@ -51,6 +51,20 @@ const api = async (chemin, options = {}) => {
   return reponse.status === 204 ? null : reponse.json();
 };
 
+/**
+ * ⚠️ L'AUTEUR AUTHENTIFIÉ DE LA PR — L'ANCRE, ET ELLE MANQUAIT (P0, revue externe du 21/08).
+ * Ce fichier ne lisait que `/pulls/{n}/commits`, donc que de l'ATTRIBUTION : GitHub rattache un
+ * commit à un compte par l'adresse écrite dans l'en-tête Git, que n'importe qui écrit localement.
+ * `pull_request.user.login` est d'une autre nature — il a fallu s'authentifier auprès de la forge
+ * pour ouvrir cette PR. C'est le seul login dont on tienne quelque chose.
+ */
+async function auteurDeLaPR() {
+  const pr = await api(`/repos/${DEPOT}/pulls/${PR}`);
+  const login = pr?.user?.login;
+  if (!login) throw new Error("la forge n'a pas rendu l'auteur de la pull request — on refuse plutôt que de deviner");
+  return login;
+}
+
 /** Tous les commits de la PR, pagination comprise — une PR longue ne doit pas passer à moitié. */
 async function commitsDeLaPR() {
   const tout = [];
@@ -127,7 +141,8 @@ const demande = (manquants, sansCompte) => [
   async function principal() {
   if (!JETON || !DEPOT || !Number.isInteger(PR)) throw new Error("contexte incomplet : CLA_TOKEN, GITHUB_REPOSITORY et CLA_PR sont requis");
 
-  const { logins, sansCompte } = auteursDe(await commitsDeLaPR());
+  const { authentifie, attribues, logins, sansCompte } =
+    auteursDe({ auteurPR: await auteurDeLaPR(), commits: await commitsDeLaPR() });
   let { registre, sha } = await registreActuel();
 
   // Un commentaire peut VALOIR signature — mais seulement de la part d'un auteur, et seulement
@@ -143,9 +158,9 @@ const demande = (manquants, sansCompte) => [
     }
   }
 
-  const v = verdict({ auteurs: logins, sansCompte, registre });
+  const v = verdict({ authentifie, attribues, sansCompte, registre });
   if (v.ouvre) {
-    console.log(`CLA : ${logins.length} auteur(s), rien à signer — ${logins.join(", ") || "aucun"}`);
+    console.log(`CLA : ouverte par ${authentifie}${attribues.length ? `, avec ${attribues.join(", ")}` : ""} — rien à signer`);
     await direSurLaPR("✅ CLA en règle — merci. Cette signature couvre toutes vos contributions à venir sur ce dépôt.").catch(() => {});
     return 0;
   }

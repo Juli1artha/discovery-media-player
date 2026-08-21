@@ -29,21 +29,82 @@ export const DISPENSES = ["Juli1artha", "dependabot[bot]", "github-actions[bot]"
 const LOGIN_VALIDE = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}(?:\[bot\])?$/;
 
 /**
- * Les auteurs d'une PR, dédoublonnés.
- *
- * ⚠️ ON PART DE `author.login`, PAS DE L'ADRESSE DU COMMIT. L'e-mail d'un commit est écrit par
- * qui pousse : n'importe qui peut signer un commit du nom d'un autre. Le login, lui, est ce que
- * la forge a authentifié. Un commit sans login attribué (auteur inconnu de GitHub) est RENDU
- * comme tel plutôt qu'ignoré — le silence est ce qui laisse passer.
+ * ⚠️ DES ADRESSES DISPENSÉES, POUR LES CO-AUTEURS QU'AUCUN COMPTE NE PORTE. Même doctrine que
+ * `claude` ci-dessus : un agent ne produit pas d'œuvre de l'esprit, il n'a rien à concéder. Une
+ * ligne `Co-authored-by:` qui nomme l'une de ces adresses n'ajoute donc aucune obligation. Toute
+ * AUTRE adresse non résolvable en compte GitHub BLOQUE, en nommant qui : on ne peut pas demander
+ * sa signature à quelqu'un qu'on ne sait pas joindre, et l'ignorer serait le laisser passer.
  */
-export function auteursDe(commits) {
-  const logins = new Set(), sansCompte = [];
+export const EMAILS_DISPENSES = ["noreply@anthropic.com"];
+
+/** `12345+octocat@users.noreply.github.com` et `octocat@users.noreply.github.com` → « octocat ». */
+export function loginDeNoreply(email) {
+  const m = /^(?:\d+\+)?([^@\s]+)@users\.noreply\.github\.com$/i.exec(String(email || "").trim());
+  return m && LOGIN_VALIDE.test(m[1]) ? m[1] : null;
+}
+
+/** Les `Co-authored-by:` d'un message de commit — la contribution invisible du diff. */
+export function coAuteursDe(message) {
+  const trouves = [];
+  for (const ligne of String(message || "").split("\n")) {
+    const m = /^\s*co-authored-by\s*:\s*(.*?)\s*<([^>]+)>\s*$/i.exec(ligne);
+    if (m) trouves.push({ nom: m[1] || m[2], email: m[2].toLowerCase() });
+  }
+  return trouves;
+}
+
+/**
+ * Qui doit signer pour cette PR.
+ *
+ * ⚠️ CE MODULE A CONFONDU ATTRIBUTION ET AUTHENTIFICATION, ET C'ÉTAIT CONTOURNABLE (P0, revue
+ * externe du 21/08). Il ne partait que de `commit.author.login`, en affirmant que « le login est
+ * ce que la forge a authentifié ». C'EST FAUX : GitHub RATTACHE un commit à un compte en
+ * comparant l'adresse de l'en-tête Git aux adresses de ce compte. Cette adresse est écrite par
+ * qui fabrique le commit, localement, sans preuve. C'est de l'attribution, pas de la preuve.
+ *
+ * Le contournement, rejoué contre l'ancien code : `mallory` ouvre une PR dont les commits portent
+ * l'adresse du mainteneur. GitHub les attribue à `Juli1artha`, qui est dispensé. Verdict rendu :
+ * « ouvre: true, manquants: [] ». `mallory` n'apparaissait NULLE PART et le CLA était déclaré en
+ * règle — sur le contrôle dont toute la raison d'être est la couverture juridique de la double
+ * licence.
+ *
+ * LA CORRECTION TIENT EN UNE PHRASE : l'auteur AUTHENTIFIÉ de la PR (`pull_request.user.login`,
+ * le seul login que la forge ait réellement vérifié, puisqu'il a fallu s'y connecter pour ouvrir
+ * la PR) est l'ANCRE. L'attribution garde son utilité — nommer les autres personnes dont le
+ * travail est dans la PR — mais elle ne peut plus qu'AJOUTER des obligations, jamais en retirer.
+ *
+ * ⚠️ LIMITE ASSUMÉE, ÉCRITE PLUTÔT QUE TUE : un contributeur qui usurpe l'adresse d'un tiers
+ * MASQUE l'obligation de ce tiers (son travail passe sous une attribution dispensée). Il ne peut
+ * plus masquer la SIENNE, qui est le trou qu'on ferme ici. Fermer l'autre demanderait de vérifier
+ * les signatures cryptographiques des commits — un chantier distinct, et une exigence que le
+ * dépôt n'impose pas encore à ses contributeurs.
+ */
+export function auteursDe({ auteurPR, commits } = {}) {
+  const attribues = new Set(), sansCompte = [];
+  const authentifie = auteurPR && LOGIN_VALIDE.test(auteurPR) ? auteurPR : null;
+  const exemptEmail = new Set(EMAILS_DISPENSES.map((e) => e.toLowerCase()));
+
   for (const c of commits || []) {
     const login = c?.author?.login;
-    if (login && LOGIN_VALIDE.test(login)) logins.add(login);
+    if (login && LOGIN_VALIDE.test(login)) attribues.add(login);
     else sansCompte.push(c?.commit?.author?.name || c?.sha?.slice(0, 8) || "inconnu");
+
+    for (const co of coAuteursDe(c?.commit?.message)) {
+      if (exemptEmail.has(co.email)) continue;
+      const depuisNoreply = loginDeNoreply(co.email);
+      if (depuisNoreply) attribues.add(depuisNoreply);
+      else sansCompte.push(`${co.nom} <${co.email}> (co-auteur)`);
+    }
   }
-  return { logins: [...logins].sort(), sansCompte };
+  if (authentifie) attribues.delete(authentifie); // il a sa place à part, pas deux fois
+  return {
+    authentifie,
+    attribues: [...attribues].sort(),
+    // ⚠️ `logins` reste l'ensemble de CEUX QUI PEUVENT SIGNER par commentaire — l'auteur
+    // authentifié compris. Ne pas l'y mettre l'empêcherait de signer sa propre PR.
+    logins: [...new Set([...(authentifie ? [authentifie] : []), ...attribues])].sort(),
+    sansCompte: [...new Set(sansCompte)],
+  };
 }
 
 /** Le registre, tel qu'il est rangé sur la branche des signatures. */
@@ -88,12 +149,22 @@ export function avecSignature(registre, login, { id, pullRequestNo, horodatage }
 export const ecrireRegistre = (registre) =>
   JSON.stringify({ signedContributors: [...registre].sort((a, b) => a.name.localeCompare(b.name)) }, null, 2) + "\n";
 
-/** Le verdict, en une valeur. `manquants` vide et `sansCompte` vide ⇒ la porte s'ouvre. */
-export function verdict({ auteurs, sansCompte, registre }) {
-  const manquants = nonSignes(auteurs, registre);
+/**
+ * Le verdict, en une valeur. `manquants` vide et `sansCompte` vide ⇒ la porte s'ouvre.
+ *
+ * ⚠️ SANS AUTEUR AUTHENTIFIÉ, ON REFUSE. Si l'appelant n'a pas su dire QUI a ouvert la PR, il n'y
+ * a pas d'ancre : tout le reste n'est que de l'attribution, et l'attribution se falsifie. Refuser
+ * là est la seule réponse honnête — c'est la règle du fichier depuis le premier jour, appliquée
+ * à son propre point d'entrée.
+ */
+export function verdict({ authentifie, attribues, auteurs, sansCompte, registre }) {
+  // `auteurs` reste accepté pour les appels qui ne distinguent pas encore les deux origines.
+  const aSigner = [...new Set([...(authentifie ? [authentifie] : []), ...(attribues || auteurs || [])])];
+  const manquants = nonSignes(aSigner, registre);
+  const sansAncre = authentifie ? [] : ["l'auteur de la pull request n'a pas pu être identifié"];
   return {
-    ouvre: manquants.length === 0 && (sansCompte || []).length === 0,
+    ouvre: manquants.length === 0 && (sansCompte || []).length === 0 && sansAncre.length === 0,
     manquants,
-    sansCompte: sansCompte || [],
+    sansCompte: [...(sansCompte || []), ...sansAncre],
   };
 }
