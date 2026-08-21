@@ -65,12 +65,57 @@ export function imagesDe(txt) {
   for (const copy of doc.getCOPYs()) {
     const depuis = copy.getFromFlag()?.getValue();
     if (!depuis) continue;
-    // `COPY --from=build` désigne une étape ; `COPY --from=0` un index d'étape. Ni l'un ni
-    // l'autre ne vient d'un registre.
-    const interne = etapes.has(depuis.toLowerCase()) || /^\d+$/.test(depuis);
-    trouvees.push({ reference: depuis, alias: null, source: "COPY --from", interne });
+    trouvees.push({ reference: depuis, alias: null, source: "COPY --from", interne: estInterne(depuis, etapes) });
+  }
+
+  // ⚠️ TROISIÈME PORTE : `RUN --mount=type=bind,from=<image>`.
+  //
+  // Cette garde lisait `FROM` puis `COPY --from`, et l'audit du 22/08 a montré qu'elle laissait
+  // passer celle-ci sans un mot :
+  //
+  //     RUN --mount=type=bind,from=nginx:latest,source=/etc,target=/src true
+  //
+  // `from` y accepte exactement les mêmes trois choses qu'un `COPY --from` — une étape, un index
+  // d'étape, ou une image du registre. Une image montée pendant un `RUN` s'exécute contre le
+  // système de fichiers de la construction : elle fournit des octets qui finissent dans l'artefact,
+  // et elle n'était épinglée par rien.
+  //
+  // C'est la deuxième fois qu'on ajoute une porte à cette garde. La leçon écrite en #288 tenait
+  // déjà : « une dépendance qui entre par une autre porte reste une dépendance » — elle nommait
+  // `COPY --from`, et celle-ci existait déjà.
+  for (const inst of doc.getInstructions()) {
+    if (inst.getKeyword() !== "RUN") continue;
+    for (const flag of inst.getFlags?.() || []) {
+      if (flag.getName() !== "mount") continue;
+      const depuis = sourceDuMontage(flag.getValue());
+      if (!depuis) continue;
+      trouvees.push({ reference: depuis, alias: null, source: "RUN --mount=from", interne: estInterne(depuis, etapes) });
+    }
   }
   return trouvees;
+}
+
+/**
+ * `--from=X` désigne une étape (`build`), un index d'étape (`0`), ou une image du registre.
+ * Seule la dernière est une dépendance à épingler.
+ */
+const estInterne = (reference, etapes) => etapes.has(reference.toLowerCase()) || /^\d+$/.test(reference);
+
+/**
+ * Le `from=` d'un `--mount`, ou `null`. La valeur du drapeau est une liste `clé=valeur` séparée
+ * par des virgules — `type=bind,from=nginx:latest,source=/etc`. Un montage de cache, de secret ou
+ * de tmpfs n'a pas de `from=` : il ne fait entrer aucune image, et il n'y a rien à reprocher.
+ */
+export function sourceDuMontage(valeur) {
+  for (const morceau of String(valeur || "").split(",")) {
+    const i = morceau.indexOf("=");
+    if (i < 0) continue;
+    // ⚠️ On ne coupe qu'au PREMIER `=` : une référence peut en contenir un (un condensat, non,
+    // mais une valeur de montage voisine oui) et couper partout tronquerait la référence.
+    if (morceau.slice(0, i).trim() !== "from") continue;
+    return morceau.slice(i + 1).trim() || null;
+  }
+  return null;
 }
 
 /** Rétro-compatible : les `FROM` seuls, tels que la garde les nommait avant. */
