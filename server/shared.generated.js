@@ -44,9 +44,11 @@ __export(shared_exports, {
   SESSION_INTERVAL_MS: () => SESSION_INTERVAL_MS,
   SESSION_QUOTA_PER_HOUR: () => SESSION_QUOTA_PER_HOUR,
   SESSION_WRITES_PER_HOUR: () => SESSION_WRITES_PER_HOUR,
+  SLUG_RE: () => SLUG_RE,
   VIEW_EVENTS_PER_READER_HOUR: () => VIEW_EVENTS_PER_READER_HOUR,
   VIEW_QUOTA_PER_HOUR: () => VIEW_QUOTA_PER_HOUR,
   cycleMapType: () => cycleMapType,
+  estSlug: () => estSlug,
   initialMapContent: () => initialMapContent,
   mapTypeLabel: () => mapTypeLabel,
   sanitizeContent: () => sanitizeContent
@@ -121,6 +123,12 @@ var PRESENT_READ_COALESCE_MS = 400;
 var PRESENT_CACHE_MS = PRESENT_READ_COALESCE_MS;
 var PRESENT_QUOTA_MARGIN = 4;
 var PRESENT_QUOTA_PER_HOUR = (PRESENT_READS_PER_HOUR + PRESENT_READ_BURST) * READERS_PER_EGRESS * PRESENT_QUOTA_MARGIN;
+
+// src/shared.ts
+var SLUG_RE = /^[A-Za-z0-9_-]{1,64}$/;
+function estSlug(v) {
+  return typeof v === "string" && SLUG_RE.test(v);
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   DEFAULT_CENTER,
@@ -142,9 +150,11 @@ var PRESENT_QUOTA_PER_HOUR = (PRESENT_READS_PER_HOUR + PRESENT_READ_BURST) * REA
   SESSION_INTERVAL_MS,
   SESSION_QUOTA_PER_HOUR,
   SESSION_WRITES_PER_HOUR,
+  SLUG_RE,
   VIEW_EVENTS_PER_READER_HOUR,
   VIEW_QUOTA_PER_HOUR,
   cycleMapType,
+  estSlug,
   initialMapContent,
   mapTypeLabel,
   sanitizeContent
