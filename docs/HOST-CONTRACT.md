@@ -76,12 +76,31 @@ The three `presence*` fields report what the host has **observed**, not what it 
 | `presenceDurcissement` | `actif` (a hardened call came back), `degrade` (migration 0018 is missing), `inconnu` (nothing attempted in this process — **not** a green light, and process-local: another instance may have seen otherwise) |
 | `presenceFusion` | `actif` (a heartbeat used the fused contract — one round trip instead of two), `degrade` (migration 0019 is missing: heartbeats cost 3 round trips instead of 2, nothing breaks), `inconnu` (no heartbeat served in this process). Same three states, same trap, same reading rule as the row above |
 
-⚠️ **Before you upgrade, do not read `presenceDurcissement`.** It is a *report of execution*: on an
-instance where nothing is running it says `inconnu`, which means *nobody looked* — not *the migration
-is there*. A pre-flight check built on it silently passes on every idle host, and the missing
-migration is then discovered at the first presentation, i.e. at the worst moment. Ask
-`GET /api/doc?contract=1&schema=1` and read **`schema.durcissementBase`** instead: it asks the
-database, so it answers a global fact.
+⚠️ **Before you upgrade, do not read `presenceDurcissement` or `presenceFusion`.** They are *reports
+of execution*: on an instance where nothing is running they say `inconnu`, which means *nobody
+looked* — not *the migration is there*. A pre-flight check built on one of them silently passes on
+every idle host, and the missing migration is then discovered at the first presentation, i.e. at the
+worst moment. Ask `GET /api/doc?contract=1&schema=1` and read **`schema.durcissementBase`** and
+**`schema.fusionBase`** instead: they ask the database, so they answer a global fact.
+
+⚠️ **And on a serverless host, `inconnu` is not the exception — it is the normal answer, forever.**
+This paragraph used to say *"on an instance where nothing is running"*, which reads as a description
+of an **idle** deployment. Field data from the second host corrected it: a real presentation ran on
+their instance, with a participant, on the very day both fields read `inconnu`. Nothing was idle —
+the presentation had simply ended, and the short-lived process answering `/api/doc` was never the one
+that served a heartbeat. On a platform where each request may be a fresh process, that is the
+**structural** case, not an edge case: a host serving presentations daily can read `inconnu` every
+single time you ask.
+
+So the two fields answer *"did this process, right now, see it work?"* — useful to confirm a fix on a
+long-lived process, worthless as an inventory anywhere else. The durable signals live in `schema`:
+`fusionBase` and `durcissementBase` for the migrations, and `schema.presence.avecJeton` crossed with
+`presentationsActives` for actual traffic — those are read from the database and survive the process
+that answers.
+
+⚠️ **A corollary worth keeping:** *"our instances are idle"* and *"our instances are lightly used"*
+are different claims, and only the second was true here. The distinction matters because a defect
+that needs traffic to appear had real opportunities the whole time it was assumed to have none.
 
 | `durcissementBase` | meaning |
 |---|---|
