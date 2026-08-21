@@ -8,7 +8,7 @@
 
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-import { SURFACE, publics, ecartsExports, ecartsDoc, ecartsInternes, formeImportee, INTERNES_TOLERES } from "../surface-publique.mjs";
+import { SURFACE, publics, ecartsExports, ecartsDoc, ecartsTypes, ecartsInternes, formeImportee, INTERNES_TOLERES } from "../surface-publique.mjs";
 
 describe("le manifeste et package.json se confrontent", () => {
   const paquet = JSON.parse(readFileSync("package.json", "utf8"));
@@ -76,5 +76,31 @@ describe("les symboles internes exposés — le préfixe dit, il n'empêche pas"
     // dit ici, avant que la CI ne le dise sur la forge.
     const mod = require("../../server/handler.js");
     expect(ecartsInternes(".", Object.keys(mod))).toEqual([]);
+  });
+});
+
+describe("un export stable doit annoncer ses types", () => {
+  // ⚠️ « Stable » engage la FORME de la surface. Sans déclaration, cette forme n'est écrite nulle
+  // part qu'une machine puisse lire : un consommateur TypeScript strict reçoit un `any` implicite
+  // — donc une erreur de compilation, ou pire, un silence qui laisse passer n'importe quel appel.
+  const paquet = JSON.parse(readFileSync("package.json", "utf8"));
+
+  it("le paquet réel tient la promesse", () => {
+    expect(ecartsTypes(paquet.exports)).toEqual([]);
+  });
+
+  it("rougit si un stable perd ses types", () => {
+    const mute = { ...paquet.exports, ".": "./server/handler.js" };
+    expect(ecartsTypes(mute).join(" ")).toMatch(/« \. » est stable et n'annonce aucun type/);
+  });
+
+  it("ne réclame rien des expérimentaux — leur forme n'est pas figée, le dire serait se contredire", () => {
+    expect(SURFACE["./shares"].statut).toBe("experimental");
+    expect(ecartsTypes(paquet.exports).some((e) => e.includes("shares"))).toBe(false);
+  });
+
+  it("les fichiers de types voyagent dans le tarball", () => {
+    // Un `.d.ts` absent de `files` est parfait chez nous et introuvable chez qui installe.
+    expect(paquet.files).toContain("types");
   });
 });
