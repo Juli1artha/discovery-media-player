@@ -35,6 +35,9 @@ need.
   "frameAncestors": ["'self'", "https://*.vercel.app", "https://app.example.com"],
   "separateIssuer": true,
   "internalStrict": true,
+  "presenceStrict": true,
+  "presenceJetons": true,
+  "presenceDurcissement": "inconnu",
   "retentionSweep": false,
   "hostShare": true,
   "hostMail": true,
@@ -62,6 +65,14 @@ different question when you want a real answer:
 ```
 GET /api/doc?contract=1&schema=1
 ```
+
+The three `presence*` fields report what the host has **observed**, not what it is configured to do:
+
+| field | meaning |
+|---|---|
+| `presenceJetons` | measured — the host actually signed a throwaway token, so `PLAYER_PRESENCE_SECRET` works |
+| `presenceStrict` | **effective** — `PLAYER_PRESENCE_STRICT` is set *and* tokens can be issued. A closed door announced over an open one would be the worse failure |
+| `presenceDurcissement` | `actif` (a hardened call came back), `degrade` (migration 0018 is missing), `inconnu` (nothing attempted in this process — **not** a green light, and process-local: another instance may have seen otherwise) |
 
 That parameter **is** the one part of this card that needs the database, and only when you ask for
 it. `verdict` is then one of:
