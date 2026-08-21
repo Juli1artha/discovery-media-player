@@ -10,6 +10,25 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.123] — 2026-08-21
+
+### Fixed
+- **The main viewer kept every page it had ever rendered** (P1, external audit). `rendered[n]` was
+  never evicted, canvases stayed in the DOM, a re-fit `build()` did not cancel the render tasks it
+  was replacing, and `rendered[n]` was set **before** the render succeeded — so a failure left the
+  page permanently marked as rendered and never retried. Measured in a real Chromium on a 40-page
+  document: **40 simultaneous canvases**, now at most 12 (current page ± 2 plus what is in flight).
+- **A canvas is now bounded by a pixel budget, not only by a page count.** The device pixel ratio was
+  not capped: on a ×3 display one page reached **9.7 M pixels — about 37 MB of buffer for a single
+  page**. Two bounds now apply (effective DPR capped at 2, then a 4 M pixel ceiling per canvas);
+  measured worst case is ~16 MB. ⚠️ In practice the pixel budget is what binds, and the DPR cap is
+  redundant with it except on a small page with a very dense screen — written down in the test rather
+  than left to be rediscovered.
+- **Render generations and cancellation**, mirroring the audience page: a new `build()` invalidates
+  callbacks from the previous one (they were painting into detached elements and the work was done
+  twice) and cancels the tasks it replaces. A page is marked rendered only on success, and the mark
+  is removed on failure or cancellation so it can be retried.
+
 ## [0.1.122] — 2026-08-21
 
 ### Fixed
@@ -3396,7 +3415,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.122...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.123...HEAD
+[0.1.123]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.122...v0.1.123
 [0.1.122]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.121...v0.1.122
 [0.1.121]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.120...v0.1.121
 [0.1.120]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.119...v0.1.120

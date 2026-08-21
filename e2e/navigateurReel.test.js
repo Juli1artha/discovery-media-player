@@ -62,6 +62,7 @@ const { TIERS } = require("../server/handler.js");
 
 const SLUG_TRACE = "essai-trace";
 const SLUG_PDF = "essai-pdf-reel";
+const SLUG_PDF_LONG = "essai-pdf-long";
 const SLUG_DIRECT = "essai-direct";
 const SLUG_URL_MUETTE = "url-muette";
 const SLUG_PRESENT_PDF = "direct-pdf-reel";
@@ -76,21 +77,32 @@ const octets = {};
  * pdf.js refuse une table xref fausse : ce fabriquant est la seule façon d'avoir une fixture
  * qu'on comprend octet par octet, sans dépendance.
  */
-function fabriquerPdf() {
-  const objets = [
-    "<< /Type /Catalog /Pages 2 0 R >>",
-    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
-    null, // le flux, traité à part
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-  ];
-  const flux = "BT /F1 24 Tf 72 720 Td (Essai reel) Tj ET";
+function fabriquerPdf(nPages = 1) {
+  // Objets : 1 catalogue, 2 arbre de pages, 3 police, puis DEUX objets par page (page + flux).
+  const objets = [];
+  const idsPages = [];
+  for (let i = 0; i < nPages; i++) idsPages.push(4 + i * 2);
+  objets.push("<< /Type /Catalog /Pages 2 0 R >>");
+  objets.push(`<< /Type /Pages /Kids [${idsPages.map((n) => `${n} 0 R`).join(" ")}] /Count ${nPages} >>`);
+  objets.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  const flux = [];
+  for (let i = 0; i < nPages; i++) {
+    objets.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${5 + i * 2} 0 R /Resources << /Font << /F1 3 0 R >> >> >>`);
+    const contenu = `BT /F1 24 Tf 72 720 Td (Page ${i + 1}) Tj ET`;
+    flux.push(contenu);
+    objets.push(null);                       // marque : le flux, écrit à part
+  }
   let corps = "%PDF-1.4\n";
   const positions = [];
+  let iFlux = 0;
   for (let i = 0; i < objets.length; i++) {
     positions.push(corps.length);
-    if (i === 3) corps += `4 0 obj\n<< /Length ${flux.length} >>\nstream\n${flux}\nendstream\nendobj\n`;
-    else corps += `${i + 1} 0 obj\n${objets[i]}\nendobj\n`;
+    if (objets[i] === null) {
+      const f = flux[iFlux++];
+      corps += `${i + 1} 0 obj\n<< /Length ${f.length} >>\nstream\n${f}\nendstream\nendobj\n`;
+    } else {
+      corps += `${i + 1} 0 obj\n${objets[i]}\nendobj\n`;
+    }
   }
   const debutXref = corps.length;
   corps += `xref\n0 ${objets.length + 1}\n0000000000 65535 f \n`;
@@ -147,8 +159,15 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     // La base d'essai (constat P2-3) : sans elle, la visionneuse tracée et la page d'audience
     // répondent 404, et deux des trois politiques de sécurité du produit restent inexercées.
     fs.writeFileSync(path.join(racine, "essai-reel.pdf"), fabriquerPdf());
+    // Un document LONG : c est le seul qui puisse montrer que les canvas ne s accumulent pas.
+    fs.writeFileSync(path.join(racine, "essai-long.pdf"), fabriquerPdf(40));
     const graine = {
       commercial_doc_shares: [{
+        id: 4, slug: SLUG_PDF_LONG, doc_id: "doc-pdf-long", revoked: false, require_auth: false,
+        file_url: pathToFileURL(path.join(racine, "essai-long.pdf")).href, file_name: "essai-long.pdf",
+        doc_title: "Document long", allow_download: false, created_by: "moi@exemple.fr",
+        recipient_email: "client@exemple.fr",
+      }, {
         id: 1, slug: SLUG_TRACE, doc_id: "doc-1", revoked: false, require_auth: false,
         file_url: fichier, file_name: "essai.png", doc_title: "Document d'essai",
         allow_download: true, created_by: "moi@exemple.fr", recipient_email: "client@exemple.fr",
@@ -393,6 +412,76 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
   // (Le test du worker-CDN-trafiqué vivait ici : son modèle de menace a disparu avec le CDN —
   // l'intégrité d'un actif de même origine est celle du serveur, éprouvée octet pour octet en
   // unitaire.)
+  // ⚠️ LE LECTEUR NE DOIT PAS GARDER TOUTES LES PAGES (P1 audit externe).
+  //
+  // `rendered[n]` n'était jamais évincé, les canvas restaient dans le DOM, et le DPR n'était pas
+  // plafonné : sur un écran haute densité un seul canvas pèse quelques dizaines de mégaoctets, donc
+  // un document long parcouru en entier faisait exploser la mémoire de l'onglet.
+  //
+  // Ce banc est le SEUL qui puisse le voir : jsdom n'a pas de canvas, et un test unitaire du script
+  // ne rendrait rien. On parcourt donc 40 pages dans un vrai Chromium et on compte.
+  it("un document long : les canvas restent bornés après un parcours complet", async () => {
+    const page = await navigateur.newPage();
+    await page.goto(`http://127.0.0.1:${port}/doc/${SLUG_PDF_LONG}`, { waitUntil: "load" });
+    await page.waitForFunction(
+      () => { const c = document.querySelector("#pages .page canvas"); return !!c && c.width > 0; },
+      { timeout: 25_000 });
+    const total = await page.evaluate(() => document.querySelectorAll("#pages .page").length);
+    expect(total, "la fixture doit bien avoir 40 pages, sinon ce banc ne prouve rien").toBe(40);
+
+    // Parcours complet, page par page, en laissant le rendu se faire.
+    let maxVus = 0;
+    for (let n = 1; n <= 40; n++) {
+      await page.evaluate((i) => {
+        const el = document.querySelector(`#pages .page[data-p="${i}"]`);
+        if (el) el.scrollIntoView({ block: "start" });
+      }, n);
+      await new Promise((r) => setTimeout(r, 60));
+      const vus = await page.evaluate(() => document.querySelectorAll("#pages .page canvas").length);
+      if (vus > maxVus) maxVus = vus;
+    }
+
+    // Fenêtre = page courante ± 2, plus quelques rendus en vol : une dizaine est large, quarante ne
+    // l'est pas. Seuil LARGE : on détecte l'EFFONDREMENT du principe, pas une consommation exacte.
+    expect(maxVus,
+      `${maxVus} canvas simultanés sur un document de 40 pages : les pages ne sont plus évincées,\n`
+      + "et la mémoire de l'onglet suit la longueur du document.")
+      .toBeLessThanOrEqual(12);
+    await page.close();
+  });
+
+  // ⚠️ LE TAMPON D'UN CANVAS EST BORNÉ EN PIXELS — et c'est CETTE borne qui mord, pas celle du DPR.
+  //
+  // Le code pose deux plafonds : le DPR effectif (2) puis le nombre de pixels du canvas (4 M). Ma
+  // première version de ce test affirmait le rapport tampon/affiché ≤ 2 pour éprouver le DPR — et
+  // retirer le plafond de DPR ne la faisait PAS rougir, parce que le budget de pixels ramenait déjà
+  // le rapport à 1,41. Deux mécanismes, un seul observable : le test ne distinguait rien.
+  //
+  // On affirme donc la propriété qui borne vraiment la mémoire — le nombre de pixels — et on note
+  // que le plafond de DPR lui est REDONDANT dans cette configuration : il ne sert que là où le
+  // budget ne mord pas (petite page, écran très dense).
+  it("un canvas ne dépasse jamais son budget de pixels, quelle que soit la densité d'écran", async () => {
+    const ctx = await navigateur.newContext({ deviceScaleFactor: 3, viewport: { width: 1400, height: 1000 } });
+    const p3 = await ctx.newPage();
+    await p3.goto(`http://127.0.0.1:${port}/doc/${SLUG_PDF_LONG}`, { waitUntil: "load" });
+    await p3.waitForFunction(
+      () => { const c = document.querySelector("#pages .page canvas"); return !!c && c.width > 0; },
+      { timeout: 25_000 });
+    const mesure = await p3.evaluate(() => {
+      let pire = 0;
+      for (const c of document.querySelectorAll("#pages .page canvas")) pire = Math.max(pire, c.width * c.height);
+      return pire;
+    });
+    expect(mesure, "aucun canvas rendu : la mesure ne mesure rien").toBeGreaterThan(0);
+    // 4 M pixels = ~16 Mo de tampon. Marge de 5 % pour les arrondis de viewport.
+    expect(mesure,
+      `un canvas fait ${(mesure / 1e6).toFixed(1)} M pixels, soit environ ${Math.round(mesure * 4 / 1048576)} Mo\n`
+      + "de tampon pour UNE page. Sur un écran dense et un document long, c'est ce produit qui fait\n"
+      + "tomber l'onglet — et le plafond du DPR seul ne le borne pas.")
+      .toBeLessThanOrEqual(4.2e6);
+    await p3.close(); await ctx.close();
+  });
+
   it("un vrai PDF est rendu par notre pdf.js — et RIEN ne part vers un tiers", async () => {
     const page = await navigateur.newPage();
     const horsOrigine = [];
