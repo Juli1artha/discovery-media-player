@@ -28,6 +28,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ecarts as ecartsChangelog, sections, sectionDe } from "./changelog.mjs";
 import { ecartsExemples, exemplesDuDepot, versionsPubliees, acceptables } from "./exemples-epingles.mjs";
+import { VIOLATION, INCONCLUSIF } from "./resultat-garde.mjs";
 
 const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
 const essaye = (fn, defaut = null) => { try { return fn(); } catch { return defaut; } };
@@ -159,15 +160,40 @@ export function rapport({ version, tag, controles }) {
   }
   const echecs = controles.filter((c) => c.etat === "ECHEC");
   const nonVus = controles.filter((c) => c.etat === "NON VÉRIFIÉ");
+  // ⚠️ LES DEUX COMPTES SORTENT D'ICI, ET LE SECOND MANQUAIT. `nonVus` était calculé pour la PHRASE
+  // et jeté ensuite : l'appelant ne recevait que `echecs`, donc un préflight où RIEN n'avait pu
+  // être vérifié rendait 0. Le texte le disait honnêtement — « 2 contrôle(s) n'ont PAS été
+  // vérifiés » — mais le CODE DE SORTIE, seul lu par un script ou une CI, disait « vas-y ».
+  // Une garde dont la prose et le verdict machine divergent est celle qu'on croira le jour où
+  // on ne lira pas la prose. Et c'est le préflight de PUBLICATION.
   lignes.push("");
   if (echecs.length) lignes.push(`REFUSÉ : ${echecs.length} contrôle(s) en échec. Ne posez pas ${tag}.`);
   else if (nonVus.length) lignes.push(`Rien ne s'oppose à ${tag} — mais ${nonVus.length} contrôle(s) n'ont PAS été vérifiés (voir « ? »). Vérifiez-les à la main avant de taguer.`);
   else lignes.push(`Publiable : git tag -a ${tag} -m "${version}" && git push origin ${tag}`);
-  return { texte: lignes.join("\n"), echecs: echecs.length };
+  return { texte: lignes.join("\n"), echecs: echecs.length, nonVerifies: nonVus.length };
 }
 
+// ⚠️ TROIS ISSUES, PAS DEUX — et les codes viennent d'`resultat-garde.mjs` plutôt que d'être
+// réécrits ici : un fait en deux exemplaires diverge tant que personne ne les confronte, et c'est
+// précisément le contrat que ce dépôt vient d'unifier.
+//
+// Ce fichier n'emprunte pas `rendre()` : il imprime un RAPPORT destiné à un humain qui s'apprête à
+// taguer, pas des lignes `::error::` pour un journal de forge. Ce qu'il partage avec les autres
+// gardes, c'est la SIGNIFICATION des codes — la seule chose qu'un appelant lit.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { texte, echecs } = rapport(preflight());
-  console.log(texte);
-  process.exit(echecs ? 1 : 0);
+  // ⚠️ UNE EXCEPTION EST UN RÉSULTAT NON CONCLUANT, PAS UN REFUS DE PUBLIER. Sans ce filet, un
+  // `git` indisponible ou un CHANGELOG absent remontait jusqu'à Node, qui sortait 1 — c'est-à-dire
+  // « REFUSÉ, ne posez pas ce tag », avec une trace de pile en guise d'explication. Le refus
+  // prudent de la garde prenait l'apparence d'un verdict sur la sortie.
+  let rendu;
+  try {
+    rendu = rapport(preflight());
+  } catch (e) {
+    console.error("::error::GARDE NON CONCLUANTE — le préflight n'a pas pu s'exécuter : "
+      + ((e && e.message) || e) + " ; le correctif est dans son environnement, pas dans la branche");
+    process.exit(INCONCLUSIF);
+  }
+  console.log(rendu.texte);
+  if (rendu.echecs) process.exit(VIOLATION);
+  if (rendu.nonVerifies) process.exit(INCONCLUSIF);
 }
