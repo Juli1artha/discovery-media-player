@@ -10,6 +10,20 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.116] — 2026-08-21
+
+### Fixed
+- **`presenceDurcissement` promoted a failure to `actif` instead of falling back to ignorance.**
+  Reported by the second host while verifying a claim of ours. The flag was set *before* the RPC
+  call, so it recorded an **attempt**, not a success; and when the 60 s "no-0018" memo expired, the
+  state did not fall back to `inconnu` — it rose to `actif`. A host missing migration 0018 therefore
+  reported `degrade` for 60 seconds and then announced the guard as **verified**, on the strength of
+  an attempt whose only proven outcome was failure. The state is now derived from two ordered
+  instants (last observed success vs last observed absence): `actif` requires a success **more
+  recent** than the last failure, so an expired proof falls back to ignorance, never to confidence.
+  A network failure now yields `inconnu` rather than `actif` — it proves nothing in either
+  direction. Both regressions are mutation-verified.
+
 ## [0.1.115] — 2026-08-20
 
 ### Added (the card said the door was configured to refuse, not that it refuses)

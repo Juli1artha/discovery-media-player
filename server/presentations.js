@@ -6,7 +6,7 @@ const crypto = require("crypto");
 // ⚠️ Le contexte est REÇU, pas construit. Ce module ne doit pas savoir d'où il vient : c'est ce
 // qui lui permettra de partir dans le dépôt du player sans emporter le studio avec lui.
 let PLAYER = null;
-function init(ctx) { PLAYER = ctx; _bumpSansDurcissementJusqua = 0; _avertRpcPresence = false; _bumpDurcissementTente = false; }
+function init(ctx) { PLAYER = ctx; _bumpSansDurcissementJusqua = 0; _avertRpcPresence = false; _dernierSuccesDurcissement = 0; _dernierEchecDurcissement = 0; }
 
 /**
  * L'état OBSERVÉ du durcissement des bootstraps — pas sa configuration.
@@ -23,7 +23,14 @@ function init(ctx) { PLAYER = ctx; _bumpSansDurcissementJusqua = 0; _avertRpcPre
  */
 function etatDurcissementBootstrap() {
   if (Date.now() < _bumpSansDurcissementJusqua) return "degrade";
-  return _bumpDurcissementTente ? "actif" : "inconnu";
+  // ⚠️ « actif » EXIGE UN SUCCÈS PLUS RÉCENT QUE LE DERNIER ÉCHEC — pas un simple drapeau. Deux
+  // défauts tenaient dans la version précédente (relevés par le second hôte) : (1) le drapeau était
+  // posé AVANT l'appel, donc il enregistrait une TENTATIVE et non un succès ; (2) l'expiration du
+  // mémo ne rétrogradait pas l'état, elle le PROMOUVAIT — un hôte sans 0018 rendait « degrade »
+  // 60 s, puis « actif », sur la foi d'une tentative dont la seule chose prouvée était l'échec.
+  // Comparer les deux instants traite les deux d'un coup : le repli d'une preuve périmée est
+  // l'IGNORANCE, jamais la confiance.
+  return _dernierSuccesDurcissement > _dernierEchecDurcissement ? "actif" : "inconnu";
 }
 
 
@@ -829,20 +836,29 @@ function signatureAbsente(erreur) {
 // silence. Un « oui » (la signature existe) n'a pas besoin d'expirer : une fonction ne disparaît pas.
 let _bumpSansDurcissementJusqua = 0;
 const MEMO_SANS_DURCISSEMENT_MS = 60 * 1000;
+// ⚠️ DEUX INSTANTS, PAS UN DRAPEAU — parce que l'ORDRE est ce qui distingue « réparé » de « cassé ».
+// Un booléen « on a essayé » ne peut pas dire si le dernier mot fut un succès ou un échec, et c'est
+// exactement le mot qui décide. Un succès plus récent que le dernier échec ⇒ la signature existe
+// (une fonction ne disparaît pas toute seule) ; un échec plus récent, mémo expiré ⇒ on ne sait plus.
+let _dernierSuccesDurcissement = 0;
+let _dernierEchecDurcissement = 0;
 // ⚠️ A-T-ON SEULEMENT ESSAYÉ ? « Pas dégradé » n'est pas « vérifié » : un processus qui vient de
-// démarrer n'a rien tenté, et rendre `true` reviendrait à annoncer une garde active sur la foi d'une
-// absence d'observation. Trois états, donc — la même règle que le verdict du schéma, où « rien de
-// manquant » se lisait « tout va bien » tant qu'on ne distinguait pas « rien demandé ».
-let _bumpDurcissementTente = false;
+// démarrer n'a rien tenté, et rendre « actif » reviendrait à annoncer une garde active sur la foi
+// d'une absence d'observation. Trois états, donc — la même règle que le verdict du schéma, où « rien
+// de manquant » se lisait « tout va bien » tant qu'on ne distinguait pas « rien demandé ».
 async function appelerBump(corps, durcissementVoulu) {
   const appel = (b) => PLAYER.db.request("rpc/player_attendance_bump", { method: "POST", body: b });
   if (durcissementVoulu && Date.now() < _bumpSansDurcissementJusqua) {
     const { p_only_if_unclaimed: _retire, ...sansDurcissement } = corps;
     return appel(sansDurcissement);
   }
-  if (durcissementVoulu) _bumpDurcissementTente = true;
   try {
-    return await appel(corps);
+    const r = await appel(corps);
+    // ⚠️ ON NE MARQUE LE SUCCÈS QU'ICI — l'appel est REVENU, donc la signature à 12 arguments existe.
+    // Un rendu `{ok:false, usurpe:true}` compte : seule 0018 sait répondre ça. Ce qui se mesure est
+    // le RETOUR, jamais l'intention de partir.
+    if (durcissementVoulu) _dernierSuccesDurcissement = Date.now();
+    return r;
   } catch (erreur) {
     if (!durcissementVoulu) throw erreur;   // rien à retirer : l'échec est réel
     // ⚠️ ON NE SE REPLIE QUE SUR LA PREUVE. Toute autre erreur remonte telle quelle : l'appelant
@@ -850,7 +866,8 @@ async function appelerBump(corps, durcissementVoulu) {
     if (!signatureAbsente(erreur)) throw erreur;
     // La signature à 12 arguments n'existe pas (0018 non appliquée) : on retire l'argument et on
     // réessaie. Le durcissement n'est alors PAS appliqué — et ça se dit, une fois, plus bas.
-    _bumpSansDurcissementJusqua = Date.now() + MEMO_SANS_DURCISSEMENT_MS;
+    _dernierEchecDurcissement = Date.now();
+    _bumpSansDurcissementJusqua = _dernierEchecDurcissement + MEMO_SANS_DURCISSEMENT_MS;
     // ⚠️ CE QUI DISPARAÎT SE DIT. Le durcissement demandé n'est pas appliqué : sous
     // PLAYER_PRESENCE_STRICT, la porte se fermerait sur les battements legacy tout en laissant un
     // bootstrap auto-déclaré s'emparer d'une présence réclamée — c'est-à-dire une fermeture qui

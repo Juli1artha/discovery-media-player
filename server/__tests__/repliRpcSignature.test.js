@@ -113,9 +113,44 @@ describe("état OBSERVÉ du durcissement", () => {
     expect(presentations.etatDurcissementBootstrap()).toBe("degrade");
   });
 
-  it("une PANNE ne fait pas passer en degrade : elle n'a rien constaté sur la signature", async () => {
+  it("une PANNE ne fait pas passer en degrade — et ne prouve rien non plus : inconnu", async () => {
     joueur(() => Object.assign(new Error("ECONNRESET"), { code: "ECONNRESET" }));
     await bootstrap();
-    expect(presentations.etatDurcissementBootstrap(), "un hoquet réseau ne prouve rien sur 0018").toBe("actif");
+    const etat = presentations.etatDurcissementBootstrap();
+    expect(etat, "un hoquet réseau ne prouve pas l'absence de 0018").not.toBe("degrade");
+    // ⚠️ CETTE ASSERTION DISAIT « actif », ET C'ÉTAIT LE MÊME DÉFAUT QU'ELLE SURVEILLAIT. Une panne ne
+    // prouve pas davantage la PRÉSENCE de 0018 que son absence : l'appel n'est jamais revenu. Le test
+    // consacrait la promotion d'un échec au plus fort des trois états.
+    expect(etat, "l'appel n'est pas revenu : rien n'a été constaté, dans aucun sens").toBe("inconnu");
+  });
+
+  // ⚠️ LE DÉFAUT RELEVÉ PAR LE SECOND HÔTE, ET C'EST LE PIRE SENS POSSIBLE. Le drapeau était posé
+  // AVANT l'appel : il enregistrait une TENTATIVE. Sur un hôte sans 0018, le mémo rendait « degrade »
+  // 60 s, puis expirait — et l'état ne redescendait pas vers l'ignorance, il MONTAIT vers « actif ».
+  // Un hôte dont tous les bootstraps ont échoué finissait par annoncer la garde vérifiée.
+  it("0018 absente, mémo EXPIRÉ : retombe en inconnu, JAMAIS en actif", async () => {
+    vi.useFakeTimers();
+    try {
+      joueur(pgrst202Details);
+      await bootstrap();
+      expect(presentations.etatDurcissementBootstrap()).toBe("degrade");
+      vi.advanceTimersByTime(61_000);                       // le mémo de 60 s a expiré
+      expect(presentations.etatDurcissementBootstrap(),
+        "le repli d'une preuve périmée est l'IGNORANCE, jamais la confiance")
+        .toBe("inconnu");
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("un succès CONSTATÉ après l'échec, lui, fait bien passer en actif", async () => {
+    vi.useFakeTimers();
+    try {
+      joueur(pgrst202Details);                              // 1er appel : signature absente
+      await bootstrap();
+      vi.advanceTimersByTime(61_000);
+      await bootstrap();                                    // 2e appel : revenu normalement
+      expect(presentations.etatDurcissementBootstrap(),
+        "un succès plus RÉCENT que le dernier échec est une observation, pas une expiration")
+        .toBe("actif");
+    } finally { vi.useRealTimers(); }
   });
 });
