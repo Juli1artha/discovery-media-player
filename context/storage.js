@@ -191,6 +191,20 @@ async function lireDepuis(fh, stat, cible, range) {
     return reponse(413, {}, Buffer.alloc(0));
   }
 
+  // ⚠️ UN FICHIER VIDE N'A PAS DE PLAGE À DIFFUSER — et c'est une régression que le passage au flux
+  // a introduite. Avec `total === 0`, la borne haute vaut `total - 1`, soit -1 : `createReadStream`
+  // reçoit alors `{ start: 0, end: -1 }` et meurt en `TypeError` à la fermeture du descripteur.
+  // Le tampon d'avant tolérait `Buffer.alloc(0)` sans rien dire ; le flux, non.
+  //
+  // Un PDF de zéro octet est évidemment invalide — mais il doit produire une RÉPONSE, pas une
+  // exception serveur : c'est le lecteur qui décidera qu'il n'y a rien à afficher, et un 500 lui
+  // dirait « notre faute » au lieu de « ce fichier est vide ». Le cas AVEC `Range` est déjà traité
+  // plus haut : `debut < total` est faux, donc 416. (Relevé par un audit externe.)
+  if (total === 0) {
+    await fh.close().catch(() => {});
+    return reponse(200, { "content-type": type, "content-length": "0" }, Buffer.alloc(0));
+  }
+
   // ⚠️ ON DIFFUSE, ON N'ALLOUE PLUS — et le plafond ne suffisait pas à rendre l'allocation sûre.
   //
   // `Buffer.alloc(fin - debut + 1)` réservait la plage DEMANDÉE en une fois : jusqu'à 60 Mio par

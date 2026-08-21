@@ -56,6 +56,45 @@ describe("le chemin local rend un CORPS LISIBLE, pas un bloc", () => {
     expect(r.status).toBe(416);
   });
 
+  // ⚠️ LE FICHIER VIDE — RÉGRESSION INTRODUITE PAR LE PASSAGE AU FLUX, ET QU'AUCUN ESSAI D'ICI
+  // N'AURAIT VUE. Avec `total === 0`, la borne haute vaut -1 : `createReadStream({start:0,end:-1})`
+  // meurt en `TypeError` à la fermeture du descripteur. Le tampon d'avant tolérait `Buffer.alloc(0)`
+  // sans rien dire — le défaut n'existait donc pas AVANT, il est né du correctif.
+  //
+  // ⚠️ Ce banc-ci ne fabriquait qu'un fichier de 8 Mio : son jeu d'essai ne POUVAIT PAS produire le
+  // phénomène. C'est la même classe que le lecteur PDF éprouvé sur un document d'une page. Un banc
+  // n'éprouve que ce que ses données peuvent faire arriver, et la taille zéro est un cas, pas un
+  // détail. (Relevé par un audit externe.)
+  describe("un fichier de zéro octet répond, il ne lève pas", () => {
+    let vide;
+    beforeAll(async () => { vide = path.join(dossier, "vide.pdf"); await fsp.writeFile(vide, Buffer.alloc(0)); });
+    const lireVide = (s, plage) =>
+      s.fetchAllowedFile(new URL("file://" + vide).href, { range: plage }, { root: dossier });
+
+    it("sans Range : 200, longueur nulle, corps vide", async () => {
+      const r = await lireVide(storage());
+      expect(r, "un fichier vide reste un fichier : on répond").not.toBeNull();
+      expect(r.status, "un PDF vide est invalide, mais c'est au LECTEUR de le dire — pas un 500").toBe(200);
+      expect(r.headers.get("content-length")).toBe("0");
+      const corps = await r.arrayBuffer();
+      expect(corps.length).toBe(0);
+    });
+
+    it("avec Range : 416, comme toute plage hors bornes", async () => {
+      const r = await lireVide(storage(), "bytes=0-99");
+      expect(r.status).toBe(416);
+    });
+
+    it("et le descripteur ne fuit pas : cent lectures d'affilée", async () => {
+      const s = storage();
+      for (let i = 0; i < 100; i++) {
+        const r = await lireVide(s);
+        if (r.body) await r.body.cancel();
+      }
+      expect(true, "cent ouvertures sur un fichier vide sans épuiser les descripteurs").toBe(true);
+    });
+  });
+
   // ⚠️ LE CŒUR : la mémoire ne doit plus suivre taille × concurrence.
   //
   // On ouvre vingt lectures SANS les consommer — le cas exact de l'audit — et on mesure le tas.
@@ -66,7 +105,13 @@ describe("le chemin local rend un CORPS LISIBLE, pas un bloc", () => {
     // ⚠️ SANS CE CONTRÔLE, CE TEST PASSE À VIDE. Si `lire` rend `null` (racine mal passée, chemin
     // refusé), aucune allocation n'a lieu et la mesure de tas est trivialement sous le seuil : le
     // banc annonce alors une propriété qu'il n'a pas éprouvée. Il a déjà passé au vert comme ça.
-    expect(await lire(s), "la lecture doit aboutir, sinon la mesure ne mesure rien").not.toBeNull();
+    // ⚠️ ET ON REFERME CE TÉMOIN. Cette ligne créait une réponse et l'abandonnait sans consommer ni
+    // annuler son corps : le descripteur partait au ramasse-miettes, avec un DeprecationWarning de
+    // Node à chaque exécution du banc. La fuite était dans l'assertion écrite pour éviter un test
+    // creux — le correctif portait son propre défaut. Un avertissement réel finirait noyé.
+    const temoin = await lire(s);
+    expect(temoin, "la lecture doit aboutir, sinon la mesure ne mesure rien").not.toBeNull();
+    await temoin.body.cancel();
     // ⚠️ ON MESURE `arrayBuffers`, PAS `heapUsed` — ET C'EST TOUT LE TEST. Un `Buffer` vit HORS du
     // tas V8 : la première version de cette mesure regardait `heapUsed`, qui rend −0 Mio pendant que
     // 160 Mio sont bel et bien réservés. Elle passait au vert avec le correctif ET avec le défaut
