@@ -1,94 +1,26 @@
-// LES ACTIONS ÉPINGLÉES — SUR LA STRUCTURE DU FICHIER, PLUS SUR SON TEXTE.
+// LES ACTIONS ÉPINGLÉES — SUR UN ARBRE YAML, PLUS SUR DU TEXTE.
 //
-// ⚠️ CETTE GARDE EXISTAIT ET ELLE ÉTAIT AVEUGLE. Elle faisait un `grep` sur les fichiers de
-// workflow, et un `grep` ne sait pas où il regarde. Deux défauts, de sens opposés :
+// ⚠️ CETTE GARDE A ÉTÉ AVEUGLE DEUX FOIS, DE DEUX FAÇONS DIFFÉRENTES.
 //
-//   1. IL VOYAIT DES COMMENTAIRES. Écrire « le contrôle refuse `uses: machin@v3` » dans un
-//      commentaire rendait la CI rouge. C'est ainsi que le défaut a été trouvé : en documentant
-//      la règle voisine (PR de l'épinglage des images), le commentaire s'est fait attraper par
-//      elle. Une garde qui rougit sur sa propre documentation apprend à être contournée.
+//   1. En `grep` d'abord : son motif exigeait `uses: ` suivi d'un nom NON QUOTÉ, donc
+//      `- uses: "actions/checkout@v4"` passait sans un mot. Trois formes flottantes invisibles,
+//      sur la garde la plus sensible du dépôt — une action s'exécute avec les droits d'une forge
+//      qui PUBLIE sur npm.
 //
-//   2. IL NE VOYAIT PAS DES ACTIONS. Et c'est le vrai défaut. Son motif exigeait littéralement
-//      `uses: ` suivi d'un nom non quoté ; ces trois lignes-ci passaient SANS UN MOT :
+//   2. Puis en lexer écrit à la main, qui corrigeait (1) et échouait autrement (revue externe,
+//      21/08) : clé citée `- "uses": …` et mapping en flow `- { uses: … }` rendaient tous deux
+//      `[]`, et l'indicateur `|2-` (valide, ordre inverse de `|-2`) faisait prendre un SCRIPT
+//      pour une action.
 //
-//          - uses: "actions/checkout@v4"      (guillemets doubles)
-//          - uses: 'actions/cache@main'       (guillemets simples)
-//          - uses:  actions/setup-node@v3     (deux espaces)
-//
-//      Constaté, pas supposé : les trois posées dans un workflow de sonde, la garde d'origine
-//      rend « rien à signaler ». Or c'est la garde la plus sensible du dépôt — une étiquette
-//      d'action peut être redéplacée par son auteur, ou par qui prend son compte, et l'action
-//      s'exécute avec les droits de cette forge, qui PUBLIE sur npm.
-//
-// C'est le même défaut que le lexer de `tools/env-lues.mjs`, corrigé pour la même raison : on ne
-// lit pas un format structuré avec une expression régulière. Faute d'analyseur YAML dans les
-// dépendances — et ce dépôt n'en ajoute pas une pour ça —, on lit les lignes en sachant CE QU'ON
-// NE SAIT PAS : les commentaires sont retirés, les blocs scalaires (`run: |`) sont sautés, et
-// `uses:` n'est reconnu qu'en POSITION DE CLÉ. Les limites sont énumérées plus bas plutôt que
-// tues.
+// Écrire un troisième lexer aurait été la troisième fois. La lecture vit maintenant dans
+// `tools/workflows-yaml.mjs`, sur un vrai analyseur YAML 1.2, et ce fichier ne garde que ce qu'il
+// sait faire : DÉCIDER. C'est la même correction que celle d'`env-lues.mjs`, pour la même raison —
+// on ne lit pas un format structuré avec une expression régulière.
 //
 // Usage : node tools/actions-epinglees.mjs [.github/workflows]
 
-import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { usesDuDepot } from "./workflows-yaml.mjs";
 import { pathToFileURL } from "node:url";
-
-/**
- * Retire le commentaire d'une ligne. Un `#` n'ouvre un commentaire que s'il est en début de
- * contenu ou précédé d'un blanc, et hors chaîne quotée — `uses: "a#b"` n'a pas de commentaire.
- */
-export function sansCommentaire(ligne) {
-  let quote = null;
-  for (let i = 0; i < ligne.length; i++) {
-    const c = ligne[i];
-    if (quote) { if (c === quote) quote = null; continue; }
-    if (c === '"' || c === "'") { quote = c; continue; }
-    if (c === "#" && (i === 0 || /\s/.test(ligne[i - 1]))) return ligne.slice(0, i);
-  }
-  return ligne;
-}
-
-/**
- * Les lignes où une clé YAML peut vivre : hors blocs scalaires, commentaires retirés.
- *
- * ⚠️ LES BLOCS `run: |` SONT DU TEXTE, PAS DU YAML. Ce fichier-ci en contient : le script d'une
- * étape peut écrire `uses: quelque-chose@v1` dans un message, et ce n'est pas une action. On les
- * saute par l'indentation, comme YAML les délimite.
- */
-export function lignesDeCleBrutes(txt) {
-  const lignes = txt.split("\n");
-  const gardees = [];
-  let blocA = null; // indentation minimale du contenu d'un bloc scalaire en cours
-  for (const brute of lignes) {
-    const vide = brute.trim() === "";
-    const indent = brute.length - brute.replace(/^\s*/, "").length;
-    if (blocA !== null) {
-      if (vide || indent >= blocA) continue;
-      blocA = null;
-    }
-    if (vide) continue;
-    const ligne = sansCommentaire(brute);
-    if (ligne.trim() === "") continue;
-    // `clé: |`, `clé: >-`, `clé: |2` … ouvrent un bloc dont le contenu est plus indenté.
-    if (/:\s*[|>][-+]?\d*\s*$/.test(ligne)) { blocA = indent + 1; continue; }
-    gardees.push(brute);
-  }
-  return gardees;
-}
-
-/** Les mêmes lignes, commentaire retiré — ce que la garde d'épinglage regarde. */
-export const lignesDeCle = (txt) => lignesDeCleBrutes(txt).map(sansCommentaire);
-
-/** Les valeurs de `uses:`, en position de clé seulement — quotées ou non, espacées ou non. */
-export function references(txt) {
-  const trouvees = [];
-  for (const ligne of lignesDeCle(txt)) {
-    const m = /^\s*(?:-\s+)?uses\s*:\s*(.+?)\s*$/.exec(ligne);
-    if (!m) continue;
-    trouvees.push(m[1].replace(/^["'](.*)["']$/, "$1"));
-  }
-  return trouvees;
-}
 
 const SHA = /^[0-9a-f]{40}$/;
 
@@ -116,26 +48,22 @@ export function ecartEpinglage(reference) {
   return null;
 }
 
-export function ecarts(txt, fichier) {
-  return references(txt).map(ecartEpinglage).filter(Boolean).map((e) => `${fichier} : ${e}`);
-}
-
-export function workflows(dossier) {
-  return readdirSync(dossier).filter((f) => /\.ya?ml$/.test(f)).map((f) => join(dossier, f));
-}
+export const ecarts = (references, fichier) =>
+  references.map((r) => ecartEpinglage(typeof r === "string" ? r : r.reference))
+    .map((e, i) => e && `${fichier || references[i]?.fichier || ""}${references[i]?.ligne ? ":" + references[i].ligne : ""} : ${e}`)
+    .filter(Boolean);
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const dossier = process.argv[2] || ".github/workflows";
-  const fichiers = workflows(dossier);
-  if (!fichiers.length) {
-    console.error(`::error::aucun workflow dans ${dossier} — la sonde vise à côté`);
+  const toutes = usesDuDepot(process.argv[2] || ".github/workflows");
+  if (!toutes.length) {
+    console.error("::error::aucun « uses » relevé dans les workflows — la sonde vise à côté");
     process.exit(1);
   }
-  const soucis = fichiers.flatMap((f) => ecarts(readFileSync(f, "utf8"), f));
+  const soucis = ecarts(toutes);
   if (soucis.length) {
     for (const s of soucis) console.error("::error::" + s);
     process.exit(1);
   }
-  const n = fichiers.flatMap((f) => references(readFileSync(f, "utf8"))).length;
-  console.log(`actions : ${n} référence(s) dans ${fichiers.length} workflows, toutes épinglées sur un commit`);
+  const fichiers = new Set(toutes.map((u) => u.fichier));
+  console.log(`actions : ${toutes.length} référence(s) dans ${fichiers.size} workflows, toutes épinglées sur un commit`);
 }
