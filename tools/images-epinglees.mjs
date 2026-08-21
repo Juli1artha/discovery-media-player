@@ -22,36 +22,66 @@
 //
 // Usage : node tools/images-epinglees.mjs [Dockerfile...]
 
+import { DockerfileParser } from "dockerfile-ast";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 /**
- * Les `FROM` d'un Dockerfile, tels qu'ils sont écrits.
+ * Les images EXTERNES d'un Dockerfile — celles qui viennent d'un registre.
  *
- * ⚠️ On ignore les étapes internes : `FROM build AS final` référence une étape déclarée plus haut
- * dans le même fichier, pas une image du registre. Exiger un condensat là-dessus serait
- * impossible à satisfaire — et une garde impossible à satisfaire finit par être désactivée.
+ * ⚠️ CETTE GARDE LISAIT LE DOCKERFILE À LA LIGNE, ET ELLE ÉTAIT AVEUGLE (revue externe, 21/08).
+ * Son motif exigeait `FROM <image> [AS <nom>]` et rien d'autre. Or ceci est la syntaxe OFFICIELLE :
+ *
+ *     FROM --platform=$BUILDPLATFORM node:24-alpine AS build
+ *
+ * Elle ne voyait pas cette ligne. Sur un Dockerfile dont TOUS les `FROM` portent `--platform`,
+ * elle rendait « 0 référence(s), toutes épinglées sur un condensat » et sortait 0 — constaté.
+ * UNE GARDE QUI DÉCLARE LA VICTOIRE SUR ZÉRO est le pire cas possible : elle est verte, elle est
+ * vide, et rien ne le dit. Mes cinq autres outils refusent quand la sonde ne trouve rien ; celui-ci
+ * était le seul où je l'avais oublié.
+ *
+ * ⚠️ ELLE IGNORAIT AUSSI `COPY --from=nginx:latest`, qui fait entrer une image du registre dans
+ * l'artefact final aussi sûrement qu'un `FROM`. Une dépendance qui entre par une autre porte reste
+ * une dépendance.
+ *
+ * La lecture passe donc par un vrai analyseur de Dockerfile, pour la même raison que les workflows
+ * sont passés à un analyseur YAML : c'est le troisième lecteur maison de ce dépôt qui échoue.
  */
-export function froms(txt) {
+export function imagesDe(txt) {
+  const doc = DockerfileParser.parse(txt);
   const etapes = new Set();
-  const trouves = [];
-  for (const ligne of txt.split("\n")) {
-    const m = /^\s*FROM\s+(\S+)(?:\s+AS\s+(\S+))?\s*$/i.exec(ligne);
-    if (!m) continue;
-    const [, reference, alias] = m;
-    trouves.push({ reference, alias, interne: etapes.has(reference.toLowerCase()) });
+  const trouvees = [];
+
+  for (const from of doc.getFROMs()) {
+    const reference = from.getImage();
+    const alias = from.getBuildStage();
+    if (reference) {
+      trouvees.push({ reference, alias, source: "FROM", interne: etapes.has(reference.toLowerCase()) });
+    }
     if (alias) etapes.add(alias.toLowerCase());
   }
-  return trouves;
+
+  for (const copy of doc.getCOPYs()) {
+    const depuis = copy.getFromFlag()?.getValue();
+    if (!depuis) continue;
+    // `COPY --from=build` désigne une étape ; `COPY --from=0` un index d'étape. Ni l'un ni
+    // l'autre ne vient d'un registre.
+    const interne = etapes.has(depuis.toLowerCase()) || /^\d+$/.test(depuis);
+    trouvees.push({ reference: depuis, alias: null, source: "COPY --from", interne });
+  }
+  return trouvees;
 }
+
+/** Rétro-compatible : les `FROM` seuls, tels que la garde les nommait avant. */
+export const froms = (txt) => imagesDe(txt).filter((i) => i.source === "FROM");
 
 const CONDENSAT = /@sha256:[0-9a-f]{64}$/;
 
 /** Une référence de registre sans condensat désigne une image différente chaque semaine. */
 export function ecartsEpinglage(txt, fichier = "Dockerfile") {
-  return froms(txt)
-    .filter((f) => !f.interne && !CONDENSAT.test(f.reference))
-    .map((f) => `${fichier} : « FROM ${f.reference} » n'est pas épinglé — ajoutez @sha256:… (la même règle que pour les actions)`);
+  return imagesDe(txt)
+    .filter((i) => !i.interne && !CONDENSAT.test(i.reference))
+    .map((i) => `${fichier} : « ${i.source} ${i.reference} » n'est pas épinglé — ajoutez @sha256:… (la même règle que pour les actions)`);
 }
 
 /**
@@ -93,11 +123,19 @@ export function ecartMajeur(txt, versionObservee) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const fichiers = process.argv.slice(2).length ? process.argv.slice(2) : ["Dockerfile"];
+  const externes = fichiers.flatMap((f) => imagesDe(readFileSync(f, "utf8"))).filter((i) => !i.interne);
+
+  // ⚠️ ZÉRO IMAGE N'EST PAS UN SUCCÈS. C'est ce que rendait la version précédente sur un
+  // Dockerfile dont tous les `FROM` portaient `--platform` : « 0 référence(s), toutes épinglées ».
+  // Une garde qui déclare la victoire sur rien est verte, vide, et muette sur les deux.
+  if (!externes.length) {
+    console.error(`::error::aucune image externe trouvée dans ${fichiers.join(", ")} — la sonde vise à côté, ou le fichier n'est pas celui qu'on croit`);
+    process.exit(1);
+  }
   const soucis = fichiers.flatMap((f) => ecartsEpinglage(readFileSync(f, "utf8"), f));
   if (soucis.length) {
     for (const s of soucis) console.error("::error::" + s);
     process.exit(1);
   }
-  const n = fichiers.flatMap((f) => froms(readFileSync(f, "utf8"))).filter((f) => !f.interne).length;
-  console.log(`images de base : ${n} référence(s), toutes épinglées sur un condensat`);
+  console.log(`images de base : ${externes.length} référence(s) externe(s), toutes épinglées sur un condensat`);
 }

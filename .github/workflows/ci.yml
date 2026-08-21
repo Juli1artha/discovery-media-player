@@ -830,6 +830,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # ⚠️ CE JOB EXÉCUTE DÉSORMAIS DE L'OUTILLAGE DU DÉPÔT, DONC IL L'INSTALLE. Il ne le faisait
+      # pas — il ne servait qu'à construire l'image — et la confrontation étiquette↔condensat plus
+      # bas s'en tirait parce qu'elle n'utilisait que du Node nu. Depuis que la lecture du
+      # Dockerfile passe par un analyseur, ce n'est plus vrai : sans `npm ci`, l'étape échoue en
+      # `ERR_MODULE_NOT_FOUND`, ce qui est arrivé à la PR qui a introduit l'analyseur.
+      # Une garde qui dépend d'un paquet doit tourner là où ce paquet existe — ou ne pas en dépendre.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with: { node-version: "22" }
+      - run: npm ci --ignore-scripts
       - run: docker build -t player:ci .
       # Une image qui construit mais ne répond pas n'est pas une image qui marche.
       - name: The image answers

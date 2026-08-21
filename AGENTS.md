@@ -33,7 +33,7 @@ coverage's sake, and coverage is deliberately not measured.
   `server/shared.generated.js` come from `src/` via `npm run build`. Edit the TypeScript source,
   rebuild, commit both. CI rebuilds and fails on any drift.
 - **Exact versions everywhere.** GitHub Actions are pinned to a 40-hex commit SHA (tag kept as
-  a trailing comment); examples pin the exact version `main` declares; third-party browser
+  a trailing comment); examples pin one of the **last two published** versions (never one npm does not serve yet); third-party browser
   scripts are version-pinned **and** SRI-fingerprinted in the `TIERS` inventory. CI rejects
   every floating or stale reference.
 - **Facts must not exist in two unconfronted copies.** Documented env vars ↔ `.env.example` ↔
