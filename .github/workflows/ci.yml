@@ -115,6 +115,41 @@ jobs:
           diff=$(comm -3 /tmp/doc.txt /tmp/env.txt) || true
           [ -z "$diff" ] || { echo "::error::.env.example and docs/CONFIGURATION.md disagree:"; echo "$diff"; exit 1; }
 
+      # ⚠️ LA PARITÉ DOC↔EXEMPLE NE VOIT PAS LE CODE. Les deux textes ci-dessus peuvent être
+      # parfaitement d'accord… sur une liste incomplète : ELEVENLABS_API_KEY, _VOICE_ID, _MODEL et
+      # PLAYER_HOST_AUTH_STORAGE_KEY ont vécu des semaines lus par le code et absents des deux —
+      # un exploitant ne les découvrait qu'en lisant la source (constat d'un audit externe, 21/08 ;
+      # même trou que PLAYER_AUTH_URL en son temps, un cran plus haut). Cette garde part donc du
+      # CODE : toute variable que le runtime lit doit être dans CONFIGURATION.md — et la parité
+      # existante la propage dans .env.example. Les exceptions sont NOMMÉES, avec leur raison :
+      # une liste d'exclusions fondue dans une regex deviendrait la règle.
+      - name: Every variable the code reads is documented
+        if: matrix.node == '22'
+        run: |
+          node -e '
+            const fs = require("node:fs"), path = require("node:path");
+            // Outillage de forge, jamais lu par une instance : documenter serait mentir sur la surface.
+            const HORS_SURFACE = new Set(["PREFIXE_REST_AMONT", "PREFIXE_REST_PORT"]);
+            const lues = new Set();
+            const visiter = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+              const p = path.join(d, e.name);
+              if (e.isDirectory()) { if (e.name !== "__tests__") visiter(p); continue; }
+              if (!p.endsWith(".js") || p.endsWith(".generated.js")) continue;
+              const src = fs.readFileSync(p, "utf8");
+              // Deux motifs réels du dépôt : process.env.X direct, et env.X via
+              // createStandaloneContext(env = process.env).
+              for (const m of src.matchAll(/\b(?:process\.)?env\.([A-Z][A-Z0-9_]{2,})\b/g)) lues.add(m[1]);
+            } };
+            for (const d of ["bin", "context", "server"]) visiter(d);
+            const doc = fs.readFileSync("docs/CONFIGURATION.md", "utf8");
+            const oubliees = [...lues].filter((v) => !HORS_SURFACE.has(v) && !doc.includes("`" + v + "`")).sort();
+            if (oubliees.length) {
+              console.error("::error::variable(s) lue(s) par le code, absente(s) de docs/CONFIGURATION.md : " + oubliees.join(", ") + " — pour un exploitant, une variable non documentée n existe pas");
+              process.exit(1);
+            }
+            console.log("environnement : " + lues.size + " variables lues, toutes documentées");
+          '
+
       # ⚠️ LA CARTE D'IDENTITÉ EST LA SEULE CHOSE QUE LES HÔTES ÉPINGLENT. Le contrat en montrait
       # une version périmée de cinq publications, à laquelle il manquait deux capacités. Un hôte
       # qui teste la présence d'une capacité d'après la doc conclut qu'elle n'existe pas. La
