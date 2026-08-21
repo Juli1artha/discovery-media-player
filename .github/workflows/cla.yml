@@ -40,8 +40,11 @@ jobs:
           # par le contributeur qui veut relire ce qu'il a signé.
           branch: cla-signatures
           # Le mainteneur est le CONCÉDANT : il ne s'accorde pas une licence à lui-même. Les bots
-          # ne produisent pas d'œuvre de l'esprit — rien à concéder non plus.
-          allowlist: Juli1artha,dependabot[bot],github-actions[bot]
+          # ne produisent pas d'œuvre de l'esprit — rien à concéder non plus. `claude` est
+          # l'identité des commits produits par l'agent dans les sessions Claude Code : même
+          # doctrine que les deux autres bots, ajouté avec l'accord explicite du mainteneur
+          # (PR #252, 21/08) quand la vérification a bloqué la première PR portant cette identité.
+          allowlist: Juli1artha,dependabot[bot],github-actions[bot],claude
           custom-notsigned-prcomment: |
             Merci pour cette contribution. Il manque une chose, une seule fois et pour toujours :
             la signature du [CLA](https://github.com/Juli1artha/discovery-media-player/blob/main/CLA.md).
