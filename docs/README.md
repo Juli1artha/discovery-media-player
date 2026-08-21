@@ -19,6 +19,14 @@ no document assumes you have read the others.
 | [`MIGRATIONS.md`](MIGRATIONS.md) | What happens to a database **already in service** when the player expects a newer schema. (French.) |
 | [`RETENTION.md`](RETENTION.md) | The declared perimeter of data retention: every personal-data column has a written policy, and CI enforces that the list is complete. Also an export of the package: `require.resolve("discovery-media-player/retention")`. (French.) |
 
+## You are contributing, or publishing a version
+
+| Document | What it gives you |
+|---|---|
+| [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | how to run the benches, what review looks for, and the one rule: a behaviour worth keeping is worth a test that fails without it. |
+| [`../AGENTS.md`](../AGENTS.md) | the conventions that are not obvious from the file tree — which ones a guard enforces, and which ones only review does. |
+| [`RELEASING.md`](RELEASING.md) | the release train, freezing the candidate SHA, the read-only preflight to run **before** the tag, and what to do when a tag lands on the wrong commit. |
+
 ## You are evaluating the project
 
 The external audit trail is public, unedited, and kept in the state it was received —
