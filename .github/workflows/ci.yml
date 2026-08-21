@@ -445,37 +445,24 @@ jobs:
       # qui voudra BIEN FAIRE montera les exemples au bon moment et rallumera le rouge structurel
       # avec les meilleures intentions, sans que rien ne l'arrête. Elle se caractérise — « la version
       # épinglée doit déjà être SERVIE par le registre » — donc elle est devenue un contrôle.
-      - name: Examples pin a version that exists
+      # ⚠️ CETTE GARDE ÉTAIT ROUGE DANS L'ÉTAT NORMAL DU DÉPÔT, ET ÇA LUI A COÛTÉ UNE PR (#273).
+      # Elle acceptait « la version de main OU la dernière publiée » — or les deux valent la même
+      # chose dès la sortie faite, donc des exemples restés une version en arrière n'étaient plus ni
+      # l'une ni l'autre. Rouge sur main, sur chaque PR ouverte, sur les suivantes. Pas un oubli
+      # isolé : L'ÉTAT QUI SUIT CHAQUE SORTIE. Deux personnes ont trébuché dessus dans la même
+      # heure, chacune le réparant dans une PR qui parlait d'autre chose.
+      #
+      # Le commentaire d'ici affirmait pourtant que « leur retard d'une version est la propriété
+      # recherchée ». Le texte et le contrôle se contredisaient ; c'est le contrôle qui gagne.
+      #
+      # LA RÈGLE TIENT MAINTENANT EN UNE LIGNE : un exemple épingle l'une des DEUX DERNIÈRES
+      # VERSIONS PUBLIÉES. Elle contient les deux anciennes — la version pas encore servie reste
+      # refusée (elle casserait le déploiement de la démo), l'exemple oublié plusieurs versions en
+      # arrière aussi. Seul le retard d'UNE version cesse d'être rouge, et c'est précisément celui
+      # que la prose appelait la propriété recherchée. Les cinq états sont au banc.
+      - name: Examples pin one of the last two published versions
         if: matrix.node == '22'
-        run: |
-          V=$(node -p 'require("./package.json").version')
-          P=$(npm view discovery-media-player version 2>/dev/null || true)
-          if [ -z "$P" ]; then
-            echo "::notice::registre injoignable — on exige la version de main ($V), sans tolérance"
-            P="$V"
-          fi
-          # ⚠️ V EST-ELLE DÉJÀ SERVIE ? C'est ce que la tolérance ci-dessous doit savoir, et c'est ce
-          # qui transforme une phrase de commentaire en contrôle. Tant que V n'est pas publiée,
-          # l'épingler DANS les exemples repasse la garde mais casse le déploiement de la démo, qui
-          # installe depuis le registre : le rouge se déplacerait du contrôle vers le déploiement.
-          # Quelqu'un qui voudra BIEN FAIRE les montera au moment de la sortie — et rien ne
-          # l'arrêtait. (Relevé par le second hôte : cette règle vivait dans un commentaire.)
-          NEUVE=$(node -e "const a=process.argv[1].split('.').map(Number),b=process.argv[2].split('.').map(Number);for(let i=0;i<3;i++){if(a[i]>b[i]){console.log('1');process.exit(0)}if(a[i]<b[i]){console.log('0');process.exit(0)}}console.log('0')" "$V" "$P")
-          echec=0
-          for ex in examples/*/package.json; do
-            dep=$(node -p "require('./$ex').dependencies['discovery-media-player']")
-            if [ "$dep" != "$V" ] && [ "$dep" != "$P" ]; then
-              echo "::error::$ex épingle $dep — ni la version de main ($V) ni la dernière publiée ($P). Un copieur recevrait un player périmé."
-              echec=1
-            elif [ "$dep" = "$V" ] && [ "$NEUVE" = "1" ]; then
-              echo "::error::$ex épingle $V, qui n'est pas encore SERVIE par le registre (dernière publiée : $P)."
-              echo "::error::Le déploiement de la démo installe depuis npm : il échouerait. Laissez les exemples sur $P — ils se monteront à la sortie SUIVANTE, et leur retard d'une version est la propriété recherchée."
-              echec=1
-            fi
-          done
-          [ "$echec" = "0" ] || exit 1
-          grep -q '">=22"' examples/demo/package.json || { echo "::error::examples must declare node >=22"; exit 1; }
-          echo "exemples : épinglés sur $V (main) ou $P (publiée) — les deux sont servables"
+        run: node tools/exemples-epingles.mjs
 
       # ⚠️ UN EXEMPLE QUI N'EST JAMAIS EXÉCUTÉ EST UNE AFFIRMATION, PAS UN EXEMPLE. Celui-ci
       # s'installe comme un copieur le ferait — sauf le player lui-même, pris depuis le tarball du
