@@ -451,3 +451,29 @@ describe("la sonde de durcissement dit une propriété GLOBALE, pas une observat
     expect(etat.durcissementBaseCouvre).toMatch(/presenceDurcissement/);
   });
 });
+
+// ⚠️ BASE ENTIÈREMENT MUETTE : le champ doit être LÀ, pas seulement le verdict (P2 audit externe).
+//
+// Le contrat annonce que `durcissementBase` vaut toujours applique / absente / indetermine. Le
+// retour anticipé — quand la requête témoin elle-même échoue — le faisait disparaître. Un hôte qui
+// teste `durcissementBase !== "applique"` avant de déployer lisait alors `undefined !== "applique"`,
+// vrai par accident. Un champ ABSENT est plus dangereux qu'un champ prudent : il ne se distingue pas
+// d'un player plus ancien qui ne le rendrait pas du tout.
+describe("base totalement muette", () => {
+  const schema = require("../schema.js");
+
+  it("rend quand même durcissementBase — et sa portée avec", async () => {
+    schema.oublier();
+    schema.init({
+      plugins: {}, has: () => false, branding: {}, config: {}, storage: {},
+      errors: { capture() {} }, limits: { async allow() { return true; } },
+      db: { async request() { throw new Error("base injoignable"); } },
+    });
+    const etat = await schema.sonderTout();
+    expect(etat.verdict).toBe("indetermine");
+    expect(Object.hasOwn(etat, "durcissementBase"),
+      "le champ a DISPARU : indiscernable d'un player plus ancien qui ne le rend pas").toBe(true);
+    expect(etat.durcissementBase, "on n'a rien pu demander : ni oui ni non").toBe("indetermine");
+    expect(etat.durcissementBaseCouvre, "la portée voyage avec le champ, ici aussi").toMatch(/BASE/);
+  });
+});

@@ -848,9 +848,32 @@ let _etatDurcissement = "inconnu";
 // démarrer n'a rien tenté, et rendre « actif » reviendrait à annoncer une garde active sur la foi
 // d'une absence d'observation. Trois états, donc — la même règle que le verdict du schéma, où « rien
 // de manquant » se lisait « tout va bien » tant qu'on ne distinguait pas « rien demandé ».
+// ⚠️ UN SEUL CONSTRUCTEUR DE REFUS, PARCE QU'IL Y A DEUX CHEMINS. Le mode strict doit refuser à
+// l'endroit où la RPC échoue ET à l'endroit où le mémo évite de la rappeler. Deux messages écrits
+// séparément divergeraient, et c'est la divergence qui a produit le défaut : le premier chemin était
+// gardé, le second non. (P1 audit externe, v0.1.120.)
+function erreurDurcissementAbsent() {
+  const e = new Error(
+    "bootstrap de présence NON durci alors que PLAYER_PRESENCE_STRICT est posé : appliquez "
+    + "supabase/migrations/0018-bootstrap-non-usurpable.sql, ou retirez le mode strict le temps "
+    + "de la migration. Aucune écriture non protégée n'a été faite.",
+  );
+  e.code = "durcissement-absent";
+  return e;
+}
+
 async function appelerBump(corps, durcissementVoulu) {
   const appel = (b) => PLAYER.db.request("rpc/player_attendance_bump", { method: "POST", body: b });
   if (durcissementVoulu && Date.now() < _bumpSansDurcissementJusqua) {
+    // ⚠️ LE SECOND CHEMIN VERS LA MÊME ÉCRITURE — et c'est par là que la porte fermée se rouvrait.
+    // Le refus de 0.1.119 vivait dans le `catch`, donc sur le chemin où la RPC vient d'échouer. Une
+    // fois le mémo armé, on sort par ICI sans jamais rappeler la RPC : le premier bootstrap était
+    // refusé en 503, le deuxième écrivait sans contrôle pendant les 60 s suivantes.
+    //
+    // Corriger un chemin d'une opération qui en a deux ne corrige rien : ça déplace le défaut vers
+    // celui qu'on n'a pas regardé, et le banc reste vert parce qu'il n'éprouvait que le premier
+    // passage. Le régime se teste sur la RÉPÉTITION, pas sur l'appel initial.
+    if (PLAYER && PLAYER.config && PLAYER.config.presenceStrict) throw erreurDurcissementAbsent();
     const { p_only_if_unclaimed: _retire, ...sansDurcissement } = corps;
     return appel(sansDurcissement);
   }
@@ -891,15 +914,7 @@ async function appelerBump(corps, durcissementVoulu) {
     // On lève, et l'appelant rend 503 : « je n'ai pas pu vérifier », pas « c'est refusé » ni « c'est
     // écrit ». ⚠️ Seuls les BOOTSTRAPS sont concernés (durcissementVoulu) : un battement prouvé n'a
     // jamais emprunté ce chemin, donc une présentation en cours ne s'arrête pas. (Audit externe.)
-    if (PLAYER && PLAYER.config && PLAYER.config.presenceStrict) {
-      const refus = new Error(
-        "bootstrap de présence NON durci alors que PLAYER_PRESENCE_STRICT est posé : appliquez "
-        + "supabase/migrations/0018-bootstrap-non-usurpable.sql, ou retirez le mode strict le temps "
-        + "de la migration. Aucune écriture non protégée n'a été faite.",
-      );
-      refus.code = "durcissement-absent";
-      throw refus;
-    }
+    if (PLAYER && PLAYER.config && PLAYER.config.presenceStrict) throw erreurDurcissementAbsent();
     const { p_only_if_unclaimed: _retire, ...sansDurcissement } = corps;
     return appel(sansDurcissement);
   }

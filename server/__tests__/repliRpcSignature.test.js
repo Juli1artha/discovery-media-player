@@ -292,3 +292,68 @@ describe("strict + 0018 absente", () => {
     expect(r.ok, "une migration manquante ne doit pas arrêter une présentation en cours").toBe(true);
   });
 });
+
+// ⚠️ LE MÉMO CONTOURNAIT LA PORTE FERMÉE AU DEUXIÈME APPEL (P1 audit externe, v0.1.120).
+//
+// Mon correctif de 0.1.119 refusait bien le repli sous `PLAYER_PRESENCE_STRICT`… dans le `catch`,
+// c'est-à-dire sur le chemin où la RPC vient d'échouer. Mais il existe un SECOND chemin vers la même
+// écriture : une fois le mémo de 60 s armé, `appelerBump` sort par le haut, retire
+// `p_only_if_unclaimed` et écrit — sans jamais consulter le mode strict.
+//
+// Donc : premier bootstrap refusé en 503, deuxième ACCEPTÉ et écrit sans contrôle. La propriété
+// annoncée « strict ⇒ aucun repli non protégé » était fausse pendant 60 secondes sur chaque hôte
+// qui aurait armé la porte sans la migration.
+//
+// ⚠️ ET MON BANC NE POUVAIT PAS LE VOIR : il n'appelait qu'une fois. Une garde qui n'éprouve que le
+// premier passage ne dit rien du régime — et c'est justement le second qui empruntait l'autre porte.
+describe("porte fermée : le MÉMO ne doit pas rouvrir ce que le refus vient de fermer", () => {
+  function joueurStrictMemo(strict) {
+    const appels = [];
+    const ctx = {
+      errors: { capture() {} },
+      config: { presenceStrict: strict },
+      db: {
+        async request(chemin, o) {
+          if (/select=[a-z_]+&limit=0/.test(chemin)) return [];
+          if (chemin.startsWith("rpc/player_attendance_bump")) {
+            appels.push({ protege: o.body.p_only_if_unclaimed !== undefined });
+            if (o.body.p_only_if_unclaimed !== undefined) throw pgrst202Details();
+            return [{ ok: true, created: true, capped: false, usurpe: false }];
+          }
+          return [];
+        },
+        async selectAll() { return []; },
+      },
+    };
+    schema.oublier(); schema.init(ctx); presentations.init(ctx);
+    return { appels };
+  }
+
+  it("strict ON : le DEUXIÈME bootstrap, pendant le mémo, est refusé lui aussi", async () => {
+    const j = joueurStrictMemo(true);
+    const premier = await bootstrap();
+    const deuxieme = await bootstrap();
+    expect(premier, "le premier était déjà couvert").toMatchObject({ ok: false, status: 503 });
+    expect(deuxieme,
+      "le mémo a rouvert la porte : ce bootstrap a écrit SANS le contrôle anti-usurpation")
+      .toMatchObject({ ok: false, status: 503 });
+    expect(j.appels.filter((a) => !a.protege).length,
+      "aucune écriture non protégée ne doit avoir lieu sous porte fermée").toBe(0);
+  });
+
+  it("strict ON : cent bootstraps de suite, aucun corps sans p_only_if_unclaimed", async () => {
+    const j = joueurStrictMemo(true);
+    for (let i = 0; i < 100; i++) await bootstrap();
+    expect(j.appels.filter((a) => !a.protege).length,
+      "le régime doit tenir, pas seulement le premier passage").toBe(0);
+  });
+
+  it("strict OFF : le repli reste autorisé pendant le mémo — c'est le régime de transition", async () => {
+    const j = joueurStrictMemo(false);
+    await bootstrap();
+    const deuxieme = await bootstrap();
+    expect(deuxieme.ok, "hors porte fermée, mieux vaut enregistrer sans contrôle que casser").toBe(true);
+    expect(j.appels.filter((a) => !a.protege).length,
+      "et le mémo fait bien son travail : le second appel part SANS durcissement").toBeGreaterThan(0);
+  });
+});
