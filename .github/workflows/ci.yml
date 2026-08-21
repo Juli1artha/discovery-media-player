@@ -740,13 +740,14 @@ jobs:
       # jamais les comparer à quoi que ce soit. Le relevé est son produit, comme pour le banc
       # structurel : c'est là qu'on verra une dérive avant qu'un utilisateur ne la sente.
       #
-      # `--disable-console-intercept` : sans lui, vitest avale le relevé et l'étape ne rend qu'un
-      # vert — un banc de charge dont on ne lit pas la sortie ne sert à rien.
+      # Il a sa PROPRE configuration : un filtre par chemin n'avait pas pris et l'étape refaisait
+      # tourner TOUT le banc base/ — dont une graine non idempotente, qui a échoué sur une clé
+      # dupliquée. Un `include` explicite ne se laisse pas contourner et dit ce qu'il couvre.
       - name: The load campaign against a real database
         env:
           PLAYER_TEST_POSTGREST_URL: http://127.0.0.1:3002
           PLAYER_CHARGE_SPECTATEURS: "50"
-        run: npx vitest run --config vitest.base.config.mjs --disable-console-intercept base/chargeReelle.test.js
+        run: npm run test:campagne
 
       # ⚠️ LE BANC DE CHARGE COMPTE, IL NE CHRONOMÈTRE PAS — il tourne donc ici, sans base ni service :
       # ce qu'il mesure (le nombre d'allers-retours qu'un geste coûte) est déterministe. Sa SORTIE est
