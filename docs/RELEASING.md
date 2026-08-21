@@ -83,7 +83,7 @@ are:
 
 | job | what it does | what it may do |
 | --- | --- | --- |
-| `verifier` | demands the exact commit's CI be entirely green (0.1.68 was published on red), runs the tests again, checks the tag matches `package.json`, extracts the changelog section | read only |
+| `verifier` | checks the tagged commit **belongs to `main`**, demands its CI be entirely green (0.1.68 was published on red), runs the tests again, checks the tag matches `package.json`, extracts the changelog section | read only |
 | `publier` | `npm publish --provenance` — nothing else | mint the npm identity (OIDC) |
 | `eprouver` | installs the **published** package from the registry, renders a page, compiles every inline script (0.1.25 was published and broken); summarises what actually changed in the tarball | read only |
 | `annoncer` | creates the GitHub Release from the notes `verifier` extracted | write to the repo |
@@ -91,6 +91,12 @@ are:
 The split is not cosmetic: `eprouver` executes code downloaded from the registry, and it is the
 job with the fewest rights. Before it existed, those same lines ran with both `contents: write`
 and `id-token: write`.
+
+⚠️ **A green CI does not mean the commit is in `main`.** An open PR branch has exactly that: green
+CI, unmerged. Nothing stopped you from tagging one by mistake and publishing it — an artefact
+carrying the project's name, holding code nobody approved, and which tag protection then makes
+awkward to withdraw. `verifier` now refuses a commit that is not an ancestor of `origin/main`.
+Replaying an old release by dispatch still works: a legitimate tag *is* an ancestor.
 
 The container image is **not** built here — [`image.yml`](../.github/workflows/image.yml) builds it
 from the same tag, in parallel, off the critical path of the npm publication.

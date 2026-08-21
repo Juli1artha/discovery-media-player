@@ -54,6 +54,36 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
+          # ⚠️ L'HISTORIQUE COMPLET EST NÉCESSAIRE À L'ÉTAPE D'ASCENDANCE CI-DESSOUS. Un clone
+          # superficiel (le défaut) n'a pas d'ancêtres : `merge-base` y répondrait « non » pour
+          # TOUT commit, y compris légitime — une garde qui refuse tout ne garde rien.
+          fetch-depth: 0
+
+      # ⚠️ UNE CI VERTE NE DIT PAS QUE LE COMMIT EST DANS `main`.
+      #
+      # Le contrôle voisin exige que la CI du commit exact soit verte. Une branche de PR a
+      # exactement ça : sa CI est verte, et elle n'est pas fusionnée. Rien n'empêchait donc de
+      # taguer par erreur la tête d'une PR en cours et de la PUBLIER — un artefact portant le nom
+      # du projet, contenant du code que personne n'a approuvé, et que la protection des tags rend
+      # ensuite difficile à retirer (P1, audit externe du 22/08).
+      #
+      # `--is-ancestor` répond exactement à la question posée, et il la pose dans le bon sens : un
+      # ancien tag légitime EST un ancêtre de `main`, donc une sortie reste rejouable par dispatch
+      # — ce qui est la raison d'être du dispatch. Un commit de PR non fusionné ne l'est pas.
+      #
+      # Placé AVANT l'attente de la CI : il coûte une seconde, là où l'autre peut attendre trente
+      # minutes avant de refuser pour une raison qu'on connaissait déjà.
+      - name: The tagged commit belongs to main
+        run: |
+          git fetch --quiet origin main
+          sha=$(git rev-parse HEAD)
+          if git merge-base --is-ancestor "$sha" origin/main; then
+            echo "$sha est un ancêtre de origin/main — le tag désigne du code fusionné"
+          else
+            echo "::error::$sha n'est PAS un ancêtre de origin/main — ce tag désigne un commit qui n'appartient pas à la branche par défaut (branche de PR non fusionnée, historique réécrit, mauvais dépôt). On ne publie pas du code que personne n'a fusionné."
+            exit 1
+          fi
+
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           # La même majeure que `publier`, pour que les tests qui autorisent la sortie tournent sur
