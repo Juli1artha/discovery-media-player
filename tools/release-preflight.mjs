@@ -27,7 +27,7 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ecarts as ecartsChangelog, sections, sectionDe } from "./changelog.mjs";
-import { ecartsExemples, exemplesDuDepot, versionsPubliees, acceptables } from "./exemples-epingles.mjs";
+import { ecartsExemples, exemplesDuDepot, versionsPubliees, acceptables, registreExploitable } from "./exemples-epingles.mjs";
 import { VIOLATION, INCONCLUSIF } from "./resultat-garde.mjs";
 
 const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
@@ -114,8 +114,12 @@ export function preflight({ racine = ".", reseau = true } = {}) {
   //    préflight sait dire « je n'ai pas regardé » — c'est sa règle depuis le premier jour.
   const exemples = exemplesDuDepot(racine);
   const publiees = reseau ? versionsPubliees() : null;
-  if (!publiees) {
-    inconnu("les exemples épinglent une version servie", reseau ? "le registre n'a pas répondu" : "réseau désactivé",
+  // ⚠️ « a répondu » ne suffit pas : un registre qui ne sert que des préversions ne nomme aucune
+  // version épinglable. `registreExploitable` porte cette nuance UNE fois, et les deux outils la
+  // lisent — c'est la même correction que celle appliquée à la garde de CI le 22/08.
+  if (!registreExploitable(publiees)) {
+    inconnu("les exemples épinglent une version servie",
+      !reseau ? "réseau désactivé" : publiees ? "le registre n'a nommé aucune version stable" : "le registre n'a pas répondu",
       "npm view discovery-media-player versions --json");
   } else {
     const soucisExemples = ecartsExemples(version, publiees, exemples);
