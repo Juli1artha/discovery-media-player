@@ -198,6 +198,12 @@ jobs:
                             " | documented but absent from code: " + (inventees.join(", ") || "none"));
               process.exit(1);
             }
+            // ATTENTION : cette liste ENUMERE, donc elle ne voit pas ce que personne ny a mis.
+            // Trois champs de presence ont ete publies des jours hors contrat sans quelle rougisse.
+            // La garde AUTORITAIRE est server/__tests__/carteContrat.test.js : elle rend une vraie
+            // carte et compare TOUTES ses cles a lexemple du contrat, dans les deux sens. Ce
+            // controle-ci nest quun filet grossier ; ne pas sy fier pour un champ nouveau.
+            // (Pas dapostrophe ici : ce script vit dans un node -e en guillemets simples de shell.)
             // Les booléens de configuration doivent apparaître aussi : ils disent ce qui est POSÉ.
             for (const champ of ["separateIssuer", "hostShare", "hostMail", "retentionSweep"]) {
               if (!src.includes(champ + ":")) { console.error("::error::" + champ + " absent du code"); process.exit(1); }

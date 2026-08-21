@@ -10,6 +10,38 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.119] — 2026-08-21
+
+### Changed
+- **The hardening state is now an explicit value instead of two compared timestamps** (P3, external
+  audit). Comparing "last success" to "last failure" was correct in principle, but two concurrent
+  responses settling in the *same millisecond* made both instants equal, and equality fell on the
+  `inconnu` side: never a false `actif` — the safe direction — but a lasting false negative. The last
+  observed outcome is now written down rather than inferred from a clock whose resolution is not
+  guaranteed. An expired *negative* proof still falls back to ignorance, never to confidence.
+
+### Fixed
+- **With the strict door closed and migration 0018 missing, a bootstrap is now refused (503) instead
+  of falling back to an unprotected write** (P2, external audit). The fallback drops the anti-takeover
+  check and writes anyway — the right trade during the transition, wrong once `PLAYER_PRESENCE_STRICT`
+  is set: it would be a closure that reassures without protecting. The refusal is **limited to
+  bootstraps**; ordinary proven heartbeats still fall back normally, so a missing migration never
+  stops a presentation in progress. The message naming the migration is still emitted first.
+- **The identity-card guard no longer enumerates field names.** It listed four, so it could not see
+  what it did not name: `presenceStrict`, `presenceJetons` and `presenceDurcissement` had been
+  published for days without appearing in the host contract, with nothing going red. A real card is
+  now rendered and **all** of its top-level keys are compared against the contract example, in both
+  directions — a field added tomorrow goes red on its own.
+
+### Documentation
+- **`docs/HOST-CONTRACT.md`** documents the three `presence*` fields and shows them in the card.
+- **`docs/CONFIGURATION.md`** corrects the cost of rotating the presence secret: it is **two** refused
+  heartbeats, not one, and — the part that actually matters — the participant gets a **new attendance
+  row**, so their accumulated time restarts and the operator sees one person as two. Discarding the
+  key at the first refusal would save a beat and is deliberately not done: the attendee key is shared
+  across presentations, so rotating it on one refusal would change the viewer's identity everywhere
+  else too.
+
 ## [0.1.118] — 2026-08-21
 
 ### Fixed

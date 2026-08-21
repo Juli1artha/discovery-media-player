@@ -133,3 +133,33 @@ describe("client — le battement porte le jeton de présence", () => {
     expect(envois.length).toBe(2);
   });
 });
+
+// ⚠️ LA SÉQUENCE RÉELLE APRÈS ROTATION DU SECRET — deux refus, pas un (relevé par un audit externe,
+// qui a comparé la documentation au code et trouvé la documentation fautive).
+//
+// Le client ne jette QUE le jeton sur 403 : la clé reste la sienne, seule la preuve est périmée. Il
+// ne fait tourner sa clé que sur 409 `usurpe`, c'est-à-dire quand l'hôte lui a dit que la ligne est
+// déjà réclamée. ⚠️ Ce n'est pas une négligence : `3dd-present-attkey` est une entrée de stockage
+// UNIQUE, partagée par toutes les présentations. La faire tourner au premier refus changerait aussi
+// l'identité du visiteur sur les autres présentations qu'il a ouvertes — et un 403 est précisément
+// la situation où l'on ne peut pas savoir si la ligne est la sienne.
+describe("réaction du client aux deux refus", () => {
+  const SRC = require("node:fs").readFileSync(
+    require("node:path").join(__dirname, "..", "gabarit-live.js"), "utf8");
+  const code = SRC.split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+
+  it("403 presence-token → le JETON est jeté, la clé est conservée", () => {
+    expect(code, "le client doit réagir au refus de jeton").toMatch(/error===.presence-token.\)ptOublie\(\)/);
+    const corps = code.slice(code.indexOf("function ptOublie"), code.indexOf("function rotationCle"));
+    expect(corps, "ptOublie ne doit PAS toucher à la clé de participant").not.toMatch(/present-attkey/);
+  });
+
+  it("409 usurpe → la clé tourne, et c'est le SEUL endroit qui y touche", () => {
+    expect(code).toMatch(/usurpe\)rotationCle\(\)/);
+    const occurrences = [...code.matchAll(/removeItem\('3dd-present-attkey'\)/g)].length;
+    expect(occurrences,
+      "un second endroit fait tourner la clé de participant : l'identité du visiteur se perdrait\n"
+      + "ailleurs que sur le refus qui prouve que sa ligne est prise.")
+      .toBe(1);
+  });
+});
