@@ -120,10 +120,13 @@ jobs:
       - name: A TypeScript consumer compiles against the tarball, and the types bite
         if: matrix.node == '22'
         run: |
-          rm -rf /tmp/fixture && mkdir -p /tmp/fixture && cp tools/fixture-types/* /tmp/fixture/
-          cd /tmp/fixture && npm init -y >/dev/null
+          # mktemp -d : nom imprévisible et permissions restreintes — un chemin fixe sous /tmp
+          # est détournable par un lien symbolique pré-posé (CodeQL, alerte haute, corrigée ici).
+          FIXTURE=$(mktemp -d)
+          cp tools/fixture-types/* "$FIXTURE/"
+          cd "$FIXTURE" && npm init -y >/dev/null
           npm i --silent "$GITHUB_WORKSPACE"/discovery-media-player-*.tgz typescript >/dev/null
-          node "$GITHUB_WORKSPACE/tools/fixture-types/eprouver.mjs" /tmp/fixture
+          node "$GITHUB_WORKSPACE/tools/fixture-types/eprouver.mjs" "$FIXTURE"
 
       # ⚠️ ET LA PROMESSE SE TIENT DEPUIS UNE INSTALLATION CONSOMMATRICE, PAS DEPUIS LE CLONE.
       # Un sous-chemin peut être déclaré, documenté, et pourtant irrésolvable chez qui installe :

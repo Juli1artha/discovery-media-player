@@ -10,13 +10,25 @@
 // vérifie rien. Même règle que partout ici — une garde qu'on n'a pas vue échouer n'est pas une
 // garde, c'est une décoration.
 //
-// Usage : node tools/fixture-types/eprouver.mjs <dossier-fixture>
+// Usage : node tools/fixture-types/eprouver.mjs <dossier-fixture>   (dossier créé par l'appelant)
 
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const dossier = process.argv[2] || "/tmp/fixture";
+// ⚠️ AUCUN CHEMIN PAR DÉFAUT SOUS /tmp, ET C'EST UN VRAI CORRECTIF. Ce script écrivait dans
+// « /tmp/fixture » quand on ne lui disait rien : un nom PRÉVISIBLE dans un dossier partagé, donc
+// un lien symbolique pré-posé par n'importe qui suffit à détourner l'écriture ailleurs (CodeQL,
+// « insecure temporary file », deux alertes hautes sur cette PR). Le risque est théorique sur un
+// runner jetable ; l'habitude, elle, ne l'est pas — c'est ainsi qu'un jour on écrit le même
+// motif dans du code qui compte. L'appelant fournit donc le dossier, et il le crée avec
+// `mktemp -d` : nom imprévisible, permissions restreintes, nettoyé avec le runner.
+const dossier = process.argv[2];
+if (!dossier) {
+  console.error("usage : node tools/fixture-types/eprouver.mjs <dossier>\n" +
+    "  Le dossier doit être créé par l'appelant (mktemp -d), jamais deviné ici.");
+  process.exit(2);
+}
 const source = join(dossier, "consommateur.ts");
 const original = readFileSync(source, "utf8");
 
