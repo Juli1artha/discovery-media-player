@@ -633,7 +633,15 @@ function createStandaloneContext(env = process.env) {
        *
        * ⚠️ Sert à fabriquer les liens qui partent par email. L'en-tête `Host` ne convient pas :
        * il est choisi par le client, donc un lecteur pouvait faire envoyer un message signé de
-       * l'hôte dont le bouton pointe ailleurs. Vide ⇒ repli sur `Host`, mais signalé.
+       * l'hôte dont le bouton pointe ailleurs.
+       *
+       * ⚠️ VIDE ⇒ RIEN NE PART. Ce commentaire a annoncé « repli sur `Host`, mais signalé »
+       * pendant tout le temps où le code refusait déjà l'envoi (`public-url-unconfigured`,
+       * routes-liens.js) — la 0.1.21 posait ce repli, la seconde passe d'audit l'a fermé, et
+       * trois textes sur quatre ont continué à le promettre (troisième audit externe, 21/08).
+       * Ce getter rend "" ; son unique consommateur retient le courrier, journalise le motif,
+       * et crée quand même le lien. Un commentaire qui décrit un comportement retiré est pire
+       * qu'une absence de commentaire : il fait renoncer à vérifier.
        */
       get publicUrl() {
         const v = sansBarreFinale(env.PLAYER_PUBLIC_URL).trim();
