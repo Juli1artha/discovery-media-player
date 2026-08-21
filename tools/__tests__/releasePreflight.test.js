@@ -12,7 +12,7 @@
 // les règles de décision — et elles se lisent sans dépôt.
 
 import { describe, it, expect } from "vitest";
-import { ecartVersionChangelog, ecartNotes, ecartsExemples, ecartTagExistant, rapport } from "../release-preflight.mjs";
+import { ecartVersionChangelog, ecartNotes, ecartTagExistant, rapport } from "../release-preflight.mjs";
 
 const CHL = `## [0.1.9] — 2026-01-09
 
@@ -57,29 +57,16 @@ describe("les notes de version — sans elles, une sortie s'annonce sans se déc
   });
 });
 
-describe("les exemples — ce que les gens recopient", () => {
-  const trois = (v) => [
-    { fichier: "examples/demo/package.json", version: v },
-    { fichier: "examples/express/package.json", version: v },
-    { fichier: "examples/vercel/package.json", version: v },
-  ];
-
-  it("acceptent quand ils épinglent la version publiée", () => {
-    expect(ecartsExemples("0.1.9", trois("0.1.9"))).toEqual([]);
-  });
-
-  it("refusent une version exacte mais ancienne — pas seulement une plage", () => {
-    const soucis = ecartsExemples("0.1.9", trois("0.1.7"));
-    expect(soucis).toHaveLength(3);
-    expect(soucis[0]).toMatch(/épingle 0\.1\.7, on publie 0\.1\.9/);
-  });
-
-  it("nomment celui qui diverge, pas « un exemple »", () => {
-    const melange = [...trois("0.1.9")];
-    melange[1] = { fichier: "examples/express/package.json", version: "0.1.2" };
-    expect(ecartsExemples("0.1.9", melange)).toEqual([expect.stringContaining("examples/express/package.json")]);
-  });
-});
+// ⚠️ LA RÈGLE DES EXEMPLES A QUITTÉ CE FICHIER, ET C'EST UN DÉFAUT QUI L'A CHASSÉE.
+//
+// Ce banc éprouvait ici « les exemples épinglent la version qu'on publie ». `ci.yml` éprouvait
+// l'inverse — une version pas encore SERVIE casse le déploiement de la démo. Les deux règles
+// étaient donc mutuellement INSATISFIABLES à l'heure de publier : quoi qu'on épingle, l'une des
+// deux refusait. Aucune n'avait tort dans son fichier ; personne ne les avait mises face à face.
+//
+// Elles vivent maintenant dans `tools/exemples-epingles.mjs`, une fois, et son banc les éprouve
+// sur les CINQ états de la vie du dépôt. Ce qui reste à vérifier ICI, c'est ce que le préflight
+// fait de leur verdict — en particulier qu'il ne conclut pas sans registre.
 
 describe("le tag — une sortie ne se rejoue pas en la retaguant", () => {
   it("accepte un tag libre", () => {

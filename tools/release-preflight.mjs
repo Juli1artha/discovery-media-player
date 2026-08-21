@@ -22,11 +22,12 @@
 //
 // Usage : node tools/release-preflight.mjs
 
-import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ecarts as ecartsChangelog, sections, sectionDe } from "./changelog.mjs";
+import { ecartsExemples, exemplesDuDepot, versionsPubliees, acceptables } from "./exemples-epingles.mjs";
 
 const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
 const essaye = (fn, defaut = null) => { try { return fn(); } catch { return defaut; } };
@@ -51,12 +52,17 @@ export function ecartNotes(version, txtChangelog) {
   return null;
 }
 
-/** Les exemples sont ce que les gens RECOPIENT : ils épinglent la version qu'on publie. */
-export function ecartsExemples(versionPaquet, exemples) {
-  return exemples
-    .filter((e) => e.version !== versionPaquet)
-    .map((e) => `${e.fichier} épingle ${e.version}, on publie ${versionPaquet}`);
-}
+// ⚠️ LA RÈGLE DES EXEMPLES A VÉCU ICI EN DOUBLE, ET LES DEUX EXEMPLAIRES SE CONTREDISAIENT.
+//
+// Ce fichier exigeait « les exemples épinglent la version qu'on publie ». `ci.yml` exigeait
+// l'inverse : une version pas encore SERVIE casse le déploiement de la démo, qui installe depuis
+// npm. Les deux règles étaient donc mutuellement INSATISFIABLES — quoi qu'on épingle à l'heure de
+// publier, l'une des deux refusait. Constaté en les faisant tourner côte à côte (21/08) ; ni l'une
+// ni l'autre n'avait tort dans son fichier, et personne ne les avait mises face à face.
+//
+// « Un fait qui existe en deux exemplaires que rien ne confronte finit par diverger » : ici il
+// avait déjà divergé, et c'est la procédure de sortie qui l'aurait payé. La règle vit maintenant
+// dans `tools/exemples-epingles.mjs`, une fois, et les deux la lisent.
 
 /** Un tag déjà posé ne se repose pas : soit la sortie est faite, soit elle est à réparer. */
 export function ecartTagExistant(tag, tagsConnus) {
@@ -64,19 +70,6 @@ export function ecartTagExistant(tag, tagsConnus) {
 }
 
 // ── Le relevé, sur le dépôt réel ──────────────────────────────────────────────────────────────
-
-function exemplesDuDepot(racine = ".") {
-  const dossier = join(racine, "examples");
-  if (!existsSync(dossier)) return [];
-  const trouves = [];
-  for (const e of readdirSync(dossier, { withFileTypes: true })) {
-    const p = join(dossier, e.name, "package.json");
-    if (!e.isDirectory() || !existsSync(p)) continue;
-    const dep = JSON.parse(readFileSync(p, "utf8")).dependencies?.["discovery-media-player"];
-    if (dep) trouves.push({ fichier: `examples/${e.name}/package.json`, version: dep });
-  }
-  return trouves;
-}
 
 export function preflight({ racine = ".", reseau = true } = {}) {
   const controles = [];
@@ -113,11 +106,21 @@ export function preflight({ racine = ".", reseau = true } = {}) {
   ajoute("références du CHANGELOG exactes", soucisChangelog.length ? soucisChangelog.join(" | ") : null,
     `${sections(changelog).length} sections`);
 
-  // 6. Les exemples suivent.
+  // 6. Les exemples épinglent l'une des deux dernières PUBLIÉES — pas celle qu'on s'apprête à
+  //    publier, qui n'est servie par personne au moment où on lit ces lignes.
+  //    ⚠️ Sans registre, on ne CONCLUT PAS. Le repli de `ci.yml` (« exiger la version de main »)
+  //    serait ici le pire des choix : c'est exactement la version qui ne doit pas y être. Le
+  //    préflight sait dire « je n'ai pas regardé » — c'est sa règle depuis le premier jour.
   const exemples = exemplesDuDepot(racine);
-  const soucisExemples = ecartsExemples(version, exemples);
-  ajoute("les exemples épinglent cette version", soucisExemples.length ? soucisExemples.join(" | ") : null,
-    `${exemples.length} exemples sur ${version}`);
+  const publiees = reseau ? versionsPubliees() : null;
+  if (!publiees) {
+    inconnu("les exemples épinglent une version servie", reseau ? "le registre n'a pas répondu" : "réseau désactivé",
+      "npm view discovery-media-player versions --json");
+  } else {
+    const soucisExemples = ecartsExemples(version, publiees, exemples);
+    ajoute("les exemples épinglent une version servie", soucisExemples.length ? soucisExemples.join(" | ") : null,
+      `${exemples.length} exemples sur ${acceptables(version, publiees).join(" ou ")}`);
+  }
 
   // 7. Le tag est libre — localement ET sur le distant.
   const locaux = essaye(() => git("tag", "-l").split("\n").filter(Boolean), []);
