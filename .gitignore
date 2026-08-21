@@ -8,3 +8,6 @@ documents/*
 .DS_Store
 *.log
 dist/
+
+# Tarball produit par `npm pack` (la preversion de la demo installe le commit, pas le registre).
+discovery-media-player-*.tgz
