@@ -839,6 +839,25 @@ function signatureAbsente(erreur) {
 // silence. Un « oui » (la signature existe) n'a pas besoin d'expirer : une fonction ne disparaît pas.
 let _bumpSansDurcissementJusqua = 0;
 const MEMO_SANS_DURCISSEMENT_MS = 60 * 1000;
+// ⚠️ CE QUE CE PROCESSUS A CONSTATÉ DU CHEMIN FUSIONNÉ — pas ce qu'il espère. Trois états, comme
+// pour le durcissement, et pour la même raison : « pas dégradé » n'est pas « vérifié ». Un
+// processus qui vient de démarrer n'a rien tenté ; rendre « actif » annoncerait une propriété sur
+// la foi d'une absence d'observation.
+//
+// ⚠️ ET C'EST UN RAPPORT D'EXÉCUTION, PAS UN INVENTAIRE. Il ne se lit pas avant un déploiement : au
+// repos il vaut « inconnu », ce qui veut dire « personne n'a regardé ». La question « la migration
+// est-elle là ? » se pose à la BASE — c'est `schema.fusionBase`, qui la lui pose vraiment.
+let _etatFusion = "inconnu";
+function etatFusionBattement() {
+  // ⚠️ MÊME LECTURE QUE `etatDurcissementBootstrap`, DÉLIBÉRÉMENT. Les deux champs partagent leur
+  // vocabulaire et se lisent côte à côte dans la carte : leur donner des règles d'expiration
+  // différentes serait un piège pour qui les compare. Tant que le mémo court, la dernière
+  // observation vaut ; passé lui, une preuve NÉGATIVE périmée retombe sur l'ignorance et jamais sur
+  // la confiance. Un « oui » n'expire pas — une fonction ne disparaît pas toute seule.
+  if (Date.now() < _bumpSansFusionJusqua) return "degrade";
+  return _etatFusion === "degrade" ? "inconnu" : _etatFusion;
+}
+
 // ⚠️ MÉMO DU CONTRAT FUSIONNÉ (0019), MÊME PATRON QUE 0018. La fusion est FONCTION-SEULE : aucune
 // colonne à sonder, donc on la DEMANDE et on retient l'échec, sinon un hôte non migré paierait un
 // aller-retour perdu à chaque battement. Soixante secondes : assez pour ne pas insister, assez court
@@ -879,6 +898,10 @@ function erreurDurcissementAbsent() {
 // est là — donc 0018 aussi, elle la précède — et le durcissement est bien celui qu'on a demandé.
 async function appelerBumpFusionne(corps, durcissementVoulu) {
   const reponse = await PLAYER.db.request("rpc/player_attendance_bump", { method: "POST", body: corps });
+  // L'appel est REVENU : le contrat à 13 arguments existe. Ce qui se mesure est le RETOUR, jamais
+  // l'intention de partir — et un durcissement demandé qui revient par ici est bien appliqué, 0019
+  // succédant à 0018 elle ne peut pas être là sans elle.
+  _etatFusion = "actif";
   if (durcissementVoulu) _etatDurcissement = "actif";
   // ⚠️ ON PROJETTE PLUTÔT QUE DE RENDRE LA LIGNE TELLE QUELLE — une garde de ce dépôt l'exige, et
   // elle a raison ici : le jour où la RPC rendra une colonne de plus, elle ne traversera pas cette
@@ -1033,6 +1056,7 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
         // 0019 n'est pas appliquée. On arme le mémo et on recommence par le chemin classique, qui
         // lira la présentation et décidera du présentateur ici — SANS rien perdre. Rien à signaler à
         // l'exploitant : le battement reste exact, il coûte simplement l'aller-retour d'avant.
+        _etatFusion = "degrade";
         _bumpSansFusionJusqua = Date.now() + MEMO_SANS_FUSION_MS;
         return recordAttendance(slug, participant,
           { presentation, ipHash, anonCap, hasToken, onlyIfUnclaimed, controlHash, sansFusion: true });
@@ -1350,4 +1374,4 @@ async function listPresentationsForDoc(docId, email, isAdmin, autoriseLarge) {
 module.exports = {
   reacteurDepuisJeton,
   purgerPerimees,
-  messagePublic, CHAMPS_PUBLICS, etatDurcissementBootstrap, signatureAbsente, cheminPieceJointe, init, createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent , STALE_MS};
+  messagePublic, CHAMPS_PUBLICS, etatDurcissementBootstrap, etatFusionBattement, signatureAbsente, cheminPieceJointe, init, createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent , STALE_MS};

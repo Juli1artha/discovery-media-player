@@ -452,6 +452,91 @@ describe("la sonde de durcissement dit une propriété GLOBALE, pas une observat
   });
 });
 
+// ⚠️ 0019 : LA MÊME QUESTION, POSÉE À LA BASE. Sans ce champ, un hôte à qui la migration manque
+// retombe en silence à trois allers-retours par battement — correct, deux fois plus cher sur le
+// chemin le plus chaud, et rien ne le dirait. C'est la dégradation qu'on rend observable ici.
+describe("« la fusion des battements est-elle en base ? » — posée à la base, pas au processus", () => {
+  const PGRST202 = () => { throw Object.assign(new Error("Supabase"), { statusCode: 404, details: { code: "PGRST202" } }); };
+
+  /** Le faux répond selon le contrat DEMANDÉ : c'est la seule façon de distinguer 0018 de 0019. */
+  function joueurParContrat({ long, court }) {
+    const journal = [];
+    const corpsVus = [];
+    schema.oublier();
+    schema.init({
+      plugins: {}, has: () => false, branding: {}, config: {}, storage: {},
+      errors: { capture(e) { journal.push(String(e && e.message)); } },
+      limits: { async allow() { return true; } },
+      db: {
+        async request(chemin, o) {
+          if (!chemin.startsWith("rpc/player_attendance_bump")) return [];
+          corpsVus.push(o.body);
+          return ("p_control_hash" in o.body ? long : court)();
+        },
+      },
+    });
+    return { journal, corpsVus };
+  }
+
+  it("0019 en base → « applique », et 0018 est prouvée du même coup — un seul appel", async () => {
+    const { corpsVus } = joueurParContrat({ long: () => [{ ok: false, introuvable: true }], court: PGRST202 });
+    const etat = await schema.sonderTout();
+    expect(etat.fusionBase).toBe("applique");
+    // ⚠️ 0019 reprend les arguments de 0018 : le contrat long ne peut pas exister sans elle. Le faux
+    // refuserait le contrat court — si le verdict était « absente », c'est qu'on l'a redemandé.
+    expect(etat.durcissementBase, "0019 succède à 0018 : la prouver, c'est les prouver toutes deux").toBe("applique");
+    expect(corpsVus.length, "une question dont la réponse vient d'être prouvée ne se repose pas").toBe(1);
+  });
+
+  it("0019 absente mais 0018 là → « absente » / « applique », et l'exploitant est AVERTI du surcoût", async () => {
+    const { journal, corpsVus } = joueurParContrat({ long: PGRST202, court: () => [{ ok: false, capped: true }] });
+    const etat = await schema.sonderTout();
+    expect(etat.fusionBase).toBe("absente");
+    expect(etat.durcissementBase, "l'hôte en retard est justement celui à qui on doit une réponse précise").toBe("applique");
+    expect(corpsVus.length, "le contrat court est reposé, et seulement dans ce cas").toBe(2);
+    // ⚠️ LE MESSAGE DIT LA DÉGRADATION EXACTE, pas « ça ne marche pas » : personne ne décide d'une
+    // migration sur « ça ne marche pas », et ici justement rien ne casse.
+    expect(journal.join(" ")).toMatch(/0019/);
+    expect(journal.join(" "), "le coût réel, sans quoi la migration ne se décide pas").toMatch(/3 allers-retours/);
+  });
+
+  it("les deux absentes → chacune le dit pour elle-même", async () => {
+    const { journal } = joueurParContrat({ long: PGRST202, court: PGRST202 });
+    const etat = await schema.sonderTout();
+    expect(etat.fusionBase).toBe("absente");
+    expect(etat.durcissementBase).toBe("absente");
+    expect(journal.join(" "), "0018 est un problème de SÉCURITÉ, 0019 de coût : deux messages").toMatch(/0018/);
+    expect(journal.join(" ")).toMatch(/0019/);
+  });
+
+  it("une PANNE ne dit ni oui ni non — et n'insiste pas sur une base en difficulté", async () => {
+    const { corpsVus } = joueurParContrat({
+      long: () => { throw Object.assign(new Error("ECONNRESET"), { code: "ECONNRESET" }); },
+      court: () => [{ ok: true }],
+    });
+    const etat = await schema.sonderTout();
+    expect(etat.fusionBase).toBe("indetermine");
+    expect(etat.durcissementBase, "une panne ne prouve rien pour l'une ni pour l'autre").toBe("indetermine");
+    expect(corpsVus.length, "frapper deux fois une base qui ne répond pas n'apprend rien").toBe(1);
+  });
+
+  it("la sonde du contrat long n'écrit rien — DEUX raisons indépendantes", async () => {
+    const { corpsVus } = joueurParContrat({ long: () => [{ ok: false, introuvable: true }], court: PGRST202 });
+    await schema.sonderTout();
+    const corps = corpsVus[0];
+    expect(corps.p_page, "p_page null sur un slug absent : la branche « introuvable » rend avant l'insert").toBe(null);
+    expect(corps.p_anon_cap, "et le plafond nul sortait déjà par la branche « capped »").toBe(0);
+    expect(corps.p_slug, "un slug qui ne peut pas être un slug réel (une espace)").toMatch(/\s/);
+  });
+
+  it("le champ dit sa portée, pour qu'on ne le lise pas comme le rapport d'exécution", async () => {
+    joueurParContrat({ long: () => [], court: () => [] });
+    const etat = await schema.sonderTout();
+    expect(etat.fusionBaseCouvre).toMatch(/presenceFusion/);
+    expect(etat.fusionBaseCouvre, "et la dégradation exacte, pour qu'on sache ce qu'on perd").toMatch(/3 allers-retours/);
+  });
+});
+
 // ⚠️ BASE ENTIÈREMENT MUETTE : le champ doit être LÀ, pas seulement le verdict (P2 audit externe).
 //
 // Le contrat annonce que `durcissementBase` vaut toujours applique / absente / indetermine. Le
