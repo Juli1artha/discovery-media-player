@@ -150,6 +150,32 @@ jobs:
             console.log("environnement : " + lues.size + " variables lues, toutes documentées");
           '
 
+      # ⚠️ LES LIENS DU CHANGELOG SE SONT ARRÊTÉS À LA 0.1.41 PENDANT 77 VERSIONS. Chaque titre
+      # « ## [x.y.z] » promet une référence de comparaison en pied de fichier ; personne n'écrit
+      # ces lignes à la main à chaque sortie, donc elles ont cessé sans que rien ne le dise —
+      # 76 titres pointaient dans le vide (constat d'un audit externe, 21/08). Même formule que
+      # partout : deux exemplaires d'un fait (les titres, les références), une étape qui les
+      # confronte. Le bloc se régénère mécaniquement depuis les titres — c'est ce que cette garde
+      # vérifie, elle n'exige aucun entretien manuel.
+      - name: Every changelog section has its comparison link
+        if: matrix.node == '22'
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const txt = fs.readFileSync("CHANGELOG.md", "utf8");
+            const sections = [...txt.matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)].map((m) => m[1]);
+            const refs = new Set([...txt.matchAll(/^\[(\d+\.\d+\.\d+)\]: /gm)].map((m) => m[1]));
+            const sansRef = sections.filter((v) => !refs.has(v));
+            const sansTitre = [...refs].filter((v) => !sections.includes(v));
+            const unreleased = (txt.match(/^\[Unreleased\]: .*compare\/v(\d+\.\d+\.\d+)\.\.\.HEAD$/m) || [])[1];
+            const echecs = [];
+            if (sansRef.length) echecs.push("titres sans référence : " + sansRef.join(", "));
+            if (sansTitre.length) echecs.push("références sans titre : " + sansTitre.join(", "));
+            if (unreleased !== sections[0]) echecs.push("[Unreleased] compare depuis v" + unreleased + ", la plus récente est v" + sections[0]);
+            if (echecs.length) { console.error("::error::CHANGELOG désaccordé — " + echecs.join(" | ")); process.exit(1); }
+            console.log("changelog : " + sections.length + " sections, chacune sa référence, [Unreleased] à jour");
+          '
+
       # ⚠️ LA CARTE D'IDENTITÉ EST LA SEULE CHOSE QUE LES HÔTES ÉPINGLENT. Le contrat en montrait
       # une version périmée de cinq publications, à laquelle il manquait deux capacités. Un hôte
       # qui teste la présence d'une capacité d'après la doc conclut qu'elle n'existe pas. La
