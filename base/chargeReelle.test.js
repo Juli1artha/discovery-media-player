@@ -143,7 +143,7 @@ decrire("campagne de charge contre une vraie base", () => {
     method: "GET", headers: {}, socket: { remoteAddress: "10.0.1." + (i % 250) }, query: { present: slug, state: "1" },
   });
 
-  function relever(nom, resultats, retard) {
+  function relever(nom, resultats, retard, extra) {
     // ⚠️ `statut < 400` N'EST PAS « a réussi » : un statut de 0 — c'est-à-dire aucune réponse du
     // tout — y passait. Vérifié par mutation : un banc qui n'appelle RIEN rendait alors 20/20
     // réussis et des percentiles à 0 ms. On exige donc une plage de succès RÉELLE.
@@ -158,6 +158,11 @@ decrire("campagne de charge contre une vraie base", () => {
       ligne("erreurs serveur (5xx)", erreurs.length),
       ligne("p50 / p95 / p99 (ms)", tries.length ? `${Math.round(pourcentile(tries, 50))} / ${Math.round(pourcentile(tries, 95))} / ${Math.round(pourcentile(tries, 99))}` : "—"),
       ligne("pire retard de boucle (ms)", retard),
+      // ⚠️ LA QUANTITÉ SUR LAQUELLE ON AFFIRME DOIT ÊTRE LISIBLE. Le premier relevé de la base
+      // ralentie imprimait des latences et TAISAIT le nombre d'allers-retours — c'est-à-dire
+      // exactement le chiffre que l'assertion compare. Un banc qui cache son sujet oblige à
+      // déduire ce qu'il mesure de ce qu'il affiche, et j'ai commencé par en déduire un faux.
+      ...(extra ? [ligne(extra.nom, extra.valeur)] : []),
     ].join("\n"));
     return { ok, tries, erreurs };
   }
@@ -325,11 +330,16 @@ decrire("campagne de charge contre une vraie base", () => {
     const froid = await sousLenteur(slug, 0, combien);
     const lent = await sousLenteur(slug, 250, combien);
 
-    relever("battements, base normale", froid.resultats, froid.retard);
-    relever("battements, base +250 ms", lent.resultats, lent.retard);
+    relever("battements, base normale", froid.resultats, froid.retard, { nom: "allers-retours comptés", valeur: froid.appels });
+    relever("battements, base +250 ms", lent.resultats, lent.retard, { nom: "allers-retours comptés", valeur: lent.appels });
 
     expect(froid.resultats.filter((r) => r.statut >= 500).length, "5xx à froid").toBe(0);
     expect(lent.resultats.filter((r) => r.statut >= 500).length, "une base lente n'est pas une panne du player").toBe(0);
+    // ⚠️ ANTI-VACUITÉ AVANT L'ÉGALITÉ. Si la sonde ne voyait plus passer aucun appel — couture
+    // déplacée, contexte reconstruit — l'égalité 0 === 0 passerait, et le banc affirmerait
+    // « aucun réessai » en n'ayant rien observé. On exige donc au moins un aller-retour par appelant.
+    expect(froid.appels, "la sonde n'a vu aucun aller-retour : elle n'est plus sur le bon chemin")
+      .toBeGreaterThanOrEqual(combien);
     expect(lent.appels,
       `la base lente a coûté ${lent.appels} allers-retours contre ${froid.appels} à froid — un réessai transforme une lenteur en effondrement`)
       .toBe(froid.appels);
@@ -350,7 +360,8 @@ decrire("campagne de charge contre une vraie base", () => {
     const froid = await sousLenteur(slug, 0, combien);
     const agonie = await sousLenteur(slug, 2000, combien);
 
-    relever("battements, base +2 s", agonie.resultats, agonie.retard);
+    relever("battements, base +2 s", agonie.resultats, agonie.retard,
+      { nom: "allers-retours comptés", valeur: `${agonie.appels} (à froid : ${froid.appels})` });
 
     expect(agonie.resultats.filter((r) => r.statut >= 500).length, "aucune erreur serveur, même à +2 s").toBe(0);
     expect(agonie.resultats.filter((r) => r.statut >= 200 && r.statut < 400).length,
