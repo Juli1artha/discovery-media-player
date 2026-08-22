@@ -14,6 +14,14 @@
 // signature, éprouvable sur n'importe quel poste en 200 ms. Rangé là, il n'aurait tourné qu'à une
 // étape de forge qui monte un Postgres. Déplacé, il tourne à chaque `npm test`.
 //
+// ⚠️ CHAQUE DOSSIER A UNE PROPRIÉTÉ QUI JUSTIFIE SA COMMANDE SÉPARÉE, ET ELLE DOIT S'OBSERVER.
+// C'est la forme générale, nommée par le second hôte quand j'ai dit vouloir « attendre un cas » pour
+// `charge/` : la règle n'attend pas un cas, elle attend une PROPRIÉTÉ OBSERVABLE. « Doit simuler de
+// la concurrence » ne se vérifie pas depuis le texte ; « ne chronomètre jamais » si.
+//
+//   base/    → interroge une base          (sans quoi il n'a rien à faire derrière un Postgres)
+//   charge/  → ne mesure jamais le temps   (sans quoi il cesse d'être déterministe)
+//
 // ⚠️ ET LA VÉRIFICATION PORTE SUR LE BESOIN, PAS SUR L'INTENTION. On ne lit pas un commentaire qui
 // annonce « ce banc a besoin d'une base » : on vérifie qu'il en TOUCHE une. Un fichier de `base/`
 // qui ne parle jamais à la base est rangé trop haut, quoi qu'il dise de lui-même.
@@ -68,5 +76,42 @@ describe("un banc rangé derrière une ressource doit en avoir besoin", () => {
       .filter((b) => !EXIGE_LA_RESSOURCE.test(b.texte))
       .map((b) => `base/${b.nom} ne mentionne pas PLAYER_TEST_POSTGREST_URL : il ne peut ni s'esquiver ni refuser`);
     expect(sansGarde, "un banc de base/ sans garde-fou de ressource").toEqual([]);
+  });
+});
+
+// ⚠️ LA PROPRIÉTÉ DE `charge/` : IL COMPTE, IL NE CHRONOMÈTRE PAS — et son en-tête l'affirmait sans
+// que rien ne le vérifie. C'est la raison d'être du banc : un percentile mesuré contre une machine
+// mutualisée donne deux nombres pour le même geste, aucun seuil ne tient, et un seuil qui rougit au
+// hasard finit desserré. Le jour où quelqu'un ajoute une assertion de durée ici, le banc perd le
+// déterminisme qui fait sa valeur — et il le perdra en restant vert.
+describe("le banc de coût compte, il ne chronomètre pas", () => {
+  const HORLOGES = /Date\.now|performance\.now|process\.hrtime|process\.uptime/;
+  const bancsDeCharge = () => fs.readdirSync(path.join(RACINE, "charge"))
+    .filter((f) => f.endsWith(".test.js"))
+    .map((f) => ({ nom: f, texte: fs.readFileSync(path.join(RACINE, "charge", f), "utf8") }));
+
+  // ⚠️ CONTRÔLE POSITIF DE LA SONDE, ET IL EST OBLIGATOIRE ICI. Cette garde affirme une ABSENCE :
+  // sa panne la plus probable — une expression régulière qui ne correspond à rien — produit elle
+  // aussi une absence, donc un vert. Un détecteur d'absence est confondable avec sa propre panne
+  // (règle du second hôte, apprise en croyant tenir une régression qui était mon harnais). On exige
+  // donc que le motif trouve des horloges LÀ OÙ IL DOIT Y EN AVOIR avant de conclure qu'il n'y en a
+  // pas ici.
+  it("la sonde reconnaît bien une horloge — sinon son silence ne vaut rien", () => {
+    const ailleurs = fs.readdirSync(path.join(RACINE, "base"))
+      .filter((f) => f.endsWith(".test.js"))
+      .filter((f) => HORLOGES.test(fs.readFileSync(path.join(RACINE, "base", f), "utf8")));
+    expect(ailleurs.length, "le motif ne trouve aucune horloge dans base/, où il y en a : il vise à côté")
+      .toBeGreaterThan(0);
+  });
+
+  it("aucun banc de charge/ ne mesure le temps", () => {
+    const bancs = bancsDeCharge();
+    expect(bancs.length, "aucun banc relevé dans charge/ : cette garde vise à côté").toBeGreaterThan(0);
+    const chronometres = bancs
+      .filter((b) => HORLOGES.test(sourceUtile(b.texte)))
+      .map((b) => `charge/${b.nom} lit une horloge : ce banc tire sa valeur d'être DÉTERMINISTE. `
+        + "Un nombre qu'on ne peut pas reproduire n'a rien à faire dans un test — la latence se mesure en supervision.");
+    expect(chronometres, "le banc de coût s'est mis à chronométrer : il perdra son déterminisme en restant vert")
+      .toEqual([]);
   });
 });
