@@ -469,6 +469,27 @@ jobs:
           name: paquet-atteste
           path: paquet
 
+      # ⚠️ UN MOTIF QUI NE CORRESPOND À RIEN NE FAIT PAS ÉCHOUER `action-gh-release` : IL SE TAIT.
+      #
+      # Constaté sur le rejeu du 22/08. Le motif disait `*.jsonl` ; le bundle produit s'appelle
+      # `attestation.json`. La Release a reçu DEUX fichiers sur les trois promis, et les cinq jobs
+      # étaient verts. Une promesse tenue à deux tiers, sans un mot — la garde muette que ce dépôt
+      # refuse depuis la 0.1.35, replacée ici par mes soins.
+      #
+      # Le nom du bundle appartient à l'action d'attestation et peut changer avec elle : cette
+      # étape est ce qui transforme un tel changement en refus plutôt qu'en fichier manquant.
+      - name: The three files the Release must carry are actually there
+        run: |
+          manquants=0
+          for motif in "paquet/"*.tgz "paquet/"*.tgz.sha256 "paquet/attestation.json"; do
+            if [ ! -e "$motif" ]; then
+              echo "::error::aucun fichier pour « $motif » — la Release en porterait un de moins, en silence"
+              manquants=1
+            fi
+          done
+          ls -l paquet/
+          [ "$manquants" = 0 ] || exit 1
+
       - name: GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
@@ -482,4 +503,4 @@ jobs:
           files: |
             paquet/*.tgz
             paquet/*.tgz.sha256
-            paquet/*.jsonl
+            paquet/attestation.json
