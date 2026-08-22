@@ -49,7 +49,7 @@ jobs:
           plusHaut=$(git tag -l | node tools/plus-haut-tag.mjs)
           [ -n "$plusHaut" ] || { echo "::error::aucun tag de version valide — la sélection stricte est cassée"; exit 1; }
           depot=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
-          jeton() { curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.stdout.write(JSON.parse(d).token||''))"; }
+          jeton() { curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | jq -r '.token // empty'; }
           digest() { curl -sI -H "Authorization: Bearer $(jeton)" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/$depot/manifests/$1" | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}'; }
           dhaut=$(digest "$plusHaut")
           [ -n "$dhaut" ] || { echo "::error::l'image $plusHaut n'est pas servie — le mécanisme ne peut pas réparer"; exit 1; }
