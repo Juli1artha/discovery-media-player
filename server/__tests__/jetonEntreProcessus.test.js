@@ -40,6 +40,25 @@ const dans = (programme, ...args) => execFileSync(
   { env: { ...process.env, PLAYER_PRESENCE_SECRET: "secret-partage-entre-processus" }, encoding: "utf8" },
 );
 
+// ⚠️ L'ORDRE DE SUSPICION, ET IL VIENT D'UNE ERREUR COMMISE ICI MÊME.
+//
+// En écrivant ces essais, mon harnais lisait `process.argv[2]` alors que l'option -e de node place
+// le premier argument en position 1. Le vérificateur recevait `undefined` et rendait `null` —
+// c'est-à-dire EXACTEMENT le symptôme du défaut que je cherchais : « un jeton signé ailleurs est
+// refusé ». J'ai cru une seconde tenir une régression inter-processus.
+//
+// Ce n'est pas de la malchance, c'est structurel (nommé par le second hôte) : QUAND ON CONSTRUIT UN
+// INSTRUMENT POUR DÉTECTER UNE ABSENCE — un refus, un rejet, un rien — SA PANNE LA PLUS PROBABLE
+// PRODUIT ELLE AUSSI UN RIEN. Un détecteur d'absence est maximalement confondable avec sa propre
+// panne.
+//
+// D'où la règle, qui s'applique à tout couple de contrôles :
+//
+//   • le contrôle NÉGATIF échoue (il passe alors qu'il devrait refuser) → suspectez LE SUJET ;
+//   • le contrôle POSITIF échoue (il refuse alors qu'il devrait passer)  → suspectez L'INSTRUMENT.
+//
+// Il n'y a qu'une façon de réussir et mille de ne rien renvoyer. Ici c'est le positif qui a échoué,
+// et j'ai accusé le sujet — l'ordre inverse aurait trouvé le défaut en trente secondes.
 describe("un jeton de présence traverse les processus", () => {
   it("signé dans un processus, accepté dans un AUTRE", () => {
     const jeton = dans(SIGNER).trim();
