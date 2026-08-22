@@ -17,6 +17,7 @@ no document assumes you have read the others.
 |---|---|
 | [`CONFIGURATION.md`](CONFIGURATION.md) | Every environment variable. An instance is described entirely by its environment — there is no configuration file, on purpose. |
 | [`MIGRATIONS.md`](MIGRATIONS.md) | What happens to a database **already in service** when the player expects a newer schema. (French.) |
+| [`VERIFYING-RELEASES.md`](VERIFYING-RELEASES.md) | how to check, yourself, that the package or image you pulled is the one this repository built — the commands, the expected output, and which signing identity to expect. |
 | [`RETENTION.md`](RETENTION.md) | The declared perimeter of data retention: every personal-data column has a written policy, and CI enforces that the list is complete. Also an export of the package: `require.resolve("discovery-media-player/retention")`. |
 
 ## You are contributing, or publishing a version
@@ -26,7 +27,8 @@ no document assumes you have read the others.
 | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | how to run the benches, what review looks for, and the one rule: a behaviour worth keeping is worth a test that fails without it. |
 | [`../AGENTS.md`](../AGENTS.md) | the conventions that are not obvious from the file tree — which ones a guard enforces, and which ones only review does. |
 | [`RELEASING.md`](RELEASING.md) | the release train, freezing the candidate SHA, the read-only preflight to run **before** the tag, and what to do when a tag lands on the wrong commit. |
-| [`DEPENDENCIES.md`](DEPENDENCIES.md) | what the project depends on and why so little of it: the bar a new dependency has to clear, how updates arrive, and the two upgrades deliberately held back. |
+| [`DEPENDENCIES.md`](DEPENDENCIES.md) | what the project depends on and why so little of it: the bar a new dependency has to clear, how updates arrive, the two upgrades deliberately held back, and the vulnerability thresholds a change has to clear to merge. |
+| [`SECURITY-PRACTICES.md`](SECURITY-PRACTICES.md) | the two standing policies: how secrets are handled (there are no long-lived ones, on purpose) and what happens when a security tool reports something. |
 | [`../MAINTAINERS.md`](../MAINTAINERS.md) | who can merge, who can publish, who reads a vulnerability report — and what one maintainer means for the answer. |
 
 ## You are evaluating the project
@@ -37,6 +39,7 @@ tracked version by version in the [CHANGELOG](../CHANGELOG.md).
 
 | Document | What it is |
 |---|---|
+| [`THREAT-MODEL.md`](THREAT-MODEL.md) | what an attacker would go after, what stands in the way, and — the part most threat models omit — what is deliberately left standing. |
 | [`AUDIT-2026-08-14-RAPPORT.md`](AUDIT-2026-08-14-RAPPORT.md) | First external audit, on `0.1.17`. Historical. (French.) |
 | [`AUDIT-2026-08-14-SUIVI.md`](AUDIT-2026-08-14-SUIVI.md) | The follow-up ledger: done, decided-but-not-done, and rejected-with-reason. Historical. (French.) |
 | [`AUDIT-2026-08-15-SECONDE-PASSE.md`](AUDIT-2026-08-15-SECONDE-PASSE.md) | Second pass, on `0.1.26` — including what the first follow-up had marked too optimistically. Historical. (French.) |

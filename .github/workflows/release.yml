@@ -51,6 +51,31 @@ jobs:
     outputs:
       notes: ${{ steps.notes.outputs.body }}
     steps:
+      # ⚠️ LA SEULE ENTRÉE DE CE DÉPÔT QUE PERSONNE NE RELIT. Tout le reste arrive par une PR, donc
+      # sous des yeux ; `workflow_dispatch` non — un collaborateur tape une chaîne dans un champ et
+      # elle part directement dans `ref:` de quatre checkouts et dans le nom de la GitHub Release.
+      #
+      # Elle n'est pas injectable aujourd'hui : `TAG` est LU comme variable d'environnement
+      # (`${TAG}`) dans les blocs `run:`, jamais interpolée par `${{ }}` — c'est la règle qui vaut
+      # déjà pour les entrées non fiables de `cla.yml`. Mais « pas injectable » et « validée » sont
+      # deux choses différentes, et la seconde manquait : une faute de frappe partait jusqu'au
+      # checkout pour échouer là-bas, sur un message qui parle de `ref` introuvable et pas de la
+      # valeur saisie. Un compte compromis, lui, disposait d'un champ libre sur le workflow qui
+      # PUBLIE.
+      #
+      # On refuse donc ici, en premier, avant tout accès au dépôt : la forme `vX.Y.Z` est la seule
+      # que ce projet tague, et `tools/release-preflight.mjs` la confronte ensuite au manifeste.
+      - name: The dispatch input looks like a tag of this project
+        env:
+          TAG_SAISI: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          case "$TAG_SAISI" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::« $TAG_SAISI » n'a pas la forme vX.Y.Z — ce dépôt ne tague que celle-là"; exit 1 ;;
+          esac
+          printf '%s\n' "$TAG_SAISI" | grep -qxE 'v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?' \
+            || { echo "::error::« $TAG_SAISI » contient autre chose qu'une version"; exit 1; }
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
@@ -368,11 +393,43 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
           persist-credentials: false
+      # ⚠️ L'IMAGE AVAIT SON SBOM, LE PAQUET NON — et c'est le paquet que la plupart des gens
+      # installent. `image.yml` produit `sbom: true` depuis toujours ; le tarball npm, lui, ne
+      # disait nulle part ce qu'il contient. Un consommateur qui doit répondre « suis-je concerné
+      # par cette CVE ? » devait le déduire de `package.json`, à la main, version par version.
+      #
+      # ⚠️ `--ignore-scripts`, ET C'EST LA RAISON D'ÊTRE DU DÉCOUPAGE DE CE WORKFLOW. Ce job est le
+      # seul à porter `contents: write`. Y installer des dépendances qui exécutent leurs scripts
+      # d'installation rendrait à du code téléchargé exactement le droit que les quatre jobs à
+      # permissions disjointes lui retirent. On installe donc l'arbre de PRODUCTION sans en
+      # exécuter une ligne — une dépendance, et `npm sbom` n'a besoin que de l'arbre, pas de son
+      # exécution.
+      #
+      # Le nom porte le tag : un SBOM détaché de la version qu'il décrit ne décrit plus rien.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22"
+      - name: Software bill of materials for the published package
+        run: |
+          npm ci --ignore-scripts --omit=dev
+          npm sbom --sbom-format cyclonedx --omit=dev > "discovery-media-player-${TAG}.cdx.json"
+          node -e '
+            const f = process.argv[1];
+            const b = JSON.parse(require("fs").readFileSync(f, "utf8"));
+            if (b.bomFormat !== "CycloneDX") { console.error("::error::" + f + " nest pas un CycloneDX"); process.exit(1); }
+            if (!Array.isArray(b.components) || !b.components.length) {
+              console.error("::error::SBOM sans composant — il decrirait un paquet vide");
+              process.exit(1);
+            }
+            console.log("SBOM : " + b.components.length + " composant(s)");
+          ' "discovery-media-player-${TAG}.cdx.json"
+
       - name: GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           tag_name: ${{ env.TAG }}
           name: ${{ env.TAG }}
           body: ${{ needs.verifier.outputs.notes }}
+          files: discovery-media-player-${{ env.TAG }}.cdx.json
           generate_release_notes: false
           make_latest: true

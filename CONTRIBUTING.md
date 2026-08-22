@@ -29,6 +29,35 @@ your machine** (`playwright-core`, no browser download); set `PLAYER_E2E_CHROME`
 somewhere unusual. Without a Chrome it skips locally, and **fails in CI** — where skipping would
 leave open exactly the hole it exists to close.
 
+## When the tests run, and what each one is for
+
+Four benches, deliberately separate: each answers a question the others cannot, and knowing which
+one went red tells you where to look before you read a single line of output.
+
+| Bench | Command | What it proves | When it runs |
+|---|---|---|---|
+| Unit + integration | `npm test` | Behaviour, in-process against a temporary folder. 1515 tests, no network, no database | Every push and pull request, on Node 22 **and** 24 |
+| Browser | `npm run test:e2e` | That a real engine accepts the pages — CSP is actually enforced, and an axe-core pass checks accessibility | Every push and pull request |
+| Real database | `npm run test:base` | Behaviour against a real PostgREST and Postgres, not a stub, including a hardening probe | Every push and pull request |
+| Cost under load | `npm run test:charge` | Database round trips **per gesture**, at a thousand viewers and on a deliberately slowed database | Every push and pull request |
+
+Alongside them, on the same trigger: `npm run lint`, `npm run typecheck`, CodeQL, a blocking
+dependency-vulnerability check, and the guards in `tools/` — every action pinned to a commit SHA,
+base images pinned to a digest, the committed bundles still matching their sources, no plaintext
+credential in any tracked file.
+
+**All of it must pass before a pull request can merge**, and pull requests are the only way into
+`main`. Nothing here runs only nightly; the weekly CodeQL scan is an addition, not the primary run,
+and exists because rules change while code stands still.
+
+**Reading a failure.** A guard that fails prints `::error::` and names the file and the rule. A
+guard that could not *look* — no network, an unreadable file — says `GARDE NON CONCLUANTE` instead,
+and that distinction is deliberate: it means the fix is in the guard or its environment, not in your
+branch. Do not "just re-run" a red that names your branch.
+
+Locally, run `npm test` and `npm run lint` before pushing; the other three benches need a browser or
+a database and CI will run them regardless.
+
 ## The hooks install themselves
 
 `npm install` puts a `pre-push` hook in place. It refuses two things: a push to a branch whose pull

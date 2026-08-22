@@ -12,7 +12,28 @@ rather we did not.
 
 ## Supported versions
 
-The latest minor release. This project is young; there is no long-term support branch yet.
+**Only the latest release is supported — for security fixes and for everything else.** This project
+is young, releases often, and has one maintainer; there is no long-term support branch, and
+pretending otherwise would be a promise nobody here can keep.
+
+| Version | Bug fixes | Security fixes |
+|---|---|---|
+| Latest release | Yes | Yes |
+| Anything earlier | No | **No — a version stops receiving security updates the moment the next release is published** |
+
+That cutoff is abrupt on purpose, and it is workable because of how this project releases: versions
+are small, frequent, and upgrading is `npm update` or pulling a new image tag. There is no migration
+cost being hidden behind the word "latest". Where a database migration *is* required, it is
+documented in [`docs/MIGRATIONS.md`](docs/MIGRATIONS.md) and the running instance says so rather
+than degrading silently.
+
+**What that means in practice.** A fix is delivered as a **new release**, never as a patch
+backported to an older line. If you are three versions behind when an advisory lands, the remedy is
+to upgrade to the current release, not to wait for a fix on yours. The changelog for each version
+names the security-relevant changes it carries, so you can see exactly what you gain by moving.
+
+**If this ever changes** — a second maintainer, an operator who needs a supported line — it changes
+here first, in this table, before it is promised anywhere else.
 
 ## What we consider a vulnerability
 

@@ -52,6 +52,36 @@ made and recorded.
 [`CONTRIBUTING.md`](CONTRIBUTING.md) asks something of them: an instance that hits a boundary the
 documentation did not predict is worth an issue, because the next operator will hit the same one.
 
+## Granting access
+
+**Nobody receives escalated permissions — merge rights on `main`, repository settings, publishing,
+or the security mailbox — without being reviewed first.** The review happens before the grant, not
+after, and it is a decision made deliberately rather than a favour extended to someone who has been
+around a while.
+
+What is looked at, in order:
+
+1. **A record in this repository.** Merged pull requests, reviewed under the ordinary rules, over a
+   period long enough to see how the person behaves when they disagree with review. There is no
+   commit count that qualifies someone; what matters is whether their work needed to be checked
+   twice.
+2. **The CLA, already signed.** It is the only place where the right to contribute the code is
+   asserted, and it is checked automatically on every pull request.
+3. **Account hygiene.** 2FA on the GitHub account — the platform enforces it, but it is confirmed
+   rather than assumed for someone about to hold write access.
+4. **The smallest grant that does the job.** Merge rights are not publishing rights, and neither is
+   repository admin. Access to a secret is granted per resource, never as a bundle.
+
+The grant is recorded in the tables above **in the same pull request that makes it**, so the list
+and reality never disagree. Access is removed the same day a person stops being a maintainer, and
+anything they could read that is not issued per run is rotated — see
+[`docs/SECURITY-PRACTICES.md`](docs/SECURITY-PRACTICES.md#rotating).
+
+⚠️ **The one place this policy is currently weaker than it reads.** With a single maintainer, the
+person applying it is the person it would be applied to. It is written down now, before there is a
+second person, precisely because a vetting rule invented at the moment someone is waiting for access
+is a rule shaped by that moment.
+
 ## Bus factor
 
 One maintainer is one point of failure, and pretending otherwise would be the kind of claim this

@@ -75,9 +75,45 @@ Two upgrades are deliberately held back, each with the reason recorded beside it
 Neither is a blanket freeze on majors elsewhere: freezing them would leave actions and images to
 rot without fixes, which trades one supply-chain risk for another.
 
+## Vulnerability and licence thresholds
+
+The thresholds below are enforced by a **blocking status check** on every push and pull request, not
+applied by judgement after the fact. A change that violates them does not merge, and therefore
+cannot reach a release.
+
+| Tree | Threshold | Why this one |
+|---|---|---|
+| **Production** (what `files` ships) | **No known vulnerability at any severity** — `npm audit --omit=dev --audit-level=low` | This runs on the operator's machine, beside their commercial documents, under their credentials. The tree is one dependency: tolerating anything here would be choosing to ship a known hole in something we can read in full |
+| **Development** | **No High or Critical** — `npm audit --audit-level=high` | It never leaves the repository. A flaw here threatens our machines and this forge, not any instance. Blocking on a moderate in a test plugin would stall the delivery of real fixes for a threat that does not touch consumers — and a check people learn to route around stops being one |
+
+**Licences.** Every dependency must be FLOSS and compatible with AGPL-3.0-or-later distribution;
+that is part of the bar in [Selecting a new dependency](#selecting-a-new-dependency) above. A
+dependency whose licence changes under us is treated as a finding at the same thresholds: the
+production tree is corrected before the next release, and the development tree within the cycle.
+
+### Before a release
+
+No release goes out carrying a violation of either threshold. The check runs on the commit being
+released — a tag can only publish a commit that is an ancestor of `main`, and every commit on `main`
+has passed it. If a new advisory lands against an already-published version, the fix goes out as a
+release of its own rather than waiting for the next feature.
+
+### When a finding is not exploitable
+
+A finding may be suppressed only as **not exploitable in this project**, never as *won't fix*. The
+suppression records why the vulnerable code path cannot be reached here, who decided, and when.
+There is currently nothing suppressed — `npm audit` reports zero across both trees — so there is no
+VEX statement to publish. If that changes, the non-exploitability assessment is published with the
+release that carries it, in the changelog section for that version and alongside the SBOM attached
+to the GitHub Release, so a consumer scanning our SBOM can tell a real exposure from one we have
+already assessed.
+
+Static-analysis findings have their own thresholds, in
+[`SECURITY-PRACTICES.md`](SECURITY-PRACTICES.md#static-analysis-findings).
+
 ## Verifying what is there
 
-- **`npm audit`** — currently 0 vulnerabilities across the tree.
+- **`npm audit`** — currently 0 vulnerabilities across the tree, enforced at the thresholds above.
 - **CodeQL** — every push, every pull request, and weekly on a schedule so that new rules meet old
   code.
 - **`tools/secrets-en-clair.mjs`** — refuses a credential in any tracked file, in CI and in the
