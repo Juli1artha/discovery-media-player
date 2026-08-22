@@ -26,6 +26,8 @@ no document assumes you have read the others.
 | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | how to run the benches, what review looks for, and the one rule: a behaviour worth keeping is worth a test that fails without it. |
 | [`../AGENTS.md`](../AGENTS.md) | the conventions that are not obvious from the file tree — which ones a guard enforces, and which ones only review does. |
 | [`RELEASING.md`](RELEASING.md) | the release train, freezing the candidate SHA, the read-only preflight to run **before** the tag, and what to do when a tag lands on the wrong commit. |
+| [`DEPENDENCIES.md`](DEPENDENCIES.md) | what the project depends on and why so little of it: the bar a new dependency has to clear, how updates arrive, and the two upgrades deliberately held back. |
+| [`../MAINTAINERS.md`](../MAINTAINERS.md) | who can merge, who can publish, who reads a vulnerability report — and what one maintainer means for the answer. |
 
 ## You are evaluating the project
 

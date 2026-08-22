@@ -28,6 +28,38 @@ supabase/init.sql     one replayable file, already hardened
 `server/**` requiring nothing from outside is enforced by a test, not by discipline. The day it
 starts importing its host, extraction becomes a project again.
 
+## Actors and actions
+
+Who can ask the player to do what, and what decides the answer. The column that matters is the
+last one: almost nothing in this system is decided by the player itself, and knowing *where* a
+decision lives is what tells you where to look when it goes wrong.
+
+| Actor | What they can do | What decides whether it happens |
+|---|---|---|
+| **Recipient of a tracked link** | Open a document from a link addressed to them; read it page by page | The slug must exist and not be revoked. If the document is behind the access wall, a valid token is required — and if the access-wall plugin is absent, the answer is **404**, never "open anyway" |
+| **Internal reader** | The same, from inside the host application | The host's own identity; their reading is stored in a **separate population** and never merged with a recipient's |
+| **Presenter** | Start a live presentation, drive the page everyone sees, read attendance | The control token. Without it the presentation can be watched, not steered |
+| **Live attendee** | Join a presentation, follow the presenter's page, chat | The presentation must be reachable and not private. Anonymous attendees get browser-chosen `anon-*` keys, capped so one browser cannot invent a crowd |
+| **Host application** | Mount the handler, inject the context, decide who its users are and what they may do | Itself. `identity.canManageShares(user, action)` is the host's permission model — **no answer means no** |
+| **Operator** | Configure an instance, choose where files may be read from, run migrations | Environment variables only — there is no configuration file, on purpose. `docs/CONFIGURATION.md` is the complete list; a variable absent from it does not exist |
+| **Maintainer** | Publish a version | Branch protection, then a tag on a commit belonging to `main`. See [`../MAINTAINERS.md`](../MAINTAINERS.md) |
+
+Three actors are not people, and they are the ones a threat model cares about most:
+
+| System | What it is asked for | What constrains it |
+|---|---|---|
+| **File source** | The bytes of a document — an object-storage origin, the host's own route, or a local folder | The SSRF guard in `context/storage.js`. A URL outside the allow-listed origins, the configured host route, or the configured local root is refused. This is the highest-value target in the codebase: it takes a URL from a caller and fetches it server-side |
+| **Database** (Postgres via PostgREST) | Shares, reading events, presence, chat | Reached **only** from the server, with a service-role key. No table carries an anonymous read policy, and `supabase/init.sql` never creates one |
+| **Host route** | Files the host alone can serve | `PLAYER_HOST_FETCH_SECRET`, which must never appear in a URL, a log, or a request to anything but the host's own route |
+
+What the player refuses to decide is as much part of the design as what it does: identity,
+permissions, rate limits, branding and logging all arrive through the injected context. That is why
+the list above has so few rows owned by the player — and why a host that implements none of the
+optional pieces still gets a working, and *closed*, viewer.
+
+Which of these actions are treated as vulnerabilities when a guard fails is enumerated in
+[`../SECURITY.md`](../SECURITY.md).
+
 ## The injected context
 
 The full list of what a context provides — and which parts are optional — is in
