@@ -267,11 +267,12 @@ jobs:
       - name: What actually changed in the published package
         run: |
           V=$(node -p 'require("./package.json").version')
-          PREC=$(npm view discovery-media-player versions --json | node -e '
-            let d=""; process.stdin.on("data",c=>d+=c).on("end",()=>{
-              const v=JSON.parse(d).filter(x=>x!==process.argv[1]);
-              console.log(v[v.length-1]||"");
-            })' "$V")
+          # ⚠️ `jq` plutôt qu'un `node -e` : la réponse du registre est une DONNÉE, et elle passait
+          # dans un interpréteur JavaScript. Le risque est faible ici — npm rend du JSON — mais la
+          # forme dit le contraire de ce que ce dépôt pratique partout ailleurs, et un lecteur
+          # pressé y voit une invitation à en écrire un autre.
+          PREC=$(npm view discovery-media-player versions --json \
+            | jq -r --arg v "$V" '[.[] | select(. != $v)] | last // empty')
           echo "## Contenu réel du paquet" >> "$GITHUB_STEP_SUMMARY"
           if [ -z "$PREC" ]; then
             echo "Première publication — rien à comparer." >> "$GITHUB_STEP_SUMMARY"

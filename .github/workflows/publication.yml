@@ -126,7 +126,7 @@ jobs:
           publiee=$(npm view discovery-media-player version 2>/dev/null || echo "")
           [ -n "$publiee" ] || { echo "registre npm injoignable — on ne conclut rien"; exit 0; }
           depot=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
-          jeton=$(curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.stdout.write(JSON.parse(d).token||''))")
+          jeton=$(curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | jq -r '.token // empty')
           code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $jeton" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/$depot/manifests/v$publiee")
           TITRE="Image de conteneur manquante pour la version publiée"
           existante=$(gh issue list --state open --search "$TITRE in:title" --json number --jq '.[0].number // empty')
@@ -150,7 +150,7 @@ jobs:
           publiee=$(npm view discovery-media-player version 2>/dev/null || echo "")
           [ -n "$publiee" ] || { echo "registre npm injoignable — on ne conclut rien"; exit 0; }
           depot=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
-          jeton() { curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.stdout.write(JSON.parse(d).token||''))"; }
+          jeton() { curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | jq -r '.token // empty'; }
           digest() { curl -sI -H "Authorization: Bearer $(jeton)" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/$depot/manifests/$1" | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}'; }
           dver=$(digest "v$publiee"); dlat=$(digest latest)
           [ -n "$dver" ] || { echo "image v$publiee absente — déjà couvert par l'étape précédente"; exit 0; }
