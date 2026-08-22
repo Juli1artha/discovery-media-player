@@ -122,10 +122,25 @@ It happened on 0.1.121. The Release and Image guards refused, which is what they
 
 1. **Do not** move the tag on a version already served by the registry. A tag that names two
    different trees over time makes every provenance attestation a lie.
-2. If **nothing was published** under that tag: delete it (`git push origin :v<version>`), fix the
-   commit, run the preflight, tag again.
-3. If **npm already served it**: the version is spent. Publish the fix as the next version, and say
-   in its changelog section what the previous one was.
+2. If **npm already served it**: the version is spent. Publish the fix as the next version, and say
+   in its changelog section what the previous one was. **This is the path to prefer** — it costs a
+   version number and nothing else.
+3. If **nothing was published** under that tag and you want the number back, the tag has to go.
+   `git push origin :v<version>` **will be refused**: the ruleset protects `v*` tags against
+   deletion, which is the point — a tag is the name of an artefact, and names that can vanish are
+   not names. Removing one is an administrative act, deliberately:
+
+   1. GitHub → *Settings* → *Rules* → the ruleset covering `refs/tags/v*` → disable it (or add
+      yourself to the bypass list);
+   2. `git push origin :v<version>` and `git tag -d v<version>` locally;
+   3. **re-enable the rule immediately** — a protection left off is a protection nobody will
+      remember to switch back on;
+   4. fix the commit, run the preflight, tag again.
+
+⚠️ **This document used to say "delete it" as if it were a one-liner** — advice the repository's
+own ruleset refuses, so the first person to follow it would have hit a wall with no explanation
+(P2, audit of 22/08). A procedure that cannot be carried out is worse than no procedure: it costs
+the reader their confidence in the rest of the page.
 
 ## What a release does not do
 
