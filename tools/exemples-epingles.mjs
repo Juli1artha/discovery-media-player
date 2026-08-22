@@ -89,21 +89,46 @@ export function acceptables(versionDeMain, publiees) {
   // à la suite deviendraient « les deux dernières » — la garde recommanderait alors une version
   // que personne ne devrait épingler.
   const stables = (publiees || []).filter(estStable);
-  if (!stables.length) return [versionDeMain];
+  // ⚠️ Ce repli rendait `[versionDeMain]`, c'est-à-dire une version dont personne n'a dit qu'elle
+  // était servie. Même raison que ci-dessus : on ne fabrique pas une réponse à partir de rien.
+  if (!stables.length) {
+    throw new Error("aucune version stable servie — il n'y a pas de version acceptable à nommer");
+  }
   return [...stables].sort(comparerVersions).slice(-2).reverse();
 }
 
+/**
+ * ⚠️ LE REGISTRE A-T-IL NOMMÉ UNE VERSION STABLE ? SANS ÇA, CETTE GARDE N'ÉTABLIT RIEN.
+ *
+ * Sa propriété est « les exemples épinglent une version que npm SERT ». Une panne du registre ne la
+ * dégrade pas : elle la rend inaccessible. Le repli précédent — exiger la version de `main` — était
+ * un proxy pour une AUTRE propriété, et un mauvais : `main` déclare régulièrement une version pas
+ * encore publiée. C'est même exactement ce que `publication.yml` surveille toutes les heures.
+ *
+ * ⚠️ ET LA BONNE RÉPONSE ÉTAIT DÉJÀ ÉCRITE À CÔTÉ. `release-preflight.mjs` refuse de conclure sans
+ * registre depuis le premier jour, et son commentaire nomme ce repli-ci comme « le pire des
+ * choix ». Deux exemplaires du même raisonnement, dont un seul avait raison — la situation que ce
+ * dépôt passe son temps à interdire ailleurs (P1, audit externe du 22/08).
+ *
+ * Une préversion ne compte pas non plus : un registre qui ne sert que des bêta ne sert aucune
+ * version épinglable, donc il n'y a rien à confronter.
+ */
+export const registreExploitable = (publiees) => (publiees || []).some(estStable);
+
 export function ecartsExemples(versionDeMain, publiees, exemples) {
+  // ⚠️ ON LÈVE PLUTÔT QUE DE RENDRE `[]`. Un tableau vide se lit « aucun écart », c'est-à-dire une
+  // conclusion — la conclusion précisément qu'on n'a pas le droit de tirer. C'est ce que rendait la
+  // version précédente, et un banc l'avait figé.
+  if (!registreExploitable(publiees)) {
+    throw new Error("le registre n'a nommé aucune version stable — « les exemples épinglent une version servie » ne peut pas être établi, et exiger la version de main répondrait à une autre question");
+  }
   const permises = acceptables(versionDeMain, publiees);
-  const sansRegistre = !publiees || !publiees.length;
   return exemples
     .filter((e) => !permises.includes(e.version))
-    .map((e) => sansRegistre
-      ? `${e.fichier} épingle ${e.version} — le registre est injoignable, on exige donc la version de main (${versionDeMain}), sans tolérance`
-      : `${e.fichier} épingle ${e.version}, qui n'est ni la dernière publiée (${permises[0]}) ni celle d'avant (${permises[1] ?? "—"}). `
-        + (comparerVersions(e.version, permises[0]) > 0
-          ? "Elle n'est pas encore SERVIE : le déploiement de la démo installe depuis npm et échouerait. Laissez les exemples sur une version publiée."
-          : "Un copieur recevrait un player périmé."));
+    .map((e) => `${e.fichier} épingle ${e.version}, qui n'est ni la dernière publiée (${permises[0]}) ni celle d'avant (${permises[1] ?? "—"}). `
+      + (comparerVersions(e.version, permises[0]) > 0
+        ? "Elle n'est pas encore SERVIE : le déploiement de la démo installe depuis npm et échouerait. Laissez les exemples sur une version publiée."
+        : "Un copieur recevrait un player périmé."));
 }
 
 export function exemplesDuDepot(racine = ".") {
@@ -132,24 +157,29 @@ export function versionsPubliees(executer = () =>
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   conclure(tenter(() => {
     const version = JSON.parse(readFileSync("package.json", "utf8")).version;
-    const publiees = versionsPubliees();
-    // ⚠️ UN REGISTRE INJOIGNABLE DÉGRADE LA GARDE SANS L'AVEUGLER : elle exige alors la version de
-    // `main`, sans tolérance. Elle conclut donc encore — c'est un AVERTISSEMENT, pas un
-    // non-concluant. La distinction compte : ici on vérifie toujours quelque chose.
-    const alertes = publiees ? [] : ["registre injoignable — on exige la version de main, sans tolérance"];
-
     const exemples = exemplesDuDepot();
-    if (!exemples.length) return inconclusif("aucun exemple relevé — la sonde vise à côté", alertes);
+    if (!exemples.length) return inconclusif("aucun exemple relevé — la sonde vise à côté");
 
-    const soucis = ecartsExemples(version, publiees, exemples);
-    // ⚠️ Cette exigence-là vivait aussi dans l'ancienne étape, et elle n'a rien à voir avec la
-    // version : un exemple qui ne déclare pas son moteur se copie sur une machine où il ne tourne pas.
+    // ⚠️ CE CONSTAT-LÀ NE DÉPEND PAS DU REGISTRE, donc il se tient même quand rien d'autre ne se
+    // tient : un exemple qui ne déclare pas son moteur se copie sur une machine où il ne tourne pas.
+    // Il est relevé AVANT l'interrogation de npm pour que la panne du registre ne l'emporte pas.
+    const soucis = [];
     if (!readFileSync("examples/demo/package.json", "utf8").includes('">=22"')) {
       soucis.push("examples/demo/package.json ne déclare pas node >=22");
     }
-    if (soucis.length) return violation(soucis, alertes);
+
+    const publiees = versionsPubliees();
+    if (!registreExploitable(publiees)) {
+      const raison = "le registre n'a nommé aucune version stable — « les exemples épinglent une version servie » n'a pas pu être vérifié ; exiger la version de main répondrait à une AUTRE question, et `main` déclare régulièrement une version pas encore publiée";
+      // Une violation qu'on a pu établir l'emporte sur ce qu'on n'a pas pu regarder : elle, elle
+      // est vraie. Le reste part en non-concluant, jamais en vert.
+      return soucis.length ? violation(soucis, [raison]) : inconclusif(raison);
+    }
+
+    soucis.push(...ecartsExemples(version, publiees, exemples));
+    if (soucis.length) return violation(soucis);
 
     const permises = acceptables(version, publiees);
-    return conforme(`exemples : ${exemples.length} sur ${permises.join(" ou ")} — servies par le registre, donc installables`, alertes);
+    return conforme(`exemples : ${exemples.length} sur ${permises.join(" ou ")} — servies par le registre, donc installables`);
   }));
 }

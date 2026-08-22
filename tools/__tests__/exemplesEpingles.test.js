@@ -10,7 +10,7 @@
 // recherchée ». Le texte et le contrôle se contredisaient, et c'est le contrôle qui gagne.
 
 import { describe, it, expect } from "vitest";
-import { comparerVersions, estStable, acceptables, ecartsExemples, versionsPubliees, exemplesDuDepot } from "../exemples-epingles.mjs";
+import { comparerVersions, estStable, acceptables, ecartsExemples, versionsPubliees, exemplesDuDepot, registreExploitable } from "../exemples-epingles.mjs";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,8 +57,13 @@ describe("⚠️ LES PRÉVERSIONS NE SONT PAS « LES DEUX DERNIÈRES »", () => 
     expect(ecartsExemples("x", ["0.1.127", "0.2.0-beta.2"], ex)).toHaveLength(1);
   });
 
-  it("retombe sur la version de main si le registre ne sert QUE des préversions", () => {
-    expect(acceptables("0.1.0", ["0.1.0-rc.1"])).toEqual(["0.1.0"]);
+  it("⚠️ REFUSE de nommer une version quand le registre ne sert QUE des préversions", () => {
+    // Le repli rendait `["0.1.0"]` — la version de `main`, dont personne n'a dit qu'elle était
+    // servie. Un registre qui ne sert que des bêta ne sert AUCUNE version épinglable : il n'y a
+    // rien à nommer, et fabriquer une réponse est ce qui a produit le faux vert du 22/08.
+    expect(() => acceptables("0.1.0", ["0.1.0-rc.1"])).toThrow(/aucune version stable/);
+    expect(registreExploitable(["0.1.0-rc.1"])).toBe(false);
+    expect(registreExploitable(["0.1.0-rc.1", "0.1.0"])).toBe(true);
   });
 });
 
@@ -133,16 +138,33 @@ describe("les messages", () => {
   });
 });
 
-describe("⚠️ registre injoignable : on RESSERRE, on n'élargit pas", () => {
-  // Ne pas savoir ne doit jamais autoriser davantage. C'est la règle des gardes muettes appliquée
-  // à une absence de réponse plutôt qu'à un contrôle sauté.
-  it("n'autorise plus que la version de main", () => {
-    expect(ecartsExemples("0.1.126", null, trois("0.1.126"))).toEqual([]);
-    expect(ecartsExemples("0.1.126", null, trois("0.1.125"))).toHaveLength(3);
+describe("⚠️ REGISTRE INJOIGNABLE : ON NE CONCLUT PAS — ET CE BANC DISAIT L'INVERSE", () => {
+  // Ce bloc s'appelait « on RESSERRE, on n'élargit pas » et FIGEAIT le défaut : sans registre, la
+  // garde exigeait la version de `main` et rendait `[]` quand les exemples l'épinglaient — donc un
+  // vert, donc la phrase « servies par le registre, donc installables » sur un fait que personne
+  // n'avait vérifié (P1, audit externe du 22/08, reproduit avec main=9.9.9).
+  //
+  // ⚠️ Le repli répondait à une AUTRE question. La propriété visée est « npm SERT cette version » ;
+  // « les exemples valent la version de main » n'en est pas une version dégradée, c'en est une
+  // différente — et `main` déclare régulièrement une version pas encore publiée, ce que
+  // `publication.yml` surveille toutes les heures.
+  //
+  // ⚠️ ET LA BONNE RÉPONSE ÉTAIT DÉJÀ ÉCRITE À CÔTÉ : `release-preflight.mjs` refusait de conclure
+  // sans registre depuis le premier jour, en nommant ce repli-ci « le pire des choix ». Deux
+  // exemplaires du même raisonnement, dont un seul avait raison.
+  it("lève plutôt que de rendre un tableau vide, qui se lirait « aucun écart »", () => {
+    expect(() => ecartsExemples("0.1.126", null, trois("0.1.126"))).toThrow(/ne peut pas être établi/);
+    expect(() => ecartsExemples("0.1.126", [], trois("0.1.125"))).toThrow(/aucune version stable/);
   });
 
-  it("le dit dans le message plutôt que de laisser croire à un oubli", () => {
-    expect(ecartsExemples("0.1.126", [], trois("0.1.125"))[0]).toMatch(/registre est injoignable/);
+  it("⚠️ le cas exact de l'audit : main sur une version que npm ne sert pas", () => {
+    // Avec 9.9.9 dans main, le registre muet et les exemples sur 9.9.9, l'ancienne garde rendait
+    // zéro écart et sortait 0. 9.9.9 n'a jamais existé sur npm.
+    expect(() => ecartsExemples("9.9.9", null, trois("9.9.9"))).toThrow();
+  });
+
+  it("un registre qui ne sert que des préversions est traité comme muet", () => {
+    expect(() => ecartsExemples("0.1.126", ["0.2.0-beta.1"], trois("0.1.126"))).toThrow();
   });
 
   it("rend null quand npm ne répond pas, sans lever", () => {
