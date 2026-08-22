@@ -381,6 +381,21 @@ jobs:
         if: matrix.node == '22'
         run: node tools/actions-epinglees.mjs
 
+      # ⚠️ ET LE JETON QU'ELLES REÇOIVENT ? Cinq des huit workflows accordaient une permission
+      # d'ÉCRITURE à la racine (relevé du 22/08) : `cla.yml` trois, `codeql.yml`, `image.yml`,
+      # `image-reconcile.yml` et `publication.yml` une chacun. Aucun n'était fautif dans son
+      # intention — chacun avait un job qui en avait vraiment besoin. Ce qu'ils laissaient ouvert,
+      # c'est le job SUIVANT : celui que personne n'a encore écrit hérite du droit sans le demander,
+      # et son auteur ne le verra pas. Un privilège qui s'accorde par oubli est l'inverse exact du
+      # refus-par-défaut appliqué partout ailleurs ici.
+      #
+      # `release.yml` en avait déjà fait la démonstration : son job qui exécute un tarball
+      # TÉLÉCHARGÉ du registre tournait avec de quoi publier sur npm, parce que les droits vivaient
+      # à la racine.
+      - name: No workflow grants write permission at its root
+        if: matrix.node == '22'
+        run: node tools/permissions-workflows.mjs
+
       # ⚠️ ET L'ÉTIQUETTE ÉCRITE À CÔTÉ DIT-ELLE LA VÉRITÉ ? La garde ci-dessus vérifie que le SHA
       # EST un SHA. Elle ne dit rien de ce que le commentaire ANNONCE — et #253 a posé trois SHA de
       # `github/codeql-action` tagués v4.37.7 en laissant `# v3` intact. Le fichier annonçait un

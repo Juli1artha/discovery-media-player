@@ -9,9 +9,15 @@ on:
     # Une analyse hebdomadaire même sans commit : les règles évoluent, le code non.
     - cron: "23 4 * * 1"
 
+# ⚠️ RIEN EN ÉCRITURE À LA RACINE — LE DROIT VA AU JOB QUI S'EN SERT, ET À LUI SEUL.
+#
+# Une permission posée ici est accordée à TOUS les jobs, y compris à ceux que personne n'a encore
+# écrits. Le jour où quelqu'un ajoute une étape à ce fichier, elle hérite d'un droit d'écriture
+# qu'il n'a pas demandé et qu'il ne verra pas — c'est un privilège qui s'accorde par oubli.
+#
+# La règle est tenue par `tools/permissions-workflows.mjs`, qui refuse toute écriture à la racine.
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   # ⚠️ CE JOB S'APPELAIT `analyze`, ET `scorecard.yml` AUSSI (P1, audit externe du 22/08).
@@ -22,6 +28,9 @@ jobs:
   # Un contrôle qu'on ne peut pas nommer est un contrôle qu'on ne peut pas exiger.
   codeql:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write  # déposer le SARIF dans l'onglet Sécurité
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
