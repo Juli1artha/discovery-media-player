@@ -77,7 +77,7 @@ git tag -a v<version> -m "<version>" && git push origin v<version>
 
 ## After the tag
 
-The [Release workflow](../.github/workflows/release.yml) takes over. It runs as **four jobs whose
+The [Release workflow](../.github/workflows/release.yml) takes over. It runs as **five jobs whose
 permissions are deliberately disjoint** — so if one fails, its name already tells you where you
 are:
 
@@ -86,7 +86,8 @@ are:
 | `verifier` | checks the tagged commit **belongs to `main`**, demands its CI be entirely green (0.1.68 was published on red), runs the tests again, checks the tag matches `package.json`, extracts the changelog section | read only |
 | `publier` | `npm publish --provenance` — nothing else | mint the npm identity (OIDC) |
 | `eprouver` | installs the **published** package from the registry, renders a page, compiles every inline script (0.1.25 was published and broken); summarises what actually changed in the tarball | read only |
-| `annoncer` | creates the GitHub Release from the notes `verifier` extracted | write to the repo |
+| `attester` | packs the tarball, **confronts it with what the registry actually serves**, and produces a SLSA provenance for that exact file | mint an OIDC identity, write attestations |
+| `annoncer` | creates the GitHub Release from the notes `verifier` extracted, and attaches the tarball, its digest and its provenance | write to the repo |
 
 The split is not cosmetic: `eprouver` executes code downloaded from the registry, and it is the
 job with the fewest rights. Before it existed, those same lines ran with both `contents: write`
@@ -97,6 +98,20 @@ CI, unmerged. Nothing stopped you from tagging one by mistake and publishing it 
 carrying the project's name, holding code nobody approved, and which tag protection then makes
 awkward to withdraw. `verifier` now refuses a commit that is not an ancestor of `origin/main`.
 Replaying an old release by dispatch still works: a legitimate tag *is* an ancestor.
+
+⚠️ **The Release now carries a verifiable artefact.** npm provenance has been in place for a long
+time and it is excellent — but it is only visible *from npm*. Someone arriving at the Releases page,
+or through the container image, had nothing: the source archives GitHub attaches automatically are
+neither the published artefact nor signed. They were left with trust, which is what this repository
+refuses everywhere else.
+
+What is attached is **not a second, unconfronted copy**. `npm pack` is reproducible, so the tarball
+is rebuilt and its `sha512` compared to the registry's own `dist.integrity`; if they differ, the
+release fails rather than publish two artefacts of the same name whose bytes disagree.
+
+```bash
+gh attestation verify discovery-media-player-<version>.tgz --repo Juli1artha/discovery-media-player
+```
 
 The container image is **not** built here — [`image.yml`](../.github/workflows/image.yml) builds it
 from the same tag, in parallel, off the critical path of the npm publication.
