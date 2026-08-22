@@ -793,7 +793,17 @@ jobs:
       - name: The load campaign against a real database
         env:
           PLAYER_TEST_POSTGREST_URL: http://127.0.0.1:3002
-          PLAYER_CHARGE_SPECTATEURS: "250"
+          # ⚠️ MILLE, ET C'EST UNE MESURE PLUTÔT QU'UNE AMBITION. « 1 000 spectateurs » figurait
+          # depuis des semaines dans le « non mesuré » de l'audit, à côté de « base ralentie » et
+          # « multi-processus » — trois postes rangés ensemble parce qu'ils se ressemblaient. Le
+          # second s'est révélé être une ligne de code ; celui-ci est une VARIABLE. Seul le
+          # troisième avait la difficulté qu'on leur prêtait à toutes.
+          #
+          # Ce que le passage de 250 à 1 000 éprouve vraiment, ce n'est pas le débit : c'est que
+          # mille lecteurs simultanés reçoivent le MÊME état. La fenêtre pendant laquelle le cache
+          # peut basculer s'allonge avec la concurrence, et c'est la seule assertion de ce banc que
+          # le volume peut casser sans qu'aucun code ne soit fautif.
+          PLAYER_CHARGE_SPECTATEURS: "1000"
         run: npm run test:campagne
 
       # ⚠️ LE BANC DE CHARGE COMPTE, IL NE CHRONOMÈTRE PAS — il tourne donc ici, sans base ni service :

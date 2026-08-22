@@ -69,6 +69,12 @@ let presentations, player, base, racine, fichierPdf;
 
 decrire("campagne de charge contre une vraie base", () => {
   beforeAll(() => {
+    // ⚠️ LE VOLUME CONFIGURÉ SE DIT UNE FOIS, EN TÊTE — c'est un réglage de campagne, pas une
+    // propriété de chaque bloc. Il était répété dans CHAQUE en-tête de relevé, où il devenait faux
+    // dès que le bloc n'appelait pas autant : « relais de fichiers — 20 appels, 1000 appelants ».
+    // eslint-disable-next-line no-console
+    console.log(`\n  CAMPAGNE DE CHARGE — volume configuré : ${SPECTATEURS} spectateurs `
+      + "(PLAYER_CHARGE_SPECTATEURS). Chaque bloc ci-dessous dit le nombre d'appels QU'IL a émis.");
     process.env.SUPABASE_URL = BASE;
     process.env.SUPABASE_SERVICE_ROLE_KEY = jeton();
     // ⚠️ Une racine locale RÉELLE : c'est le seul moyen d'éprouver le relais de fichiers sans
@@ -143,7 +149,7 @@ decrire("campagne de charge contre une vraie base", () => {
     method: "GET", headers: {}, socket: { remoteAddress: "10.0.1." + (i % 250) }, query: { present: slug, state: "1" },
   });
 
-  function relever(nom, resultats, retard) {
+  function relever(nom, resultats, retard, extra) {
     // ⚠️ `statut < 400` N'EST PAS « a réussi » : un statut de 0 — c'est-à-dire aucune réponse du
     // tout — y passait. Vérifié par mutation : un banc qui n'appelle RIEN rendait alors 20/20
     // réussis et des percentiles à 0 ms. On exige donc une plage de succès RÉELLE.
@@ -153,11 +159,21 @@ decrire("campagne de charge contre une vraie base", () => {
     const ligne = (n, v) => `    ${String(n).padEnd(28)}${v}`;
     // eslint-disable-next-line no-console
     console.log([
-      `\n  ── ${nom} — ${resultats.length} appels, ${SPECTATEURS} appelants ──`,
+      // ⚠️ CE LIBELLÉ ANNONÇAIT `SPECTATEURS` APPELANTS POUR CHAQUE BLOC, Y COMPRIS CEUX QUI N'EN
+      // ONT PAS TANT. « relais de fichiers — 20 appels, 1000 appelants » : le second nombre était
+      // faux pour cinq blocs sur sept. Il l'était déjà à 250 ; passer à 1 000 l'a rendu criant. Un
+      // relevé qui annonce un volume qu'il n'a pas atteint est la forme la plus discrète de
+      // surpromesse — celui qui le lit en tire une confiance que la mesure ne porte pas.
+      `\n  ── ${nom} — ${resultats.length} appels ──`,
       ligne("réussis", `${ok.length}/${resultats.length}`),
       ligne("erreurs serveur (5xx)", erreurs.length),
       ligne("p50 / p95 / p99 (ms)", tries.length ? `${Math.round(pourcentile(tries, 50))} / ${Math.round(pourcentile(tries, 95))} / ${Math.round(pourcentile(tries, 99))}` : "—"),
       ligne("pire retard de boucle (ms)", retard),
+      // ⚠️ LA QUANTITÉ SUR LAQUELLE ON AFFIRME DOIT ÊTRE LISIBLE. Le premier relevé de la base
+      // ralentie imprimait des latences et TAISAIT le nombre d'allers-retours — c'est-à-dire
+      // exactement le chiffre que l'assertion compare. Un banc qui cache son sujet oblige à
+      // déduire ce qu'il mesure de ce qu'il affiche, et j'ai commencé par en déduire un faux.
+      ...(extra ? [ligne(extra.nom, extra.valeur)] : []),
     ].join("\n"));
     return { ok, tries, erreurs };
   }
@@ -281,6 +297,89 @@ decrire("campagne de charge contre une vraie base", () => {
   // ⚠️ LA PROPRIÉTÉ QUI DÉCIDE DE L'ÉCHELLE : le coût doit croître LINÉAIREMENT, pas plus vite. Une
   // latence dit ce qui se passe aujourd'hui sur cette machine ; le rapport entre deux échelles, lui,
   // dit ce qui se passera à 250 ou à 1 000.
+  // ══════════════════════════════════════════════════════════════════════════════════════════════
+  // UNE BASE LENTE — LE RÉGIME QU'ON DISAIT HORS DE PORTÉE DE LA FORGE.
+  //
+  // ⚠️ NOUS L'AVIONS CLASSÉ « demande de l'infrastructure », À CÔTÉ DE 1 000 SPECTATEURS ET DU
+  // MULTI-PROCESSUS. C'était faux, et l'erreur a coûté des semaines de « non mesuré » : ralentir la
+  // base ne demande pas une autre base, seulement d'intercaler une attente sur la couture que le
+  // player utilise déjà. Trois choses classées ensemble parce qu'elles se ressemblaient ; une seule
+  // avait la difficulté qu'on leur prêtait à toutes.
+  //
+  // ⚠️ ET CE QU'ON AFFIRME N'EST PAS UNE LATENCE — c'est qu'elle ne se MULTIPLIE pas. Un seuil de
+  // temps rougit au hasard et finit desserré ; le NOMBRE d'allers-retours, lui, est déterministe.
+  // La panne qu'on redoute a un nom : quand la base ralentit, un client qui réessaie transforme une
+  // lenteur en effondrement. On mesure donc le coût à froid, puis sous +250 ms, et on exige qu'il
+  // soit IDENTIQUE. C'est la propriété qui décide si une instance survit à une base fatiguée.
+  function ralentir(ms) {
+    const vraie = base.request.bind(base);
+    let appels = 0;
+    base.request = async (chemin, o) => {
+      appels += 1;
+      if (ms) await new Promise((r) => setTimeout(r, ms));
+      return vraie(chemin, o);
+    };
+    return { compte: () => appels, rendre() { base.request = vraie; return appels; } };
+  }
+
+  async function sousLenteur(slug, ms, combien) {
+    const sonde = ralentir(ms);
+    const retard = mesureRetardBoucle();
+    const resultats = await Promise.all(Array.from({ length: combien }, (_, i) => battement(slug, i)));
+    return { resultats, appels: sonde.rendre(), retard: retard.arreter() };
+  }
+
+  it("une base ralentie ne fait pas monter le nombre d'allers-retours — pas de réessai en cascade", async () => {
+    const { slug } = await nouvellePresentation();
+    const combien = Math.min(SPECTATEURS, 60);
+
+    // ⚠️ UN TOUR DE CHAUFFE HORS MESURE : la sonde de schéma et les mémos de contrat se paient une
+    // fois par processus. Les compter dans le premier régime et pas dans le second ferait apparaître
+    // une différence qui ne dit rien de la lenteur.
+    await sousLenteur(slug, 0, 5);
+
+    const froid = await sousLenteur(slug, 0, combien);
+    const lent = await sousLenteur(slug, 250, combien);
+
+    relever("battements, base normale", froid.resultats, froid.retard, { nom: "allers-retours comptés", valeur: froid.appels });
+    relever("battements, base +250 ms", lent.resultats, lent.retard, { nom: "allers-retours comptés", valeur: lent.appels });
+
+    expect(froid.resultats.filter((r) => r.statut >= 500).length, "5xx à froid").toBe(0);
+    expect(lent.resultats.filter((r) => r.statut >= 500).length, "une base lente n'est pas une panne du player").toBe(0);
+    // ⚠️ ANTI-VACUITÉ AVANT L'ÉGALITÉ. Si la sonde ne voyait plus passer aucun appel — couture
+    // déplacée, contexte reconstruit — l'égalité 0 === 0 passerait, et le banc affirmerait
+    // « aucun réessai » en n'ayant rien observé. On exige donc au moins un aller-retour par appelant.
+    expect(froid.appels, "la sonde n'a vu aucun aller-retour : elle n'est plus sur le bon chemin")
+      .toBeGreaterThanOrEqual(combien);
+    expect(lent.appels,
+      `la base lente a coûté ${lent.appels} allers-retours contre ${froid.appels} à froid — un réessai transforme une lenteur en effondrement`)
+      .toBe(froid.appels);
+
+    // ⚠️ ET L'ATTENTE DOIT ÊTRE ASYNCHRONE. Si un seul appel bloquait la boucle, 250 ms × N
+    // s'accumuleraient et le retard de boucle exploserait ; il reste borné parce que le player
+    // attend sans occuper le processus. Le plafond est LARGE — on détecte un blocage, pas une
+    // milliseconde.
+    expect(lent.retard, `retard de boucle sous lenteur : ${lent.retard} ms`).toBeLessThan(2000);
+  });
+
+  it("une base TRÈS lente (+2 s) : les appels aboutissent encore, et toujours sans réessai", async () => {
+    const { slug } = await nouvellePresentation();
+    // Moins d'appelants : ce qu'on éprouve ici est la RÉSISTANCE à une base à l'agonie, pas le
+    // volume — et un banc qui dure trois minutes finit par être coupé, donc par ne rien mesurer.
+    const combien = Math.min(SPECTATEURS, 12);
+    await sousLenteur(slug, 0, 3);
+    const froid = await sousLenteur(slug, 0, combien);
+    const agonie = await sousLenteur(slug, 2000, combien);
+
+    relever("battements, base +2 s", agonie.resultats, agonie.retard,
+      { nom: "allers-retours comptés", valeur: `${agonie.appels} (à froid : ${froid.appels})` });
+
+    expect(agonie.resultats.filter((r) => r.statut >= 500).length, "aucune erreur serveur, même à +2 s").toBe(0);
+    expect(agonie.resultats.filter((r) => r.statut >= 200 && r.statut < 400).length,
+      "tous les appels aboutissent : rien n'abandonne en silence").toBe(combien);
+    expect(agonie.appels, "toujours aucun réessai, même quand la base est à l'agonie").toBe(froid.appels);
+  });
+
   it("doubler les appelants ne quadruple pas le coût : la croissance reste linéaire", async () => {
     const p = await nouvellePresentation();
     const compter = async (n, decalage) => {
