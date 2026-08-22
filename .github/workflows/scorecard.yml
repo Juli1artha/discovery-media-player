@@ -17,7 +17,9 @@ on:
 permissions: read-all
 
 jobs:
-  analyze:
+  # Renommé en même temps que celui de `codeql.yml` : deux contrôles nommés `analyze` ne se
+  # distinguaient que par leur workflow, ce qu'une liste de contrôles requis ne sait pas dire.
+  scorecard:
     runs-on: ubuntu-latest
     permissions:
       security-events: write # déposer le SARIF dans l'onglet Sécurité
