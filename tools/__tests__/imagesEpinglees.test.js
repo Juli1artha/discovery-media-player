@@ -7,7 +7,7 @@
 
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-import { froms, imagesDe, ecartsEpinglage, majeurAnnonce, majeurAttendu, ecartMajeur } from "../images-epinglees.mjs";
+import { froms, imagesDe, ecartsEpinglage, majeurAnnonce, majeurAttendu, ecartMajeur, sourceDuMontage } from "../images-epinglees.mjs";
 
 const REEL = readFileSync("Dockerfile", "utf8");
 const CONDENSAT = "sha256:" + "a".repeat(64);
@@ -37,6 +37,69 @@ describe("⚠️ LA SYNTAXE OFFICIELLE QUE LA VERSION LIGNE-À-LIGNE NE VOYAIT P
     const txt = `# un commentaire : FROM pas/une-image\nFROM \\\n  node:24-alpine@${CONDENSAT}\n`;
     expect(ecartsEpinglage(txt)).toEqual([]);
     expect(imagesDe(txt)).toHaveLength(1);
+  });
+});
+
+describe("⚠️ LA TROISIÈME PORTE : RUN --mount=from=", () => {
+  // Cette garde lisait `FROM`, puis `COPY --from` après #288. L'audit du 22/08 a montré qu'une
+  // image pouvait encore entrer par un montage de construction, sans un mot :
+  //
+  //     RUN --mount=type=bind,from=nginx:latest,source=/etc,target=/src true
+  //
+  // Une image montée pendant un `RUN` fournit des octets qui finissent dans l'artefact. La leçon
+  // écrite en #288 tenait déjà — « une dépendance qui entre par une autre porte reste une
+  // dépendance » — elle nommait `COPY --from`, et celle-ci existait déjà.
+
+  it("⚠️ voit une image du registre montée par RUN, et la refuse", () => {
+    const txt = `FROM node:24-alpine@${CONDENSAT} AS build\nRUN --mount=type=bind,from=nginx:latest,source=/etc,target=/src true\n`;
+    expect(ecartsEpinglage(txt).join(" ")).toMatch(/RUN --mount=from nginx:latest.*n'est pas épinglé/);
+  });
+
+  it("accepte la même image quand elle porte un condensat", () => {
+    const txt = `FROM node:24-alpine@${CONDENSAT} AS build\nRUN --mount=type=bind,from=nginx:1@${CONDENSAT},target=/s true\n`;
+    expect(ecartsEpinglage(txt)).toEqual([]);
+  });
+
+  it("ne reproche rien à un montage qui désigne une étape, ni un index", () => {
+    const txt = `FROM node:24-alpine@${CONDENSAT} AS build\nRUN --mount=from=build,target=/b true\nRUN --mount=type=bind,from=0,target=/z true\n`;
+    expect(ecartsEpinglage(txt)).toEqual([]);
+  });
+
+  it("ignore les montages qui ne font entrer aucune image", () => {
+    // cache, secret, tmpfs : pas de `from=`, donc rien à reprocher — et surtout pas un faux
+    // positif sur `type=cache`, que le vrai Dockerfile pourrait adopter demain.
+    const txt = `FROM node:24-alpine@${CONDENSAT} AS build\nRUN --mount=type=cache,target=/root/.npm --mount=type=secret,id=x npm ci\n`;
+    expect(ecartsEpinglage(txt)).toEqual([]);
+    expect(imagesDe(txt).filter((i) => i.source === "RUN --mount=from")).toEqual([]);
+  });
+
+  it("relève chaque montage d'un RUN qui en porte plusieurs", () => {
+    const txt = `FROM node:24-alpine@${CONDENSAT} AS build\nRUN --mount=from=alpine:3,target=/a --mount=from=busybox:1,target=/b true\n`;
+    expect(ecartsEpinglage(txt)).toHaveLength(2);
+  });
+
+  describe("la lecture du drapeau", () => {
+    it("trouve from où qu'il soit dans la liste", () => {
+      expect(sourceDuMontage("type=bind,from=x:1,source=/e")).toBe("x:1");
+      expect(sourceDuMontage("from=x:1")).toBe("x:1");
+      expect(sourceDuMontage("target=/a,from=x:1")).toBe("x:1");
+    });
+
+    it("rend null quand il n'y a pas de from", () => {
+      expect(sourceDuMontage("type=cache,target=/root/.npm")).toBeNull();
+      expect(sourceDuMontage("")).toBeNull();
+      expect(sourceDuMontage(undefined)).toBeNull();
+    });
+
+    it("⚠️ ne confond pas une clé qui CONTIENT « from »", () => {
+      // `fromage=x` n'est pas `from=x`. Une comparaison par inclusion aurait fabriqué une
+      // référence à partir d'un drapeau qui n'en désigne aucune.
+      expect(sourceDuMontage("fromage=x,target=/a")).toBeNull();
+    });
+
+    it("ne coupe qu'au premier signe égal", () => {
+      expect(sourceDuMontage("from=reg.example/o/i:1@sha256:abc")).toBe("reg.example/o/i:1@sha256:abc");
+    });
   });
 });
 
