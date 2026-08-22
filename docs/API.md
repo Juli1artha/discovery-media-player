@@ -106,6 +106,17 @@ start when you depend on something this instance does not have.
 | `GET /api/doc?present=<slug>` | the live audience page (usually `/present/:slug`) |
 | `GET /api/doc?preview=1&url=<file>&name=<name>` | internal preview — no tracked link, no analytics |
 | `GET …&stream=1` | streams the previewed file |
+| `GET /api/doc?asset=pdf` | the embedded pdf.js bundle — no CDN, ever |
+| `GET /api/doc?asset=pdfworker` | its worker, served from the same origin |
+
+⚠️ **The two `asset` values are exact, and anything else is a plain `404`.** They were readable only
+in the source until the second host guessed `?asset=worker`, got a bare 404, and reported it as a
+possible defect. It was not one — the value is `pdfworker` — but the contract was an exact string
+nobody could discover, and the refusal named nothing. A route whose accepted values live only in the
+code turns every integrator's first guess into a bug report.
+
+Both are served from the player's own origin **on purpose**: a viewer that fetched its engine from a
+CDN would hand a third party the ability to run script inside the page that displays your documents.
 
 Common parameters: `title`, `docId`, `by` (presenter name), `av` (avatar), `uemail` (a member —
 this is what routes the session to *internal* analytics), `autopresent=1`, `resume=<slug>`,
