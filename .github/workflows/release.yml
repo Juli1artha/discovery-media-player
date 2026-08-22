@@ -360,9 +360,22 @@ jobs:
   # exécutions, même condensat), donc on peut CONFRONTER — le sha512 du tarball local doit être
   # celui que le registre annonce dans `dist.integrity`, sinon on refuse.
   #
-  # ⚠️ AUCUN `npm ci` ICI, ET C'EST DÉLIBÉRÉ. `npm pack` n'a pas besoin de l'arbre de développement
-  # (vérifié). Ce job porte `id-token` et `attestations` en écriture : moins il exécute de code
-  # venu d'ailleurs, mieux c'est. C'est la même discipline que le découpage de #295.
+  # ⚠️ IL FAUT CONSTRUIRE AVANT DE PACKER, ET JE L'AI APPRIS EN LE RATANT.
+  #
+  # La première version de ce job packait sans rien installer, au motif que « `npm pack` n'a pas
+  # besoin de l'arbre de développement ». C'est vrai, et c'est hors sujet : `dist/` est IGNORÉ PAR
+  # GIT et construit par `prepublishOnly` au moment de publier. Le tarball packé sur l'arbre nu ne
+  # contient donc pas `dist/` — 308 395 octets au lieu de 311 695 — et la confrontation a refusé,
+  # ce qui est exactement ce qu'on lui demande. Le rejeu de v0.1.128 du 22/08 l'a montré en 82
+  # secondes ; sans ce rejeu, on l'aurait découvert à la prochaine vraie sortie.
+  #
+  # `npm ci --ignore-scripts && npm run build && npm pack` reproduit le tarball publié à l'octet
+  # près — vérifié sur v0.1.128, même sha256 et même taille que ce que sert le registre.
+  #
+  # ⚠️ `--ignore-scripts` n'est pas décoratif : ce job porte `id-token` et `attestations` en
+  # écriture, et c'est ce qui l'empêche d'exécuter les scripts d'installation des dépendances.
+  # Vérifié aussi : la reproduction tient sans eux. Reste la construction elle-même, qui est le
+  # code du dépôt — la même chose que `publier` fait déjà sous un droit de même classe.
   attester:
     needs: eprouver
     runs-on: ubuntu-latest
@@ -377,11 +390,15 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "24"
+      - run: npm ci --ignore-scripts
 
       - id: paquet
-        name: Pack, and confront the tarball with what the registry actually serves
+        name: Build, pack, and confront the tarball with what the registry actually serves
         run: |
           V=$(node -p 'require("./package.json").version')
+          # `dist/` est ignoré par git : sans cette construction, le tarball packé ne le contient
+          # pas et ne peut pas être celui que le registre sert.
+          npm run build --silent >/dev/null
           mkdir -p /tmp/sortie
           npm pack --pack-destination /tmp/sortie --silent >/dev/null
           F=$(ls /tmp/sortie/*.tgz)
