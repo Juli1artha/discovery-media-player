@@ -107,28 +107,40 @@ export function verdict(toutes, tagsParDepot) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const dossier = process.argv[2] || ".github/workflows";
   conclure(tenter(() => {
-    const toutes = usesDuDepot(dossier)
-      // Une action sans commentaire n'annonce rien : il n'y a rien à confronter, et rien à
-      // reprocher. Une action non épinglée sur un SHA est le sujet de la garde VOISINE.
-      .filter((u) => u.annonce && /@[0-9a-f]{40}$/.test(u.reference))
-      .map((u) => ({ ...u, depot: depotDe(u.reference), sha: u.reference.slice(-40) }));
-    if (!toutes.length) return inconclusif(`aucune action épinglée avec une étiquette dans ${dossier} — la sonde vise à côté`);
+    // Une action LOCALE (`./…`) n'a pas de dépôt distant, et une action non épinglée sur un SHA est
+    // le sujet de la garde VOISINE.
+    const epinglees = usesDuDepot(dossier).filter((u) => /@[0-9a-f]{40}$/.test(u.reference));
+    if (!epinglees.length) return inconclusif(`aucune action épinglée sur un commit dans ${dossier} — la sonde vise à côté`);
 
-    const depots = [...new Set(toutes.map((e) => e.depot))];
+    // ⚠️ UNE ACTION SANS ÉTIQUETTE SORTAIT DE LA GARDE PAR LE HAUT (P2, audit du 22/08).
+    //
+    // Ce filtre disait `u.annonce && …` : retirer le commentaire `# v4` d'une des 35 références ne
+    // faisait rien rougir. L'épinglage tenait toujours — la garde voisine l'exige — mais la
+    // confrontation disparaissait, et avec elle la seule chose qu'un humain peut relire. Quarante
+    // caractères hexadécimaux ne se relisent pas ; c'est précisément pour ça que ce dépôt écrit
+    // l'étiquette à côté. Une garde qu'on peut vider en supprimant un commentaire n'en est pas une.
+    const muettes = epinglees.filter((u) => !u.annonce)
+      .map((u) => `${u.fichier}:${u.ligne} : « ${u.reference} » n'annonce aucune version — un SHA de 40 caractères est illisible, l'étiquette « # vN » est ce qui se relit, et c'est elle que cette garde confronte. Sans elle il n'y a plus rien à vérifier.`);
+
+    const aConfronter = epinglees.filter((u) => u.annonce)
+      .map((u) => ({ ...u, depot: depotDe(u.reference), sha: u.reference.slice(-40) }));
+
+    const depots = [...new Set(aConfronter.map((e) => e.depot))];
     const tagsParDepot = new Map(depots.map((d) => [d, tagsDuDepot(d)]));
-    const { ecarts, nonVus } = verdict(toutes, tagsParDepot);
+    const { ecarts, nonVus } = verdict(aConfronter, tagsParDepot);
+
+    if (ecarts.length || muettes.length) return violation([...muettes, ...ecarts], nonVus);
 
     // ⚠️ UN DÉPÔT INJOIGNABLE N'EST PAS UNE VIOLATION, MAIS CE N'EST PAS RIEN NON PLUS. Tant qu'il
     // en reste à confronter, on confronte et on DIT ce qu'on n'a pas vu (avertissement). Si plus
     // AUCUNE n'a pu l'être, il n'y a plus de vérification du tout : c'est non concluant, et le
     // prétendre vert serait la garde muette que ce dépôt refuse.
-    if (ecarts.length) return violation(ecarts, nonVus);
-    if (nonVus.length === toutes.length) {
+    if (aConfronter.length && nonVus.length === aConfronter.length) {
       return inconclusif(`aucun des ${depots.length} dépôts n'a répondu — pas une seule étiquette n'a été confrontée`, nonVus);
     }
-    const vues = toutes.length - nonVus.length;
+    const vues = aConfronter.length - nonVus.length;
     return conforme(
-      `étiquettes : ${vues}/${toutes.length} confrontées à leur SHA sur ${depots.length} dépôts, toutes exactes`
+      `étiquettes : ${vues}/${epinglees.length} confrontées à leur SHA sur ${depots.length} dépôts, toutes exactes`
         + (nonVus.length ? ` — ⚠️ ${nonVus.length} NON VÉRIFIÉE(S), voir ci-dessus` : ""),
       nonVus,
     );
