@@ -19,7 +19,7 @@
 //
 // Usage : node tools/actions-epinglees.mjs [.github/workflows]
 
-import { usesDuDepot } from "./workflows-yaml.mjs";
+import { usesDuDepot, horsPositionDuDepot } from "./workflows-yaml.mjs";
 import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 import { pathToFileURL } from "node:url";
 
@@ -62,9 +62,18 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   conclure(tenter(() => {
     const toutes = usesDuDepot(dossier);
     if (!toutes.length) return inconclusif(`aucun « uses » relevé dans ${dossier} — la sonde vise à côté`);
+    // ⚠️ CE QUE LE RESSERREMENT DE PORTÉE A ÉCARTÉ, ON LE DIT. La lecture ne retient plus que
+    // `jobs.<id>.steps[*].uses` et `jobs.<id>.uses` — les deux seuls endroits où GitHub exécute une
+    // action. Un `uses:` ailleurs (dans un `env:`, par exemple) n'en est pas une, et le compter
+    // était un faux positif. Mais rétrécir une garde de sécurité en silence est exactement ce qui
+    // a coûté trois lecteurs à ce dépôt : ce qui est écarté est nommé, à charge d'un humain de dire
+    // si l'un d'eux est une action mal placée.
+    const ecartes = horsPositionDuDepot(dossier).map(
+      (h) => `${h.fichier}:${h.ligne} : « uses: ${h.valeur} » n'est pas à une position d'exécution — non vérifié par cette garde`);
+
     const soucis = ecarts(toutes);
-    if (soucis.length) return violation(soucis);
+    if (soucis.length) return violation(soucis, ecartes);
     const fichiers = new Set(toutes.map((u) => u.fichier));
-    return conforme(`actions : ${toutes.length} référence(s) dans ${fichiers.size} workflows, toutes épinglées sur un commit`);
+    return conforme(`actions : ${toutes.length} référence(s) dans ${fichiers.size} workflows, toutes épinglées sur un commit`, ecartes);
   }));
 }
