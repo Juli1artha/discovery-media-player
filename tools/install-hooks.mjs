@@ -40,7 +40,17 @@ try {
   mkdirSync(dirname(cible), { recursive: true });
   copyFileSync(source, cible);
   chmodSync(cible, 0o755);
-  console.log("hooks git : pre-push installé");
+  // ⚠️ SUR STDERR, ET C'EST UN CORRECTIF PLUTÔT QU'UN GOÛT. `prepare` tourne AUSSI sous
+  // `npm pack --dry-run --json`, dont `tools/langue-publiee.mjs` lit la sortie JSON. Cette ligne
+  // partait sur stdout, en tête du JSON : le banc de la langue publiée tombait sur
+  // `SyntaxError: Unexpected token 'h'` — un rouge qui ne nomme ni les hooks, ni sa vraie cause.
+  //
+  // Et il ne se déclenchait qu'UNE fois, juste après une modification de `tools/git-hooks/pre-push`
+  // (le hook redevient périmé, donc la ligne se réimprime), puis disparaissait tout seul au
+  // deuxième essai. C'est le pire des rouges : celui qu'on ne reproduit pas, qu'on met sur le
+  // compte du hasard, et qui apprend à relancer plutôt qu'à lire. Exactement ce que
+  // `tools/resultat-garde.mjs` existe pour interdire.
+  console.error("hooks git : pre-push installé");
 } catch {
   // Un hook non installé ne doit jamais empêcher d'installer le projet.
 }

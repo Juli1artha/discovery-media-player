@@ -31,9 +31,22 @@ leave open exactly the hole it exists to close.
 
 ## The hooks install themselves
 
-`npm install` puts a `pre-push` hook in place: it refuses a push to a branch whose pull request is
-already merged. It runs only in a clone of *this* repository — never when the package is installed
-as a dependency — and it is idempotent.
+`npm install` puts a `pre-push` hook in place. It refuses two things: a push to a branch whose pull
+request is already merged, and a push carrying a plaintext credential. It runs only in a clone of
+*this* repository — never when the package is installed as a dependency — and it is idempotent.
+
+⚠️ **Why the credential check runs before the push and not only in CI.** Every other guard here
+catches a mistake a later commit can fix. A secret cannot be fixed by a commit: the moment it
+reaches a public remote it is disclosed, rewriting history does not recall it, and the only real
+remedy is to **revoke** it. CI would tell you a minute too late. The same guard
+(`tools/secrets-en-clair.mjs`) runs in CI as well, so a `--no-verify` push does not slip through
+unnoticed — but by then the cost is already the revocation.
+
+It reports the file, the line and the *kind* of credential, and never the value itself: a CI log on
+a public repository is public, and a guard that echoes what it found discloses it a second time, in
+a place that cannot be revoked. It reads the files git tracks at the current commit, so a secret
+committed and then removed in a later commit still travels in the history — the remote's push
+protection is what covers that case.
 
 ⚠️ **Why automatic rather than documented.** The neighbouring repository has had this hook since
 5 August, after an identical incident. This one received it on 14 August, once the same thing had

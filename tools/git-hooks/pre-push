@@ -36,4 +36,34 @@ if [ -n "$BRANCHE" ] && [ "$BRANCHE" != "HEAD" ] && [ "$BRANCHE" != "main" ] \
     exit 1
   fi
 fi
+
+# ══ UN SECRET POUSSÉ NE SE RETIRE PAS ══════════════════════════════════════════════════════
+#
+# ⚠️ C'EST LE SEUL DÉFAUT DE CE DÉPÔT QU'UN COMMIT NE CORRIGE PAS. Une régression se corrige par
+# un correctif ; un secret poussé sur un dépôt PUBLIC est divulgué à la seconde où il arrive.
+# Réécrire l'historique n'y change rien — les forges gardent les objets, les miroirs ont déjà
+# copié, les moissonneurs indexent en continu. La seule issue est la RÉVOCATION du secret, avec
+# tout ce qu'elle coûte. D'où un refus AVANT le push, et pas seulement en CI : la CI le
+# constaterait une minute trop tard.
+#
+# ⚠️ CE QUE CETTE GARDE NE VOIT PAS, ET IL FAUT LE SAVOIR. Elle inspecte les fichiers SUIVIS au
+# commit courant, pas l'historique poussé. Un secret commité puis retiré au commit suivant passe
+# ici et part quand même dans l'historique. Le contrôle qui rattrape ce cas est la protection de
+# poussée de la forge, activée sur le dépôt — celle-ci couvre le cas courant, tôt, hors ligne.
+if command -v node >/dev/null 2>&1 && [ -f tools/secrets-en-clair.mjs ]; then
+  if ! node tools/secrets-en-clair.mjs >/dev/null; then
+    echo ""
+    echo "✖ pre-push refusé : un identifiant d'authentification est en clair dans les fichiers suivis."
+    echo "  (le détail vient d'être imprimé ci-dessus — fichier, ligne et espèce, jamais la valeur)"
+    echo ""
+    echo "  Un secret poussé est DIVULGUÉ : le retirer ne suffit pas."
+    echo "    1. RÉVOQUE-le chez son émetteur, maintenant ;"
+    echo "    2. retire-le de la branche, et remets la variable à valeur vide ;"
+    echo "    3. si le code de sortie était 2, la garde n'a rien pu lire — corrige-la, elle."
+    echo ""
+    echo "  Si tu sais ce que tu fais : git push --no-verify"
+    exit 1
+  fi
+fi
+
 exit 0
