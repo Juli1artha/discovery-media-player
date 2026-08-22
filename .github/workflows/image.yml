@@ -39,9 +39,23 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write        # pousser l'image sur ghcr
+      packages: write        # pousser l'image sur ghcr, ET les attestations que BuildKit y joint
       id-token: write        # OIDC
-      attestations: write    # provenance de l'image
+      # ⚠️ PAS de `attestations: write` — IL ÉTAIT LÀ ET NE SERVAIT À RIEN.
+      #
+      # Ce droit ouvre l'API d'attestation de la FORGE, celle qu'utilisent les actions
+      # `actions/attest*`. Ce job n'en appelle aucune : sa provenance et son SBOM viennent de
+      # BuildKit (`provenance: mode=max`, `sbom: true`), qui les joint à l'image DANS LE REGISTRE —
+      # ce qui relève de `packages: write`. Le commentaire disait « provenance de l'image » et
+      # désignait la bonne intention avec le mauvais droit.
+      #
+      # ⚠️ ET JE L'AI DÉPLACÉ ICI MOI-MÊME EN #309, sans me demander s'il servait. Le principe
+      # « le droit va au job qui s'en sert » a été appliqué à la lettre et pas à la lettre près :
+      # personne ne s'en sert. Un privilège accordé pour rien est plus discret qu'un privilège mal
+      # placé, et il survit plus longtemps.
+      #
+      # `id-token: write` RESTE : je n'ai pas pu vérifier d'ici si BuildKit s'en sert pour signer
+      # la provenance qu'il produit, et on ne retire pas un droit sur une supposition.
     outputs:
       ref: ${{ steps.img.outputs.ref }}
     env:
