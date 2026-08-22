@@ -19,11 +19,15 @@ on:
         description: "Tag existant à rejouer (ex. v0.1.78)"
         required: true
 
+# ⚠️ RIEN EN ÉCRITURE À LA RACINE — LE DROIT VA AU JOB QUI S'EN SERT, ET À LUI SEUL.
+#
+# Une permission posée ici est accordée à TOUS les jobs, y compris à ceux que personne n'a encore
+# écrits. `promote-latest` déclarait déjà les siens ; `image` héritait des quatre, dont deux dont
+# il n'a besoin que pour l'attestation. Le jour où un troisième job arrive, il hérite de tout.
+#
+# La règle est tenue par `tools/permissions-workflows.mjs`, qui refuse toute écriture à la racine.
 permissions:
   contents: read
-  packages: write        # pousser l'image sur ghcr
-  id-token: write        # OIDC
-  attestations: write    # provenance de l'image
 
 # ⚠️ PAS de concurrency au niveau du workflow (P2 douzième audit). Deux tags rapprochés produisent
 # deux images VERSIONNÉES distinctes qui ne se marchent pas dessus : les sérialiser ferait qu'un
@@ -33,6 +37,11 @@ permissions:
 jobs:
   image:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write        # pousser l'image sur ghcr
+      id-token: write        # OIDC
+      attestations: write    # provenance de l'image
     outputs:
       ref: ${{ steps.img.outputs.ref }}
     env:

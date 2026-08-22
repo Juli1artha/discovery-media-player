@@ -15,13 +15,22 @@ on:
     - cron: "23 6 * * 1"   # lundi matin, à froid
   workflow_dispatch:
 
+# ⚠️ RIEN EN ÉCRITURE À LA RACINE — LE DROIT VA AU JOB QUI S'EN SERT, ET À LUI SEUL.
+#
+# Une permission posée ici est accordée à TOUS les jobs, y compris à ceux que personne n'a encore
+# écrits. Le jour où quelqu'un ajoute une étape à ce fichier, elle hérite d'un droit d'écriture
+# qu'il n'a pas demandé et qu'il ne verra pas — c'est un privilège qui s'accorde par oubli.
+#
+# La règle est tenue par `tools/permissions-workflows.mjs`, qui refuse toute écriture à la racine.
 permissions:
   contents: read
-  packages: write
 
 jobs:
   reconcile:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write         # retaguer `latest` sur ghcr
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
