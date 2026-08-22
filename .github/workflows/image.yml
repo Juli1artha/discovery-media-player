@@ -118,7 +118,7 @@ jobs:
       - name: The versioned image is served, amd64 + arm64
         run: |
           depot=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
-          jeton=$(curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.stdout.write(JSON.parse(d).token||''))")
+          jeton=$(curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | jq -r '.token // empty')
           index=$(curl -s -H "Authorization: Bearer $jeton" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/$depot/manifests/${TAG}")
           echo "$index" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const m=JSON.parse(d);const arch=(m.manifests||[]).map(x=>x.platform&&x.platform.architecture).filter(Boolean);if(!arch.includes('amd64')||!arch.includes('arm64')){console.error('::error::image '+process.env.TAG+' incomplète — arches: '+arch.join(',')||'aucune');process.exit(1)}console.log('image '+process.env.TAG+' servie, arches: '+arch.join(', '))})"
 
@@ -166,7 +166,7 @@ jobs:
           plusHaut=$(git tag -l | node tools/plus-haut-tag.mjs)
           [ -n "$plusHaut" ] || { echo "aucun tag de version valide — latest NON touché"; exit 0; }
           depot=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
-          jeton() { curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.stdout.write(JSON.parse(d).token||''))"; }
+          jeton() { curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | jq -r '.token // empty'; }
           digest() { curl -sI -H "Authorization: Bearer $(jeton)" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/$depot/manifests/$1" | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}'; }
           # L'image versionnée du plus haut doit exister avant de pointer latest dessus.
           dhaut=$(digest "$plusHaut")
