@@ -9,7 +9,7 @@
 // à « celui de quelqu'un d'autre ». Les deux ont un contenu différent du nôtre, et ils appellent
 // l'inverse l'un de l'autre.
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -159,5 +159,42 @@ describe("⚠️ IMPORTER CE MODULE NE DOIT RIEN TOUCHER", () => {
     execFileSync(process.execPath, [join(outils, "install-hooks.mjs")], { cwd: racine, stdio: "ignore" });
 
     expect(readFileSync(join(racine, ".git", "hooks", "pre-push"), "utf8")).toContain(SIGNATURE);
+  });
+});
+
+describe("⚠️ IL N'ÉCRIT RIEN SUR stdout — LE CANAL DES DONNÉES N'EST PAS LE SIEN", () => {
+  // Constaté en direct pendant cette correction. `prepare` s'exécute AUSSI pendant
+  // `npm pack --dry-run --json`, dont `langue-publiee.mjs` parse la sortie standard. Un
+  // « hooks git : pre-push installé » écrit sur stdout se retrouve devant le JSON, qui cesse d'en
+  // être un : la garde de langue sortait alors 2 avec « Unexpected token 'h' » — un message qui ne
+  // désigne rien de ce qui cloche.
+  //
+  // En CI c'était masqué : `npm ci` installe le hook avant, donc le `npm pack` qui suit n'a plus
+  // rien à dire. Un défaut que seule la première exécution d'un clone frais révèle est un défaut
+  // qui attend le nouvel arrivant.
+  const lancerDansUnDepotNeuf = () => {
+    const racine = mkdtempSync(join(tmpdir(), "canaux-"));
+    execFileSync("git", ["init", "-q", racine]);
+    const outils = join(racine, "tools");
+    mkdirSync(join(outils, "git-hooks"), { recursive: true });
+    writeFileSync(join(outils, "install-hooks.mjs"), readFileSync("tools/install-hooks.mjs", "utf8"));
+    writeFileSync(join(outils, "git-hooks", "pre-push"), NOTRE_HOOK);
+    const r = spawnSync(process.execPath, [join(outils, "install-hooks.mjs")], { cwd: racine, encoding: "utf8" });
+    return { ...r, racine };
+  };
+
+  it("installe bien, mais sans un octet sur stdout", () => {
+    const r = lancerDansUnDepotNeuf();
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toMatch(/pre-push/);
+    expect(existsSync(join(r.racine, ".git", "hooks", "pre-push"))).toBe(true);
+  });
+
+  it("⚠️ et le JSON qui l'entoure reste parsable", () => {
+    // La propriété qui compte vraiment : ce n'est pas « stdout est vide », c'est « ce que le
+    // parseur d'à côté reçoit est encore du JSON ».
+    const r = lancerDansUnDepotNeuf();
+    const melange = r.stdout + JSON.stringify([{ id: "x", files: [{ path: "README.md" }] }]);
+    expect(() => JSON.parse(melange)).not.toThrow();
   });
 });

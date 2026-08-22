@@ -121,8 +121,21 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
           source: readFileSync(source, "utf8"),
           aSauvegarde: existsSync(sauvegarde),
         });
+        // ⚠️ SUR stderr, JAMAIS stdout — ET CE N'EST PAS UN DÉTAIL DE STYLE.
+        //
+        // `prepare` s'exécute aussi pendant `npm pack --dry-run --json`, dont `langue-publiee.mjs`
+        // PARSE la sortie standard. Un « hooks git : pre-push installé » écrit sur stdout se
+        // retrouve donc devant le JSON, qui cesse d'en être un — la garde de langue sort alors 2
+        // avec « Unexpected token 'h' », un message qui ne désigne rien de ce qui cloche.
+        //
+        // Constaté en direct pendant cette correction, sur un clone dont le hook n'était pas à
+        // jour. En CI c'était masqué : `npm ci` installe le hook avant, donc le `npm pack` qui
+        // suit n'a plus rien à dire. Un défaut que seule la première exécution d'un clone frais
+        // révèle est un défaut qui attend le nouvel arrivant.
+        //
+        // Un message de diagnostic n'a rien à faire dans le canal des données.
         if (action === "refuser") {
-          console.warn(raison);
+          process.stderr.write(raison + "\n");
         } else if (action !== "rien") {
           mkdirSync(dirname(cible), { recursive: true });
           if (action === "chainer") {
@@ -131,7 +144,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
           }
           copyFileSync(source, cible);
           chmodSync(cible, 0o755);
-          console.log(raison);
+          process.stderr.write(raison + "\n");
         }
       } catch {
         // Un hook non installé ne doit jamais empêcher d'installer le projet.
