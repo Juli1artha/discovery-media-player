@@ -116,11 +116,34 @@ describe("⚠️ SUR LE VRAI DÉPÔT", () => {
     for (const e of exemples) expect(e.fichier).toMatch(/^examples\/.+\/package\.json$/);
   });
 
-  it("la version que main déclare est celle que les exemples épinglent aujourd'hui", () => {
-    const version = JSON.parse(readFileSync("package.json", "utf8")).version;
-    const d = diagnostic([version], exemplesDuDepot());
+  // ⚠️ CE CAS ÉTAIT ROUGE PAR CONSTRUCTION À CHAQUE PUBLICATION — le défaut que la garde voisine
+  // avait déjà payé d'une PR (#273), reproduit ici à un fichier de distance. Il donnait
+  // `[version-de-main]` comme liste des versions publiées : vrai en régime établi, FAUX pendant
+  // toute PR de sortie, où main déclare N+1 et où le registre sert encore N. Les exemples, restés
+  // sur N comme la règle l'EXIGE, devenaient « à signaler » — et l'alerte tombait sur l'auteur de la
+  // sortie, qui n'y était pour rien.
+  //
+  // Une alerte qui se déclenche quand tout va bien apprend à passer outre, et le jour où elle a
+  // raison personne ne la lit. Hors ligne on ne peut pas interroger le registre : on lit donc les
+  // DEUX DERNIÈRES VERSIONS DU CHANGELOG, une source qui vieillit avec le dépôt — le même remède que
+  // celui appliqué au contrôle jumeau de `exemplesEpingles`.
+  it("les exemples épinglent l'une des deux dernières versions du CHANGELOG", () => {
+    const versions = [...readFileSync("CHANGELOG.md", "utf8").matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)]
+      .map((m) => m[1]);
+    // Sans ce plancher, un CHANGELOG dont l'entête changerait de forme rendrait ce cas vert en
+    // n'ayant rien lu — la vacuité que ce dépôt refuse partout ailleurs.
+    expect(versions.length, "aucune version lue dans le CHANGELOG : la sonde vise à côté")
+      .toBeGreaterThanOrEqual(2);
+    const d = diagnostic(versions.slice(0, 2), exemplesDuDepot());
     expect(d).not.toBeNull();
-    expect(d.aSignaler).toBe(false);
+    // ⚠️ ON AFFIRME L'ABSENCE DE ROUGE, PAS L'ABSENCE DE SIGNAL — et la nuance est toute la
+    // sentinelle. Pendant une PR de sortie, main déclare N+1, le registre sert encore N, et les
+    // exemples restent sur N comme la règle l'exige : ils sont donc EN SURSIS, et le dire est la
+    // raison d'être de ce fichier. Exiger `aSignaler === false` revenait à interdire à la sentinelle
+    // de faire son travail au seul moment où elle sert. Ce qui n'est jamais acceptable, c'est le
+    // ROUGE : un exemple sorti de la fenêtre des deux dernières versions.
+    expect(d.rouges.map((e) => `${e.fichier} → ${e.version}`),
+      "un exemple est hors de la fenêtre des deux dernières versions").toEqual([]);
   });
 });
 

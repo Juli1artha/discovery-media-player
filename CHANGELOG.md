@@ -10,6 +10,34 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.129] — 2026-08-22
+
+### Changed
+- **A document's analytics read is bounded, and says what it covers.** `listSharesForDoc` pulled the
+  *entire* view history of a document; its neighbour `overview()`, forty lines below in the same
+  file, had bounded itself to a rolling 24-month window months ago, with the reason written above
+  it. Two reads of the same event tables, two rules — and the second was written nowhere: **an
+  absence of a bound does not write itself.** One definition now, shared by both.
+  - The response carries `fenetreMois` (the window, in months). A bounded analytic that does not
+    announce it is indistinguishable from a complete one — the reader sees definitive figures. The
+    field is present even when the window cuts nothing, so a caller never has to infer coverage from
+    the *absence* of a flag.
+  - ⚠️ **The bound is temporal, not a row limit, and the measurement is what decided it.** PostgREST
+    caps at 1 000 rows on this deployment — recorded by a past incident whose comment survives in
+    `overview()`: ascending order plus a silent cut means *the recent* rows vanish, and the dashboard
+    showed "0 opens" on documents read the day before. A `limit` under 1 000 would already bite on
+    the worst real document (662 rows); a `limit` above it is silently reduced to 1 000, so a
+    `truncated` flag computed from the length would **lie**. `selectAll` paginates by `Range` and is
+    immune to the cap; the window bounds the volume.
+
+### Fixed
+- **"Last activity" no longer depends on the query's `ORDER BY`** — in both aggregating functions.
+  `lastAt = row.at` ("the last row wins") was correct only *while* the query sorted `at.asc`: a
+  hidden coupling between the aggregation and an `ORDER BY` thirty lines above it. Reversing the sort
+  — to keep recent rows in case of a cut, which was the obvious next move — would have turned "last
+  activity" into "first activity" **without a single test moving**. It is computed now, and the
+  property is proven by *permutation*: whatever order the rows arrive in, the result is identical.
+
 ## [0.1.128] — 2026-08-21
 
 ### Added
@@ -3552,7 +3580,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.128...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.129...HEAD
+[0.1.129]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.128...v0.1.129
 [0.1.128]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.127...v0.1.128
 [0.1.127]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.126...v0.1.127
 [0.1.126]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.125...v0.1.126
