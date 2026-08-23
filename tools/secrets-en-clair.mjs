@@ -33,7 +33,7 @@
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+import { estExecuteDirectement } from "./execute-directement.mjs";
 import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 
 /**
@@ -164,7 +164,7 @@ export function inspecter(fichiers, lire = (f) => readFileSync(f, "utf8")) {
   return constats;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (estExecuteDirectement(import.meta.url)) {
   conclure(tenter(() => {
     // ⚠️ `tenter` parce que `git ls-files` LÈVE hors d'un dépôt git — un refus prudent de la
     // garde, pas une faute de la branche (voir tools/resultat-garde.mjs).
