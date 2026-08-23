@@ -139,12 +139,27 @@ async function logView(share, { event, page, maxPage, seconds, sessionId, ua }) 
  * d'administration) : sans restriction, un commercial verrait à qui d'autre le document a été
  * envoyé — donc les prospects de ses collègues.
  */
+// ⚠️ UNE SEULE DÉFINITION DE LA FENÊTRE D'ANALYTIQUE, PARCE QU'ELLE ÉTAIT DANS UNE FONCTION SUR DEUX.
+// `overview()` bornait sa lecture à 24 mois glissants ; `listSharesForDoc`, quarante lignes plus haut,
+// lisait TOUT l'historique d'un document. Deux lectures des mêmes tables d'événements, deux règles —
+// et la seconde n'était écrite nulle part : elle se déduisait d'une absence.
+//
+// ⚠️ ET LE BORNAGE EST TEMPOREL, PAS EN NOMBRE DE LIGNES — la mesure l'impose. PostgREST plafonne à
+// 1 000 lignes ici (constaté par un incident, cf. le commentaire d'`overview()` plus bas) : un
+// `limit` inférieur mordrait DÉJÀ sur notre pire document (662 lignes), et un `limit` supérieur
+// serait silencieusement ramené à 1 000 — donc un drapeau « tronqué » calculé sur la longueur
+// MENTIRAIT. C'est `selectAll`, qui pagine par `Range`, qui met à l'abri du plafond ; la fenêtre,
+// elle, borne le volume. Le patron « borné-ordonné-parlant » s'applique donc par sa borne TEMPORELLE.
+const FENETRE_ANALYTIQUE_MOIS = 24;
+const depuisFenetre = () =>
+  new Date(Date.now() - FENETRE_ANALYTIQUE_MOIS * 30 * 24 * 60 * 60 * 1000).toISOString();
+
 async function listSharesForDoc(docId, owner) {
   const id = enc(String(docId || ""));
   const filtreOwner = owner ? `&created_by=eq.${enc(low(owner))}` : "";
   const [shares, views] = await Promise.all([
     PLAYER.db.request(`commercial_doc_shares?doc_id=eq.${id}&is_test=not.is.true${filtreOwner}&select=*&order=created_at.desc`),
-    PLAYER.db.selectAll(`commercial_doc_views?doc_id=eq.${id}&select=slug,event,page,max_page,seconds,session_id,at&order=at.asc`),
+    PLAYER.db.selectAll(`commercial_doc_views?doc_id=eq.${id}&select=slug,event,page,max_page,seconds,session_id,at&at=gte.${enc(depuisFenetre())}&order=at.asc`),
   ]);
   const shareList = Array.isArray(shares) ? shares : [];
   const viewList = Array.isArray(views) ? views : [];
@@ -160,7 +175,12 @@ async function listSharesForDoc(docId, owner) {
     if (mp > s.maxPage) s.maxPage = mp;
     s.seconds = Math.max(s.seconds, Number(v.seconds) || 0);
     if (v.session_id) s.sessions.add(v.session_id);
-    s.lastAt = v.at;
+    // ⚠️ UN MAXIMUM, PAS « LA DERNIÈRE LIGNE GAGNE ». `s.lastAt = v.at` n'était juste que TANT QUE la
+    // requête triait par `at.asc` — un couplage caché entre l'agrégation et l'ORDER BY, à trente
+    // lignes de distance. Quiconque aurait inversé le tri (pour garder le récent en cas de coupe)
+    // aurait transformé « dernière activité » en « première activité », sans qu'un seul test ne
+    // bouge. L'agrégation ne dépend plus de l'ordre : elle le calcule.
+    if (!s.lastAt || String(v.at) > String(s.lastAt)) s.lastAt = v.at;
   }
   const enriched = shareList.map((sh) => {
     const a = bySlug.get(sh.slug) || { opens: 0, maxPage: 0, seconds: 0, sessions: new Set(), lastAt: null };
@@ -186,7 +206,11 @@ async function listSharesForDoc(docId, owner) {
     maxPage: enriched.reduce((m, x) => Math.max(m, x.maxPage), 0),
     readers: reached.length, // sessions distinctes ayant tourné au moins une page
   };
-  return { shares: enriched, total, funnel };
+  // ⚠️ « PARLANT » : la réponse DIT ce qu'elle couvre. Une analytique bornée qui ne l'annonce pas
+  // est indiscernable d'une analytique complète — le lecteur y voit des chiffres définitifs. Le champ
+  // est présent même quand la fenêtre ne coupe rien (la purge à 13 mois arrive avant), pour que
+  // l'appelant n'ait jamais à déduire la couverture de l'ABSENCE d'un drapeau.
+  return { shares: enriched, total, funnel, fenetreMois: FENETRE_ANALYTIQUE_MOIS };
 }
 
 // Vue d'ensemble (tous documents) : stats agrégées par doc_id, pour les badges de la grille + le « top ».
@@ -197,7 +221,7 @@ async function overview() {
   // Borne glissante généreuse (24 mois) : ces tables d'événements grossissent sans fin ; sans filtre, le
   // scan intégral se dégrade avec le temps. 24 mois couvre tout l'historique utile pour la vue d'ensemble
   // (opens / lecteurs / dernière activité) sans changer les chiffres actuels. Filtre servi par l'index sur `at`.
-  const since = new Date(Date.now() - 24 * 30 * 24 * 60 * 60 * 1000).toISOString();
+  const since = depuisFenetre();
   const [views, internal] = await Promise.all([
     // PAGINÉ : au-delà de 1 000 lignes, PostgREST tronquait en silence — et comme le tri
     // est ascendant, c'est le RÉCENT qui disparaissait. Les consultations des trois dernières
@@ -237,7 +261,9 @@ async function overview() {
     if (v.event === "open") a.opens++;
     if (v.session_id) a.readers.add(v.session_id);
     a.maxPage = Math.max(a.maxPage, Number(v.page) || 0, Number(v.max_page) || 0);
-    a.lastAt = v.at;
+    // Même couplage caché que dans `listSharesForDoc`, et corrigé de la même façon : « dernière
+    // activité » se calcule, elle ne se déduit pas du tri de la requête.
+    if (!a.lastAt || String(v.at) > String(a.lastAt)) a.lastAt = v.at;
   }
   const intByDoc = new Map();
   for (const s of Array.isArray(internal) ? internal : []) {
