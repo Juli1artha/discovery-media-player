@@ -68,6 +68,11 @@ describe("⚠️ DANS UN VRAI DÉPÔT GIT, PARCE QUE LE CHAÎNAGE NE SE DÉDUIT 
     const outils = join(racine, "tools");
     mkdirSync(join(outils, "git-hooks"), { recursive: true });
     writeFileSync(join(outils, "install-hooks.mjs"), readFileSync("tools/install-hooks.mjs", "utf8"));
+    // ⚠️ L'OUTIL A UN VOISIN : il importe `execute-directement.mjs`, et une éprouvette qui ne
+    // copie qu'un fichier modélise un outil ISOLÉ qu'il n'est pas. Sans cette ligne l'import
+    // échoue, l'enfant meurt, et rien ne s'installe — le symptôme même que ces essais
+    // surveillent, produit par le montage plutôt que par le code.
+    writeFileSync(join(outils, "execute-directement.mjs"), readFileSync("tools/execute-directement.mjs", "utf8"));
     writeFileSync(join(outils, "git-hooks", "pre-push"), NOTRE_HOOK);
     execFileSync(process.execPath, [join(outils, "install-hooks.mjs")], { cwd: racine, stdio: "ignore" });
     return { racine, hooks };
@@ -137,6 +142,11 @@ describe("⚠️ IMPORTER CE MODULE NE DOIT RIEN TOUCHER", () => {
     const outils = join(racine, "tools");
     mkdirSync(join(outils, "git-hooks"), { recursive: true });
     writeFileSync(join(outils, "install-hooks.mjs"), readFileSync("tools/install-hooks.mjs", "utf8"));
+    // ⚠️ L'OUTIL A UN VOISIN : il importe `execute-directement.mjs`, et une éprouvette qui ne
+    // copie qu'un fichier modélise un outil ISOLÉ qu'il n'est pas. Sans cette ligne l'import
+    // échoue, l'enfant meurt, et rien ne s'installe — le symptôme même que ces essais
+    // surveillent, produit par le montage plutôt que par le code.
+    writeFileSync(join(outils, "execute-directement.mjs"), readFileSync("tools/execute-directement.mjs", "utf8"));
     writeFileSync(join(outils, "git-hooks", "pre-push"), NOTRE_HOOK);
 
     // Un IMPORT, pas une exécution : `process.argv[1]` désigne le script appelant, pas le module.
@@ -155,6 +165,11 @@ describe("⚠️ IMPORTER CE MODULE NE DOIT RIEN TOUCHER", () => {
     const outils = join(racine, "tools");
     mkdirSync(join(outils, "git-hooks"), { recursive: true });
     writeFileSync(join(outils, "install-hooks.mjs"), readFileSync("tools/install-hooks.mjs", "utf8"));
+    // ⚠️ L'OUTIL A UN VOISIN : il importe `execute-directement.mjs`, et une éprouvette qui ne
+    // copie qu'un fichier modélise un outil ISOLÉ qu'il n'est pas. Sans cette ligne l'import
+    // échoue, l'enfant meurt, et rien ne s'installe — le symptôme même que ces essais
+    // surveillent, produit par le montage plutôt que par le code.
+    writeFileSync(join(outils, "execute-directement.mjs"), readFileSync("tools/execute-directement.mjs", "utf8"));
     writeFileSync(join(outils, "git-hooks", "pre-push"), NOTRE_HOOK);
     execFileSync(process.execPath, [join(outils, "install-hooks.mjs")], { cwd: racine, stdio: "ignore" });
 
@@ -178,6 +193,11 @@ describe("⚠️ IL N'ÉCRIT RIEN SUR stdout — LE CANAL DES DONNÉES N'EST PAS
     const outils = join(racine, "tools");
     mkdirSync(join(outils, "git-hooks"), { recursive: true });
     writeFileSync(join(outils, "install-hooks.mjs"), readFileSync("tools/install-hooks.mjs", "utf8"));
+    // ⚠️ L'OUTIL A UN VOISIN : il importe `execute-directement.mjs`, et une éprouvette qui ne
+    // copie qu'un fichier modélise un outil ISOLÉ qu'il n'est pas. Sans cette ligne l'import
+    // échoue, l'enfant meurt, et rien ne s'installe — le symptôme même que ces essais
+    // surveillent, produit par le montage plutôt que par le code.
+    writeFileSync(join(outils, "execute-directement.mjs"), readFileSync("tools/execute-directement.mjs", "utf8"));
     writeFileSync(join(outils, "git-hooks", "pre-push"), NOTRE_HOOK);
     const r = spawnSync(process.execPath, [join(outils, "install-hooks.mjs")], { cwd: racine, encoding: "utf8" });
     return { ...r, racine };

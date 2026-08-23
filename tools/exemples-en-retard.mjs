@@ -26,8 +26,9 @@
 // Usage : node tools/exemples-en-retard.mjs
 
 import { appendFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+
 import { estStable, comparerVersions, exemplesDuDepot, versionsPubliees } from "./exemples-epingles.mjs";
+import { estExecuteDirectement } from "./execute-directement.mjs";
 
 export const A_JOUR = "a-jour";
 /** Encore accepté par la garde — mais la prochaine publication le refuse. */
@@ -109,7 +110,7 @@ export function poser(cle, valeur, fichier = process.env.GITHUB_OUTPUT) {
   else process.stdout.write(texte);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (estExecuteDirectement(import.meta.url)) {
   const d = diagnostic(versionsPubliees(), exemplesDuDepot());
 
   // ⚠️ ICI, REGISTRE INJOIGNABLE ⇒ SORTIE 0, ET C'EST VOLONTAIREMENT L'INVERSE DES GARDES.

@@ -21,9 +21,10 @@
 
 import { parseAllDocuments, isMap, isScalar } from "yaml";
 import { readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+
 import { workflows, ligneDe } from "./workflows-yaml.mjs";
 import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
+import { estExecuteDirectement } from "./execute-directement.mjs";
 
 /**
  * ⚠️ CE QUI COMPTE COMME UNE ÉCRITURE. `write` sur n'importe quelle portée, bien sûr — mais aussi
@@ -78,7 +79,7 @@ export function releve(dossier = ".github/workflows") {
   return { fichiers, soucis: fichiers.flatMap((f) => ecartsDuFichier(readFileSync(f, "utf8"), f)) };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (estExecuteDirectement(import.meta.url)) {
   const dossier = process.argv[2] || ".github/workflows";
   conclure(tenter(() => {
     const { fichiers, soucis } = releve(dossier);

@@ -27,6 +27,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { estExecuteDirectement } from "./execute-directement.mjs";
 
 const RACINE = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -143,7 +144,7 @@ export function fichiersServeur(racine = RACINE) {
     .map((f) => ({ nom: f, texte: readFileSync(join(dir, f), "utf8") }));
 }
 
-if (import.meta.url === pathToFileURLSafe(process.argv[1])) {
+if (estExecuteDirectement(import.meta.url)) {
   conclure(tenter(() => {
     const fichiers = fichiersServeur();
     const mesure = { ...mesurer(fichiers), in: compterIn(fichiers) };
@@ -162,6 +163,3 @@ if (import.meta.url === pathToFileURLSafe(process.argv[1])) {
   }));
 }
 
-function pathToFileURLSafe(p) {
-  try { return new URL(`file://${p.startsWith("/") ? "" : "/"}${p}`).href; } catch { return ""; }
-}
