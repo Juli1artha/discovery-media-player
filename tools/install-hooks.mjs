@@ -22,8 +22,9 @@
 
 import { existsSync, copyFileSync, chmodSync, mkdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
+import { estExecuteDirectement } from "./execute-directement.mjs";
 
 /**
  * ⚠️ CE QUI DISTINGUE « NOTRE HOOK, PLUS VIEUX » DE « LE HOOK DE QUELQU'UN D'AUTRE ».
@@ -96,7 +97,7 @@ export function decider({ existant, source, aSauvegarde }) {
 //
 // C'est l'idiome que les six autres outils de `tools/` utilisent déjà. Rendre un module testable
 // ne doit pas le rendre agissant : un `import` ne touche à rien.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (estExecuteDirectement(import.meta.url)) {
   const ICI = dirname(fileURLToPath(import.meta.url));
 
   // ⚠️ `prepare` s'exécute AUSSI quand le paquet est installé comme dépendance. On ne touche jamais

@@ -46,9 +46,10 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+
 import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 import ts from "typescript";
+import { estExecuteDirectement } from "./execute-directement.mjs";
 
 // Les variables d'environnement de ce dépôt sont en MAJUSCULES, sans exception. Le filtre
 // écarte le bruit (`env.length`, `env.toString`) sans jamais écarter une vraie variable.
@@ -178,7 +179,7 @@ export function inventaire(racine = ".") {
 //   0 — toute variable lue est documentée, et tout accès est lisible ;
 //   1 — le dépôt viole la règle (variable non documentée, accès au nom illisible) ;
 //   2 — la garde n'a pas pu conclure (voir tools/resultat-garde.mjs).
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (estExecuteDirectement(import.meta.url)) {
   conclure(tenter(() => {
     const { lues, interdits } = inventaire();
 

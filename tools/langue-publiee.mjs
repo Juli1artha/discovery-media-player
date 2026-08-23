@@ -28,8 +28,9 @@
 
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { pathToFileURL } from "node:url";
+
 import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
+import { estExecuteDirectement } from "./execute-directement.mjs";
 
 // Des mots-outils SANS RECOUVREMENT entre les deux langues : « on », « a », « as » ou « sur »
 // existent des deux côtés ou dans du code, ils ne comptent pas.
@@ -92,7 +93,7 @@ export function markdownsDuTarball(executer = () =>
   return fichiers.filter((f) => f.toLowerCase().endsWith(".md")).sort();
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (estExecuteDirectement(import.meta.url)) {
   // ⚠️ `tenter` : `npm pack` peut échouer (npm absent, manifeste cassé, disque plein) et
   // `markdownsDuTarball` LÈVE sur un inventaire vide — « on ne conclut pas sur un inventaire vide ».
   // Aucun de ces cas ne dit quoi que ce soit de la langue des documents.

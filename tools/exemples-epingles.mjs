@@ -55,8 +55,9 @@
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+
 import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
+import { estExecuteDirectement } from "./execute-directement.mjs";
 
 /** Une version STABLE : trois nombres, rien d'autre. `0.2.0-beta.1` n'en est pas une. */
 export const estStable = (v) => /^\d+\.\d+\.\d+$/.test(String(v).trim());
@@ -154,7 +155,7 @@ export function versionsPubliees(executer = () =>
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (estExecuteDirectement(import.meta.url)) {
   conclure(tenter(() => {
     const version = JSON.parse(readFileSync("package.json", "utf8")).version;
     const exemples = exemplesDuDepot();

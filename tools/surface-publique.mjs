@@ -28,6 +28,7 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { conclure, conforme, violation, inconclusif } from "./resultat-garde.mjs";
+import { estExecuteDirectement } from "./execute-directement.mjs";
 
 export const SURFACE = {
   ".": {
@@ -136,7 +137,7 @@ export function ecartsInternes(sousChemin, symboles) {
     .map((s) => `« ${sousChemin} » rend un nouveau symbole interne « ${s} » — décidez-le dans INTERNES_TOLERES, ou ne l'exportez pas`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (estExecuteDirectement(import.meta.url)) {
   // ⚠️ UNE EXCEPTION EST UN RÉSULTAT NON CONCLUANT, PAS UNE VIOLATION. `docs/API.md` absent ou
   // `package.json` déplacé faisaient remonter l'erreur jusqu'à Node, qui sortait 1 : le refus
   // prudent de la garde prenait l'apparence d'un dépôt fautif, avec une trace de pile pour

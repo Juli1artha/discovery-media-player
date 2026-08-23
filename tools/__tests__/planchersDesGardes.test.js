@@ -43,6 +43,14 @@ const EXEMPTES = {
     pourquoi: "installateur de crochets git : il agit, il ne mesure rien — il n'a pas de sonde qui puisse revenir vide",
     tientEncore: (src) => !/::error::/.test(src),
   },
+  "execute-directement.mjs": {
+    pourquoi: "bibliothèque d'un seul prédicat (« suis-je le programme principal ? »), sans point d'entrée : elle ne juge rien, elle est appelée",
+    // ⚠️ SANS LE RETRAIT DES COMMENTAIRES, CETTE VÉRIFICATION ACCUSE LE HELPER LUI-MÊME : il CITE la
+    // forme fautive pour expliquer pourquoi elle est interdite. Une sonde qui lit du commentaire
+    // invente un coupable — troisième fois que ce dépôt le paie, et la première dans une exemption.
+    tientEncore: (src) => !/import\.meta\.url\s*===/.test(
+      src.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n")),
+  },
   "resultat-garde.mjs": {
     pourquoi: "bibliothèque du verdict des gardes (conforme / violation / non concluant), sans point d'entrée : elle ne juge rien, elle est appelée",
     tientEncore: (src) => !/import\.meta\.url\s*===/.test(src),
