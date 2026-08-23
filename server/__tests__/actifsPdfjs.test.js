@@ -93,7 +93,7 @@ const ORIGINES_DECLAREES = {
 
 describe("pdf.js ne sort plus de notre origine", () => {
   const src = require("./sourceDesPages.cjs").SOURCE_PAGES
-    .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
+    .split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
 
   const originesDuSource = () => {
     const trouvees = src.match(/https?:\/\/[A-Za-z0-9.*${}_-]+/g) || [];

@@ -41,7 +41,7 @@ describe("aucune clé de stockage propre à un hôte", () => {
     const trouves = [];
     for (const f of fichiersDuPaquet()) {
       fs.readFileSync(f, "utf8").split("\n").forEach((ligne, i) => {
-        if (/^\s*(\/\/|\*)/.test(ligne)) return;                     // les commentaires en parlent
+        if (/^\s*(\/\/|\*|\/\*)/.test(ligne)) return;                     // les commentaires en parlent
         if (SUSPECT.test(ligne)) trouves.push(`${path.basename(f)}:${i + 1}`);
       });
     }
@@ -52,7 +52,7 @@ describe("aucune clé de stockage propre à un hôte", () => {
     const porteurs = fichiersDuPaquet().filter((f) => {
       const src = fs.readFileSync(f, "utf8");
       // Les commentaires ont le droit de la nommer : c'est même là qu'elle doit être expliquée.
-      return src.split("\n").some((l) => l.includes("3dd-supabase-auth") && !/^\s*(\/\/|\*)/.test(l));
+      return src.split("\n").some((l) => l.includes("3dd-supabase-auth") && !/^\s*(\/\/|\*|\/\*)/.test(l));
     });
     expect(porteurs.map((f) => path.basename(f))).toEqual([]);
   });

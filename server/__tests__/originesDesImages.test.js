@@ -32,7 +32,7 @@ function listeDesOrigines() {
   const i = SRC.indexOf("function originesImages(");
   expect(i, "la liste doit exister en UN seul endroit").toBeGreaterThan(0);
   return SRC.slice(i, SRC.indexOf("\n}", i))
-    .split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+    .split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
 }
 
 /**

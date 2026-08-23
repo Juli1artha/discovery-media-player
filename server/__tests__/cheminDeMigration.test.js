@@ -97,7 +97,7 @@ describe("toute colonne écrite par le code est déclarée", () => {
       // Seulement les commentaires EN DÉBUT DE LIGNE : retirer tout « // » couperait les URL des
       // chaînes, ce qui ferait lire un code qui n'existe pas.
       const src = fs.readFileSync(path.join(RACINE, "server", f), "utf8")
-        .split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+        .split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
       // `body: { colonne: …, autre: … }` — on ne lit que les corps d'écriture.
       for (const m of src.matchAll(/body:\s*\{([^}]*)\}/g)) {
         for (const c of m[1].matchAll(/\b([a-z][a-z0-9_]{2,})\s*:/g)) noms.add(c[1]);

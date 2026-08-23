@@ -54,7 +54,7 @@ describe("aucune écriture de mesure n'est rattrapée en silence", () => {
     for (const f of fichiersServeur()) {
       const lignes = fs.readFileSync(f, "utf8").split("\n");
       lignes.forEach((ligne, i) => {
-        if (/^\s*(\/\/|\*)/.test(ligne)) return;                       // un commentaire la cite
+        if (/^\s*(\/\/|\*|\/\*)/.test(ligne)) return;                       // un commentaire la cite
         if (/^\s*(async\s+)?function\s/.test(ligne)) return;           // sa déclaration
         // Le verbe peut être sur la ligne suivante quand l'appel est réparti.
         if (!estEcriture(ligne, lignes.slice(i, i + 3).join("\n"))) return;
