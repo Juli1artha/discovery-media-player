@@ -828,7 +828,10 @@ function signatureAbsente(erreur) {
   if (!erreur) return false;
   const code = erreur.details && (erreur.details.code || (erreur.details.error && erreur.details.error.code));
   if (code === "PGRST202") return true;
-  const texte = String((erreur && erreur.message) || "");
+  // ⚠️ PAS DE `erreur &&` ICI : la garde de la première ligne l'a déjà tranché. Le garder ne
+  // protégeait de rien et APPRENAIT AU LECTEUR QUE `erreur` PEUT ÊTRE NULLE À CET ENDROIT — ce qui
+  // est faux. Un test qui ne peut pas échouer ne coûte pas un cycle, il coûte une lecture.
+  const texte = String(erreur.message || "");
   return texte.includes("PGRST202") || /Could not find the function/i.test(texte);
 }
 
@@ -1138,12 +1141,17 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
     presentateurEcrit = presentateurEcrit
       || (controlHash != null && relu.control_hash != null && controlHash === relu.control_hash);
   }
-  let cur = null;
+  // ⚠️ ON RELIT À CHAQUE TOUR — ET C'EST DÉJÀ CE QUI SE PASSAIT. La lecture était gardée par un
+  // `if (cur === null)` qui ne pouvait JAMAIS être faux : les deux seuls chemins qui rebouclent
+  // (un 409 à la création, une écriture battue en vol) remettaient `cur` à null juste avant. La
+  // condition décrivait une intention — « ne relis que si tu n'as pas d'état frais » — que le code
+  // ne pouvait pas contredire. Signalée par le scan (#78), et il a raison : une branche morte
+  // laisse croire qu'il existe un cas où l'on repart avec un état déjà lu. Il n'y en a pas, et il
+  // ne DOIT pas y en avoir : rejouer sur un état périmé est précisément ce que la serrure
+  // `last_seen` interdit.
   for (let essai = 0; essai < 4; essai += 1) {
-    if (cur === null) {
-      const rows = await PLAYER.db.request(`doc_presentation_attendees?slug=eq.${enc(slug)}&attendee_key=eq.${enc(String(key))}&select=*&limit=1`);
-      cur = (Array.isArray(rows) && rows[0]) || false;
-    }
+    const rows = await PLAYER.db.request(`doc_presentation_attendees?slug=eq.${enc(slug)}&attendee_key=eq.${enc(String(key))}&select=*&limit=1`);
+    let cur = (Array.isArray(rows) && rows[0]) || false;
     if (!cur) {
       const now = Date.now();
       const row = { slug: String(slug), attendee_key: String(key).slice(0, 200), name: (name || "").slice(0, 120) || null, email: lc(email) || null, avatar: (avatar || "").slice(0, 600) || null, is_member: !!isMember, is_presenter: presentateurEcrit, first_seen: new Date(now).toISOString(), last_seen: new Date(now).toISOString(), total_ms: 0, pages: [pageEcrite] };
@@ -1159,8 +1167,7 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
         // Journalisé comme bénin : deux onglets qui arrivent ensemble sont une information, pas
         // une panne — et la garde des écritures muettes exige que tout rattrapage parle.
         try { PLAYER.errors.capture(new Error("présence déjà ouverte (second onglet) : " + String(slug)), { route: "present-attend", benin: true }); } catch { /* jamais bloquant */ }
-        cur = null;
-        continue;
+        continue;   // le tour suivant relit : la ligne que l'autre onglet vient de créer
       }
     }
     // ⚠️ UN `last_seen` ACCEPTÉ EST STRICTEMENT CROISSANT — sans ça, la serrure est aveugle dans
@@ -1184,7 +1191,7 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
         is_member: !!isMember, is_presenter: presentateurEcrit },
     );
     if (ecrit) return { ok: true };
-    cur = null;   // battu en vol : on relira l'état frais au tour suivant
+    // battu en vol : le tour suivant relit l'état frais — c'est la lecture en tête de boucle
   }
   // Quatre tours perdus : un battement de présence se reperd sans conséquence — le suivant arrive
   // dans quelques secondes. Refuser net plutôt qu'écraser ce que les gagnants viennent d'écrire.

@@ -23,7 +23,8 @@ function base(ligne) {
     db: {
       async request(chemin, o) {
         if (!o || !o.method) return [{ ...ligne }];
-        ecritures.push({ chemin, corps: (o && o.body) || null });
+        // `o` est non nul : la ligne au-dessus l'a tranché. Un second test ne garde rien.
+        ecritures.push({ chemin, corps: o.body || null });
         // ⚠️ CE FAUX RÉPOND COMME 0019, SINON IL NE MESURE PAS CE QU'IL PRÉTEND. Depuis la fusion,
         // c'est la BASE qui oppose le refus d'archive à un battement de présence — un faux muet
         // ferait retomber le player dans son repli, et le test montrerait vert un chemin que la

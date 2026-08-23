@@ -59,13 +59,67 @@ describe("les actifs pdf.js sortent de notre origine, octet pour octet", () => {
 
 // ⚠️ LE GABARIT NE DOIT PLUS JAMAIS POINTER UN CDN POUR PDF.JS — garde sur la règle, comme pour
 // jsonPourScript : une URL cdnjs réintroduite demain serait nommée ici avant d'être servie.
+//
+// ⚠️ ET LA GARDE NE NOMMAIT QU'UN SEUL HÔTE (alerte de scan #82, relevé du 23/08). Elle disait
+// « pas cdnjs » là où la règle du dépôt est « je déclare ce que j'autorise ». Un pdf.js servi
+// demain depuis `unpkg.com` ou n'importe quel autre CDN passait sans un mot : la liste noire ne
+// connaît que ce qui a déjà mal tourné, et le prochain défaut n'est jamais celui-là.
+//
+// ⚠️ MON PROPRE BALAYAGE AVAIT LE MÊME DÉFAUT, ce qui vaut d'être écrit ici. En relevant les
+// origines présentes, ma première expression régulière excluait `*` de la classe de caractères :
+// SIX origines joker — `*.googleapis.com`, `*.gstatic.com`, `*.ggpht.com`, `*.googleusercontent.com`,
+// `*.tile.openstreetmap.org`, `*.vercel.app` — ne correspondaient à rien et ne s'affichaient donc
+// pas. Un lecteur qui ne voit pas une forme ne dit pas qu'il ne la voit pas ; il rend une liste
+// courte, qui a l'air complète.
+const ORIGINES_DECLAREES = {
+  "cdn.jsdelivr.net": "supabase-js — épinglé en version exacte et empreinté dans TIERS",
+  "unpkg.com": "leaflet (js + css) — épinglés en version exacte et empreintés dans TIERS",
+  "accounts.google.com": "Google Sign-In, chargé par la page quand un client GSI est configuré",
+  "api.elevenlabs.io": "synthèse vocale, appelée depuis le serveur",
+  "maps.googleapis.com": "cartes Google, autorisées en CSP",
+  "maps.gstatic.com": "actifs des cartes Google, autorisés en CSP",
+  "*.googleapis.com": "joker CSP couvrant les sous-domaines Google appelés par les cartes",
+  "*.gstatic.com": "joker CSP, même raison",
+  "*.ggpht.com": "photos Street View / Places, autorisées en img-src",
+  "*.googleusercontent.com": "photos de profil et de lieux, autorisées en img-src",
+  "fonts.googleapis.com": "feuille de police, autorisée en CSP",
+  "fonts.gstatic.com": "fichiers de police, autorisés en CSP",
+  "nominatim.openstreetmap.org": "géocodage OpenStreetMap, autorisé en CSP",
+  "*.tile.openstreetmap.org": "tuiles OSM (joker CSP)",
+  "{s}.tile.openstreetmap.org": "tuiles OSM — `{s}` est le gabarit de sous-domaine de Leaflet, pas un hôte",
+  "*.vercel.app": "encadrement par défaut : la démo hébergée peut encadrer le player",
+  "interne": "base FACTICE de `new URL(req.url, \"http://interne\")` — aucun appel réseau ne part là",
+};
+
 describe("pdf.js ne sort plus de notre origine", () => {
   const src = require("./sourceDesPages.cjs").SOURCE_PAGES
     .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
 
+  const originesDuSource = () => {
+    const trouvees = src.match(/https?:\/\/[A-Za-z0-9.*${}_-]+/g) || [];
+    return [...new Set(trouvees.map((u) => u.replace(/^https?:\/\//, "")))].sort();
+  };
+
   it("zéro cdnjs hors commentaires, et les CSP portent 'self'", () => {
     expect(src.includes("cdnjs.cloudflare.com"), "un CDN est revenu dans le code exécutable").toBe(false);
     expect(src).toContain('${scriptSrc ? scriptSrc + " \'self\'" : "\'self\'"}');
+  });
+
+  it("⚠️ et TOUTE origine externe du code exécutable est déclarée, avec sa raison", () => {
+    // C'est la garde qui aurait attrapé un pdf.js servi depuis un CDN que personne n'a pensé à
+    // interdire. Ajouter une origine sans écrire pourquoi elle est là fait échouer ce banc — et
+    // c'est le seul moment où quelqu'un se posera la question.
+    const inconnues = originesDuSource().filter((h) => !(h in ORIGINES_DECLAREES));
+    expect(inconnues, `origine(s) non déclarée(s) : ${inconnues.join(", ")}`).toEqual([]);
+  });
+
+  it("⚠️ et la liste ne contient rien qui ait DISPARU du code", () => {
+    // La contrepartie, sans laquelle la liste devient un cimetière : on pourrait satisfaire la
+    // garde précédente en y ajoutant tout, pour toujours. Une déclaration qui ne correspond plus
+    // à rien est une autorisation que personne ne relit.
+    const presentes = new Set(originesDuSource());
+    const mortes = Object.keys(ORIGINES_DECLAREES).filter((h) => !presentes.has(h));
+    expect(mortes, `déclarée(s) mais absente(s) du code : ${mortes.join(", ")}`).toEqual([]);
   });
 
   it("les deux pages donnent au navigateur l'URL de NOS actifs", () => {
