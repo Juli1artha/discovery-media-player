@@ -1,8 +1,11 @@
 // L'HÔTE VERS LEQUEL CE RENVOI PARLE NE DÉPEND PAS DE CE QU'ON LUI DEMANDE.
 //
-// ⚠️ POURQUOI CE BANC EXISTE : CodeQL classe la ligne de `fetch` en SSRF critique (#74). C'est un
-// faux positif — l'autorité de l'URL est close avant que le chemin de l'appelant commence — mais
-// « c'est un faux positif » est une PHRASE, et une phrase ne tient pas dans le temps. Le banc, si.
+// ⚠️ POURQUOI CE BANC EXISTE. La première version de `cibleAmont` concaténait `amont + "/" + chemin`.
+// C'était correct — l'autorité de l'URL est close avant que le chemin de l'appelant commence — mais
+// correct par un RAISONNEMENT, tenu dans un commentaire. CodeQL la classait en SSRF critique (#74),
+// et il avait tort sur le fond et raison sur la forme : une propriété de sécurité qui ne vit que
+// dans un paragraphe n'est gardée par personne. L'hôte vient maintenant de `new URL(amont)` et
+// n'est jamais réécrit ; ce banc est ce qui rend la propriété vérifiable au lieu d'argumentée.
 //
 // ⚠️ ET IL GARDE SURTOUT CONTRE LE CORRECTIF. La réécriture qu'on fait spontanément pour faire
 // taire l'alerte est `new URL(chemin, AMONT)` — et elle rend `http://evil.com/x` dès que le chemin
@@ -36,6 +39,20 @@ describe("⚠️ AUCUN CHEMIN NE DÉPLACE L'HÔTE", () => {
       expect(cible.host, `« ${suite} » a déplacé l'hôte`).toBe(new URL(AMONT).host);
       expect(cible.protocol).toBe("http:");
     }
+  });
+
+  it("⚠️ la normalisation du chemin ne rend jamais l'hôte à l'appelant", () => {
+    // Les accesseurs d'URL normalisent : `\\` devient `/`, `#` devient `%23`. Ces réécritures
+    // changent le CHEMIN transmis — et c'est justement la démonstration : elles ne peuvent pas
+    // toucher l'autorité, qui est posée avant elles et n'est jamais réassignée.
+    expect(cibleAmont(PREFIXE + "x#//evil.com")).toBe(AMONT + "/x%23//evil.com");
+    expect(cibleAmont(PREFIXE + "\\\\evil.com\\x")).toBe(AMONT + "///evil.com/x");
+  });
+
+  it("⚠️ un amont qui porte un préfixe de chemin le garde", () => {
+    // La contrepartie de « l'hôte vient de l'amont » : le reste de l'amont aussi. Écraser le
+    // chemin de base ferait taper à côté sans rien dire.
+    expect(cibleAmont(PREFIXE + "pages?a=1", "http://h:3001/base/")).toBe("http://h:3001/base/pages?a=1");
   });
 
   it("et la demande légitime arrive entière, préfixe retiré", () => {

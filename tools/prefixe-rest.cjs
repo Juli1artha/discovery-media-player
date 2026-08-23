@@ -16,21 +16,30 @@ const PORT = Number(process.env.PREFIXE_REST_PORT || 3002);
 const PREFIXE = "/rest/v1/";
 
 /**
- * ⚠️ L'HÔTE EST VERROUILLÉ PAR CONSTRUCTION — ET LE « CORRECTIF » ÉVIDENT LE DÉVERROUILLERAIT.
+ * ⚠️ L'HÔTE VIENT DE `amont`, ET DE NULLE PART AILLEURS — STRUCTURELLEMENT, PAS PAR ARGUMENT.
  *
- * CodeQL classe cette ligne en SSRF critique (alerte #74) : une donnée venue de la requête entre
- * dans un `fetch`. Ce qu'il ne voit pas, c'est que `AMONT` se termine AVANT le troisième `/` :
- * l'autorité de l'URL est close quand le chemin de l'appelant commence. `//evil.com/x`,
- * `@evil.com`, `\evil.com` atterrissent tous dans le CHEMIN. Seul le chemin est contrôlé, et
- * c'est très exactement la fonction de ce renvoi.
+ * La première version concaténait : `amont + "/" + chemin`. C'était CORRECT — l'autorité de l'URL
+ * est close avant que le chemin de l'appelant commence, donc `//evil.com/x`, `@evil.com` et
+ * `\evil.com` atterrissent tous dans le chemin — mais correct par un raisonnement, tenu dans un
+ * commentaire. CodeQL la classait en SSRF critique (#74), et il avait tort sur le fond ET raison
+ * sur la forme : une propriété de sécurité qui ne vit que dans un paragraphe n'est pas gardée.
  *
- * ⚠️ NE REMPLACEZ PAS CECI PAR `new URL(chemin, AMONT)`. C'est la réécriture qu'on fait
- * spontanément pour faire taire l'alerte, et elle rend `http://evil.com/x` dès que le chemin
- * commence par `//` : on créerait la faille en corrigeant le faux positif. `prefixeRest.test.js`
- * est rouge sur ce jour-là.
+ * Ici l'hôte est posé par `new URL(amont)` et n'est JAMAIS réécrit. Ce que la requête contrôle —
+ * le chemin et la requête, c'est-à-dire très exactement la fonction de ce renvoi — entre par des
+ * accesseurs qui ne peuvent pas déplacer l'autorité. Le raisonnement est devenu la structure.
+ *
+ * ⚠️ ET SURTOUT PAS `new URL(chemin, amont)`. C'est la réécriture qu'on fait spontanément pour
+ * faire taire l'alerte, et elle rend `http://evil.com/x` dès que le chemin commence par `//` : on
+ * créerait la faille en corrigeant le faux positif. `prefixeRest.test.js` mesure ce piège.
  */
 function cibleAmont(urlDemandee, amont = AMONT) {
-  return amont + "/" + String(urlDemandee).slice(PREFIXE.length);
+  const reste = String(urlDemandee).slice(PREFIXE.length);
+  const q = reste.indexOf("?");
+  const cible = new URL(amont);
+  // Un amont peut porter un préfixe de chemin (`http://hôte/base`) : on le garde, on ne l'écrase pas.
+  cible.pathname = cible.pathname.replace(/\/+$/, "") + "/" + (q < 0 ? reste : reste.slice(0, q));
+  cible.search = q < 0 ? "" : reste.slice(q);
+  return cible.toString();
 }
 
 /**
