@@ -55,7 +55,7 @@ describe("aucune interpolation nue ne subsiste ni ne revient", () => {
     // invente des coupables, et la seule issue serait de dégrader l'explication pour la satisfaire.
     // Même correction que la garde de portabilité de la forge, pour la même raison.
     const src = require("./sourceDesPages.cjs").SOURCE_PAGES
-      .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
+      .split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
     expect(src.includes('cfg.replace(/</g'), "un .replace à l'interpolation est un correctif qu'on oublie d'appliquer au champ suivant").toBe(false);
   });
 });
@@ -110,7 +110,7 @@ describe("une page rendue avec un titre hostile reste une page", () => {
 // dépend plus de ce qu'on met dedans, il n'y a plus de dedans.
 describe("le broadcast du chat est un signal, structurellement", () => {
   const src = require("./sourceDesPages.cjs").SOURCE_PAGES
-    .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
+    .split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
 
   it("msg et msg-upd partent avec une charge VIDE", () => {
     expect(src).toContain("event:'msg',payload:{}");

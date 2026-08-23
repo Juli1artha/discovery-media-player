@@ -109,7 +109,7 @@ describe("la présence ne publie plus d'adresse", () => {
   // exécute. Le dire ainsi vaut mieux que d'affirmer qu'on a observé le réseau.
   it("ni la charge de présence ni la clé du canal ne portent d'adresse", () => {
     const source = require("./sourceDesPages.cjs").SOURCE_PAGES;
-    const sansCommentaires = source.split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+    const sansCommentaires = source.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
 
     const track = /ch\.track\(\{[^}]*\}\)/.exec(sansCommentaires);
     expect(track, "l'appel track() doit rester repérable, sinon cette garde ne garde rien").toBeTruthy();
