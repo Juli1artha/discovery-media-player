@@ -25,7 +25,8 @@
 import { DockerfileParser } from "dockerfile-ast";
 import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 import { readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+
+import { estExecuteDirectement } from "./execute-directement.mjs";
 
 /**
  * Les images EXTERNES d'un Dockerfile — celles qui viennent d'un registre.
@@ -167,7 +168,7 @@ export function ecartMajeur(txt, versionObservee) {
   return null;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (estExecuteDirectement(import.meta.url)) {
   const fichiers = process.argv.slice(2).length ? process.argv.slice(2) : ["Dockerfile"];
   // ⚠️ `tenter` : un Dockerfile absent ou illisible ne dit rien de l'épinglage. Il sortait 1, avec
   // une trace de pile ENOENT en guise de verdict.

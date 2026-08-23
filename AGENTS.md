@@ -41,6 +41,19 @@ coverage's sake, and coverage is deliberately not measured.
   `server/handler.js`, the database call count in `docs/API.md` ↔ the code, changelog sections ↔
   their comparison links, `supabase/init.sql` ↔ the migrations: each pair has a CI step that
   compares them. If you change one side, change the other in the same commit.
+- **No workflow grants write permission at its root.** A permission declared at the top of a
+  workflow file is granted to *every* job in it — including the ones nobody has written yet, whose
+  author will inherit it without asking and without seeing it. Writes go on the job that uses them.
+  `release.yml` is the worked example: its job that executes a tarball **downloaded from the
+  registry** used to run with enough rights to publish to npm, purely because the grants lived at
+  the root.
+- **No source directory escapes the linter, and a warning stops CI.** `npm run lint` covers
+  `bin context server src build tools charge` with `--max-warnings 0`. It used to stop before
+  `tools/` — the eleven guards that reject everyone else's PRs were themselves unchecked — and
+  `no-unused-vars` was switched off for every test file with no comment saying why. CodeQL had been
+  reporting the consequences on `main` for a week: 40 open alerts for a defect the repo's own linter
+  sees in two seconds. `tools/__tests__/perimetreDuLinter.test.js` now holds the perimeter.
+
 - **The database surface stays portable.** Core queries are `table?column=eq.value` PostgREST
   syntax only — no embedded joins, no `or=()`/`and=()` trees, no `offset=`. Schema expectations
   are declared once in `server/schema.js`, never probed ad hoc.

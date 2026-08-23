@@ -19,11 +19,15 @@ on:
         description: "Tag existant à rejouer (ex. v0.1.78)"
         required: true
 
+# ⚠️ RIEN EN ÉCRITURE À LA RACINE — LE DROIT VA AU JOB QUI S'EN SERT, ET À LUI SEUL.
+#
+# Une permission posée ici est accordée à TOUS les jobs, y compris à ceux que personne n'a encore
+# écrits. `promote-latest` déclarait déjà les siens ; `image` héritait des quatre, dont deux dont
+# il n'a besoin que pour l'attestation. Le jour où un troisième job arrive, il hérite de tout.
+#
+# La règle est tenue par `tools/permissions-workflows.mjs`, qui refuse toute écriture à la racine.
 permissions:
   contents: read
-  packages: write        # pousser l'image sur ghcr
-  id-token: write        # OIDC
-  attestations: write    # provenance de l'image
 
 # ⚠️ PAS de concurrency au niveau du workflow (P2 douzième audit). Deux tags rapprochés produisent
 # deux images VERSIONNÉES distinctes qui ne se marchent pas dessus : les sérialiser ferait qu'un
@@ -33,6 +37,25 @@ permissions:
 jobs:
   image:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write        # pousser l'image sur ghcr, ET les attestations que BuildKit y joint
+      id-token: write        # OIDC
+      # ⚠️ PAS de `attestations: write` — IL ÉTAIT LÀ ET NE SERVAIT À RIEN.
+      #
+      # Ce droit ouvre l'API d'attestation de la FORGE, celle qu'utilisent les actions
+      # `actions/attest*`. Ce job n'en appelle aucune : sa provenance et son SBOM viennent de
+      # BuildKit (`provenance: mode=max`, `sbom: true`), qui les joint à l'image DANS LE REGISTRE —
+      # ce qui relève de `packages: write`. Le commentaire disait « provenance de l'image » et
+      # désignait la bonne intention avec le mauvais droit.
+      #
+      # ⚠️ ET JE L'AI DÉPLACÉ ICI MOI-MÊME EN #309, sans me demander s'il servait. Le principe
+      # « le droit va au job qui s'en sert » a été appliqué à la lettre et pas à la lettre près :
+      # personne ne s'en sert. Un privilège accordé pour rien est plus discret qu'un privilège mal
+      # placé, et il survit plus longtemps.
+      #
+      # `id-token: write` RESTE : je n'ai pas pu vérifier d'ici si BuildKit s'en sert pour signer
+      # la provenance qu'il produit, et on ne retire pas un droit sur une supposition.
     outputs:
       ref: ${{ steps.img.outputs.ref }}
     env:
@@ -95,7 +118,7 @@ jobs:
       - name: The versioned image is served, amd64 + arm64
         run: |
           depot=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
-          jeton=$(curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.stdout.write(JSON.parse(d).token||''))")
+          jeton=$(curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | jq -r '.token // empty')
           index=$(curl -s -H "Authorization: Bearer $jeton" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/$depot/manifests/${TAG}")
           echo "$index" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const m=JSON.parse(d);const arch=(m.manifests||[]).map(x=>x.platform&&x.platform.architecture).filter(Boolean);if(!arch.includes('amd64')||!arch.includes('arm64')){console.error('::error::image '+process.env.TAG+' incomplète — arches: '+arch.join(',')||'aucune');process.exit(1)}console.log('image '+process.env.TAG+' servie, arches: '+arch.join(', '))})"
 
@@ -143,7 +166,7 @@ jobs:
           plusHaut=$(git tag -l | node tools/plus-haut-tag.mjs)
           [ -n "$plusHaut" ] || { echo "aucun tag de version valide — latest NON touché"; exit 0; }
           depot=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
-          jeton() { curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.stdout.write(JSON.parse(d).token||''))"; }
+          jeton() { curl -s "https://ghcr.io/token?scope=repository:$depot:pull" | jq -r '.token // empty'; }
           digest() { curl -sI -H "Authorization: Bearer $(jeton)" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/$depot/manifests/$1" | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}'; }
           # L'image versionnée du plus haut doit exister avant de pointer latest dessus.
           dhaut=$(digest "$plusHaut")

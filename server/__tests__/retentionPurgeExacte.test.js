@@ -82,10 +82,10 @@ describe("purge exacte", () => {
   });
 
   it("dry-run : exactement le plafond, rien au-delà → tronque false ; plafond+1 → tronque true", async () => {
-    const a = harnais({ pools: [poolTable("commercial_doc_views", "id", 100)] });
+    harnais({ pools: [poolTable("commercial_doc_views", "id", 100)] });
     const ra = await retention.purgerRetention(Date.now(), { dryRun: true, taille: 50, plafond: 100 });
     expect(ra.rapport.commercial_doc_views.tronque, "pile le plafond, rien de plus").toBe(false);
-    const b = harnais({ pools: [poolTable("commercial_doc_views", "id", 101)] });
+    harnais({ pools: [poolTable("commercial_doc_views", "id", 101)] });
     const rb = await retention.purgerRetention(Date.now(), { dryRun: true, taille: 50, plafond: 100 });
     expect(rb.rapport.commercial_doc_views.tronque, "une de plus que le plafond → il reste").toBe(true);
   });
@@ -144,7 +144,7 @@ describe("le plafond est GLOBAL aux présentations, pas par présentation", () =
   it("3 présentations, plafond 1 → UN SEUL message supprimé au total (budget global)", async () => {
     const h = harnaisPlusieurs([5, 5, 5]);
     // Le harnais doit filtrer les messages par slug — on patche le pool pour le respecter.
-    const r = await retention.purgerRetention(Date.now(), { taille: 1, plafond: 1 });
+    await retention.purgerRetention(Date.now(), { taille: 1, plafond: 1 });
     const total = (h.supprimesIds.doc_presentation_messages || []).length;
     expect(total, "le plafond 1 est global : un seul message, pas un par présentation").toBe(1);
   });
@@ -223,7 +223,7 @@ describe("l'off-by-one des 500 présentations", () => {
   });
 
   it("501 présentations → seules 500 traitées, tronque true", async () => {
-    const h = harnaisN(501);
+    harnaisN(501);
     const r = await retention.purgerRetention(Date.now());
     expect(r.rapport.presentations.examinees, "on n'en traite que 500 par exécution").toBe(500);
     expect(r.rapport.presentations.tronque, "une 501e existe → tronqué").toBe(true);

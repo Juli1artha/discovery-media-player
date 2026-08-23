@@ -9,7 +9,10 @@
 // Le relevé réseau n'est pas simulé au hasard : il est INJECTÉ, avec les sorties `git ls-remote`
 // réelles relevées ce jour-là.
 
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 import { depotDe, ecartVersion, tagsDuDepot, verdict } from "../actions-versions.mjs";
 import { usesDe, usesDuDepot } from "../workflows-yaml.mjs";
@@ -150,7 +153,40 @@ describe("les workflows réellement présents", () => {
   });
 
   it("la lecture par arbre YAML retrouve bien les annonces", () => {
-    const u = usesDe(`steps:\n  - uses: a/b@${"c".repeat(40)} # v9\n`, "w.yml")[0];
+    const u = usesDe(`jobs:\n  a:\n    steps:\n      - uses: a/b@${"c".repeat(40)} # v9\n`, "w.yml")[0];
     expect(u.annonce).toBe("v9");
+  });
+});
+
+describe("⚠️ UNE ACTION SANS ÉTIQUETTE SORTAIT DE LA GARDE PAR LE HAUT", () => {
+  // P2 de l'audit du 22/08 : le filtre disait `u.annonce && …`, donc retirer le commentaire
+  // `# v4` d'une des 35 références ne faisait rien rougir. L'épinglage tenait toujours — la garde
+  // voisine l'exige — mais la confrontation disparaissait, et avec elle la seule chose qu'un
+  // humain peut relire. Une garde qu'on vide en supprimant un commentaire n'en est pas une.
+  const lancer = (dossier) => {
+    const r = spawnSync(process.execPath, ["tools/actions-versions.mjs", dossier], { encoding: "utf8" });
+    return { code: r.status, sortie: (r.stdout || "") + (r.stderr || "") };
+  };
+
+  it("le vrai dépôt : chaque action épinglée porte son étiquette", () => {
+    const t = usesDuDepot().filter((u) => /@[0-9a-f]{40}$/.test(u.reference));
+    expect(t.length).toBeGreaterThan(0);
+    expect(t.filter((u) => !u.annonce)).toEqual([]);
+  });
+
+  it("⚠️ retirer UNE étiquette fait rougir — vérifié en lançant la garde", () => {
+    const dossier = mkdtempSync(join(tmpdir(), "sans-etiquette-"));
+    writeFileSync(join(dossier, "w.yml"),
+      `jobs:\n  a:\n    steps:\n      - uses: actions/checkout@${"3d3c42e5aac5ba805825da76410c181273ba90b1"}\n`);
+    const { code, sortie } = lancer(dossier);
+    expect(code).toBe(1);
+    expect(sortie).toMatch(/n'annonce aucune version/);
+  });
+
+  it("la même, étiquette remise, ne reproche plus l'absence", () => {
+    const dossier = mkdtempSync(join(tmpdir(), "avec-etiquette-"));
+    writeFileSync(join(dossier, "w.yml"),
+      `jobs:\n  a:\n    steps:\n      - uses: actions/checkout@${"3d3c42e5aac5ba805825da76410c181273ba90b1"} # v7\n`);
+    expect(lancer(dossier).sortie).not.toMatch(/n'annonce aucune version/);
   });
 });

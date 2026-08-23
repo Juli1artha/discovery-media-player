@@ -133,8 +133,6 @@ describe("un hôte qui n'a pas migré continue de piloter", () => {
 
 // ── Le navigateur, qui est l'autre moitié ────────────────────────────────────────────────────────
 describe("le navigateur numérote ses écritures", () => {
-  const fs = require("node:fs");
-  const path = require("node:path");
   const SRC = require("./sourceDesPages.cjs").SOURCE_PAGES;
 
   it("chaque écriture de page porte un rang", () => {

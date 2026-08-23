@@ -121,7 +121,7 @@ describe("une présentation close ne se pilote plus non plus par le chemin propr
   });
 
   it("ni en changeant le document montré", async () => {
-    const b = base(CLOSE);
+    base(CLOSE);
     const r = await presentations.switchPresentationDoc(CLOSE.slug, "proprio@ex.fr", false, {
       fileUrl: "https://exemple.supabase.co/x.pdf", fileName: "x.pdf", docTitle: "X", docId: "d2",
     });

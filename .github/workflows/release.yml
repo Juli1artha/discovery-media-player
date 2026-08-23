@@ -23,13 +23,18 @@ on:
 # un environnement capable de frapper un jeton de publication npm et d'écrire dans le dépôt est le
 # contraire du deny-by-default que ce dépôt applique partout ailleurs.
 #
-# Les quatre jeux ci-dessous sont DISJOINTS, et c'est la propriété qui compte — pas leur nombre.
+# Les CINQ jeux ci-dessous sont DISJOINTS, et c'est la propriété qui compte — pas leur nombre.
 # Fusionner deux jobs quelconques rendrait un droit élevé à une étape qui n'en a pas besoin :
 #
-#   verifier  contents:read + actions:read  → ne publie rien, ne modifie rien
-#   publier   contents:read + id-token:write → SEUL à pouvoir frapper l'identité npm
-#   eprouver  contents:read                  → exécute du code TÉLÉCHARGÉ, donc le moins de droits
-#   annoncer  contents:write                 → SEUL à écrire, et n'exécute rien de téléchargé
+#   verifier  contents:read + actions:read     → ne publie rien, ne modifie rien
+#   publier   contents:read + id-token:write   → SEUL à pouvoir frapper l'identité npm
+#   eprouver  contents:read                    → exécute du code TÉLÉCHARGÉ, donc le moins de droits
+#   attester  + attestations:write             → signe le tarball, n'exécute rien de téléchargé
+#   annoncer  contents:write                   → SEUL à écrire, et n'exécute rien de téléchargé
+#
+# ⚠️ `attester` est un job À PART, et pas des droits en plus sur `annoncer`. Poser `id-token` et
+# `attestations` sur celui qui porte déjà `contents: write` aurait défait la propriété ci-dessus au
+# moment même où on l'invoque.
 #
 # ⚠️ L'image de conteneur (packages/attestations) a migré dans .github/workflows/image.yml —
 # elle se construit sur le même tag, EN PARALLÈLE, hors du chemin critique de la publication npm.
@@ -287,11 +292,12 @@ jobs:
       - name: What actually changed in the published package
         run: |
           V=$(node -p 'require("./package.json").version')
-          PREC=$(npm view discovery-media-player versions --json | node -e '
-            let d=""; process.stdin.on("data",c=>d+=c).on("end",()=>{
-              const v=JSON.parse(d).filter(x=>x!==process.argv[1]);
-              console.log(v[v.length-1]||"");
-            })' "$V")
+          # ⚠️ `jq` plutôt qu'un `node -e` : la réponse du registre est une DONNÉE, et elle passait
+          # dans un interpréteur JavaScript. Le risque est faible ici — npm rend du JSON — mais la
+          # forme dit le contraire de ce que ce dépôt pratique partout ailleurs, et un lecteur
+          # pressé y voit une invitation à en écrire un autre.
+          PREC=$(npm view discovery-media-player versions --json \
+            | jq -r --arg v "$V" '[.[] | select(. != $v)] | last // empty')
           echo "## Contenu réel du paquet" >> "$GITHUB_STEP_SUMMARY"
           if [ -z "$PREC" ]; then
             echo "Première publication — rien à comparer." >> "$GITHUB_STEP_SUMMARY"
@@ -365,6 +371,126 @@ jobs:
               console.log("page rendue : " + res.body.length + " octets, " + blocs.length + " scripts, tous compilables");
             })();'
 
+  # ── 4. ATTESTER — le tarball, CONFRONTÉ au registre, puis prouvé ─────────────────────────────
+  #
+  # ⚠️ CE QU'UN CONSOMMATEUR NE PEUT PAS VÉRIFIER AUJOURD'HUI. La publication npm porte une
+  # provenance SLSA depuis longtemps, et elle est excellente — mais elle n'est visible QUE depuis
+  # npm. Quelqu'un qui arrive par la page des Releases, ou par l'image de conteneur, n'a rien : les
+  # archives sources que GitHub attache automatiquement ne sont ni l'artefact publié ni signées.
+  # Il lui reste à faire confiance, ce qui est précisément ce que ce dépôt refuse ailleurs.
+  #
+  # ⚠️ ET ON N'ATTACHE PAS UN SECOND EXEMPLAIRE NON CONFRONTÉ. Reconstruire un tarball et le poser
+  # à côté de celui de npm fabriquerait deux artefacts du même nom : le jour où ils divergent,
+  # celui qui vérifie l'un croit avoir vérifié l'autre. `npm pack` est reproductible (vérifié : deux
+  # exécutions, même condensat), donc on peut CONFRONTER — le sha512 du tarball local doit être
+  # celui que le registre annonce dans `dist.integrity`, sinon on refuse.
+  #
+  # ⚠️ IL FAUT CONSTRUIRE AVANT DE PACKER, ET JE L'AI APPRIS EN LE RATANT.
+  #
+  # La première version de ce job packait sans rien installer, au motif que « `npm pack` n'a pas
+  # besoin de l'arbre de développement ». C'est vrai, et c'est hors sujet : `dist/` est IGNORÉ PAR
+  # GIT et construit par `prepublishOnly` au moment de publier. Le tarball packé sur l'arbre nu ne
+  # contient donc pas `dist/` — 308 395 octets au lieu de 311 695 — et la confrontation a refusé,
+  # ce qui est exactement ce qu'on lui demande. Le rejeu de v0.1.128 du 22/08 l'a montré en 82
+  # secondes ; sans ce rejeu, on l'aurait découvert à la prochaine vraie sortie.
+  #
+  # `npm ci --ignore-scripts && npm run build && npm pack` reproduit le tarball publié à l'octet
+  # près — vérifié sur v0.1.128, même sha256 et même taille que ce que sert le registre.
+  #
+  # ⚠️ `--ignore-scripts` n'est pas décoratif : ce job porte `id-token` et `attestations` en
+  # écriture, et c'est ce qui l'empêche d'exécuter les scripts d'installation des dépendances.
+  # Vérifié aussi : la reproduction tient sans eux. Reste la construction elle-même, qui est le
+  # code du dépôt — la même chose que `publier` fait déjà sous un droit de même classe.
+  attester:
+    needs: eprouver
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write        # OIDC : signer l'attestation sans jeton stocké
+      attestations: write    # la déposer dans le magasin de la forge
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "24"
+      - run: npm ci --ignore-scripts
+
+      - id: paquet
+        name: Build, pack, and confront the tarball with what the registry actually serves
+        run: |
+          V=$(node -p 'require("./package.json").version')
+          # `dist/` est ignoré par git : sans cette construction, le tarball packé ne le contient
+          # pas et ne peut pas être celui que le registre sert.
+          npm run build --silent >/dev/null
+          mkdir -p /tmp/sortie
+          npm pack --pack-destination /tmp/sortie --silent >/dev/null
+          F=$(ls /tmp/sortie/*.tgz)
+          [ -n "$F" ] || { echo "::error::npm pack n'a produit aucun tarball"; exit 1; }
+
+          # ⚠️ LA CONFRONTATION. `dist.integrity` est le sha512 que le registre SERT ; le nôtre doit
+          # être le même octet pour octet. S'ils diffèrent, on ne sait pas lequel des deux les gens
+          # installent — et attacher le mauvais serait pire que ne rien attacher.
+          LOCAL="sha512-$(openssl dgst -sha512 -binary "$F" | base64 -w0)"
+          PUBLIE=$(npm view "discovery-media-player@$V" dist.integrity 2>/dev/null || echo "")
+          [ -n "$PUBLIE" ] || { echo "::error::le registre n'a pas rendu dist.integrity pour $V — on n'attache pas un tarball qu'on n'a pas pu confronter"; exit 1; }
+          if [ "$LOCAL" != "$PUBLIE" ]; then
+            echo "::error::le tarball reconstruit DIFFÈRE de celui que npm sert pour $V"
+            echo "::error::  local  : $LOCAL"
+            echo "::error::  publié : $PUBLIE"
+            exit 1
+          fi
+          echo "tarball confronté : $(basename "$F") — identique à ce que le registre sert"
+
+          ( cd /tmp/sortie && sha256sum "$(basename "$F")" > "$(basename "$F").sha256" )
+          echo "chemin=$F" >> "$GITHUB_OUTPUT"
+
+      # ⚠️ L'IMAGE AVAIT SON SBOM, LE PAQUET NON — et c'est le paquet que la plupart des gens
+      # installent. `image.yml` produit `sbom: true` depuis toujours ; le tarball npm, lui, ne
+      # disait nulle part ce qu'il contient. Un consommateur qui doit répondre « suis-je concerné
+      # par cette CVE ? » devait le déduire de `package.json`, à la main, version par version.
+      #
+      # ⚠️ ICI ET PAS DANS `annoncer`, ET C'EST LE DÉCOUPAGE DE CE WORKFLOW QUI L'IMPOSE. Ma
+      # première version le produisait dans `annoncer`, qui portait alors le `npm ci` nécessaire —
+      # or `annoncer` est le SEUL job à détenir `contents: write`, et le commentaire en tête de ce
+      # fichier dit pourquoi il ne doit rien installer. `attester` a déjà l'arbre, déjà
+      # `--ignore-scripts`, et pas le droit d'écrire : le SBOM se fabrique là où le tarball se
+      # fabrique, et voyage avec lui.
+      #
+      # Le nom suit celui du tarball — la VERSION, pas le tag : un SBOM détaché de ce qu'il décrit
+      # ne décrit plus rien, et `discovery-media-player-0.1.129.cdx.json` se range de lui-même à
+      # côté de `discovery-media-player-0.1.129.tgz`.
+      - name: Software bill of materials, beside the tarball it describes
+        run: |
+          V=$(node -p 'require("./package.json").version')
+          CIBLE="/tmp/sortie/discovery-media-player-$V.cdx.json"
+          npm sbom --sbom-format cyclonedx --omit=dev > "$CIBLE"
+          node -e '
+            const f = process.argv[1];
+            const b = JSON.parse(require("fs").readFileSync(f, "utf8"));
+            if (b.bomFormat !== "CycloneDX") { console.error("::error::" + f + " nest pas un CycloneDX"); process.exit(1); }
+            if (!Array.isArray(b.components) || !b.components.length) {
+              console.error("::error::SBOM sans composant — il decrirait un paquet vide"); process.exit(1);
+            }
+            console.log("SBOM : " + b.components.length + " composant(s)");
+          ' "$CIBLE"
+
+      # La provenance SLSA de CE fichier exact, vérifiable par `gh attestation verify <tarball>`.
+      - uses: actions/attest-build-provenance@8beda2b7ed98355c0e97c0a63bec38ae472e66c4 # v4
+        id: attestation
+        with:
+          subject-path: ${{ steps.paquet.outputs.chemin }}
+
+      - name: Gather what the Release will carry
+        run: cp "${{ steps.attestation.outputs.bundle-path }}" /tmp/sortie/
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: paquet-atteste
+          path: /tmp/sortie/
+          if-no-files-found: error
+
   # ── 4. ANNONCER — le SEUL job qui écrit dans le dépôt, et il n'exécute rien de téléchargé ────
   #
   # ⚠️ EN DERNIER, ET C'EST DÉLIBÉRÉ. La Release n'apparaît qu'une fois le paquet publié ÉPROUVÉ :
@@ -384,7 +510,7 @@ jobs:
   # que le découpage visait. `persist-credentials: false` évite au passage de laisser un jeton
   # capable d'écrire dans le `.git/config` du seul job qui peut écrire.
   annoncer:
-    needs: [verifier, eprouver]
+    needs: [verifier, attester]
     runs-on: ubuntu-latest
     permissions:
       contents: write        # créer la Release GitHub
@@ -393,36 +519,31 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
           persist-credentials: false
-      # ⚠️ L'IMAGE AVAIT SON SBOM, LE PAQUET NON — et c'est le paquet que la plupart des gens
-      # installent. `image.yml` produit `sbom: true` depuis toujours ; le tarball npm, lui, ne
-      # disait nulle part ce qu'il contient. Un consommateur qui doit répondre « suis-je concerné
-      # par cette CVE ? » devait le déduire de `package.json`, à la main, version par version.
-      #
-      # ⚠️ `--ignore-scripts`, ET C'EST LA RAISON D'ÊTRE DU DÉCOUPAGE DE CE WORKFLOW. Ce job est le
-      # seul à porter `contents: write`. Y installer des dépendances qui exécutent leurs scripts
-      # d'installation rendrait à du code téléchargé exactement le droit que les quatre jobs à
-      # permissions disjointes lui retirent. On installe donc l'arbre de PRODUCTION sans en
-      # exécuter une ligne — une dépendance, et `npm sbom` n'a besoin que de l'arbre, pas de son
-      # exécution.
-      #
-      # Le nom porte le tag : un SBOM détaché de la version qu'il décrit ne décrit plus rien.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          node-version: "22"
-      - name: Software bill of materials for the published package
+          name: paquet-atteste
+          path: paquet
+
+      # ⚠️ UN MOTIF QUI NE CORRESPOND À RIEN NE FAIT PAS ÉCHOUER `action-gh-release` : IL SE TAIT.
+      #
+      # Constaté sur le rejeu du 22/08. Le motif disait `*.jsonl` ; le bundle produit s'appelle
+      # `attestation.json`. La Release a reçu DEUX fichiers sur les trois promis, et les cinq jobs
+      # étaient verts. Une promesse tenue à deux tiers, sans un mot — la garde muette que ce dépôt
+      # refuse depuis la 0.1.35, replacée ici par mes soins.
+      #
+      # Le nom du bundle appartient à l'action d'attestation et peut changer avec elle : cette
+      # étape est ce qui transforme un tel changement en refus plutôt qu'en fichier manquant.
+      - name: The four files the Release must carry are actually there
         run: |
-          npm ci --ignore-scripts --omit=dev
-          npm sbom --sbom-format cyclonedx --omit=dev > "discovery-media-player-${TAG}.cdx.json"
-          node -e '
-            const f = process.argv[1];
-            const b = JSON.parse(require("fs").readFileSync(f, "utf8"));
-            if (b.bomFormat !== "CycloneDX") { console.error("::error::" + f + " nest pas un CycloneDX"); process.exit(1); }
-            if (!Array.isArray(b.components) || !b.components.length) {
-              console.error("::error::SBOM sans composant — il decrirait un paquet vide");
-              process.exit(1);
-            }
-            console.log("SBOM : " + b.components.length + " composant(s)");
-          ' "discovery-media-player-${TAG}.cdx.json"
+          manquants=0
+          for motif in "paquet/"*.tgz "paquet/"*.tgz.sha256 "paquet/attestation.json" "paquet/"*.cdx.json; do
+            if [ ! -e "$motif" ]; then
+              echo "::error::aucun fichier pour « $motif » — la Release en porterait un de moins, en silence"
+              manquants=1
+            fi
+          done
+          ls -l paquet/
+          [ "$manquants" = 0 ] || exit 1
 
       - name: GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
@@ -430,6 +551,13 @@ jobs:
           tag_name: ${{ env.TAG }}
           name: ${{ env.TAG }}
           body: ${{ needs.verifier.outputs.notes }}
-          files: discovery-media-player-${{ env.TAG }}.cdx.json
           generate_release_notes: false
           make_latest: true
+          # Le tarball CONFRONTÉ au registre, son condensat, la provenance SLSA de ce fichier
+          # exact, et le SBOM de ce qu'il contient.
+          # `gh attestation verify paquet/*.tgz --repo Juli1artha/discovery-media-player`.
+          files: |
+            paquet/*.tgz
+            paquet/*.tgz.sha256
+            paquet/attestation.json
+            paquet/*.cdx.json

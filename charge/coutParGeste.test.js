@@ -12,7 +12,6 @@
 // LARGES, avec le relevé daté écrit à côté comme témoin — même doctrine que les planchers de
 // couverture. Le franchir veut dire qu'un geste a changé d'ORDRE DE GRANDEUR, pas qu'il a bougé.
 
-const schema = require("../server/schema.js");
 
 /**
  * Un contexte qui COMPTE les allers-retours, branché sur la couture que le player utilise vraiment

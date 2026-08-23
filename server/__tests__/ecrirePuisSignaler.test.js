@@ -16,8 +16,6 @@
 // corps de chaque fonction. C'est la leçon des trois tests qui, aujourd'hui, épinglaient un défaut
 // en croyant décrire une propriété.
 
-const fs = require("node:fs");
-const path = require("node:path");
 
 const SRC = require("./sourceDesPages.cjs").SOURCE_PAGES;
 

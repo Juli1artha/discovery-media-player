@@ -173,8 +173,6 @@ describe("la mécanique du cache", () => {
 // relecture n'est pas un filet, c'est le SEUL chemin par lequel le numéro de page arrive.
 describe("la fenêtre du cache se déduit de celle de l'ordonnanceur", () => {
   const { PRESENT_CACHE_MS, PRESENT_READ_COALESCE_MS } = require("../shared.generated.js");
-  const fs = require("node:fs");
-  const path = require("node:path");
 
   it("elles sont égales, et déclarées une seule fois", () => {
     expect(PRESENT_CACHE_MS).toBe(PRESENT_READ_COALESCE_MS);

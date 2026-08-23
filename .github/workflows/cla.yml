@@ -33,10 +33,14 @@ on:
   pull_request_target:
     types: [opened, synchronize, reopened]
 
-permissions:
-  contents: write         # écrire le registre des signatures (branche dédiée)
-  pull-requests: write    # poser et mettre à jour le commentaire
-  issues: write           # un commentaire de PR est un commentaire d'issue
+# ⚠️ RIEN EN ÉCRITURE À LA RACINE — LE DROIT VA AU JOB QUI S'EN SERT, ET À LUI SEUL.
+#
+# Une permission posée ici est accordée à TOUS les jobs, y compris à ceux que personne n'a encore
+# écrits. Le jour où quelqu'un ajoute une étape à ce fichier, elle hérite d'un droit d'écriture
+# qu'il n'a pas demandé et qu'il ne verra pas — c'est un privilège qui s'accorde par oubli.
+#
+# La règle est tenue par `tools/permissions-workflows.mjs`, qui refuse toute écriture à la racine.
+permissions: {}
 
 concurrency:
   # Deux signatures postées coup sur coup réécriraient le registre en même temps ; la seconde
@@ -51,6 +55,10 @@ jobs:
   # geste.
   cla:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write         # écrire le registre des signatures (branche dédiée)
+      pull-requests: write    # poser et mettre à jour le commentaire
+      issues: write           # un commentaire de PR est un commentaire d'issue
     # Le bot ne se répond pas à lui-même. Sur un commentaire, on ne réveille le contrôle que pour
     # la phrase de signature ou « recheck » — tout le reste serait du bruit à chaque échange.
     if: >

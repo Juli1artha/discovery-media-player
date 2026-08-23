@@ -10,7 +10,7 @@
 //      hors quota ne charge plus la base.
 
 const schema = require("../schema.js");
-const { SESSION_QUOTA_PER_HOUR, VIEW_QUOTA_PER_HOUR } = require("../shared.generated.js");
+const { VIEW_QUOTA_PER_HOUR } = require("../shared.generated.js");
 
 function joueur() {
   const ecritures = [];

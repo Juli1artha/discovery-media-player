@@ -8,6 +8,7 @@
 // Usage : `git tag -l | node tools/plus-haut-tag.mjs` → imprime le plus haut `vX.Y.Z`, ou rien.
 //         `node -e "import('./tools/plus-haut-tag.mjs').then(m=>...)"` pour les fonctions.
 
+import { estExecuteDirectement } from "./execute-directement.mjs";
 const SEMVER = /^v(\d+)\.(\d+)\.(\d+)$/;
 
 export function estTagValide(tag) {
@@ -32,7 +33,7 @@ export function plusHaut(tags) {
 }
 
 // Exécuté directement : lit stdin (une ligne par tag) et imprime le plus haut.
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (estExecuteDirectement(import.meta.url)) {
   let entree = "";
   process.stdin.on("data", (c) => (entree += c)).on("end", () => {
     process.stdout.write(plusHaut(entree.split("\n")));

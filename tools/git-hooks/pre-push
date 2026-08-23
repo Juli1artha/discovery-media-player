@@ -6,6 +6,17 @@
 #   chmod +x "$(git rev-parse --git-common-dir)/hooks/pre-push"
 #
 # Contournement en connaissance de cause : git push --no-verify
+#
+# discovery-media-player:pre-push   ← signature lue par tools/install-hooks.mjs pour reconnaître
+#                                     SES propres versions et n'écraser qu'elles.
+
+# ⚠️ UN HOOK QUI ÉTAIT DÉJÀ LÀ N'EST PAS DÉTRUIT. L'installateur le déplace en `pre-push.local`
+# plutôt que de l'écraser, et il est exécuté ICI, en premier. S'il refuse, on refuse — sa décision
+# prime, puisqu'elle était là avant nous.
+REPERTOIRE=$(dirname "$0")
+if [ -x "$REPERTOIRE/pre-push.local" ]; then
+  "$REPERTOIRE/pre-push.local" "$@" || exit $?
+fi
 
 # ══ BRANCHE DÉJÀ MERGÉE = COMMIT ORPHELIN ══════════════════════════════════════════════════
 #

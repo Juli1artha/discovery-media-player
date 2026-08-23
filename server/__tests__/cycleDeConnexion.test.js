@@ -11,7 +11,6 @@
 // de portée, qui se lit dans le texte. Le cycle réel appartient au banc navigateur, et il demande
 // un canal Realtime que le banc n'a pas.
 
-const fs = require("node:fs");
 
 const SOURCE = require("./sourceDesPages.cjs").SOURCE_PAGES
   .split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");

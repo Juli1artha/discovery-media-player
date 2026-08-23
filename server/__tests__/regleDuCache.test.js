@@ -14,8 +14,6 @@
 //
 // ⚠️ Une garde qui énumère ne voit que ce qu'on y a mis. Celle-ci voit aussi le prochain.
 
-const fs = require("node:fs");
-const path = require("node:path");
 
 const SRC = require("./sourceDesPages.cjs").SOURCE_PAGES;
 

@@ -135,8 +135,16 @@ jobs:
           # est détournable par un lien symbolique pré-posé (CodeQL, alerte haute, corrigée ici).
           FIXTURE=$(mktemp -d)
           cp tools/fixture-types/* "$FIXTURE/"
+          # ⚠️ LE COMPILATEUR EST CELUI DU DÉPÔT, PAS CELUI DU JOUR. `npm i typescript` dans une
+          # fixture vierge prend la DERNIÈRE publiée : constaté le 22/08, elle rendait 7.0.2 alors
+          # que ce dépôt vérifie ses propres types avec 5.9.3. Ce banc éprouvait donc un compilateur
+          # que personne ici n'utilise, et il en changeait sans qu'aucun commit ne bouge — un jour
+          # rouge, un jour vert, pour une raison invisible dans le diff.
+          # La version vient du lockfile : un seul exemplaire du fait, celui qui fait déjà foi.
+          TS=$(node -p "require('$GITHUB_WORKSPACE/package-lock.json').packages['node_modules/typescript'].version")
+          [ -n "$TS" ] || { echo "::error::version de typescript introuvable dans package-lock.json"; exit 1; }
           cd "$FIXTURE" && npm init -y >/dev/null
-          npm i --silent "$GITHUB_WORKSPACE"/discovery-media-player-*.tgz typescript >/dev/null
+          npm i --silent "$GITHUB_WORKSPACE"/discovery-media-player-*.tgz "typescript@$TS" >/dev/null
           node "$GITHUB_WORKSPACE/tools/fixture-types/eprouver.mjs" "$FIXTURE"
 
       # ⚠️ ET LA PROMESSE SE TIENT DEPUIS UNE INSTALLATION CONSOMMATRICE, PAS DEPUIS LE CLONE.
@@ -381,6 +389,21 @@ jobs:
         if: matrix.node == '22'
         run: node tools/actions-epinglees.mjs
 
+      # ⚠️ ET LE JETON QU'ELLES REÇOIVENT ? Cinq des huit workflows accordaient une permission
+      # d'ÉCRITURE à la racine (relevé du 22/08) : `cla.yml` trois, `codeql.yml`, `image.yml`,
+      # `image-reconcile.yml` et `publication.yml` une chacun. Aucun n'était fautif dans son
+      # intention — chacun avait un job qui en avait vraiment besoin. Ce qu'ils laissaient ouvert,
+      # c'est le job SUIVANT : celui que personne n'a encore écrit hérite du droit sans le demander,
+      # et son auteur ne le verra pas. Un privilège qui s'accorde par oubli est l'inverse exact du
+      # refus-par-défaut appliqué partout ailleurs ici.
+      #
+      # `release.yml` en avait déjà fait la démonstration : son job qui exécute un tarball
+      # TÉLÉCHARGÉ du registre tournait avec de quoi publier sur npm, parce que les droits vivaient
+      # à la racine.
+      - name: No workflow grants write permission at its root
+        if: matrix.node == '22'
+        run: node tools/permissions-workflows.mjs
+
       # ⚠️ ET L'ÉTIQUETTE ÉCRITE À CÔTÉ DIT-ELLE LA VÉRITÉ ? La garde ci-dessus vérifie que le SHA
       # EST un SHA. Elle ne dit rien de ce que le commentaire ANNONCE — et #253 a posé trois SHA de
       # `github/codeql-action` tagués v4.37.7 en laissant `# v3` intact. Le fichier annonçait un
@@ -511,7 +534,11 @@ jobs:
         if: matrix.node == '22'
         run: |
           rm -rf /tmp/exsmoke && cp -r examples/express /tmp/exsmoke && cd /tmp/exsmoke
-          npm i --silent "$GITHUB_WORKSPACE"/discovery-media-player-*.tgz express >/dev/null
+          # ⚠️ On n'écrit PAS « express » ici : l'exemple le déclare (`^4.19.2`), et l'ajouter
+          # réécrivait la plage dans la copie — un copieur, lui, lance `npm i` tout court.
+          # (Vérifié : les deux formes installent la même version, npm respectant la plage déjà
+          # déclarée ; c'est une redondance, pas un défaut de version.)
+          npm i --silent "$GITHUB_WORKSPACE"/discovery-media-player-*.tgz >/dev/null
           mkdir -p documents && cp "$GITHUB_WORKSPACE"/examples/demo/documents/sample.pdf documents/
           # PLAYER_LOCAL_ROOT : sans lui le relais refuse le fichier local — refus par défaut,
           # constaté en écrivant ce banc. C'est la variable que le README de l'exemple fait poser.

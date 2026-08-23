@@ -1,6 +1,6 @@
 {
   "name": "discovery-media-player",
-  "version": "0.1.128",
+  "version": "0.1.129",
   "description": "Self-hosted document viewer: per-recipient tracked links, reading analytics, live presentation. The core knows nothing about the application hosting it — everything it borrows arrives through an injected context.",
   "keywords": [
     "pdf-viewer",
@@ -68,8 +68,8 @@
     "build": "node -e \"require('fs').existsSync('build/bundle.mjs')||(console.error('Ce script ne vit pas dans le paquet publié - le champ scripts annonce plus que le tarball ne contient. Clonez le depot puis npm ci : https://github.com/Juli1artha/discovery-media-player'),process.exit(1))\" && node build/bundle.mjs && tsc -p tsconfig.build.json && node -e \"import('./build/bundle.mjs').then(m=>m.marquerDistEsm())\"",
     "test": "node -e \"require('fs').existsSync('server/__tests__')||(console.error('Ce banc ne vit pas dans le paquet publié - le champ scripts annonce plus que le tarball ne contient. Clonez le depot puis npm ci : https://github.com/Juli1artha/discovery-media-player'),process.exit(1))\" && vitest run",
     "test:watch": "vitest",
-    "lint": "node -e \"require('fs').existsSync('eslint.config.mjs')||(console.error('Ce script ne vit pas dans le paquet publié - le champ scripts annonce plus que le tarball ne contient. Clonez le depot puis npm ci : https://github.com/Juli1artha/discovery-media-player'),process.exit(1))\" && eslint bin context server src build",
-    "lint:fix": "eslint bin context server src build --fix",
+    "lint": "node -e \"require('fs').existsSync('eslint.config.mjs')||(console.error('Ce script ne vit pas dans le paquet publié - le champ scripts annonce plus que le tarball ne contient. Clonez le depot puis npm ci : https://github.com/Juli1artha/discovery-media-player'),process.exit(1))\" && eslint bin context server src build tools charge --max-warnings 0",
+    "lint:fix": "eslint bin context server src build tools charge --fix",
     "typecheck": "node -e \"require('fs').existsSync('tsconfig.json')||(console.error('Ce script ne vit pas dans le paquet publié - le champ scripts annonce plus que le tarball ne contient. Clonez le depot puis npm ci : https://github.com/Juli1artha/discovery-media-player'),process.exit(1))\" && tsc --noEmit",
     "prepublishOnly": "npm run build && npm test",
     "test:e2e": "node -e \"require('fs').existsSync('vitest.e2e.config.mjs')||(console.error('Ce banc ne vit pas dans le paquet publié - le champ scripts annonce plus que le tarball ne contient. Clonez le depot puis npm ci : https://github.com/Juli1artha/discovery-media-player'),process.exit(1))\" && vitest run --config vitest.e2e.config.mjs",
@@ -86,6 +86,7 @@
     "dockerfile-ast": "0.7.1",
     "esbuild": "^0.28.2",
     "eslint": "^10.8.1",
+    "fast-check": "4.9.0",
     "jsdom": "^30.0.1",
     "playwright-core": "^1.62.1",
     "typescript": "^5.5.4",

@@ -12,8 +12,9 @@
 // v0.1.42` passait, alors que la version qui précède la 0.1.42 est la 0.1.41.
 
 import { readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+
 import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
+import { estExecuteDirectement } from "./execute-directement.mjs";
 
 export const DEPOT = "https://github.com/Juli1artha/discovery-media-player";
 
@@ -89,7 +90,7 @@ export function sectionDe(txt, version) {
   return (fin === -1 ? apres : apres.slice(0, fin)).split("\n").slice(1).join("\n").trim();
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (estExecuteDirectement(import.meta.url)) {
   conclure(tenter(() => {
     const txt = readFileSync("CHANGELOG.md", "utf8");
     // ⚠️ « AUCUNE SECTION » N'EST PAS UNE VIOLATION, C'EST UNE SONDE QUI NE VOIT RIEN. Le fichier
