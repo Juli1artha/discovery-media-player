@@ -94,7 +94,7 @@ describe("aucune écriture indexée par une donnée du dehors", () => {
       const src = fs.readFileSync(f, "utf8");
       const lignes = src.split("\n");
       lignes.forEach((ligne, i) => {
-        if (/^\s*(\/\/|\*)/.test(ligne)) return;
+        if (/^\s*(\/\/|\*|\/\*)/.test(ligne)) return;
         // `quelquechose[cle] = …` où `cle` n'est ni un littéral ni un nombre.
         for (const m of ligne.matchAll(/(\w+)\[([A-Za-z_$][\w$.]*)\]\s*=[^=]/g)) {
           const [, objet, cle] = m;

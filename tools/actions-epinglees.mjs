@@ -21,7 +21,8 @@
 
 import { usesDuDepot, horsPositionDuDepot } from "./workflows-yaml.mjs";
 import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
-import { pathToFileURL } from "node:url";
+
+import { estExecuteDirectement } from "./execute-directement.mjs";
 
 const SHA = /^[0-9a-f]{40}$/;
 
@@ -54,7 +55,7 @@ export const ecarts = (references, fichier) =>
     .map((e, i) => e && `${fichier || references[i]?.fichier || ""}${references[i]?.ligne ? ":" + references[i].ligne : ""} : ${e}`)
     .filter(Boolean);
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (estExecuteDirectement(import.meta.url)) {
   const dossier = process.argv[2] || ".github/workflows";
   // ⚠️ `tenter` parce que la lecture LÈVE sur un YAML illisible ou un `uses:` en alias — un refus
   // prudent de la garde, pas une faute du dépôt. Il sortait 1 comme une violation (voir

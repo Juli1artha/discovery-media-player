@@ -35,7 +35,7 @@ function sources() {
     .map((f) => ({
       nom: f,
       code: fs.readFileSync(path.join(RACINE, "server", f), "utf8")
-        .split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n"),
+        .split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n"),
     }));
 }
 

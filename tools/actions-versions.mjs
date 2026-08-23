@@ -23,9 +23,10 @@
 // Usage : node tools/actions-versions.mjs [.github/workflows]
 
 import { execFileSync } from "node:child_process";
-import { pathToFileURL } from "node:url";
+
 import { usesDuDepot } from "./workflows-yaml.mjs";
 import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
+import { estExecuteDirectement } from "./execute-directement.mjs";
 
 /**
  * Le dépôt qui porte l'action. `github/codeql-action/init` vit dans `github/codeql-action` : le
@@ -104,7 +105,7 @@ export function verdict(toutes, tagsParDepot) {
   return { ecarts, nonVus };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (estExecuteDirectement(import.meta.url)) {
   const dossier = process.argv[2] || ".github/workflows";
   conclure(tenter(() => {
     // Une action LOCALE (`./…`) n'a pas de dépôt distant, et une action non épinglée sur un SHA est

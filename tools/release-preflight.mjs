@@ -25,10 +25,11 @@
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+
 import { ecarts as ecartsChangelog, sections, sectionDe } from "./changelog.mjs";
 import { ecartsExemples, exemplesDuDepot, versionsPubliees, acceptables, registreExploitable } from "./exemples-epingles.mjs";
 import { VIOLATION, INCONCLUSIF } from "./resultat-garde.mjs";
+import { estExecuteDirectement } from "./execute-directement.mjs";
 
 const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
 const essaye = (fn, defaut = null) => { try { return fn(); } catch { return defaut; } };
@@ -184,7 +185,7 @@ export function rapport({ version, tag, controles }) {
 // Ce fichier n'emprunte pas `rendre()` : il imprime un RAPPORT destiné à un humain qui s'apprête à
 // taguer, pas des lignes `::error::` pour un journal de forge. Ce qu'il partage avec les autres
 // gardes, c'est la SIGNIFICATION des codes — la seule chose qu'un appelant lit.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (estExecuteDirectement(import.meta.url)) {
   // ⚠️ UNE EXCEPTION EST UN RÉSULTAT NON CONCLUANT, PAS UN REFUS DE PUBLIER. Sans ce filet, un
   // `git` indisponible ou un CHANGELOG absent remontait jusqu'à Node, qui sortait 1 — c'est-à-dire
   // « REFUSÉ, ne posez pas ce tag », avec une trace de pile en guise d'explication. Le refus
