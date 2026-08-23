@@ -9,7 +9,6 @@ import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import { compte, prose, ecartLangue, markdownsDuTarball } from "../langue-publiee.mjs";
 
-const paquet = JSON.parse(readFileSync("package.json", "utf8"));
 
 describe("⚠️ LE PÉRIMÈTRE SE DEMANDE À npm, PAS À package.json#files", () => {
   // `files` n'est pas la liste de ce qui part : npm ajoute des fichiers et développe les dossiers.

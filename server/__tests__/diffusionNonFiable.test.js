@@ -22,8 +22,6 @@
 //
 // La couche navigateur est injectée en TEXTE dans la page : elle se vérifie sur le source.
 
-const fs = require("node:fs");
-const path = require("node:path");
 
 const SRC = require("./sourceDesPages.cjs").SOURCE_PAGES;
 

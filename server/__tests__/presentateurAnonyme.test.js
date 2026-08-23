@@ -175,8 +175,6 @@ describe("la route laisse passer le pilote sans session", () => {
 
 // ── Et le navigateur, qui est la troisième moitié ────────────────────────────────────────────────
 describe("le navigateur envoie effectivement le jeton", () => {
-  const fs = require("node:fs");
-  const path = require("node:path");
   const SRC = require("./sourceDesPages.cjs").SOURCE_PAGES;
 
   it("l'appel « present-content » porte le control_token", () => {

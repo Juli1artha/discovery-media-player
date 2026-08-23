@@ -20,8 +20,6 @@
 // sa présence. Le titre vient donc du serveur, qui seul sait qui a prouvé le control_token.
 
 const crypto = require("node:crypto");
-const fs = require("node:fs");
-const path = require("node:path");
 
 const CONTROL = "jeton-de-controle-du-presentateur";
 const HASH = crypto.createHash("sha256").update(CONTROL).digest("hex");

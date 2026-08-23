@@ -4,7 +4,6 @@
 // cadence que la session interne. Dépassé → aucune écriture, réponse 200 (une mesure ne casse pas
 // une lecture).
 const schema = require("../schema.js");
-const { SESSION_QUOTA_PER_HOUR } = require("../shared.generated.js");
 
 function joueur() {
   const ecritures = [];
