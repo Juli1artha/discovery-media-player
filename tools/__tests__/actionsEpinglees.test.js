@@ -9,7 +9,6 @@
 // Même défaut que le lexer de `tools/env-lues.mjs`, corrigé pour la même raison : on ne lit pas un
 // format structuré avec une expression régulière.
 
-import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import { ecartEpinglage, ecarts } from "../actions-epinglees.mjs";
 import { usesDuDepot } from "../workflows-yaml.mjs";

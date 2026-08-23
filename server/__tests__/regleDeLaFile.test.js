@@ -11,8 +11,6 @@
 //
 // C'est le même geste que pour le cache : une liste se périme, une forme non.
 
-const fs = require("node:fs");
-const path = require("node:path");
 
 const SRC = require("./sourceDesPages.cjs").SOURCE_PAGES;
 

@@ -4,7 +4,6 @@
 // les 25 s) → le 7e derrière une IP partagée (bureau, Wi-Fi d'événement) prenait des 429. Le quota
 // se dérive désormais des constantes de cadence en visant ATTENDEES_PER_EGRESS participants.
 const schema = require("../schema.js");
-const presentations = require("../presentations.js");
 
 function joueur() {
   const quotas = [];

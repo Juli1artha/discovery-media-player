@@ -18,8 +18,6 @@
 // Signalé par la vérification d'audit (V-5), sur du code que nous venions d'écrire.
 
 const vm = require("node:vm");
-const fs = require("node:fs");
-const path = require("node:path");
 
 const { PLAYER_BROWSER_JS } = require("../browser.generated.js");
 const SRC = require("./sourceDesPages.cjs").SOURCE_PAGES;

@@ -55,7 +55,7 @@ describe("chat différentiel", () => {
   });
 
   it("le curseur renvoie le mod_seq au client (pour qu'il l'avance)", async () => {
-    const j = joueur({ seqPresent: true });
+    joueur({ seqPresent: true });
     const out = await presentations.listMessages("s", { after: 0 });
     expect(out.every((m) => typeof m.mod_seq === "number"), "chaque message porte son mod_seq").toBe(true);
     expect(Math.max(...out.map((m) => m.mod_seq))).toBe(8);

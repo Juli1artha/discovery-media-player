@@ -186,7 +186,7 @@ describe("un usage, un lien — la contrainte tranche, le perdant relit", () => 
 
   it("les liens ORDINAIRES restent illimités — la clé ne les touche pas", async () => {
     const crypto2 = crypto; void crypto2;
-    const { etat, player } = harnais();
+    const { etat } = harnais();
     const shares = require("../shares.js");
     await shares.createShare({ docId: "doc-5", fileUrl: "https://x/d.pdf", recipientEmail: "a@x.fr" });
     await shares.createShare({ docId: "doc-5", fileUrl: "https://x/d.pdf", recipientEmail: "b@x.fr" });

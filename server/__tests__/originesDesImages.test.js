@@ -17,8 +17,6 @@
 // La forme, telle que le second hôte l'a énoncée : toute valeur qui produit une URL destinée au
 // navigateur doit, par construction, ajouter son origine à la politique.
 
-const fs = require("node:fs");
-const path = require("node:path");
 
 const SRC = require("./sourceDesPages.cjs").SOURCE_PAGES;
 

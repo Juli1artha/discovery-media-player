@@ -21,8 +21,6 @@
 // ce que la page lit doit être soit FOURNI, soit DÉCLARÉ absent avec sa raison. Le troisième oubli
 // ne passera pas — il échouera ici jusqu'à ce que quelqu'un décide.
 
-const fs = require("node:fs");
-const path = require("node:path");
 
 const SRC = require("./sourceDesPages.cjs").SOURCE_PAGES;
 

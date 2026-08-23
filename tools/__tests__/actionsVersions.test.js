@@ -9,7 +9,6 @@
 // Le relevé réseau n'est pas simulé au hasard : il est INJECTÉ, avec les sorties `git ls-remote`
 // réelles relevées ce jour-là.
 
-import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

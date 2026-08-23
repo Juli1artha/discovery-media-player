@@ -13,8 +13,6 @@
 //
 // Signalé par l'analyse statique (js/polynomial-redos).
 
-const fs = require("node:fs");
-const path = require("node:path");
 
 const SRC = require("./sourceDesPages.cjs").SOURCE_PAGES;
 

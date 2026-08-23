@@ -102,7 +102,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   // ⚠️ `prepare` s'exécute AUSSI quand le paquet est installé comme dépendance. On ne touche jamais
   // au dépôt de quelqu'un d'autre : ni depuis node_modules, ni hors d'un dépôt git.
   if (!ICI.includes("node_modules")) {
-    let dossierGit = null;
+    let dossierGit;
     try {
       dossierGit = execFileSync("git", ["rev-parse", "--git-common-dir"], {
         cwd: join(ICI, ".."), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
