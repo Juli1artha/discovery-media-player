@@ -180,33 +180,32 @@ describe("les bornes des valeurs venues du client", () => {
     expect(ctx.ecrits[0].corps).toMatchObject({ rating: 5 });
   });
 
-  // ⚠️ CE TEST FIGE UN COMPORTEMENT QUI EST PROBABLEMENT UN DÉFAUT — il le fige exprès, plutôt que
-  // de prétendre le contraire, et il le nomme pour que la décision revienne à quelqu'un.
-  //
-  //     const note = Math.max(1, Math.min(5, Number(body.rating) || 0));
-  //     if (!note) return jp(400, { ok: false, error: "rating" });
-  //
-  // `Math.max(1, …)` rend `note` TOUJOURS ≥ 1. `!note` n'est donc jamais vrai : le refus
-  // `400 { error: "rating" }` de la ligne suivante est INATTEIGNABLE, et c'est ainsi que la
-  // branche a été trouvée — en cherchant à l'exercer.
-  //
-  // La conséquence n'est pas le code mort, c'est la mesure : une notation SANS note — champ
-  // absent, `null`, `"abc"`, ou un client qui poste deux fois — enregistre **1 étoile**, la pire
-  // du barème, au lieu d'être refusée. La satisfaction mesurée baisse d'elle-même à chaque appel
-  // malformé. C'est exactement ce que `docs/ARCHITECTURE.md` refuse pour le temps de lecture :
-  // « une métrique qui dit le contraire est la première que les gens cessent de croire ».
-  //
-  // Le correctif tiendrait en une ligne — calculer la note SANS plancher, puis refuser :
-  //     const note = Math.min(5, Math.round(Number(body.rating) || 0));
-  //     if (!(note >= 1)) return jp(400, { ok: false, error: "rating" });
-  // Il n'est pas appliqué ici : il change la réponse de l'API pour une requête malformée, ce qui
-  // se décide, et pas dans un lot dont l'objet est d'ÉPROUVER l'existant.
-  it("⚠️ défaut figé : une notation sans note enregistre 1 étoile au lieu d'être refusée", async () => {
+  it("arrondit une note fractionnaire — la colonne est un smallint", async () => {
+    // `3.7` traversait la garde intact et partait tel quel vers PostgREST : l'arrondi se décidait
+    // en aval, hors de vue, et pouvait varier avec la version du serveur.
     const ctx = contexte();
-    const { res } = await appeler({ action: "bot-rate", slug: "Doc-A", sessionId: "sess-A" }, ctx);
-    expect(res.statusCode).toBe(200);          // le refus 400 « rating » est inatteignable
-    expect(ctx.ecrits[0].corps).toMatchObject({ rating: 1 });
+    await appeler({ action: "bot-rate", slug: "Doc-A", sessionId: "sess-A", rating: 3.7 }, ctx);
+    expect(ctx.ecrits[0].corps).toMatchObject({ rating: 4 });
   });
+
+  // ⚠️ LE REFUS QUI N'ÉTAIT PAS ATTEIGNABLE, et le seul test de ce fichier écrit AVANT son
+  // correctif. `const note = Math.max(1, …)` posait un plancher à 1 : `note` valait toujours au
+  // moins 1, `!note` n'était jamais vrai, et la ligne de refus juste en dessous ne s'exécutait
+  // jamais. Une notation sans note enregistrait **1 étoile** — la pire du barème — au lieu d'être
+  // refusée, et la satisfaction mesurée baissait d'elle-même à chaque appel malformé.
+  //
+  // Une note absente n'est pas une mauvaise note : c'est une absence. Les quatre formes qu'elle
+  // prend sont éprouvées ensemble, parce que c'est la MÊME absence vue de quatre clients
+  // différents — champ oublié, champ vidé, champ mal typé, double envoi.
+  for (const [nom, rating] of [["absente", undefined], ["nulle", null], ["non numérique", "abc"], ["à zéro", 0], ["négative", -3]]) {
+    it(`refuse une note ${nom} au lieu de l'enregistrer comme 1 étoile`, async () => {
+      const ctx = contexte();
+      const { res } = await appeler({ action: "bot-rate", slug: "Doc-A", sessionId: "sess-A", rating }, ctx);
+      expect(res.statusCode).toBe(400);
+      expect(res.corps).toEqual({ ok: false, error: "rating" });
+      expect(ctx.ecrits, "une note refusée ne doit RIEN écrire en base").toHaveLength(0);
+    });
+  }
 
   it("refuse un message vide", async () => {
     const { res } = await appeler({ action: "bot-say", slug: "Doc-A", sessionId: "sess-A", text: "   " }, contexte());
