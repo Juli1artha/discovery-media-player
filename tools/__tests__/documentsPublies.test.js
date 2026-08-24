@@ -1,70 +1,66 @@
 // LES DOCUMENTS QUE LE PAQUET PROMET, ÉPROUVÉS SUR LA RÈGLE PUIS SUR LE PAQUET RÉEL.
 //
 // ⚠️ Le défaut d'origine n'était pas « le CHANGELOG manque » : c'était que RIEN NE DISTINGUAIT
-// son absence d'une décision. Un banc qui se contenterait de lire `package.json#files` relirait
-// l'étiquette ; celui-ci interroge l'inventaire que npm servira — le fait.
+// son absence d'une décision. Son MIROIR a été trouvé en corrigeant le premier : `docs/README.md`
+// voyageait sans que personne l'ait décidé, parce qu'une entrée nue de `files` est un motif que
+// npm fait correspondre à toute profondeur. Les deux sens sont donc éprouvés ici.
+
+import { readFileSync } from "node:fs";
 
 import { describe, it, expect } from "vitest";
 
-import { PROMIS, promessesRompues } from "../documents-publies.mjs";
+import { PROMIS, promessesRompues, voyageursNonDecides, documentsDe } from "../documents-publies.mjs";
 import { fichiersDuTarball } from "../inventaire-tarball.mjs";
 
 const pack = (chemins) => JSON.stringify([{ files: chemins.map((path) => ({ path })) }]);
+const TOUT = Object.keys(PROMIS);
 
-describe("la règle", () => {
-  const tout = Object.keys(PROMIS);
-
-  it("se tait quand toutes les promesses sont tenues", () => {
-    expect(promessesRompues(tout)).toEqual([]);
-  });
-
-  it("⚠️ refuse en NOMMANT le fautif, pas avec une liste tronquée", () => {
-    const rompues = promessesRompues(tout.filter((f) => f !== "docs/RETENTION.md"));
-    let message = "";
-    try {
-      expect(rompues, `promesse(s) rompue(s) :\n${rompues.join("\n")}`).toEqual([]);
-    } catch (erreur) {
-      message = String(erreur.message);
-    }
-    // ⚠️ vitest AJOUTE toujours sa forme tronquée (« expected [ Array(1) ] to deeply equal [] »)
-    // après le message ; on ne peut pas la supprimer. Ce qui se gagne, c'est qu'elle arrive APRÈS
-    // les noms au lieu d'être tout ce qu'on lit — donc on éprouve la présence des noms, pas
-    // l'absence du tronqué.
-    expect(message).toContain("docs/RETENTION.md");
-    expect(message).toContain("le périmètre déclaré de la rétention");
-    expect(message.indexOf("docs/RETENTION.md")).toBeLessThan(message.indexOf("Array("));
+describe("une promesse rompue", () => {
+  it("se tait quand toutes sont tenues", () => {
+    expect(promessesRompues(TOUT)).toEqual([]);
   });
 
   it("⚠️ désigne EXACTEMENT le document retiré, et dit ce qu'on perd", () => {
-    const soucis = promessesRompues(tout.filter((f) => f !== "CHANGELOG.md"));
+    const soucis = promessesRompues(TOUT.filter((f) => f !== "docs/RETENTION.md"));
     expect(soucis).toHaveLength(1);
-    expect(soucis[0]).toContain("CHANGELOG.md");
-    expect(soucis[0]).toMatch(/ce qui a changé depuis la version/);
+    expect(soucis[0]).toContain("docs/RETENTION.md");
+    expect(soucis[0]).toMatch(/le périmètre déclaré de la rétention/);
   });
 
   it("nomme chaque promesse rompue, pas seulement la première", () => {
     const soucis = promessesRompues(["README.md"]);
-    expect(soucis).toHaveLength(tout.length - 1);
-    for (const chemin of tout.filter((f) => f !== "README.md")) {
+    expect(soucis).toHaveLength(TOUT.length - 1);
+    for (const chemin of TOUT.filter((f) => f !== "README.md")) {
       expect(soucis.join("\n")).toContain(chemin);
     }
   });
+});
 
-  it("⚠️ ne refuse PAS un document qui voyage sans être promis — la confrontation est à sens unique", () => {
-    expect(promessesRompues([...tout, "docs/README.md", "docs/INTERNE.md"])).toEqual([]);
+describe("un document qui voyage sans être promis", () => {
+  it("⚠️ est accusé — le défaut miroir, et il a existé pour de vrai", () => {
+    // `docs/README.md` partait en portant un sommaire de dix-sept documents absents du paquet.
+    const soucis = voyageursNonDecides([...TOUT, "docs/README.md"]);
+    expect(soucis).toHaveLength(1);
+    expect(soucis[0]).toContain("docs/README.md");
+    expect(soucis[0]).toMatch(/personne ne l'a décidé/);
   });
 
-  it("chaque promesse porte la raison pour laquelle elle voyage", () => {
-    for (const [chemin, pourquoi] of Object.entries(PROMIS)) {
-      expect(pourquoi, chemin).toBeTruthy();
-      expect(pourquoi.length, chemin).toBeGreaterThan(20);
-    }
+  it("se tait sur ce qui est promis", () => {
+    expect(voyageursNonDecides(TOUT)).toEqual([]);
+  });
+
+  it("⚠️ NE PORTE QUE SUR LES DOCUMENTS — exiger la liste du code serait un second « files »", () => {
+    expect(voyageursNonDecides([...TOUT, "server/handler.js", "dist/bridge.js", "bin/serve.js"])).toEqual([]);
+  });
+
+  it("le périmètre « document » retient les Markdown et les licences", () => {
+    const vus = documentsDe(["a.md", "docs/b.MD", "LICENSE", "LICENSE-MIT", "server/x.js", "types/i.d.ts"]);
+    expect(vus).toEqual(["a.md", "docs/b.MD", "LICENSE", "LICENSE-MIT"]);
   });
 });
 
 describe("la sonde ne conclut pas sur une ignorance", () => {
   it("⚠️ lève sur un inventaire vide au lieu de rendre une liste vide", () => {
-    // Une liste vide ferait dire « aucune promesse rompue » à une garde qui n'a rien pu lire.
     expect(() => fichiersDuTarball(() => pack([]))).toThrow(/aucun fichier/);
   });
 
@@ -76,22 +72,26 @@ describe("la sonde ne conclut pas sur une ignorance", () => {
 describe("le paquet réel", () => {
   const inventaire = fichiersDuTarball();
 
-  it("tient toutes ses promesses", () => {
+  it("tient toutes ses promesses, et rien ne voyage sans décision", () => {
     // ⚠️ Le message est passé à `expect` : sans lui, vitest refuse sur « expected [ Array(1) ] to
-    // deeply equal [] » et il faut relancer la garde à la main pour savoir ce qui manque. Une
-    // garde qui refuse sans nommer le fautif est le défaut corrigé sur le décompte des sessions.
-    const rompues = promessesRompues(inventaire);
-    expect(rompues, `promesse(s) rompue(s) :\n${rompues.join("\n")}`).toEqual([]);
+    // deeply equal [] » et il faut relancer la garde à la main pour savoir ce qui manque.
+    const soucis = [...promessesRompues(inventaire), ...voyageursNonDecides(inventaire)];
+    expect(soucis, `écart(s) :\n${soucis.join("\n")}`).toEqual([]);
   });
 
-  it("⚠️ le CHANGELOG part vraiment — le défaut d'origine", () => {
-    expect(inventaire).toContain("CHANGELOG.md");
+  it("⚠️ le README voyage SANS être nommé dans « files »", () => {
+    // La ligne a été retirée : elle valait `**/README.md` et ramenait `docs/README.md`. npm inclut
+    // toujours le README racine — vérifié ici à chaque exécution plutôt que supposé.
+    expect(inventaire).toContain("README.md");
+    expect(JSON.parse(readFileSync("package.json", "utf8")).files).not.toContain("README.md");
   });
 
-  it("⚠️ le périmètre de la garde de LANGUE s'est élargi tout seul", () => {
-    // Rien n'a été câblé : elle interroge le même inventaire, donc elle lit le CHANGELOG depuis
-    // qu'il voyage. Un périmètre qui se dérive n'a pas de liste à tenir à jour.
-    const markdowns = inventaire.filter((f) => f.toLowerCase().endsWith(".md"));
-    expect(markdowns).toContain("CHANGELOG.md");
+  it("⚠️ le CHANGELOG ne voyage PAS, et c'est la décision écrite", () => {
+    expect(inventaire).not.toContain("CHANGELOG.md");
+    expect(PROMIS).not.toHaveProperty("CHANGELOG.md");
+  });
+
+  it("⚠️ le sommaire de docs/ ne voyage plus — il indexait dix-sept absents", () => {
+    expect(inventaire).not.toContain("docs/README.md");
   });
 });
