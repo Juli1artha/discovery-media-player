@@ -19,6 +19,7 @@
 //      « function Object() { [native code] } ». C'est le geste du dépôt appliqué tel quel : un
 //      commentaire qui raconte un incident est déjà l'intitulé d'un test.
 
+const { readFileSync } = require("node:fs");
 const ID_SHARES = require.resolve("../shares.js");
 const vraisShares = require("../shares.js");
 let partageRendu = null;
@@ -155,6 +156,76 @@ describe("une session est liée à SON document", () => {
     const { res, ecrits } = await appeler({ action: "bot-rate", slug: "Doc-A", sessionId: "sess-A", rating: 4 }, ctx);
     expect(res.statusCode).toBe(200);
     expect(ecrits[0].corps).toMatchObject({ rating: 4 });
+  });
+});
+
+describe("⚠️ ON COMPTE LES ACTIONS, PAS LES IMPLÉMENTATIONS", () => {
+  // ⚠️ LA MESURE QUI MANQUAIT, ET LE DÉFAUT QU'ELLE A RÉVÉLÉ.
+  //
+  // La liaison session↔document était écrite DANS chaque action. Trois sur sept la faisaient :
+  // `bot-rate`, `bot-script`, et `bot-history` — cette dernière ajoutée en 0.1.131 après qu'un
+  // exploitant l'ait trouvée exploitable en production. `bot-say`, `bot-nudge`, `bot-book` et
+  // `bot-contact` prenaient le même `sessionId` venu du client sans jamais le rattacher au document.
+  //
+  // Le relevé vient de cet exploitant, et il vaut au-delà de ce fichier : « une vérification que
+  // plusieurs actions font chacune pour son compte — il faut compter les ACTIONS, pas les
+  // implémentations ». La duplication était HOMOGÈNE : une seule orthographe, donc invisible à un
+  // balayage des variantes. C'est la COUVERTURE qui divergeait, et rien ne la mesurait.
+  //
+  // Ce banc est cette mesure. Il lit l'aiguillage dans le source et le confronte à la liste : une
+  // action ajoutée à l'un sans l'autre le fait rougir, sans que personne ait à y penser.
+  const source = readFileSync(require.resolve("../routes-agent.js"), "utf8");
+
+  const actionsDeLAiguillage = () => {
+    const ligne = source.split("\n").find((l) => (l.match(/body\.action === "bot-/g) || []).length >= 3);
+    expect(ligne, "l'aiguillage de l'assistant n'a pas été retrouvé : la sonde vise à côté").toBeTruthy();
+    return [...ligne.matchAll(/body\.action === "([^"]+)"/g)].map((m) => m[1]);
+  };
+
+  const listeDeclaree = () => {
+    const m = /const ACTIONS_LIEES_A_UNE_SESSION = new Set\(\[([\s\S]*?)\]\)/.exec(source);
+    expect(m, "la liste des actions liées n'a pas été retrouvée").toBeTruthy();
+    return [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]);
+  };
+
+  it("⚠️ toute action de l'aiguillage sauf `bot-start` exige une session liée au document", () => {
+    // `bot-start` est la seule exclue : elle CRÉE la session. Exiger qu'elle en prouve une
+    // fermerait l'assistant à tout le monde.
+    const attendues = actionsDeLAiguillage().filter((a) => a !== "bot-start").sort();
+    expect(attendues.length, "moins de quatre actions lues : la sonde vise à côté").toBeGreaterThanOrEqual(4);
+    expect(listeDeclaree().sort()).toEqual(attendues);
+  });
+
+  it("⚠️ et la liaison n'est écrite QU'UNE FOIS", () => {
+    // Écrite sept fois, elle serait oubliée une huitième au prochain ajout. Le défaut n'était pas
+    // la ligne absente : c'était que sa présence dépende de la mémoire de qui écrit l'action.
+    expect((source.match(/share_slug !== share\.slug/g) || []).length).toBe(1);
+  });
+
+  for (const [action, corps] of [
+    ["bot-say", { text: "bonjour" }],
+    ["bot-nudge", {}],
+    ["bot-book", { book: "2026-09-01T10:00" }],
+    ["bot-contact", { name: "X", email: "x@y.fr", phone: "0600000000" }],
+  ]) {
+    it(`« ${action} » refuse une session ouverte sur un autre document`, async () => {
+      // ⚠️ CES QUATRE ÉCRIVENT. `bot-history` LISAIT la conversation d'un autre document ; celles-ci
+      // y ajoutent un message, un rendez-vous, ou les coordonnées d'un prospect. Une porte en
+      // lecture avait été fermée, quatre en écriture restaient ouvertes dans le même bloc.
+      const { res } = await appeler({ action, slug: "Doc-A", sessionId: "sess-B", ...corps }, contexte());
+      expect(res.statusCode).toBe(400);
+      expect(res.corps).toEqual({ ok: false, error: "session" });
+    });
+
+    it(`témoin : « ${action} » passe avec la bonne session`, async () => {
+      // Sans les témoins, les quatre refus seraient satisfaits par une garde qui refuse TOUT.
+      const { res } = await appeler({ action, slug: "Doc-A", sessionId: "sess-A", ...corps }, contexte());
+      expect(res.statusCode).toBe(200);
+    });
+  }
+
+  it("⚠️ `bot-start` n'exige PAS de session — c'est elle qui la crée", () => {
+    expect(listeDeclaree()).not.toContain("bot-start");
   });
 });
 
