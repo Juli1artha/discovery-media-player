@@ -131,6 +131,17 @@ jobs:
         if: matrix.node == '22'
         run: node tools/documents-publies.mjs
 
+      # ⚠️ NEUF DES DOUZE LIENS RELATIFS DU README MENAIENT DANS LE VIDE une fois le paquet installé
+      # (0.1.134) : docs/API.md, SECURITY.md, CONTRIBUTING.md, le CLA — aucun ne voyage. Sur
+      # npmjs.com la page se rend et les liens sont réécrits vers le dépôt ; dans `node_modules`, il
+      # n'y a rien contre quoi les résoudre. C'était le lecteur hors ligne au nom duquel on
+      # argumentait pour embarquer le CHANGELOG, et le document qu'on lui donnait renvoyait déjà
+      # vers douze autres dont trois existaient chez lui. La règle n'est pas « pas de lien relatif » :
+      # un lien relatif vers un fichier QUI VOYAGE fonctionne partout, y compris hors ligne.
+      - name: Relative links in published documents lead somewhere in the package
+        if: matrix.node == '22'
+        run: node tools/liens-des-documents.mjs
+
       # ⚠️ UN `.d.ts` PARFAIT DANS LE CLONE PEUT ÊTRE ABSENT DU PAQUET PUBLIÉ — il suffit que
       # `files` ne l'embarque pas, et c'est exactement ce qui était arrivé au contrat et à la
       # rétention. On compile donc un consommateur RÉEL contre le TARBALL, en mode strict et

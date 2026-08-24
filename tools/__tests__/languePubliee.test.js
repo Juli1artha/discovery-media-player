@@ -37,7 +37,15 @@ describe("⚠️ LE PÉRIMÈTRE SE DEMANDE À npm, PAS À package.json#files", (
     const vus = markdownsDuTarball();
     expect(vus).toContain("README.md");
     expect(vus).toContain("docs/RETENTION.md");
-    expect(vus).toContain("docs/README.md");
+    expect(vus).toContain("docs/HOST-CONTRACT.md");
+  });
+
+  it("⚠️ ce banc EXIGEAIT docs/README.md — il avait figé un accident en attente", () => {
+    // Ce document ne partait pas par décision : `"README.md"` dans `files` est un MOTIF que npm
+    // fait correspondre à toute profondeur, et il ramenait `docs/README.md` avec lui — un sommaire
+    // de dix-sept documents absents du paquet. La ligne a été retirée de `files` ; ce qui avait été
+    // observé une fois était devenu ici la preuve que c'était voulu.
+    expect(markdownsDuTarball()).not.toContain("docs/README.md");
   });
 });
 

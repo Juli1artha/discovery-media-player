@@ -6,7 +6,7 @@
 > `node_modules` paths by hand is a guess about our tree, and it broke twice in one day.
 
 What a host application may call, what it must implement, and what will not change without a
-version bump. If you are integrating the player, this page and [`API.md`](API.md) are the two you
+version bump. If you are integrating the player, this page and [`API.md`](https://github.com/Juli1artha/discovery-media-player/blob/main/docs/API.md) are the two you
 need.
 
 ## Five rules
@@ -362,7 +362,7 @@ Four requirements, in order of what they cost when missed:
 
 ## The postMessage bridge
 
-Described once in [`src/bridge.ts`](../src/bridge.ts) and published as `discovery-media-player/bridge`
+Described once in [`src/bridge.ts`](https://github.com/Juli1artha/discovery-media-player/blob/main/src/bridge.ts) and published as `discovery-media-player/bridge`
 — **compiled JavaScript with type declarations, under MIT** rather than the core's AGPL, so that
 importing it is not a toll. Import it rather than copying constants: a message name retyped by hand
 is a contract in two copies, and the day it changes only one of them knows.
