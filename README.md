@@ -16,6 +16,7 @@ to a third-party SaaS.
 [![CI](https://github.com/Juli1artha/discovery-media-player/actions/workflows/ci.yml/badge.svg)](https://github.com/Juli1artha/discovery-media-player/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/Juli1artha/discovery-media-player/actions/workflows/codeql.yml/badge.svg)](https://github.com/Juli1artha/discovery-media-player/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Juli1artha/discovery-media-player/badge)](https://scorecard.dev/viewer/?uri=github.com/Juli1artha/discovery-media-player)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14197/badge)](https://www.bestpractices.dev/projects/14197)
 [![npm](https://img.shields.io/npm/v/discovery-media-player?logo=npm&color=cb3837)](https://www.npmjs.com/package/discovery-media-player)
 [![Container](https://img.shields.io/badge/ghcr.io-discovery--media--player-2496ed?logo=docker&logoColor=white)](https://github.com/Juli1artha/discovery-media-player/pkgs/container/discovery-media-player)
 [![Node](https://img.shields.io/node/v/discovery-media-player?logo=node.js&color=5fa04e)](package.json)
