@@ -60,12 +60,12 @@ const presentations = require(${JSON.stringify(path.join(RACINE, "server/present
 const { createStandaloneContext } = require(${JSON.stringify(path.join(RACINE, "context/standalone.js"))});
 const ctx = createStandaloneContext(process.env);
 require(${JSON.stringify(path.join(RACINE, "server/handler.js"))}).init(ctx);
-// ATTENTION argv : avec l'option -e de node, argv ne contient PAS de chemin de script, donc
-// les arguments commencent en position 1. Ecrit slice(2), l'enfant recevait un slug
-// indefini et creait des presences sur une presentation inexistante, sans lever.
-// (Aucun accent grave dans ce commentaire : il vit DANS un gabarit, qui se refermerait au
-// premier — le contexte d'accueil interdit le caractere, et le bloc tronque a l'air valide.)
-const [slug, rang, combien, plafond] = process.argv.slice(1);
+// ATTENTION : les valeurs passent par l'ENVIRONNEMENT, pas par argv. Un slug est engendre au
+// hasard et peut commencer par un tiret : passe en argument, node le lit comme une OPTION et
+// refuse de demarrer (« bad option: -aeLmx1Xd3hI », constate en forge). Le banc a tourne des
+// jours avant qu'un slug ne commence par un tiret — le defaut n'attendait pas une plateforme,
+// il attendait une DONNEE. L'environnement n'a pas de syntaxe : aucune valeur n'y change de sens.
+const { MP_SLUG: slug, MP_RANG: rang, MP_COMBIEN: combien, MP_PLAFOND: plafond } = process.env;
 (async () => {
   const faits = [];
   // ⚠️ TOUS EN MÊME TEMPS DANS L'ENFANT AUSSI : sinon les quatre processus se croiseraient à peine,
@@ -107,8 +107,9 @@ decrire("plusieurs processus, une seule base", () => {
   it(`le plafond anonyme tient à travers ${PROCESSUS} PROCESSUS qui frappent ensemble`, async () => {
     const { slug } = await nouvellePresentation();
     const lancer = (rang) => new Promise((resoudre) => {
-      execFile(process.execPath, ["-e", ENFANT, slug, String(rang), String(PAR_PROCESSUS), String(PLAFOND)],
-        { env: process.env, encoding: "utf8", maxBuffer: 4 << 20 },
+      execFile(process.execPath, ["-e", ENFANT],
+        { env: { ...process.env, MP_SLUG: slug, MP_RANG: String(rang), MP_COMBIEN: String(PAR_PROCESSUS), MP_PLAFOND: String(PLAFOND) },
+          encoding: "utf8", maxBuffer: 4 << 20 },
         (err, sortie) => resoudre({ err: err && String(err.message), sortie: String(sortie || "") }));
     });
 
