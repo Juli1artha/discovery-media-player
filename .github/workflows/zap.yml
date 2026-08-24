@@ -114,9 +114,22 @@ jobs:
         run: |
           mkdir -p /tmp/zap-wrk && cp .zap/rules.tsv /tmp/zap-wrk/ && chmod -R a+rwx /tmp/zap-wrk
           echec=""
-          for cible in "http://localhost:3000/" "http://localhost:3000/doc/zap-doc" "http://localhost:3000/present/zap-direct"; do
+          for paire in "accueil=http://localhost:3000/" "doc=http://localhost:3000/doc/zap-doc" "present=http://localhost:3000/present/zap-direct"; do
+            nom="${paire%%=*}" cible="${paire#*=}"
             echo "── scan : $cible"
+            # `-r` : le rapport HTML complet, par surface, dans /zap/wrk — la sortie du job ne
+            # montre que 5 URL d'exemple par règle ; le rapport montre tout, et c'est lui qu'on
+            # ouvre pour trier une alerte nouvelle sans rejouer le scan.
             docker run --rm --network host -v /tmp/zap-wrk:/zap/wrk zap-epingle \
-              zap-baseline.py -t "$cible" -c rules.tsv || echec="$echec $cible"
+              zap-baseline.py -t "$cible" -c rules.tsv -r "rapport-$nom.html" || echec="$echec $cible"
           done
-          [ -z "$echec" ] || { echo "::error::alerte non triée sur :$echec — le tri (une décision écrite par règle) vit dans .zap/rules.tsv"; exit 1; }
+          [ -z "$echec" ] || { echo "::error::alerte non triée sur :$echec — le tri (une décision écrite par règle) vit dans .zap/rules.tsv, le détail dans l'artefact rapports-zap"; exit 1; }
+
+      # ⚠️ `if: always()` — c'est quand le scan est ROUGE que le rapport sert : le lire est le
+      # premier geste du tri, et il n'existerait pas si l'étape ne s'exécutait qu'au vert.
+      - name: Upload the HTML reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rapports-zap
+          path: /tmp/zap-wrk/rapport-*.html
