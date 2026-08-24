@@ -2,6 +2,7 @@
 // Reste à PLAT dans server/ (les gardes de forge ciblent server/*.js).
 
 const { adresseAppelant } = require("./appelant");
+const { estConflit } = require("./erreurs-base.js");
 const { createShare, createReshare, sendReshareEmail, revokeShare, setShareAuth, listSharesForDoc, listSessionsForDoc, internalStatsForDoc, cleIdempotence, getShareBySlug, logView, upsertSession, upsertInternalSession, overview: docOverview } = require("./shares");
 const { SESSION_QUOTA_PER_HOUR, VIEW_QUOTA_PER_HOUR } = require("./shared.generated.js");
 
@@ -142,7 +143,7 @@ async function traiter(req, res, body, slug) {
                   body: { doc_title: body.docTitle || null, file_url: String(body.fileUrl), file_name: body.fileName || null, revoked: false, ...(cleDispo ? { idem_key: cleHote } : {}) },
                 });
               } catch (erreur) {
-                if (!String((erreur && erreur.message) || "").includes("409")) throw erreur;
+                if (!estConflit(erreur)) throw erreur;
                 try { PLAYER.errors.capture(new Error("backfill hôte : la clé était déjà posée ailleurs — " + docId), { route: "hostshare", benin: true }); } catch { /* jamais bloquant */ }
                 const gagnant = await PLAYER.db.request(`commercial_doc_shares?idem_key=eq.${encodeURIComponent(cleHote)}&select=slug&limit=1`);
                 if (!Array.isArray(gagnant) || !gagnant[0]) throw erreur;
@@ -169,7 +170,7 @@ async function traiter(req, res, body, slug) {
               });
               return jd(200, { ok: true, slug: neuf.slug, reused: false });
             } catch (erreur) {
-              if (!String((erreur && erreur.message) || "").includes("409")) throw erreur;
+              if (!estConflit(erreur)) throw erreur;
               try { PLAYER.errors.capture(new Error("lien hôte déjà créé par une demande simultanée : " + docId), { route: "hostshare", benin: true }); } catch { /* jamais bloquant */ }
               const gagnant = await PLAYER.db.request(`commercial_doc_shares?idem_key=eq.${encodeURIComponent(cleHote)}&select=slug&limit=1`);
               if (!Array.isArray(gagnant) || !gagnant[0]) throw erreur;   // 409 d'autre chose : on ne l'invente pas
@@ -219,7 +220,7 @@ async function traiter(req, res, body, slug) {
             try {
               await PLAYER.db.request(`commercial_doc_shares?slug=eq.${encodeURIComponent(ex[0].slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { doc_title: body.docTitle || null, file_url: String(body.fileUrl), file_name: body.fileName || null, bot_enabled: true, bot_guided: true, bot_profile_id: (body.profileId || "").trim() || null, revoked: false, ...(cleDispo ? { idem_key: cleTest } : {}) } });
             } catch (erreur) {
-              if (!String((erreur && erreur.message) || "").includes("409")) throw erreur;
+              if (!estConflit(erreur)) throw erreur;
               try { PLAYER.errors.capture(new Error("backfill répétition : la clé était déjà posée ailleurs — " + docId), { route: "docshare-test", benin: true }); } catch { /* jamais bloquant */ }
               const gagnant = await PLAYER.db.request(`commercial_doc_shares?idem_key=eq.${encodeURIComponent(cleTest)}&select=slug&limit=1`);
               if (!Array.isArray(gagnant) || !gagnant[0]) throw erreur;
@@ -232,7 +233,7 @@ async function traiter(req, res, body, slug) {
             const t = await createShare({ docId, docTitle: body.docTitle, fileUrl: body.fileUrl, fileName: body.fileName, recipientName: "Répétition (test)", createdBy: u.email, bot: true, guided: true, profileId: body.profileId, isTest: true, idemKey: cleTest });
             return jd(200, { ok: true, slug: t.slug });
           } catch (erreur) {
-            if (!String((erreur && erreur.message) || "").includes("409")) throw erreur;
+            if (!estConflit(erreur)) throw erreur;
             try { PLAYER.errors.capture(new Error("lien de répétition déjà créé par une demande simultanée : " + docId), { route: "docshare-test", benin: true }); } catch { /* jamais bloquant */ }
             const gagnant = await PLAYER.db.request(`commercial_doc_shares?idem_key=eq.${encodeURIComponent(cleTest)}&select=slug&limit=1`);
             if (!Array.isArray(gagnant) || !gagnant[0]) throw erreur;
