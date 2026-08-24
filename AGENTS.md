@@ -87,6 +87,26 @@ if (ACTIONS_LIEES_A_UNE_SESSION.has(body.action)) {
 this repository on 24/08, in two independent sessions, on the same day. **Re-read the region you
 edited.** Neither case was caught by a tool; both were caught by reading.
 
+## An assertion that costs its author is still an assertion
+
+**Nobody re-checks a claim that makes its author look bad.** It reads as expensive, therefore
+sincere, therefore already verified. It is not.
+
+⚠️ This happened on 24/08 and cost two sessions. Writing up the release-verification page, one
+session stated that no CI check confronted the npm tarball with the archive attached to the Release
+— an admission of a hole in our own pipeline. The other session did not re-check it; it built on
+it. **The check existed**: the `attester` job compares its rebuilt `sha512` against the registry's
+`dist.integrity` and refuses to attach anything if they differ. The false claim was found only
+because its own author went to read the workflow before publishing the page.
+
+The correction was not "there is no hole" but a finer statement worth keeping: the hole was not in
+the pipeline, it was in **what a reader can conclude on their own** — the refusal happened on our
+side, at a moment they did not witness.
+
+So: verify a self-accusation with the same suspicion as a self-congratulation, especially before it
+reaches a page someone will act on. And prefer stating where a property is *held* over stating that
+it is missing — the first is checkable against a file, the second against nothing.
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives
