@@ -102,6 +102,24 @@ trusts nothing about how the files were made — and stronger in another: it is 
 see a change made **after** publication, such as a Release asset replaced later or a registry
 substitution. The workflow cannot check that, because by then it has finished.
 
+### Tying it to the copy you actually install
+
+The step above proves two published files match each other. It does not yet prove either of them is
+the one **your** project installs — `npm pack` fetches *a* copy of that version, and a version
+number is not a digest. If you depend on this package, close that gap with your own lockfile:
+
+```bash
+openssl dgst -sha512 -binary registry/discovery-media-player-*.tgz | base64 -w0
+grep -A3 '"node_modules/discovery-media-player"' package-lock.json | grep integrity
+```
+
+The `sha512-…` you compute must equal the `integrity` your lockfile records. Only then does the
+verdict you reached on that archive say anything about the code that runs in your application.
+
+Without this middle link you have proved something about *an* archive, not about yours. The point
+was raised by an integrating host that had verified a fix in the published package and realised its
+own conclusion rested on an archive it had not tied to its install.
+
 ### What was measured, and when
 
 A verification you read is not a verification you ran. This table records what was actually
@@ -109,9 +127,16 @@ compared from the outside, so the next reader knows what was true *at that date*
 assuming it is still true today — and so a later divergence has a fixed point to be measured
 against.
 
-| Version | Date | Release `.tgz` `sha256` | Identical to npm | Also checked |
-|---|---|---|---|---|
-| 0.1.134 | 2026-08-24 | `aa56a1d85ef005baa65a065485eacd5462891dce1cb2961036b08af0e2a9c969` | yes — 320 659 bytes on both sides | attestation subject and digest, SLSA workflow and ref, SBOM version, `.sha256` sidecar |
+| Version | Date | Release `.tgz` `sha256` | Identical to npm | Who looked | Also checked |
+|---|---|---|---|---|---|
+| 0.1.134 | 2026-08-24 | `aa56a1d85ef005baa65a065485eacd5462891dce1cb2961036b08af0e2a9c969` | yes — 320 659 bytes on both sides | this repository, by hand | attestation subject and digest, SLSA workflow and ref, SBOM version, `.sha256` sidecar |
+| 0.1.134 | 2026-08-24 | same digest | yes — reproduced independently | an integrating host, on another machine — **reported to us, not measured here** | its own lockfile `integrity`, then the fix re-measured on the unpacked archive |
+
+⚠️ The two rows are not the same kind of statement, and the column says so. The first is a
+measurement made in this repository; the second is a report we received and could not re-run. The
+second is nonetheless the **stronger** of the two for the property this section is about: an
+outside check has value precisely because it is not ours, and a table that blurred that distinction
+would be the sort of undifferentiated record it exists to prevent.
 
 For 0.1.134 the SLSA attestation attached to the Release named that same `sha256`, for the subject
 `discovery-media-player-0.1.134.tgz`, built from `refs/tags/v0.1.134` by
