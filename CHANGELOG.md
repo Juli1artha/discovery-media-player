@@ -10,6 +10,29 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.130] — 2026-08-22
+
+### Fixed
+- **A malformed rating was recorded as one star instead of being refused.** The guard read
+  `const note = Math.max(1, Math.min(5, Number(body.rating) || 0)); if (!note) …` — the `Math.max(1, …)`
+  put a **floor** at 1, so `note` was never falsy and the refusal on the next line could never run. A
+  rating with no rating — field absent, `null`, `"abc"`, a double send from the client — was not
+  rejected: it was stored as **1 star, the worst of the scale**. Measured satisfaction therefore fell
+  on its own with every malformed call, and nothing in the number made that visible.
+  - ⚠️ The refusal was **unreachable**, not wrong. Code that cannot execute is not dead weight when
+    it is the only thing standing between bad input and a recorded number.
+
+### Added
+- **A secrets guard, six written policies and three benches.** A secret is not a regression like any
+  other: it is not fixed by a commit, because the value has already left. The guard therefore refuses
+  *before* the push rather than reporting afterwards — seven species recognised by their shape, plus
+  the rule that a variable whose **name** announces a secret carries no value in a tracked file.
+  - ⚠️ The bench builds its fake secrets **at run time** rather than embedding them, so the guard's
+    own test corpus is not itself a file full of credential-shaped strings.
+- **Declared storage origins are now covered by a bench** — an opaque origin (whose `origin` is the
+  string `"null"`) is refused, an unreadable entry is ignored rather than invalidating the whole
+  configuration, and an origin declared twice is counted once.
+
 ## [0.1.129] — 2026-08-22
 
 ### Changed
@@ -3580,7 +3603,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.129...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.130...HEAD
+[0.1.130]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.129...v0.1.130
 [0.1.129]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.128...v0.1.129
 [0.1.128]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.127...v0.1.128
 [0.1.127]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.126...v0.1.127

@@ -2,13 +2,23 @@
 
 ## Reporting a vulnerability
 
-Email **security@3d-discovery.fr** with enough detail to reproduce. Please do not open a public
-issue — instances of this player serve commercial documents that are not meant to be read by
-strangers, and a public report is a starting pistol.
+**Please do not open a public issue.** Instances of this player serve commercial documents that are
+not meant to be read by strangers, and a public report is a starting pistol.
 
-You will get an acknowledgement within 72 hours and an assessment within 7 days. If the report is
-valid we will agree a disclosure date with you, and credit you in the changelog unless you would
-rather we did not.
+Two private channels. Either is fine, and both reach the same person:
+
+- **[Report a vulnerability privately on GitHub](https://github.com/Juli1artha/discovery-media-player/security/advisories/new)**
+  — the *Report a vulnerability* button in the repository's Security tab. Preferred, because it
+  gives you three things an email cannot: a private thread attached to the repository, so the
+  exchange stays in one place; a timestamped record of what was said and when, which protects you
+  as much as us; and a direct path to a CVE request if the finding warrants one.
+- **security@3d-discovery.fr** — for anyone without a GitHub account, or who would simply rather
+  send an email. Nothing about it is second-class: it lands in the maintainer's mailbox, named in
+  [`MAINTAINERS.md`](MAINTAINERS.md).
+
+Whichever you use, you will get an acknowledgement within 72 hours and an assessment within 7 days.
+If the report is valid we will agree a disclosure date with you, and credit you in the changelog
+unless you would rather we did not.
 
 ## Supported versions
 
