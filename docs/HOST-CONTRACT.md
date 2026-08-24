@@ -414,6 +414,18 @@ Measured on a production host the day the second defect was fixed:
 Same incident, same instance, two verdicts — decided months earlier by one column. It costs nothing
 at write time, and it decides what you are able to say afterwards.
 
+⚠️ **The expectation is answerability, not a column name** — and this paragraph earned that sentence
+the hard way, one day after it was written. The same host then swept all eight of their tables
+carrying a session: seven already recorded the document, under four different names (`doc_id`,
+`share_slug`, `link_id`, `xp_id`). **One** did not. The discipline was everywhere and written
+nowhere, which is exactly why it gave way at the single place nobody thought about.
+
+Their first sweep looked for the two names this page happens to use, and would have accused three
+correct tables. So when you check your own schema, write the check from **what your code stores**,
+not from a list of column names borrowed from someone else's — a coarse check has no false
+positives to excuse, it has a pattern to derive. The question each row must be able to answer is
+*which document was this written for*; the key that answers it is yours to name.
+
 **Configured is not served.** When a diagnosis is disputed, the useful question is not who is right
 but *did you measure exactly what fails*. Two true statements about the same instance can describe
 different responses.
