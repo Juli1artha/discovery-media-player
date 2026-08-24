@@ -124,6 +124,30 @@ async function retirerFichier(chemin, opts) {
 // au RESTE du plafond (`min(taille, plafond - examinees)`) pour ne jamais le dépasser. Et on
 // compte les lignes RENDUES par le DELETE (`return=representation&select=id`), pas les ids
 // présélectionnés : deux exécutions concurrentes n'annoncent pas deux fois la même suppression.
+/**
+ * « Cette table n'existe pas ici » — et RIEN d'autre.
+ *
+ * ⚠️ UNE CIBLE DE PURGE PEUT LÉGITIMEMENT MANQUER, LE CONTRAT LE DIT. `docs/HOST-CONTRACT.md` :
+ * les migrations de débit « ne sont délibérément pas » dans le périmètre de la carte, parce
+ * qu'« un hôte peut fournir sa propre capacité `limits`, et sur un tel hôte leur absence est
+ * NORMALE, pas un défaut ». Le balayage, lui, purgeait `player_rate_limits` sans condition — donc
+ * sur cet hôte-là il levait à la cinquième cible sur huit, et les liens révoqués comme les
+ * présentations n'étaient JAMAIS atteints. Enveloppé dans un `catch` qui le classe bénin, il
+ * restait armé, silencieux, et partiellement inopérant : le pire des trois états.
+ *
+ * ⚠️ AUSSI ÉTROIT QUE `signatureAbsente`, ET POUR LA MÊME RAISON. On accepte le code PostgREST de la
+ * table introuvable, ou son message — et rien d'autre. Un 404 seul ne suffit pas : il peut venir
+ * d'ailleurs, et avaler une vraie panne ferait de ce correctif une purge qui ne purge plus sans le
+ * dire, c'est-à-dire exactement ce qu'il corrige.
+ */
+function tableAbsente(erreur) {
+  if (!erreur) return false;
+  const code = erreur.details && (erreur.details.code || (erreur.details.error && erreur.details.error.code));
+  if (code === "PGRST205") return true;
+  const texte = String(erreur.message || "");
+  return texte.includes("PGRST205") || /Could not find the table/i.test(texte);
+}
+
 async function purgerParLots(table, filtre, colId, { dryRun = false, taille = LOT, plafond = PLAFOND } = {}, plafondForce) {
   if (plafondForce !== undefined) plafond = plafondForce;
   let examinees = 0, supprimees = 0, tronque = false, curseur = null;
@@ -200,7 +224,15 @@ async function purgerRetention(now, optsBrutes = {}) {
   rapport.commercial_doc_sessions = await purgerParLots("commercial_doc_sessions", `last_at=lt.${enc(bJournaux)}`, "session_id", opts);
   rapport.commercial_doc_internal_sessions = await purgerParLots("commercial_doc_internal_sessions", `last_at=lt.${enc(bJournaux)}`, "session_id", opts);
   rapport.doc_bot_sessions = await purgerParLots("doc_bot_sessions", `last_at=lt.${enc(bJournaux)}`, "id", opts);
-  rapport.player_rate_limits = await purgerParLots("player_rate_limits", `expires_at=lt.${enc(new Date(now).toISOString())}`, "key", opts);
+  // ⚠️ LA SEULE CIBLE QUE LE CONTRAT REND OPTIONNELLE — et le balayage la traitait comme les autres.
+  // Son absence est normale sur un hôte qui fournit sa propre capacité `limits` ; elle ne doit donc
+  // pas interrompre les trois cibles qui suivent. Sautée, ET DITE : un rapport qui omettrait la
+  // ligne se lirait comme « rien à supprimer », ce qui est une autre affirmation.
+  rapport.player_rate_limits = await purgerParLots("player_rate_limits", `expires_at=lt.${enc(new Date(now).toISOString())}`, "key", opts)
+    .catch((e) => {
+      if (!tableAbsente(e)) throw e;
+      return { examinees: 0, supprimees: 0, tronque: false, sautee: "table absente — l'hôte fournit ses propres compteurs de débit" };
+    });
 
   // Liens révoqués : seulement là où la révocation est DATÉE (0013).
   const dateDispo = await require("./schema").attendue("revocationDatee");
