@@ -45,9 +45,10 @@ describe("⚠️ LA RELEASE NE PEUT PAS PROMETTRE UN FICHIER QU'ELLE NE CONTRÔL
     expect(motifsDeLaGarde(etapes[indexGarde].run)).toEqual(motifsPromis(etapes[indexRelease].with.files));
   });
 
-  it("elle en promet trois : le tarball, son condensat, sa provenance", () => {
-    // Le compte est le fait qui a été rompu en silence. Un jour on en attachera un quatrième —
-    // il faudra alors le dire ici, ce qui est précisément le geste que ce banc réclame.
-    expect(motifsPromis(etapes[indexRelease].with.files)).toHaveLength(3);
+  it("elle en promet quatre : le tarball, son condensat, sa provenance, son SBOM", () => {
+    // Le compte est le fait qui a été rompu en silence. Ce banc avait prévu le cas : « un jour on
+    // en attachera un quatrième — il faudra alors le dire ici ». C'est fait, et le quatrième est
+    // le SBOM CycloneDX du paquet, produit par `attester` à côté du tarball qu'il décrit.
+    expect(motifsPromis(etapes[indexRelease].with.files)).toHaveLength(4);
   });
 });

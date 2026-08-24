@@ -426,6 +426,47 @@ jobs:
         if: matrix.node == '22'
         run: node tools/images-epinglees.mjs Dockerfile
 
+      # ⚠️ LE SEUL DÉFAUT DE CE DÉPÔT QU'UN COMMIT NE CORRIGE PAS. `.gitignore` exclut `.env` et
+      # `.env.*`, et aucun secret n'a jamais été commité — mais `.gitignore` ne protège qu'un
+      # CHEMIN, et « ça n'est jamais arrivé » décrit le passé. Un jeton collé dans un test, une clé
+      # PEM dans une fixture, un `.env.example` rempli pour faire tourner la démo chez soi puis
+      # commité avec le reste : les trois entrent sans qu'un seul motif les regarde.
+      #
+      # Et un secret poussé ne se retire pas. Réécrire l'historique n'y change rien — ce qui a été
+      # public une minute est divulgué, et la seule issue est la RÉVOCATION. C'est pourquoi la même
+      # garde tourne AUSSI dans `tools/git-hooks/pre-push`, avant que le dépôt distant le voie :
+      # ici elle constate, là-bas elle empêche.
+      - name: No plaintext credentials in the repository
+        if: matrix.node == '22'
+        run: node tools/secrets-en-clair.mjs
+
+      # ⚠️ DEUX SEUILS, PARCE QUE LES DEUX ARBRES N'ONT PAS LE MÊME RAYON D'ACTION — et le seuil
+      # est écrit ici ET dans docs/DEPENDENCIES.md, où un consommateur peut le lire sans ouvrir
+      # une CI.
+      #
+      #   - L'arbre de PRODUCTION est ce qui tourne chez l'auto-hébergeur, à côté de ses documents
+      #     commerciaux et sous ses identifiants. Il compte UNE dépendance. Le seuil y est donc
+      #     `low` : tolérer quoi que ce soit reviendrait à choisir de livrer une faille connue dans
+      #     un arbre qu'on peut lire en entier.
+      #   - L'arbre de DÉVELOPPEMENT ne quitte jamais le dépôt (`files` filtre le tarball). Une
+      #     faille y menace nos machines et cette forge, pas les instances. Le seuil est `high` :
+      #     bloquer sur une modérée dans un plugin de test arrêterait la livraison de correctifs
+      #     pour une menace qui ne les concerne pas — et une CI qu'on apprend à contourner ne
+      #     garde plus rien.
+      #
+      # ⚠️ CE CONTRÔLE EXIGE LE RÉSEAU : il interroge l'avis de sécurité du registre. S'il tombe
+      # pour cette raison, c'est la garde qui n'a pas pu regarder — pas la branche. On le DIT,
+      # plutôt que d'imputer à l'auteur un rouge dont il n'est pas responsable.
+      - name: Dependencies carry no known vulnerability above the documented threshold
+        if: matrix.node == '22'
+        run: |
+          if ! npm audit --omit=dev --audit-level=low; then
+            echo "::error::arbre de PRODUCTION : faille connue — seuil « aucune », voir docs/DEPENDENCIES.md"; exit 1
+          fi
+          if ! npm audit --audit-level=high; then
+            echo "::error::arbre de DÉVELOPPEMENT : faille haute ou critique — seuil « high », voir docs/DEPENDENCIES.md"; exit 1
+          fi
+
       # ⚠️ EXACTE NE SUFFIT PAS : IL FAUT AUSSI LA NÔTRE. Cette garde n'interdisait que les plages
       # (`^`, `~`) — et pendant ce temps la démo épinglait 0.1.20 et les exemples Express et Vercel
       # 0.1.7, cent onze versions en arrière, sans qu'aucune étape ne rougisse (constat d'un audit

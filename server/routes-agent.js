@@ -106,8 +106,35 @@ async function traiter(req, res, body, _slug) {
           if (body.action === "bot-rate") { // satisfaction (1-5 étoiles) posée depuis le bloc central du viewer
             const sess = await docbot.getSession(String(body.sessionId || ""));
             if (!sess || sess.share_slug !== share.slug) return jp(400, { ok: false, error: "session" });
-            const note = Math.max(1, Math.min(5, Number(body.rating) || 0));
-            if (!note) return jp(400, { ok: false, error: "rating" });
+            // ⚠️ CE REFUS ÉTAIT INATTEIGNABLE, ET C'EST LA MESURE QUI EN PAYAIT LE PRIX.
+            //
+            //     const note = Math.max(1, Math.min(5, Number(body.rating) || 0));
+            //     if (!note) return jp(400, { ok: false, error: "rating" });
+            //
+            // `Math.max(1, …)` posait un PLANCHER à 1 : `note` valait toujours au moins 1, donc
+            // `!note` n'était jamais vrai et la ligne suivante ne s'exécutait jamais. Une notation
+            // SANS note — champ absent, `null`, `"abc"`, un double envoi du client — n'était pas
+            // refusée : elle enregistrait **1 étoile**, la pire du barème. La satisfaction mesurée
+            // baissait donc d'elle-même à chaque appel malformé, et rien dans le chiffre ne
+            // permettait de le voir.
+            //
+            // C'est la règle que ce dépôt applique déjà au temps de lecture, une couche plus haut :
+            // « une métrique qui dit le contraire est la première que les gens cessent de croire ».
+            // Une note absente n'est pas une mauvaise note, c'est une absence — et elle se refuse.
+            //
+            // ⚠️ TROUVÉ EN CHERCHANT À EXERCER LA BRANCHE, pas en lisant le code. Le refus était
+            // écrit, donc il avait l'air tenu ; il a fallu écrire le test qui l'atteint pour
+            // constater qu'aucune entrée n'y arrivait.
+            //
+            // ⚠️ `Math.round` PARCE QUE LA COLONNE EST `smallint`. `3.7` traversait la garde intact
+            // et partait tel quel vers PostgREST : l'arrondi se décidait en aval, hors de vue. Le
+            // plafond à 5 reste, lui — un clic sur une sixième étoile est un défaut d'interface,
+            // pas une tentative, et le ramener à 5 est ce que l'appelant voulait dire.
+            //
+            // `!(note >= 1)` plutôt que `!note` : la forme rend faux pour `NaN` sans s'en remettre
+            // au `|| 0` qui le précède, donc elle survit à un changement de la ligne d'au-dessus.
+            const note = Math.min(5, Math.round(Number(body.rating) || 0));
+            if (!(note >= 1)) return jp(400, { ok: false, error: "rating" });
             const cmt = String(body.comment || "").trim().slice(0, 500); // mot facultatif (2e temps du bloc)
             await PLAYER.db.request("doc_bot_sessions?id=eq." + encodeURIComponent(String(body.sessionId)), { method: "PATCH", headers: { Prefer: "return=minimal" }, body: cmt ? { rating: note, rating_comment: cmt } : { rating: note } });
             return jp(200, { ok: true });

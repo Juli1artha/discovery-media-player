@@ -56,6 +56,31 @@ jobs:
     outputs:
       notes: ${{ steps.notes.outputs.body }}
     steps:
+      # ⚠️ LA SEULE ENTRÉE DE CE DÉPÔT QUE PERSONNE NE RELIT. Tout le reste arrive par une PR, donc
+      # sous des yeux ; `workflow_dispatch` non — un collaborateur tape une chaîne dans un champ et
+      # elle part directement dans `ref:` de quatre checkouts et dans le nom de la GitHub Release.
+      #
+      # Elle n'est pas injectable aujourd'hui : `TAG` est LU comme variable d'environnement
+      # (`${TAG}`) dans les blocs `run:`, jamais interpolée par `${{ }}` — c'est la règle qui vaut
+      # déjà pour les entrées non fiables de `cla.yml`. Mais « pas injectable » et « validée » sont
+      # deux choses différentes, et la seconde manquait : une faute de frappe partait jusqu'au
+      # checkout pour échouer là-bas, sur un message qui parle de `ref` introuvable et pas de la
+      # valeur saisie. Un compte compromis, lui, disposait d'un champ libre sur le workflow qui
+      # PUBLIE.
+      #
+      # On refuse donc ici, en premier, avant tout accès au dépôt : la forme `vX.Y.Z` est la seule
+      # que ce projet tague, et `tools/release-preflight.mjs` la confronte ensuite au manifeste.
+      - name: The dispatch input looks like a tag of this project
+        env:
+          TAG_SAISI: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          case "$TAG_SAISI" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::« $TAG_SAISI » n'a pas la forme vX.Y.Z — ce dépôt ne tague que celle-là"; exit 1 ;;
+          esac
+          printf '%s\n' "$TAG_SAISI" | grep -qxE 'v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?' \
+            || { echo "::error::« $TAG_SAISI » contient autre chose qu'une version"; exit 1; }
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
@@ -421,6 +446,36 @@ jobs:
           ( cd /tmp/sortie && sha256sum "$(basename "$F")" > "$(basename "$F").sha256" )
           echo "chemin=$F" >> "$GITHUB_OUTPUT"
 
+      # ⚠️ L'IMAGE AVAIT SON SBOM, LE PAQUET NON — et c'est le paquet que la plupart des gens
+      # installent. `image.yml` produit `sbom: true` depuis toujours ; le tarball npm, lui, ne
+      # disait nulle part ce qu'il contient. Un consommateur qui doit répondre « suis-je concerné
+      # par cette CVE ? » devait le déduire de `package.json`, à la main, version par version.
+      #
+      # ⚠️ ICI ET PAS DANS `annoncer`, ET C'EST LE DÉCOUPAGE DE CE WORKFLOW QUI L'IMPOSE. Ma
+      # première version le produisait dans `annoncer`, qui portait alors le `npm ci` nécessaire —
+      # or `annoncer` est le SEUL job à détenir `contents: write`, et le commentaire en tête de ce
+      # fichier dit pourquoi il ne doit rien installer. `attester` a déjà l'arbre, déjà
+      # `--ignore-scripts`, et pas le droit d'écrire : le SBOM se fabrique là où le tarball se
+      # fabrique, et voyage avec lui.
+      #
+      # Le nom suit celui du tarball — la VERSION, pas le tag : un SBOM détaché de ce qu'il décrit
+      # ne décrit plus rien, et `discovery-media-player-0.1.129.cdx.json` se range de lui-même à
+      # côté de `discovery-media-player-0.1.129.tgz`.
+      - name: Software bill of materials, beside the tarball it describes
+        run: |
+          V=$(node -p 'require("./package.json").version')
+          CIBLE="/tmp/sortie/discovery-media-player-$V.cdx.json"
+          npm sbom --sbom-format cyclonedx --omit=dev > "$CIBLE"
+          node -e '
+            const f = process.argv[1];
+            const b = JSON.parse(require("fs").readFileSync(f, "utf8"));
+            if (b.bomFormat !== "CycloneDX") { console.error("::error::" + f + " nest pas un CycloneDX"); process.exit(1); }
+            if (!Array.isArray(b.components) || !b.components.length) {
+              console.error("::error::SBOM sans composant — il decrirait un paquet vide"); process.exit(1);
+            }
+            console.log("SBOM : " + b.components.length + " composant(s)");
+          ' "$CIBLE"
+
       # La provenance SLSA de CE fichier exact, vérifiable par `gh attestation verify <tarball>`.
       - uses: actions/attest-build-provenance@8beda2b7ed98355c0e97c0a63bec38ae472e66c4 # v4
         id: attestation
@@ -478,10 +533,10 @@ jobs:
       #
       # Le nom du bundle appartient à l'action d'attestation et peut changer avec elle : cette
       # étape est ce qui transforme un tel changement en refus plutôt qu'en fichier manquant.
-      - name: The three files the Release must carry are actually there
+      - name: The four files the Release must carry are actually there
         run: |
           manquants=0
-          for motif in "paquet/"*.tgz "paquet/"*.tgz.sha256 "paquet/attestation.json"; do
+          for motif in "paquet/"*.tgz "paquet/"*.tgz.sha256 "paquet/attestation.json" "paquet/"*.cdx.json; do
             if [ ! -e "$motif" ]; then
               echo "::error::aucun fichier pour « $motif » — la Release en porterait un de moins, en silence"
               manquants=1
@@ -498,9 +553,11 @@ jobs:
           body: ${{ needs.verifier.outputs.notes }}
           generate_release_notes: false
           make_latest: true
-          # Le tarball CONFRONTÉ au registre, son condensat, et la provenance SLSA de ce fichier
-          # exact. `gh attestation verify paquet/*.tgz --repo Juli1artha/discovery-media-player`.
+          # Le tarball CONFRONTÉ au registre, son condensat, la provenance SLSA de ce fichier
+          # exact, et le SBOM de ce qu'il contient.
+          # `gh attestation verify paquet/*.tgz --repo Juli1artha/discovery-media-player`.
           files: |
             paquet/*.tgz
             paquet/*.tgz.sha256
             paquet/attestation.json
+            paquet/*.cdx.json

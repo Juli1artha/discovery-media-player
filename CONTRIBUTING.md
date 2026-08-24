@@ -29,11 +29,53 @@ your machine** (`playwright-core`, no browser download); set `PLAYER_E2E_CHROME`
 somewhere unusual. Without a Chrome it skips locally, and **fails in CI** — where skipping would
 leave open exactly the hole it exists to close.
 
+## When the tests run, and what each one is for
+
+Four benches, deliberately separate: each answers a question the others cannot, and knowing which
+one went red tells you where to look before you read a single line of output.
+
+| Bench | Command | What it proves | When it runs |
+|---|---|---|---|
+| Unit + integration | `npm test` | Behaviour, in-process against a temporary folder. 1515 tests, no network, no database | Every push and pull request, on Node 22 **and** 24 |
+| Browser | `npm run test:e2e` | That a real engine accepts the pages — CSP is actually enforced, and an axe-core pass checks accessibility | Every push and pull request |
+| Real database | `npm run test:base` | Behaviour against a real PostgREST and Postgres, not a stub, including a hardening probe | Every push and pull request |
+| Cost under load | `npm run test:charge` | Database round trips **per gesture**, at a thousand viewers and on a deliberately slowed database | Every push and pull request |
+
+Alongside them, on the same trigger: `npm run lint`, `npm run typecheck`, CodeQL, a blocking
+dependency-vulnerability check, and the guards in `tools/` — every action pinned to a commit SHA,
+base images pinned to a digest, the committed bundles still matching their sources, no plaintext
+credential in any tracked file.
+
+**All of it must pass before a pull request can merge**, and pull requests are the only way into
+`main`. Nothing here runs only nightly; the weekly CodeQL scan is an addition, not the primary run,
+and exists because rules change while code stands still.
+
+**Reading a failure.** A guard that fails prints `::error::` and names the file and the rule. A
+guard that could not *look* — no network, an unreadable file — says `GARDE NON CONCLUANTE` instead,
+and that distinction is deliberate: it means the fix is in the guard or its environment, not in your
+branch. Do not "just re-run" a red that names your branch.
+
+Locally, run `npm test` and `npm run lint` before pushing; the other three benches need a browser or
+a database and CI will run them regardless.
+
 ## The hooks install themselves
 
-`npm install` puts a `pre-push` hook in place: it refuses a push to a branch whose pull request is
-already merged. It runs only in a clone of *this* repository — never when the package is installed
-as a dependency — and it is idempotent.
+`npm install` puts a `pre-push` hook in place. It refuses two things: a push to a branch whose pull
+request is already merged, and a push carrying a plaintext credential. It runs only in a clone of
+*this* repository — never when the package is installed as a dependency — and it is idempotent.
+
+⚠️ **Why the credential check runs before the push and not only in CI.** Every other guard here
+catches a mistake a later commit can fix. A secret cannot be fixed by a commit: the moment it
+reaches a public remote it is disclosed, rewriting history does not recall it, and the only real
+remedy is to **revoke** it. CI would tell you a minute too late. The same guard
+(`tools/secrets-en-clair.mjs`) runs in CI as well, so a `--no-verify` push does not slip through
+unnoticed — but by then the cost is already the revocation.
+
+It reports the file, the line and the *kind* of credential, and never the value itself: a CI log on
+a public repository is public, and a guard that echoes what it found discloses it a second time, in
+a place that cannot be revoked. It reads the files git tracks at the current commit, so a secret
+committed and then removed in a later commit still travels in the history — the remote's push
+protection is what covers that case.
 
 ⚠️ **Why automatic rather than documented.** The neighbouring repository has had this hook since
 5 August, after an identical incident. This one received it on 14 August, once the same thing had
