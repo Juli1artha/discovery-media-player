@@ -1,0 +1,21 @@
+# LE TRI DU SCAN ZAP — chaque ligne est une DÉCISION écrite, jamais un silence.
+#
+# Le scan (zap.yml) échoue sur toute alerte qui n'est pas triée ici : une règle absente de ce
+# fichier est bloquante par défaut (WARN → code de sortie 2). N'inscrire une règle ici qu'avec
+# sa raison — une exception fondue dans le décor devient la règle (la leçon de SANS_EMPREINTE
+# dans server/handler.js, qui s'applique mot pour mot).
+#
+# Format : <id de règle> <TAB> <IGNORE|INFO|WARN|FAIL> <TAB> (raison). Trois champs, tabulations.
+#
+# 10055 : la CSP des pages porte style-src 'unsafe-inline', et c'est une décision écrite dans
+# server/handler.js — pas de framework CSS, les styles sont inline et aucun script inline n'est
+# permis (nonce partout). La retirer casserait l'affichage sans rien protéger de plus.
+10055	IGNORE	(style-src unsafe-inline : decision ecrite dans server/handler.js, scripts sous nonce)
+#
+# 10027 : la règle repère des MOTS (« bug », « user », « xxx »…) dans le JS servi — ici le bundle
+# de la visionneuse et pdf.js, du code public et relu. Elle repère des mots, pas des fuites.
+10027	IGNORE	(commentaires du bundle public de la visionneuse et de pdf.js : des mots, pas des secrets)
+#
+# 10109 : « Modern Web Application » constate que la page utilise du JavaScript. C'est un
+# constat, pas un défaut.
+10109	IGNORE	(constat informatif : la visionneuse est une application JavaScript, oui)
