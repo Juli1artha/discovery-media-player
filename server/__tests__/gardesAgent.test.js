@@ -193,7 +193,16 @@ describe("⚠️ ON COMPTE LES ACTIONS, PAS LES IMPLÉMENTATIONS", () => {
     // fermerait l'assistant à tout le monde.
     const attendues = actionsDeLAiguillage().filter((a) => a !== "bot-start").sort();
     expect(attendues.length, "moins de quatre actions lues : la sonde vise à côté").toBeGreaterThanOrEqual(4);
-    expect(listeDeclaree().sort()).toEqual(attendues);
+    const declarees = listeDeclaree();
+    // ⚠️ ON NOMME L'ÉCART, ON NE COMPARE PAS DEUX LISTES. Un `toEqual` sur les listes entières
+    // rendait « expected [ 'bot-rate', 'bot-script' ] to deeply equal [ 'bot-book', …(5) ] » : le
+    // vitest tronque, et le lecteur doit reconstituer de tête ce qui manque. Ce test refusait sans
+    // dire QUOI corriger — le défaut que la garde des permissions a un cas dédié pour interdire.
+    // Trouvé en éprouvant cette garde à la demande d'un exploitant, pas en la relisant.
+    const manquantes = attendues.filter((x) => !declarees.includes(x));
+    const enTrop = declarees.filter((x) => !attendues.includes(x));
+    expect(manquantes, `action(s) de l'aiguillage NON liées à leur document : ${manquantes.join(", ")}`).toEqual([]);
+    expect(enTrop, `action(s) déclarées liées mais absentes de l'aiguillage : ${enTrop.join(", ")}`).toEqual([]);
   });
 
   it("⚠️ et la liaison n'est écrite QU'UNE FOIS", () => {
