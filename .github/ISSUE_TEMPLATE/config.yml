@@ -1,9 +1,27 @@
-# ⚠️ Le lien « Question » pointait vers Discussions — une fonctionnalité DÉSACTIVÉE sur ce dépôt
+# ⚠️ UN LIEN VERS UNE FONCTIONNALITÉ DÉSACTIVÉE EST UN 404, DEPUIS LA PAGE QUI PROMET DE L'AIDE.
+#
+# Le lien « Question » pointait vers Discussions — une fonctionnalité DÉSACTIVÉE sur ce dépôt
 # (has_discussions=false, constaté par API le 21/08, relevé par un audit externe). Celui qui
-# cliquait tombait sur un 404, depuis la page même qui promet de l'aide. Les questions sont un
-# FORMULAIRE d'issue (question.yml) : si Discussions est activé un jour, refaire le chemin inverse.
+# cliquait tombait sur un 404. Les questions sont donc un FORMULAIRE d'issue (question.yml) : si
+# Discussions est activé un jour, refaire le chemin inverse.
+#
+# ⚠️ ET LA MÊME RÈGLE S'APPLIQUE AU LIEN DE SÉCURITÉ CI-DESSOUS, DANS L'AUTRE SENS. Le signalement
+# privé de vulnérabilités a été activé le 24/08 ; c'est ce qui rend l'URL
+# `/security/advisories/new` cliquable. Elle ne l'était pas avant — le formulaire n'existe que si le
+# réglage est actif, exactement comme Discussions. Si ce réglage est un jour désactivé, ce lien doit
+# repointer vers `/security/policy` DANS LE MÊME GESTE : sinon un chercheur qui a trouvé une faille
+# tombe sur un 404, depuis la page la plus sensible du dépôt, et son premier réflexe suivant sera
+# peut-être d'ouvrir une issue publique.
+#
+# ⚠️ DEUX LIENS ET PAS UN, parce qu'ils ne servent pas la même personne. Celui qui a trouvé quelque
+# chose veut AGIR — il lui faut le formulaire. Celui qui se demande si son constat entre dans le
+# périmètre veut LIRE — il lui faut la politique. Fondre les deux obligerait le second à traverser
+# un formulaire de signalement pour trouver une définition.
 blank_issues_enabled: false
 contact_links:
-  - name: Security vulnerability
+  - name: Report a security vulnerability (private)
+    url: https://github.com/Juli1artha/discovery-media-player/security/advisories/new
+    about: Do not open an issue. This opens a private report visible only to the maintainer. Email security@3d-discovery.fr works too.
+  - name: Security policy — scope, timelines, what counts
     url: https://github.com/Juli1artha/discovery-media-player/security/policy
-    about: Do not open an issue. Email security@3d-discovery.fr — see SECURITY.md.
+    about: What is and is not treated as a vulnerability, the response times we commit to, and the design notes worth knowing before you test.
