@@ -457,15 +457,14 @@ jobs:
       # ⚠️ CE CONTRÔLE EXIGE LE RÉSEAU : il interroge l'avis de sécurité du registre. S'il tombe
       # pour cette raison, c'est la garde qui n'a pas pu regarder — pas la branche. On le DIT,
       # plutôt que d'imputer à l'auteur un rouge dont il n'est pas responsable.
+      # ⚠️ LA GARDE NE LIT PLUS LE CODE DE SORTIE DE `npm audit`, ET C'ÉTAIT LE DÉFAUT. Il vaut
+      # non-zéro pour deux raisons sans rapport — des failles trouvées, ou un registre injoignable —
+      # et l'étape imputait la seconde à la branche, en annonçant une « faille connue » qui
+      # n'existait pas. Le commentaire ci-dessus promettait pourtant de les distinguer.
+      # `tools/failles-connues.mjs` lit le relevé lui-même et rend 2 quand il n'a rien pu voir.
       - name: Dependencies carry no known vulnerability above the documented threshold
         if: matrix.node == '22'
-        run: |
-          if ! npm audit --omit=dev --audit-level=low; then
-            echo "::error::arbre de PRODUCTION : faille connue — seuil « aucune », voir docs/DEPENDENCIES.md"; exit 1
-          fi
-          if ! npm audit --audit-level=high; then
-            echo "::error::arbre de DÉVELOPPEMENT : faille haute ou critique — seuil « high », voir docs/DEPENDENCIES.md"; exit 1
-          fi
+        run: node tools/failles-connues.mjs
 
       # ⚠️ EXACTE NE SUFFIT PAS : IL FAUT AUSSI LA NÔTRE. Cette garde n'interdisait que les plages
       # (`^`, `~`) — et pendant ce temps la démo épinglait 0.1.20 et les exemples Express et Vercel

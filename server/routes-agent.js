@@ -139,7 +139,26 @@ async function traiter(req, res, body, _slug) {
             await PLAYER.db.request("doc_bot_sessions?id=eq." + encodeURIComponent(String(body.sessionId)), { method: "PATCH", headers: { Prefer: "return=minimal" }, body: cmt ? { rating: note, rating_comment: cmt } : { rating: note } });
             return jp(200, { ok: true });
           }
-          if (body.action === "bot-history") return jp(200, { ok: true, messages: await docbot.listMessages(String(body.sessionId || "")) });
+          if (body.action === "bot-history") {
+            // ⚠️ MÊME LIAISON QUE `bot-rate` ET `bot-script`, ET ELLE MANQUAIT ICI.
+            //
+            // Cette action rendait le transcript de N'IMPORTE QUELLE session à qui en connaissait
+            // l'identifiant — et cet identifiant voyage côté client. Il suffisait d'un slug avec
+            // assistant activé (le refus juste au-dessus) et d'un `sessionId` récupéré ailleurs
+            // pour lire la conversation tenue sur un autre document : des questions de prospect,
+            // c'est-à-dire de la donnée commerciale sur un client, pas un compteur d'usage.
+            //
+            // ⚠️ ON NE PEUT PAS DÉLÉGUER CE FILTRAGE AU GREFFON. `docbot` est `ctx.plugins.bot`,
+            // fourni par l'hôte : supposer qu'il recoupe la session et le document reviendrait à
+            // faire dépendre une propriété de sécurité du player d'un code qu'il ne contient pas.
+            // C'est exactement pourquoi les deux actions voisines le vérifient elles-mêmes.
+            //
+            // Les deux voisines avaient la garde ET leur banc ; celle-ci n'avait ni l'une ni
+            // l'autre, et la relecture qui a ajouté les bancs a couvert deux actions sur trois.
+            const sess = await docbot.getSession(String(body.sessionId || ""));
+            if (!sess || sess.share_slug !== share.slug) return jp(400, { ok: false, error: "session" });
+            return jp(200, { ok: true, messages: await docbot.listMessages(String(body.sessionId || "")) });
+          }
           // ⚠️ Même piège : un objet littéral répond à `constructor`. Sans `Object.hasOwn`, une
           // langue « constructor » passait la garde et finissait interpolée dans le prompt du
           // modèle sous la forme « function Object() { [native code] } ».

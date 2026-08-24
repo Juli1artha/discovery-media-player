@@ -127,10 +127,26 @@ describe("une session est liée à SON document", () => {
     expect(res.corps).toEqual({ ok: false, error: "session" });
   });
 
+  it("⚠️ refuse de LIRE LE TRANSCRIPT d'une session ouverte sur un autre document", async () => {
+    // Le trou que les deux tests au-dessus ne voyaient pas : `bot-history` prenait un `sessionId`
+    // et rendait la conversation, sans jamais la rattacher au document demandé. Un identifiant
+    // récupéré ailleurs suffisait à lire les questions posées par le prospect d'un autre.
+    const { res } = await appeler({ action: "bot-history", slug: "Doc-A", sessionId: "sess-B" }, contexte());
+    expect(res.statusCode).toBe(400);
+    expect(res.corps).toEqual({ ok: false, error: "session" });
+  });
+
   it("refuse une session inconnue", async () => {
     const { res } = await appeler({ action: "bot-rate", slug: "Doc-A", sessionId: "jamais-vue", rating: 5 }, contexte());
     expect(res.statusCode).toBe(400);
     expect(res.corps).toEqual({ ok: false, error: "session" });
+  });
+
+  it("témoin : la bonne session LIT bien son propre transcript", async () => {
+    // Sans lui, on satisferait le refus ci-dessus en fermant `bot-history` à tout le monde.
+    const { res } = await appeler({ action: "bot-history", slug: "Doc-A", sessionId: "sess-A" }, contexte());
+    expect(res.statusCode).toBe(200);
+    expect(res.corps).toEqual({ ok: true, messages: [{ role: "bot", text: "bonjour" }] });
   });
 
   it("témoin : la bonne session note bien le document", async () => {

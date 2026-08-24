@@ -155,3 +155,48 @@ describe("ce que la garde délivre", () => {
     }
   });
 });
+
+describe("⚠️ LA RÈGLE DE NOM, APRÈS RELECTURE", () => {
+  // Deux défauts opposés, trouvés à la relecture de la PR qui a introduit cette garde.
+
+  it("⚠️ un commentaire dotenv en fin de ligne n'est pas une valeur", () => {
+    // `SECRET=   # openssl rand -base64 48` est l'idiome standard : valeur VIDE, plus la manière
+    // de l'engendrer. La garde y voyait un secret en clair et bloquait `pre-push` ET la CI. Une
+    // garde qui sonne quand tout va bien apprend à passer outre.
+    expect(secretsDeEnv("PLAYER_IP_HASH_SECRET=   # openssl rand -base64 48")).toEqual([]);
+    expect(secretsDeEnv("PLAYER_IP_HASH_SECRET=# sans espace avant")).toEqual([]);
+  });
+
+  it("⚠️ mais une VRAIE valeur suivie d'un commentaire reste refusée", () => {
+    // La contrepartie : on pourrait faire taire la garde en ajoutant « # » après le secret.
+    expect(secretsDeEnv("PLAYER_HOST_FETCH_SECRET=vrai-secret # posé pour la démo")).toHaveLength(1);
+    // Et un « # » sans espace devant fait partie de la valeur, comme pour dotenv.
+    expect(secretsDeEnv("PLAYER_HOST_FETCH_SECRET=abc#def")).toHaveLength(1);
+    // Cité, le « # » appartient au secret : le tronquer ne jugerait qu'un morceau.
+    expect(secretsDeEnv('PLAYER_HOST_FETCH_SECRET="abc # def"')).toHaveLength(1);
+  });
+
+  it("⚠️ le mot n'a pas à être en FIN de nom", () => {
+    // La première version était ancrée en `…$` : elle voyait `…_SECRET` et ratait ceux-ci, qui
+    // sont pourtant des noms courants — et c'est exactement la classe de secrets que cette règle
+    // existe pour attraper, puisqu'elle n'a aucune forme reconnaissable.
+    for (const nom of ["SECRET_KEY_BASE", "API_TOKEN_VALUE", "PRIVATE_KEY_PATH", "SIGNING_KEYS", "PASSWORD_FILE"]) {
+      expect(secretsDeEnv(`${nom}=une-valeur-reelle`), nom).toHaveLength(1);
+    }
+  });
+
+  it("⚠️ sans refuser ce qui n'est pas un secret", () => {
+    // L'excès inverse use la garde aussi sûrement que le manque.
+    for (const ligne of ["KEYCLOAK_URL=https://kc.example", "TOKENIZER_MODE=fast", "MONKEY_PATCH=1"]) {
+      expect(secretsDeEnv(ligne), ligne).toEqual([]);
+    }
+  });
+
+  it("⚠️ et une clé PUBLIABLE porte sa valeur, c'est sa raison d'être", () => {
+    // `SUPABASE_PUBLISHABLE_KEY` est FAITE pour atteindre un navigateur. C'est la distinction que
+    // ce fichier fait déjà plus haut en décodant les JWT pour ne refuser que `service_role`.
+    for (const ligne of ["SUPABASE_PUBLISHABLE_KEY=sb_publishable_abc", "SUPABASE_ANON_KEY=ey.abc", "PLAYER_PUBLIC_TOKEN=abc"]) {
+      expect(secretsDeEnv(ligne), ligne).toEqual([]);
+    }
+  });
+});
