@@ -10,9 +10,10 @@
 #
 # ⚠️ BASELINE, ET PAS FULL SCAN, PAR DÉCISION. Le scan baseline est PASSIF : il parcourt et
 # observe, il n'injecte rien. Le full scan attaque — et une CI qui attaque sa propre instance
-# jetable n'apprendrait pas grand-chose de plus sur un player sans base, tout en multipliant la
-# durée du job. Le jour où ce dépôt veut éprouver les liens tracés en conditions réelles, c'est
-# une décision à écrire ici, pas une option à cocher.
+# jetable n'apprendrait pas grand-chose de plus, tout en multipliant la durée du job. Les liens
+# tracés et la présentation SONT scannés — servis par une base d'essai, observés passivement.
+# Le jour où ce dépôt veut les ATTAQUER (full scan actif, payloads), c'est une décision à écrire
+# ici, pas une option à cocher.
 #
 # ⚠️ TOUTE ALERTE NON TRIÉE BLOQUE. La baseline sort en erreur dès qu'une alerte reste au niveau
 # WARN (son défaut). Le tri vit dans `.zap/rules.tsv`, une décision écrite par règle — pas de
@@ -46,19 +47,46 @@ jobs:
       - name: Build the shipped image
         run: docker build -t player-sous-scan .
 
-      # Mode dossier avec le document d'exemple : la plus grande surface accessible sans base —
-      # page d'accueil, visionneuse, flux du fichier, actifs pdf.js. Les routes à base (liens
-      # tracés, présentation) répondent leurs refus, qui sont aussi des réponses à éprouver.
-      - name: Start it in folder mode
+      # ⚠️ LES ROUTES À BASE AUSSI, PAS SEULEMENT LE MODE DOSSIER. La visionneuse tracée
+      # (/doc/:slug) et la présentation (/present/:slug) portent CHACUNE leur propre politique de
+      # sécurité ; sans base elles répondent 404 et le scan ne les regardait pas — le même trou
+      # que le banc navigateur avait comblé pour les essais (constat P2-3), comblé par la même
+      # doublure : tools/postgrest-en-memoire.cjs, qui refuse plutôt qu'inventer. La graine vit
+      # dans tools/zap-base-de-scan.mjs — versionnée et lintée, pas inline dans ce run:.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22"
+      - name: Start the scan database (in-memory PostgREST double)
         run: |
-          docker run -d --name player -p 3000:3000 \
+          # ⚠️ L'URL du document est celle QUE LE CONTENEUR VERRA : /data est son montage, pas le
+          # nôtre. C'est le script qui l'exige en paramètre, précisément pour que personne ne
+          # confonde les deux mondes.
+          node tools/zap-base-de-scan.mjs 54321 file:///data/sample.pdf &
+          sleep 1
+          # Le préfixe /rest/v1/ est celui que le player emploie — on sonde le chemin qu'il prendra.
+          curl -fsS "http://127.0.0.1:54321/rest/v1/commercial_doc_shares?slug=eq.zap-doc" >/dev/null \
+            || { echo "::error::la base de scan ne répond pas"; exit 1; }
+
+      # `--network host` : le player doit joindre la doublure sur 127.0.0.1:54321 — un pont
+      # Docker l'en séparerait. Le scanner tourne sur le même réseau, plus rien à câbler.
+      - name: Start the player — folder mode AND database routes
+        run: |
+          docker run -d --name player --network host \
+            -e SUPABASE_URL=http://127.0.0.1:54321 \
+            -e SUPABASE_SERVICE_ROLE_KEY=cle-sans-valeur-de-scan \
             -v "$PWD/examples/demo/documents:/data:ro" player-sous-scan
           for i in $(seq 1 30); do
-            curl -fsS localhost:3000/healthz >/dev/null 2>&1 && exit 0; sleep 2
+            curl -fsS localhost:3000/healthz >/dev/null 2>&1 && break; sleep 2
           done
-          echo "::error::le player n'a jamais répondu sur /healthz"
-          docker logs player
-          exit 1
+          # ⚠️ UN SCAN D'UN 404 EST VERT ET VIDE — le pire cas, celui que toutes les gardes d'ici
+          # refusent. Chaque surface doit répondre 200 AVANT d'être scannée ; et c'est aussi la
+          # confrontation des slugs : écrits ici ET dans la graine, deux exemplaires d'un fait,
+          # cette boucle est l'étape qui les compare (un slug qui diverge rougit en nommant l'URL).
+          for route in /healthz /doc/zap-doc /present/zap-direct; do
+            code=$(curl -sS -o /dev/null -w "%{http_code}" "localhost:3000$route")
+            [ "$code" = "200" ] || { echo "::error::$route répond $code — le scan mesurerait le vide"; docker logs player; exit 1; }
+          done
+          echo "trois surfaces servies : accueil, lien tracé, présentation"
 
       # ⚠️ L'ÉTIQUETTE DIT-ELLE LA VÉRITÉ ? Même confrontation que pour l'image Node du
       # Dockerfile racine : le condensat fait foi pour Docker, la version écrite à côté n'est
@@ -76,11 +104,19 @@ jobs:
           fi
           echo "ZAP $reelle, étiquette et condensat d'accord"
 
-      # `--network host` : le scanner voit le port publié du player, sans réseau à câbler.
+      # Une passe par surface : le spider ne suit que les liens, et rien ne mène de l'accueil vers
+      # un lien tracé — c'est le principe même d'un lien par destinataire. Les trois échouent ou
+      # réussissent ENSEMBLE : une seule passe rouge arrêterait le tri au premier constat, alors
+      # que le triage de .zap/rules.tsv se décide sur le tableau complet.
       # `/zap/wrk` doit être INSCRIPTIBLE par l'utilisateur `zap` de l'image (le script y copie
       # son plan) — d'où la copie hors du dépôt plutôt qu'un montage de `.zap/` lui-même.
-      - name: Baseline scan — passive, untriaged warnings block
+      - name: Baseline scan — three surfaces, untriaged warnings block
         run: |
           mkdir -p /tmp/zap-wrk && cp .zap/rules.tsv /tmp/zap-wrk/ && chmod -R a+rwx /tmp/zap-wrk
-          docker run --rm --network host -v /tmp/zap-wrk:/zap/wrk zap-epingle \
-            zap-baseline.py -t http://localhost:3000 -c rules.tsv
+          echec=""
+          for cible in "http://localhost:3000/" "http://localhost:3000/doc/zap-doc" "http://localhost:3000/present/zap-direct"; do
+            echo "── scan : $cible"
+            docker run --rm --network host -v /tmp/zap-wrk:/zap/wrk zap-epingle \
+              zap-baseline.py -t "$cible" -c rules.tsv || echec="$echec $cible"
+          done
+          [ -z "$echec" ] || { echo "::error::alerte non triée sur :$echec — le tri (une décision écrite par règle) vit dans .zap/rules.tsv"; exit 1; }

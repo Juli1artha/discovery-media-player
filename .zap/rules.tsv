@@ -10,6 +10,9 @@
 # 10055 : la CSP des pages porte style-src 'unsafe-inline', et c'est une décision écrite dans
 # server/handler.js — pas de framework CSS, les styles sont inline et aucun script inline n'est
 # permis (nonce partout). La retirer casserait l'affichage sans rien protéger de plus.
+# La même règle porte une variante « CSP: Notices » : en scan, elle relève l'origine http://
+# de la base d'essai (tools/zap-base-de-scan.mjs) dans connect-src — un artefact du banc, pas
+# de la production, où SUPABASE_URL est https.
 10055	IGNORE	(style-src unsafe-inline : decision ecrite dans server/handler.js, scripts sous nonce)
 #
 # 10027 : la règle repère des MOTS (« bug », « user », « xxx »…) dans le JS servi — ici le bundle
