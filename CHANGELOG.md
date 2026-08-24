@@ -10,6 +10,75 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.135] — 2026-08-24
+
+A train about **what the package actually hands you**. Nothing here changes what the player does;
+all of it changes what an integrator finds on disk after `npm install`, and what CI now refuses.
+
+### Removed
+- **`docs/README.md` no longer travels in the package.** It was never meant to: a **bare entry in
+  `files` is a pattern, not a path**, and npm matches it at any depth — `"README.md"` meant
+  `**/README.md` and dragged the one in `docs/` along with it. Measured in four runs:
+
+  ```
+  files: ["docs/HOST-CONTRACT.md"]                    → docs/README.md absent
+  files: ["README.md", "docs/HOST-CONTRACT.md"]       → docs/README.md SHIPS
+  files: ["./README.md", …] or ["/README.md", …]      → docs/README.md absent
+  ```
+
+  What shipped was **an index of seventeen documents the package does not contain** — a table of
+  contents pointing into the void on the integrator's disk. The line is gone from `files`; npm
+  always includes the root README, which a guard now verifies on every run instead of assuming.
+
+### Fixed
+- **Nine of the README's twelve relative links led nowhere once the package was installed.**
+  `docs/API.md`, `SECURITY.md`, `CONTRIBUTING.md`, `docs/ARCHITECTURE.md`, the CLA — none of them
+  ship. On npmjs.com the page renders and links are rewritten to the repository; inside
+  `node_modules` there is nothing to resolve them against. Twelve links are now absolute, in the
+  README and in the host contract.
+  - ⚠️ The rule is **not** "no relative links". A relative link to a file that *does* ship works in
+    the repository, on npmjs.com and offline; it is the link to an absent file that lies. The guard
+    derives its perimeter from the tarball inventory, so publishing a document makes links to it
+    legitimate with nothing to edit.
+
+### Added
+- **CI refuses a document that ships without being decided, and one that was decided and does not
+  ship.** The confrontation runs both ways on purpose: the first defect found was an absence that
+  looked like a decision, and its mirror — a presence nobody chose — turned out to exist in the
+  same package. The symmetry covers documents only; demanding the exact list of shipped code would
+  be a second copy of `files` that nothing confronts.
+- **CI refuses a relative link in a published document whose target does not ship**, naming
+  `file:line`.
+- **[`AGENTS.md`](AGENTS.md) records why a self-accusation goes unchecked.** One session wrote that
+  a verification our pipeline performs did not exist; the other built on it rather than re-reading
+  the workflow, because a claim that costs its author reads as already verified. The rule: state
+  **where** a property is held rather than that it is missing — the first can be checked against a
+  file, the second against nothing.
+
+### Changed
+- **[`docs/VERIFYING-RELEASES.md`](docs/VERIFYING-RELEASES.md) gains what a reader could not
+  conclude alone.** Two attestations exist per version — npm attests
+  `pkg:npm/discovery-media-player@…` in `sha512`, the GitHub Release attests the `.tgz` in `sha256`
+  — and each verifies without saying anything about the other. The release workflow already
+  refuses to attach an archive whose digest differs from what the registry serves, so this is not a
+  gap in the pipeline; it is a gap in what someone downloading can establish for themselves. The
+  page now says which is which, and adds the step that ties a verified archive to the copy you
+  actually install: your own lockfile's `integrity`.
+  - A table records what was checked from the outside, with the date and the digest, and separates
+    **what was measured here from what was reported to us**. An empty row means nobody looked from
+    the outside — not that nothing was wrong.
+
+### Decided
+- **The package does not ship its CHANGELOG, and that is now written down rather than silent.** It
+  was added, then removed within the day. The test that settled it: *remove the document — does an
+  **obligation** become unverifiable?* Removing the host contract or the retention policy, yes;
+  removing a history, no. What settled it in practice was not the reasoning but a measurement — an
+  integrating host upgraded four versions and opened the CHANGELOG zero times. Price avoided:
+  **+29 %** on the compressed tarball, growing by one section per release. The shipped README
+  carries the address of the history instead.
+
+Package: **62 entries and 319 190 compressed bytes**, against 63 and 320 659 for 0.1.134.
+
 ## [0.1.134] — 2026-08-24
 
 An ordinary train. Two behaviour fixes, three expectations written down for hosts, and the badge —
@@ -3765,7 +3834,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.134...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.135...HEAD
+[0.1.135]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.134...v0.1.135
 [0.1.134]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.133...v0.1.134
 [0.1.133]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.132...v0.1.133
 [0.1.132]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.131...v0.1.132
