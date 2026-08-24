@@ -129,6 +129,31 @@ describe("page d'accueil du mode dossier", () => {
   });
 });
 
+// ⚠️ LA PAGE D'ACCUEIL ÉTAIT LA SEULE PAGE HTML SERVIE SANS LES EN-TÊTES QUE LA VISIONNEUSE POSE
+// PARTOUT — pas de CSP, pas de `nosniff`, encadrable par n'importe qui. Relevé par le premier
+// scan ZAP baseline (règles 10038, 10021, 10020 — 24/08) : la visionneuse, elle, était déjà
+// irréprochable, parce que ses en-têtes passent par des aides dédiées. Cette route-ci écrivait
+// les siens à la main, et la règle ne l'avait pas suivie.
+describe("les en-têtes de la page d'accueil", () => {
+  const { serveur } = require("../serve.js");
+  // Le serveur n'écoute pas pendant les tests (garde dans serve.js) : on appelle son gestionnaire
+  // de requêtes directement, comme les tests du player appellent `handler`.
+  const repondre = serveur.listeners("request")[0];
+
+  it("pose CSP, nosniff et interdit l'encadrement", async () => {
+    const res = { entetes: null, corps: "", writeHead(_c, h) { this.entetes = h; }, end(b) { this.corps = String(b || ""); } };
+    await repondre({ url: "/", headers: {}, method: "GET" }, res);
+    expect(res.entetes["X-Content-Type-Options"]).toBe("nosniff");
+    expect(res.entetes["Referrer-Policy"]).toBe("strict-origin-when-cross-origin");
+    const csp = res.entetes["Content-Security-Policy"] || "";
+    expect(csp, "sans default-src 'none', tout ce qui n'est pas nommé est permis").toContain("default-src 'none'");
+    expect(csp, "personne n'a de raison d'encadrer la page d'accueil").toContain("frame-ancestors 'none'");
+    // La page n'a qu'un bloc <style> à elle : c'est la SEULE chose que la CSP doit permettre.
+    expect(csp).toContain("style-src 'unsafe-inline'");
+    expect(res.corps).toContain("Discovery Media Player");
+  });
+});
+
 // ⚠️ LA PAGE DE PREMIER CONTACT NE DOIT PROMETTRE QUE CE QUE LA VISIONNEUSE SAIT OUVRIR.
 //
 // Elle tenait sa propre liste d'extensions, qui contenait encore `.svg` après son retrait de la

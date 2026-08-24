@@ -119,7 +119,18 @@ const serveur = http.createServer(async (req, res) => {
 
   // Mode dossier : la racine du serveur montre ce qu'il y a à lire.
   if ((url.pathname === "/" || url.pathname === "/preview" || url.pathname === "/preview/") && process.env.PLAYER_LOCAL_ROOT) {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+    res.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+      // ⚠️ Les MÊMES protections que la visionneuse, écrites pour la page qui n'y passait pas.
+      // C'était la seule page HTML servie sans CSP ni `nosniff`, encadrable par n'importe qui —
+      // relevé par le premier scan ZAP baseline (24/08). Elle n'a ni script, ni image, ni
+      // formulaire : tout est refusé, sauf son unique bloc <style>.
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "strict-origin-when-cross-origin",
+      "Content-Security-Policy":
+        "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    });
     res.end(await pageAccueil(path.resolve(process.env.PLAYER_LOCAL_ROOT)));
     return;
   }
