@@ -54,6 +54,12 @@ describe("le player répond sans plateforme", () => {
     const res = await appel(params("/preview/rapport.pdf"));
     expect(res.statusCode).toBe(200);
     expect(String(res.body)).toMatch(/Player\.tracking\.createTracker\(/);
+    // ⚠️ Ce que la page n'utilise pas est refusé PAR ÉCRIT (Permissions-Policy) : sans la ligne,
+    // un script tiers compromis hérite de tout ce que le navigateur sait faire. Relevé par le
+    // premier passage CI du scan ZAP (règle 10063, 24/08) — le passage local, scanners par
+    // défaut, ne l'avait pas vu. Le plein écran n'y est PAS refusé : la présentation s'en sert.
+    expect(res.headers["permissions-policy"]).toContain("camera=()");
+    expect(res.headers["permissions-policy"]).toContain("geolocation=()");
   });
 
   it("sert le fichier avec sa vraie taille et accepte un Range", async () => {
@@ -150,6 +156,7 @@ describe("les en-têtes de la page d'accueil", () => {
     expect(csp, "personne n'a de raison d'encadrer la page d'accueil").toContain("frame-ancestors 'none'");
     // La page n'a qu'un bloc <style> à elle : c'est la SEULE chose que la CSP doit permettre.
     expect(csp).toContain("style-src 'unsafe-inline'");
+    expect(res.entetes["Permissions-Policy"], "même refus écrit que les pages de la visionneuse").toContain("camera=()");
     expect(res.corps).toContain("Discovery Media Player");
   });
 });

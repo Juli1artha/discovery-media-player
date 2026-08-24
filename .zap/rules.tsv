@@ -19,3 +19,14 @@
 # 10109 : « Modern Web Application » constate que la page utilise du JavaScript. C'est un
 # constat, pas un défaut.
 10109	IGNORE	(constat informatif : la visionneuse est une application JavaScript, oui)
+#
+# 10049 : « Non-Storable Content » reproche aux réponses de ne PAS être mises en cache. C'est
+# le Cache-Control: no-store DÉLIBÉRÉ de ce player : il sert des documents commerciaux traqués
+# par destinataire — rien ne doit survivre dans un cache partagé. La règle décrit la propriété
+# recherchée, pas un défaut.
+10049	IGNORE	(no-store est une decision : documents commerciaux traques, rien ne doit rester en cache)
+#
+# 90004 : COEP require-corp exigerait que chaque tiers (tuiles OSM, unpkg, gstatic…) envoie
+# CORP/CORS — plusieurs ne le font pas, la visionneuse perdrait ses cartes. L'isolation croisée
+# ne protège que SharedArrayBuffer et les timers fins, dont ces pages ne se servent pas.
+90004	IGNORE	(COEP casserait les tiers de la visionneuse ; pas de SharedArrayBuffer ici, rien a isoler)

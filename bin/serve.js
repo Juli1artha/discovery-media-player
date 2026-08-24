@@ -128,6 +128,8 @@ const serveur = http.createServer(async (req, res) => {
       // formulaire : tout est refusé, sauf son unique bloc <style>.
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "strict-origin-when-cross-origin",
+      // La définition vit dans le player (une seule copie du fait) — voir son commentaire.
+      "Permissions-Policy": player.POLITIQUE_PERMISSIONS,
       "Content-Security-Policy":
         "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     });

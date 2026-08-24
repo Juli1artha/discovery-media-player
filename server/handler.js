@@ -197,6 +197,15 @@ function refuserEnTexte(res, statut, message) {
   res.end(message);
 }
 
+// ⚠️ CE QUE LES PAGES N'UTILISENT PAS EST REFUSÉ PAR ÉCRIT. Sans Permissions-Policy, un script
+// tiers compromis (le risque exact que l'inventaire TIERS épingle) hérite de tout ce que le
+// navigateur sait faire — caméra, micro, position. Aucune page ici ne s'en sert : on le dit.
+// Le plein écran n'est PAS refusé — la présentation s'en sert (page-visionneuse.js). Relevé par
+// le premier passage CI du scan ZAP (règle 10063, 24/08) ; le passage local, scanners par
+// défaut, ne l'avait pas vu. UNE définition, exportée : bin/serve.js pose la même — deux
+// exemplaires d'un fait divergent, c'est la formule du dépôt.
+const POLITIQUE_PERMISSIONS = "camera=(), microphone=(), geolocation=(), payment=()";
+
 async function relayerFichier(res, r, disposition) {
   if (!r) { refuserEnTexte(res, 404, "Fichier indisponible"); return; }
   // 413 et 416 sont des REFUS ARGUMENTÉS de l'amont local (plafond, borne absurde) : les fondre
@@ -306,6 +315,7 @@ function sendHtml(res, status, html, scriptSrc, imgExtra, frameAncestors) {
   res.setHeader("Cache-Control", "no-store, max-age=0");
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", POLITIQUE_PERMISSIONS);
   res.setHeader("Content-Security-Policy", [
     "default-src 'none'",
     // ⚠️ `'none'` DOIT ÊTRE SEUL ou la directive est invalide — « 'none' 'self' » a fait rejeter
@@ -349,6 +359,7 @@ function sendSoftWallHtml(res, html, nonce, imgExtra, frameAncestors) {
   res.setHeader("Cache-Control", "no-store, max-age=0");
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", POLITIQUE_PERMISSIONS);
   res.setHeader("Content-Security-Policy", [
     "default-src 'none'",
     `script-src 'nonce-${nonce}' https://accounts.google.com/gsi/client`,
@@ -437,6 +448,7 @@ function sendPresentHtml(res, html, nonce, supaUrl, imgExtra, frameAncestors) {
   res.setHeader("Cache-Control", "no-store, max-age=0");
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", POLITIQUE_PERMISSIONS);
   res.setHeader("Content-Security-Policy", [
     "default-src 'none'",
     `script-src 'nonce-${nonce}' 'self' https://cdn.jsdelivr.net https://unpkg.com https://maps.googleapis.com https://maps.gstatic.com`,
@@ -1023,6 +1035,6 @@ async function handler(req, res) {
 // tenir une seconde liste — c'est la seule façon qu'une empreinte périmée finisse par se voir.
 // ⚠️ Exporté pour être ÉPROUVÉ, pas pour être appelé : le plafond du relais ne se vérifie qu en
 // regardant si le corps a été lu, ce qu aucune route ne peut montrer de l extérieur.
-module.exports = { handler, init, TIERS, __relayerFichier: relayerFichier, __jsonPourScript: jsonPourScript };
+module.exports = { handler, init, TIERS, POLITIQUE_PERMISSIONS, __relayerFichier: relayerFichier, __jsonPourScript: jsonPourScript };
 
 // redeploy: forcer le build production (Vercel a sauté la prod du merge #463 — wording re-partage).
