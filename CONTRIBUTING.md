@@ -36,10 +36,14 @@ one went red tells you where to look before you read a single line of output.
 
 | Bench | Command | What it proves | When it runs |
 |---|---|---|---|
-| Unit + integration | `npm test` | Behaviour, in-process against a temporary folder. 1515 tests, no network, no database | Every push and pull request, on Node 22 **and** 24 |
-| Browser | `npm run test:e2e` | That a real engine accepts the pages — CSP is actually enforced, and an axe-core pass checks accessibility | Every push and pull request |
-| Real database | `npm run test:base` | Behaviour against a real PostgREST and Postgres, not a stub, including a hardening probe | Every push and pull request |
-| Cost under load | `npm run test:charge` | Database round trips **per gesture**, at a thousand viewers and on a deliberately slowed database | Every push and pull request |
+| Unit + integration | `npm test` | Behaviour, in-process against a temporary folder — no network, no database | Every pull request, and every push to `main`, on Node 22 **and** 24 |
+| Browser | `npm run test:e2e` | That a real engine accepts the pages — CSP is actually enforced, and an axe-core pass checks accessibility | Every pull request, and every push to `main` |
+| Real database | `npm run test:base` | Behaviour against a real PostgREST and Postgres, not a stub, including a hardening probe | Every pull request, and every push to `main` |
+| Cost under load | `npm run test:charge` | Database round trips **per gesture**, at a thousand viewers and on a deliberately slowed database | Every pull request, and every push to `main` |
+
+> ⚠️ **A push to a working branch runs nothing.** `ci.yml` triggers on `pull_request` and on
+> `push: branches: [main]` — this table used to say "every push", which reads as a safety net that
+> is not there. Open the pull request early if you want the benches to speak.
 
 Alongside them, on the same trigger: `npm run lint`, `npm run typecheck`, CodeQL, a blocking
 dependency-vulnerability check, and the guards in `tools/` — every action pinned to a commit SHA,
