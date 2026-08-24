@@ -10,6 +10,66 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.134] — 2026-08-24
+
+An ordinary train. Two behaviour fixes, three expectations written down for hosts, and the badge —
+none of them meeting the two exceptions [`docs/RELEASING.md`](docs/RELEASING.md) allows for leaving
+outside a train, which is what keeps those two exceptions worth something.
+
+### Fixed
+- **A database conflict was recognised by finding `409` anywhere in the error message.** Six call
+  sites read `message.includes("409")`. But the message carries the **path**, so it carries the
+  slug, the id, the page number. Measured on the shapes the shipped context actually composes:
+
+  ```
+  POST  /doc_presentation_attendees                  → 409   conflict  ✅
+  POST  /doc_presentation_attendees?slug=eq.demo409  → 500   conflict  ❌
+  PATCH /doc_bot_sessions?id=eq.sess-409abc          → 500   conflict  ❌
+  GET   /doc_pages?page=eq.409                       → 503   conflict  ❌
+  ```
+
+  Three in four. And every site reads `if (!conflict) throw`, so **a genuine 500 was swallowed** and
+  the code carried on as though the row already existed. One document whose slug contains `409` —
+  a reference number, a date — was enough.
+  - ⚠️ **The fact already existed.** `erreur.statusCode` has been set since the PGRST202 fix, and
+    that comment says both shipped contexts converge on it. The six sites read the text beside it:
+    not for want of a fact, out of habit. `server/erreurs-base.js` now holds the only copy — status
+    first, text only in its absence, and the fallback accepts `409` **after the arrow** alone, where
+    a status lives and a slug cannot.
+- **Three guards knew where the defect was and did not say.** Made to fail one by one to read what
+  they render — a test none of them was under, since they were only ever exercised as *green or
+  red*. `actions-versions` and `images-epinglees` printed the file without the line they already
+  held; the environment guard named the forgotten variable and left you to find it across three
+  directories. All three now answer `file:line`.
+  - ⚠️ `dockerfile-ast` counts lines from **zero**. Without the `+1` the position would be off by
+    one — and a position wrong by one line reads as a correct position, which is worse than no
+    position at all. A bench asserts the positions are **distinct**, not merely present.
+
+### Changed
+- **Three expectations for host plugins are now written in
+  [`docs/HOST-CONTRACT.md`](docs/HOST-CONTRACT.md)**, each earned by a measurement rather than by
+  reasoning:
+  - **a row written on behalf of a session also carries the document.** On one production host the
+    leads table recorded it and the messages table did not: 46 leads verdictable and none crossed,
+    1 693 messages **not measurable**. Same incident, same instance, two answers — decided months
+    earlier by one column.
+  - **the expectation is answerability, not a column name.** That same host then swept eight tables:
+    seven already recorded the document, under four different names. Their first sweep looked for
+    the two names this page happens to use and would have accused three correct tables.
+  - **a database error carries its status as a number**, not inside its message.
+- **The session-binding count now names the gap** instead of returning two truncated lists. It
+  refused without saying what to fix — the defect a neighbouring guard has a dedicated case to
+  forbid, three files away.
+- **[`MAINTAINERS.md`](MAINTAINERS.md) records the review that cannot happen here.** A change cannot
+  be reviewed by someone who is not its author, and no setting fixes that; it is answered *Unmet* on
+  the OpenSSF form rather than dressed up. What stands in for review is named **without claiming to
+  equal it**: a guard catches what someone thought to encode, a reviewer catches what nobody thought
+  of.
+
+### Added
+- **The [OpenSSF Best Practices](https://www.bestpractices.dev/projects/14197) badge** — the only
+  one in that row that does not attest to an automatic measurement.
+
 ## [0.1.133] — 2026-08-24
 
 ⚠️ **`0.1.132` was tagged but never published.** Its CI was red, and the release job refused —
@@ -3705,7 +3765,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.133...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.134...HEAD
+[0.1.134]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.133...v0.1.134
 [0.1.133]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.132...v0.1.133
 [0.1.132]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.131...v0.1.132
 [0.1.131]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.130...v0.1.131
