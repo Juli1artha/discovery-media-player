@@ -1,0 +1,32 @@
+# LE TRI DU SCAN ZAP — chaque ligne est une DÉCISION écrite, jamais un silence.
+#
+# Le scan (zap.yml) échoue sur toute alerte qui n'est pas triée ici : une règle absente de ce
+# fichier est bloquante par défaut (WARN → code de sortie 2). N'inscrire une règle ici qu'avec
+# sa raison — une exception fondue dans le décor devient la règle (la leçon de SANS_EMPREINTE
+# dans server/handler.js, qui s'applique mot pour mot).
+#
+# Format : <id de règle> <TAB> <IGNORE|INFO|WARN|FAIL> <TAB> (raison). Trois champs, tabulations.
+#
+# 10055 : la CSP des pages porte style-src 'unsafe-inline', et c'est une décision écrite dans
+# server/handler.js — pas de framework CSS, les styles sont inline et aucun script inline n'est
+# permis (nonce partout). La retirer casserait l'affichage sans rien protéger de plus.
+10055	IGNORE	(style-src unsafe-inline : decision ecrite dans server/handler.js, scripts sous nonce)
+#
+# 10027 : la règle repère des MOTS (« bug », « user », « xxx »…) dans le JS servi — ici le bundle
+# de la visionneuse et pdf.js, du code public et relu. Elle repère des mots, pas des fuites.
+10027	IGNORE	(commentaires du bundle public de la visionneuse et de pdf.js : des mots, pas des secrets)
+#
+# 10109 : « Modern Web Application » constate que la page utilise du JavaScript. C'est un
+# constat, pas un défaut.
+10109	IGNORE	(constat informatif : la visionneuse est une application JavaScript, oui)
+#
+# 10049 : « Non-Storable Content » reproche aux réponses de ne PAS être mises en cache. C'est
+# le Cache-Control: no-store DÉLIBÉRÉ de ce player : il sert des documents commerciaux traqués
+# par destinataire — rien ne doit survivre dans un cache partagé. La règle décrit la propriété
+# recherchée, pas un défaut.
+10049	IGNORE	(no-store est une decision : documents commerciaux traques, rien ne doit rester en cache)
+#
+# 90004 : COEP require-corp exigerait que chaque tiers (tuiles OSM, unpkg, gstatic…) envoie
+# CORP/CORS — plusieurs ne le font pas, la visionneuse perdrait ses cartes. L'isolation croisée
+# ne protège que SharedArrayBuffer et les timers fins, dont ces pages ne se servent pas.
+90004	IGNORE	(COEP casserait les tiers de la visionneuse ; pas de SharedArrayBuffer ici, rien a isoler)

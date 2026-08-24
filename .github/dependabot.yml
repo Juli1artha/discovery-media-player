@@ -68,3 +68,13 @@ updates:
     ignore:
       - dependency-name: node
         update-types: ["version-update:semver-major"]
+
+  # ⚠️ L'IMAGE DU SCANNER ZAP SUIT LA MÊME RÈGLE QUE L'IMAGE NODE : épinglée par condensat,
+  # montée par Dependabot. Entrée séparée parce que l'écosystème docker ne lit que le répertoire
+  # qu'on lui donne — celle du dessus regarde `/`, pas `/.zap`. Monter le scanner, c'est monter
+  # ses RÈGLES : la PR Dependabot déclenche le scan (zap.yml écoute pull_request), donc une règle
+  # nouvelle qui mord se voit dans SA CI, pas dans celle du contributeur suivant.
+  - package-ecosystem: docker
+    directory: /.zap
+    schedule: { interval: monthly }
+    commit-message: { prefix: "chore(ci)" }

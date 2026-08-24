@@ -54,6 +54,12 @@ describe("le player répond sans plateforme", () => {
     const res = await appel(params("/preview/rapport.pdf"));
     expect(res.statusCode).toBe(200);
     expect(String(res.body)).toMatch(/Player\.tracking\.createTracker\(/);
+    // ⚠️ Ce que la page n'utilise pas est refusé PAR ÉCRIT (Permissions-Policy) : sans la ligne,
+    // un script tiers compromis hérite de tout ce que le navigateur sait faire. Relevé par le
+    // premier passage CI du scan ZAP (règle 10063, 24/08) — le passage local, scanners par
+    // défaut, ne l'avait pas vu. Le plein écran n'y est PAS refusé : la présentation s'en sert.
+    expect(res.headers["permissions-policy"]).toContain("camera=()");
+    expect(res.headers["permissions-policy"]).toContain("geolocation=()");
   });
 
   it("sert le fichier avec sa vraie taille et accepte un Range", async () => {
@@ -126,6 +132,32 @@ describe("page d'accueil du mode dossier", () => {
     const html = await pageAccueil(dir);
     expect(html).not.toContain("<img src=x");
     expect(html).toContain("&lt;img");
+  });
+});
+
+// ⚠️ LA PAGE D'ACCUEIL ÉTAIT LA SEULE PAGE HTML SERVIE SANS LES EN-TÊTES QUE LA VISIONNEUSE POSE
+// PARTOUT — pas de CSP, pas de `nosniff`, encadrable par n'importe qui. Relevé par le premier
+// scan ZAP baseline (règles 10038, 10021, 10020 — 24/08) : la visionneuse, elle, était déjà
+// irréprochable, parce que ses en-têtes passent par des aides dédiées. Cette route-ci écrivait
+// les siens à la main, et la règle ne l'avait pas suivie.
+describe("les en-têtes de la page d'accueil", () => {
+  const { serveur } = require("../serve.js");
+  // Le serveur n'écoute pas pendant les tests (garde dans serve.js) : on appelle son gestionnaire
+  // de requêtes directement, comme les tests du player appellent `handler`.
+  const repondre = serveur.listeners("request")[0];
+
+  it("pose CSP, nosniff et interdit l'encadrement", async () => {
+    const res = { entetes: null, corps: "", writeHead(_c, h) { this.entetes = h; }, end(b) { this.corps = String(b || ""); } };
+    await repondre({ url: "/", headers: {}, method: "GET" }, res);
+    expect(res.entetes["X-Content-Type-Options"]).toBe("nosniff");
+    expect(res.entetes["Referrer-Policy"]).toBe("strict-origin-when-cross-origin");
+    const csp = res.entetes["Content-Security-Policy"] || "";
+    expect(csp, "sans default-src 'none', tout ce qui n'est pas nommé est permis").toContain("default-src 'none'");
+    expect(csp, "personne n'a de raison d'encadrer la page d'accueil").toContain("frame-ancestors 'none'");
+    // La page n'a qu'un bloc <style> à elle : c'est la SEULE chose que la CSP doit permettre.
+    expect(csp).toContain("style-src 'unsafe-inline'");
+    expect(res.entetes["Permissions-Policy"], "même refus écrit que les pages de la visionneuse").toContain("camera=()");
+    expect(res.corps).toContain("Discovery Media Player");
   });
 });
 
