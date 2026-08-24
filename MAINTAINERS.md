@@ -89,6 +89,14 @@ project's guards exist to prevent. Concretely:
 
 - A vulnerability report arriving while that person is unavailable waits. The 72-hour
   acknowledgement in [`SECURITY.md`](SECURITY.md) is a commitment made by one person, not a rota.
+- **A change cannot be reviewed by someone who is not its author**, and no setting fixes that.
+  Every change here is authored by the only person who could approve it, and GitHub does not allow
+  self-approval. This is answered **Unmet** on the OpenSSF Best Practices form
+  ([project 14197](https://www.bestpractices.dev/projects/14197)) rather than explained away — the
+  remedy is a second reviewer, and the vetting that would apply to them is written under *Granting
+  access* above. What stands in for review meanwhile is stated plainly, so nobody mistakes it for
+  the same thing: guards that refuse in CI, a test that must fail without the behaviour it defends,
+  and mutation rather than reading to establish that it does.
 - Nothing is lost if that person disappears: the source is AGPL-3.0-or-later, the full history is
   public, releases are reproducible from a clean `npm ci` plus `npm run build`, and every published
   version carries a signed provenance attestation binding it to the commit that built it. A fork
