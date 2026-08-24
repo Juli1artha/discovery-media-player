@@ -127,8 +127,8 @@ forking it. A fix lands once and reaches every instance on its next deploy.
 It reads `req.query` when the platform provides it (serverless, Express) and falls back to parsing
 `req.url` when it does not — so a bare `http.createServer` works too, without a shim.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the boundary, and
-[`docs/API.md`](docs/API.md) for the surface an integrator implements.
+See [`docs/ARCHITECTURE.md`](https://github.com/Juli1artha/discovery-media-player/blob/main/docs/ARCHITECTURE.md) for the boundary, and
+[`docs/API.md`](https://github.com/Juli1artha/discovery-media-player/blob/main/docs/API.md) for the surface an integrator implements.
 
 ---
 
@@ -152,8 +152,8 @@ Minimum configuration:
 | `PLAYER_BRAND_NAME`, `PLAYER_LOADER_NAME` | your name in the tab title and the loader |
 | `PLAYER_SOURCE_URL` | where readers can obtain the source (AGPL, see below) |
 
-Full list: [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md).
-Examples you can copy: [`examples/`](examples/).
+Full list: [`docs/CONFIGURATION.md`](https://github.com/Juli1artha/discovery-media-player/blob/main/docs/CONFIGURATION.md).
+Examples you can copy: [`examples/`](https://github.com/Juli1artha/discovery-media-player/tree/main/examples).
 
 ---
 
@@ -166,10 +166,10 @@ your private network.
 
 The project has been through repeated external audits. The reports are published in the
 repository, unedited, with their follow-up ledgers — findings, fixes, and what was rejected
-with its reason: see [`docs/`](docs/README.md). Fixes are traced version by version in the
-[CHANGELOG](CHANGELOG.md).
+with its reason: see [`docs/`](https://github.com/Juli1artha/discovery-media-player/blob/main/docs/README.md). Fixes are traced version by version in the
+[CHANGELOG](https://github.com/Juli1artha/discovery-media-player/blob/main/CHANGELOG.md).
 
-Found a hole? [`SECURITY.md`](SECURITY.md) — please do not open a public issue.
+Found a hole? [`SECURITY.md`](https://github.com/Juli1artha/discovery-media-player/blob/main/SECURITY.md) — please do not open a public issue.
 
 ---
 
@@ -185,7 +185,7 @@ Player* are trademarks of 3D Discovery: fork the code freely, but call your fork
 This is the usual arrangement in open source, and it protects you as much as us — nobody should
 be able to publish something under this name that we did not write.
 
-One exception, on purpose: **[`src/bridge.ts`](src/bridge.ts) is MIT**
+One exception, on purpose: **[`src/bridge.ts`](https://github.com/Juli1artha/discovery-media-player/blob/main/src/bridge.ts) is MIT**
 ([`LICENSE-MIT`](LICENSE-MIT)). It is the message contract a host application imports to talk to
 the player. Putting it under the core licence would make integration itself a toll. We protect
 the player, not the people plugging into it.
@@ -194,10 +194,10 @@ the player, not the people plugging into it.
 
 ## Contributing
 
-[`CONTRIBUTING.md`](CONTRIBUTING.md) — how to run the tests, what the review looks for, and the
+[`CONTRIBUTING.md`](https://github.com/Juli1artha/discovery-media-player/blob/main/CONTRIBUTING.md) — how to run the tests, what the review looks for, and the
 one rule that matters: a behaviour worth keeping is worth a test that fails without it.
 
-Your first pull request asks you to sign the [CLA](CLA.md) — one reply, once, for good. You keep
+Your first pull request asks you to sign the [CLA](https://github.com/Juli1artha/discovery-media-player/blob/main/CLA.md) — one reply, once, for good. You keep
 the copyright in your work; you grant a licence that may be sublicensed, so that the core can stay
 AGPL while a commercial licence remains possible for organisations that cannot live with the
 network clause. Better said before you write the patch than after.
