@@ -391,7 +391,7 @@ The rule underneath, safer than the list: **never fall back on a refusal of *acc
 back on an inability to *reach*.** And "do not fall back" applies to what you **offer** — an
 "Open ↗" button left in place is falling back one second later.
 
-## Three things that will bite
+## Four things that will bite
 
 **Your document-opening doors reappear.** A host has more than one place that opens a file, and new
 ones get written. Keep the list and hunt it periodically — and note that **your search criteria
@@ -425,6 +425,28 @@ correct tables. So when you check your own schema, write the check from **what y
 not from a list of column names borrowed from someone else's — a coarse check has no false
 positives to excuse, it has a pattern to derive. The question each row must be able to answer is
 *which document was this written for*; the key that answers it is yours to name.
+
+**A database error carries its status as a number, not inside its message.** Set `statusCode` (or
+`status`) on whatever `db.request` throws. Both contexts shipped here already do; a host that
+implements the seam itself may not, and the player then has to guess from the text.
+
+Guessing was the state until 24/08, at six call sites: `message.includes("409")` — the digits
+anywhere in the string. But the message carries the **path**, so it carries the slug, the id, the
+page number. Measured on the real shapes:
+
+```
+Supabase POST  /doc_presentation_attendees                  → 409   conflict   ✅
+Supabase POST  /doc_presentation_attendees?slug=eq.demo409  → 500   conflict   ❌
+Supabase PATCH /doc_bot_sessions?id=eq.sess-409abc          → 500   conflict   ❌
+Supabase GET   /doc_pages?page=eq.409                       → 503   conflict   ❌
+```
+
+Three in four. And every site reads `if (!conflict) throw`, so a genuine 500 was **swallowed** and
+the code carried on as though the row already existed. One document whose slug contains `409` —
+a reference number, a date — was enough.
+
+The fallback that remains accepts `409` only **after the arrow**, where a status lives and a slug
+cannot. Setting the number spares you that reasoning entirely.
 
 **Configured is not served.** When a diagnosis is disputed, the useful question is not who is right
 but *did you measure exactly what fails*. Two true statements about the same instance can describe

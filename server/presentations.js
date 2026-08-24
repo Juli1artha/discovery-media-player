@@ -589,7 +589,7 @@ async function addMessage(slug, { name, email, avatar, isPresenter, isMember, bo
     // attendu n'est pas un incident — mais rien ne distinguait « je sais ce que je rattrape » de
     // « j'avale tout ». On le dit donc : ce qui n'est pas le conflit attendu remonte, et le conflit
     // attendu est journalisé une fois, en clair, parce qu'un renvoi fréquent est une information.
-    const conflit = cle && String((erreur && erreur.message) || "").includes("409");
+    const conflit = cle && estConflit(erreur);
     if (!conflit) throw erreur;
     try { PLAYER.errors.capture(new Error("message déjà enregistré (renvoi) : " + String(slug)), { route: "present-chat", benin: true }); } catch { /* jamais bloquant */ }
     const deja = await PLAYER.db.request(
@@ -1163,7 +1163,7 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
         // simultanés (deux onglets ouverts ensemble), et le second recevait un 409 que personne ne
         // rattrapait — un 500 pour un battement, bénin mais faux. Le conflit dit « la ligne existe
         // maintenant » : on la relit et on continue en mise à jour. Tout autre échec remonte.
-        if (!String((erreur && erreur.message) || "").includes("409")) throw erreur;
+        if (!estConflit(erreur)) throw erreur;
         // Journalisé comme bénin : deux onglets qui arrivent ensemble sont une information, pas
         // une panne — et la garde des écritures muettes exige que tout rattrapage parle.
         try { PLAYER.errors.capture(new Error("présence déjà ouverte (second onglet) : " + String(slug)), { route: "present-attend", benin: true }); } catch { /* jamais bloquant */ }
@@ -1284,6 +1284,7 @@ async function switchPresentationDoc(slug, email, isAdmin, { fileUrl, fileName, 
 // Il traverse trois frontières (présentateur → serveur → audience) : deux implémentations
 // finissaient par diverger, et une audience qui ne voit pas la bonne carte n'émet aucune erreur.
 const { sanitizeContent } = require("./shared.generated.js");
+const { estConflit } = require("./erreurs-base.js");
 
 /**
  * Une présentation close ne se pilote plus par le chemin PROPRIÉTAIRE.
