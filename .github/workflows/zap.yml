@@ -1,0 +1,86 @@
+# ⚠️ CE QUE CODEQL NE PEUT PAS VOIR : L'APPLICATION EN MARCHE.
+#
+# CodeQL lit le code, Scorecard note les pratiques, les 1100 tests appellent le gestionnaire en
+# mémoire — et AUCUN des trois ne voit ce qu'un navigateur reçoit vraiment : les en-têtes, les
+# CSP, les cookies, tels qu'ils sortent du serveur assemblé. C'est ainsi que la page d'accueil du
+# mode dossier a servi du HTML sans CSP ni `nosniff` pendant que la visionneuse, testée en
+# mémoire, était irréprochable — trouvé par le PREMIER passage de ce scan (24/08), avant même
+# qu'il soit en CI. Un scan dynamique n'est pas une redondance des trois autres : c'est le seul
+# des quatre qui regarde par la fenêtre du visiteur.
+#
+# ⚠️ BASELINE, ET PAS FULL SCAN, PAR DÉCISION. Le scan baseline est PASSIF : il parcourt et
+# observe, il n'injecte rien. Le full scan attaque — et une CI qui attaque sa propre instance
+# jetable n'apprendrait pas grand-chose de plus sur un player sans base, tout en multipliant la
+# durée du job. Le jour où ce dépôt veut éprouver les liens tracés en conditions réelles, c'est
+# une décision à écrire ici, pas une option à cocher.
+#
+# ⚠️ TOUTE ALERTE NON TRIÉE BLOQUE. La baseline sort en erreur dès qu'une alerte reste au niveau
+# WARN (son défaut). Le tri vit dans `.zap/rules.tsv`, une décision écrite par règle — pas de
+# `-I` qui transformerait le garde en rapport que personne ne lit.
+name: ZAP
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Pas de rendez-vous planifié, et c'est un choix : l'image du scanner est épinglée par
+  # condensat (.zap/Dockerfile), donc ses règles ne bougent qu'avec la PR Dependabot qui la
+  # monte — laquelle déclenche déjà ce scan. Un hebdomadaire re-scannerait l'identique ;
+  # CodeQL garde le sien parce que SES règles, elles, bougent sans commit.
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zap-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # On scanne l'IMAGE LIVRÉE, pas un serveur de développement : c'est elle qui tourne chez
+      # les auto-hébergeurs, et c'est donc ses en-têtes à elle qui comptent.
+      - name: Build the shipped image
+        run: docker build -t player-sous-scan .
+
+      # Mode dossier avec le document d'exemple : la plus grande surface accessible sans base —
+      # page d'accueil, visionneuse, flux du fichier, actifs pdf.js. Les routes à base (liens
+      # tracés, présentation) répondent leurs refus, qui sont aussi des réponses à éprouver.
+      - name: Start it in folder mode
+        run: |
+          docker run -d --name player -p 3000:3000 \
+            -v "$PWD/examples/demo/documents:/data:ro" player-sous-scan
+          for i in $(seq 1 30); do
+            curl -fsS localhost:3000/healthz >/dev/null 2>&1 && exit 0; sleep 2
+          done
+          echo "::error::le player n'a jamais répondu sur /healthz"
+          docker logs player
+          exit 1
+
+      # ⚠️ L'ÉTIQUETTE DIT-ELLE LA VÉRITÉ ? Même confrontation que pour l'image Node du
+      # Dockerfile racine : le condensat fait foi pour Docker, la version écrite à côté n'est
+      # qu'un second exemplaire d'un fait — on demande donc à l'image sa version, et on compare.
+      - name: The tag beside the digest tells the truth
+        run: |
+          docker build -t zap-epingle .zap
+          annoncee=$(grep -oE 'zaproxy:[0-9]+\.[0-9]+\.[0-9]+' .zap/Dockerfile | cut -d: -f2)
+          [ -n "$annoncee" ] || { echo "::error::.zap/Dockerfile n'annonce pas de version lisible"; exit 1; }
+          reelle=$(docker run --rm zap-epingle zap.sh -cmd -version 2>/dev/null | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+$' | tail -1)
+          [ -n "$reelle" ] || { echo "::error::l'image n'a pas rendu de version lisible"; exit 1; }
+          if [ "$annoncee" != "$reelle" ]; then
+            echo "::error::l'image embarque ZAP $reelle, mais .zap/Dockerfile annonce $annoncee — le condensat et l'étiquette ne désignent pas la même chose"
+            exit 1
+          fi
+          echo "ZAP $reelle, étiquette et condensat d'accord"
+
+      # `--network host` : le scanner voit le port publié du player, sans réseau à câbler.
+      # `/zap/wrk` doit être INSCRIPTIBLE par l'utilisateur `zap` de l'image (le script y copie
+      # son plan) — d'où la copie hors du dépôt plutôt qu'un montage de `.zap/` lui-même.
+      - name: Baseline scan — passive, untriaged warnings block
+        run: |
+          mkdir -p /tmp/zap-wrk && cp .zap/rules.tsv /tmp/zap-wrk/ && chmod -R a+rwx /tmp/zap-wrk
+          docker run --rm --network host -v /tmp/zap-wrk:/zap/wrk zap-epingle \
+            zap-baseline.py -t http://localhost:3000 -c rules.tsv

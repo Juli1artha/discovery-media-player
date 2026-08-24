@@ -186,18 +186,38 @@ const { adresseAppelant } = require("./appelant");
  */
 const PLAFOND_RELAIS = Number(process.env.PLAYER_MAX_RELAY_BYTES || 0) || 60 * 1024 * 1024;
 
+// ⚠️ UN REFUS EN TEXTE POSE SON TYPE, COMME TOUT LE RESTE. Ces réponses partaient avec un code et
+// un corps, sans Content-Type : le seul corps de ce serveur qu'un navigateur avait le droit de
+// deviner, alors que la règle `nosniff` est écrite partout ailleurs. Relevé par le premier scan
+// ZAP baseline (règle 10019, 24/08).
+function refuserEnTexte(res, statut, message) {
+  res.statusCode = statut;
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.end(message);
+}
+
+// ⚠️ CE QUE LES PAGES N'UTILISENT PAS EST REFUSÉ PAR ÉCRIT. Sans Permissions-Policy, un script
+// tiers compromis (le risque exact que l'inventaire TIERS épingle) hérite de tout ce que le
+// navigateur sait faire — caméra, micro, position. Aucune page ici ne s'en sert : on le dit.
+// Le plein écran n'est PAS refusé — la présentation s'en sert (page-visionneuse.js). Relevé par
+// le premier passage CI du scan ZAP (règle 10063, 24/08) ; le passage local, scanners par
+// défaut, ne l'avait pas vu. UNE définition, exportée : bin/serve.js pose la même — deux
+// exemplaires d'un fait divergent, c'est la formule du dépôt.
+const POLITIQUE_PERMISSIONS = "camera=(), microphone=(), geolocation=(), payment=()";
+
 async function relayerFichier(res, r, disposition) {
-  if (!r) { res.statusCode = 404; res.end("Fichier indisponible"); return; }
+  if (!r) { refuserEnTexte(res, 404, "Fichier indisponible"); return; }
   // 413 et 416 sont des REFUS ARGUMENTÉS de l'amont local (plafond, borne absurde) : les fondre
   // dans un 502 dirait « panne » là où l'amont a dit « demande irrecevable ».
   if (!r.ok && r.status !== 206) {
-    res.statusCode = r.status === 413 || r.status === 416 ? r.status : 502;
-    res.end(r.status === 413 ? "Fichier trop volumineux" : "Fichier indisponible");
+    refuserEnTexte(res, r.status === 413 || r.status === 416 ? r.status : 502,
+      r.status === 413 ? "Fichier trop volumineux" : "Fichier indisponible");
     return;
   }
 
   const compresse = !!r.headers.get("content-encoding");
-  if (compresse && r.status === 206) { res.statusCode = 502; res.end("Fichier indisponible"); return; }
+  if (compresse && r.status === 206) { refuserEnTexte(res, 502, "Fichier indisponible"); return; }
 
   // ⚠️ DEUX BORNES, ET LA SECONDE EST LA SEULE QUI TIENNE DEVANT UN AMONT QUI MENT.
   //
@@ -213,8 +233,7 @@ async function relayerFichier(res, r, disposition) {
   const annoncee = Number(brute || 0);
   if (annoncee > PLAFOND_RELAIS) {
     try { PLAYER.errors.capture(new Error(`relais refusé : ${annoncee} octets au-dessus du plafond de ${PLAFOND_RELAIS}`), { route: "relais" }); } catch { /* jamais bloquant */ }
-    res.statusCode = 413;
-    res.end("Fichier trop volumineux");
+    refuserEnTexte(res, 413, "Fichier trop volumineux");
     // ⚠️ Renoncer ne suffit pas : un corps jamais tiré laisse la connexion amont OUVERTE, et le
     // pool de sockets s'épuise sur les gros fichiers — exactement la ressource qu'on protège.
     try { if (r.body) r.body.cancel(); } catch { /* déjà refermé */ }
@@ -296,6 +315,7 @@ function sendHtml(res, status, html, scriptSrc, imgExtra, frameAncestors) {
   res.setHeader("Cache-Control", "no-store, max-age=0");
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", POLITIQUE_PERMISSIONS);
   res.setHeader("Content-Security-Policy", [
     "default-src 'none'",
     // ⚠️ `'none'` DOIT ÊTRE SEUL ou la directive est invalide — « 'none' 'self' » a fait rejeter
@@ -339,6 +359,7 @@ function sendSoftWallHtml(res, html, nonce, imgExtra, frameAncestors) {
   res.setHeader("Cache-Control", "no-store, max-age=0");
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", POLITIQUE_PERMISSIONS);
   res.setHeader("Content-Security-Policy", [
     "default-src 'none'",
     `script-src 'nonce-${nonce}' https://accounts.google.com/gsi/client`,
@@ -427,6 +448,7 @@ function sendPresentHtml(res, html, nonce, supaUrl, imgExtra, frameAncestors) {
   res.setHeader("Cache-Control", "no-store, max-age=0");
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", POLITIQUE_PERMISSIONS);
   res.setHeader("Content-Security-Policy", [
     "default-src 'none'",
     `script-src 'nonce-${nonce}' 'self' https://cdn.jsdelivr.net https://unpkg.com https://maps.googleapis.com https://maps.gstatic.com`,
@@ -533,7 +555,7 @@ async function handler(req, res) {
       if (!octets) {
         try { octets = global.__actifsPdfjs[fichier] = require("node:fs").readFileSync(require.resolve(fichier)); } catch { /* dépendance absente */ }
       }
-      if (!octets) { res.statusCode = 404; res.end("actif indisponible"); return; }
+      if (!octets) { refuserEnTexte(res, 404, "actif indisponible"); return; }
       res.statusCode = 200;
       res.setHeader("Content-Type", "text/javascript; charset=utf-8");
       res.setHeader("X-Content-Type-Options", "nosniff");
@@ -845,7 +867,7 @@ async function handler(req, res) {
       const pres = await getPresentation(String(q.present));
       if (!pres) return sendRefusal(res, "ended", embed);
       if (String(q.file || "") === "1") {
-        if (!isAllowedStorageUrl(pres.file_url)) { res.statusCode = 404; res.end("Fichier indisponible"); return; }
+        if (!isAllowedStorageUrl(pres.file_url)) { refuserEnTexte(res, 404, "Fichier indisponible"); return; }
         const range = req.headers["range"];
         const r = await PLAYER.storage.fetchFile(pres.file_url, { range });
         await relayerFichier(res, r, null);
@@ -1013,6 +1035,6 @@ async function handler(req, res) {
 // tenir une seconde liste — c'est la seule façon qu'une empreinte périmée finisse par se voir.
 // ⚠️ Exporté pour être ÉPROUVÉ, pas pour être appelé : le plafond du relais ne se vérifie qu en
 // regardant si le corps a été lu, ce qu aucune route ne peut montrer de l extérieur.
-module.exports = { handler, init, TIERS, __relayerFichier: relayerFichier, __jsonPourScript: jsonPourScript };
+module.exports = { handler, init, TIERS, POLITIQUE_PERMISSIONS, __relayerFichier: relayerFichier, __jsonPourScript: jsonPourScript };
 
 // redeploy: forcer le build production (Vercel a sauté la prod du merge #463 — wording re-partage).

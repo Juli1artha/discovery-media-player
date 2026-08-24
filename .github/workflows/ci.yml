@@ -422,9 +422,11 @@ jobs:
       # externe, 21/08). Deux constructions du MÊME commit rendaient deux images : celle qu'on
       # éprouve ici, et celle qu'un auto-hébergeur obtient trois semaines plus tard. Aucune n'est
       # fausse ; rien ne disait laquelle tourne.
+      # `.zap/Dockerfile` entre dans le périmètre : l'image du scanner est une dépendance comme
+      # une autre — mouvante, elle changerait les règles du garde sans qu'aucun commit ne bouge.
       - name: Container base images are pinned to a digest
         if: matrix.node == '22'
-        run: node tools/images-epinglees.mjs Dockerfile
+        run: node tools/images-epinglees.mjs Dockerfile .zap/Dockerfile
 
       # ⚠️ LE SEUL DÉFAUT DE CE DÉPÔT QU'UN COMMIT NE CORRIGE PAS. `.gitignore` exclut `.env` et
       # `.env.*`, et aucun secret n'a jamais été commité — mais `.gitignore` ne protège qu'un
