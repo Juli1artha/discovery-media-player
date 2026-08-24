@@ -10,7 +10,7 @@
 // recherchée ». Le texte et le contrôle se contredisaient, et c'est le contrôle qui gagne.
 
 import { describe, it, expect } from "vitest";
-import { comparerVersions, estStable, acceptables, ecartsExemples, versionsPubliees, exemplesDuDepot, registreExploitable } from "../exemples-epingles.mjs";
+import { comparerVersions, estStable, acceptables, ecartsExemples, versionsPubliees, exemplesDuDepot, registreExploitable, versionsDuChangelog, fenetreHorsLigne, horsFenetre } from "../exemples-epingles.mjs";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -177,6 +177,42 @@ describe("⚠️ REGISTRE INJOIGNABLE : ON NE CONCLUT PAS — ET CE BANC DISAIT 
   });
 });
 
+describe("⚠️ LA FENÊTRE HORS LIGNE NE CONTREDIT JAMAIS CELLE DE LA FORGE", () => {
+  // C'est la propriété qui empêche la divergence du 24/08 de revenir. Deux gardes répondent à
+  // « cette version est-elle installable ? » : celle de la forge interroge le registre et SAIT ;
+  // le banc lit le CHANGELOG et ne sait pas si la section de tête est déjà servie. Une garde qui
+  // ne peut pas savoir ne doit jamais être plus stricte que celle qui sait — sinon elle refuse ce
+  // que l'autre autorise, et le refus tombe sur quelqu'un qui n'a rien fait de mal.
+  const DOCUMENTEES = ["0.1.131", "0.1.130", "0.1.129", "0.1.128"];
+
+  it("⚠️ tout ce que la forge accepte, le banc l'accepte — tête PUBLIÉE", () => {
+    const enLigne = acceptables("0.1.131", ["0.1.129", "0.1.130", "0.1.131"]);
+    for (const v of enLigne) expect(fenetreHorsLigne(DOCUMENTEES), v).toContain(v);
+  });
+
+  it("⚠️ tout ce que la forge accepte, le banc l'accepte — tête PAS ENCORE PUBLIÉE", () => {
+    // L'état d'une PR de sortie : main documente 0.1.131, npm sert encore 0.1.130 et 0.1.129.
+    // C'est exactement le cas où l'ancienne fenêtre à deux refusait 0.1.129.
+    const enLigne = acceptables("0.1.131", ["0.1.128", "0.1.129", "0.1.130"]);
+    expect(enLigne).toContain("0.1.129");
+    for (const v of enLigne) expect(fenetreHorsLigne(DOCUMENTEES), v).toContain(v);
+  });
+
+  it("mais elle reste une garde : le vrai retard est toujours attrapé", () => {
+    // Plus large ne veut pas dire inerte. Sans cette contrepartie, on satisferait les deux cas
+    // ci-dessus en acceptant tout.
+    expect(horsFenetre([{ fichier: "examples/x/package.json", version: "0.1.128" }], fenetreHorsLigne(DOCUMENTEES)))
+      .toHaveLength(1);
+  });
+
+  it("⚠️ et elle REFUSE de conclure sur un CHANGELOG qu'elle n'a pas su lire", () => {
+    // Rendre une fenêtre vide ferait tout tomber « hors fenêtre » ; rendre tout accepterait tout.
+    // Les deux sont des conclusions qu'on n'a pas le droit de tirer.
+    expect(() => fenetreHorsLigne([])).toThrow(/ne peut pas être établie/);
+    expect(() => fenetreHorsLigne(["0.1.131"])).toThrow(/moins de deux versions/);
+  });
+});
+
 describe("le dépôt réel", () => {
   it("a bien trois exemples, et ils épinglent une version exacte", () => {
     const exemples = exemplesDuDepot();
@@ -190,22 +226,14 @@ describe("le dépôt réel", () => {
   // aurait pu VERDIR sur un dépôt en retard, puisque la liste ne bouge plus. C'est la même classe
   // que le relevé daté du banc de coût, trouvé le même jour : un fait figé à côté d'un fait vivant.
   //
-  // ⚠️ UN TEST HORS LIGNE NE PEUT PAS SAVOIR CE QUE NPM SERT — et il ne doit pas essayer. Ce qu'il
-  // peut vérifier, c'est l'invariant qui ne dépend que du dépôt : un exemple épingle l'une des DEUX
-  // dernières versions que le CHANGELOG déclare. C'est la même fenêtre que la règle en forge, avec
-  // une source qui VIEILLIT AVEC LE DÉPÔT au lieu d'être recopiée. La vérification contre le
-  // registre, elle, reste en forge — c'est là que le réseau est légitime.
-  it("les exemples épinglent l'une des deux dernières versions du CHANGELOG", () => {
-    const changelog = readFileSync(join(RACINE, "CHANGELOG.md"), "utf8");
-    const versions = [...changelog.matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)].map((m) => m[1]);
-    // ⚠️ ANTI-VACUITÉ : sans versions lues, la comparaison ci-dessous serait vraie pour tout le
-    // monde. Un test qui ne peut pas mesurer doit refuser de conclure, pas conclure au vert.
-    expect(versions.length, "aucune version lue dans le CHANGELOG : la sonde vise à côté")
-      .toBeGreaterThanOrEqual(2);
-    const fenetre = versions.slice(0, 2);
-    const retard = exemplesDuDepot()
-      .filter((e) => !fenetre.includes(e.version))
-      .map((e) => `${e.fichier} épingle ${e.version}, hors des deux dernières (${fenetre.join(", ")})`);
+  // ⚠️ UN TEST HORS LIGNE NE PEUT PAS SAVOIR CE QUE NPM SERT — et il ne doit pas essayer. Mais il
+  // ne doit pas non plus être PLUS STRICT que la garde qui sait : c'est ce qui s'est produit le
+  // 24/08, où ce cas a refusé une PR de sortie sur des exemples que la garde en forge acceptait.
+  // La fenêtre et son raisonnement vivent désormais dans `fenetreHorsLigne`, en un seul
+  // exemplaire, importé ici comme dans le banc voisin.
+  it("les exemples restent dans la fenêtre que le CHANGELOG permet d'établir hors ligne", () => {
+    const versions = versionsDuChangelog(readFileSync(join(RACINE, "CHANGELOG.md"), "utf8"));
+    const retard = horsFenetre(exemplesDuDepot(), fenetreHorsLigne(versions));
     expect(retard, "un intégrateur qui copie recevrait un player périmé").toEqual([]);
   });
 });

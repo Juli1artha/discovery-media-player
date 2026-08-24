@@ -132,6 +132,58 @@ export function ecartsExemples(versionDeMain, publiees, exemples) {
         : "Un copieur recevrait un player périmé."));
 }
 
+/**
+ * ⚠️ UNE GARDE QUI NE PEUT PAS SAVOIR NE DOIT JAMAIS ÊTRE PLUS STRICTE QUE CELLE QUI SAIT.
+ *
+ * C'est la règle que ce fichier posait sans la nommer, et l'avoir laissée implicite a produit une
+ * divergence (relevé du 24/08, pendant la sortie de la 0.1.131).
+ *
+ * Deux gardes répondent à « un exemple épingle-t-il une version installable ? ». Celle-ci, en
+ * forge, interroge le REGISTRE — elle sait. Les bancs, hors ligne, lisent le CHANGELOG — ils ne
+ * savent pas si la section la plus récente est déjà servie. Or pendant toute PR de sortie, `main`
+ * documente N+1 que npm ne sert pas encore.
+ *
+ *   fenêtre en ligne (vérité)   : {N, N-1}      ← ce que npm sert
+ *   fenêtre du CHANGELOG        : {N+1, N}      ← ce que le dépôt documente
+ *
+ * Les bancs refusaient donc N-1, que la garde en forge ACCEPTE. Deux réponses à une question,
+ * et la plus stricte venait de celle qui en savait le moins. C'est ce qui a fait rougir la PR de
+ * sortie sur des exemples parfaitement légaux — l'alerte qui sonne quand tout va bien, encore.
+ *
+ * ⚠️ LE REMÈDE N'EST PAS DE DEVINER. Aucun signal local ne dit si la tête du CHANGELOG est publiée :
+ * `package.json` la déclare dans les deux cas, et les tags peuvent manquer d'un clone superficiel.
+ * Ce qu'on sait avec CERTITUDE, c'est que la fenêtre réelle est soit {v0, v1}, soit {v1, v2} — selon
+ * que la tête est publiée ou non. Leur UNION, {v0, v1, v2}, contient donc la vérité dans les deux
+ * cas, quoi qu'il arrive.
+ *
+ * Le banc est alors délibérément PLUS LARGE que la forge : il ne peut plus contredire la garde qui
+ * sait, et il attrape quand même le vrai retard (N-3 et au-delà). Le verdict fin reste en forge,
+ * là où le réseau est légitime.
+ */
+export function fenetreHorsLigne(versionsDocumentees) {
+  const stables = (versionsDocumentees || []).filter(estStable);
+  // ⚠️ ANTI-VACUITÉ : sans versions lues, « hors fenêtre » serait vide pour tout le monde et le
+  // banc conclurait au vert sans avoir rien mesuré.
+  if (stables.length < 2) {
+    throw new Error("moins de deux versions documentées — la fenêtre hors ligne ne peut pas être établie");
+  }
+  return stables.slice(0, 3);
+}
+
+/** Les versions que le CHANGELOG documente, de la plus récente à la plus ancienne. */
+export const versionsDuChangelog = (texte) =>
+  [...String(texte).matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)].map((m) => m[1]);
+
+/**
+ * Les exemples hors d'une fenêtre donnée. ⚠️ UN SEUL EXEMPLAIRE DE CE CALCUL : les deux bancs le
+ * réécrivaient chacun de leur côté, avec des commentaires presque identiques — c'est-à-dire deux
+ * copies de plus de la même règle, dans un dépôt qui interdit la deuxième.
+ */
+export const horsFenetre = (exemples, fenetre) =>
+  (exemples || [])
+    .filter((e) => !fenetre.includes(e.version))
+    .map((e) => `${e.fichier} épingle ${e.version}, hors de la fenêtre (${fenetre.join(", ")})`);
+
 export function exemplesDuDepot(racine = ".") {
   const dossier = join(racine, "examples");
   if (!existsSync(dossier)) return [];
