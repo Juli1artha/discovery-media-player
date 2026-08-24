@@ -95,8 +95,52 @@ const JWT = /eyJ[0-9A-Za-z_-]{6,}\.[0-9A-Za-z_-]{20,}\.[0-9A-Za-z_-]{10,}/g;
  * ce qui paraît inoffensif — la garde ne sait pas distinguer « exemple réaliste » de « vraie clé
  * de la préproduction », et c'est exactement la confusion qui produit l'incident.
  */
-const NOM_DE_SECRET = /(?:SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIALS?|PRIVATE_KEY|_KEY)$/;
+/**
+ * ⚠️ LE MOT PEUT ÊTRE N'IMPORTE OÙ DANS LE NOM, PAS SEULEMENT À LA FIN. La première version était
+ * ancrée en fin (`…$`) : elle voyait `PLAYER_HOST_FETCH_SECRET` et ratait `SECRET_KEY_BASE`,
+ * `API_TOKEN_VALUE`, `PRIVATE_KEY_PATH`, `SIGNING_KEYS` — des noms parfaitement courants, et
+ * précisément le genre de secret que cette règle existe pour attraper, puisqu'il n'a aucune forme
+ * reconnaissable. Une règle qui ne couvre que les noms bien terminés donne l'assurance sans la
+ * couverture, ce qui est pire que pas de règle : on cesse de regarder.
+ *
+ * Les bornes `(^|_)` et `(_|$)` évitent l'excès inverse : `KEYCLOAK_URL` ou `TOKENIZER` ne sont
+ * pas des secrets, et une garde qui les refuse s'use aussi vite qu'une garde qui rate.
+ *
+ * ⚠️ ET `PUBLIC` / `PUBLISHABLE` SORT DE LA RÈGLE, DÉLIBÉRÉMENT. Une clé publiable est FAITE pour
+ * atteindre un navigateur : `SUPABASE_PUBLISHABLE_KEY` avec sa valeur est la configuration
+ * normale, pas un incident. C'est la même distinction que ce fichier fait déjà plus haut en
+ * décodant les JWT Supabase pour ne refuser que `service_role`.
+ */
+const NOM_DE_SECRET = /(^|_)(SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIALS?|KEY|KEYS)(_|$)/;
+const NOM_PUBLIC = /(^|_)(PUBLIC|PUBLISHABLE|ANON)(_|$)/;
 const GABARIT = /^(?:<.*>|\.{3}|…|x{3,}|changeme|change_me|your[-_].*|todo|placeholder|dummy|example)$/i;
+
+/**
+ * La valeur d'une ligne `.env`, telle que dotenv la lirait.
+ *
+ * ⚠️ UN COMMENTAIRE EN FIN DE LIGNE N'EST PAS UNE VALEUR, et la première version le prenait pour
+ * un secret. `PLAYER_IP_HASH_SECRET=   # openssl rand -base64 48` est l'idiome dotenv standard —
+ * valeur VIDE, plus l'indication de comment la fabriquer — et la garde y voyait
+ * `# openssl rand -base64 48`, refusait, et bloquait le `pre-push` ET la CI pour un secret absent.
+ *
+ * Une garde qui sonne quand tout va bien apprend à passer outre, et c'est le jour où elle a raison
+ * qu'on ne la lit plus. Le prix de ce faux positif était d'autant plus élevé qu'il tombait sur le
+ * geste le plus courant : documenter comment engendrer la valeur qu'on ne commite pas.
+ *
+ * ⚠️ SEULEMENT SI LA VALEUR N'EST PAS CITÉE. `SECRET="abc # def"` porte un `#` qui fait partie du
+ * secret ; le tronquer laisserait passer une vraie valeur en n'en jugeant qu'un morceau.
+ */
+export function valeurDe(brut) {
+  const t = String(brut).trim();
+  const cite = /^(['"])(.*)\1/.exec(t);
+  if (cite) return cite[2].trim();
+  // ⚠️ ON RETIRE LE COMMENTAIRE SUR LA CHAÎNE BRUTE, PAS SUR LA CHAÎNE ÉBARBÉE. Écrit
+  // `t.replace(/\s+#.*$/, "")`, le cas qui compte échouait : `SECRET=   # openssl rand …` a son
+  // espace mangé par le `trim()`, la valeur commence donc par `#`, et il n'y a plus d'espace à
+  // faire correspondre. La ligne exacte que ce correctif vise passait à côté du correctif.
+  // `(^|\s)#` couvre les deux : commentaire seul, et commentaire après une valeur.
+  return String(brut).replace(/(^|\s)#.*$/, "").trim();
+}
 
 export function secretsDeEnv(texte) {
   const trouves = [];
@@ -104,10 +148,8 @@ export function secretsDeEnv(texte) {
     const m = /^\s*(?:export\s+)?([A-Z][A-Z0-9_]*)\s*=\s*(.*)$/.exec(ligne);
     if (!m) return;
     const [, nom, brut] = m;
-    if (!NOM_DE_SECRET.test(nom)) return;
-    // Une valeur citée reste la même valeur : on retire les guillemets avant de juger, sans quoi
-    // `SECRET="vrai"` passerait là où `SECRET=vrai` est refusé.
-    const valeur = brut.trim().replace(/^(['"])(.*)\1$/, "$2").trim();
+    if (!NOM_DE_SECRET.test(nom) || NOM_PUBLIC.test(nom)) return;
+    const valeur = valeurDe(brut);
     if (!valeur || GABARIT.test(valeur)) return;
     trouves.push({ ligne: i + 1, espece: `valeur écrite pour « ${nom} », dont le nom annonce un secret` });
   });
