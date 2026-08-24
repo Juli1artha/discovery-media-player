@@ -68,6 +68,25 @@ coverage's sake, and coverage is deliberately not measured.
   act (`chore(release)` + tag) with its own gated workflow and its own document —
   [`docs/RELEASING.md`](docs/RELEASING.md). A code or docs PR ships without touching either.
 
+## When you edit a file with a script
+
+**Write after each substitution, not once at the end.** A script that applies several replacements
+and saves at the end will, on a later failure, discard the earlier ones that succeeded — and the
+file looks untouched, so nothing tells you the first fix is gone.
+
+⚠️ The neighbouring trap is worse and has no error at all: a second substitution whose pattern
+matches what the first one just inserted. It deletes it silently, and what is left can be perfectly
+valid code —
+
+```js
+if (ACTIONS_LIEES_A_UNE_SESSION.has(body.action)) {
+}
+```
+
+— a guard that checks nothing, which `require()` loads without a word. Both of these happened on
+this repository on 24/08, in two independent sessions, on the same day. **Re-read the region you
+edited.** Neither case was caught by a tool; both were caught by reading.
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives
