@@ -57,6 +57,71 @@ The npm page for a published version shows the same provenance in readable form,
 commit and the workflow run that produced it. A signature that verifies but names a different
 repository or a different workflow file is **not** this project's release.
 
+## The registry and the Release carry the same bytes
+
+Two attestations exist for every version, and **each one verifies without saying anything about
+the other**:
+
+| | Attested subject | Digest |
+|---|---|---|
+| npm registry | `pkg:npm/discovery-media-player@0.1.134` | `sha512` |
+| GitHub Release | `discovery-media-player-0.1.134.tgz` | `sha256` |
+
+Different names, different algorithms. If the two files ever diverged, both attestations would
+still verify — each would correctly attest its own file — and a reader who checked one would have
+no reason to suspect the other.
+
+### What the release workflow already refuses
+
+That gap is closed at publication. Before anything is attached to a Release, the workflow rebuilds
+the package, packs it, and compares its `sha512` with the `dist.integrity` the registry serves for
+that version. If they differ it **stops** rather than attaching a file nobody could match to what
+people install. The archive the Release carries is therefore the same bytes the registry serves,
+and the SLSA attestation is issued over that archive.
+
+So this is not a hole in the pipeline. It is a hole in what *you* can conclude on your own: the
+refusal happened on our side, at a moment you did not witness, and nothing you download tells you
+it happened.
+
+### Checking it from the outside
+
+```bash
+VERSION=0.1.134
+mkdir -p registry release
+( cd registry && npm pack "discovery-media-player@$VERSION" )
+gh release download "v$VERSION" --pattern '*.tgz' --dir release \
+  --repo Juli1artha/discovery-media-player
+sha256sum registry/*.tgz release/*.tgz
+```
+
+The two downloads go to separate directories on purpose: both files carry the same name, and
+overwriting one with the other would leave you comparing a file with itself.
+
+Both lines must show the same digest. This is weaker than the workflow's check in one sense — it
+trusts nothing about how the files were made — and stronger in another: it is the only one that can
+see a change made **after** publication, such as a Release asset replaced later or a registry
+substitution. The workflow cannot check that, because by then it has finished.
+
+### What was measured, and when
+
+A verification you read is not a verification you ran. This table records what was actually
+compared from the outside, so the next reader knows what was true *at that date* rather than
+assuming it is still true today — and so a later divergence has a fixed point to be measured
+against.
+
+| Version | Date | Release `.tgz` `sha256` | Identical to npm | Also checked |
+|---|---|---|---|---|
+| 0.1.134 | 2026-08-24 | `aa56a1d85ef005baa65a065485eacd5462891dce1cb2961036b08af0e2a9c969` | yes — 320 659 bytes on both sides | attestation subject and digest, SLSA workflow and ref, SBOM version, `.sha256` sidecar |
+
+For 0.1.134 the SLSA attestation attached to the Release named that same `sha256`, for the subject
+`discovery-media-player-0.1.134.tgz`, built from `refs/tags/v0.1.134` by
+`.github/workflows/release.yml` in this repository — and npm's own `sha512`
+(`18c88f5eae80f00e…`) is the digest of those same bytes.
+
+That row was produced by hand, after publication, and **an empty row for a version means nobody
+looked from the outside — not that nothing was wrong**. The workflow's own refusal covers every
+version whether or not a row exists here.
+
 ## The container image
 
 The image is built multi-architecture with an SBOM and full provenance
@@ -101,6 +166,7 @@ version. The image carries its own SBOM, embedded as an attestation, for the sam
 |---|---|---|
 | `npm audit signatures` | The tarball you have is byte-for-byte what the workflow published, and the registry has not substituted it | That the code is free of defects |
 | Identity fields above | It was built by *this* repository's release workflow, from a commit on `main` | That the commit was reviewed by anyone in particular — see [`../MAINTAINERS.md`](../MAINTAINERS.md) |
+| Comparing the two digests | The registry and the Release still serve the same file **today** — the one check that can see a substitution made after publication | That either file is the one you want — verify the identity fields as well |
 | `gh attestation verify` | The image was built by this repository's workflow | That the base image is current — check the digest against the Dockerfile |
 | The SBOM | What the release declares it contains | That nothing was added outside the package manager — the Dockerfile is the place to read for that |
 
