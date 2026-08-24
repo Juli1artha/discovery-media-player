@@ -184,3 +184,36 @@ describe("l'étiquette et le condensat sont deux exemplaires du même fait", () 
     expect(majeurAttendu(REEL)).toBe(24);
   });
 });
+
+describe("⚠️ LE REFUS DIT OÙ, PAS SEULEMENT QUOI", () => {
+  // Relevé du 24/08, en faisant rougir les onze gardes une par une pour LIRE ce qu'elles rendent :
+  // quatre nommaient `fichier:ligne`, trois connaissaient la position et la jetaient. Celle-ci en
+  // faisait partie — et un Dockerfile multi-étages porte plusieurs portes, donc « le fichier » ne
+  // suffit pas à envoyer quelqu'un au bon endroit.
+  const CONDENSAT_OK = "sha256:" + "a".repeat(64);
+  const TROIS_PORTES = [
+    `FROM node:24@${CONDENSAT_OK} AS base`,
+    "RUN true",
+    "FROM python:3.12",
+    "COPY --from=golang:1.22 /go /go",
+    "RUN --mount=type=bind,from=busybox:1.36,target=/s true",
+    "",
+  ].join("\n");
+
+  it("chaque porte est nommée avec SA ligne", () => {
+    const soucis = ecartsEpinglage(TROIS_PORTES, "Dockerfile");
+    expect(soucis).toHaveLength(3);
+    expect(soucis[0]).toMatch(/^Dockerfile:3 .*FROM python:3\.12/);
+    expect(soucis[1]).toMatch(/^Dockerfile:4 .*COPY --from golang:1\.22/);
+    expect(soucis[2]).toMatch(/^Dockerfile:5 .*RUN --mount=from busybox:1\.36/);
+  });
+
+  it("⚠️ et les lignes sont DISTINCTES — un décalage constant se lirait comme une position juste", () => {
+    // La contrepartie qui compte : `ligne: 1` partout satisferait « il y a une ligne » et
+    // n'aiderait personne. C'est aussi pourquoi `ligneDe` ajoute 1 — `dockerfile-ast` compte à
+    // partir de zéro, et une position décalée d'une ligne est pire qu'une position absente.
+    const lignes = ecartsEpinglage(TROIS_PORTES, "Dockerfile").map((s) => Number(/:(\d+) /.exec(s)[1]));
+    expect(new Set(lignes).size).toBe(3);
+    expect(lignes).toEqual([3, 4, 5]);
+  });
+});

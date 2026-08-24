@@ -116,23 +116,41 @@ function aliasDe(source) {
   return alias;
 }
 
-/** { lues, interdits } pour une source. Lève si le fichier ne se parse pas. */
+/**
+ * { lues, interdits, ou } pour une source. Lève si le fichier ne se parse pas.
+ *
+ * ⚠️ `ou` EST LE PREMIER ENDROIT OÙ CETTE GARDE DIT *OÙ*. Elle nommait la variable oubliée et
+ * s'arrêtait là : le lecteur recevait `PLAYER_TRUC` et devait la chercher dans bin/, context/ et
+ * server/. Les autres gardes de ce dossier rendent `fichier:ligne` depuis toujours ; celle-ci
+ * jetait une position qu'elle avait sous la main. Trouvé en faisant rougir les onze gardes une par
+ * une pour LIRE ce qu'elles disent — un essai qu'aucune d'elles ne subissait, puisqu'on ne les
+ * éprouvait que sur « verte ou rouge ».
+ *
+ * ⚠️ `lues` RESTE UN Set. C'est la forme que quatre bancs et deux appelants attendent, dont un test
+ * de propriété. `ou` vient à côté, et ne sert qu'au message.
+ */
 export function analyser(src, fichier = "source.js") {
   const source = arbre(src, fichier);
   const alias = aliasDe(source);
-  const lues = new Set(), interdits = [];
+  const lues = new Set(), interdits = [], ou = new Map();
+  // La PREMIÈRE lecture suffit à envoyer quelqu'un au bon endroit : une variable lue à dix
+  // endroits n'a pas dix corrections, elle en a une, dans docs/CONFIGURATION.md.
+  const noter = (nom, n) => {
+    lues.add(nom);
+    if (!ou.has(nom)) ou.set(nom, `${fichier}:${source.getLineAndCharacterOfPosition(n.getStart(source)).line + 1}`);
+  };
   const refuser = (raison, n) => interdits.push({ raison, extrait: n.getText().slice(0, 80).replace(/\s+/g, " ") });
 
   pourChaqueNoeud(source, (n) => {
     // process.env.NOM  ·  env.NOM  ·  process.env?.NOM
     if (ts.isPropertyAccessExpression(n) && estProcessEnv(n.expression, alias)) {
-      if (NOM_VALIDE.test(n.name.text)) lues.add(n.name.text);
+      if (NOM_VALIDE.test(n.name.text)) noter(n.name.text, n);
       return;
     }
     // process.env["NOM"] statique ; tout nom calculé est refusé, jamais deviné
     if (ts.isElementAccessExpression(n) && estProcessEnv(n.expression, alias)) {
       const arg = deballer(n.argumentExpression);
-      if (arg && ts.isStringLiteralLike(arg)) { if (NOM_VALIDE.test(arg.text)) lues.add(arg.text); }
+      if (arg && ts.isStringLiteralLike(arg)) { if (NOM_VALIDE.test(arg.text)) noter(arg.text, n); }
       else refuser("nom d'environnement calculé — illisible statiquement", n);
       return;
     }
@@ -144,11 +162,11 @@ export function analyser(src, fichier = "source.js") {
         const cle = element.propertyName || element.name;
         if (ts.isComputedPropertyName(cle)) { refuser("propriété calculée dans une déstructuration de process.env", element); continue; }
         const nom = ts.isIdentifier(cle) || ts.isStringLiteralLike(cle) ? cle.text : null;
-        if (nom && NOM_VALIDE.test(nom)) lues.add(nom);
+        if (nom && NOM_VALIDE.test(nom)) noter(nom, element);
       }
     }
   });
-  return { lues, interdits };
+  return { lues, interdits, ou };
 }
 
 export const variablesLues = (src, fichier) => analyser(src, fichier).lues;
@@ -160,19 +178,20 @@ const HORS_SURFACE = new Set(["PREFIXE_REST_AMONT", "PREFIXE_REST_PORT"]);
 // Périmètre : le RUNTIME — bin/, context/, server/ — fichiers .js, hors tests, hors bundles
 // générés (du code navigateur minifié, où `env` peut être n'importe quelle variable locale).
 export function inventaire(racine = ".") {
-  const lues = new Set(), interdits = [];
+  const lues = new Set(), interdits = [], ou = new Map();
   const visiter = (d) => {
     for (const e of readdirSync(d, { withFileTypes: true })) {
       const p = join(d, e.name);
       if (e.isDirectory()) { if (e.name !== "__tests__") visiter(p); continue; }
       if (!p.endsWith(".js") || p.endsWith(".generated.js")) continue;
-      const { lues: l, interdits: i } = analyser(readFileSync(p, "utf8"), p);
+      const { lues: l, interdits: i, ou: o } = analyser(readFileSync(p, "utf8"), p);
+      for (const [nom, position] of o) if (!ou.has(nom)) ou.set(nom, position);
       for (const v of l) lues.add(v);
       for (const a of i) interdits.push({ fichier: p, ...a });
     }
   };
   for (const d of ["bin", "context", "server"]) visiter(join(racine, d));
-  return { lues, interdits };
+  return { lues, interdits, ou };
 }
 
 // Exécution directe : le contrat de la garde.
@@ -181,7 +200,7 @@ export function inventaire(racine = ".") {
 //   2 — la garde n'a pas pu conclure (voir tools/resultat-garde.mjs).
 if (estExecuteDirectement(import.meta.url)) {
   conclure(tenter(() => {
-    const { lues, interdits } = inventaire();
+    const { lues, interdits, ou } = inventaire();
 
     // ⚠️ ZÉRO VARIABLE N'EST PAS UN SUCCÈS — LE MÊME DÉFAUT QUE LA GARDE DOCKER, ICI AUSSI.
     // Ce bloc imprimait « 0 variables lues (AST), toutes documentées » et sortait 0 dès que
@@ -198,7 +217,11 @@ if (estExecuteDirectement(import.meta.url)) {
 
     const constats = interdits.map((i) => `${i.fichier} : ${i.raison} (« ${i.extrait} »)`);
     if (oubliees.length) {
-      constats.push("variable(s) lue(s) par le code, absente(s) de docs/CONFIGURATION.md : " + oubliees.join(", ") + " — pour un exploitant, une variable non documentée n'existe pas");
+      // ⚠️ CHAQUE NOM PORTE SA POSITION. Sans elle, ce message envoyait chercher `PLAYER_TRUC`
+      // dans trois dossiers — le seul de ce dossier à refuser sans dire où.
+      constats.push("variable(s) lue(s) par le code, absente(s) de docs/CONFIGURATION.md : "
+        + oubliees.map((v) => `${v} (${ou.get(v) || "position inconnue"})`).join(", ")
+        + " — pour un exploitant, une variable non documentée n'existe pas");
     }
     if (constats.length) return violation(constats);
     return conforme("environnement : " + lues.size + " variables lues (AST), toutes documentées, aucun nom illisible");

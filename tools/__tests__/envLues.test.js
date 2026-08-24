@@ -20,7 +20,7 @@
 
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-import { variablesLues, accesInterdits, inventaire } from "../env-lues.mjs";
+import { variablesLues, accesInterdits, inventaire, analyser } from "../env-lues.mjs";
 
 describe("les quatre reproductions du troisième audit", () => {
   it("4.1 — une regex contenant un guillemet, après une parenthèse fermante, ne masque plus la suite", () => {
@@ -209,5 +209,42 @@ describe("la convention `env` du dépôt — sur du code RÉEL, pas des extraits
 describe("robustesse", () => {
   it("un fichier syntaxiquement cassé ne passe pas en silence", () => {
     expect(() => variablesLues("const a = {{{ ;")).toThrow();
+  });
+});
+
+describe("⚠️ LE REFUS DIT OÙ LA VARIABLE EST LUE", () => {
+  // Cette garde nommait la variable oubliée et s'arrêtait là : le lecteur recevait `PLAYER_TRUC`
+  // et devait la chercher dans bin/, context/ et server/. Elle était la SEULE de ce dossier à
+  // refuser sans position, et elle l'avait sous la main. Relevé du 24/08, en faisant rougir les
+  // onze gardes une par une pour lire ce qu'elles rendent.
+
+  it("chaque forme de lecture porte sa ligne", () => {
+    const src = [
+      "const a = process.env.PLAYER_UN;",
+      "function f() {",
+      "  return process.env[\"PLAYER_DEUX\"];",
+      "}",
+      "const { PLAYER_TROIS } = process.env;",
+      "",
+    ].join("\n");
+    const { ou } = analyser(src, "server/x.js");
+    expect(ou.get("PLAYER_UN")).toBe("server/x.js:1");
+    expect(ou.get("PLAYER_DEUX")).toBe("server/x.js:3");
+    expect(ou.get("PLAYER_TROIS")).toBe("server/x.js:5");
+  });
+
+  it("⚠️ la PREMIÈRE lecture suffit — une variable lue dix fois n'a qu'une correction", () => {
+    // Elle se corrige dans docs/CONFIGURATION.md, pas à chaque site. Lister dix positions
+    // ferait un message que personne ne lit jusqu'au bout.
+    const { ou } = analyser("process.env.PLAYER_UN;\nprocess.env.PLAYER_UN;\n", "server/x.js");
+    expect(ou.get("PLAYER_UN")).toBe("server/x.js:1");
+  });
+
+  it("⚠️ et `lues` reste un Set — c'est la forme que les autres bancs attendent", () => {
+    // La position vient À CÔTÉ. Changer `lues` aurait cassé le test de propriété des lecteurs,
+    // qui fait `[...analyser(...).lues]`.
+    const { lues } = analyser("process.env.PLAYER_UN;\n", "server/x.js");
+    expect(lues).toBeInstanceOf(Set);
+    expect([...lues]).toEqual(["PLAYER_UN"]);
   });
 });

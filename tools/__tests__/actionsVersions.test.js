@@ -128,10 +128,24 @@ describe("⚠️ un « non vérifié » ne se confond jamais avec un vert", () =
     expect(vu.ecarts[0]).toContain("w.yml");
   });
 
-  it("nomme le fichier fautif", () => {
-    const vu = verdict([{ ...entree, fichier: ".github/workflows/codeql.yml" }],
+  it("nomme le fichier fautif ET SA LIGNE", () => {
+    // ⚠️ Le « : » sans ligne était le message d'origine. `usesDe` rend pourtant `ligne` depuis
+    // toujours : la position était disponible et jetée. Un workflow qui épingle dix actions
+    // obligeait alors à les relire toutes. Relevé du 24/08, en faisant rougir les onze gardes une
+    // par une pour LIRE ce qu'elles rendent — un essai qu'aucune ne subissait.
+    const vu = verdict([{ ...entree, fichier: ".github/workflows/codeql.yml", ligne: 37 }],
       new Map([["a/b", new Map([[V4, ["v4.37.7"]]])]]));
-    expect(vu.ecarts[0]).toMatch(/^\.github\/workflows\/codeql\.yml :/);
+    expect(vu.ecarts[0]).toMatch(/^\.github\/workflows\/codeql\.yml:37 :/);
+  });
+
+  it("⚠️ et deux actions du MÊME fichier ne rendent pas la même position", () => {
+    // La contrepartie : nommer le fichier deux fois avec la même ligne satisferait « il y a une
+    // ligne » sans rien désigner.
+    const vu = verdict([
+      { ...entree, fichier: "w.yml", ligne: 12 },
+      { ...entree, fichier: "w.yml", ligne: 30 },
+    ], new Map([["a/b", new Map([[V4, ["v4.37.7"]]])]]));
+    expect(vu.ecarts.map((e) => e.split(" ")[0])).toEqual(["w.yml:12", "w.yml:30"]);
   });
 });
 
