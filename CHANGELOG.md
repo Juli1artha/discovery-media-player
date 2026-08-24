@@ -10,6 +10,36 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.132] — 2026-08-24
+
+### Security
+- **Four more assistant actions took a `sessionId` without tying it to the document.** 0.1.131 closed
+  `bot-history`; counting the *actions* rather than the implementations showed three bound out of
+  seven, not six. `bot-say`, `bot-nudge`, `bot-book` and `bot-contact` were still open.
+  - ⚠️ **What remained open was worse than what had been closed.** `bot-history` *read* another
+    document's conversation. `bot-say` **writes** into it and gets an answer; `bot-contact` attaches
+    a name, an e-mail and a phone number to another client's session; `bot-book` books a meeting
+    there. A door left open on writing is not the same defect as one left open on reading.
+  - The pattern to look for was named by an operator running the player: *a check that several
+    actions each perform for themselves — count the actions, not the implementations.*
+
+### Fixed
+- **A missing purge target no longer aborts the retention sweep, and the contract allows it.**
+  `docs/HOST-CONTRACT.md` states that the rate-limit migrations are deliberately outside the card's
+  scope because *"a host may provide its own `limits` capability, and on such a host their absence is
+  normal, not a defect"*. The sweep purged `player_rate_limits` unconditionally, **fifth of eight**:
+  on such a host it threw there, and revoked links and presentations were **never reached**.
+  - ⚠️ The trigger wraps the sweep in a `catch` that files the failure as *benign*. Armed, it would
+    have stayed **silent and partly inoperative** — which reads like a working sweep and behaves like
+    a disarmed one, on half the tables. Worse than either honest state.
+  - The skipped target is **reported**, not omitted: a report without the line reads as "nothing to
+    delete", which is a different claim — and the only one of the two that is false.
+  - The detector is as narrow as `signatureAbsente`: the PostgREST code for an unknown table, or its
+    message, and nothing else. A bare 404 is not enough, and a **failure** on the same table still
+    aborts — a bench asserts it.
+  - Found in **pre-flight**, before arming the sweep on an instance: measure what a purge would
+    delete before authorising it to delete.
+
 ## [0.1.131] — 2026-08-24
 
 Published on its own, outside the train, because of the first entry — the rule
@@ -3658,7 +3688,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.131...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.132...HEAD
+[0.1.132]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.131...v0.1.132
 [0.1.131]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.130...v0.1.131
 [0.1.130]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.129...v0.1.130
 [0.1.129]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.128...v0.1.129
