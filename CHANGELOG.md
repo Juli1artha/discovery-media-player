@@ -10,6 +10,23 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.133] — 2026-08-24
+
+⚠️ **`0.1.132` was tagged but never published.** Its CI was red, and the release job refused —
+*"we do not publish on red"*. The cause was a bench, not the code the version carried: everything
+listed under `0.1.132` below ships here, unchanged. Removing an erroneous tag is an administrative
+act, not a command line, so the version number moves on instead.
+
+### Fixed
+- **A slug beginning with a dash made `node` refuse to start.** The multi-process bench passed the
+  slug as an **argument** to `node -e`; slugs are randomly generated, and one began with `-`, which
+  node read as an **option** (`bad option: -aeLmx1Xd3hI`). The bench had been green for days.
+  - ⚠️ **The defect was not waiting for a platform, it was waiting for a value.** Three platforms
+    would never have found it; one draw did. It is the lesson a second host gave us two days ago — *a
+    CI matrix multiplies systems and never data* — landing on the very bench written to illustrate it.
+  - Values now travel through the **environment**, which has no syntax: nothing there changes meaning.
+    A `--` would have covered the option case only, not the next character the parser cares about.
+
 ## [0.1.132] — 2026-08-24
 
 ### Security
@@ -3688,7 +3705,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.132...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.133...HEAD
+[0.1.133]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.132...v0.1.133
 [0.1.132]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.131...v0.1.132
 [0.1.131]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.130...v0.1.131
 [0.1.130]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.129...v0.1.130
