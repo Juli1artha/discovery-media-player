@@ -100,7 +100,11 @@ export function verdict(toutes, tagsParDepot) {
       continue;
     }
     const souci = ecartVersion(e, parSha.get(e.sha));
-    if (souci) ecarts.push(`${e.fichier} : ${souci}`);
+    // ⚠️ `${fichier}:${ligne}`, PAS `${fichier} :`. Le relevé portait déjà la ligne — `usesDe` la
+    // rend — et ce message la jetait. Un workflow qui épingle dix actions obligeait alors le
+    // lecteur à chercher laquelle. Constaté en faisant rougir les onze gardes une par une pour
+    // lire ce qu'elles disent : quatre nommaient la ligne, trois la connaissaient sans la dire.
+    if (souci) ecarts.push(`${e.fichier}:${e.ligne} : ${souci}`);
   }
   return { ecarts, nonVus };
 }

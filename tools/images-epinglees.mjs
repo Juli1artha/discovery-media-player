@@ -49,6 +49,17 @@ import { estExecuteDirectement } from "./execute-directement.mjs";
  * La lecture passe donc par un vrai analyseur de Dockerfile, pour la même raison que les workflows
  * sont passés à un analyseur YAML : c'est le troisième lecteur maison de ce dépôt qui échoue.
  */
+/**
+ * La ligne (1-indexée) d'une instruction. ⚠️ `dockerfile-ast` compte à partir de ZÉRO ; oublier le
+ * `+ 1` donnerait une position juste au-dessus de la bonne — un décalage d'une ligne se lit comme
+ * une position correcte, et c'est la pire sorte d'erreur de position.
+ * Rend `0` si la plage manque : mieux vaut une position visiblement absente qu'une position fausse.
+ */
+const ligneDe = (inst) => {
+  const l = inst && inst.getRange && inst.getRange();
+  return l && l.start && typeof l.start.line === "number" ? l.start.line + 1 : 0;
+};
+
 export function imagesDe(txt) {
   const doc = DockerfileParser.parse(txt);
   const etapes = new Set();
@@ -58,7 +69,7 @@ export function imagesDe(txt) {
     const reference = from.getImage();
     const alias = from.getBuildStage();
     if (reference) {
-      trouvees.push({ reference, alias, source: "FROM", interne: etapes.has(reference.toLowerCase()) });
+      trouvees.push({ reference, alias, source: "FROM", ligne: ligneDe(from), interne: etapes.has(reference.toLowerCase()) });
     }
     if (alias) etapes.add(alias.toLowerCase());
   }
@@ -66,7 +77,7 @@ export function imagesDe(txt) {
   for (const copy of doc.getCOPYs()) {
     const depuis = copy.getFromFlag()?.getValue();
     if (!depuis) continue;
-    trouvees.push({ reference: depuis, alias: null, source: "COPY --from", interne: estInterne(depuis, etapes) });
+    trouvees.push({ reference: depuis, alias: null, source: "COPY --from", ligne: ligneDe(copy), interne: estInterne(depuis, etapes) });
   }
 
   // ⚠️ TROISIÈME PORTE : `RUN --mount=type=bind,from=<image>`.
@@ -90,7 +101,7 @@ export function imagesDe(txt) {
       if (flag.getName() !== "mount") continue;
       const depuis = sourceDuMontage(flag.getValue());
       if (!depuis) continue;
-      trouvees.push({ reference: depuis, alias: null, source: "RUN --mount=from", interne: estInterne(depuis, etapes) });
+      trouvees.push({ reference: depuis, alias: null, source: "RUN --mount=from", ligne: ligneDe(inst), interne: estInterne(depuis, etapes) });
     }
   }
   return trouvees;
@@ -128,7 +139,9 @@ const CONDENSAT = /@sha256:[0-9a-f]{64}$/;
 export function ecartsEpinglage(txt, fichier = "Dockerfile") {
   return imagesDe(txt)
     .filter((i) => !i.interne && !CONDENSAT.test(i.reference))
-    .map((i) => `${fichier} : « ${i.source} ${i.reference} » n'est pas épinglé — ajoutez @sha256:… (la même règle que pour les actions)`);
+    // ⚠️ La ligne était disponible et jetée. Un Dockerfile multi-étages porte plusieurs `FROM` et
+    // des `COPY --from` : nommer le fichier seul obligeait à les relire tous.
+    .map((i) => `${fichier}:${i.ligne} : « ${i.source} ${i.reference} » n'est pas épinglé — ajoutez @sha256:… (la même règle que pour les actions)`);
 }
 
 /**
