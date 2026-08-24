@@ -12,6 +12,16 @@ const init = (ctx) => { PLAYER = ctx; docbot = ctx.plugins.bot; };
 // chute au bout rend `false` et le dispatch continue. Aucune liste d'actions n'est dupliquée
 // entre ici et handler (un correctif à deux exemplaires finit par diverger) — et aucun appui
 // sur res.writableEnded, absent des `res` postiches des bancs comme de certains hôtes.
+
+/**
+ * Les actions qui AGISSENT SUR UNE SESSION EXISTANTE — c'est-à-dire toutes celles du bloc assistant
+ * sauf `bot-start`, qui la crée. La liste vit ici plutôt que dans chaque branche pour que le banc
+ * puisse la CONFRONTER à l'aiguillage : une action ajoutée à l'un et pas à l'autre fait rougir.
+ */
+const ACTIONS_LIEES_A_UNE_SESSION = new Set([
+  "bot-say", "bot-history", "bot-nudge", "bot-book", "bot-contact", "bot-rate", "bot-script",
+]);
+
 async function traiter(req, res, body, _slug) {
       if (body.action === "bot-tts") {
         const jp = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
@@ -101,11 +111,38 @@ async function traiter(req, res, body, _slug) {
           if (!allowed) return jp(429, { ok: false, error: "rate" });
           const share = await getShareBySlug(String(body.slug || ""));
           if (!share || !share.bot_enabled) return jp(404, { ok: false, error: "bot" });
+          // ⚠️ UNE SESSION EST LIÉE À SON DOCUMENT — VÉRIFIÉ ICI, POUR TOUTES LES ACTIONS À LA FOIS.
+          //
+          // Cette vérification vivait DANS chaque action, et trois seulement sur sept la faisaient :
+          // `bot-rate`, `bot-script` et `bot-history` (celle-ci ajoutée après coup, en 0.1.131).
+          // `bot-say`, `bot-nudge`, `bot-book` et `bot-contact` prenaient le même `sessionId` venu du
+          // client sans jamais le rattacher au document demandé.
+          //
+          // ⚠️ CE QUE ÇA OUVRAIT EST PIRE QUE CE QU'ON VENAIT DE FERMER. `bot-history` LISAIT la
+          // conversation d'un autre document ; `bot-say` y ÉCRIT et se fait répondre, `bot-contact`
+          // attache un nom, un e-mail et un téléphone à la session d'un autre client. Une porte en
+          // lecture et quatre en écriture, dans le même bloc.
+          //
+          // ⚠️ ET LA LEÇON N'EST PAS « IL EN MANQUAIT QUATRE ». Écrite sept fois, cette garde serait
+          // oubliée une huitième au prochain ajout — le défaut n'est pas la ligne absente, c'est que
+          // sa présence dépende de la mémoire de celui qui écrit l'action. Elle est donc hissée : une
+          // action qui porte une session la prouve, sans que son auteur ait à y penser.
+          //
+          // Le relevé qui a mené ici vient d'un exploitant : « une vérification que plusieurs actions
+          // font chacune pour son compte — il faut compter les ACTIONS, pas les implémentations ».
+          // La duplication était homogène, donc invisible à un balayage des variantes ; c'est la
+          // COUVERTURE qui divergeait, et rien ne la mesurait. `gardesAgent.test.js` la mesure
+          // désormais, en lisant la liste d'actions dans ce fichier même.
+          //
+          // ⚠️ `bot-start` EST EXCLUE, ET C'EST LA SEULE. Elle CRÉE la session : exiger qu'elle en
+          // prouve une fermerait l'assistant à tout le monde.
+          if (ACTIONS_LIEES_A_UNE_SESSION.has(body.action)) {
+            const liee = await docbot.getSession(String(body.sessionId || ""));
+            if (!liee || liee.share_slug !== share.slug) return jp(400, { ok: false, error: "session" });
+          }
           const pages = Math.max(0, Math.min(500, Number(body.pages) || 0));
           const mobile = body.mobile === 1 || body.mobile === true; // téléphone → messages courts + autoplay steps
           if (body.action === "bot-rate") { // satisfaction (1-5 étoiles) posée depuis le bloc central du viewer
-            const sess = await docbot.getSession(String(body.sessionId || ""));
-            if (!sess || sess.share_slug !== share.slug) return jp(400, { ok: false, error: "session" });
             // ⚠️ CE REFUS ÉTAIT INATTEIGNABLE, ET C'EST LA MESURE QUI EN PAYAIT LE PRIX.
             //
             //     const note = Math.max(1, Math.min(5, Number(body.rating) || 0));
@@ -155,8 +192,6 @@ async function traiter(req, res, body, _slug) {
             //
             // Les deux voisines avaient la garde ET leur banc ; celle-ci n'avait ni l'une ni
             // l'autre, et la relecture qui a ajouté les bancs a couvert deux actions sur trois.
-            const sess = await docbot.getSession(String(body.sessionId || ""));
-            if (!sess || sess.share_slug !== share.slug) return jp(400, { ok: false, error: "session" });
             return jp(200, { ok: true, messages: await docbot.listMessages(String(body.sessionId || "")) });
           }
           // ⚠️ Même piège : un objet littéral répond à `constructor`. Sans `Object.hasOwn`, une
@@ -168,8 +203,6 @@ async function traiter(req, res, body, _slug) {
           // Bascule de langue EN COURS de présentation : renvoie le script (traduit ou FR) — le client
           // remplace sa liste d'étapes et rejoue le message courant dans la nouvelle langue.
           if (body.action === "bot-script") {
-            const sess = await docbot.getSession(String(body.sessionId || ""));
-            if (!sess || sess.share_slug !== share.slug) return jp(400, { ok: false, error: "session" });
             const sp = docbot.applyPron(await docbot.scriptedPayload(share.doc_id, blang, String(body.sessionId)), await docbot.getProfile(share.bot_profile_id));
             if (!sp) return jp(400, { ok: false, error: "script" });
             return jp(200, { ok: true, steps: sp.steps, voiceScript: sp.voice, message: sp.hook, closing: sp.closing, messageSay: sp.hookSay, closingSay: sp.closingSay });
