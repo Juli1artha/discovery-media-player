@@ -391,12 +391,28 @@ The rule underneath, safer than the list: **never fall back on a refusal of *acc
 back on an inability to *reach*.** And "do not fall back" applies to what you **offer** — an
 "Open ↗" button left in place is falling back one second later.
 
-## Two things that will bite
+## Three things that will bite
 
 **Your document-opening doors reappear.** A host has more than one place that opens a file, and new
 ones get written. Keep the list and hunt it periodically — and note that **your search criteria
 decide what you find**: search by what the user *obtains* (a document opens), not by the technique
 you expect to see.
+
+**A row written on behalf of a session also carries the document.** The player hands every bot
+plugin call both the `sessionId` and the `share`. If your plugin stores only the session, then the
+day a session-binding defect is found — one was in 0.1.131, and four more actions in 0.1.133 — you
+cannot say whether anything crossed. The honest answer is not *"nothing found"*, it is **"not
+measurable"**, and those are different sentences to give a client.
+
+Measured on a production host the day the second defect was fixed:
+
+| table | what it records beside the session | verdict |
+| --- | --- | --- |
+| leads (`bot-contact`, `bot-book`) | the share **and** the document | 46 leads, 21 carrying contact details — **none crossed** |
+| messages (`bot-say`) | the session alone | 1 693 messages — **not measurable** |
+
+Same incident, same instance, two verdicts — decided months earlier by one column. It costs nothing
+at write time, and it decides what you are able to say afterwards.
 
 **Configured is not served.** When a diagnosis is disputed, the useful question is not who is right
 but *did you measure exactly what fails*. Two true statements about the same instance can describe
