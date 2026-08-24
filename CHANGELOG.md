@@ -10,6 +10,61 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.131] — 2026-08-24
+
+Published on its own, outside the train, because of the first entry — the rule
+[`docs/RELEASING.md`](docs/RELEASING.md) sets for a security fix.
+
+### Security
+- **`bot-history` returned the transcript of a conversation held on *another* document.** Two of the
+  assistant's three session-bearing actions bind the session to the document they act on
+  (`sess.share_slug !== share.slug`, a refusal `bot-rate` and `bot-script` each perform themselves).
+  The third took a `sessionId` and returned the conversation, without ever tying it to the requested
+  document. A slug whose assistant is enabled, plus a session id picked up elsewhere — and the id
+  travels client-side — were enough to read the questions asked by someone else's prospect. That is
+  commercial data about a client, not a usage counter.
+  - ⚠️ **This filtering cannot be delegated to the host.** `docbot` is `ctx.plugins.bot`, supplied by
+    whoever embeds the player: assuming it cross-checks session against document would make a player
+    security property depend on code the player does not contain. It is exactly why the two
+    neighbouring actions check it themselves rather than trusting the plugin.
+  - The bench for that binding existed and covered **two actions out of three**. A guard written
+    three times and tested twice is the shape this repository keeps finding: the missing one is
+    never the one you look at.
+
+### Fixed
+- **The dependency gate blamed the branch for an unreachable registry.** Its own comment promised the
+  opposite — *"it is the guard that could not look, not the branch. We say so"* — but the step read
+  `npm audit`'s **exit status**, which is non-zero for two unrelated causes: vulnerabilities found,
+  or no answer from the registry. The second was reported as a *known vulnerability* against a
+  branch that had none.
+  - `tools/failles-connues.mjs` reads the **report** (`metadata.vulnerabilities`) instead of an
+    integer that conflates two causes, and answers `2` — *GARDE NON CONCLUANTE* — when there is no
+    report. That tri-state has been in `tools/resultat-garde.mjs` for a while; this step simply was
+    not using it. Both thresholds and their documented reasons are unchanged.
+- **The secrets guard refused a standard dotenv idiom.** `PLAYER_IP_HASH_SECRET=   # openssl rand
+  -base64 48` — an **empty** value plus a note on how to generate it — was reported as a plaintext
+  credential, blocking both `pre-push` and CI. A guard that fires when nothing is wrong teaches
+  people to click past it, and the day it is right nobody reads it.
+- **And the same guard missed the names it exists for.** Its name rule was anchored at the end
+  (`…_SECRET$`), so `SECRET_KEY_BASE`, `API_TOKEN_VALUE`, `PRIVATE_KEY_PATH` and `SIGNING_KEYS`
+  went through — precisely the class of secret that has no recognisable shape, which is why the name
+  is all there is to go on. Now matched on word boundaries, with the counterpart that `KEYCLOAK_URL`
+  and `TOKENIZER_MODE` are still ignored, and a deliberate exemption for `PUBLIC` / `PUBLISHABLE` /
+  `ANON`: a publishable key carries its value, that being its entire purpose.
+- **`CONTRIBUTING.md` promised a safety net that does not exist.** Its table said the four benches run
+  on *"every push and pull request"*, while CI triggers on `pull_request` and `push: branches:
+  [main]` — **a push to a working branch runs nothing**. It also quoted a test count that had drifted
+  by 150; the number is removed rather than corrected, so the second copy is not put back.
+
+### Changed
+- **Private vulnerability reporting is now a path, not just an address.** [`SECURITY.md`](SECURITY.md)
+  offers two private channels instead of one, each with what it actually gives rather than a
+  preference order with no reason: the GitHub form provides a thread attached to the repository, a
+  timestamp of what was said and when — which protects the reporter as much as us — and a direct
+  route to a CVE. **Email remains, and is not a second-class channel**: not everyone has a GitHub
+  account, and a researcher who must create one to warn us is a researcher who gives up. The
+  response-time commitment now covers both.
+
 ## [0.1.130] — 2026-08-22
 
 ### Fixed
@@ -3603,7 +3658,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.130...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.131...HEAD
+[0.1.131]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.130...v0.1.131
 [0.1.130]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.129...v0.1.130
 [0.1.129]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.128...v0.1.129
 [0.1.128]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.127...v0.1.128
