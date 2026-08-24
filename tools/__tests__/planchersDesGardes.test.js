@@ -51,6 +51,10 @@ const EXEMPTES = {
     tientEncore: (src) => !/import\.meta\.url\s*===/.test(
       src.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n")),
   },
+  "inventaire-tarball.mjs": {
+    pourquoi: "sonde de l'inventaire du tarball, sans point d'entrée : elle rend ce que npm annonce et LÈVE sur un inventaire vide — c'est l'appelant qui juge",
+    tientEncore: (src) => !/import\.meta\.url\s*===/.test(src) && /aucun fichier/.test(src),
+  },
   "resultat-garde.mjs": {
     pourquoi: "bibliothèque du verdict des gardes (conforme / violation / non concluant), sans point d'entrée : elle ne juge rien, elle est appelée",
     tientEncore: (src) => !/import\.meta\.url\s*===/.test(src),

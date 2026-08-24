@@ -113,11 +113,23 @@ jobs:
       # pendant que tout le reste de ce qu'un intégrateur lit — README, contrat d'hôte, API,
       # configuration — est en anglais. La règle du dépôt existait (dehors en anglais, traces
       # internes en français), mais seulement dans les têtes : elle a donc été respectée jusqu'au
-      # jour où elle ne l'a plus été, sans que rien ne le voie. Le périmètre se DÉRIVE de
-      # `package.json#files` — ce qui voyage, se lit — plutôt que d'être une liste de plus à tenir.
+      # jour où elle ne l'a plus été, sans que rien ne le voie. Le périmètre se DÉRIVE — ce qui
+      # voyage, se lit — plutôt que d'être une liste de plus à tenir, et il se demande à
+      # `npm pack --dry-run`, PAS à `package.json#files` : npm ajoute et développe, et sur la
+      # 0.1.127 un quatrième Markdown voyageait pendant que la garde annonçait en couvrir trois.
       - name: Documents that ship in the package are in English
         if: matrix.node == '22'
         run: node tools/langue-publiee.mjs
+
+      # ⚠️ LE CHANGELOG NE VOYAGEAIT PAS, ET PERSONNE NE L'AVAIT DÉCIDÉ (constaté en publiant la
+      # 0.1.134). `files` nommait le README, les licences et deux documents de `docs/` ajoutés avec
+      # leur raison écrite ; le CHANGELOG n'apparaissait dans aucune discussion — pas un refus, un
+      # silence. Or une absence ressemble à une décision : rien ne distinguait « on a choisi de ne
+      # pas l'envoyer » de « personne n'y a pensé ». Cette garde confronte ce que le paquet PROMET
+      # de porter à ce que `npm pack` dit qu'il portera, et nomme ce qu'on perd quand ça diverge.
+      - name: The documents the package promises are actually in the tarball
+        if: matrix.node == '22'
+        run: node tools/documents-publies.mjs
 
       # ⚠️ UN `.d.ts` PARFAIT DANS LE CLONE PEUT ÊTRE ABSENT DU PAQUET PUBLIÉ — il suffit que
       # `files` ne l'embarque pas, et c'est exactement ce qui était arrivé au contrat et à la

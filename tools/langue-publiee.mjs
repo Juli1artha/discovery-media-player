@@ -27,8 +27,8 @@
 // Usage : node tools/langue-publiee.mjs
 
 import { readFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
 
+import { markdownsDuTarball } from "./inventaire-tarball.mjs";
 import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 import { estExecuteDirectement } from "./execute-directement.mjs";
 
@@ -68,30 +68,11 @@ export function ecartLangue(fichier, txt) {
   return null;
 }
 
-/**
- * ⚠️ LE PÉRIMÈTRE SE DEMANDE À npm, PAS À `package.json#files` (revue externe, 21/08).
- *
- * `files` n'est pas la liste de ce qui part : npm AJOUTE des fichiers de lui-même et DÉVELOPPE les
- * dossiers et les motifs. Constaté sur la 0.1.127 : le tarball contenait QUATRE Markdown —
- * README.md, docs/HOST-CONTRACT.md, docs/RETENTION.md, et `docs/README.md` que `files` ne nomme
- * pas. Ce quatrième voyageait sans être contrôlé.
- *
- * Il se trouve qu'il était en anglais, donc il n'y avait pas de violation. LE DÉFAUT ÉTAIT
- * AILLEURS : la garde annonçait « 3 documents publiés, tous en anglais » alors qu'elle en
- * regardait trois sur quatre. Une couverture affirmée plus large qu'elle n'est vaut moins que pas
- * de couverture du tout — on cesse de vérifier ce qu'on croit déjà tenu.
- *
- * `npm pack --dry-run --json` dit exactement ce que le registre servira. C'est la source de
- * vérité, et npm le recommande comme telle.
- */
-export function markdownsDuTarball(executer = () =>
-  execFileSync("npm", ["pack", "--dry-run", "--json"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 120000 })) {
-  const brut = JSON.parse(executer());
-  const entree = Array.isArray(brut) ? brut[0] : brut;
-  const fichiers = (entree?.files || []).map((f) => f.path).filter((p) => typeof p === "string");
-  if (!fichiers.length) throw new Error("npm pack n'a rendu aucun fichier — on ne conclut pas sur un inventaire vide");
-  return fichiers.filter((f) => f.toLowerCase().endsWith(".md")).sort();
-}
+// ⚠️ Le périmètre se demande à npm, pas à `package.json#files` — la raison, mesurée sur la
+// 0.1.127, est écrite dans `tools/inventaire-tarball.mjs`, où vit désormais la sonde. Elle est
+// réexportée ici pour que la garde de langue reste lisible d'un bloc, mais elle n'a QU'UNE
+// implémentation : la garde des documents promis interroge le même inventaire.
+export { markdownsDuTarball };
 
 if (estExecuteDirectement(import.meta.url)) {
   // ⚠️ `tenter` : `npm pack` peut échouer (npm absent, manifeste cassé, disque plein) et
