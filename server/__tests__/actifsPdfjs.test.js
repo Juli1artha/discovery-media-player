@@ -93,7 +93,7 @@ const ORIGINES_DECLAREES = {
 
 describe("pdf.js ne sort plus de notre origine", () => {
   const src = require("./sourceDesPages.cjs").SOURCE_PAGES
-    .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
+    .split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
 
   const originesDuSource = () => {
     const trouvees = src.match(/https?:\/\/[A-Za-z0-9.*${}_-]+/g) || [];
@@ -101,7 +101,18 @@ describe("pdf.js ne sort plus de notre origine", () => {
   };
 
   it("zéro cdnjs hors commentaires, et les CSP portent 'self'", () => {
-    expect(src.includes("cdnjs.cloudflare.com"), "un CDN est revenu dans le code exécutable").toBe(false);
+    // ⚠️ ON INTERROGE LA LISTE DES ORIGINES, PAS LE TEXTE. `src.includes("cdnjs.cloudflare.com")`
+    // disait la même chose et le disait bien — mais chercher un nom d'hôte dans une chaîne est le
+    // motif que CodeQL classe en « Incomplete URL substring sanitization » (#82), parce que c'est
+    // celui qui, DANS UN CONTRÔLE D'ACCÈS, laisse passer `cdnjs.cloudflare.com.evil.tld`. Ici ce
+    // n'était pas un contrôle d'accès mais une affirmation d'absence : l'alerte visait à côté.
+    //
+    // ⚠️ ET JE L'AVAIS LAISSÉE OUVERTE EN CROYANT L'AVOIR RÉGLÉE. La PR précédente ajoutait la
+    // liste blanche À CÔTÉ de cette ligne sans la retirer — le corps de la PR annonçait donc plus
+    // que le diff ne faisait. Une alerte qui vise à côté et qu'on laisse ouverte use la liste
+    // exactement autant qu'une vraie. La question posée à `originesDuSource()` est strictement la
+    // même, et elle se lit mieux : l'hôte y est ou il n'y est pas, sans sous-chaîne.
+    expect(originesDuSource(), "un CDN est revenu dans le code exécutable").not.toContain("cdnjs.cloudflare.com");
     expect(src).toContain('${scriptSrc ? scriptSrc + " \'self\'" : "\'self\'"}');
   });
 

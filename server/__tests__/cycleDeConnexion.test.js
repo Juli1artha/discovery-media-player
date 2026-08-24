@@ -13,7 +13,7 @@
 
 
 const SOURCE = require("./sourceDesPages.cjs").SOURCE_PAGES
-  .split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+  .split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
 
 // ⚠️ `{2}` plutôt que deux espaces littéraux : eslint refuse — et il a raison, deux espaces dans
 // une expression régulière ne se comptent pas à l’œil. Ici ils délimitent la fin du corps de la

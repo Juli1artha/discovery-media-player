@@ -146,7 +146,7 @@ describe("client — le battement porte le jeton de présence", () => {
 describe("réaction du client aux deux refus", () => {
   const SRC = require("node:fs").readFileSync(
     require("node:path").join(__dirname, "..", "gabarit-live.js"), "utf8");
-  const code = SRC.split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+  const code = SRC.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
 
   it("403 presence-token → le JETON est jeté, la clé est conservée", () => {
     expect(code, "le client doit réagir au refus de jeton").toMatch(/error===.presence-token.\)ptOublie\(\)/);

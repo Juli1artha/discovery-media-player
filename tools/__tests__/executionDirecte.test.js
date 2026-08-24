@@ -36,6 +36,63 @@ const sourceUtile = (t) => t.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.tes
 
 const outils = () => fs.readdirSync(DOSSIER).filter((f) => f.endsWith(".mjs") && f !== HELPER);
 
+// ⚠️ L'AXE QUE LA MATRICE DE FORGE NE COUVRE JAMAIS : LES DONNÉES.
+//
+// Une matrice multiplie les SYSTÈMES — trois plateformes, deux versions de Node — et jamais les
+// données. Trois plateformes sur une seule éprouvette, c'est UN test, pas trois. Elle donne pourtant
+// l'impression contraire, et c'est ce qui la rend coûteuse : on croit avoir élargi la couverture
+// alors qu'on a élargi la dimension qui n'était pas en cause. (Formulé par le second hôte.)
+//
+// Les deux incidents de ce dépôt le disent. La forme `import.meta.url === \`file://${argv}\`` était
+// fausse sur les TROIS plateformes depuis toujours — il manquait une ESPACE dans un chemin, pas un
+// système d'exploitation. Et un `check (22)` rouge avec `check (24)` vert a ressemblé trois fois à
+// une différence de version de Node : c'était un caractère, un CHANGELOG, un compte périmé. Une
+// matrice ne se contente pas de ne pas trouver — elle propose une explication plausible et fausse,
+// parce qu'elle est le seul axe visible du tableau.
+//
+// Ce cas ajoute donc la donnée manquante, et rien d'autre : un chemin qui porte une espace et des
+// accents. C'est exactement ce que l'ancienne orthographe ratait, et ce qu'aucune plateforme
+// n'aurait révélé.
+describe("le chemin peut porter une espace et des accents", () => {
+  const { execFileSync } = require("node:child_process");
+  const { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync } = require("node:fs");
+  const { tmpdir } = require("node:os");
+
+  const SONDE = [
+    'import { estExecuteDirectement } from "./execute-directement.mjs";',
+    'process.stdout.write(String(estExecuteDirectement(import.meta.url)));',
+  ].join("\n");
+
+  const IMPORTATEUR = [
+    'import { estExecuteDirectement } from "./execute-directement.mjs";',
+    'import "./sonde.mjs";',
+    'process.stdout.write("|importé:" + String(estExecuteDirectement(import.meta.url)));',
+  ].join("\n");
+
+  let dossier;
+  beforeAll(() => {
+    // Une espace ET des accents : deux caractères que `file://` + concaténation n'encode pas.
+    dossier = path.join(mkdtempSync(path.join(tmpdir(), "axe-")), "un dossier accentué ÉÀ");
+    mkdirSync(dossier, { recursive: true });
+    copyFileSync(path.join(DOSSIER, HELPER), path.join(dossier, HELPER));
+    writeFileSync(path.join(dossier, "sonde.mjs"), SONDE);
+    writeFileSync(path.join(dossier, "importateur.mjs"), IMPORTATEUR);
+  });
+  afterAll(() => { try { rmSync(path.dirname(dossier), { recursive: true, force: true }); } catch { /* rien */ } });
+
+  it("lancé directement depuis un tel chemin, le module se reconnaît", () => {
+    const sortie = execFileSync(process.execPath, [path.join(dossier, "sonde.mjs")], { encoding: "utf8" });
+    expect(sortie.trim(), "l'ancienne orthographe rendait `false` ici, sur TOUTE plateforme").toBe("true");
+  });
+
+  // ⚠️ CONTRÔLE NÉGATIF : sans lui, un helper qui rendrait TOUJOURS vrai passerait le cas ci-dessus.
+  // C'est la moitié qui dit que la réponse dépend bien de la question posée.
+  it("et importé depuis un autre module, il ne se reconnaît pas", () => {
+    const sortie = execFileSync(process.execPath, [path.join(dossier, "importateur.mjs")], { encoding: "utf8" });
+    expect(sortie, "la sonde importée doit dire false, l'importateur true").toBe("false|importé:true");
+  });
+});
+
 describe("un seul endroit décide si un module est lancé directement", () => {
   it("la sonde trouve bien des outils à examiner", () => {
     expect(outils().length, "aucun outil relevé : cette garde vise à côté").toBeGreaterThanOrEqual(8);
