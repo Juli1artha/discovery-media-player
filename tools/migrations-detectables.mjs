@@ -58,7 +58,19 @@ export const INDISTINGUABLES_DECLAREES = {
  * 0017/0018/0019, pas le nom.
  */
 export function signesDe(sql) {
-  const t = String(sql || "").replace(/--[^\n]*/g, " ").replace(/\/\*[\s\S]*?\*\//g, " ");
+  // ⚠️ ON RETIRE AUSSI LES CORPS DE FONCTION, PAS SEULEMENT LES COMMENTAIRES. Un corps est du code
+  // que la fonction EXÉCUTE, pas une déclaration que la migration FAIT : un `execute 'create index
+  // …'` à l'intérieur serait compté comme un signe que la migration ne laisse pas. La distinction
+  // est DÉCLARATION contre RÉFÉRENCE, et elle n'existe pas dans le texte brut d'un fichier — c'est
+  // exactement là qu'une sonde voisine s'est trompée cinq fois en une journée, dont une en
+  // accusant une migration parfaitement saine parce qu'une colonne y était LUE et non ajoutée.
+  //
+  // ⚠️ Zéro occurrence aujourd'hui : ce correctif ne change aucun compte, il ferme une porte. La
+  // déclaration de la fonction elle-même est HORS du corps, donc elle reste relevée.
+  const t = String(sql || "")
+    .replace(/--[^\n]*/g, " ")
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/\$\$[\s\S]*?\$\$/g, " $BODY$ ");
   const signes = new Set();
   const arite = (args) => args.split(",").filter((a) => a.trim()).length;
   for (const [, nom, args] of t.matchAll(/\bdrop\s+function\s+(?:if\s+exists\s+)?([\w.]+)\s*\(([^)]*)\)/gi)) {

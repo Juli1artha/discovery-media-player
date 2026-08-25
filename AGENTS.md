@@ -128,6 +128,31 @@ other party, one by accident, one by a tool. **Zero by the person writing the co
 writing this very rule down. That is consistent with the rule rather than an argument against it —
 the sign is visible while writing, which is exactly to say it is invisible to the one writing.
 
+## A conclusion never goes red — only a count can drop
+
+**Print what you measured, not what you concluded from it.** A summary line that states a verdict
+cannot be wrong out loud: nothing in it moves when the measurement underneath stops covering what
+it claims.
+
+⚠️ Measured twice on 25/08, in guards written that same day:
+
+| The line it printed | What was actually true |
+|---|---|
+| `19 migrations lues, chacune prouvable sur ses effets` | seven of them had no sign at all and were **skipped** by the filter |
+| a `docs only` verdict on a release | says nothing about where the boundary of "docs" is drawn, and that boundary is ours |
+
+Both were replaced by counts — `19 lues, 44 signes sondables relevés, aucune muette`, and a table of
+zones with added/removed/changed per zone. A probe that stopped seeing one shape makes that number
+fall visibly; *"each one provable"* does not move, and neither does a boolean.
+
+This is the two-inputs rule for the case where **there are no two inputs at all**: a sentence that
+asserts more than the code measured compares nothing, so nothing can contradict it. The catch is
+not a better comparison — it is refusing to print a verdict where a number would do.
+
+⚠️ Both were found by re-reading the guard's own output and asking whether it was *true* — after
+the bench was green, after CI was green, after the merge. That is not a place anyone looks by
+habit, which is precisely why the rule is to remove the possibility rather than to look harder.
+
 ## An assertion that costs its author is still an assertion
 
 **Nobody re-checks a claim that makes its author look bad.** It reads as expensive, therefore
