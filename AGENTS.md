@@ -111,6 +111,23 @@ cannot do it without changing the setup — because they share the handle — th
 This is not "make sure your check can fail", which says nothing about where to look. It says the
 boundary to inspect is the one between your sentence and your wiring.
 
+**And naming both inputs is only the catch-up. The closure is getting both facts from a single
+operation** — then there is no window to name, because there is no second moment.
+
+⚠️ A third instance, the same evening, in the file that adds this rule: `statSync(p).isDirectory()`
+followed by `readFileSync(p)`. CodeQL caught it; the author did not. The fix was not a more careful
+comparison but `readdirSync(dir, { withFileTypes: true })`, where the type arrives **with** the
+entry. There is no longer a "we checked, then we acted"; there is only a "we read".
+
+So the order to try things in is: make the assumption impossible to hold wrongly, cheaply, if you
+can — and only fall back on naming the two handles when you cannot. The first removes the failure;
+the second makes it visible.
+
+⚠️ And note what the three instances have in common about *who* saw them: one was found by the
+other party, one by accident, one by a tool. **Zero by the person writing the code**, minutes after
+writing this very rule down. That is consistent with the rule rather than an argument against it —
+the sign is visible while writing, which is exactly to say it is invisible to the one writing.
+
 ## An assertion that costs its author is still an assertion
 
 **Nobody re-checks a claim that makes its author look bad.** It reads as expensive, therefore
