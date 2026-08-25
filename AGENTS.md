@@ -29,14 +29,17 @@ coverage's sake.
 
 Coverage **is measured and published** since 2026-08-25 — a reversal of the sentence that stood
 here ("deliberately not measured"), and the reversal carries its reason. What changed is not the
-rule above but the audience: the OpenSSF Silver form asks whether the suite provides ≥ 80%
-statement coverage, and an outside evaluator cannot verify a number nobody publishes. The figure
-was already true before it was claimed (83% measured, then the claim made — in that order), so CI
-now prints it on every run, with an 80% floor. ⚠️ The floor defends the **public claim**, not a
-quality target: if it ever trips, the honest moves are a test for a real behaviour, or withdrawing
-the claim from the badge form — never a test written to make a number go up. A suite padded to
-protect a threshold is worth less than the smaller suite it replaced, because nobody can tell the
-two apart from the number alone.
+rule above but the audience: the OpenSSF forms ask for thresholds, and an outside evaluator cannot
+verify a number nobody publishes. Each figure was true before it was claimed, in that order: 83%
+measured, then the Silver claim (≥ 80% statements) with an 80% floor; the same evening, 90.31%
+statements and 83.01% branches measured — earned by behaviour tests, none written for the number —
+then the Gold claims (≥ 90% statements, ≥ 80% branches), and the floors moved to **90/80** to
+match. ⚠️ The floors defend the **public claims**, not a quality target: if one ever trips, the
+honest moves are a test for a real behaviour, or withdrawing the claim from the badge form — never
+a test written to make a number go up. The statement margin is thin (~0.3 points), and that is the
+price of the claim: it is paid in behaviour tests. A suite padded to protect a threshold is worth
+less than the smaller suite it replaced, because nobody can tell the two apart from the number
+alone.
 
 ## Conventions the guards enforce
 
