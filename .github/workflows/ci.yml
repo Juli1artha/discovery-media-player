@@ -178,6 +178,16 @@ jobs:
         if: matrix.node == '22'
         run: node tools/migrations-detectables.mjs
 
+      # ⚠️ UN BLOC « run: » N'EST ANALYSÉ PAR PERSONNE AVANT DE S'EXÉCUTER — et pour le workflow de
+      # sortie, il s'exécute APRÈS la publication npm. À la 0.1.136, une étape portait
+      # `node -e '…'` entre guillemets simples avec « d'attestation » dedans : l'apostrophe fermait
+      # la chaîne, bash analysait le JavaScript et butait sur une parenthèse. npm publié, image
+      # publiée, AUCUNE Release, aucune attestation. Rien n'avait pu le voir : ce bloc ne tourne que
+      # sur un tag. `bash -n` analyse sans exécuter, et il ne se rappelle de rien.
+      - name: Every workflow run block is valid shell
+        if: matrix.node == '22'
+        run: node tools/shell-des-workflows.mjs
+
       # ⚠️ UN `.d.ts` PARFAIT DANS LE CLONE PEUT ÊTRE ABSENT DU PAQUET PUBLIÉ — il suffit que
       # `files` ne l'embarque pas, et c'est exactement ce qui était arrivé au contrat et à la
       # rétention. On compile donc un consommateur RÉEL contre le TARBALL, en mode strict et

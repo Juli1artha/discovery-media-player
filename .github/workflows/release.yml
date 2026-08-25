@@ -299,7 +299,13 @@ jobs:
           PREC=$(npm view discovery-media-player versions --json \
             | jq -r --arg v "$V" '[.[] | select(. != $v)] | last // empty')
           echo "## Contenu réel du paquet" >> "$GITHUB_STEP_SUMMARY"
-          if [ -z "$PREC" ]; then
+          # ⚠️ MÊME HASARD QUE CI-DESSOUS : un rejeu sur un tag antérieur à cet outil ne l'aurait
+          # pas dans son arbre. On le DIT dans le bloc au lieu de faire échouer la sortie — « on n'a
+          # pas pu regarder » n'est pas « rien n'a changé », et une Release amputée de sa table vaut
+          # mieux qu'une Release absente.
+          if [ ! -f tools/zones-du-tarball.mjs ]; then
+            printf '%s\n' "_This tag predates the per-zone comparison, so it was **not made**. This says nothing about what changed._" > "$BLOC"
+          elif [ -z "$PREC" ]; then
             echo "Première publication — rien à comparer." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -530,20 +536,35 @@ jobs:
       #
       # Le nom porte la VERSION, comme le tarball et le SBOM : un bundle détaché de ce qu'il
       # signe ne signe plus rien d'identifiable.
+      # ⚠️ CE CONTRÔLE N'APPELLE AUCUN FICHIER DU DÉPÔT, ET C'EST LA RAISON DE SA FORME. Un rejeu
+      # par `workflow_dispatch` exécute le workflow de `main` contre le CONTENU DU TAG : une étape
+      # qui appelle `node tools/…` échoue sur tout tag antérieur à ce fichier — donc exactement sur
+      # les sorties que le dispatch existe pour rattraper. `jq` est déjà utilisé par quatre
+      # workflows ici et vit sur le runner, pas dans l'arbre.
+      #
+      # ⚠️ ET IL N'Y A PLUS DE JAVASCRIPT DANS UNE CHAÎNE SHELL. La première écriture était
+      # `node -e '…'` entre guillemets simples et contenait « d'attestation » : l'apostrophe fermait
+      # la chaîne, bash analysait le JavaScript restant et butait sur une parenthèse. Ce job est mort
+      # là à la 0.1.136 — npm publié, aucune Release, aucune attestation. Un `case` sur une variable
+      # n'a pas de citation à tenir : la classe est supprimée, pas surveillée.
+      #
+      # Un nom affirme un format, donc le format se vérifie AVANT de poser « .sigstore.json ».
       - name: Gather what the Release will carry — the bundle under its recognized name
         run: |
           V=$(node -p 'require("./package.json").version')
-          node -e '
-            const f = process.argv[1];
-            const b = JSON.parse(require("fs").readFileSync(f, "utf8"));
-            const mt = String(b.mediaType || "");
-            if (!mt.startsWith("application/vnd.dev.sigstore.bundle")) {
-              console.error("::error::le fichier d'attestation nest pas un bundle Sigstore (mediaType: " + (mt || "absent") + ") — on ne pose pas un nom .sigstore.json qui le prétendrait");
-              process.exit(1);
-            }
-            console.log("bundle Sigstore confirmé : " + mt);
-          ' "${{ steps.attestation.outputs.bundle-path }}"
-          cp "${{ steps.attestation.outputs.bundle-path }}" "/tmp/sortie/discovery-media-player-$V.sigstore.json"
+          BUNDLE="${{ steps.attestation.outputs.bundle-path }}"
+          MT=$(jq -r '.mediaType // ""' "$BUNDLE")
+          case "$MT" in
+            application/vnd.dev.sigstore.bundle*)
+              echo "bundle Sigstore confirme : $MT" ;;
+            "")
+              echo "::error::$BUNDLE ne declare aucun mediaType — on ne pose pas un nom .sigstore.json qui pretendrait un format absent"
+              exit 1 ;;
+            *)
+              echo "::error::$BUNDLE declare le mediaType « $MT » — attendu application/vnd.dev.sigstore.bundle*. Un nom affirme un format ; celui-ci ne correspond pas"
+              exit 1 ;;
+          esac
+          cp "$BUNDLE" "/tmp/sortie/discovery-media-player-$V.sigstore.json"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
