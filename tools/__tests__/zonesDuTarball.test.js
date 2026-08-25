@@ -4,7 +4,12 @@
 // à la main par l'hôte, deux fois. Ce banc éprouve la règle, puis l'applique aux DEUX ARCHIVES
 // PUBLIÉES de la 0.1.134 et de la 0.1.135, dont l'écart est connu indépendamment.
 
-import { describe, it, expect } from "vitest";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 
 import { ZONES, zoneDe, ecarts, rapport, versionPrecedente, diffUnifie, objetsSQL, lireTarball } from "../zones-du-tarball.mjs";
 
@@ -211,13 +216,40 @@ describe("l'alarme porte de quoi agir", () => {
 });
 
 describe("une seule lecture rend les deux faits", () => {
+  // ⚠️ CE BANC FABRIQUE SON ARCHIVE. Sa première écriture lisait un tarball posé dans le
+  // répertoire de travail de la session qui l'écrivait : `npm test` passait ici et refusait en
+  // forge, et aurait refusé chez n'importe quel contributeur. Un banc vert par accident
+  // d'environnement est pire qu'un banc absent — il affirme une couverture qu'il n'a pas.
+  let archive, temp;
+
+  beforeAll(() => {
+    temp = mkdtempSync(join(tmpdir(), "banc-zones-"));
+    const racine = join(temp, "package");
+    mkdirSync(join(racine, "supabase", "migrations"), { recursive: true });
+    mkdirSync(join(racine, "server"), { recursive: true });
+    writeFileSync(join(racine, "supabase", "migrations", "0001-a.sql"), "create table t(id int);\n");
+    writeFileSync(join(racine, "supabase", "migrations", "0002-b.sql"), "alter table t add s text;\n");
+    writeFileSync(join(racine, "server", "handler.js"), "module.exports = {};\n");
+    archive = join(temp, "paquet.tgz");
+    execFileSync("tar", ["-czf", archive, "-C", temp, "package"]);
+  });
+
+  afterAll(() => rmSync(temp, { recursive: true, force: true }));
+
   it("⚠️ les contenus ne sont gardés que pour ce qui est demandé", () => {
     // Deux passes auraient donné deux vérités possibles sur la même archive.
-    const S = "/tmp/claude-0/-home-user-discovery-media-player/86acc80b-9405-5ebb-ae7f-a1c2c3a2aebc/scratchpad";
-    const r = lireTarball(`${S}/v135/discovery-media-player-0.1.135.tgz`, (f) => f.startsWith("supabase/migrations/"));
-    expect(Object.keys(r.empreintes).length).toBeGreaterThan(50);
-    expect(Object.keys(r.contenus).length).toBe(19);
-    expect(Object.keys(r.contenus).every((f) => f.startsWith("supabase/migrations/"))).toBe(true);
+    const r = lireTarball(archive, (f) => f.startsWith("supabase/migrations/"));
+    expect(Object.keys(r.empreintes).sort()).toEqual([
+      "server/handler.js", "supabase/migrations/0001-a.sql", "supabase/migrations/0002-b.sql",
+    ]);
+    expect(Object.keys(r.contenus).sort()).toEqual([
+      "supabase/migrations/0001-a.sql", "supabase/migrations/0002-b.sql",
+    ]);
+    expect(r.contenus["supabase/migrations/0002-b.sql"]).toContain("alter table t");
+  });
+
+  it("sans prédicat, aucun contenu n'est gardé", () => {
+    expect(lireTarball(archive).contenus).toEqual({});
   });
 });
 
