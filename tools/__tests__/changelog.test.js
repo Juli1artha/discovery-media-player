@@ -142,8 +142,14 @@ describe("le CHANGELOG réel du dépôt", () => {
     expect(ecarts(reel)).toEqual([]);
   });
 
-  it("⚠️ n'a qu'un seul `[Unreleased]` — il en a porté deux, et personne ne l'a vu", () => {
-    expect(titres(reel).filter((t) => t === "Unreleased")).toHaveLength(1);
+  it("⚠️ ne porte PAS deux `[Unreleased]` — il en a porté deux, et personne ne l'a vu", () => {
+    // ⚠️ « AU PLUS UN », PAS « EXACTEMENT UN », et c'est une sortie qui l'a appris à ce banc.
+    // Publier une version REMPLACE le titre `[Unreleased]` par celui de la version : entre la
+    // sortie et le premier changement suivant, le fichier n'en porte AUCUN — état parfaitement
+    // normal, que la première rédaction de ce test appelait une faute. Ce qu'on refuse est le
+    // doublon, pas l'absence. (Le lien de bas de page `[Unreleased]:`, lui, reste exigé à un
+    // exemplaire par `ecarts` : c'est lui qui pointe la comparaison vers HEAD.)
+    expect(titres(reel).filter((t) => t === "Unreleased").length).toBeLessThanOrEqual(1);
   });
 
   it("contient bien la discontinuité qui interdit le calcul naïf", () => {

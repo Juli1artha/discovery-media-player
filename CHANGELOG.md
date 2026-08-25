@@ -10,7 +10,27 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
-## [Unreleased]
+## [0.1.138] — 2026-08-25
+
+**A security fix, and two doors that did not exist.** This train leaves on the same day as 0.1.137,
+which the release pace normally forbids — the exception it uses is the first one written down:
+*a security fix leaves as soon as it is green*. A visitor holding a valid link could store a value
+that made the statistics page exhaust the heap, and that is not a defect that waits for tomorrow's
+train.
+
+**⚠️ Operators: apply migration `0020` before or with this upgrade.** It adds bounds to
+`commercial_doc_views` and `commercial_doc_sessions`, repairs any out-of-range history, and only
+then validates — in that order, because a validated constraint on an already-poisoned table fails.
+`supabase/init.sql` carries the same constraints for a fresh install, and a catch-up block for a
+base created before them.
+
+Measured on the two tarballs rather than claimed: **62 files → 64**, exactly **two added**
+(`server/reponses.js`, `supabase/migrations/0020-mesures-bornees.sql`), **none removed**, nine
+changed. All of the change is in `server`, `cli`, `database` and the manifest; `documents`,
+`context`, `types` and `browser` are untouched — **the bundle a visitor's page executes is
+byte-identical across the two releases** (`server/browser.generated.js`, `sha256 ad3af9dc56479147…`,
+16 809 bytes; `shared.generated.js` and `dist/bridge.js` likewise).
+
 
 ### Fixed
 - ⚠️ **Twenty JSON responses declared their type and none forbade sniffing.** The JSON reply helper
@@ -4100,7 +4120,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.137...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.138...HEAD
+[0.1.138]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.137...v0.1.138
 [0.1.137]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.136...v0.1.137
 [0.1.136]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.135...v0.1.136
 [0.1.135]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.134...v0.1.135
