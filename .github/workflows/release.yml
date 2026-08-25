@@ -482,6 +482,36 @@ jobs:
         with:
           subject-path: ${{ steps.paquet.outputs.chemin }}
 
+      # ⚠️ « RIEN DE CE QUE L'HÔTE EXÉCUTE N'A CHANGÉ » EST LA PHRASE QUI DÉCIDE D'UNE MONTÉE, et
+      # elle était calculée après coup, à la main, par l'hôte de production — deux fois, pour la
+      # 0.1.134 puis la 0.1.135. Elle se calcule ici, sur les DEUX TARBALLS.
+      #
+      # ⚠️ CE QUI COMPTE N'EST PAS LA PHRASE, C'EST QU'ELLE SOIT MÉCANIQUE. Une mention « docs
+      # seulement » tapée à la main dans les notes se revérifie — l'hôte l'a dit et l'a fait. Une
+      # mention produite par la chaîne se recoupe une fois, puis on s'appuie dessus.
+      #
+      # ⚠️ ET LE BLOC EST TOUJOURS ÉCRIT, MÊME QUAND ON NE PEUT PAS CONCLURE : un bloc absent
+      # disparaîtrait des notes sans un mot, et le lecteur croirait qu'il n'y avait rien à dire.
+      # « On n'a pas pu regarder » et « rien n'a changé » ne se ressemblent que si on les tait.
+      - name: What changed in the package, by zone, measured on the two tarballs
+        run: |
+          V=$(node -p 'require("./package.json").version')
+          BLOC=/tmp/sortie/zones.md
+          mkdir -p /tmp/sortie /tmp/precedent
+          PREC=$(npm view discovery-media-player versions --json 2>/dev/null \
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",async()=>{
+                const {versionPrecedente}=await import("./tools/zones-du-tarball.mjs");
+                let v=[]; try{v=JSON.parse(s)}catch{}
+                process.stdout.write(versionPrecedente(Array.isArray(v)?v:[v],process.argv[1])||"")})' "$V" || echo "")
+          if [ -z "$PREC" ]; then
+            printf '%s\n' "_No previous published version to compare against._" > "$BLOC"
+          elif ! ( cd /tmp/precedent && npm pack "discovery-media-player@$PREC" >/dev/null 2>&1 ); then
+            printf '%s\n' "_The previous package (\`$PREC\`) could not be fetched, so the per-zone comparison was **not made**. This says nothing about what changed._" > "$BLOC"
+          else
+            node tools/zones-du-tarball.mjs "$(ls /tmp/precedent/*.tgz)" "${{ steps.paquet.outputs.chemin }}" "$PREC" "$V" > "$BLOC"
+          fi
+          cat "$BLOC"
+
       - name: Gather what the Release will carry
         run: cp "${{ steps.attestation.outputs.bundle-path }}" /tmp/sortie/
 
@@ -545,12 +575,25 @@ jobs:
           ls -l paquet/
           [ "$manquants" = 0 ] || exit 1
 
+      # ⚠️ Le bloc des zones n'est PAS un fichier attaché — il ne rejoint donc pas la garde de
+      # présence d'à côté, dont un banc exige qu'elle soit exactement `files:`. Il a sa protection
+      # ici : s'il manquait, le corps de la Release perdrait la table sans un mot, ce qui est
+      # précisément ce que cette Release a déjà vécu avec un motif qui ne correspondait à rien.
+      - name: Compose the Release body — the notes, then what changed by zone
+        env:
+          NOTES: ${{ needs.verifier.outputs.notes }}
+        run: |
+          [ -s paquet/zones.md ] || { echo "::error::paquet/zones.md manquant ou vide — le corps de la Release perdrait la table des zones en silence"; exit 1; }
+          printf '%s\n\n' "$NOTES" > corps.md
+          cat paquet/zones.md >> corps.md
+          wc -l corps.md
+
       - name: GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           tag_name: ${{ env.TAG }}
           name: ${{ env.TAG }}
-          body: ${{ needs.verifier.outputs.notes }}
+          body_path: corps.md
           generate_release_notes: false
           make_latest: true
           # Le tarball CONFRONTÉ au registre, son condensat, la provenance SLSA de ce fichier
