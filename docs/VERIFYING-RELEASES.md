@@ -153,6 +153,12 @@ differ from the tag commit        0
 differ from the attested commit  32     (the attested commit includes a later change)
 ```
 
+⚠️ The mechanism, because a divergence you cannot explain is one you cannot judge: a dispatch runs
+**the workflow file from the ref it was dispatched from**, while every job in it checks out **the
+tag**. So the run is attributed to `main`'s head — the commit above — and the archive is packed from
+the tag's tree. Both halves are doing exactly what they were told; they simply answer two different
+questions, and the attestation only records one of them.
+
 **The signature, the builder and the bytes are sound.** What diverges is the *source → artefact
 link*. Rebuilding from the attested commit will **not** reproduce this archive — and that mismatch
 is indistinguishable from tampering unless you know to expect it.
