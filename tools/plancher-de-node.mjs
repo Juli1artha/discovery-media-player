@@ -119,9 +119,23 @@ export function plancherProuve(exigences) {
  * bénirait un document qui annonce un plancher plus BAS que le vrai — exactement le sens de
  * l'erreur qu'on ferme ici. Et cette décision vit dans une fonction exportée, pas dans le point
  * d'entrée : une règle qu'on ne peut pas appeler depuis un banc est une règle qu'on ne teste pas.
+ *
+ * ⚠️ ET ON NE CONSTRUIT PAS D'EXPRESSION RÉGULIÈRE À PARTIR DU TEXTE. La première écriture le
+ * faisait, en échappant le point — et CodeQL l'a refusée sur cette PR même : « n'échappe pas les
+ * antislashs ». Le constat était juste, et le correctif n'est pas un meilleur échappeur. Ce dépôt
+ * a déjà payé deux fois l'idée qu'on peut assainir une chaîne à la main (le lexer des `uses:`,
+ * celui des `FROM`) ; ici la question — « ce nombre est-il écrit, entier ? » — se répond en
+ * cherchant la sous-chaîne LITTÉRALE et en regardant ses deux voisins. Aucun métacaractère
+ * n'existe plus, donc aucun n'est oublié.
  */
-export const plancherEcritDans = (texte, version) =>
-  new RegExp(`(^|[^\\d.])${version.replace(/\./g, "\\.")}([^\\d.]|$)`).test(texte);
+export function plancherEcritDans(texte, version) {
+  // Un voisin qui n'est ni chiffre ni point — ou le bord du texte — borne le nombre.
+  const borne = (c) => c === undefined || !"0123456789.".includes(c);
+  for (let i = texte.indexOf(version); i !== -1; i = texte.indexOf(version, i + 1)) {
+    if (borne(texte[i - 1]) && borne(texte[i + version.length])) return true;
+  }
+  return false;
+}
 
 if (estExecuteDirectement(import.meta.url)) {
   // ⚠️ `tenter` : un `package.json` ou un verrou illisible ne dit RIEN du plancher — il dit qu'on

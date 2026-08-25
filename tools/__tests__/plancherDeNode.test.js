@@ -138,6 +138,17 @@ describe("le plancher écrit dans le document", () => {
   it("refuse un document qui ne le dit pas du tout", () => {
     expect(plancherEcritDans("Node ≥ 22.", "22.22.2")).toBe(false);
   });
+
+  it("⚠️ CHERCHE UNE SOUS-CHAÎNE LITTÉRALE, PAS UN MOTIF — refusé par CodeQL sur la PR qui l'a introduite", () => {
+    // La première écriture construisait une expression régulière en échappant le point, et rien
+    // d'autre. `\d` y aurait été une classe de chiffres au lieu de deux caractères.
+    expect(plancherEcritDans("plancher 22\\d2 ici", "22\\d2")).toBe(true);
+    expect(plancherEcritDans("plancher 2242 ici", "22\\d2")).toBe(false);
+  });
+
+  it("trouve une occurrence bornée même quand une occurrence collée la précède", () => {
+    expect(plancherEcritDans("122.22.2 puis 22.22.2", "22.22.2")).toBe(true);
+  });
 });
 
 describe("le dépôt tel qu'il est", () => {
