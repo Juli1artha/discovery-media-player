@@ -1,0 +1,24 @@
+# Propriete minimale des zones sensibles. Ce fichier ne distribue pas le travail : il garantit
+# qu'aucune modification de ces zones ne peut etre fusionnee sans qu'un mainteneur l'ait vue.
+#
+# `tools/codeowners-valide.mjs` verifie que chaque motif designe au moins un fichier suivi —
+# une regle qui ne matche rien est une protection qu'on croit avoir.
+
+# Defaut : tout le depot.
+*                           @Juli1artha
+
+# Ce qui s'execute avec nos droits.
+/.github/workflows/         @Juli1artha
+
+# Le code que les hotes executent, et le contrat qu'ils lisent.
+/server/                    @Juli1artha
+/context/                   @Juli1artha
+/docs/HOST-CONTRACT.md      @Juli1artha
+
+# Le schema : additif seulement, et une migration appliquee ailleurs est immuable.
+/supabase/migrations/       @Juli1artha
+
+# La chaine de sortie et ce qui la prouve.
+/docs/RELEASING.md          @Juli1artha
+/docs/VERIFYING-RELEASES.md @Juli1artha
+/SECURITY.md                @Juli1artha
