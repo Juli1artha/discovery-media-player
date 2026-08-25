@@ -33,6 +33,14 @@ describe("les signes qu'une migration laisse", () => {
     expect(signesDe("comment on column public.t.c is 'x';")[0]).toMatch(/^comment public\.t\.c #[0-9a-f]{8}$/);
   });
 
+  it("⚠️ un corps de fonction ne DÉCLARE rien — c'est du code qu'elle exécute", () => {
+    // La distinction est DÉCLARATION contre RÉFÉRENCE, et elle n'existe pas dans le texte brut.
+    // Une sonde voisine s'y est trompée cinq fois en une journée. Zéro occurrence chez nous
+    // aujourd'hui : ce cas ferme une porte, il ne corrige pas un compte.
+    const sql = "create or replace function public.f() returns void language plpgsql as $$ begin execute 'create index fantome on t(x)'; end $$;";
+    expect(signesDe(sql)).toEqual(["function public.f/0"]);
+  });
+
   it("⚠️ le signe d'un commentaire est son TEXTE — 0012 ne fait que remplacer celui de 0011", () => {
     const a = signesDe("comment on column public.t.c is 'ancien';");
     const b = signesDe("comment on column public.t.c is 'nouveau';");
