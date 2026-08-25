@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "commonjs",
   "dependencies": {
-    "discovery-media-player": "0.1.133",
+    "discovery-media-player": "0.1.134",
     "express": "^4.19.2"
   },
   "engines": { "node": ">=22" }
