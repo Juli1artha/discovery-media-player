@@ -23,7 +23,7 @@
 // Usage : node tools/zones-du-tarball.mjs <avant.tgz> <apres.tgz>
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, mkdtempSync, rmSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { createHash } from "node:crypto";
@@ -69,7 +69,13 @@ export const ZONES = [
   // appliqué ailleurs doit être immuable, et un fichier qui change sous des bases qui l'ont déjà
   // joué n'est pas une ligne de tableau, c'est un arrêt.
   { nom: "database", quoi: "the schema and the migrations the host applies itself", est: (f) => f.startsWith("supabase/"),
-    alarmeSiModifie: "a migration already applied elsewhere must be immutable. A changed file here is not a count — it is a stop. Do not upgrade before establishing which databases have already played it." },
+    // ⚠️ LE TEXTE NE RENVOIE PLUS VERS UN REGISTRE DE MIGRATIONS, et c'est une correction due à un
+    // hôte qui a fait le geste pour de vrai. Sa table `schema_migrations` enregistrait 0001, 0002 et
+    // 0005 à 0011 — alors que 0013 et 0016 à 0019 étaient bel et bien appliquées, vérifiées sur
+    // leurs effets. Un registre n'enregistre que ce qui est passé par un chemin donné ; le reste
+    // n'y laisse aucune trace. Une instruction qui envoie lire une table suppose une fiabilité
+    // qu'aucun hôte ne nous a promise. On envoie donc sonder l'OBJET, et on donne son nom.
+    alarmeSiModifie: "a migration already applied elsewhere must be immutable. A changed file here is not a count — it is a stop. Check the objects listed below against your live database: a migration registry only records what went through one particular path, so absence from it does not mean the migration was never applied." },
 ];
 
 export const zoneDe = (fichier) => (ZONES.find((z) => z.est(fichier)) || { nom: null }).nom;
@@ -99,7 +105,7 @@ export function ecarts(avant, apres) {
  * identifiants du produit qu'on tape, ce sont des libellés qu'on lit, et ils portent le nom du
  * répertoire qu'ils recouvrent pour qu'on puisse aller vérifier.
  */
-export function rapport(avantVersion, apresVersion, avant, apres) {
+export function rapport(avantVersion, apresVersion, avant, apres, contenus = {}) {
   const { parZone, horsZone } = ecarts(avant, apres);
   const l = [];
   l.push(`### What changed in the package, by zone — \`${avantVersion}\` → \`${apresVersion}\``);
@@ -135,7 +141,19 @@ export function rapport(avantVersion, apresVersion, avant, apres) {
     l.push(">");
     l.push(`> ${z.alarmeSiModifie}`);
     l.push(">");
-    for (const f of touches) l.push(`> - \`${f}\``);
+    for (const f of touches) {
+      l.push(`> - \`${f}\``);
+      const textAvant = (contenus.avant || {})[f];
+      const textApres = (contenus.apres || {})[f];
+      if (textApres === undefined || textAvant === undefined) {
+        // ⚠️ On le DIT. « Pas de contenu disponible » et « rien de notable » se ressemblent en silence.
+        l.push(">   _(contents not available here, so no diff and no object list)_");
+        continue;
+      }
+      const objets = objetsSQL(textApres);
+      if (objets.length) l.push(`>   objects it touches — ${objets.map((o) => `\`${o}\``).join(", ")}`);
+      l.push(">", ">   ```diff", ...diffUnifie(textAvant, textApres).split("\n").map((x) => `>   ${x}`), ">   ```");
+    }
   }
 
   if (horsZone.length) {
@@ -165,34 +183,130 @@ export function versionPrecedente(versions, courante) {
   return candidates.reduce((meilleure, v) => (avant(meilleure, v) ? v : meilleure));
 }
 
-/** L'inventaire d'un tarball : chemin (sans le `package/` de tête) → sha256. */
-export function inventaireDuTarball(chemin) {
-  const dir = mkdtempSync(join(tmpdir(), "zones-"));
+/**
+ * LE DIFF UNIFIÉ D'UN FICHIER, parce que « modifié » recouvre deux choses opposées : une faute de
+ * frappe dans un commentaire, et une DDL réécrite. La première ne mérite pas d'arrêter un train,
+ * la seconde mérite d'arrêter beaucoup plus qu'un train — et rien dans un compte ne les sépare.
+ *
+ * ⚠️ C'EST GRATUIT ICI ET COÛTEUX AILLEURS. Au moment où ce bloc s'écrit, les deux archives sont
+ * ouvertes ; pour l'hôte qui lit les notes, l'obtenir suppose de télécharger et déplier deux
+ * tarballs. Le déséquilibre est la raison d'être de cette fonction.
+ *
+ * ⚠️ ON NE TRONQUE PAS EN SILENCE. Un diff long EST une information — on le dit, avec le nombre de
+ * lignes retirées, plutôt que de rendre un extrait qui se lit comme un diff complet.
+ */
+export function diffUnifie(avant, apres, plafond = 80, executer = executerDiff) {
+  // ⚠️ `diff` SORT EN 1 QUAND LES FICHIERS DIFFÈRENT — c'est son contrat, pas une panne. Traiter ce
+  // code comme une erreur ferait disparaître le diff exactement quand il y en a un.
+  //
+  // ⚠️ ET LE RATTRAPAGE EST ICI, PAS DANS LE LANCEUR PAR DÉFAUT. Il y était, et la couture
+  // d'injection le CONTOURNAIT : le banc écrit pour l'éprouver ne l'atteignait pas. Ce que
+  // j'affirmais éprouver et ce que j'éprouvais n'étaient pas le même objet — le défaut dont ce
+  // dépôt tient la règle deux fichiers plus loin.
+  let brut;
   try {
-    execFileSync("tar", ["-xzf", chemin, "-C", dir], { stdio: ["ignore", "ignore", "pipe"] });
-    const racine = join(dir, "package");
-    const out = {};
-    // ⚠️ `withFileTypes` PLUTÔT QU'UN `statSync` SÉPARÉ. Interroger le type par un second appel
-    // ouvre une fenêtre entre le contrôle et l'usage — CodeQL l'a refusé, à raison sur la forme
-    // même si le répertoire vient d'être créé ici. Le type arrive avec l'entrée, donc il n'y a
-    // plus de « on a vérifié, puis on a fait » : il n'y a qu'un « on a lu ».
-    const parcourir = (d) => {
-      for (const e of readdirSync(d, { withFileTypes: true })) {
-        const p = join(d, e.name);
-        if (e.isDirectory()) parcourir(p);
-        else if (e.isFile()) out[relative(racine, p)] = createHash("sha256").update(readFileSync(p)).digest("hex");
-      }
-    };
-    parcourir(racine);
-    if (!Object.keys(out).length) throw new Error(`${chemin} : aucun fichier — on ne compare pas sur un inventaire vide`);
-    return out;
+    brut = executer(String(avant ?? ""), String(apres ?? ""));
+  } catch (erreur) {
+    if (erreur && erreur.status === 1 && typeof erreur.stdout === "string") brut = erreur.stdout;
+    else throw erreur;
+  }
+  // Les deux premières lignes de `diff -u` nomment des fichiers temporaires : elles ne veulent
+  // rien dire pour le lecteur, et le chemin réel est déjà dans le titre du bloc.
+  const lignes = brut.split("\n").filter((l, i) => !(i < 2 && /^(---|\+\+\+) /.test(l)));
+  if (lignes.length <= plafond) return lignes.join("\n").trimEnd();
+  const retirees = lignes.length - plafond;
+  return [...lignes.slice(0, plafond), `… ${retirees} more line(s) not shown — a diff this long is itself the answer`].join("\n");
+}
+
+function executerDiff(avant, apres) {
+  const dir = mkdtempSync(join(tmpdir(), "diff-"));
+  try {
+    const a = join(dir, "avant"), b = join(dir, "apres");
+    writeFileSync(a, avant); writeFileSync(b, apres);
+    return execFileSync("diff", ["-u", a, b], { encoding: "utf8" });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
+/**
+ * LES OBJETS QU'UNE MIGRATION TOUCHE, tirés de son SQL.
+ *
+ * ⚠️ C'EST LA CLASSE D'ERREUR ENTIÈRE QUE ÇA SUPPRIME. Répondre « cette migration est-elle
+ * appliquée ? » se fait en sondant l'objet — et sans son nom on le DEVINE. Mesuré chez un hôte de
+ * production : une sonde cherchant une fonction contenant « presence » a rendu « absente » pour une
+ * migration parfaitement appliquée, la fonction s'appelant `player_attendance_bump`. Quatrième
+ * accusation à tort du même genre dans la même journée.
+ *
+ * ⚠️ HEURISTIQUE ASSUMÉE. Elle lit des formes DDL courantes hors chaînes et commentaires ; elle ne
+ * comprend pas le SQL. Elle sert à VISER une sonde, jamais à conclure — un objet qu'elle manque
+ * coûte un aller-retour, un objet qu'elle invente serait pire, donc on ne retient que ce qui suit
+ * immédiatement un verbe connu.
+ */
+export function objetsSQL(texte) {
+  const sansCommentaires = String(texte || "").replace(/--[^\n]*/g, " ").replace(/\/\*[\s\S]*?\*\//g, " ");
+  const VERBES = /\b(create|alter|drop)\s+(?:or\s+replace\s+)?(table|function|index|view|policy|trigger|type|schema)\s+(?:if\s+(?:not\s+)?exists\s+)?([a-zA-Z_][\w.$"]*)/gi;
+  // ⚠️ ON GARDE TOUS LES VERBES D'UN MÊME OBJET, PAS LE PREMIER. Une migration qui fait
+  // `drop function` puis `create or replace function` sur le même nom n'a pas supprimé la fonction —
+  // et n'annoncer que « drop » enverrait sonder une absence là où il faut vérifier une signature.
+  // Mesuré sur `0019-presence-lit-la-presentation.sql`, qui fait exactement ça.
+  const vus = new Map();
+  for (const [, verbe, genre, nom] of sansCommentaires.matchAll(VERBES)) {
+    const cle = `${genre.toLowerCase()} ${nom.replace(/"/g, "")}`;
+    if (!vus.has(cle)) vus.set(cle, []);
+    const verbes = vus.get(cle);
+    if (!verbes.includes(verbe.toLowerCase())) verbes.push(verbe.toLowerCase());
+  }
+  return [...vus.entries()].map(([cle, verbes]) => `${cle} — ${verbes.join(", ")}`);
+}
+
+/**
+ * UNE SEULE LECTURE DE L'ARCHIVE, DEUX FAITS : les empreintes de tout, et le CONTENU de ce que
+ * `contenuSi` réclame.
+ *
+ * ⚠️ Deux passes auraient donné deux vérités possibles sur la même archive, et c'est exactement
+ * la forme que ce dépôt vient d'interdire : obtenir les deux faits d'une seule opération ferme la
+ * fenêtre au lieu de la nommer. Le contenu n'est gardé que pour les fichiers demandés — un paquet
+ * navigateur entier en mémoire ne servirait personne.
+ *
+ * ⚠️ LÈVE sur une archive vide : « rien à comparer » et « on n'a pas pu lire » ne se ressemblent
+ * que si on les tait.
+ */
+export function lireTarball(chemin, contenuSi = () => false) {
+  const dir = mkdtempSync(join(tmpdir(), "zones-"));
+  try {
+    execFileSync("tar", ["-xzf", chemin, "-C", dir], { stdio: ["ignore", "ignore", "pipe"] });
+    const racine = join(dir, "package");
+    const empreintes = {};
+    const contenus = {};
+    const parcourir = (d) => {
+      for (const e of readdirSync(d, { withFileTypes: true })) {
+        const p = join(d, e.name);
+        if (e.isDirectory()) { parcourir(p); continue; }
+        if (!e.isFile()) continue;
+        const nom = relative(racine, p);
+        const octets = readFileSync(p);
+        empreintes[nom] = createHash("sha256").update(octets).digest("hex");
+        if (contenuSi(nom)) contenus[nom] = octets.toString("utf8");
+      }
+    };
+    parcourir(racine);
+    if (!Object.keys(empreintes).length) throw new Error(`${chemin} : aucun fichier — on ne compare pas sur un inventaire vide`);
+    return { empreintes, contenus };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** Les seules empreintes, pour qui n'a pas besoin des contenus. */
+export const inventaireDuTarball = (chemin) => lireTarball(chemin).empreintes;
+
 if (estExecuteDirectement(import.meta.url)) {
   const [avantF, apresF, avantV = "previous", apresV = "current"] = process.argv.slice(2);
   if (!avantF || !apresF) { console.error("usage : node tools/zones-du-tarball.mjs <avant.tgz> <apres.tgz> [versionAvant] [versionApres]"); process.exit(2); }
-  console.log(rapport(avantV, apresV, inventaireDuTarball(avantF), inventaireDuTarball(apresF)));
+  // Les contenus ne sont gardés que pour les zones qui peuvent CRIER : ailleurs, un compte suffit.
+  const aAlarme = (f) => ZONES.some((z) => z.alarmeSiModifie && z.est(f));
+  const a = lireTarball(avantF, aAlarme);
+  const b = lireTarball(apresF, aAlarme);
+  console.log(rapport(avantV, apresV, a.empreintes, b.empreintes, { avant: a.contenus, apres: b.contenus }));
 }
