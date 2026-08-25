@@ -41,6 +41,45 @@ the notes there are this file's section for that version.
     `require` whose absence it was hunting. It accused the fixed file. This repository has paid for
     that lesson twice before, on `uses:` and on `FROM`.
 
+## [Unreleased]
+
+### Fixed
+- ⚠️ **A stored denial of service in the analytics funnel.** A visitor holding a valid link could
+  post `{"event":"page","page":2147483647,"maxPage":2147483647}`. `logView()` checked only that the
+  number was finite, the `integer` column accepted it, and the overview's funnel then looped from 1
+  to that value — **measured: `FATAL ERROR: JavaScript heap out of memory` in eight seconds**, on a
+  single stored row, with the process capped at 512 MB. One row was enough, it persisted, and the
+  trigger was **someone else opening the statistics**, later. Found by the CODEX 5.6 audit on
+  v0.1.137, reproduced here before being believed.
+  - The bounds already existed **275 lines below**, added against exactly this class of defect on
+    the two *session* paths. `logView` was the third path, missed when the other two were closed.
+    So the fix is not "bound here too": there is now **one** function through which a measurement
+    enters the database, and one through which a page is read back. There is no second place left
+    to forget. (`AGENTS.md`, same day: you do not check the crossing, you remove it.)
+  - **The database is no longer assumed clean.** Bounding writes protects future rows; the ones
+    already stored remain. Every read of a page value is clamped, including the ones that are only
+    *displayed* — "this reader reached page 2 147 483 647" is a false number served to a human who
+    decides.
+  - **The funnel is now O(pages + sessions)** — histogram plus descending cumulative — instead of
+    rescanning every session per page. Equivalence with the previous implementation checked on
+    3 000 random draws and six edge cases. On legitimate values it also matters: 10 000 pages ×
+    400 sessions was four million comparisons for a result two passes give exactly.
+  - **Migration `0020`** adds `CHECK` constraints on both tables, `NOT VALID` first, then repairs
+    out-of-range history, then validates — in that order, because a validated constraint on an
+    already-poisoned table fails, and a migration that fails on the data it came to repair is one
+    an operator stops running. Mirrored into `supabase/init.sql`.
+
+### Added
+- **The schema parity check now compares constraints.** CI proved that `init.sql` carries every
+  column, index, function, trigger, publication and replica identity the migrations bring — but not
+  their constraints, so `0020`'s could have drifted between the two files unnoticed. Same blind spot
+  already closed twice, for nullability and for triggers.
+- **The migration guard reads `DO` blocks**, which it used to strip as function bodies. A `DO`
+  block is not a body someone calls later — it is code the migration *executes*, so what it
+  declares, the migration declares. `0020` puts its six constraints in one (there is no
+  `add constraint if not exists` in PostgreSQL) and was accused of leaving no probeable sign. And
+  `add constraint <name>` is now itself a sign: `pg_constraint` answers for it.
+
 ## [0.1.137] — 2026-08-25
 
 **One host-visible fix, one tightened declaration, one new field on the identity card.** Measured on

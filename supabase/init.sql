@@ -93,9 +93,13 @@ create table if not exists public.commercial_doc_views (
   doc_id          text,
   recipient_email text,
   event           text not null,             -- open | page | heartbeat
-  page            integer,
-  max_page        integer,
-  seconds         integer,
+  -- ⚠️ BORNES EN BASE, PARCE QUE LE CODE N'EST PAS LE DERNIER REMPART (0020, audit CODEX 5.6).
+  -- Ces trois colonnes sont peuplées par le PUBLIC. Sans plage, un visiteur muni d'un lien valide
+  -- y écrivait 2147483647 ; l'agrégation du funnel bouclait ensuite jusque-là, à l'ouverture des
+  -- statistiques — chez quelqu'un d'autorisé, plus tard, sur une ligne posée une seule fois.
+  page            integer check (page is null or (page >= 0 and page <= 10000)),
+  max_page        integer check (max_page is null or (max_page >= 0 and max_page <= 10000)),
+  seconds         integer check (seconds is null or (seconds >= 0 and seconds <= 86400)),
   session_id      text,
   at              timestamptz not null default now(),
   ua              text
@@ -113,9 +117,10 @@ create table if not exists public.commercial_doc_sessions (
   slug            text not null,
   doc_id          text,
   recipient_email text,
-  num_pages       integer,
-  max_page        integer,
-  total_seconds   integer default 0,
+  -- Mêmes bornes que `commercial_doc_views`, même raison : ces trois-là viennent aussi du dehors.
+  num_pages       integer check (num_pages is null or (num_pages >= 0 and num_pages <= 10000)),
+  max_page        integer check (max_page is null or (max_page >= 0 and max_page <= 10000)),
+  total_seconds   integer default 0 check (total_seconds is null or (total_seconds >= 0 and total_seconds <= 86400)),
   pages_time      jsonb   default '{}'::jsonb,
   ua              text,
   ip              text,
