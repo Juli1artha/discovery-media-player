@@ -129,10 +129,28 @@ against.
 
 | Version | Date | Release `.tgz` `sha256` | Identical to npm | Who looked | Also checked |
 |---|---|---|---|---|---|
+| 0.1.136 | 2026-08-25 | `3a9e8b435211094006221f55fcfbd004e42e37704194847a0ff41c55497ca61e` | yes — 319 202 bytes on both sides | this repository, by hand | attestation subject and digest, bundle mediaType (`application/vnd.dev.sigstore.bundle.v0.3+json`), SBOM version, `.sha256` sidecar, and the per-zone table against an independent derivation from git. ⚠️ **Its attested `ref` is `refs/heads/main`, not the tag** — see below |
 | 0.1.135 | 2026-08-25 | `603c1a44a502f2929a3ec806a9ee6886085614a20019d01c4019554ea229991d` | yes — 319 190 bytes on both sides | this repository, by hand | attestation subject and digest, SLSA workflow and ref, SBOM version, `.sha256` sidecar — and the release's own claims re-checked **inside the published tarball**: no `CHANGELOG.md`, no `docs/README.md`, and 0 dead relative links out of 2 (28 out of 34 in 0.1.134) |
 | 0.1.135 | 2026-08-25 | same digest | yes — reproduced independently, 319 190 bytes | an integrating host, on another machine — **reported to us, not measured here** | its own lockfile `integrity`; then, on the two published archives, that exactly one entry was removed and `package/README.md` was not |
 | 0.1.134 | 2026-08-24 | `aa56a1d85ef005baa65a065485eacd5462891dce1cb2961036b08af0e2a9c969` | yes — 320 659 bytes on both sides | this repository, by hand | attestation subject and digest, SLSA workflow and ref, SBOM version, `.sha256` sidecar |
 | 0.1.134 | 2026-08-24 | same digest | yes — reproduced independently | an integrating host, on another machine — **reported to us, not measured here** | its own lockfile `integrity`, then the fix re-measured on the unpacked archive |
+
+⚠️ **0.1.136 was produced by a replay, and its provenance says so.** The first run of the release
+workflow died before creating the Release — an apostrophe closed a shell string in the step that
+names the signature bundle, so npm and the image were published while the Release, attestation and
+SBOM were not. The recovery is `workflow_dispatch` on the existing tag, and it runs **`main`'s
+workflow**: the attestation therefore names
+
+```
+refs/heads/main          for 0.1.136
+refs/tags/v0.1.135       for 0.1.135, published in one pass
+```
+
+Both are true statements about how the artefact was built, and both are signed. But a verification
+that *expects* `refs/tags/vX.Y.Z` will not find it on a replayed release, and would be right to
+stop rather than assume. Check the repository and the workflow path as usual; on a replayed
+version, expect the branch ref and confront it with the run in the Actions log rather than treating
+the mismatch as a compromise — or as nothing.
 
 ⚠️ The rows are not all the same kind of statement, and the column says so. The first is a
 measurement made in this repository; the second is a report we received and could not re-run. The
