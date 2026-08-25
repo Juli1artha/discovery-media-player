@@ -3,6 +3,12 @@
 // EXTRAIT DE handler.js (refactor lot 3 — routes, 19/08/2026) — blocs déplacés À L'IDENTIQUE.
 // Reste à PLAT dans server/ (les gardes de forge ciblent server/*.js).
 
+// ⚠️ EXPLICITE, PARCE QUE LE GLOBAL N'EST PAS LE MODULE. L'extraction depuis handler.js (lot 3)
+// a déplacé bot-tts sans importer `crypto` : la route s'appuyait sur `globalThis.crypto`, dont la
+// forme varie selon le runtime — certains y exposent `createHash`, d'autres (dont l'environnement
+// des bancs) n'ont que WebCrypto, et la route rendait alors 500 à la première synthèse. Le banc
+// agentVoix.test.js échoue sans cette ligne.
+const crypto = require("node:crypto");
 const { adresseAppelant } = require("./appelant");
 
 const { getShareBySlug } = require("./shares");
