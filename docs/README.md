@@ -33,6 +33,10 @@ no document assumes you have read the others.
 
 ## You are evaluating the project
 
+The intent on one year is written down, refusals included:
+[`../ROADMAP.md`](../ROADMAP.md) — what the project will do, what it will not become, and the one
+item that unblocks the rest.
+
 The external audit trail is public, unedited, and kept in the state it was received —
 an audit rewritten after the fact is no longer a trace. Findings and their fixes are
 tracked version by version in the [CHANGELOG](../CHANGELOG.md).

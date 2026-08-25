@@ -25,7 +25,18 @@ Node 22 and 24 and will not be more forgiving than your machine.
 **A behaviour worth keeping is worth a test that fails without it.** Before fixing anything,
 write the test that is red for the exact failure you are fixing; the comment above it says what
 broke and when. Do not write happy-path tests to raise a number — no test exists here for
-coverage's sake, and coverage is deliberately not measured.
+coverage's sake.
+
+Coverage **is measured and published** since 2026-08-25 — a reversal of the sentence that stood
+here ("deliberately not measured"), and the reversal carries its reason. What changed is not the
+rule above but the audience: the OpenSSF Silver form asks whether the suite provides ≥ 80%
+statement coverage, and an outside evaluator cannot verify a number nobody publishes. The figure
+was already true before it was claimed (83% measured, then the claim made — in that order), so CI
+now prints it on every run, with an 80% floor. ⚠️ The floor defends the **public claim**, not a
+quality target: if it ever trips, the honest moves are a test for a real behaviour, or withdrawing
+the claim from the badge form — never a test written to make a number go up. A suite padded to
+protect a threshold is worth less than the smaller suite it replaced, because nobody can tell the
+two apart from the number alone.
 
 ## Conventions the guards enforce
 

@@ -30,6 +30,30 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
+      # ⚠️ LA COUVERTURE EST MESURÉE POUR ÊTRE MONTRÉE, PAS POUR ÊTRE POURSUIVIE. AGENTS.md a dit
+      # « délibérément non mesurée » jusqu'au 25/08 ; la décision est retournée LÀ-BAS, avec sa
+      # raison — ce qui a changé n'est pas la règle (aucun test n'existe pour la couverture) mais
+      # le public : le formulaire OpenSSF Silver demande ≥ 80 % d'instructions, et un évaluateur
+      # extérieur ne peut pas vérifier un nombre que personne ne publie. CE JOURNAL est la preuve
+      # publique. Le chiffre était vrai AVANT d'être affirmé (83 % mesurés, puis l'affirmation —
+      # dans cet ordre), et le plancher défend l'AFFIRMATION : s'il rougit un jour, les issues
+      # honnêtes sont un test pour un comportement réel, ou le retrait de l'affirmation du
+      # formulaire — jamais un test écrit pour faire remonter un nombre.
+      #
+      # ⚠️ PÉRIMÈTRE : le code embarqué (server, context, src). Les bundles générés sont mesurés à
+      # travers leurs sources TypeScript — les compter comme sortie de build doublerait les mêmes
+      # lignes sous un autre nom. Les bancs eux-mêmes sont exclus : de la couverture qui se mesure
+      # elle-même n'est pas une mesure. Une seconde exécution de la suite, sur Node 22 seulement :
+      # le prix (≈ 40 s) est celui d'une preuve qu'on peut citer.
+      - name: Statement coverage is public evidence — 80% is the published floor
+        if: matrix.node == '22'
+        run: |
+          npx vitest run --coverage.enabled --coverage.provider=v8 \
+            --coverage.reporter=text-summary \
+            --coverage.include='server/**' --coverage.include='context/**' --coverage.include='src/**' \
+            --coverage.exclude='**/__tests__/**' --coverage.exclude='**/*.generated.js' \
+            --coverage.thresholds.statements=80
+
       # Les artefacts navigateur sont COMMITÉS (les plateformes serverless ne construisent rien).
       # Les reconstruire et exiger qu'ils n'aient pas bougé est la seule façon d'éviter qu'une
       # instance serve un bundle plus ancien que sa source, sans que rien ne le signale.
