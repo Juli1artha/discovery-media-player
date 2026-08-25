@@ -216,6 +216,46 @@ before it, and neither author found their own. Nothing in that is self-sustainin
 both sides kept publishing proofs at a pace, and the day one of them records a verdict out of
 fatigue, the other has nothing left to bite on — and will not know it.
 
+## A value crossing a shell is re-read by a grammar that is not its own
+
+**Take the value out of the text.** Environment, file, argv array — anywhere there is no grammar,
+so there is no special character. The question stops being asked, rather than being answered better.
+
+⚠️ Two defects on 25/08, in two repositories, two shells, one effect:
+
+| What crossed | The character | What it did | What was left |
+|---|---|---|---|
+| a message inside `node -e '…'` | `'` in *d'attestation* | **closed** the string | bash parsed JavaScript and hit `(` |
+| `"$TAG:server/handler.js"` in zsh | `:` | **transformed** it — a substitution modifier | `d0bfe3d8…r.js`, a path to nothing |
+
+Note the second closes nothing. The rule is not about quote characters: **any character the outer
+grammar gives meaning to is a trap**, whether it terminates something or not.
+
+**The sign, while writing: the value and the syntax share a line.** If you cannot show where the
+value ends and the syntax resumes without reading the content, no external parser can either.
+
+⚠️ **`bash -n` does not catch this**, and neither would any other syntax check: the second command
+was valid. Where the value cannot be taken out of the text, use the **tell** instead — an eaten
+argument does not raise an error, it produces *emptiness that looks like a measurement*:
+
+```
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855   sha256 of the empty string
+da39a3ee5e6b4b0d3255bfef95601890afd80709                           sha1 of the empty string
+```
+
+Seeing one of those means *"my probe read nothing"* — never *"the two sides are identical"*. Same
+family: an empty diff, a zero count, an empty list. A positive control — hash something you know
+is not empty — costs one line and catches the whole class, shell or not.
+
+Measured here on 25/08 after the rule was written: **7 expressions still interpolated into `run:`
+text, 25 values passed through `env:`**. All seven are GitHub-controlled (`github.repository`); the
+two that were ours, written that same day, were closed.
+
+⚠️ **This rule was already written in the neighbouring repository, and it prevented neither
+defect** — it named the apostrophe case verbatim, and its author did not apply it to their own
+colon. Third time in two days that a correct sentence existed, served one place, and nobody carried
+it a metre further. Writing the rule is necessary and demonstrably not sufficient.
+
 ## An assertion that costs its author is still an assertion
 
 **Nobody re-checks a claim that makes its author look bad.** It reads as expensive, therefore
