@@ -10,6 +10,37 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [Unreleased]
+
+### Fixed
+- ⚠️ **Nine route failures returned 500 without reporting anything.** The body of `bot-tts` — and
+  eight sibling routes across `routes-agent`, `routes-direct` and `routes-liens` — was wrapped in a
+  bare `catch` that returned `{ ok: false }`: no stack, no message, no call to `errors.capture`.
+  That is why the crypto defect above lived through two releases: **a host's monitoring could not
+  have seen it even correctly wired** — the route was silent, not their instrument. It was found by
+  reading the code, not by watching it.
+  - It was a repeated omission, not a doctrine: `handler.js`, `presentations.js` and `retention.js`
+    have captured for a long time, and exactly one of the ten route catches did. All nine now
+    report the error and name the request's **actual action** before returning 500 — each catch
+    covers a *block* of actions (the one in `routes-agent` covers eight), so a fixed label would
+    have lied on eight calls out of nine.
+  - All nine paths are covered by a bench, not just the one that broke. The first version covered
+    `bot-tts` alone and said so; CI refused it on coverage, and was right — nine silent failures
+    replaced by nine untested reporting paths is the same fault, smaller. Statement coverage goes
+    from 90.31% to **90.81%**.
+
+### Added
+- **A guard that refuses a Node-only `crypto` method called on the global.** `crypto` has been a
+  global since Node 18, so `no-undef` cannot help: the variable *exists*, it just means something
+  else — WebCrypto, which has no `createHash`. The list of module-only methods is **derived from
+  the running Node** (63 of 65 on Node 22; only `getRandomValues` and `randomUUID` live on both
+  sides), never typed by hand.
+  - ⚠️ It reads the code with a **real lexer**. Three regex versions were written first, and all
+    three were blind — the last one was defeated by a file-glob quoted inside a *line* comment,
+    whose slash-star opened a block the pattern closed twenty-four lines later, swallowing the very
+    `require` whose absence it was hunting. It accused the fixed file. This repository has paid for
+    that lesson twice before, on `uses:` and on `FROM`.
+
 ## [0.1.137] — 2026-08-25
 
 **One host-visible fix, one tightened declaration, one new field on the identity card.** Measured on
@@ -21,11 +52,17 @@ browser bundle a visitor actually executes is **byte-identical across the two re
 (`sha256 c399acaed0caf66e…`, 15 863 bytes).
 
 ### Fixed
-- ⚠️ **`bot-tts` returned 500 on the first synthesis, on any runtime whose global `crypto` has no
+- ⚠️ **`bot-tts` returned 500 on *every* call, on any runtime whose global `crypto` has no
   `createHash`.** The lot-3 extraction moved the route out of `handler.js` without bringing
   `require("node:crypto")` with it, so it leaned on `globalThis.crypto` — whose shape varies by
-  runtime. Where only WebCrypto is exposed, the first call to voice synthesis failed. The import is
-  now explicit, and the bench fails without it.
+  runtime. Where only WebCrypto is exposed, the route threw. The import is now explicit, and the
+  bench fails without it.
+  - ⚠️ **This entry first said "on the first synthesis". That was wrong, and wrong in the direction
+    that matters** — it suggested cached calls still worked. They did not: `keyFor()` builds the
+    cache key, so it runs *before* the cache is read. The throw always precedes the lookup, and no
+    cache hit is ever reached. Corrected on 25/08 after an integrating host measured the ordering
+    in the version they were running. If you have `plugins.bot` set, the bot's voice was **entirely
+    out of service** from 0.1.135 until this release, not degraded.
 
 ### Changed
 - ⚠️ **`engines.node` is now `>=22.13.0`, up from `>=22`.** This is a correction, not a new
