@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE QUOTA NE TENAIT PAS UN SEUL LECTEUR.
 //
 // Le navigateur écrivait une session interne toutes les 12 s — 300 par heure pour UNE personne — et

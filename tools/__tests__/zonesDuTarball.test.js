@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // CE QUI A CHANGÉ ENTRE DEUX PAQUETS, PAR ZONE.
 //
 // ⚠️ Le fait qui décide d'une montée — « rien de ce que l'hôte exécute n'a changé » — était calculé

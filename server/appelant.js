@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // EXTRAIT DE handler.js (refactor lot 3 — routes, 19/08/2026) — blocs déplacés À L'IDENTIQUE.
 // Reste à PLAT dans server/ (les gardes de forge ciblent server/*.js).
 

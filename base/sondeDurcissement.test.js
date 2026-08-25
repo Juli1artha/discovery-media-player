@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA SONDE DE DURCISSEMENT N'ÉCRIT RIEN — ÉPROUVÉ CONTRE UN VRAI POSTGRES.
 //
 // ⚠️ Elle interroge la base pour savoir si la migration 0018 est appliquée, en APPELANT la fonction.

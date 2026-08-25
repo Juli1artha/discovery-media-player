@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE CHAT SE RELIT EN DIFFÉRENTIEL — CE QUI A CHANGÉ DEPUIS LE CURSEUR, PAS LES 300 DERNIERS.
 //
 // ⚠️ P « architecture scalable ». `listMessages(slug, { after })` ne rend que les lignes dont le

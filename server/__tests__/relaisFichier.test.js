@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // CE QU'ON RELAIE S'OUVRE SUR NOTRE ORIGINE.
 //
 // Le player ne se contente pas de pointer vers un fichier : il le RELAIE, donc le fichier sort du

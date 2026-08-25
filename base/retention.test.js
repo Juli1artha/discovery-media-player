@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA PURGE, CONTRE UNE VRAIE BASE — la moitié « déclaration » du contrat de rétention.
 //
 // Ce banc sème des lignes VIEILLES (au-delà des fenêtres de docs/RETENTION.md) et leurs jumelles

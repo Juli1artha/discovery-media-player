@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // Rendu des messages du chat de présentation : d'un message à son fragment HTML.
 //
 // Ces fonctions produisent une CHAÎNE, pas des nœuds — c'est ce qui les rend testables, et c'est

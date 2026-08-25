@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE PERMISSION D'ÉCRITURE VA AU JOB QUI S'EN SERT — JAMAIS À LA RACINE D'UN WORKFLOW.
 //
 // ⚠️ CE QUE COÛTE UNE PERMISSION POSÉE À LA RACINE : elle est accordée à TOUS les jobs du fichier,

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // Géométrie de la visionneuse : zoom, largeur de page, pagination, progression.
 //
 // Ce sont des calculs, pas du dessin — mais ils vivaient au milieu du DOM, mêlés à des

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA SENTINELLE QUI PRÉVIENT AVANT QUE LE ROUGE NE TOMBE SUR QUELQU'UN D'AUTRE.
 //
 // ⚠️ L'INCIDENT : le 21/08, deux PR ouvertes sont passées au rouge pendant que 0.1.127 puis

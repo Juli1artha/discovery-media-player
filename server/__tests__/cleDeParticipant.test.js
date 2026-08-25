@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA LIGNE DE PRÉSENCE D'UN COLLÈGUE S'ÉCRASAIT AVEC SON ADRESSE E-MAIL.
 //
 // `present-attend` journalise qui suit une présentation, combien de temps, et quelles pages. La

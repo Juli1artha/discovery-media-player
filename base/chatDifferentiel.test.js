@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE TRIGGER `mod_seq` AVANCE À CHAQUE ÉCRITURE — INSERTION ET MUTATION — ÉPROUVÉ CONTRE UN VRAI POSTGRES.
 //
 // ⚠️ P « architecture scalable ». Le différentiel du chat repose sur un fait que seul le SGBD porte :

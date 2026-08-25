@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UN JETON DE PRÉSENCE SIGNÉ DANS UN PROCESSUS DOIT ÊTRE ACCEPTÉ DANS UN AUTRE.
 //
 // ⚠️ SUR UN HÔTE SERVERLESS, CE N'EST PRESQUE JAMAIS LE MÊME PROCESSUS. Le participant reçoit son

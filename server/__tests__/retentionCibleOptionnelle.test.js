@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE CIBLE DE PURGE PEUT LÉGITIMEMENT MANQUER — LE CONTRAT LE DIT, LE BALAYAGE L'IGNORAIT.
 //
 // ⚠️ `docs/HOST-CONTRACT.md` écrit noir sur blanc que les migrations de débit ne sont « délibérément

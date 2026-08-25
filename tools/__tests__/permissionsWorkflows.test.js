@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE PERMISSION D'ÉCRITURE À LA RACINE EST UN PRIVILÈGE QUI S'ACCORDE PAR OUBLI.
 //
 // ⚠️ Cinq des huit workflows étaient dans ce cas (relevé du 22/08). Aucun n'était fautif dans son

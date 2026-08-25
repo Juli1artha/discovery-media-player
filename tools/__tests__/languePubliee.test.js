@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA LANGUE DES DOCUMENTS QUI VOYAGENT, ÉPROUVÉE.
 //
 // ⚠️ `docs/RETENTION.md` partait en français dans le tarball publié (P1, audit externe du 21/08) :

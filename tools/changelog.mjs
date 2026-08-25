@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // L'ACCORD ENTRE LES TITRES DU CHANGELOG ET LEURS RÉFÉRENCES DE COMPARAISON.
 //
 // ⚠️ Cette logique vivait EN LIGNE dans ci.yml. Le préflight de publication en a besoin aussi —

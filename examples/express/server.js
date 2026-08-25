@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // Le player dans une application Node existante — et les deux routes par lesquelles il vous
 // rappelle. Exécutable tel quel : `node server.js`.
 

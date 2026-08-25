@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // ⚠️ `.mjs` et pas `.js` : le paquet est en CommonJS (`package.json` sans `"type": "module"`),
 // et cette configuration est écrite en modules ES. Vitest 3 tolérait le mélange ; la 4 non —
 // `ERR_REQUIRE_ESM` au démarrage, avant le premier test. L'extension le dit sans ambiguïté.

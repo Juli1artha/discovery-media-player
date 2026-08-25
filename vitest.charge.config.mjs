@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // BANC DE CHARGE — séparé, et pour une raison de MESURE, pas d'organisation.
 //
 // ⚠️ CE BANC COMPTE, IL NE CHRONOMÈTRE PAS. Un banc qui rendrait des percentiles contre une base

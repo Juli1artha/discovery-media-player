@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // CE QUI DOIT ÊTRE ARRÊTÉ DOIT ÊTRE VISIBLE DEPUIS L'ENDROIT QUI ARRÊTE.
 //
 // `_ordEtat`, `_ordChat` et `_filet` étaient déclarés DANS `connect()` ; `disconnect()`, défini un

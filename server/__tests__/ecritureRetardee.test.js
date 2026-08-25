@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE ÉCRITURE AUTORISÉE SUR UN ÉTAT ANCIEN NE DOIT PAS ARRIVER SUR UN ÉTAT NEUF.
 //
 // Le pilotage faisait : lire la ligne, vérifier le jeton, PATCHER. Entre la vérification et le

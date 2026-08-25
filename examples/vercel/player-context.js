@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE CÂBLAGE — ⚠️ LISEZ CECI AVANT DE LE COPIER : vous n'en avez probablement pas besoin.
 //
 // `context/standalone` délègue DÉJÀ les deux décisions de l'hôte à `PLAYER_HOST_AUTHZ_URL` et

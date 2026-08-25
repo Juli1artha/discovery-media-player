@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // L'IMAGE DE BASE EST UNE DÉPENDANCE — ET LES DÉPENDANCES S'ÉPINGLENT.
 //
 // ⚠️ CE DÉPÔT EXIGEAIT DÉJÀ CETTE RÈGLE, POUR LES ACTIONS SEULEMENT. `ci.yml` refuse depuis

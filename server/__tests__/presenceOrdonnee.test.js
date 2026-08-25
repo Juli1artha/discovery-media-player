@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE DERNIER LIRE-MODIFIER-RÉÉCRIRE DU DÉPÔT.
 //
 // Deux onglets du même participant battent dans la même seconde : les deux lisent la même ligne,

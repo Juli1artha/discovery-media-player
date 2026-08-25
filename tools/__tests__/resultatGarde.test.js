@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LES TROIS VERDICTS, ET SURTOUT LA FRONTIÈRE ENTRE LES DEUX ROUGES.
 //
 // ⚠️ Avant ce module, les six gardes du dépôt sortaient 1 pour « le dépôt viole la règle » ET pour

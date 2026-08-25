@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // CE QUI VOYAGE DANS LE TARBALL SE LIT PARTOUT — DONC EN ANGLAIS.
 //
 // ⚠️ `docs/RETENTION.md` était en français, et il partait dans le paquet publié (P1, audit externe

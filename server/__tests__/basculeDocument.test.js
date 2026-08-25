@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // @vitest-environment jsdom
 //
 // LA BASCULE DE DOCUMENT ET LES COURSES DE RENDU — P1 d'audit externe.

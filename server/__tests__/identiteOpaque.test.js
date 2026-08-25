@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // AUCUNE ADRESSE NE SORT — ET LES DEUX MOITIÉS DU CALCUL DOIVENT COÏNCIDER.
 //
 // `author_email` figurait dans les champs publics du chat : chaque message rendu à n'importe quel

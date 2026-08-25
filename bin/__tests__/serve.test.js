@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE SERVEUR AUTONOME — la preuve que le cœur ne dépend d'aucune plateforme.
 //
 // Le player est un gestionnaire `(req, res)` : Vercel, Next.js, Express et le serveur HTTP de Node

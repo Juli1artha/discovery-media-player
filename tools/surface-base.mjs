@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA SURFACE BASE SE DÉRIVE DU CODE — ELLE NE SE RECOPIE PLUS DANS UN DOCUMENT.
 //
 // ⚠️ TROIS DES CINQ CHIFFRES DE `docs/API.md` AVAIENT DÉRIVÉ, DANS LA MÊME TABLE.

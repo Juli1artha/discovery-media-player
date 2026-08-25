@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE DIFFUSION EST UN SIGNAL, PAS UNE VÉRITÉ.
 //
 // Le canal Realtime d'une présentation est PUBLIC : la clé publiable et le slug sont dans la page,

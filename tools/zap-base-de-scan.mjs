@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA BASE D'ESSAI DU SCAN ZAP — les routes authentifiées, servies pour de vrai.
 //
 // Le scan baseline (zap.yml) n'éprouvait que le mode dossier : la visionneuse tracée

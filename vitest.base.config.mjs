@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // BANC « VRAIE BASE » — séparé, et volontairement.
 //
 // Le double PostgREST en mémoire dit lui-même ce qu'il ne sait pas faire : pas de contraintes, pas

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA FILE SUPPRIME LE DÉSORDRE QU'ON CAUSE, PAS CELUI QU'ON SUBIT.
 //
 // La file unique du navigateur garantit UNE seule écriture en vol : elle ordonne les DÉPARTS. Mais

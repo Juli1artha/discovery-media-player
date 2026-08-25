@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // @vitest-environment jsdom
 //
 // Harnais DOM. Le rendu des messages produit une CHAÎNE : on peut donc l'inspecter à l'œil nu.

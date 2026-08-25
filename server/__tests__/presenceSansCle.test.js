@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA CLÉ DES STATISTIQUES ÉTAIT DIFFUSÉE À TOUTE L'AUDIENCE.
 //
 // La présence Realtime transporte un `uid` pour dédoublonner l'affichage — « je me vois deux fois »

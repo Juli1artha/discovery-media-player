@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // CE QUE LA BASE PORTE VRAIMENT, ET NON CE QU'ON CROIT LUI AVOIR APPLIQUÉ.
 //
 // ⚠️ LE PLAYER N'APPLIQUE PAS LES MIGRATIONS, ET NE LE POURRA JAMAIS. Il parle à la base uniquement

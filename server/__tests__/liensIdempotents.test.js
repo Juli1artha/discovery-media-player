@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // DEUX DEMANDES SIMULTANÉES CRÉAIENT DEUX LIENS POUR LE MÊME USAGE.
 //
 // Le lien de l'hôte (un par document et destinataire attesté) et le lien de répétition (un par

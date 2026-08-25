@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // ON N'ENVOIE DE COURRIER QUE POUR UN LIEN QUI A UN DESTINATAIRE.
 //
 // Le lecteur d'un lien ANONYME est un visiteur quelconque. Lui laisser demander un envoi ferait

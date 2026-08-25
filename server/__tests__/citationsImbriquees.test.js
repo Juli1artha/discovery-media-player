@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UN CARACTÈRE DE CITATION DANS UN CONTEXTE DE CITATION IMBRIQUÉ COUPE LE PROGRAMME EN DEUX.
 //
 // ⚠️ Deux fois dans la même journée, et jamais au même endroit :

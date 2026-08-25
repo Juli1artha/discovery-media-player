@@ -109,6 +109,17 @@ prevents. A test whose name does not tell you what it protects will be asked abo
 4. **Is the boundary documented?** If you change what a host can call, say so in
    [`docs/HOST-CONTRACT.md`](docs/HOST-CONTRACT.md) — the contract with host applications, and its journal.
 
+### How review is conducted
+
+All review happens on the pull request, in public. Nothing merges red: CI — the full suite, the
+linters at zero warnings, and the guards in `tools/` — must pass first, and `main` requires the
+branch to be up to date, so what was reviewed is what lands. External contributions are reviewed
+by the maintainer against the four questions above; a change is acceptable when each question has
+its answer in the diff itself and the one rule holds — the behaviour it adds is worth a test that
+fails without it. The maintainer's own changes go through the same pull requests and the same
+gates; until a second maintainer exists ([`MAINTAINERS.md`](MAINTAINERS.md)), the machines *are*
+that review, and this document says so rather than pretending otherwise.
+
 ## Generated files
 
 `server/*.generated.js` are built from `src/*.ts` by `npm run build` and **committed on purpose**:

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // `retention.run` PASSE SES OPTIONS À LA PURGE — dryRun COMPRIS.
 //
 // ⚠️ P1 DU NEUVIÈME AUDIT. La route recevait bien `dryRun:true` mais appelait

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE PLUS HAUT TAG : SEMVER STRICT, TRI NUMÉRIQUE, INVALIDES IGNORÉS (treizième audit).
 const { pathToFileURL } = require("node:url");
 const path = require("node:path");

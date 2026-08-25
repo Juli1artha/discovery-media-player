@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // DEUX RÉACTIONS SIMULTANÉES S'ÉCRASAIENT.
 //
 // Lire le JSON, le modifier en mémoire, le réécrire en entier : deux participants qui réagissent

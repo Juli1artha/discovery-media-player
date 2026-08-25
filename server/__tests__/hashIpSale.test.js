@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // L'EMPREINTE D'IP EST SALÉE, LIÉE À LA PRÉSENTATION — ET LE CHEMIN SALÉ EST RÉELLEMENT EXERCÉ.
 //
 // ⚠️ P2 d'audit externe, et c'était une SURPROMESSE DE COMMENTAIRE : le code écrivait

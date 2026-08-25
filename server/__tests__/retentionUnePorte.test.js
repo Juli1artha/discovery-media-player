@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE OPTION N'EST PAS SEULEMENT DÉFINIE ET TRANSMISE — ELLE DOIT ÊTRE HONORÉE SUR CHAQUE CHEMIN.
 //
 // ⚠️ Le second hôte a affiné la règle des trois audits (clé tronquée, backfill, dryRun) : « définie »

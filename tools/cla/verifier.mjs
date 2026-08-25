@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE CLA, VÉRIFIÉ PAR NOUS — plus par une action archivée.
 //
 // ⚠️ CE FICHIER S'EXÉCUTE SOUS `pull_request_target`, DONC AVEC LES DROITS D'ÉCRITURE DU DÉPÔT.

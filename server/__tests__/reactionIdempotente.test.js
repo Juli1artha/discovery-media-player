@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UN RENVOI RÉSEAU NE DOIT PAS ANNULER LA RÉACTION QU'ON VIENT D'AJOUTER.
 //
 // « Basculer » n'a de sens qu'une fois. Un double-clic, une reprise de requête, un renvoi après

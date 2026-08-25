@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // L'ÉPINGLAGE DE L'IMAGE DE BASE, ÉPROUVÉ SUR LE VRAI DOCKERFILE ET SUR CE QUI POURRAIT LE CASSER.
 //
 // ⚠️ Ce dépôt refuse `uses: action@v3` depuis longtemps : une étiquette mobile est un contrat que

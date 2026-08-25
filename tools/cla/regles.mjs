@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // QUI DOIT SIGNER LE CLA, ET QUI A DÉJÀ SIGNÉ — LES RÈGLES, SÉPARÉES DE LA MÉCANIQUE.
 //
 // ⚠️ POURQUOI CE FICHIER EXISTE PLUTÔT QU'UNE ACTION TIERCE. `contributor-assistant/github-action`

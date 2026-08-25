@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE MUR D'ACCÈS — LA PROPRIÉTÉ QUE TOUT LE RESTE DU DÉPÔT CITE, ET QUE RIEN NE VÉRIFIAIT.
 //
 // ⚠️ `SECURITY.md` l'énonce comme note de conception, `docs/THREAT-MODEL.md` la place en T1, et

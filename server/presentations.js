@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // Mode « Présenter » : sessions de présentation live (page synchronisée). Table doc_presentations
 // (cf. migration v12324) — écriture service role only. Le présentateur détient un control_token ; on en
 // stocke le HASH (sha256) → l'audience peut lire la ligne (Realtime) sans pouvoir piloter.

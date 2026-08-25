@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE PRÉFLIGHT DE PUBLICATION, ÉPROUVÉ SUR LES SORTIES QUI ONT MAL TOURNÉ.
 //
 // Chaque comparaison ci-dessous porte le nom d'un incident réel :

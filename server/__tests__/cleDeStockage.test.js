@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA CLÉ D'UN SEUL HÔTE, ÉCRITE EN DUR POUR TOUS LES AUTRES.
 //
 // `3dd-supabase-auth` — la clé de session du studio 3D Discovery — figurait à cinq endroits de ce

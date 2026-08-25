@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // L'HÔTE VERS LEQUEL CE RENVOI PARLE NE DÉPEND PAS DE CE QU'ON LUI DEMANDE.
 //
 // ⚠️ POURQUOI CE BANC EXISTE. La première version de `cibleAmont` concaténait `amont + "/" + chemin`.

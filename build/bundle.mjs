@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // Regroupe le code navigateur du player (modules TypeScript) en un fichier que la fonction
 // serverless `api/doc.js` injecte dans son HTML.
 //
@@ -101,6 +103,10 @@ export async function bundleShared() {
 
 export async function renderShared() {
   return [
+    // La licence arrive par le GÉNÉRATEUR, jamais à la main : un fichier généré s'édite ici ou
+    // nulle part, et la garde licence-par-fichier exige l'en-tête sur lui comme sur les autres.
+    "// SPDX-License-Identifier: AGPL-3.0-or-later",
+    "// Copyright © 2026 3D Discovery",
     "// GÉNÉRÉ par `npm run build:player` — NE PAS ÉDITER À LA MAIN.",
     `// Sources : ${SHARED_SOURCES.join(", ")}`,
     "//",
@@ -124,6 +130,10 @@ export async function marquerDistEsm() {
 export async function render() {
   const js = await bundle();
   return [
+    // Même règle que renderShared() : l'en-tête vient du générateur. Le bundle embarque
+    // src/bridge.ts (MIT), mais l'AGRÉGAT est AGPL — le MIT s'incorpore dans l'AGPL, pas l'inverse.
+    "// SPDX-License-Identifier: AGPL-3.0-or-later",
+    "// Copyright © 2026 3D Discovery",
     "// GÉNÉRÉ par `npm run build:player` — NE PAS ÉDITER À LA MAIN.",
     `// Sources : ${SOURCES.join(", ")}`,
     "//",

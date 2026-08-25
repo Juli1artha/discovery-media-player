@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // SERVEUR AUTONOME — le player sans plateforme.
 //
 // Le cœur est un gestionnaire `(req, res)` sans framework : c'est ce qui lui permet de tourner

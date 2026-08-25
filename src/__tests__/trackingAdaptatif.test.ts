@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE SESSION IDENTIQUE NE SE RÉÉCRIT PAS — LE FILET PÉRIODIQUE NE PAIE QUE CE QUI A CHANGÉ.
 //
 // ⚠️ P1 « réduction de charge ». Le filet de persistance tournait à cadence fixe et RÉÉMETTAIT à

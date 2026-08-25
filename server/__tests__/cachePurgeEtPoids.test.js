@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE CACHE NE GARDE NI CE QUI EST PÉRIMÉ, NI PLUS QUE SON POIDS — ET NE LÂCHE PAS UNE DEMANDE EN VOL.
 //
 // ⚠️ P1 d'audit externe. Le cache bornait le NOMBRE d'entrées (500) et jamais leur poids, et ne

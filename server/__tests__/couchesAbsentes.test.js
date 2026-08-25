@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UN DOUBLE DÉCLARE CE QU'IL NE SIMULE PAS — pas seulement ce qu'il simule.
 //
 // ⚠️ Cran suggéré par le second hôte (dixième audit) après le bug d'encodage `in.()` : un double

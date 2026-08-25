@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UN LIEN RELATIF DANS UN DOCUMENT PUBLIÉ DOIT MENER QUELQUE PART DANS LE PAQUET.
 //
 // ⚠️ NEUF DES DOUZE LIENS RELATIFS DU README POINTAIENT DANS LE VIDE une fois le paquet installé

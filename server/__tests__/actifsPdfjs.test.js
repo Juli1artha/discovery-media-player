@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // PDF.JS EST EMBARQUÉ ET SERVI DEPUIS NOTRE ORIGINE.
 //
 // Trois ans de CDN ont coûté : un tiers dans la CSP, un worker impossible à couvrir par SRI (il

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE MODULE DE RÉTENTION, AU DOUBLE — les propriétés qui ne demandent pas une vraie base :
 // les filtres émis, les comptes déclarés depuis les lignes RENDUES, la sonde de schéma qui coupe
 // la purge des liens sans la colonne 0013, les pièces jointes retirées seulement si l'hôte sait,

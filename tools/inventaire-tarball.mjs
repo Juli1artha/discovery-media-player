@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // CE QUE LE REGISTRE SERVIRA — UNE SEULE SONDE, POUR TOUTES LES QUESTIONS QU'ON LUI POSE.
 //
 // ⚠️ LE PÉRIMÈTRE SE DEMANDE À npm, PAS À `package.json#files` (revue externe, 21/08).

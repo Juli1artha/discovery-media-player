@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE CHAÎNE JSON PEUT FERMER LA BALISE QUI LA CONTIENT.
 //
 // Le parseur HTML lit la page AVANT JavaScript : un `</script>` dans une chaîne JSON ferme

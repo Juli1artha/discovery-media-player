@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // ⚠️ LA TRACE EXISTAIT À L'ENDROIT EXACT OÙ PERSONNE NE REGARDE.
 //
 // Une colonne absente était signalée par un `console.warn`, une fois par processus. Sur une

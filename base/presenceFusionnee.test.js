@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA BASE LIT LA PRÉSENTATION, ET ON LE MESURE — CONTRE UN VRAI POSTGRES (migration 0019).
 //
 // ⚠️ CE FICHIER PORTE LA MOITIÉ D'UNE PREUVE. La décision « qui est le présentateur » a quitté le

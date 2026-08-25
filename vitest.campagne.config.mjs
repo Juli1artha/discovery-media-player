@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // BANC DE CAMPAGNE DE CHARGE — sa PROPRE configuration, et ce n'est pas du rangement.
 //
 // ⚠️ Première version : `vitest run --config vitest.base.config.mjs … base/chargeReelle.test.js`.

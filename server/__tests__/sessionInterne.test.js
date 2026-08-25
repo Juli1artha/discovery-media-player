@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA POPULATION INTERNE ÉTAIT OUVERTE À TOUS.
 //
 // C'est celle que le produit promet de ne jamais mélanger aux prospects : « ce client a lu douze

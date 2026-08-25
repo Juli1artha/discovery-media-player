@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // CE QUE LE PAQUET PROMET DE PORTER, CONFRONTÉ À CE QU'IL PORTE.
 //
 // ⚠️ LE CHANGELOG NE VOYAGE PAS, ET C'EST DÉSORMAIS DÉCIDÉ (0.1.134). Il ne partait pas, et

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // Page publique de consultation d'un document commercial : /doc/:slug → visionneuse pdf.js qui TRACE
 // l'ouverture et les PAGES VUES (un lien par destinataire → on sait qui a lu, combien de pages).
 //  - GET  /doc/:slug            → HTML visionneuse (pdf.js EMBARQUÉ, servi par ?asset=…, nonce CSP)

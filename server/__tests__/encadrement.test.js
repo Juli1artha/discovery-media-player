@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // TOUTE PAGE QU'UN HÔTE PEUT INTÉGRER DOIT ÊTRE ENCADRABLE PAR CET HÔTE.
 //
 // ⚠️ C'est la seule panne qu'un hôte ne peut PAS diagnostiquer : le navigateur bloque l'iframe

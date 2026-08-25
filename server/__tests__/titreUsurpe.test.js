@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE TITRE DE PRÉSENTATEUR SE RÉCLAMAIT.
 //
 // L'audit décrit l'attaquant : « tout participant connaissant le slug ». ⚠️ C'est important, parce

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UN REFUS EN TEXTE PARTAIT SANS Content-Type — LE SEUL CORPS DE CE SERVEUR QU'UN NAVIGATEUR
 // AVAIT LE DROIT DE DEVINER.
 //

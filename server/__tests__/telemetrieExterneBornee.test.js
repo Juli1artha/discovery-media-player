@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA TÉLÉMÉTRIE EXTERNE EST BORNÉE ET LIMITÉE — un slug public ne peut pas inonder la base.
 //
 // ⚠️ P1 PERFORMANCE : le chemin analytique externe écrivait sans quota, et upsertSession stockait

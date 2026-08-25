@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UN CONSOMMATEUR TYPESCRIPT, COMPILÉ CONTRE LE TARBALL.
 //
 // ⚠️ CE FICHIER N'EST PAS UN TEST DE PLUS : c'est la seule preuve que les types VOYAGENT. Un

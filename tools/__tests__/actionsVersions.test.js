@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // L'ÉTIQUETTE CONFRONTÉE AU SHA — ÉPROUVÉE SUR LE CAS QUI L'A FAIT NAÎTRE.
 //
 // ⚠️ #253 (21/08) a remplacé trois SHA de `github/codeql-action` en laissant `# v3` intact. Le SHA

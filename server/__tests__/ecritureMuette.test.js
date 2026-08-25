@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE RÈGLE ÉCRITE DANS UN COMMENTAIRE NE PROTÈGE PAS LE CODE QUI LA SUIT.
 //
 // En 0.1.35 nous avons écrit, dans `upsertInternalSession` : « ce n'est pas la garde qui était en

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // L'extracteur de variables d'environnement, éprouvé cas par cas.
 //
 // ⚠️ CE BANC EXISTE PARCE QUE DEUX GÉNÉRATIONS DE SONDE TEXTUELLE SE SONT TROMPÉES.

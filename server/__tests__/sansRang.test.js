@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA CARTE REND UN COMPTEUR INTERPRÉTABLE POUR `mod_seq` NUL — GELÉ vs RATTRAPAGE INCOMPLET.
 //
 // ⚠️ Relevé par le second hôte sur la 0.1.91, puis affiné en trois passes (0.1.92→0.1.94). Le rattrapage
