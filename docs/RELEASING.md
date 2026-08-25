@@ -16,11 +16,17 @@ version per merged fix. Nothing was broken by it, and it is still the wrong sign
 reading the releases page sees churn, not care, and nobody can tell an ordinary fix from the one
 that matters. A train groups what is ready; the fixes land on `main` at their own pace, as always.
 
-**Two exceptions, and only these:**
+**Three exceptions, and only these:**
 
 - a **security** fix — it leaves as soon as it is green, alone if necessary;
 - a **broken package** on the registry — the same, because every install is affected until it is
   replaced. (0.1.25 is the precedent: an inline script that did not parse, live layer dead.)
+- a **release-pipeline repair** — when the previous train's own publication left its artefacts
+  missing or wrong (Release, attestation, SBOM), the repair may leave the same day. It changes
+  nothing at runtime and its notes say so. *(Added 2026-08-25, the day 0.1.135 and 0.1.136 shipped
+  together: 0.1.136 repaired the release tooling after 0.1.135's run died mid-publication. The rule
+  said two exceptions; the practice used a third; an external audit read both and asked which one
+  was lying. This is the honest reconciliation — the exception was real, so now it is written.)*
 
 Everything else waits for the next train. A fix merged on `main` is already available to anyone
 building from source, and no host deploys from the registry within the hour.

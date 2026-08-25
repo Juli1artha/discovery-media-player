@@ -63,7 +63,10 @@ export function garde(racine = process.cwd()) {
   // `git ls-files` et pas une promenade de dossiers : le périmètre est « ce que le dépôt PUBLIE de
   // lui-même », pas ce qui traîne sur le disque — node_modules, dist/ et les brouillons non suivis
   // n'ont pas de licence à porter. Hors d'un dépôt git, l'appel lève et `tenter()` classe : 2.
-  const suivis = execFileSync("git", ["ls-files"], { cwd: racine, encoding: "utf8" })
+  // stderr en tuyau, pas hérité : hors d'un dépôt git, le « fatal: not a git repository » de git
+  // partait dans la sortie des bancs (relevé par le contre-audit du 25/08 — du bruit dans un
+  // rapport vert apprend à ne plus le lire). L'erreur reste entière : `tenter()` la classe en 2.
+  const suivis = execFileSync("git", ["ls-files"], { cwd: racine, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
     .split("\n")
     .filter((f) => SOURCES.test(f));
   if (suivis.length === 0) {

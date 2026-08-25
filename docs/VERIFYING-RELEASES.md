@@ -168,9 +168,19 @@ the one that fails here for a benign reason** — and a check that fails benignl
 learn to click past. So: verify against the **tag commit**, and treat a replayed release as
 carrying a known, written divergence rather than as either fine or compromised.
 
-Since this was found, a replayed release **states the gap in its own notes**: when the dispatch ref
-is not the tag, the Release body carries both commits and says a rebuild from the attested one will
-not match. 0.1.136 predates that block; every replay after it carries it.
+Since this was found, two layers exist, added in this order:
+
+1. a replayed release **states the gap in its own notes**: when the dispatch ref is not the tag,
+   the Release body carries both commits and says a rebuild from the attested one will not match
+   (0.1.136 predates that block);
+2. the workflow now **refuses to run at all** when the run's own commit is not the tag's — the
+   `verifier` job compares them first, before any artefact, and every other job (including the one
+   that attests) sits behind it. A divergent attestation can no longer be *produced*; the honest
+   replay is to dispatch **on the tag ref itself** ("Use workflow from" → the tag), which makes
+   `github.sha` the tag commit and the provenance true. The first layer remains as the second net.
+
+0.1.136 keeps its divergence, documented here — its bytes are the tag's, its attested commit is
+not, and no later mechanism can rewrite that honestly.
 
 ⚠️ The rows are not all the same kind of statement, and the column says so. The first is a
 measurement made in this repository; the second is a report we received and could not re-run. The
