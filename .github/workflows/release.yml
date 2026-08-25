@@ -530,19 +530,16 @@ jobs:
       #
       # Le nom porte la VERSION, comme le tarball et le SBOM : un bundle détaché de ce qu'il
       # signe ne signe plus rien d'identifiable.
+      # ⚠️ LE CONTRÔLE VIT DANS UN FICHIER, PAS DANS UN `node -e '…'`. Sa première écriture était en
+      # ligne, entre guillemets simples, et contenait « d'attestation » : l'apostrophe FERMAIT la
+      # chaîne shell, bash analysait le JavaScript restant et butait sur une parenthèse. Ce job est
+      # mort là à la 0.1.136 — npm publié, aucune Release, aucune attestation. Sortir le code du
+      # shell supprime la classe au lieu de la surveiller ; `tools/shell-des-workflows.mjs` garde
+      # le reste.
       - name: Gather what the Release will carry — the bundle under its recognized name
         run: |
           V=$(node -p 'require("./package.json").version')
-          node -e '
-            const f = process.argv[1];
-            const b = JSON.parse(require("fs").readFileSync(f, "utf8"));
-            const mt = String(b.mediaType || "");
-            if (!mt.startsWith("application/vnd.dev.sigstore.bundle")) {
-              console.error("::error::le fichier d'attestation nest pas un bundle Sigstore (mediaType: " + (mt || "absent") + ") — on ne pose pas un nom .sigstore.json qui le prétendrait");
-              process.exit(1);
-            }
-            console.log("bundle Sigstore confirmé : " + mt);
-          ' "${{ steps.attestation.outputs.bundle-path }}"
+          node tools/bundle-sigstore.mjs "${{ steps.attestation.outputs.bundle-path }}"
           cp "${{ steps.attestation.outputs.bundle-path }}" "/tmp/sortie/discovery-media-player-$V.sigstore.json"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
