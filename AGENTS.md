@@ -153,6 +153,39 @@ not a better comparison — it is refusing to print a verdict where a number wou
 the bench was green, after CI was green, after the merge. That is not a place anyone looks by
 habit, which is precisely why the rule is to remove the possibility rather than to look harder.
 
+## Record the proof, never the verdict
+
+**A record that states only its conclusion cannot be attacked by anyone.** Write down what was
+measured and how, so a second reader has a surface to disagree with. This is the form constraint
+that makes review possible at all — not a request to be careful.
+
+⚠️ Measured on 25/08, on a neighbouring repository's migration register. Its line read:
+
+```
+0012   comment present on commercial_doc_shares.idem_key
+```
+
+That proves nothing — `0011` already comments that column, and `0012` only replaces its text. The
+entry happened to be **correct**, and it was correct **by luck**: a right conclusion reached by
+reasoning that does not hold is not a verified conclusion, and what survives in a record is the
+method. The defect was findable by someone else precisely because the *proof* was written. Had the
+line read `8 migrations verified`, there would have been nothing to catch — a verdict is read,
+believed, and left alone.
+
+The same holds for every rule in this file: each was found because someone could point at one
+precise sentence. *"An assertion that costs its author"* was only catchable because a page said, in
+writing, "no guard holds this". Thought and not written, it would have survived — starting with its
+own author.
+
+⚠️ **And a fix that repairs nothing must say so.** A commit that closes a door without there having
+been an incident — a probe hardened where the measurement showed zero occurrences — reads later as
+evidence of a defect that never existed, unless the count is written beside it. `0 occurrences
+today; the count is unchanged; this closes a door` is a proof. "Hardened the probe" is a verdict.
+
+⚠️ Two readers with different blind spots are the *condition* for any of this to work; a written
+proof is what makes them able to act. Over two days, every fix here found the defect in the one
+before it, and neither author found their own.
+
 ## An assertion that costs its author is still an assertion
 
 **Nobody re-checks a claim that makes its author look bad.** It reads as expensive, therefore
