@@ -48,9 +48,10 @@ This follows, rather than precedes, a real non-francophone deployment asking for
 
 The practices exist; the work is keeping their public measurements honest. Scorecard's `Maintained`
 check becomes evaluable around **11 November 2026** (90 days after creation) — the plan is to earn
-it with normal activity, not to manufacture commits for it. Statement coverage is printed by CI on
-every run, with a floor of 80% defending the published claim (measured 83% when the claim was
-first made). Badges stay linked from the README so a drift is visible, not archived.
+it with normal activity, not to manufacture commits for it. Statement and branch coverage are
+printed by CI on every run, with floors of 90% and 80% defending the published claims (each figure
+measured before it was claimed: 83% at the first claim, then 90.31%/83.01% at the Gold claims).
+Badges stay linked from the README so a drift is visible, not archived.
 
 ### 5. Release rhythm: unchanged, on purpose
 
