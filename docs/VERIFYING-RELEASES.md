@@ -196,6 +196,42 @@ publication, from somewhere else — nothing more. A version you decide *not* to
 its row filled, and it is still a measurement. Saying "we skipped that one, so nobody checked"
 would leave a gap where none was necessary.
 
+## Does the named source produce these bytes?
+
+Every check above answers *where the artefact came from*. None answers the harder question: **does
+the source it names actually build it?** That one closes the gap a valid signature over the wrong
+commit leaves open — and it needs nothing from us.
+
+```bash
+VERSION=0.1.136
+git clone https://github.com/Juli1artha/discovery-media-player rebuild && cd rebuild
+git checkout "v$VERSION"
+npm ci && npm run build && npm pack
+sha256sum discovery-media-player-$VERSION.tgz
+```
+
+Compare it with the archive attached to the Release. **They must be identical.** Our packing is
+reproducible, and that is not an assumption: the release workflow rebuilds and repacks on every
+run, and refuses to attach anything whose digest differs from what the registry serves.
+
+### Measured, with a control that fails
+
+A check that passes on everything proves nothing, so here is the same recipe run on three inputs:
+
+| Rebuilt from | Result |
+|---|---|
+| tag `v0.1.135` | **identical** |
+| tag `v0.1.136` | **identical** |
+| the commit 0.1.136's attestation *names* (`4efb5a0b`) | **different** — `a6af5610…` |
+
+The third row is the point. It is not a flaw in the recipe: it is the replay divergence documented
+above, caught by the only check that can catch it. **Run this against the tag commit, and read the
+Release notes for whether the attested commit is that same commit.**
+
+⚠️ And it is not machine-bound: those rebuilds were made on Node 22, while the published archives
+were packed by CI on Node 24. Byte-identical across a major version — which is what makes the
+recipe worth handing to someone who has no reason to trust our runner either.
+
 ## What actually changed between two published versions
 
 Release notes describe a change; the artefacts *are* it. When the question is "what am I taking on
@@ -286,6 +322,7 @@ version. The image carries its own SBOM, embedded as an attestation, for the sam
 | `npm audit signatures` | The tarball you have is byte-for-byte what the workflow published, and the registry has not substituted it | That the code is free of defects |
 | Identity fields above | It was built by *this* repository's release workflow, from a commit on `main` | That the commit was reviewed by anyone in particular — see [`../MAINTAINERS.md`](../MAINTAINERS.md) |
 | Comparing the two digests | The registry and the Release still serve the same file **today** — the one check that can see a substitution made after publication | That either file is the one you want — verify the identity fields as well |
+| Rebuilding from the tag | The named source **does** produce those bytes — the gap a valid signature over the wrong commit leaves open | That the source is free of defects, only that it is the source |
 | `gh attestation verify` | The image was built by this repository's workflow | That the base image is current — check the digest against the Dockerfile |
 | The SBOM | What the release declares it contains | That nothing was added outside the package manager — the Dockerfile is the place to read for that |
 
