@@ -13,37 +13,12 @@ the notes there are this file's section for that version.
 ## [Unreleased]
 
 ### Fixed
-- ⚠️ **Nine route failures returned 500 without reporting anything.** The body of `bot-tts` — and
-  eight sibling routes across `routes-agent`, `routes-direct` and `routes-liens` — was wrapped in a
-  bare `catch` that returned `{ ok: false }`: no stack, no message, no call to `errors.capture`.
-  That is why the crypto defect above lived through two releases: **a host's monitoring could not
-  have seen it even correctly wired** — the route was silent, not their instrument. It was found by
-  reading the code, not by watching it.
-  - It was a repeated omission, not a doctrine: `handler.js`, `presentations.js` and `retention.js`
-    have captured for a long time, and exactly one of the ten route catches did. All nine now
-    report the error and name the request's **actual action** before returning 500 — each catch
-    covers a *block* of actions (the one in `routes-agent` covers eight), so a fixed label would
-    have lied on eight calls out of nine.
-  - All nine paths are covered by a bench, not just the one that broke. The first version covered
-    `bot-tts` alone and said so; CI refused it on coverage, and was right — nine silent failures
-    replaced by nine untested reporting paths is the same fault, smaller. Statement coverage goes
-    from 90.31% to **90.81%**.
-
-### Added
-- **A guard that refuses a Node-only `crypto` method called on the global.** `crypto` has been a
-  global since Node 18, so `no-undef` cannot help: the variable *exists*, it just means something
-  else — WebCrypto, which has no `createHash`. The list of module-only methods is **derived from
-  the running Node** (63 of 65 on Node 22; only `getRandomValues` and `randomUUID` live on both
-  sides), never typed by hand.
-  - ⚠️ It reads the code with a **real lexer**. Three regex versions were written first, and all
-    three were blind — the last one was defeated by a file-glob quoted inside a *line* comment,
-    whose slash-star opened a block the pattern closed twenty-four lines later, swallowing the very
-    `require` whose absence it was hunting. It accused the fixed file. This repository has paid for
-    that lesson twice before, on `uses:` and on `FROM`.
-
-## [Unreleased]
-
-### Fixed
+- ⚠️ **The `[Unreleased]` section had been written twice.** Two branches each opened their own,
+  git merged both without a conflict — the file then carried two identical titles, and
+  `sectionDe()` (which the release preflight uses to extract a version's notes) stops at the first.
+  Half the notes would have shipped missing, silently. The two sections are merged here, and
+  **the guard now refuses any repeated section title**: this was invisible to it because it only
+  ever read version numbers and the footer link, never the headings themselves.
 - ⚠️ **A stored denial of service in the analytics funnel.** A visitor holding a valid link could
   post `{"event":"page","page":2147483647,"maxPage":2147483647}`. `logView()` checked only that the
   number was finite, the `integer` column accepted it, and the overview's funnel then looped from 1
@@ -68,8 +43,40 @@ the notes there are this file's section for that version.
     out-of-range history, then validates — in that order, because a validated constraint on an
     already-poisoned table fails, and a migration that fails on the data it came to repair is one
     an operator stops running. Mirrored into `supabase/init.sql`.
+- ⚠️ **Nine route failures returned 500 without reporting anything.** The body of `bot-tts` — and
+  eight sibling routes across `routes-agent`, `routes-direct` and `routes-liens` — was wrapped in a
+  bare `catch` that returned `{ ok: false }`: no stack, no message, no call to `errors.capture`.
+  That is why the `crypto` defect fixed in 0.1.137 lived through two releases: **a host's
+  monitoring could not have seen it even correctly wired** — the route was silent, not their
+  instrument. It was found by reading the code, not by watching it.
+  - It was a repeated omission, not a doctrine: `handler.js`, `presentations.js` and `retention.js`
+    have captured for a long time, and exactly one of the ten route catches did. All nine now
+    report the error and name the request's **actual action** before returning 500 — each catch
+    covers a *block* of actions (the one in `routes-agent` covers eight), so a fixed label would
+    have lied on eight calls out of nine.
+  - All nine paths are covered by a bench, not just the one that broke. The first version covered
+    `bot-tts` alone and said so; CI refused it on coverage, and was right — nine silent failures
+    replaced by nine untested reporting paths is the same fault, smaller. Statement coverage goes
+    from 90.31% to **90.81%**.
 
 ### Added
+- **The registry images CI pulls are pinned by digest.** `postgres:16-alpine` (the real-database
+  benches) and `postgrest/postgrest:v12.2.3` ran on moving tags: two runs of the *same* commit
+  could prove different things, and a version tag is a publisher's convention, not a property of
+  the registry. Both now carry an `@sha256:` digest with the tag kept beside it, exactly as the
+  `Dockerfile` rule has required for weeks (CODEX 5.6 audit, 25/08).
+  - ⚠️ **A registry image is now *declared*, never written inside a command** — in
+    `services.<name>.image`, `container:`, or an `env:` variable named `IMAGE_…`. The first version
+    of the guard read `run:` blocks with a pattern and accused three places: `host` (taken out of
+    `--network host`) and two images *built locally*, which have no registry and nothing to pin —
+    three false accusations out of three findings. A `run:` block is shell; telling an image from
+    an argument there means re-implementing `docker run`'s grammar. So the boundary was removed
+    rather than checked, and `tools/images-des-workflows.mjs` reads YAML only. It also refuses a
+    `$IMAGE_…` used without a declaration, so the convention does not rest on remembering it.
+  - **`dumb-init` in the `Dockerfile` is still unpinned** and is named here rather than quietly
+    left out: the Alpine package index is unreachable from the environment this was prepared in
+    (the egress proxy answers 403), so the version could not be resolved — and inventing one would
+    be worse than the gap.
 - **The schema parity check now compares constraints.** CI proved that `init.sql` carries every
   column, index, function, trigger, publication and replica identity the migrations bring — but not
   their constraints, so `0020`'s could have drifted between the two files unnoticed. Same blind spot
@@ -79,6 +86,16 @@ the notes there are this file's section for that version.
   declares, the migration declares. `0020` puts its six constraints in one (there is no
   `add constraint if not exists` in PostgreSQL) and was accused of leaving no probeable sign. And
   `add constraint <name>` is now itself a sign: `pg_constraint` answers for it.
+- **A guard that refuses a Node-only `crypto` method called on the global.** `crypto` has been a
+  global since Node 18, so `no-undef` cannot help: the variable *exists*, it just means something
+  else — WebCrypto, which has no `createHash`. The list of module-only methods is **derived from
+  the running Node** (63 of 65 on Node 22; only `getRandomValues` and `randomUUID` live on both
+  sides), never typed by hand.
+  - ⚠️ It reads the code with a **real lexer**. Three regex versions were written first, and all
+    three were blind — the last one was defeated by a file-glob quoted inside a *line* comment,
+    whose slash-star opened a block the pattern closed twenty-four lines later, swallowing the very
+    `require` whose absence it was hunting. It accused the fixed file. This repository has paid for
+    that lesson twice before, on `uses:` and on `FROM`.
 
 ## [0.1.137] — 2026-08-25
 
