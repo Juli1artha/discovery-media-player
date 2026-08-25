@@ -19,13 +19,26 @@
 // qu'un banc qui a tenu 250 appelants — c'est la classe qui a laissé passer deux mutations aujourd'hui.
 // Les premières assertions portent donc sur le fait que la charge a EU LIEU.
 //
-// CE QU'IL FAIT : jusqu'à 250 appelants, 20 présentations simultanées, et le relais de fichiers
-// sous concurrence — c'est-à-dire tout ce que la forge actuelle permet d'atteindre.
+// CE QU'IL FAIT : `PLAYER_CHARGE_SPECTATEURS` appelants — 50 par défaut sur un poste, 1 000 dans la
+// forge —, 20 présentations simultanées, et le relais de fichiers sous concurrence. Deux blocs
+// plafonnent volontairement plus bas (60 pour la base ralentie, 12 pour la croissance) et le
+// disent chacun dans leur libellé : un compte annoncé pour tous les blocs alors qu'un seul l'atteint
+// est la forme d'exagération que ce fichier a déjà corrigée une fois, ligne 169.
 //
-// ⚠️ CE QU'IL NE FAIT PAS, et il faut le dire aussi précisément : pas de 1 000 appelants, pas de base
-// RALENTIE artificiellement (+250 ms, +2 s), pas de MULTI-PROCESSUS. Ces trois-là demandent une
-// infrastructure que la forge n'a pas, pas seulement plus de temps — et leur absence n'est pas une
-// propriété vérifiée. Un banc qui tait ce qu'il ne couvre pas se lit comme s'il couvrait tout.
+// ⚠️ CE QU'IL NE FAIT PAS : le MULTI-PROCESSUS — qui a son propre banc, `base/multiProcessus.test.js`.
+// Le dire ainsi plutôt que « il ne le fait pas » tout court : un lecteur qui s'arrête à la première
+// moitié conclut que personne ne le couvre.
+//
+// ⚠️ ET CE PARAGRAPHE NIAIT TROIS CHOSES QUE LE DÉPÔT COUVRE (audit CODEX 5.6, 25/08). Les 1 000
+// appelants tournent en forge — `PLAYER_CHARGE_SPECTATEURS: "1000"` dans `ci.yml`, sur ce fichier
+// même. La base ralentie est mesurée deux cents lignes plus bas, avec l'explication de pourquoi on
+// l'avait crue hors de portée. Le multi-processus a le sien depuis. Les trois avaient été rangés
+// ensemble sous « demande de l'infrastructure », les trois sont tombés, et ce commentaire est resté
+// sur le classement d'origine pendant que le code le démentait.
+//
+// Un banc qui NIE couvrir ce qu'il couvre est le miroir du défaut qu'il dénonce : dans les deux
+// sens, ce qu'on LIT décide à la place de ce qui EST — et le sens « je couvre moins » n'est pas le
+// plus inoffensif, il fait refaire un travail déjà fait ou renoncer à s'y fier.
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");

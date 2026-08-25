@@ -109,8 +109,17 @@ A prospect reading your proposal and a colleague re-reading it in-house are stor
 Merged, the second inflates the first and *"this prospect read for 12 minutes"* becomes false —
 worse than having no number.
 
-Reading time counts only while the tab is **visible, focused and not idle**. An open tab in the
-background is not reading, and a metric that says otherwise is the one people stop trusting first.
+Reading time counts only while the tab is **visible and not idle**. A backgrounded tab is not
+reading, and a metric that says otherwise is the one people stop trusting first.
+
+⚠️ **Visible, not focused** — and the distinction is the whole point. `hasFocus()` measures *"the
+user is typing here"*, not *"the user is looking"*. It was removed in 0.1.39: a reader on a second
+screen, document visible for forty seconds with their hands on the other screen, was counted as
+**two seconds**. A prospect keeping a deck open while you talk them through it on the phone is the
+central use of a tracked link, so a metric that misses it is not conservative, it is wrong. Idleness
+still cuts the count — that threshold is now the only thing separating a reader from an abandoned
+tab. *(This page said "focused" until 25/08 — nine days after 0.1.39 stopped requiring it, and
+nobody reading either one noticed. Found by the CODEX 5.6 audit.)*
 
 ## Deploy order
 
