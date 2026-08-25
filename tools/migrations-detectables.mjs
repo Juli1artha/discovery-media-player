@@ -69,10 +69,18 @@ export function signesDe(sql) {
   //
   // ⚠️ Zéro occurrence aujourd'hui : ce correctif ne change aucun compte, il ferme une porte. La
   // déclaration de la fonction elle-même est HORS du corps, donc elle reste relevée.
+  //
+  // ⚠️ ET « CORPS DE FONCTION » N'EST PAS « BLOC ENTRE $$ ». La première écriture retirait TOUT bloc
+  // délimité par `$$`, ce qui emportait aussi les `do $$ … $$` — or un bloc `do` n'est pas un corps
+  // que quelqu'un appellera plus tard : c'est du code que LA MIGRATION EXÉCUTE, donc ce qu'il
+  // déclare, la migration le déclare. La 0020 pose ses six contraintes dans un `do` (pour tester
+  // leur existence, `add constraint if not exists` n'existant pas en PostgreSQL) et se faisait
+  // accuser de ne laisser aucun signe. La garde avait raison de refuser une migration muette ;
+  // elle avait tort sur celle-là, et c'est ce qui l'a montré.
   const t = String(sql || "")
     .replace(/--[^\n]*/g, " ")
     .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/\$\$[\s\S]*?\$\$/g, " $BODY$ ");
+    .replace(/(\bdo\s*)?\$\$([\s\S]*?)\$\$/gi, (tout, doDevant, corps) => (doDevant ? doDevant + corps : " $BODY$ "));
   const signes = new Set();
   const arite = (args) => args.split(",").filter((a) => a.trim()).length;
   for (const [, nom, args] of t.matchAll(/\bdrop\s+function\s+(?:if\s+exists\s+)?([\w.]+)\s*\(([^)]*)\)/gi)) {
@@ -83,6 +91,14 @@ export function signesDe(sql) {
   }
   for (const [, genre, nom] of t.matchAll(/\bcreate\s+(?:unique\s+)?(table|index|view|policy|type|trigger)\s+(?:if\s+not\s+exists\s+)?([\w.]+)/gi)) {
     signes.add(`${genre.toLowerCase()} ${nom}`);
+  }
+
+  // ⚠️ UNE CONTRAINTE NOMMÉE EST SONDABLE — `pg_constraint`. Elle manquait à la liste, et la 0020
+  // ne laisse QUE ça : elle n'ajoute ni table, ni colonne, ni index, elle restreint une plage.
+  // Un hôte prouve son passage en demandant `conname = 'ck_views_page_borne'`, ce qu'aucune autre
+  // migration ne peut lui faire répondre.
+  for (const [, nom] of t.matchAll(/\badd\s+constraint\s+([\w.]+)/gi)) {
+    signes.add(`constraint ${nom}`);
   }
 
   // ⚠️ SEPT MIGRATIONS SUR DIX-NEUF N'AVAIENT AUCUN SIGNE, et la garde les SAUTAIT en annonçant

@@ -121,12 +121,50 @@ async function getShareBySlug(slug) {
   return Array.isArray(rows) && rows[0] ? rows[0] : null;
 }
 
+// ⚠️ BORNER CE QUI VIENT DU DEHORS — TOUS les chemins d'écriture publics, et le pluriel a coûté.
+//
+// Ces bornes ont été posées pour les deux chemins de SESSION (interne et externe) : un objet libre
+// sans plafond laisse un seul appel écrire un JSON de la taille qu'il veut. Le troisième chemin —
+// `logView`, qui journalise open/page/heartbeat — a été oublié, et il est resté ouvert deux cent
+// soixante-quinze lignes plus haut pendant que les bornes vivaient ici (audit CODEX 5.6, 25/08).
+//
+// ⚠️ CE QUE COÛTAIT L'OUBLI, MESURÉ : un visiteur muni d'un lien valide postait
+// `{"event":"page","page":2147483647,"maxPage":2147483647}`. La valeur était stockée telle quelle
+// — `integer` PostgreSQL l'accepte — et le funnel de la vue d'ensemble bouclait ensuite de 1 à
+// 2 147 483 647. Mesuré par extrapolation linéaire sur cinq échelles : environ quatre minutes de
+// CPU et 17 à 40 Go. Une seule ligne suffisait, et elle restait. DoS STOCKÉ, déclenché par
+// l'ouverture des statistiques — donc par quelqu'un d'autorisé, plus tard.
+//
+// ⚠️ ET LE CORRECTIF N'EST PAS « BORNER AUSSI ICI ». Deux chemins qui bornent chacun de leur côté
+// divergent — c'est ce qui vient d'arriver. Il y a désormais UNE fonction qui fabrique la mesure
+// bornée, appelée par les deux ; il n'y a plus de second endroit à oublier. C'est la règle du jour
+// (`AGENTS.md`) appliquée à une frontière interne : on ne vérifie pas le passage, on le supprime.
+const BORNES = { pages: 10_000, secondes: 24 * 3600, entreesPagesTime: 2_000 };
+const bornerNombre = (v, max) => { const n = Number.isFinite(+v) ? Math.trunc(+v) : null; return n == null ? null : Math.max(0, Math.min(n, max)); };
+
+/**
+ * Une page LUE en base, ramenée dans la plage.
+ *
+ * ⚠️ SYMÉTRIQUE DE L'ÉCRITURE, ET POUR UNE AUTRE RAISON. Borner l'écriture protège les lignes à
+ * venir ; celles déjà posées restent. Une agrégation qui suppose la base saine transforme une
+ * donnée héritée en panne — c'est cette moitié-là qui déclenchait le DoS, et elle vaut aussi pour
+ * les valeurs seulement AFFICHÉES : « ce lecteur a atteint la page 2 147 483 647 » est un chiffre
+ * faux servi à un humain qui décide, ce que ce dépôt traite comme un défaut à part entière.
+ */
+const pageLue = (...valeurs) => Math.min(Math.max(0, ...valeurs.map((v) => Number(v) || 0)), BORNES.pages);
+
+/** La mesure d'un visiteur, bornée — le SEUL endroit où page/maxPage/seconds entrent en base. */
+const mesureBornee = ({ page, maxPage, seconds }) => ({
+  page: bornerNombre(page, BORNES.pages),
+  max_page: bornerNombre(maxPage, BORNES.pages),
+  seconds: bornerNombre(seconds, BORNES.secondes),
+});
+
 // Journalise un événement de consultation (ouverture / page vue / battement). Best-effort.
 async function logView(share, { event, page, maxPage, seconds, sessionId, ua }) {
-  const num = (v) => (Number.isFinite(+v) ? Math.trunc(+v) : null);
   const row = {
     slug: share.slug, doc_id: share.doc_id, recipient_email: share.recipient_email,
-    event: String(event || "open").slice(0, 16), page: num(page), max_page: num(maxPage), seconds: num(seconds),
+    event: String(event || "open").slice(0, 16), ...mesureBornee({ page, maxPage, seconds }),
     session_id: String(sessionId || "").slice(0, 64) || null, ua: String(ua || "").slice(0, 300) || null,
   };
   await PLAYER.db.request("commercial_doc_views", { method: "POST", headers: { Prefer: "return=minimal" }, body: [row] });
@@ -173,7 +211,7 @@ async function listSharesForDoc(docId, owner) {
     let s = bySlug.get(v.slug);
     if (!s) { s = { opens: 0, maxPage: 0, seconds: 0, sessions: new Set(), lastAt: null }; bySlug.set(v.slug, s); }
     if (v.event === "open") s.opens++;
-    const mp = Math.max(Number(v.page) || 0, Number(v.max_page) || 0);
+    const mp = pageLue(v.page, v.max_page);
     if (mp > s.maxPage) s.maxPage = mp;
     s.seconds = Math.max(s.seconds, Number(v.seconds) || 0);
     if (v.session_id) s.sessions.add(v.session_id);
@@ -193,13 +231,25 @@ async function listSharesForDoc(docId, owner) {
   const sessMax = new Map();
   for (const v of viewList) {
     const sid = v.session_id || v.slug;
-    const mp = Math.max(Number(v.page) || 0, Number(v.max_page) || 0);
+    // ⚠️ ON REBORNE À LA LECTURE, PARCE QUE LA BASE N'EST PAS PROPRE. Borner l'écriture protège les
+    // lignes à venir ; les lignes déjà posées, elles, restent. Une agrégation qui suppose une base
+    // saine transforme une donnée héritée en panne — et c'est cette moitié-là qui déclenchait le
+    // DoS, à l'ouverture des statistiques, chez quelqu'un d'autorisé.
+    const mp = pageLue(v.page, v.max_page);
     if (mp > 0) sessMax.set(sid, Math.max(sessMax.get(sid) || 0, mp));
   }
   const reached = [...sessMax.values()];
   const maxReached = reached.reduce((m, x) => Math.max(m, x), 0);
-  const funnel = [];
-  for (let p = 1; p <= maxReached; p++) funnel.push(reached.filter((x) => x >= p).length);
+  // ⚠️ HISTOGRAMME PUIS CUMUL DESCENDANT — O(pages + sessions) au lieu de O(pages × sessions).
+  // L'écriture précédente rebalayait TOUTES les sessions à chaque page : avec le rebornage
+  // ci-dessus le pire cas passe de 2,1 milliards d'itérations à 10 000, mais le quadratique
+  // restait payé sur des valeurs parfaitement légitimes — 10 000 pages × 500 sessions font cinq
+  // millions de comparaisons pour un résultat que deux passes donnent exactement.
+  const parPage = new Array(maxReached + 2).fill(0);
+  for (const x of reached) parPage[x] += 1;
+  const funnel = new Array(maxReached);
+  let cumul = 0;
+  for (let p = maxReached; p >= 1; p--) { cumul += parPage[p]; funnel[p - 1] = cumul; }
 
   const total = {
     shares: shareList.length,
@@ -262,7 +312,7 @@ async function overview() {
     if (!a) { a = { opens: 0, readers: new Set(), maxPage: 0, lastAt: null }; byDoc.set(id, a); }
     if (v.event === "open") a.opens++;
     if (v.session_id) a.readers.add(v.session_id);
-    a.maxPage = Math.max(a.maxPage, Number(v.page) || 0, Number(v.max_page) || 0);
+    a.maxPage = Math.max(a.maxPage, pageLue(v.page, v.max_page));
     // Même couplage caché que dans `listSharesForDoc`, et corrigé de la même façon : « dernière
     // activité » se calcule, elle ne se déduit pas du tri de la requête.
     if (!a.lastAt || String(v.at) > String(a.lastAt)) a.lastAt = v.at;
@@ -311,7 +361,7 @@ async function upsertSession(share, p, { ip, ua }) {
   const row = {
     session_id: sessionId, slug: share.slug, doc_id: share.doc_id, recipient_email: share.recipient_email,
     // Bornées comme la session INTERNE : plafond d'entrées, clés/valeurs numériques, totaux capés.
-    num_pages: bornerNombre(p.numPages, BORNES.pages), max_page: bornerNombre(p.maxPage, BORNES.pages),
+    num_pages: bornerNombre(p.numPages, BORNES.pages), max_page: mesureBornee({ maxPage: p.maxPage }).max_page,
     total_seconds: bornerNombre(p.totalSeconds, BORNES.secondes) || 0, pages_time: bornerPagesTime(p.pagesTime),
     ua: String(ua || "").slice(0, 300), ip: String(ip || "").slice(0, 60), device, os, browser, last_at: new Date().toISOString(),
   };
@@ -397,10 +447,6 @@ async function setShareAuth(slug, requireAuth) {
 // ABSURDE, et qu'un appel répété fasse grossir la base sans limite. L'authenticité, elle, demande
 // que l'hôte se porte garant de l'identité (jeton signé) : c'est le second volet, et il est
 // signalé au point d'entrée plutôt qu'ici.
-const BORNES = { pages: 10_000, secondes: 24 * 3600, entreesPagesTime: 2_000 };
-// ⚠️ BORNER CE QUI VIENT DU DEHORS — les DEUX chemins de session (interne ET externe). Un objet
-// libre sans plafond laisse un seul appel écrire un JSON de la taille qu'il veut (P1 performance).
-const bornerNombre = (v, max) => { const n = Number.isFinite(+v) ? Math.trunc(+v) : null; return n == null ? null : Math.max(0, Math.min(n, max)); };
 function bornerPagesTime(brut) {
   const src = (brut && typeof brut === "object" && !Array.isArray(brut)) ? brut : {};
   const out = {};
@@ -497,7 +543,7 @@ async function internalStatsForDoc(docId) {
     let u = byUser.get(k);
     if (!u) { u = { email: r.user_email || null, name: r.user_name || null, opens: 0, maxPage: 0, seconds: 0, lastAt: null }; byUser.set(k, u); }
     u.opens++;
-    u.maxPage = Math.max(u.maxPage, Number(r.max_page) || 0);
+    u.maxPage = Math.max(u.maxPage, pageLue(r.max_page));
     u.seconds += Number(r.total_seconds) || 0;
     if (!u.lastAt || r.last_at > u.lastAt) u.lastAt = r.last_at;
     if (!u.name && r.user_name) u.name = r.user_name;

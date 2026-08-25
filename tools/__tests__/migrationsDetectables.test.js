@@ -6,7 +6,7 @@
 // registre de migrations ne disait pas la vérité, donc la seule réponse fiable se lit sur les
 // effets. Ce banc éprouve la règle, puis l'applique aux DIX-NEUF migrations réelles.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 
 import { signesDe, improuvables, cleDe, ecarts, lireDossier, INDISTINGUABLES_DECLAREES } from "../migrations-detectables.mjs";
@@ -107,14 +107,21 @@ describe("la règle", () => {
   });
 });
 
-describe("les dix-neuf migrations réelles", () => {
+describe("les migrations réelles", () => {
   const parFichier = lireDossier();
 
-  it("la sonde en trouve bien", () => {
-    expect(Object.keys(parFichier).length).toBe(19);
+  // ⚠️ LE COMPTE SE DÉRIVE, IL NE S'ÉCRIT PAS. Ce banc portait « 19 » en dur : il rougissait à
+  // CHAQUE migration ajoutée, en disant « la sonde en trouve 20 au lieu de 19 » — un refus qui
+  // n'apprend rien et qu'on corrige sans réfléchir, donc le pire genre. Ce qui doit être vérifié
+  // n'est pas un nombre, c'est que la sonde ne SAUTE aucun fichier : on compte les `.sql` du
+  // dossier indépendamment, et on exige l'égalité.
+  it("la sonde ne saute aucun fichier du dossier", () => {
+    const surDisque = readdirSync("supabase/migrations").filter((f) => f.endsWith(".sql"));
+    expect(surDisque.length).toBeGreaterThan(0);
+    expect(Object.keys(parFichier).sort()).toEqual(surDisque.sort());
   });
 
-  it("⚠️ AUCUNE des dix-neuf n'est muette — l'assertion qui manquait", () => {
+  it("⚠️ AUCUNE n'est muette — l'assertion qui manquait", () => {
     // Sans elle, la garde annonçait « chacune prouvable » en en sautant sept, et le banc restait
     // vert. C'est la propriété qui a lâché, donc c'est celle qui doit être écrite.
     const muettes = Object.entries(parFichier).filter(([, s]) => s.length === 0).map(([f]) => f);
