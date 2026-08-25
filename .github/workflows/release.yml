@@ -632,13 +632,47 @@ jobs:
       # présence d'à côté, dont un banc exige qu'elle soit exactement `files:`. Il a sa protection
       # ici : s'il manquait, le corps de la Release perdrait la table sans un mot, ce qui est
       # précisément ce que cette Release a déjà vécu avec un motif qui ne correspondait à rien.
-      - name: Compose the Release body — the notes, then what changed by zone
+      - name: Compose the Release body — the notes, what changed by zone, and any provenance gap
         env:
           NOTES: ${{ needs.verifier.outputs.notes }}
+          DECLENCHEUR: ${{ github.event_name }}
+          SHA_DU_DECLENCHEMENT: ${{ github.sha }}
         run: |
           [ -s paquet/zones.md ] || { echo "::error::paquet/zones.md manquant ou vide — le corps de la Release perdrait la table des zones en silence"; exit 1; }
           printf '%s\n\n' "$NOTES" > corps.md
           cat paquet/zones.md >> corps.md
+
+          # ⚠️ UN REJEU DÉCLENCHÉ AILLEURS QUE SUR LE TAG ATTESTE LE MAUVAIS COMMIT, EN SILENCE.
+          # L'attestation nomme la référence du DÉCLENCHEMENT, pas celle du tag : la 0.1.136,
+          # rejouée depuis `main`, porte `refs/heads/main` et le commit 4efb5a0b, alors que
+          # l'archive vient de d0bfe3d8. Mesuré après coup par un hôte : sur 59 fichiers publiés
+          # suivis par git, 0 diffèrent du tag et 32 diffèrent du commit attesté.
+          #
+          # Ce n'est ni la signature ni les octets qui sont en cause — c'est le LIEN source →
+          # artefact. Quelqu'un qui reconstruit depuis le commit nommé obtient un écart qu'il ne
+          # peut pas distinguer d'une altération. Et la seule vérification capable d'attraper un
+          # vrai remplacement est alors celle qui échoue pour une raison bénigne : on apprend à
+          # l'ignorer, ce qui est pire que de ne pas l'avoir.
+          #
+          # On ne peut pas le corriger ici — l'attestation est déjà signée quand ce job tourne — donc
+          # ON LE DIT, dans le corps que le lecteur a sous les yeux au moment de vérifier.
+          TAG_SHA=$(git rev-parse HEAD)
+          if [ "$DECLENCHEUR" = "workflow_dispatch" ] && [ "$TAG_SHA" != "$SHA_DU_DECLENCHEMENT" ]; then
+            {
+              printf '\n---\n\n'
+              printf '### ⚠️ This release was replayed, and its provenance names another commit\n\n'
+              printf 'The attestation records the commit of the **ref this run was dispatched from**, not the tag:\n\n'
+              printf '```\n'
+              printf 'attested commit   %s   (the dispatch ref)\n' "$SHA_DU_DECLENCHEMENT"
+              printf 'tag commit        %s   (what the archive was actually built from)\n' "$TAG_SHA"
+              printf '```\n\n'
+              printf 'The signature, the builder and the bytes are sound — the archive matches the tag.\n'
+              printf 'What diverges is the **source → artefact link**: rebuilding from the attested commit\n'
+              printf 'will **not** reproduce this archive, and that mismatch is indistinguishable from\n'
+              printf 'tampering unless you know to expect it. Verify against the tag commit above.\n'
+            } >> corps.md
+            echo "::warning::provenance rejouée : attestée sur $SHA_DU_DECLENCHEMENT, construite depuis $TAG_SHA — l'écart est écrit dans le corps de la Release"
+          fi
           wc -l corps.md
 
       - name: GitHub Release
