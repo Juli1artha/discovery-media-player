@@ -218,15 +218,29 @@ run, and refuses to attach anything whose digest differs from what the registry 
 
 A check that passes on everything proves nothing, so here is the same recipe run on three inputs:
 
-| Rebuilt from | Result |
-|---|---|
-| tag `v0.1.135` | **identical** |
-| tag `v0.1.136` | **identical** |
-| the commit 0.1.136's attestation *names* (`4efb5a0b`) | **different** — `a6af5610…` |
+| Rebuilt from | Here, Node 22 | An integrating host, Node 20 |
+|---|---|---|
+| tag `v0.1.135` | **identical** | **identical** |
+| tag `v0.1.136` | **identical** | **identical** |
+| the commit 0.1.136's attestation *names* (`4efb5a0b`) | **different** — `a6af5610…` | **different** — `a6af5610…`, 319 785 bytes |
+
+⚠️ **The row that matters most is the third, reproduced.** Two people, two machines, two Node
+majors — and the *failing* control lands on the same digest. A negative control that returns the
+same value to independent observers is not an accident of someone's setup: it is a property of the
+artefact. Without that, one "different" and another "different" could have been two unrelated
+breakages that happen to look alike.
+
+The published archives were packed by CI on Node 24; the rebuilds above ran on 22 and on 20. Three
+majors, identical bytes.
 
 The third row is the point. It is not a flaw in the recipe: it is the replay divergence documented
 above, caught by the only check that can catch it. **Run this against the tag commit, and read the
 Release notes for whether the attested commit is that same commit.**
+
+⚠️ Which is why the order matters, and not merely for tidiness: **without the divergence written
+down first, this recipe destroys trust instead of building it.** A reader who rebuilds 0.1.136 from
+the attested commit gets `a6af5610…`, concludes the archive was tampered with, and is right to
+stop. The recipe on its own manufactures a false alarm about our own release.
 
 ⚠️ And it is not machine-bound: those rebuilds were made on Node 22, while the published archives
 were packed by CI on Node 24. Byte-identical across a major version — which is what makes the
