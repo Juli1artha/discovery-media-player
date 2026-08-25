@@ -512,8 +512,38 @@ jobs:
           fi
           cat "$BLOC"
 
-      - name: Gather what the Release will carry
-        run: cp "${{ steps.attestation.outputs.bundle-path }}" /tmp/sortie/
+      # ⚠️ LE NOM DU BUNDLE EST DEVENU UNE PROPRIÉTÉ, ET VOICI CE QU'IL COÛTAIT. L'artefact
+      # gardait le nom du fichier temporaire de l'action : `attestation.json`. Or l'OpenSSF
+      # Scorecard — la v5.5.0, celle qu'embarque l'action épinglée par scorecard.yml — ne
+      # reconnaît une signature de release QU'À son suffixe : `.asc`, `.minisig`, `.sig`,
+      # `.sign`, `.sigstore`, `.sigstore.json` (probes/releasesAreSigned/impl.go, vérifié sur le
+      # source du tag v5.5.0). Une vraie attestation Sigstore sous le mauvais nom comptait ZÉRO :
+      # Signed-Releases 0/10, pour un dépôt qui signe chaque sortie depuis la 0.1.130.
+      #
+      # `.sigstore.json` n'est pas un déguisement : c'est l'extension que la spécification des
+      # bundles Sigstore prescrit pour leur sérialisation JSON, et ce fichier EST un tel bundle.
+      # On VÉRIFIE son mediaType avant de poser le nom — poser un nom sans vérifier ce qu'il
+      # promet est exactement le mensonge d'étiquette que la garde des actions refuse ailleurs.
+      # Et on ne prétend PAS `.intoto.jsonl` (la provenance, comptée 10/10) : le bundle CONTIENT
+      # une provenance in-toto dans son enveloppe DSSE, mais il n'est pas ce format-là, et un nom
+      # qui annonce un format qu'on ne produit pas ferait de la note un mensonge.
+      #
+      # Le nom porte la VERSION, comme le tarball et le SBOM : un bundle détaché de ce qu'il
+      # signe ne signe plus rien d'identifiable.
+      - name: Gather what the Release will carry — the bundle under its recognized name
+        run: |
+          V=$(node -p 'require("./package.json").version')
+          node -e '
+            const f = process.argv[1];
+            const b = JSON.parse(require("fs").readFileSync(f, "utf8"));
+            const mt = String(b.mediaType || "");
+            if (!mt.startsWith("application/vnd.dev.sigstore.bundle")) {
+              console.error("::error::le fichier d'attestation nest pas un bundle Sigstore (mediaType: " + (mt || "absent") + ") — on ne pose pas un nom .sigstore.json qui le prétendrait");
+              process.exit(1);
+            }
+            console.log("bundle Sigstore confirmé : " + mt);
+          ' "${{ steps.attestation.outputs.bundle-path }}"
+          cp "${{ steps.attestation.outputs.bundle-path }}" "/tmp/sortie/discovery-media-player-$V.sigstore.json"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -556,17 +586,19 @@ jobs:
 
       # ⚠️ UN MOTIF QUI NE CORRESPOND À RIEN NE FAIT PAS ÉCHOUER `action-gh-release` : IL SE TAIT.
       #
-      # Constaté sur le rejeu du 22/08. Le motif disait `*.jsonl` ; le bundle produit s'appelle
-      # `attestation.json`. La Release a reçu DEUX fichiers sur les trois promis, et les cinq jobs
-      # étaient verts. Une promesse tenue à deux tiers, sans un mot — la garde muette que ce dépôt
-      # refuse depuis la 0.1.35, replacée ici par mes soins.
+      # Constaté sur le rejeu du 22/08. Le motif disait `*.jsonl` ; le bundle produit s'appelait
+      # alors `attestation.json`. La Release a reçu DEUX fichiers sur les trois promis, et les cinq
+      # jobs étaient verts. Une promesse tenue à deux tiers, sans un mot — la garde muette que ce
+      # dépôt refuse depuis la 0.1.35, replacée ici par mes soins.
       #
-      # Le nom du bundle appartient à l'action d'attestation et peut changer avec elle : cette
-      # étape est ce qui transforme un tel changement en refus plutôt qu'en fichier manquant.
+      # Le nom du bundle est depuis posé PAR NOUS dans `attester` (voir le commentaire là-bas :
+      # `.sigstore.json`, le suffixe que Scorecard reconnaît comme signature), après vérification
+      # de son mediaType. Cette étape reste ce qui transforme un nom qui dériverait — retour au
+      # nom de l'action, action qui change son fichier — en refus plutôt qu'en fichier manquant.
       - name: The four files the Release must carry are actually there
         run: |
           manquants=0
-          for motif in "paquet/"*.tgz "paquet/"*.tgz.sha256 "paquet/attestation.json" "paquet/"*.cdx.json; do
+          for motif in "paquet/"*.tgz "paquet/"*.tgz.sha256 "paquet/"*.sigstore.json "paquet/"*.cdx.json; do
             if [ ! -e "$motif" ]; then
               echo "::error::aucun fichier pour « $motif » — la Release en porterait un de moins, en silence"
               manquants=1
@@ -596,11 +628,11 @@ jobs:
           body_path: corps.md
           generate_release_notes: false
           make_latest: true
-          # Le tarball CONFRONTÉ au registre, son condensat, la provenance SLSA de ce fichier
-          # exact, et le SBOM de ce qu'il contient.
+          # Le tarball CONFRONTÉ au registre, son condensat, le bundle Sigstore qui le signe —
+          # sous le suffixe que Scorecard reconnaît — et le SBOM de ce qu'il contient.
           # `gh attestation verify paquet/*.tgz --repo Juli1artha/discovery-media-player`.
           files: |
             paquet/*.tgz
             paquet/*.tgz.sha256
-            paquet/attestation.json
+            paquet/*.sigstore.json
             paquet/*.cdx.json
