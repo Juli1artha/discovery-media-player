@@ -43,6 +43,27 @@ git rev-parse HEAD          # write this SHA down; it is the artefact
 Everything below applies to that SHA. If `main` moves while you are checking, you are checking
 something you are not about to publish: start again.
 
+## Replaying a release, and what it costs
+
+`workflow_dispatch` replays a tag whose first run failed — npm is skipped when the version is
+already published, and everything else is redone. It exists because three releases were lost that
+way (0.1.67 → 0.1.69).
+
+⚠️ **Dispatch it on the tag, not on a branch.** An attestation records the commit of the ref the run
+was dispatched from, *not* the tag it rebuilds. Replaying 0.1.136 from `main` produced an
+attestation naming `4efb5a0b` while the archive was built from `d0bfe3d8` — 32 of the 59 tracked
+published files differ between the two. The bytes and the signature are sound; the source → artefact
+link is not, and a rebuild from the attested commit fails in a way nobody can distinguish from
+tampering.
+
+⚠️ **And dispatching on the tag only works if the tag's workflow is sound** — the dispatch runs the
+workflow file *at that ref*. A tag whose workflow is what broke the release cannot be replayed
+coherently: choose then between a divergent provenance, stated, and cutting the next version
+instead. There is no third option, and pretending otherwise is how the divergence goes unwritten.
+
+Either way the Release says which it is: when the dispatch ref is not the tag, the body carries
+both commits and warns that a rebuild from the attested one will not match.
+
 ## Before the tag
 
 ```bash
