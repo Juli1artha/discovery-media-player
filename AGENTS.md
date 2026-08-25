@@ -219,23 +219,41 @@ before it, and neither author found their own. Nothing in that is self-sustainin
 both sides kept publishing proofs at a pace, and the day one of them records a verdict out of
 fatigue, the other has nothing left to bite on — and will not know it.
 
-## A value crossing a shell is re-read by a grammar that is not its own
+## A value crossing a boundary is re-read by a grammar that is not its own
 
 **Take the value out of the text.** Environment, file, argv array — anywhere there is no grammar,
 so there is no special character. The question stops being asked, rather than being answered better.
 
-⚠️ Two defects on 25/08, in two repositories, two shells, one effect:
+⚠️ Three defects on 25/08, in two repositories, two shells and a module scope, one effect:
 
 | What crossed | The character | What it did | What was left |
 |---|---|---|---|
 | a message inside `node -e '…'` | `'` in *d'attestation* | **closed** the string | bash parsed JavaScript and hit `(` |
 | `"$TAG:server/handler.js"` in zsh | `:` | **transformed** it — a substitution modifier | `d0bfe3d8…r.js`, a path to nothing |
+| `crypto.createHash(…)` after a file move | *(none)* | **rebound** the name — Node has had a global `crypto` since 18 | WebCrypto, which has no `createHash`: a `TypeError` at request time |
 
-Note the second closes nothing. The rule is not about quote characters: **any character the outer
-grammar gives meaning to is a trap**, whether it terminates something or not.
+Note the second closes nothing, and the third has no special character at all. The rule is not about
+quote characters, nor even about characters: **any element the surrounding grammar gives its own
+meaning to is a trap**, whether it terminates something, transforms it, or silently denotes
+something else.
+
+⚠️ **The gesture is not to check the crossing — it is to remove it.** Take the value out of the
+text; bind the module instead of trusting a name the scope hands you; write the check outside the
+shell. Each closure deletes the boundary rather than verifying the passage, which is why none of
+them needs to be remembered afterwards. (Formulated by an integrating host on 25/08, reading our
+three incidents back to us: we had written the boundary and the sign, never the gesture in general.)
+
+⚠️ **And the third case is the limit case, worth its own sentence.** There, the "line" is the
+**scope of a module**, and the name in it **is supplied by someone else** — Node, which added
+`crypto` to the global object in v18. The boundary does not need to be crossed *by us*: it can move
+under our feet between two runtime versions, turning code that was correct where it was written
+into code that is wrong where it now lives. `no-undef` cannot help — the variable exists. The
+closure is the same as everywhere else: bind it, and there is no boundary left to move.
 
 **The sign, while writing: the value and the syntax share a line.** If you cannot show where the
-value ends and the syntax resumes without reading the content, no external parser can either.
+value ends and the syntax resumes without reading the content, no external parser can either. In
+the third case that "line" is a scope rather than a row of characters — the test is the same, and
+the answer is the same: you cannot say, from the call site alone, which `crypto` this is.
 
 ⚠️ **`bash -n` does not catch this**, and neither would any other syntax check: the second command
 was valid. Where the value cannot be taken out of the text, use the **tell** instead — an eaten
