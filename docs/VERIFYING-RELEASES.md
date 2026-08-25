@@ -129,11 +129,19 @@ against.
 
 | Version | Date | Release `.tgz` `sha256` | Identical to npm | Who looked | Also checked |
 |---|---|---|---|---|---|
+| 0.1.137 | 2026-08-25 | `a289ed55b7101db29d260eba752afdbdce6633c42482bbf653b072e376fbcc63` | yes — 321 079 bytes on both sides | this repository, by hand | **the attestation names its own tag** — `refs/tags/v0.1.137`, commit `407e07fb051c19ea`, the commit `main` carries — and its subject digest is the `sha256` in this row. **Rebuilt from that attested commit: byte-identical.** The first release since 0.1.135 produced in a single pass, and the first whose source → artefact link closes in both directions |
 | 0.1.136 | 2026-08-25 | `3a9e8b435211094006221f55fcfbd004e42e37704194847a0ff41c55497ca61e` | yes — 319 202 bytes on both sides | this repository, by hand | attestation subject and digest, bundle mediaType (`application/vnd.dev.sigstore.bundle.v0.3+json`), SBOM version, `.sha256` sidecar, and the per-zone table against an independent derivation from git. ⚠️ **Its attested commit is not the tag's, and 32 of 59 tracked files differ from it** — see below |
 | 0.1.135 | 2026-08-25 | `603c1a44a502f2929a3ec806a9ee6886085614a20019d01c4019554ea229991d` | yes — 319 190 bytes on both sides | this repository, by hand | attestation subject and digest, SLSA workflow and ref, SBOM version, `.sha256` sidecar — and the release's own claims re-checked **inside the published tarball**: no `CHANGELOG.md`, no `docs/README.md`, and 0 dead relative links out of 2 (28 out of 34 in 0.1.134) |
 | 0.1.135 | 2026-08-25 | same digest | yes — reproduced independently, 319 190 bytes | an integrating host, on another machine — **reported to us, not measured here** | its own lockfile `integrity`; then, on the two published archives, that exactly one entry was removed and `package/README.md` was not |
 | 0.1.134 | 2026-08-24 | `aa56a1d85ef005baa65a065485eacd5462891dce1cb2961036b08af0e2a9c969` | yes — 320 659 bytes on both sides | this repository, by hand | attestation subject and digest, SLSA workflow and ref, SBOM version, `.sha256` sidecar |
 | 0.1.134 | 2026-08-24 | same digest | yes — reproduced independently | an integrating host, on another machine — **reported to us, not measured here** | its own lockfile `integrity`, then the fix re-measured on the unpacked archive |
+
+⚠️ **0.1.137 closes this, and the row above is the proof rather than the claim.** The
+mechanism that produced the divergence below was fixed in #383, but a fix to a release
+pipeline is only demonstrated by a release. 0.1.137 was tagged, run once, and its
+attestation names `refs/tags/v0.1.137` — not a branch. Rebuilding from the commit it names
+returns the published archive to the byte. The paragraph below stays because 0.1.136 is
+still on the registry and still diverges; it is history now, not the current state.
 
 ⚠️ **0.1.136 was produced by a replay, and its provenance names a commit that does not build it.**
 The first run of the release workflow died before creating the Release, so npm and the image were
@@ -230,6 +238,7 @@ A check that passes on everything proves nothing, so here is the same recipe run
 
 | Rebuilt from | Here, Node 22 | An integrating host, Node 20 |
 |---|---|---|
+| tag `v0.1.137` — *the commit its attestation names* | **identical** | not measured there |
 | tag `v0.1.135` | **identical** | **identical** |
 | tag `v0.1.136` | **identical** | **identical** |
 | the commit 0.1.136's attestation *names* (`4efb5a0b`) | **different** — `a6af5610…` | **different** — `a6af5610…`, 319 785 bytes |
