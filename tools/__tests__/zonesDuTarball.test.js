@@ -4,9 +4,14 @@
 // à la main par l'hôte, deux fois. Ce banc éprouve la règle, puis l'applique aux DEUX ARCHIVES
 // PUBLIÉES de la 0.1.134 et de la 0.1.135, dont l'écart est connu indépendamment.
 
-import { describe, it, expect } from "vitest";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { ZONES, zoneDe, ecarts, rapport, versionPrecedente } from "../zones-du-tarball.mjs";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+
+import { ZONES, zoneDe, ecarts, rapport, versionPrecedente, diffUnifie, objetsSQL, lireTarball } from "../zones-du-tarball.mjs";
 
 const inv = (o) => o;
 
@@ -139,6 +144,112 @@ describe("l'alarme d'une zone", () => {
     const avec = ZONES.filter((z) => z.alarmeSiModifie);
     expect(avec.map((z) => z.nom)).toEqual(["database"]);
     expect(avec[0].alarmeSiModifie.length).toBeGreaterThan(40);
+  });
+});
+
+describe("le diff d'un fichier changé", () => {
+  it("⚠️ un diff est rendu même si `diff` sort en 1 — c'est son contrat quand ça diffère", () => {
+    const faux = () => { const e = new Error("exit 1"); e.status = 1; e.stdout = "--- /tmp/a\n+++ /tmp/b\n@@\n-vieux\n+neuf"; throw e; };
+    expect(diffUnifie("vieux", "neuf", 80, faux)).toContain("+neuf");
+  });
+
+  it("retire les en-têtes qui nomment des fichiers temporaires", () => {
+    const faux = () => "--- /tmp/zz/avant\n+++ /tmp/zz/apres\n@@ -1 +1 @@\n-a\n+b";
+    const d = diffUnifie("a", "b", 80, faux);
+    expect(d).not.toContain("/tmp/zz");
+    expect(d).toContain("@@");
+  });
+
+  it("⚠️ ne tronque PAS en silence — il dit combien de lignes manquent", () => {
+    const faux = () => ["--- x", "+++ y", ...Array.from({ length: 50 }, (_, i) => `+l${i}`)].join("\n");
+    const d = diffUnifie("", "", 10, faux);
+    expect(d).toMatch(/40 more line\(s\) not shown/);
+  });
+});
+
+describe("les objets qu'une migration touche", () => {
+  it("⚠️ GARDE TOUS LES VERBES D'UN OBJET — « drop » seul enverrait sonder une absence", () => {
+    // Cas réel : 0019 fait `drop function` puis `create or replace function` sur le même nom.
+    const objets = objetsSQL("drop function public.f(); create or replace function public.f() returns int as $$ select 1 $$ language sql;");
+    expect(objets).toEqual(["function public.f — drop, create"]);
+  });
+
+  it("nomme ce qu'une sonde devrait viser", () => {
+    expect(objetsSQL("create table if not exists player_x (id uuid); create index player_x_slug on player_x(slug);"))
+      .toEqual(["table player_x — create", "index player_x_slug — create"]);
+  });
+
+  it("⚠️ ne lit pas les commentaires — une sonde qui lit du commentaire invente un coupable", () => {
+    expect(objetsSQL("-- create table fantome (id int)\ncreate table vrai (id int);"))
+      .toEqual(["table vrai — create"]);
+    expect(objetsSQL("/* alter table fantome add x int */ alter table vrai add y int;"))
+      .toEqual(["table vrai — alter"]);
+  });
+
+  it("rend une liste vide sur du SQL sans DDL, plutôt que d'inventer", () => {
+    expect(objetsSQL("insert into t values (1); select * from t;")).toEqual([]);
+  });
+});
+
+describe("l'alarme porte de quoi agir", () => {
+  const f = "supabase/migrations/0007-x.sql";
+  const rendu = (av, ap) => rapport("a", "b", { [f]: "1" }, { [f]: "2" }, { avant: { [f]: av }, apres: { [f]: ap } });
+
+  it("⚠️ donne le diff ET les objets — « modifié » recouvre une faute de frappe et une DDL réécrite", () => {
+    const md = rendu("create table t(id int);\n", "create table t(id int, s text);\n");
+    expect(md).toContain("objects it touches");
+    expect(md).toContain("table t — create");
+    expect(md).toContain("```diff");
+    expect(md).toContain("+create table t(id int, s text);");
+  });
+
+  it("⚠️ N'ENVOIE PLUS LIRE UN REGISTRE DE MIGRATIONS — un hôte réel a montré que le sien ment", () => {
+    const md = rendu("a", "b");
+    expect(md).toContain("registry only records what went through one particular path");
+    expect(md).not.toMatch(/establishing which databases have already played/);
+  });
+
+  it("⚠️ DIT quand le contenu manque, au lieu de rendre un bloc muet", () => {
+    const md = rapport("a", "b", { [f]: "1" }, { [f]: "2" });
+    expect(md).toContain("contents not available");
+  });
+});
+
+describe("une seule lecture rend les deux faits", () => {
+  // ⚠️ CE BANC FABRIQUE SON ARCHIVE. Sa première écriture lisait un tarball posé dans le
+  // répertoire de travail de la session qui l'écrivait : `npm test` passait ici et refusait en
+  // forge, et aurait refusé chez n'importe quel contributeur. Un banc vert par accident
+  // d'environnement est pire qu'un banc absent — il affirme une couverture qu'il n'a pas.
+  let archive, temp;
+
+  beforeAll(() => {
+    temp = mkdtempSync(join(tmpdir(), "banc-zones-"));
+    const racine = join(temp, "package");
+    mkdirSync(join(racine, "supabase", "migrations"), { recursive: true });
+    mkdirSync(join(racine, "server"), { recursive: true });
+    writeFileSync(join(racine, "supabase", "migrations", "0001-a.sql"), "create table t(id int);\n");
+    writeFileSync(join(racine, "supabase", "migrations", "0002-b.sql"), "alter table t add s text;\n");
+    writeFileSync(join(racine, "server", "handler.js"), "module.exports = {};\n");
+    archive = join(temp, "paquet.tgz");
+    execFileSync("tar", ["-czf", archive, "-C", temp, "package"]);
+  });
+
+  afterAll(() => rmSync(temp, { recursive: true, force: true }));
+
+  it("⚠️ les contenus ne sont gardés que pour ce qui est demandé", () => {
+    // Deux passes auraient donné deux vérités possibles sur la même archive.
+    const r = lireTarball(archive, (f) => f.startsWith("supabase/migrations/"));
+    expect(Object.keys(r.empreintes).sort()).toEqual([
+      "server/handler.js", "supabase/migrations/0001-a.sql", "supabase/migrations/0002-b.sql",
+    ]);
+    expect(Object.keys(r.contenus).sort()).toEqual([
+      "supabase/migrations/0001-a.sql", "supabase/migrations/0002-b.sql",
+    ]);
+    expect(r.contenus["supabase/migrations/0002-b.sql"]).toContain("alter table t");
+  });
+
+  it("sans prédicat, aucun contenu n'est gardé", () => {
+    expect(lireTarball(archive).contenus).toEqual({});
   });
 });
 
