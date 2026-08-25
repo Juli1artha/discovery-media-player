@@ -142,6 +142,18 @@ jobs:
         if: matrix.node == '22'
         run: node tools/liens-des-documents.mjs
 
+      # ⚠️ UN HÔTE DOIT POUVOIR PROUVER QU'UNE MIGRATION A TOURNÉ EN SONDANT SA BASE, et pas en
+      # lisant un registre : mesuré le 25/08 sur une base de production, `schema_migrations` y
+      # listait 0001, 0002 et 0005 à 0011 alors que huit autres étaient appliquées. Un registre
+      # n'enregistre que ce qui est passé par un chemin donné ; les effets, eux, ne mentent pas.
+      #
+      # Notre chaîne le permettait PAR ACCIDENT : quatre migrations redéfinissent la même fonction,
+      # et seule la discipline « supprimer la signature précédente » les sépare. Une discipline que
+      # rien n'écrit est tenue jusqu'au jour où elle ne l'est plus — et là, rien ne casse.
+      - name: Every migration leaves a sign of its own
+        if: matrix.node == '22'
+        run: node tools/migrations-detectables.mjs
+
       # ⚠️ UN `.d.ts` PARFAIT DANS LE CLONE PEUT ÊTRE ABSENT DU PAQUET PUBLIÉ — il suffit que
       # `files` ne l'embarque pas, et c'est exactement ce qui était arrivé au contrat et à la
       # rétention. On compile donc un consommateur RÉEL contre le TARBALL, en mode strict et

@@ -58,6 +58,45 @@ alter table public.<table> add column if not exists <colonne> <type>;
 `if not exists` partout : une migration doit être rejouable sans dommage, parce qu'un hôte qui ne
 sait plus où il en est la rejouera.
 
+## Chaque migration doit laisser un signe qui lui soit propre
+
+Un hôte doit pouvoir répondre à **« l'ai-je jouée ? »** en sondant sa base. Pas en lisant un
+registre : un registre n'enregistre que ce qui est passé par un chemin donné, et il se tait sur le
+reste. Mesuré sur une base de production le 25/08 — `schema_migrations` y listait 0001, 0002 et
+0005 à 0011, alors que huit autres migrations étaient bel et bien appliquées. Un registre peut être
+faux sans le dire ; les effets, non.
+
+Donc : **une migration qui ne laisse aucune trace distincte de sa voisine est invérifiable**, et
+elle l'est en silence — rien ne casse, l'objet est là, tout a l'air bon.
+
+Cette propriété était tenue ici sans être écrite. Quatre migrations redéfinissent
+`player_attendance_bump`, et ce qui les sépare est que chacune **supprime exactement la signature
+de la précédente** :
+
+```
+0017   drop player_attendance_bump(10 args)   →   crée la version à 11
+0018   drop player_attendance_bump(11 args)   →   crée la version à 12
+0019   drop player_attendance_bump(12 args)   →   crée la version à 13
+```
+
+Aucune ancienne signature ne subsiste, donc chaque `drop` a eu lieu, donc chacune a tourné. C'est
+ce qui rend la réponse **prouvable** plutôt que plausible. Personne ne l'avait décidé.
+
+En écrivant une migration qui touche un objet existant, donnez-lui donc l'un des deux :
+
+- un `drop` de la signature précédente — la forme à préférer, elle prouve le passage ;
+- ou un objet qu'elle seule crée. `0015` n'a que celui-là : elle ne supprime rien, et sans
+  `idx_attendees_slug_creator` elle serait aujourd'hui invisible.
+
+[`tools/migrations-detectables.mjs`](../tools/migrations-detectables.mjs) refuse une migration sans
+signe propre, en nommant celle avec qui elle se confond.
+
+⚠️ **Une migration déjà appliquée ailleurs ne se réécrit pas**, même pour lui ajouter un signe.
+`0010` recrée `player_archive_scellee()` avec la même signature que `0007` et ne supprime rien :
+sonder le schéma ne dira jamais si elle a tourné, il faut lire le corps de la fonction. Elle est
+donc **déclarée** dans la garde, avec ce que ça coûte à l'hôte — une dette écrite plutôt qu'une
+surprise.
+
 ## Le player détecte, il ne suppose pas
 
 Il n'existe **aucune table de suivi des migrations**, et c'est délibéré : elle devrait elle-même
