@@ -94,12 +94,18 @@ create table if not exists public.commercial_doc_views (
   recipient_email text,
   event           text not null,             -- open | page | heartbeat
   -- ⚠️ BORNES EN BASE, PARCE QUE LE CODE N'EST PAS LE DERNIER REMPART (0020, audit CODEX 5.6).
+  -- ⚠️ ET NOMMÉES, COMME DANS LA MIGRATION. Un `check` anonyme reçoit un nom AUTOMATIQUE de
+  -- PostgreSQL : une base née d'`init.sql` et une base migrée porteraient alors la même règle sous
+  -- deux noms, et rejouer les migrations par-dessus en ajouterait six de plus. La parité de schéma
+  -- de la forge a refusé exactement ça — dans la PR qui venait de lui apprendre à regarder les
+  -- contraintes. Un hôte prouve le passage de la 0020 en demandant `ck_views_page_borne` ; le nom
+  -- EST le signe, il ne peut donc pas être laissé au hasard.
   -- Ces trois colonnes sont peuplées par le PUBLIC. Sans plage, un visiteur muni d'un lien valide
   -- y écrivait 2147483647 ; l'agrégation du funnel bouclait ensuite jusque-là, à l'ouverture des
   -- statistiques — chez quelqu'un d'autorisé, plus tard, sur une ligne posée une seule fois.
-  page            integer check (page is null or (page >= 0 and page <= 10000)),
-  max_page        integer check (max_page is null or (max_page >= 0 and max_page <= 10000)),
-  seconds         integer check (seconds is null or (seconds >= 0 and seconds <= 86400)),
+  page            integer constraint ck_views_page_borne check (page is null or (page >= 0 and page <= 10000)),
+  max_page        integer constraint ck_views_max_page_borne check (max_page is null or (max_page >= 0 and max_page <= 10000)),
+  seconds         integer constraint ck_views_seconds_borne check (seconds is null or (seconds >= 0 and seconds <= 86400)),
   session_id      text,
   at              timestamptz not null default now(),
   ua              text
@@ -118,9 +124,9 @@ create table if not exists public.commercial_doc_sessions (
   doc_id          text,
   recipient_email text,
   -- Mêmes bornes que `commercial_doc_views`, même raison : ces trois-là viennent aussi du dehors.
-  num_pages       integer check (num_pages is null or (num_pages >= 0 and num_pages <= 10000)),
-  max_page        integer check (max_page is null or (max_page >= 0 and max_page <= 10000)),
-  total_seconds   integer default 0 check (total_seconds is null or (total_seconds >= 0 and total_seconds <= 86400)),
+  num_pages       integer constraint ck_sessions_num_pages_borne check (num_pages is null or (num_pages >= 0 and num_pages <= 10000)),
+  max_page        integer constraint ck_sessions_max_page_borne check (max_page is null or (max_page >= 0 and max_page <= 10000)),
+  total_seconds   integer default 0 constraint ck_sessions_total_seconds_borne check (total_seconds is null or (total_seconds >= 0 and total_seconds <= 86400)),
   pages_time      jsonb   default '{}'::jsonb,
   ua              text,
   ip              text,
