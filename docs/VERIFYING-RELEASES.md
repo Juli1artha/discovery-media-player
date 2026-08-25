@@ -129,14 +129,19 @@ against.
 
 | Version | Date | Release `.tgz` `sha256` | Identical to npm | Who looked | Also checked |
 |---|---|---|---|---|---|
+| 0.1.135 | 2026-08-25 | `603c1a44a502f2929a3ec806a9ee6886085614a20019d01c4019554ea229991d` | yes — 319 190 bytes on both sides | this repository, by hand | attestation subject and digest, SLSA workflow and ref, SBOM version, `.sha256` sidecar — and the release's own claims re-checked **inside the published tarball**: no `CHANGELOG.md`, no `docs/README.md`, and 0 dead relative links out of 2 (28 out of 34 in 0.1.134) |
 | 0.1.134 | 2026-08-24 | `aa56a1d85ef005baa65a065485eacd5462891dce1cb2961036b08af0e2a9c969` | yes — 320 659 bytes on both sides | this repository, by hand | attestation subject and digest, SLSA workflow and ref, SBOM version, `.sha256` sidecar |
 | 0.1.134 | 2026-08-24 | same digest | yes — reproduced independently | an integrating host, on another machine — **reported to us, not measured here** | its own lockfile `integrity`, then the fix re-measured on the unpacked archive |
 
-⚠️ The two rows are not the same kind of statement, and the column says so. The first is a
+⚠️ The rows are not all the same kind of statement, and the column says so. The first is a
 measurement made in this repository; the second is a report we received and could not re-run. The
 second is nonetheless the **stronger** of the two for the property this section is about: an
 outside check has value precisely because it is not ours, and a table that blurred that distinction
 would be the sort of undifferentiated record it exists to prevent.
+
+The 0.1.135 row adds a check the earlier ones did not make: **the release notes' own claims,
+re-read inside the published tarball** rather than in the repository. A changelog entry saying a
+file no longer ships is a statement about an artefact nobody has opened until someone opens it.
 
 For 0.1.134 the SLSA attestation attached to the Release named that same `sha256`, for the subject
 `discovery-media-player-0.1.134.tgz`, built from `refs/tags/v0.1.134` by
