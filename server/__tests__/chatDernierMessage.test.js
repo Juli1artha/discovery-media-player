@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // AU-DELÀ DE 300 MESSAGES, LES NOUVEAUX DOIVENT ARRIVER — pas rester coincés derrière les anciens.
 //
 // ⚠️ P1 PERFORMANCE : `order=created_at.asc&limit=300` rendait les 300 PLUS ANCIENS. Au 301e, un

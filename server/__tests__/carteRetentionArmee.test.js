@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA CARTE DIT SI LE BALAYAGE DE RÉTENTION EST ARMÉ.
 //
 // ⚠️ Signalé par le second hôte (suite du neuvième audit) : la carte annonce la CAPACITÉ

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA MÉCANIQUE DU CLA, REJOUÉE SANS FORGE NI RÉSEAU.
 //
 // ⚠️ LES RÈGLES SONT ÉPROUVÉES AILLEURS (cla.test.js) ; ICI C'EST LE FLUX. Une garde bloquante

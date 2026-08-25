@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // Installe les hooks git de ce dépôt. Appelé par `npm install` via le script `prepare`.
 //
 // ⚠️ POURQUOI AUTOMATIQUE PLUTÔT QUE DOCUMENTÉ. Le hook `pre-push` existait dans le dépôt voisin

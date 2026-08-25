@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // CE QUE VOIT QUELQU'UN QUI N'A REÇU AUCUN MESSAGE.
 //
 // Deux défauts de la même famille, signalés par le second hôte en regardant son propre écran —

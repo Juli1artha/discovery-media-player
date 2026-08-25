@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE LISTE SE PÉRIME, UNE FORME NON.
 //
 // Le cache de lecture a d'abord été posé sur DEUX ROUTES ÉNUMÉRÉES — `state=1` et `chat=1`. Le

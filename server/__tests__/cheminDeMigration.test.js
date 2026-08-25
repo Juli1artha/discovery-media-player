@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE COLONNE INTRODUITE SANS SA MIGRATION CASSE TOUTES LES ÉCRITURES DE SON CHEMIN.
 //
 // PostgREST rejette un `PATCH` portant une colonne inconnue. Un hôte qui déploie le code avant la

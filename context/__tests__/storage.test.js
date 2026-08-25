@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE DOSSIER LOCAL — la source qui rend le player essayable, et celle qui pourrait tout ouvrir.
 //
 // Servir un dossier est le mode d'exploitation le plus simple (aucune base, aucun Storage) et le

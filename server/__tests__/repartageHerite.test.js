@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE RESTRICTION NE DOIT PAS DISPARAÎTRE EN ÉTANT TRANSMISE.
 //
 // Le re-partage énumérait les colonnes à recopier. Une énumération se périme à chaque colonne

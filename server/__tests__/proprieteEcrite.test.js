@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA GARDE DE 0.1.2 NE COUVRAIT QUE LES LECTURES.
 //
 // En 0.1.2, une liste blanche indexée par une donnée du dehors laissait passer `constructor` —

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // CONTRAT DE CONTENU d'une présentation en direct : ce que le présentateur diffuse quand il quitte
 // le document pour une carte ou une vue Street View.
 //

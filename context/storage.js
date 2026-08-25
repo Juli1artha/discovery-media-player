@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // D'OÙ LE PLAYER ACCEPTE DE LIRE UN FICHIER — et comment il le sert.
 //
 // Le player relaie des URL fournies par l'appelant (aperçu, démarrage de présentation). Sans

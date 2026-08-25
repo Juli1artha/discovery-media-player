@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UN DOCUMENT AFFICHÉ SUR UN SECOND ÉCRAN ÉTAIT COMPTÉ COMME UNE ABSENCE.
 //
 // `viewable()` exigeait `doc.hasFocus()`. Or `hasFocus()` répond « l'utilisateur tape ICI », pas

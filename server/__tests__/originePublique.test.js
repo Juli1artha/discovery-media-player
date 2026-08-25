@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // L'EN-TÊTE `Host` EST CHOISI PAR LE CLIENT.
 //
 // Le lien inséré dans l'email de re-partage était construit avec `req.headers.host`. Sur le

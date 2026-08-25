@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA ROUTE APPLIQUE LE CONTRAT DU SLUG, ET TRADUIT LA SATURATION EN 503 — PAS EN 500.
 //
 // ⚠️ Deux volets d'un même P1 d'audit externe. Le slug vient de l'URL ; non validé, il entrait tel

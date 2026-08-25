@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+// Copyright © 2026 3D Discovery
 //
 // ⚠️ CE FICHIER EST SOUS MIT, pas AGPL — délibérément, et c'est le seul.
 // C'est le contrat que l'application hôte doit importer pour parler au player. Le placer sous la

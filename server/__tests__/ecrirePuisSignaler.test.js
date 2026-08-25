@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // ON SIGNALAIT AVANT D'ÉCRIRE, ET LE COMMENTAIRE AFFIRMAIT L'INVERSE.
 //
 // `pushPage`, `presentContent` et `endPresent` émettaient le signal, PUIS lançaient l'écriture.

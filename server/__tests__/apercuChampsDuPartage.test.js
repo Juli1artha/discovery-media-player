@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // « UN PARTAGE SANS PARTAGE » — ET CHAQUE CHAMP DOIT Y ÊTRE REBRANCHÉ UN PAR UN.
 //
 // Le mode aperçu construit un pseudo-partage : un objet qui ressemble à un lien tracé, sans en être

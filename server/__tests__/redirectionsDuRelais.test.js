@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LES TROIS PROPRIÉTÉS DE LA BOUCLE DE REDIRECTION — copiées du commentaire qui les énonce.
 //
 // ⚠️ CE FICHIER EXISTE À CAUSE D'UN GESTE, PAS D'UN INCIDENT. Le second hôte l'a formulé ainsi :

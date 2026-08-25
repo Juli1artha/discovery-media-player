@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // CODE NEUF SUR BASE ANCIENNE : ON N'ENVOIE PAS L'ARGUMENT QUI N'EXISTE PAS ENCORE.
 //
 // ⚠️ Relevé du second hôte, MESURÉ sur sa base. PostgREST résout une RPC par JEU D'ARGUMENTS NOMMÉS :

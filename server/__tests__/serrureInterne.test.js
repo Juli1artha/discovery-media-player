@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE VERROU EXISTAIT, LA CLÉ N'AVAIT PAS DE SERRURE.
 //
 // 0.1.22 a posé `verifyInternalToken`, qui lit `body.it`, et annoncé que `PLAYER_INTERNAL_STRICT=1`

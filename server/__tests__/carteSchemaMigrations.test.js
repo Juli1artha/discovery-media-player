@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA CARTE DE SCHÉMA DOIT SUIVRE LES MIGRATIONS — SINON ELLE DIT « COMPLET » SUR UN PÉRIMÈTRE PÉRIMÉ.
 //
 // ⚠️ Relevé par la session ADV (20/08/2026) sur la 0.1.88 : `ATTENDUES` (server/schema.js) est une

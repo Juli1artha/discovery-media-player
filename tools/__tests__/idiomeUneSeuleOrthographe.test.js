@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE IDÉE RECOPIÉE À LA MAIN SE PROPAGE AVEC SES VARIANTES.
 //
 // ⚠️ LE CHIFFRE QUI COMPTE N'EST PAS « 14 COPIES », C'EST « 3 ORTHOGRAPHES ». Le second hôte l'a

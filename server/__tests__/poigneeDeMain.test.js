@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE SILENCE N'EST PAS UNE INFORMATION.
 //
 // `embed-ready` dit à l'hôte « je suis là ». Sans lui, un hôte prudent ne peut pas distinguer un

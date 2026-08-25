@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // Suivi de lecture d'un document : temps réellement passé PAR PAGE, page la plus loin atteinte,
 // durée totale. C'est la matière première de tout ce que l'application affiche ensuite (entonnoir
 // de lecture, donut de progression, graphe temps/page, classement des lecteurs).

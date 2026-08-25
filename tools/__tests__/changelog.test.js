@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // L'ACCORD TITRES ↔ RÉFÉRENCES, ÉPROUVÉ SUR LES DEUX DÉFAUTS QUI L'ONT RENDU NÉCESSAIRE.
 //
 // Les références se sont arrêtées à la 0.1.41 pendant 77 versions : 76 titres pointaient dans le

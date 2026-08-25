@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE RELAIS CHARGEAIT LE FICHIER ENTIER EN MÉMOIRE, SANS AUCUNE BORNE.
 //
 // Un PDF de 80 Mo, trois requêtes Range simultanées, et une fonction serverless tombe — pas pour un

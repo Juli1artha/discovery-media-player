@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE CHEMIN ANALYTIQUE EXTERNE EST LIMITÉ PAR IP — au-delà du quota, on n'écrit plus (mais 200).
 //
 // ⚠️ P1 PERFORMANCE : un slug public permettait des écritures illimitées. Même quota dérivé de la

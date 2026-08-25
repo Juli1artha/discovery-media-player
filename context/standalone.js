@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // CONTEXTE PAR DÉFAUT — de quoi faire tourner une instance sans écrire une ligne.
 //
 // L'architecture veut qu'un hôte écrive son câblage : c'est ce qui lui permet de brancher SON

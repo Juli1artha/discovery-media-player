@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE ACTION POST INCONNUE N'EST PAS UN SUCCÈS.
 //
 // ⚠️ P2 DU HUITIÈME AUDIT. Toute action POST qu'aucune famille ne reconnaît tombait dans le repli

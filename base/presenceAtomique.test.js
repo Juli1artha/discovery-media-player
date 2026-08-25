@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE PLAFOND DE CRÉATION ANONYME TIENT SOUS LA CONCURRENCE — ÉPROUVÉ CONTRE UN VRAI POSTGRES.
 //
 // ⚠️ P1c audit CODEX 5.6, étape 1. Le double en mémoire ne sait ni verrouiller (pg_advisory_xact_lock)

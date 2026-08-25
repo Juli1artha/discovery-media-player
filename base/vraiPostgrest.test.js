@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // ⚠️ LE DOUBLE EN MÉMOIRE DIT LUI-MÊME CE QU'IL NE SAIT PAS FAIRE.
 //
 //   « Pas de transactions, pas de contraintes, pas de types, pas de RLS — et surtout PAS un

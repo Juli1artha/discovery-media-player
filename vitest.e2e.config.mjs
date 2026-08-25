@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // BANC NAVIGATEUR — séparé, et volontairement.
 //
 // `npm test` doit rester exécutable partout, sans navigateur : c'est ce qui le rend praticable en

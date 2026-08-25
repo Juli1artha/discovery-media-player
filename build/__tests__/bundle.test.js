@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // L'ARTEFACT NE DOIT PAS DÉPENDRE DU DOSSIER D'OÙ ON LE CONSTRUIT.
 //
 // `server/*.generated.js` sont produits par `npm run build` et COMMITTÉS : les plateformes

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE REDIRECTION NE DOIT RIEN OUVRIR QUE L'URL DE DÉPART N'AURAIT PAS OUVERT.
 //
 // `fetch` suit les redirections par défaut, et n'en revalide aucune. La garde n'examinait que

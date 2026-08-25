@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // @vitest-environment jsdom
 //
 // ON ANNONÇAIT LA FIN AVANT DE L'OBTENIR.

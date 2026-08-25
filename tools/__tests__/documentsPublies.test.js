@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LES DOCUMENTS QUE LE PAQUET PROMET, ÉPROUVÉS SUR LA RÈGLE PUIS SUR LE PAQUET RÉEL.
 //
 // ⚠️ Le défaut d'origine n'était pas « le CHANGELOG manque » : c'était que RIEN NE DISTINGUAIT

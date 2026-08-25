@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA SUPPRESSION DOIT TOUJOURS GAGNER SUR LE CONTENU.
 //
 // L'édition et la réaction vérifiaient « pas supprimé » à la LECTURE, puis écrivaient par id seul :

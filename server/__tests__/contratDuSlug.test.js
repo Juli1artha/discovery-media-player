@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE CONTRAT DU SLUG EXISTE EN DEUX EXEMPLAIRES, ET C'EST VOULU — DONC IL SE SURVEILLE.
 //
 // ⚠️ `src/bridge.ts` est le SEUL fichier MIT d'un paquet AGPL : c'est le contrat qu'une application

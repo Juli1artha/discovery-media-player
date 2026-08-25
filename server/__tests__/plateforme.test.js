@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE GESTIONNAIRE NE DOIT DÉPENDRE D'AUCUNE PLATEFORME.
 //
 // Le README promet « Vercel, Next.js, Express, ou le serveur HTTP de Node — le même gestionnaire ».

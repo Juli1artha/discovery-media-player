@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UN COMPTEUR EN MÉMOIRE EST DIVISÉ PAR LE NOMBRE D'INSTANCES, ET RIEN NE LE DIT.
 //
 // En serverless, plusieurs exécutions servent en parallèle et démarrent à froid : une limite de 120

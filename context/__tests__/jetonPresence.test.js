@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE JETON DE PRÉSENCE — SIGNÉ, LIÉ À (slug, key), EXPIRABLE, INFALSIFIABLE SANS LE SECRET.
 //
 // ⚠️ Socle de P1c étape 2 (incrément 1). Le jeton lie `slug + key + exp` et n'est vérifiable qu'avec

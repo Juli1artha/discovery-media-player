@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // L'ÉTIQUETTE ÉCRITE À CÔTÉ DU SHA DIT-ELLE LA VÉRITÉ ?
 //
 // ⚠️ CE TROU A ÉTÉ TROUVÉ EN DIRECT, ET IL A LAISSÉ PASSER UNE MONTÉE DE MAJEURE (#253, 21/08).

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE FAIT, PAS LE LIBELLÉ — COMMENT ON RECONNAÎT UN CONFLIT D'UNICITÉ.
 //
 // ⚠️ CE QUE FAISAIENT LES SIX SITES, ET CE QUE ÇA COÛTAIT.

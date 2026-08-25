@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE SESSION SUFFISAIT POUR LIRE LES PARTICIPANTS D'UNE PRÉSENTATION QUI N'ÉTAIT PAS LA SIENNE.
 //
 // `present-stats` et `present-doc-list` exigeaient un jeton, et rien de plus. Tout membre connaissant

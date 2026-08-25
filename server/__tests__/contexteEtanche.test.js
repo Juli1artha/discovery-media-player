@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE CŒUR N'OUVRE PAS L'ENVIRONNEMENT.
 //
 // C'est la règle que le projet affiche partout — « tout ce que le player emprunte arrive par le

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LES AGRÉGATEURS ÉTAIENT DES OBJETS INDEXÉS PAR DES DONNÉES DU DEHORS.
 //
 // `byDoc`, `intByDoc`, `byUser`, `sessMax`, `nameBySlug`, `msgByKey` : des `{}` dont les clés sont

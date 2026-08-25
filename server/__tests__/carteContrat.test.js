@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA CARTE PUBLIÉE ET LE CONTRAT ÉCRIT DOIVENT PORTER LES MÊMES CHAMPS.
 //
 // ⚠️ La garde qui existait ÉNUMÉRAIT quatre noms (`separateIssuer`, `hostShare`, `hostMail`,

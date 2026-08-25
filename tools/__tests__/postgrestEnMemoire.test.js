@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE DOUBLURE QUI MENT EST PIRE QUE PAS DE DOUBLURE.
 //
 // Ce faux PostgREST sert de base aux essais de bout en bout : la visionneuse tracée et la page

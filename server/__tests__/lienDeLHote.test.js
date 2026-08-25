@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // L'HÔTE PEUT CRÉER UN LIEN EN SON NOM PROPRE — ET RIEN D'AUTRE.
 //
 // Un lien ANONYME (la plaquette publique d'un programme, lue par un prospect sans compte) n'a pas

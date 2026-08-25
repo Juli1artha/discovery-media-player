@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE COMPTEUR DE DÉBIT LOCAL EST O(1) PAR DÉCISION — pas un balayage de tout l'historique.
 //
 // ⚠️ P1 PERFORMANCE : l'ancien compteur gardait un TABLEAU de timestamps par clé et le RE-FILTRAIT

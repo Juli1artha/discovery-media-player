@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LES FAILLES CONNUES DES DÉPENDANCES — ET LA DIFFÉRENCE ENTRE « AUCUNE » ET « JE N'AI PAS PU VOIR ».
 //
 // ⚠️ CE QUE FAISAIT L'ÉTAPE QUE CE FICHIER REMPLACE. Elle lisait le code de sortie de

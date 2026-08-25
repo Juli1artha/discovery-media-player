@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE ADRESSE TROP LONGUE BLOQUAIT L'INSTANCE ENTIÈRE.
 //
 // Le re-partage validait l'adresse avec `/.+@.+\..+/`. Ce motif reprend à chaque position de

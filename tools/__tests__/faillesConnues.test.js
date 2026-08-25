@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // « AUCUNE FAILLE » ET « JE N'AI PAS PU VOIR » NE SONT PAS LE MÊME RÉSULTAT.
 //
 // ⚠️ L'ÉTAPE REMPLACÉE LISAIT LE CODE DE SORTIE DE `npm audit`, qui vaut non-zéro pour deux

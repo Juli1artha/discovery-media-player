@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UN SIGNAL RELU N'EST PAS ROBUSTE SI L'ATTAQUANT PEUT EMPÊCHER LA RELECTURE D'ARRIVER.
 //
 // Depuis 0.1.19, toute la défense du canal Realtime public repose sur une relecture : on cesse de

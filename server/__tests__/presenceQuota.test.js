@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE QUOTA DE PRÉSENCE COUVRE UNE VRAIE AUDIENCE DERRIÈRE UNE IP PARTAGÉE — pas 6 personnes.
 //
 // ⚠️ P1 PERFORMANCE : 1000 battements/h/IP en dur, alors qu'un participant en émet ~144 (toutes

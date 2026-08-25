@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LES LIENS DES DOCUMENTS PUBLIÉS, ÉPROUVÉS SUR LA RÈGLE PUIS SUR LE PAQUET RÉEL.
 //
 // ⚠️ Neuf des douze liens relatifs du README menaient dans le vide une fois le paquet installé —

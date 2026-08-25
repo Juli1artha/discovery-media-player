@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // SIX CHEMINS D'ÉCRITURE, DEUX PROTÉGÉS — ET LA LISTE N'A JAMAIS TENU.
 //
 // 0.1.41 annonçait « les écritures de carte sont séquentielles ». C'était vrai d'un chemin sur

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // « TERMINER » NE TERMINAIT RIEN DE DÉFINITIF.
 //
 // Les fonctions de pilotage écrivent `active: true` — c'est voulu — et le jeton de contrôle

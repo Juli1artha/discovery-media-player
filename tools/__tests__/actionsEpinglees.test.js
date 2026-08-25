@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA GARDE D'ÉPINGLAGE DES ACTIONS, ÉPROUVÉE SUR CE QU'ELLE RATAIT.
 //
 // ⚠️ Elle existait depuis longtemps, en `grep`, et elle était aveugle DANS LES DEUX SENS. Elle

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA GRAINE DU SCAN DOIT SERVIR — SINON LE SCAN MESURE LE VIDE.
 //
 // Le job zap sonde ses trois surfaces en CI avant de scanner (un scan d'un 404 est vert et

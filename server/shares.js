@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // GED commerciale : liens de partage tracés (un par destinataire) + agrégation des consultations.
 // Tables service-role only (cf. migration v12321) → tout passe par le service role ici.
 const crypto = require("crypto");

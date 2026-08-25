@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // L'ALLOW-LIST DISTANTE — LA MOITIÉ DE LA GARDE SSRF QUI N'AVAIT PAS DE BANC.
 //
 // ⚠️ `storage.test.js` éprouve la RACINE LOCALE, en détail : la remontée par `..`, le dossier

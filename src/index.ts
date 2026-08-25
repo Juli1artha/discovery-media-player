@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // Point d'entrée du code navigateur du player.
 //
 // esbuild regroupe ce fichier en un IIFE exposé sous `window.Player` (cf. player/build/bundle.mjs).

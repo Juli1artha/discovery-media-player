@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA PURGE DÉCLARE, LE RECENSEMENT LA CONTREDIT.
 //
 // Ce module est UNE des deux moitiés du contrat de rétention (docs/RETENTION.md) : il efface ce
