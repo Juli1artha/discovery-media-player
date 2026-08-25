@@ -268,6 +268,24 @@ Seeing one of those means *"my probe read nothing"* — never *"the two sides ar
 family: an empty diff, a zero count, an empty list. A positive control — hash something you know
 is not empty — costs one line and catches the whole class, shell or not.
 
+⚠️ **And one storey above: an action that looks like a successful action.** The two first cases
+leave a silence one misreads; here the tool *asserts*. On 25/08 a published release body was edited
+twice through a web form, saved twice, and changed neither time — the only measurable difference
+between the two versions was **124 carriage returns** the editor had normalised. Both saves reported
+success, and nothing in what they returned distinguished *done* from *not done*.
+
+The parry is the same gesture, one step further: **read what is served, never what the tool says it
+wrote.** Diff the two bodies, re-fetch the page, re-read the row — the banner is not evidence.
+
+| The storey | What it looks like |
+|---|---|
+| a **value** crossing a grammar | what remains is plausible |
+| an **absence** returned as a result | emptiness reads as a measurement |
+| an **action** reported as done | the tool says *"saved"* |
+
+(The three-storey reading is an integrating host's, on 25/08, merging three notes we had each
+written separately without seeing they described one defect.)
+
 Measured here on 25/08 after the rule was written: **7 expressions still interpolated into `run:`
 text, 25 values passed through `env:`**. All seven are GitHub-controlled (`github.repository`); the
 two that were ours, written that same day, were closed.
