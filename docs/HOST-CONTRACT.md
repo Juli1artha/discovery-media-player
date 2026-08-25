@@ -31,6 +31,7 @@ need.
   "product": "discovery-media-player",
   "contract": 1,
   "version": "<the running version>",
+  "runtime": { "node": "<what this instance runs on>", "nodeRequired": ">=22.13.0" },
   "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention"],
   "frameAncestors": ["'self'", "https://*.vercel.app", "https://app.example.com"],
   "separateIssuer": true,
@@ -50,6 +51,20 @@ need.
 **Pin `contract`**, not `version`: it moves only on a break. Test `capabilities` by **presence**,
 never by order. `plugins` lets you refuse to start when you depend on an optional module this
 instance does not have.
+
+⚠️ **`runtime` is the only way to see what the player is actually running on.** `nodeRequired` is
+the floor the package declares, `node` is what the process reports — two numbers, no verdict:
+compare them with your own semver rather than trusting a field we compute for you.
+
+The floor is **Node ≥ 22.13.0**, and it is not ours: it is what `pdfjs-dist` — the one production
+dependency, the one that renders your documents — requires. npm will not stop you below it. It
+prints an `EBADENGINE` line in the noise of an install and installs anyway, so an instance can run
+for months on a Node its rendering engine calls unsupported, and nothing says so.
+
+⚠️ **Read `node` rather than your platform's setting; they are not the same fact.** Measured on
+25/08 at an integrating host: the project setting said `24.x` while the deployment serving
+production ran `nodejs 22`. A configured runtime is an intention, and no amount of reading it back
+tells you what executed. This field is the only place the two can be confronted.
 
 ⚠️ **`schema` tells you which migrations this instance is still waiting for.** The player never
 applies migrations — it cannot, it only speaks PostgREST — so it *detects* instead, and a missing

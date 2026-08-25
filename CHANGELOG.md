@@ -38,6 +38,24 @@ the notes there are this file's section for that version.
   about an npm bug advising you to delete `package-lock.json` — advice that edits a tracked file
   for a problem that is a Node version. Measured on a host running 20.18.1. `CONTRIBUTING.md`
   carries the number and the guard refuses if it drifts from the lockfile.
+- **The identity card now reports the runtime.** `GET /api/doc?contract=1` gains
+  `runtime: { node, nodeRequired }` — what the process is executing on, and the floor the package
+  declares. Additive, so the `contract` number does not move (rule 2).
+  - ⚠️ **A configured runtime is an intention, and reading it back does not tell you what ran.**
+    Measured on 25/08 at an integrating host: the project setting said `24.x` while the deployment
+    serving production ran `nodejs 22`. They could not tell from the outside, and they were right
+    that nothing let them — no route anywhere rendered `process.version`, ours included.
+  - **Two numbers, no verdict.** The card does not say "supported": that would put a semver range
+    evaluator in the server, and this repository has twice paid for parsing a structured format by
+    hand. Compare them with your own semver.
+  - The patch level is given, not just major.minor — the floor is patch-level (`>=22.13.0`), so a
+    truncated version would not answer the one question the field exists for.
+- **The production floor is written in the document a host actually receives.** `engines` is
+  machine-readable and npm only *warns* below it; the only human-readable statement was a
+  shields.io badge in the README — a remote image, invisible offline and inside `node_modules`,
+  which is exactly where a self-hoster reads. `docs/HOST-CONTRACT.md` — the page hosts pin — did
+  not contain the word "node". It now carries the floor, and the same guard refuses if that number
+  drifts from the lockfile.
 
 ## [0.1.136] — 2026-08-25
 

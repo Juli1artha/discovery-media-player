@@ -52,6 +52,11 @@ let docbot = null;
 // Version publiée du player — lue là où elle est déjà déclarée, pour qu'elle ne puisse pas
 // diverger de ce que l'hôte a réellement installé.
 const PLAYER_VERSION = require("../package.json").version;
+// ⚠️ LE PLANCHER, LU LÀ OÙ IL EST DÉCLARÉ. Un hôte ne peut pas confronter le Node qu'il CROIT
+// déployer à celui qui TOURNE : mesuré le 25/08 chez un intégrateur dont le réglage de plateforme
+// disait « 24.x » pendant que la fonction servant la production tournait en 22. Il n'avait aucune
+// route à interroger — ni chez lui, ni chez nous. Le player le sait, lui ; il ne le disait pas.
+const NODE_REQUIS = require("../package.json").engines.node;
 // Registre des marques : le loader porte celle du CLIENT dont on montre le document.
 const brands = require("./brands");
 
@@ -592,6 +597,18 @@ async function handler(req, res) {
         // un paramètre ou un motif de refus ne le change pas.
         contract: 1,
         version: PLAYER_VERSION,
+        // ⚠️ SUR QUOI CETTE INSTANCE TOURNE, ET CE QU'ELLE EXIGE. Deux nombres, aucune décision :
+        // l'hôte compare avec son propre semver. Écrire ici « supporté : oui » demanderait un
+        // évaluateur d'intervalles dans le serveur, et ce dépôt a déjà payé deux fois d'avoir
+        // analysé un format structuré à la main.
+        //
+        // ⚠️ ON DONNE LE CORRECTIF, PAS SEULEMENT LA MINEURE, et ce n'est pas un oubli. Le plancher
+        // est de niveau correctif (`>=22.13.0`), donc une majeure.mineure ne permet PAS de répondre
+        // à la seule question posée. Et la carte publie déjà `version`, qui désigne notre code à
+        // l'exemplaire près : taire un chiffre de Node en publiant celui-là serait cohérent avec
+        // rien. La carte reste muette sur ce qui aide à ATTEIGNER l'instance — URL, secrets, noms
+        // d'hôte ; une version de moteur ne fait entrer personne.
+        runtime: { node: process.versions.node, nodeRequired: NODE_REQUIS },
         // Ce que cette instance sait faire. Un hôte teste la présence, jamais l'ordre.
         // `host-auth` : cette instance sait vérifier les jetons auprès d'un émetteur DISTINCT de
         // sa base (PLAYER_AUTH_URL). Un hôte tiers en a besoin pour savoir si ses membres
