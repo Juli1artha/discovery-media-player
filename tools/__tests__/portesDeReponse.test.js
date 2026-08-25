@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright © 2026 3D Discovery
-// UN CORPS EN TEXTE NE QUITTE CE SERVEUR QUE PAR UNE SEULE PORTE.
+// UNE RÉPONSE NE QUITTE CE SERVEUR QUE PAR UNE PORTE, ET LA PORTE POSE LA RÈGLE.
 //
 // ⚠️ La règle a été posée une fois (scan ZAP baseline, règle 10019, 24/08) et n'a tenu que là où
 // elle était écrite. Un mois plus tard, l'audit CODEX 5.6 en trouvait trois autres : le `500` du
@@ -11,7 +11,7 @@ import { describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-import { corpsEcrits, estTexteEcrit, entetesDe, manquements } from "../corps-en-texte.mjs";
+import { corpsEcrits, estTexteEcrit, entetesDe, manquements, typesReserves, MODULE_DES_PORTES } from "../portes-de-reponse.mjs";
 import ts from "typescript";
 
 const lu = (source) => corpsEcrits("t.js", source);
@@ -87,6 +87,36 @@ describe("ce que la garde NE doit PAS accuser", () => {
   });
 });
 
+describe("le second volet : le JSON sort par la porte, ou il ne sort pas", () => {
+  // ⚠️ CE VOLET EXISTE PARCE QUE LE PREMIER NE POUVAIT RIEN VOIR ICI. Les treize copies de l'aide
+  // JSON faisaient `res.end(JSON.stringify(obj))` — un corps CALCULÉ, que le premier volet ne
+  // regarde pas et ne doit pas regarder. Ce qu'elles avaient en commun, c'est de DÉCLARER le type,
+  // donc de décider chacune dans son coin ce qui l'accompagne. Aucune des vingt ne posait
+  // `nosniff` : ce n'est pas vingt oublis, c'est ce qu'une recette recopiée devient.
+  const copie = 'function f(res) {\n  const jp = (s, o) => { res.statusCode = s; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(o)); };\n  return jp(200, {});\n}';
+
+  it("⚠️ une quatorzième copie de l'aide JSON est refusée, et le message dit pourquoi", () => {
+    const [souci] = typesReserves("server/routes-neuve.js", copie);
+    expect(souci).toContain("application/json");
+    expect(souci).toContain("ne s'appliquera qu'ici");
+  });
+
+  it("⚠️ mais le module des portes a le droit — c'est LUI la définition", () => {
+    expect(typesReserves(MODULE_DES_PORTES, copie)).toEqual([]);
+    expect(typesReserves("/ailleurs/" + MODULE_DES_PORTES, copie)).toEqual([]);
+  });
+
+  it("un `application/json` qui n'est pas un en-tête de réponse n'est pas visé", () => {
+    // Le vrai cas : `routes-agent.js` en passe un à `fetch` et à `storage.put`.
+    expect(typesReserves("server/routes-agent.js", 'fetch(u, { headers: { "Content-Type": "application/json" } });')).toEqual([]);
+    expect(typesReserves("server/routes-agent.js", 'PLAYER.storage.put("c", "k", b, "application/json");')).toEqual([]);
+  });
+
+  it("un autre type déclaré reste permis — il a ses propres envoyeurs, et la garde le dit", () => {
+    expect(typesReserves("server/handler.js", 'function f(res) { res.setHeader("Content-Type", "text/javascript; charset=utf-8"); }')).toEqual([]);
+  });
+});
+
 describe("les fichiers réels du dépôt", () => {
   const fichiers = execFileSync("git", ["ls-files"], { encoding: "utf8" })
     .split("\n")
@@ -100,5 +130,14 @@ describe("les fichiers réels du dépôt", () => {
   it("⚠️ aucun corps en texte ne part sans type ni nosniff", () => {
     const soucis = fichiers.flatMap((f) => manquements(corpsEcrits(f, readFileSync(f, "utf8"))));
     expect(soucis, soucis.join("\n")).toEqual([]);
+  });
+
+  it("⚠️ et `application/json` n'est déclaré que dans le module des portes", () => {
+    const soucis = fichiers.flatMap((f) => typesReserves(f, readFileSync(f, "utf8")));
+    expect(soucis, soucis.join("\n")).toEqual([]);
+  });
+
+  it("le module des portes est bien dans le périmètre lu — sinon les deux règles ne visent rien", () => {
+    expect(fichiers).toContain(MODULE_DES_PORTES);
   });
 });

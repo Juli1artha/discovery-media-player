@@ -128,3 +128,60 @@ describe("le refus survit à un en-tête déjà parti", () => {
     expect(res.corps).toBe("Fichier indisponible");
   });
 });
+
+// ⚠️ LA PORTE JSON, ÉPROUVÉE SUR CE QUI LUI MANQUAIT. Elle a remplacé TREIZE copies identiques de
+// la même aide, sous quatre noms (`jp`, `jd`, `j`, `jv`), plus sept corps écrits à la main et cinq
+// réponses inline. Vingt endroits, et aucun ne posait `nosniff` — ce n'est pas vingt oublis, c'est
+// ce qu'une recette recopiée devient : la copie initiale était juste, c'est la CORRECTION qui ne
+// se propage pas.
+describe("la porte JSON", () => {
+  const { repondreJson, repondreJsonTexte, jsonPour } = require("../reponses.js");
+
+  it("⚠️ pose le type ET `nosniff` — c'est le second qui manquait aux vingt", () => {
+    const res = resSimple();
+    repondreJson(res, 400, { ok: false, error: "bad-event" });
+    expect(res.statusCode).toBe(400);
+    expect(res.entetes["Content-Type"]).toBe("application/json");
+    expect(res.entetes["X-Content-Type-Options"]).toBe("nosniff");
+    expect(res.corps).toBe('{"ok":false,"error":"bad-event"}');
+  });
+
+  it("⚠️ rend le corps AU MÊME OCTET que la chaîne écrite à la main qu'elle remplace", () => {
+    const res = resSimple();
+    repondreJson(res, 200, { ok: true });
+    expect(res.corps, "un corps qui change de forme changerait le contrat des hôtes").toBe('{"ok":true}');
+  });
+
+  it("porte les en-têtes qui varient légitimement d'une réponse à l'autre", () => {
+    const res = resSimple();
+    repondreJson(res, 503, { ok: false }, { "Retry-After": "2", "Cache-Control": "no-store" });
+    expect(res.entetes["Retry-After"]).toBe("2");
+    expect(res.entetes["Cache-Control"]).toBe("no-store");
+  });
+
+  it("ignore un en-tête absent plutôt que de poser `null` — le cas du cookie de visiteur", () => {
+    const res = resSimple();
+    repondreJson(res, 200, { ok: true }, { "Set-Cookie": null });
+    expect("Set-Cookie" in res.entetes).toBe(false);
+  });
+
+  it("⚠️ un corps DÉJÀ sérialisé n'est pas ré-encodé — c'est l'état de présentation, sur un chemin chaud", () => {
+    const res = resSimple();
+    repondreJsonTexte(res, 200, '{"pres":1}');
+    expect(res.corps, "le re-sérialiser produirait une chaîne JSON contenant du JSON").toBe('{"pres":1}');
+  });
+
+  it("la porte liée à une réponse est la même porte, pas une seconde recette", () => {
+    const res = resSimple();
+    jsonPour(res)(404, { ok: false, error: "bot" });
+    expect(res.statusCode).toBe(404);
+    expect(res.entetes["X-Content-Type-Options"]).toBe("nosniff");
+  });
+
+  it("elle survit elle aussi à un en-tête déjà parti", () => {
+    const res = resSimple();
+    res.end("déjà écrit");
+    expect(() => repondreJson(res, 500, { ok: false })).not.toThrow();
+    expect(res.corps).toBe("déjà écrit");
+  });
+});

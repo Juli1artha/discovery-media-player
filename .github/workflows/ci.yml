@@ -357,9 +357,16 @@ jobs:
       # ⚠️ ET ZAP NE POUVAIT PAS LES VOIR. Le scan visite trois surfaces servies ; un `500`
       # d'exception et un `400` de paramètre manquant ne sont sur aucune d'elles. Ce qu'un scanner
       # atteint dépend de ce qu'on lui donne à visiter — la garde, elle, lit les 25 fichiers.
-      - name: A hand-written text body never leaves without its type and nosniff
+      # ⚠️ ET LE JSON AVAIT FAIT LA MÊME CHOSE, EN PLUS GRAND — trouvé en mesurant le texte.
+      # L'aide de réponse JSON était définie TREIZE fois, à l'identique, sous quatre noms, plus
+      # sept corps écrits à la main et cinq réponses inline : vingt endroits, aucun ne posant
+      # `nosniff`. Ce n'est pas vingt oublis — c'est ce qu'une recette recopiée devient : la copie
+      # initiale était juste, c'est la CORRECTION qui ne se propage pas. Le second volet ne compte
+      # donc pas les oublis, il ferme la porte : hors de `server/reponses.js`, aucun fichier ne
+      # déclare `application/json`.
+      - name: Responses leave by a door, and the door sets the rule
         if: matrix.node == '22'
-        run: node tools/corps-en-texte.mjs
+        run: node tools/portes-de-reponse.mjs
 
       # ⚠️ LA CARTE D'IDENTITÉ EST LA SEULE CHOSE QUE LES HÔTES ÉPINGLENT. Le contrat en montrait
       # une version périmée de cinq publications, à laquelle il manquait deux capacités. Un hôte

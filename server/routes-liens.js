@@ -4,6 +4,7 @@
 // Reste à PLAT dans server/ (les gardes de forge ciblent server/*.js).
 
 const { adresseAppelant } = require("./appelant");
+const { jsonPour, repondreJson } = require("./reponses.js");
 const { estConflit } = require("./erreurs-base.js");
 const { createShare, createReshare, sendReshareEmail, revokeShare, setShareAuth, listSharesForDoc, listSessionsForDoc, internalStatsForDoc, cleIdempotence, getShareBySlug, logView, upsertSession, upsertInternalSession, overview: docOverview } = require("./shares");
 const { SESSION_QUOTA_PER_HOUR, VIEW_QUOTA_PER_HOUR } = require("./shared.generated.js");
@@ -29,7 +30,7 @@ async function traiter(req, res, body, slug) {
       // Déclenchement explicite : hôte de confiance ou admin. Renvoie les comptes DÉCLARÉS —
       // le recensement indépendant (SQL nu) est l'autre moitié du contrat, pas cette route.
       if (body.action === "retention.run") {
-        const jd = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
+        const jd = jsonPour(res);
         try {
           const hote = !!(PLAYER.identity.isTrustedHostCall && PLAYER.identity.isTrustedHostCall(req.headers));
           let admin = false;
@@ -46,7 +47,7 @@ async function traiter(req, res, body, slug) {
         } catch (e) { try { PLAYER.errors.capture(e, { route: "retention" }); } catch { /* jamais bloquant */ } return jd(500, { ok: false }); }
       }
       if (String(body.action || "").startsWith("docshare.")) {
-        const jd = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
+        const jd = jsonPour(res);
         // Balayage de rétention opportuniste — au plus un par 24 h, jamais bloquant.
         try { require("./retention").tick(); } catch { /* jamais bloquant */ }
         try {
@@ -255,7 +256,7 @@ async function traiter(req, res, body, slug) {
       // Discovery si demandé (body.send). Anti-spam : contenu templé + RATE LIMIT par IP (8/h).
       if (body.action === "reshare") {
         const mail = String(body.email || "").trim().toLowerCase();
-        const j = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
+        const j = jsonPour(res);
         // ⚠️ LA LONGUEUR AVANT LE MOTIF — et ici ce n'est pas de la prudence, c'est mesuré :
         // `.+@.+\..+` reprend à chaque position de départ, coût 49 ms sur 10 000 caractères,
         // 3 900 ms sur 100 000. Une seule requête, sur une route ouverte au lecteur, bloquait la
@@ -343,11 +344,11 @@ async function traiter(req, res, body, slug) {
       // événement absent ou invalide transformé en ouverture.
       const EVENEMENTS = new Set(["open", "page", "heartbeat", "session"]);
       if (typeof body.action === "string" && body.action.trim()) {
-        res.statusCode = 400; res.setHeader("Content-Type", "application/json"); res.end('{"ok":false,"error":"unknown-action"}');
+        repondreJson(res, 400, { ok: false, error: "unknown-action" });
         return true;
       }
       if (!EVENEMENTS.has(body.event)) {
-        res.statusCode = 400; res.setHeader("Content-Type", "application/json"); res.end('{"ok":false,"error":"bad-event"}');
+        repondreJson(res, 400, { ok: false, error: "bad-event" });
         return true;
       }
       const ua0 = req.headers["user-agent"];
@@ -392,7 +393,7 @@ async function traiter(req, res, body, slug) {
               PLAYER.errors.capture(new Error(`session interne refusée : quota horaire atteint (${SESSION_QUOTA_PER_HOUR}/h par adresse) — la mesure s'arrête tant qu'il l'est`), { route: "internal-session" });
             }
           } catch { /* un journal ne doit jamais empêcher une lecture */ }
-          res.statusCode = 429; res.setHeader("Content-Type", "application/json"); res.end('{"ok":false,"error":"rate"}');
+          repondreJson(res, 429, { ok: false, error: "rate" });
           return;
         }
         const jeton = typeof PLAYER.identity.verifyInternalToken === "function"
@@ -400,7 +401,7 @@ async function traiter(req, res, body, slug) {
           : null;
         const strict = !!(PLAYER.config && PLAYER.config.internalStrict);
         if (strict && !jeton) {
-          res.statusCode = 403; res.setHeader("Content-Type", "application/json"); res.end('{"ok":false,"error":"internal-token"}');
+          repondreJson(res, 403, { ok: false, error: "internal-token" });
           return;
         }
         if (!strict && !jeton) {
@@ -442,7 +443,7 @@ async function traiter(req, res, body, slug) {
             }
           } catch { /* un journal ne doit jamais empêcher une lecture */ }
         }
-        res.statusCode = 200; res.setHeader("Content-Type", "application/json"); res.end('{"ok":true}');
+        repondreJson(res, 200, { ok: true });
         return;
       }
       // ⚠️ PLAFOND ANTI-INONDATION PAR IP, EN DEUX SEAUX, ET VÉRIFIÉ AVANT DE LIRE LE LIEN (P1
@@ -468,7 +469,7 @@ async function traiter(req, res, body, slug) {
           const avert = estSession ? "sess:quota-avert" : "view:quota-avert";
           if (await PLAYER.limits.allow(avert, 1, 3600)) PLAYER.errors.capture(new Error(`télémétrie externe abandonnée (${body.event}) : quota horaire atteint (${quotaTrack}/h par adresse)`), { route: "track", abandon: true });
         } catch { /* jamais bloquant */ }
-        res.statusCode = 200; res.setHeader("Content-Type", "application/json"); res.end('{"ok":true}');
+        repondreJson(res, 200, { ok: true });
         return;
       }
       const share = await getShareBySlug(body.slug || slug);
@@ -491,7 +492,7 @@ async function traiter(req, res, body, slug) {
           } catch { /* un journal ne doit jamais empêcher une lecture */ }
         }
       }
-      res.statusCode = 200; res.setHeader("Content-Type", "application/json"); res.end('{"ok":true}');
+      repondreJson(res, 200, { ok: true });
       return;
   // ⚠️ PAS de `return false` ici : le bloc ci-dessus est le repli ANALYTIQUE (open/page/heartbeat/
   // session). Une action inconnue N'Y ARRIVE PLUS — elle est refusée en 400 unknown-action au

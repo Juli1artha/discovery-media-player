@@ -4,6 +4,7 @@
 // Reste à PLAT dans server/ (les gardes de forge ciblent server/*.js).
 
 const { adresseAppelant } = require("./appelant");
+const { repondreJson } = require("./reponses.js");
 
 const { getShareBySlug } = require("./shares");
 let PLAYER = null;
@@ -18,7 +19,7 @@ async function traiter(req, res, body, _slug) {
       // ── Connexion VISITEUR (soft wall) : demande d'un code par email, puis vérification. ──
       // Émet un jeton signé posé en cookie qui débloque les contenus gatés (require_auth).
       if (body.action === "visitor-request" || body.action === "visitor-verify" || body.action === "visitor-google") {
-        const jv = (status, obj, cookie) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); if (cookie) res.setHeader("Set-Cookie", cookie); res.end(JSON.stringify(obj)); };
+        const jv = (statut, obj, cookie) => repondreJson(res, statut, obj, cookie ? { "Set-Cookie": cookie } : null);
         const V = PLAYER.plugins.visitors;
         if (!V) return jv(404, { ok: false, error: "disabled" });
         const ip = adresseAppelant(req) || "ip";

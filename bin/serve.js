@@ -114,8 +114,7 @@ const serveur = http.createServer(async (req, res) => {
   // Point de santé : un orchestrateur doit pouvoir savoir si le processus répond sans ouvrir un
   // document ni toucher la base.
   if (url.pathname === "/healthz") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ ok: true }));
+    player.repondreJson(res, 200, { ok: true });
     return;
   }
 

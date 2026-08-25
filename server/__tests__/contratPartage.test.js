@@ -41,8 +41,10 @@ describe("les deux côtés lisent le même contrat de cadence", () => {
     const src = require("./sourceDesPages.cjs").SOURCE_PAGES;
     expect(src).toContain("intsess:quota-avert");
     // ⚠️ Le signalement doit précéder le `return`, sinon il ne s'exécute jamais.
+    // Le 429 ne s'écrit plus `res.statusCode = 429` : toutes les réponses JSON passent par une
+    // porte unique, et le statut y est le deuxième argument.
     const i = src.indexOf("intsess:quota-avert");
-    const j = src.indexOf("statusCode = 429", i);
+    const j = src.indexOf("repondreJson(res, 429", i);
     expect(j, "un 429 doit suivre le journal").toBeGreaterThan(i);
     expect(j - i, "et dans le même bloc").toBeLessThan(900);
   });

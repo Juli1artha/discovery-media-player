@@ -10,6 +10,7 @@
 // agentVoix.test.js échoue sans cette ligne.
 const crypto = require("node:crypto");
 const { adresseAppelant } = require("./appelant");
+const { jsonPour } = require("./reponses.js");
 
 const { getShareBySlug } = require("./shares");
 let PLAYER = null; let docbot = null;
@@ -32,7 +33,7 @@ const ACTIONS_LIEES_A_UNE_SESSION = new Set([
 
 async function traiter(req, res, body, _slug) {
       if (body.action === "bot-tts") {
-        const jp = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
+        const jp = jsonPour(res);
         if (!docbot) return jp(404, { ok: false, error: "disabled" });
         try {
           const apiKey = process.env.ELEVENLABS_API_KEY;
@@ -111,7 +112,7 @@ async function traiter(req, res, body, _slug) {
         } catch (e) { try { PLAYER.errors.capture(e, { route: String(body.action || "(sans action)") }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
       }
       if (body.action === "bot-start" || body.action === "bot-say" || body.action === "bot-history" || body.action === "bot-nudge" || body.action === "bot-book" || body.action === "bot-contact" || body.action === "bot-rate" || body.action === "bot-script") {
-        const jp = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
+        const jp = jsonPour(res);
         if (!docbot) return jp(404, { ok: false, error: "disabled" });
         try {
           const ip = adresseAppelant(req) || "anon";
