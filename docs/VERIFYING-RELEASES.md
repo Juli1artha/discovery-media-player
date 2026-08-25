@@ -130,6 +130,7 @@ against.
 | Version | Date | Release `.tgz` `sha256` | Identical to npm | Who looked | Also checked |
 |---|---|---|---|---|---|
 | 0.1.135 | 2026-08-25 | `603c1a44a502f2929a3ec806a9ee6886085614a20019d01c4019554ea229991d` | yes — 319 190 bytes on both sides | this repository, by hand | attestation subject and digest, SLSA workflow and ref, SBOM version, `.sha256` sidecar — and the release's own claims re-checked **inside the published tarball**: no `CHANGELOG.md`, no `docs/README.md`, and 0 dead relative links out of 2 (28 out of 34 in 0.1.134) |
+| 0.1.135 | 2026-08-25 | same digest | yes — reproduced independently, 319 190 bytes | an integrating host, on another machine — **reported to us, not measured here** | its own lockfile `integrity`; then, on the two published archives, that exactly one entry was removed and `package/README.md` was not |
 | 0.1.134 | 2026-08-24 | `aa56a1d85ef005baa65a065485eacd5462891dce1cb2961036b08af0e2a9c969` | yes — 320 659 bytes on both sides | this repository, by hand | attestation subject and digest, SLSA workflow and ref, SBOM version, `.sha256` sidecar |
 | 0.1.134 | 2026-08-24 | same digest | yes — reproduced independently | an integrating host, on another machine — **reported to us, not measured here** | its own lockfile `integrity`, then the fix re-measured on the unpacked archive |
 
@@ -148,9 +149,38 @@ For 0.1.134 the SLSA attestation attached to the Release named that same `sha256
 `.github/workflows/release.yml` in this repository — and npm's own `sha512`
 (`18c88f5eae80f00e…`) is the digest of those same bytes.
 
-That row was produced by hand, after publication, and **an empty row for a version means nobody
+Those rows were produced by hand, after publication, and **an empty row for a version means nobody
 looked from the outside — not that nothing was wrong**. The workflow's own refusal covers every
 version whether or not a row exists here.
+
+⚠️ **The outside check does not require installing the version.** It requires downloading it after
+publication, from somewhere else — nothing more. A version you decide *not* to adopt can still have
+its row filled, and it is still a measurement. Saying "we skipped that one, so nobody checked"
+would leave a gap where none was necessary.
+
+## What actually changed between two published versions
+
+Release notes describe a change; the artefacts *are* it. When the question is "what am I taking on
+by upgrading", the two tarballs answer it without reading a word of prose:
+
+```bash
+for V in 0.1.134 0.1.135; do
+  mkdir -p "v$V" && ( cd "v$V" && npm pack "discovery-media-player@$V" >/dev/null &&
+    tar -xzf *.tgz && find package -type f -exec sha256sum {} + | sort -k2 > ../"$V.txt" )
+done
+diff "0.1.134.txt" "0.1.135.txt"
+```
+
+For 0.1.134 → 0.1.135 that comes out as **one entry removed** (`package/docs/README.md`), none
+added, and **three files changed**: `README.md` and `docs/HOST-CONTRACT.md`, whose relative links
+became absolute, and `package.json`, whose version did. **Nothing under `server/` or `context/`
+differs** — so nothing the host executes changed, and that is a fact read off the artefacts rather
+than an inference from a heading.
+
+This is worth doing precisely when the notes say a file *stopped* shipping. Such a claim is about
+an artefact nobody has opened until someone opens it, and the failure mode it hides is silent: a
+pattern in `package.json#files` that removes one entry too many takes a needed document with it,
+and no test fails.
 
 ## The container image
 
