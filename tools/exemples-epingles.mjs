@@ -59,6 +59,8 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 
 import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
+import semver from "semver";
+
 import { estExecuteDirectement } from "./execute-directement.mjs";
 
 /** Une version STABLE : trois nombres, rien d'autre. `0.2.0-beta.1` n'en est pas une. */
@@ -199,6 +201,48 @@ export function exemplesDuDepot(racine = ".") {
   return trouves;
 }
 
+/**
+ * Le `engines.node` de chaque exemple, tel qu'il est écrit.
+ *
+ * ⚠️ CETTE RÈGLE ÉTAIT UNE CHAÎNE EN DUR, ET ELLE A BLOQUÉ LA 0.1.137. Elle exigeait littéralement
+ * `">=22"` — et dans le seul `examples/demo`. Quand le plancher réel est passé à `>=22.13.0`, la
+ * garde a refusé la valeur JUSTE en réclamant la périmée : un second exemplaire du plancher que
+ * personne ne confrontait, exactement ce que `plancher-de-node` existe pour empêcher un cran plus
+ * haut. Un exemple se copie tel quel dans le projet d'un intégrateur ; le plancher qu'il annonce
+ * doit être celui du paquet, pas celui du jour où quelqu'un a écrit la garde.
+ */
+export function moteursDesExemples(racine = ".") {
+  const dossier = join(racine, "examples");
+  if (!existsSync(dossier)) return [];
+  const trouves = [];
+  for (const e of readdirSync(dossier, { withFileTypes: true })) {
+    const p = join(dossier, e.name, "package.json");
+    if (!e.isDirectory() || !existsSync(p)) continue;
+    const j = JSON.parse(readFileSync(p, "utf8"));
+    if (!j.dependencies?.["discovery-media-player"]) continue;
+    trouves.push({ fichier: `examples/${e.name}/package.json`, portee: j.engines?.node });
+  }
+  return trouves;
+}
+
+/**
+ * Les exemples dont le moteur déclaré est plus PERMISSIF que celui du paquet.
+ *
+ * ⚠️ On compare des INTERVALLES, pas des chaînes : plus strict que nous est accepté (un exemple a
+ * le droit d'exiger node 24), plus permissif ne l'est pas — il promet à qui le copie que son
+ * montage tournera là où le player ne tourne pas.
+ */
+export function moteursTropLarges(notre, moteurs) {
+  return moteurs.flatMap(({ fichier, portee }) => {
+    if (typeof portee !== "string" || !semver.validRange(portee)) {
+      return [`${fichier} ne déclare pas un engines.node lisible (${JSON.stringify(portee)}) — un exemple sans moteur se copie sur une machine où il ne tourne pas`];
+    }
+    return semver.subset(portee, notre)
+      ? []
+      : [`${fichier} déclare node ${portee}, plus permissif que le paquet (${notre}) — un intégrateur le copie et croit son montage supporté là où il ne l'est pas`];
+  });
+}
+
 export function versionsPubliees(executer = () =>
   execFileSync("npm", ["view", "discovery-media-player", "versions", "--json"], { encoding: "utf8", timeout: 60000 })) {
   try {
@@ -219,9 +263,11 @@ if (estExecuteDirectement(import.meta.url)) {
     // tient : un exemple qui ne déclare pas son moteur se copie sur une machine où il ne tourne pas.
     // Il est relevé AVANT l'interrogation de npm pour que la panne du registre ne l'emporte pas.
     const soucis = [];
-    if (!readFileSync("examples/demo/package.json", "utf8").includes('">=22"')) {
-      soucis.push("examples/demo/package.json ne déclare pas node >=22");
+    const notre = JSON.parse(readFileSync("package.json", "utf8")).engines?.node;
+    if (typeof notre !== "string" || !semver.validRange(notre)) {
+      return inconclusif(`package.json ne déclare pas un engines.node lisible (${JSON.stringify(notre)}) — sans lui, « l'exemple est-il plus permissif que nous ? » n'a pas de sens`);
     }
+    soucis.push(...moteursTropLarges(notre, moteursDesExemples()));
 
     const publiees = versionsPubliees();
     if (!registreExploitable(publiees)) {

@@ -12,7 +12,7 @@
 // recherchée ». Le texte et le contrôle se contredisaient, et c'est le contrôle qui gagne.
 
 import { describe, it, expect } from "vitest";
-import { comparerVersions, estStable, acceptables, ecartsExemples, versionsPubliees, exemplesDuDepot, registreExploitable, versionsDuChangelog, fenetreHorsLigne, horsFenetre } from "../exemples-epingles.mjs";
+import { comparerVersions, estStable, acceptables, ecartsExemples, versionsPubliees, exemplesDuDepot, registreExploitable, versionsDuChangelog, fenetreHorsLigne, horsFenetre, moteursDesExemples, moteursTropLarges } from "../exemples-epingles.mjs";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -237,5 +237,52 @@ describe("le dépôt réel", () => {
     const versions = versionsDuChangelog(readFileSync(join(RACINE, "CHANGELOG.md"), "utf8"));
     const retard = horsFenetre(exemplesDuDepot(), fenetreHorsLigne(versions));
     expect(retard, "un intégrateur qui copie recevrait un player périmé").toEqual([]);
+  });
+});
+
+// ⚠️ CETTE RÈGLE A BLOQUÉ LA 0.1.137 EN RÉCLAMANT LA VALEUR PÉRIMÉE. Elle exigeait la chaîne
+// littérale `">=22"`, dans le seul `examples/demo`. Le plancher réel passé à `>=22.13.0`, elle a
+// refusé la valeur juste — un second exemplaire du plancher que personne ne confrontait.
+describe("le moteur que les exemples déclarent", () => {
+  const ex = (fichier, portee) => ({ fichier, portee });
+
+  it("se tait quand l'exemple déclare exactement notre plancher", () => {
+    expect(moteursTropLarges(">=22.13.0", [ex("a", ">=22.13.0")])).toEqual([]);
+  });
+
+  it("⚠️ REJOUE LE BLOCAGE : un exemple resté sur >=22 face à un paquet en >=22.13.0", () => {
+    const soucis = moteursTropLarges(">=22.13.0", [ex("examples/vercel/package.json", ">=22")]);
+    expect(soucis).toHaveLength(1);
+    expect(soucis[0]).toContain("examples/vercel/package.json");
+    expect(soucis[0]).toContain(">=22.13.0");
+  });
+
+  it("accepte un exemple PLUS STRICT que nous — il a le droit d'exiger node 24", () => {
+    expect(moteursTropLarges(">=22.13.0", [ex("a", ">=24")])).toEqual([]);
+  });
+
+  it("refuse un moteur absent : un exemple sans moteur se copie sur une machine où il ne tourne pas", () => {
+    expect(moteursTropLarges(">=22.13.0", [ex("a", undefined)])).toHaveLength(1);
+  });
+
+  it("refuse un intervalle illisible au lieu de le sauter en silence", () => {
+    expect(moteursTropLarges(">=22.13.0", [ex("a", "pas un intervalle")])).toHaveLength(1);
+  });
+
+  it("nomme CHAQUE exemple fautif — la version en dur n'en regardait qu'un sur trois", () => {
+    const soucis = moteursTropLarges(">=22.13.0", [ex("a", ">=22"), ex("b", ">=22"), ex("c", ">=22.13.0")]);
+    expect(soucis).toHaveLength(2);
+  });
+
+  describe("le dépôt tel qu'il est", () => {
+    const notre = JSON.parse(readFileSync(join(RACINE, "package.json"), "utf8")).engines.node;
+
+    it("relève les trois exemples, pas seulement celui qui était nommé en dur", () => {
+      expect(moteursDesExemples(RACINE).length).toBeGreaterThanOrEqual(3);
+    });
+
+    it("aucun n'annonce un plancher plus permissif que le paquet", () => {
+      expect(moteursTropLarges(notre, moteursDesExemples(RACINE))).toEqual([]);
+    });
   });
 });
