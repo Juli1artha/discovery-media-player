@@ -87,8 +87,16 @@ jobs:
         if: matrix.node == '22'
         run: |
           rm -rf /tmp/conso && mkdir -p /tmp/conso && cd /tmp/conso
-          npm init -y >/dev/null
-          npm i --silent "$GITHUB_WORKSPACE"/discovery-media-player-*.tgz
+          # ⚠️ L'ÉPROUVETTE EST COMMITÉE, SES DÉPENDANCES SONT HACHÉES. Avant : `npm i <tgz>`,
+          # et la dépendance de prod (pdfjs-dist + ses binaires optionnels) arrivait du registre
+          # SANS empreinte — le seul maillon non épinglé de toute la CI (relevé par Scorecard,
+          # Pinned-Dependencies). Désormais `npm ci` sur tools/fixture-conso (lockfile commité),
+          # et le player lui-même est POSÉ depuis le tarball du commit : `tar` n'interroge aucun
+          # registre. La cohérence fixture ↔ racine est confrontée par fixtureConso.test.js.
+          cp "$GITHUB_WORKSPACE"/tools/fixture-conso/package.json "$GITHUB_WORKSPACE"/tools/fixture-conso/package-lock.json .
+          npm ci --silent
+          mkdir -p node_modules/discovery-media-player
+          tar -xzf "$GITHUB_WORKSPACE"/discovery-media-player-*.tgz -C node_modules/discovery-media-player --strip-components=1
           cd node_modules/discovery-media-player
           for banc in test test:e2e test:base test:charge test:campagne; do
             if sortie=$(npm run "$banc" 2>&1); then
@@ -206,14 +214,16 @@ jobs:
           cp tools/fixture-types/* "$FIXTURE/"
           # ⚠️ LE COMPILATEUR EST CELUI DU DÉPÔT, PAS CELUI DU JOUR. `npm i typescript` dans une
           # fixture vierge prend la DERNIÈRE publiée : constaté le 22/08, elle rendait 7.0.2 alors
-          # que ce dépôt vérifie ses propres types avec 5.9.3. Ce banc éprouvait donc un compilateur
-          # que personne ici n'utilise, et il en changeait sans qu'aucun commit ne bouge — un jour
-          # rouge, un jour vert, pour une raison invisible dans le diff.
-          # La version vient du lockfile : un seul exemplaire du fait, celui qui fait déjà foi.
-          TS=$(node -p "require('$GITHUB_WORKSPACE/package-lock.json').packages['node_modules/typescript'].version")
-          [ -n "$TS" ] || { echo "::error::version de typescript introuvable dans package-lock.json"; exit 1; }
-          cd "$FIXTURE" && npm init -y >/dev/null
-          npm i --silent "$GITHUB_WORKSPACE"/discovery-media-player-*.tgz "typescript@$TS" >/dev/null
+          # que ce dépôt vérifie ses propres types avec 5.9.3 — un jour rouge, un jour vert, pour
+          # une raison invisible dans le diff. La version vit maintenant dans le lockfile COMMITÉ
+          # de tools/fixture-conso (empreintes comprises — même geste que le banc consommateur
+          # ci-dessus), et fixtureConso.test.js la confronte à celle du lockfile racine : toujours
+          # un seul exemplaire du fait, et désormais haché.
+          cd "$FIXTURE"
+          cp "$GITHUB_WORKSPACE"/tools/fixture-conso/package.json "$GITHUB_WORKSPACE"/tools/fixture-conso/package-lock.json .
+          npm ci --silent
+          mkdir -p node_modules/discovery-media-player
+          tar -xzf "$GITHUB_WORKSPACE"/discovery-media-player-*.tgz -C node_modules/discovery-media-player --strip-components=1
           node "$GITHUB_WORKSPACE/tools/fixture-types/eprouver.mjs" "$FIXTURE"
 
       # ⚠️ ET LA PROMESSE SE TIENT DEPUIS UNE INSTALLATION CONSOMMATRICE, PAS DEPUIS LE CLONE.
@@ -619,6 +629,11 @@ jobs:
           # réécrivait la plage dans la copie — un copieur, lui, lance `npm i` tout court.
           # (Vérifié : les deux formes installent la même version, npm respectant la plage déjà
           # déclarée ; c'est une redondance, pas un défaut de version.)
+          #
+          # ⚠️ ET CE `npm i` RESTE NON ÉPINGLÉ EN CONNAISSANCE DE CAUSE (Scorecard le signale).
+          # L'assertion de ce banc est « s'installer comme un copieur le ferait » : un lockfile
+          # d'éprouvette installerait ce que NOUS avons figé, plus ce que l'exemple déclare — le
+          # banc cesserait d'éprouver l'exemple. On préfère l'assertion au point de score.
           npm i --silent "$GITHUB_WORKSPACE"/discovery-media-player-*.tgz >/dev/null
           mkdir -p documents && cp "$GITHUB_WORKSPACE"/examples/demo/documents/sample.pdf documents/
           # PLAYER_LOCAL_ROOT : sans lui le relais refuse le fichier local — refus par défaut,

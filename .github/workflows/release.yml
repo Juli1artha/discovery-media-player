@@ -343,6 +343,11 @@ jobs:
           # Le registre met quelques instants à servir une version fraîche.
           for i in $(seq 1 20); do npm view "discovery-media-player@$V" version >/dev/null 2>&1 && break || sleep 6; done
           mkdir -p /tmp/fume && cd /tmp/fume && npm init -y >/dev/null
+          # ⚠️ CE `npm i` DEPUIS LE REGISTRE RESTE NON ÉPINGLÉ EN CONNAISSANCE DE CAUSE (Scorecard
+          # le signale) : ce test de fumée éprouve précisément CE QUE LE REGISTRE SERT aux vrais
+          # consommateurs, minutes après la publication. L'épingler par un lockfile local
+          # reviendrait à éprouver notre copie plutôt que la leur — et l'empreinte, elle, est déjà
+          # confrontée ailleurs : le job attester refuse si le sha512 du registre diffère du build.
           npm i "discovery-media-player@$V" --silent
           node -e '
             const vm = require("node:vm");
