@@ -20,8 +20,26 @@ describe("les signes qu'une migration laisse", () => {
       .toEqual(["index i", "table t", "trigger tr"]);
   });
 
-  it("⚠️ ne lit pas les commentaires — une sonde qui lit du commentaire invente un coupable", () => {
+  it("⚠️ ne lit pas les commentaires SQL — une sonde qui lit du commentaire invente un coupable", () => {
     expect(signesDe("-- create table fantome(id int)\ncreate table vrai(id int);")).toEqual(["table vrai"]);
+  });
+
+  it("⚠️ relève les quatre formes qui manquaient — sept migrations n'avaient AUCUN signe", () => {
+    // Elles en laissaient toutes ; c'est la sonde qui ne les cherchait pas, pendant que la garde
+    // annonçait « chacune prouvable ». Une couverture affirmée plus large qu'elle n'est.
+    expect(signesDe("alter table public.t add column if not exists c text;")).toEqual(["column public.t.c"]);
+    expect(signesDe("alter table public.t alter column c drop not null;")).toEqual(["nullability public.t.c drop"]);
+    expect(signesDe("alter table public.t replica identity default;")).toEqual(["replica identity public.t default"]);
+    expect(signesDe("comment on column public.t.c is 'x';")[0]).toMatch(/^comment public\.t\.c #[0-9a-f]{8}$/);
+  });
+
+  it("⚠️ le signe d'un commentaire est son TEXTE — 0012 ne fait que remplacer celui de 0011", () => {
+    const a = signesDe("comment on column public.t.c is 'ancien';");
+    const b = signesDe("comment on column public.t.c is 'nouveau';");
+    expect(a).not.toEqual(b);
+    // « cette colonne est-elle commentée ? » répond oui pour les deux : seul le texte les sépare,
+    // et `col_description()` le rend, donc c'est sondable.
+    expect(a[0].split(" #")[0]).toBe(b[0].split(" #")[0]);
   });
 });
 
@@ -53,6 +71,15 @@ describe("la règle", () => {
     })).toEqual([]);
   });
 
+  it("⚠️ une migration SANS AUCUN signe est accusée, pas sautée", () => {
+    // Le filtre disait `parFichier[f].length &&` : sept migrations passaient sans être regardées.
+    // N'avoir aucun signe est PIRE que se confondre — on ne peut même pas nommer quoi sonder.
+    const vus = improuvables({ "a.sql": ["table t"], "muette.sql": [] });
+    expect(vus.map((x) => x.fichier)).toEqual(["muette.sql"]);
+    expect(vus[0].confondueAvec).toEqual([]);
+    expect(ecarts({ "a.sql": ["table t"], "muette.sql": [] }, {}).join(" ")).toMatch(/AUCUN signe sondable/);
+  });
+
   it("dit AVEC QUI elle se confond — sinon on ne sait pas où regarder", () => {
     expect(cleDe({ fichier: "b.sql", confondueAvec: ["a.sql"] })).toBe("b.sql (se confond avec a.sql)");
   });
@@ -75,6 +102,13 @@ describe("les dix-neuf migrations réelles", () => {
 
   it("la sonde en trouve bien", () => {
     expect(Object.keys(parFichier).length).toBe(19);
+  });
+
+  it("⚠️ AUCUNE des dix-neuf n'est muette — l'assertion qui manquait", () => {
+    // Sans elle, la garde annonçait « chacune prouvable » en en sautant sept, et le banc restait
+    // vert. C'est la propriété qui a lâché, donc c'est celle qui doit être écrite.
+    const muettes = Object.entries(parFichier).filter(([, s]) => s.length === 0).map(([f]) => f);
+    expect(muettes, `migration(s) sans aucun signe sondable : ${muettes.join(", ")}`).toEqual([]);
   });
 
   it("aucun écart non déclaré", () => {
