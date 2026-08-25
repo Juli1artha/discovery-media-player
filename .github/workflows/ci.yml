@@ -313,6 +313,20 @@ jobs:
         if: matrix.node == '22'
         run: node tools/changelog.mjs
 
+      # ⚠️ `engines` ANNONÇAIT `>=22` ET `pdfjs-dist` EXIGEAIT `>=22.13.0` (mesuré le 25/08). Entre
+      # node 22.0 et 22.12, le paquet déclarait donc que tout allait bien et faisait tourner son
+      # moteur de rendu — sa SEULE dépendance de production — sur une version que ce moteur déclare
+      # non supportée. `engine-strict` vaut `false` par défaut : npm émet un EBADENGINE dans le
+      # bruit de l'installation, puis installe.
+      #
+      # ⚠️ ET CETTE ÉTAPE NE POUVAIT PAS L'ATTRAPER EN TOURNANT SIMPLEMENT. `node-version: "22"`
+      # résout au DERNIER 22.x : la CI atterrit toujours au-dessus du plancher, quel qu'il soit.
+      # Une règle que l'environnement de vérification satisfait par construction est supposée, pas
+      # vérifiée — d'où une garde qui LIT les intervalles au lieu de les éprouver par sa présence.
+      - name: The declared Node floor is not more permissive than what production requires
+        if: matrix.node == '22'
+        run: node tools/plancher-de-node.mjs
+
       # ⚠️ LA CARTE D'IDENTITÉ EST LA SEULE CHOSE QUE LES HÔTES ÉPINGLENT. Le contrat en montrait
       # une version périmée de cinq publications, à laquelle il manquait deux capacités. Un hôte
       # qui teste la présence d'une capacité d'après la doc conclut qu'elle n'existe pas. La
