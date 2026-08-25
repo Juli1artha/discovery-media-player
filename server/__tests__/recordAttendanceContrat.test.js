@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // L'EXPORT PUBLIC `recordAttendance(slug, participant)` DOIT RESTER APPELABLE À DEUX ARGUMENTS.
 //
 // ⚠️ P1a de l'audit CODEX 5.6 — ET C'ÉTAIT MA RÉGRESSION (0.1.84). En glissant l'optimisation

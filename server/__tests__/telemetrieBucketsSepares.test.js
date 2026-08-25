@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE QUOTA DE SESSION NE DOIT PAS ÊTRE CONSOMMÉ PAR open/page — ET UN REFUS NE DOIT PAS LIRE LE LIEN.
 //
 // ⚠️ P1b audit CODEX 5.6. Le bucket `sess:${ip}` gardait TOUS les événements externes (open, page,

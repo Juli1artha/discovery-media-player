@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // L'INSTALLATEUR DE HOOKS — ET LE TRAVAIL DE QUELQU'UN D'AUTRE QU'IL DÉTRUISAIT.
 //
 // ⚠️ P2 de l'audit du 22/08 : il ne réécrivait pas quand le contenu était IDENTIQUE, et son

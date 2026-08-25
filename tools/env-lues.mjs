@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // Quelles variables d'environnement le RUNTIME lit-il réellement ?
 //
 // ⚠️ TROISIÈME GÉNÉRATION, ET LES DEUX PREMIÈRES ONT ÉCHOUÉ POUR LA MÊME RAISON : elles

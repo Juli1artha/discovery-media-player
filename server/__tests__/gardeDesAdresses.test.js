@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA CATÉGORIE, PAS LES QUATRE CHEMINS CONNUS.
 //
 // Nous avions fermé quatre chemins portant l'adresse d'un membre. Le second hôte a nommé ce qui

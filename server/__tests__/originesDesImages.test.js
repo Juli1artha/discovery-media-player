@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // FOURNIR UNE URL SANS AUTORISER SON ORIGINE REVIENT À NE PAS LA FOURNIR.
 //
 // 0.1.47 transportait la clé de marque, la résolvait, et écrivait le bon `src` dans la page. Mais

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE PIÈCE JOINTE NE DÉSIGNE QUE SON PROPRE DOSSIER — À L'ÉCRITURE ET À LA SUPPRESSION.
 //
 // ⚠️ P1 DU HUITIÈME AUDIT, ET C'ÉTAIT MON DÉFAUT. `addMessage` n'acceptait l'URL de pièce jointe

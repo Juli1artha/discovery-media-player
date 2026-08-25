@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LES SECRETS EN CLAIR — CE QUE `.gitignore` NE PEUT PAS ATTRAPER.
 //
 // ⚠️ LA PROPRIÉTÉ ÉTAIT TENUE, LE CONTRÔLE MANQUAIT. Le dépôt n'a jamais porté de secret, et

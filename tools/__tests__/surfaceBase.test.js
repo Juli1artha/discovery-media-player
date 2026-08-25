@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // L'OUTIL QUI DÉRIVE LA SURFACE BASE — ÉPROUVÉ, PARCE QU'IL REMPLACE UNE PROSE QUI AVAIT DÉRIVÉ.
 //
 // ⚠️ UNE GARDE QU'ON N'A PAS VUE REFUSER NE GARDE RIEN, et celle-ci remplace trois chiffres écrits à

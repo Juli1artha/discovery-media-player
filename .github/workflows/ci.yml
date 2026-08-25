@@ -511,6 +511,17 @@ jobs:
         if: matrix.node == '22'
         run: node tools/secrets-en-clair.mjs
 
+      # ⚠️ LA FRONTIÈRE AGPL/MIT N'ÉTAIT QUE DE LA PROSE. `src/bridge.ts` est MIT « délibérément,
+      # et c'est le seul » ; AGENTS.md demande de ne pas déplacer de code à travers cette ligne.
+      # Aucun contrôle ne tenait ces deux phrases : un fichier créé du mauvais côté ne faisait
+      # rougir personne. Chaque fichier source porte désormais ses deux lignes (SPDX + copyright,
+      # exigence Gold license_per_file / copyright_per_file), la licence attendue est LUE dans
+      # package.json plutôt qu'écrite deux fois, et les fichiers générés la reçoivent de
+      # build/bundle.mjs — s'ils rougissent, le correctif est dans la bannière du build.
+      - name: Every source file names its licence and its copyright
+        if: matrix.node == '22'
+        run: node tools/licence-par-fichier.mjs
+
       # ⚠️ DEUX SEUILS, PARCE QUE LES DEUX ARBRES N'ONT PAS LE MÊME RAYON D'ACTION — et le seuil
       # est écrit ici ET dans docs/DEPENDENCIES.md, où un consommateur peut le lire sans ouvrir
       # une CI.

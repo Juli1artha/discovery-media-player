@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UN POSTGREST EN MÉMOIRE — la base d'essai qui manquait (constat P2-3).
 //
 // Le player ne parle à sa base que par HTTP, et la garde de portabilité de la forge interdit

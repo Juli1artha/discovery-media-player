@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UN HÔTE DOIT POUVOIR PROUVER QU'UNE MIGRATION A TOURNÉ, EN SONDANT SA BASE.
 //
 // ⚠️ CETTE PROPRIÉTÉ EXISTAIT SANS ÊTRE ÉCRITE, ET UN HÔTE EN DÉPEND. Constaté le 25/08 par un

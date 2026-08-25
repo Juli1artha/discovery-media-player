@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // CONNAÎTRE LE PIÈGE N'EMPÊCHE PAS D'Y TOMBER.
 //
 // `docs/MIGRATIONS.md` le dit en toutes lettres : PostgREST rejette le PATCH ENTIER si une colonne

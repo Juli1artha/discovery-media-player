@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE CORRECTIF EXISTAIT, LA ROUTE NE L'APPELAIT PAS.
 //
 // `toggleReaction` sait poser un état depuis 0.1.56, le navigateur envoie `etat` depuis 0.1.56 —

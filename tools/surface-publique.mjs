@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // CE QUE LE PAQUET PROMET — DÉCLARÉ UNE FOIS, CONFRONTÉ PARTOUT.
 //
 // ⚠️ « UNE DONNÉE EXPOSÉE EST UNE PROMESSE » (second hôte, 19/08). Le champ `exports` de

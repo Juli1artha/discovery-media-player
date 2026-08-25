@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // L'ADMISSION DU CACHE EST BORNÉE — LE PLAFOND DES RÉSULTATS N'EN BORNAIT AUCUNE.
 //
 // ⚠️ P1 d'audit externe, MESURÉ avant d'être corrigé : avec `max: 100`, dix mille clés distinctes

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LES ACTIONS ÉPINGLÉES — SUR UN ARBRE YAML, PLUS SUR DU TEXTE.
 //
 // ⚠️ CETTE GARDE A ÉTÉ AVEUGLE DEUX FOIS, DE DEUX FAÇONS DIFFÉRENTES.

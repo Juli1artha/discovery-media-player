@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LES GARDES DE L'ASSISTANT — LE PLUS GROS BLOC DE DÉCISIONS NON ÉPROUVÉES DU DÉPÔT.
 //
 // ⚠️ `server/routes-agent.js` portait 171 branches et 5,8 % de couverture : quatorze refus écrits

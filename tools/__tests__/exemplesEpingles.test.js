@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // CE QUE LES EXEMPLES ONT LE DROIT D'ÉPINGLER — LES CINQ ÉTATS DE LA VIE DU DÉPÔT.
 //
 // ⚠️ L'ancienne règle (« la version de main OU la dernière publiée ») était ROUGE dans l'état

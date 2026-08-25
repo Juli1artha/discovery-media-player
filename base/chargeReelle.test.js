@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA CAMPAGNE DE CHARGE — contre un VRAI PostgREST, avec ce qu'un banc de charge peut honnêtement dire.
 //
 // ⚠️ CE BANC SÉPARE CE QU'IL AFFIRME DE CE QU'IL RAPPORTE, et c'est sa seule idée.

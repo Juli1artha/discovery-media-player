@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // AUCUNE SORTIE SANS PROJECTION.
 //
 // La garde catégorielle des adresses (server/publier.js) n'a trouvé aucun endroit où se brancher :

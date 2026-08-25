@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE MÊME CONTRAT, LU DES DEUX CÔTÉS.
 //
 // ⚠️ CE FICHIER EXISTE PARCE QUE CES ASSERTIONS ÉTAIENT AU MAUVAIS ENDROIT. Elles vivaient dans

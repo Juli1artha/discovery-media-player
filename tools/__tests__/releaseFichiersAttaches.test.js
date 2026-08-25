@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LES FICHIERS QUE LA RELEASE PROMET, ET CEUX QU'ELLE VÉRIFIE, SONT LA MÊME LISTE.
 //
 // ⚠️ CE QUI EST ARRIVÉ (rejeu du 22/08). `files:` disait `paquet/*.jsonl` ; le bundle produit par

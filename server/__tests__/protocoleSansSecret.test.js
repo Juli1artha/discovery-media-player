@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // SANS SECRET, LE PARTICIPANT NE DOIT PAS SE FAIRE REFUSER PAR SA PROPRE PRÉSENCE.
 //
 // ⚠️ P1 d'audit externe, et la composition que NOS tests ne voyaient pas : le banc client simulait

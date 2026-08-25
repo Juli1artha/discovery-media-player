@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LES PROPRIÉTÉS DES LECTEURS — SUR DES ENTRÉES QUE PERSONNE N'A ÉCRITES À LA MAIN.
 //
 // ⚠️ POURQUOI ICI ET PAS AILLEURS. Ce dépôt a vu TROIS lecteurs échouer, et les trois fois de la

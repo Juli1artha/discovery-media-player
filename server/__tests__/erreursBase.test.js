@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // ON RECONNAÎT UN CONFLIT AU FAIT, PAS AU LIBELLÉ.
 //
 // ⚠️ CE QUE SIX SITES FAISAIENT, ET CE QUE ÇA AVALAIT. Le test était

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA VÉRIFICATION ÉTAIT FAITE, PUIS L'ÉCRITURE PARTAIT SANS ELLE.
 //
 // Six chemins lisaient la ligne, vérifiaient (jeton ou propriétaire), puis PATCHaient par slug

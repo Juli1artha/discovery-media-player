@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA CONCATÉNATION EST-ELLE COMPLÈTE ? Énuméré depuis le DISQUE, jamais de tête : tout
 // gabarit-*.js présent dans server/ doit être dans la source que les essais regardent — sinon
 // le prochain gabarit extrait sort du regard de toutes les gardes de texte, en silence.

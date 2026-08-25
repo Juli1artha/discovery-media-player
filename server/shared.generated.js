@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // GÉNÉRÉ par `npm run build:player` — NE PAS ÉDITER À LA MAIN.
 // Sources : src/shared.ts, src/presentation-content.ts, src/cadence.ts
 //

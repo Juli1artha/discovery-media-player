@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA SURFACE PUBLIQUE, CONFRONTÉE À CE QUE LE PAQUET EXPOSE VRAIMENT.
 //
 // ⚠️ `package.json#exports` portait dix sous-chemins, dont cinq que docs/API.md ne mentionnait

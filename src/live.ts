@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // Cœur logique de la présentation en direct : identité des participants, dédoublonnage de la
 // présence, échappement et mise en forme des messages, prédicats de modération et de notification.
 //

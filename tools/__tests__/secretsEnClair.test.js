@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA GARDE DES SECRETS — ÉPROUVÉE SUR CE QU'ELLE ATTRAPE *ET* SUR CE QU'ELLE LAISSE PASSER.
 //
 // ⚠️ CE BANC N'ÉCRIT AUCUN SECRET, MÊME FAUX. Il les FABRIQUE par concaténation à l'exécution.

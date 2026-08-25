@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE PLUS HAUT TAG DE VERSION — UNE SEULE SOURCE DE VÉRITÉ, STRICTE.
 //
 // ⚠️ Treizième audit : `git tag -l 'v*'` attrapait n'importe quel `v*` (un `v999-test` accidentel

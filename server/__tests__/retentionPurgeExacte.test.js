@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA PURGE COMPTE JUSTE, NE DÉPASSE PAS SON PLAFOND, ET NE LAISSE PAS D'ORPHELINS.
 //
 // ⚠️ TROIS P2 DU NEUVIÈME AUDIT :

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA SURFACE QUE CES ESSAIS REGARDENT EST « LE CODE DE PAGE LIVRÉ », PAS UN FICHIER.
 //
 // Avant le refactor du 19/08, tout vivait dans handler.js et les essais lisaient ce fichier.

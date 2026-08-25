@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // Ce que l'audience fait d'un état de présentation reçu.
 //
 // Cette décision n'existait qu'à un seul endroit : le gestionnaire du canal temps réel de

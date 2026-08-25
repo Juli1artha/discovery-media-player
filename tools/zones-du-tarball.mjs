@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // CE QUI A CHANGÉ ENTRE DEUX PAQUETS PUBLIÉS, PAR ZONE — PRODUIT PAR LE TRAIN, PAS À LA MAIN.
 //
 // ⚠️ « AUCUN FICHIER D'EXÉCUTION NE DIFFÈRE » EST LA PHRASE QUI DÉCIDE D'UNE MONTÉE, et elle était

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA DÉMONSTRATION EN LIGNE : le player, un dossier, un PDF. Aucune base, aucun secret.
 //
 // C'est aussi le plus petit hôte possible — une fonction, une dépendance, aucune décision.

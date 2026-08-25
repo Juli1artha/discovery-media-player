@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE REPLI VERS L'ANCIEN CONTRAT NE SE DÉCLENCHE QUE SUR LA PREUVE, JAMAIS SUR UNE PANNE.
 //
 // ⚠️ P1 d'audit externe, et c'était MON défaut. `appelerBump` attrapait TOUTE exception et en concluait

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // PLUSIEURS PROCESSUS, UNE SEULE BASE — LE TROISIÈME POSTE DU « NON MESURÉ ».
 //
 // ⚠️ TROIS POSTES AVAIENT ÉTÉ RANGÉS ENSEMBLE PARCE QU'ILS SE RESSEMBLAIENT : « 1 000 spectateurs »,

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE ACTION D'AUTORISATION QUI N'EST PAS DANS LE CONTRAT CASSE UN HÔTE SANS RIEN DIRE.
 //
 // `identity.canManageShares(user, action)` demande à l'hôte s'il accorde un droit, nommé par une

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE RELAIS DE FICHIERS LOCAUX DIFFUSE — IL N'ALLOUE PLUS LA PLAGE DEMANDÉE.
 //
 // ⚠️ P1 d'audit externe. `readLocal` faisait `Buffer.alloc(fin - debut + 1)` : jusqu'à 60 Mio par

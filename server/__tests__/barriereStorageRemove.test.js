@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA DERNIÈRE BARRIÈRE, TESTÉE EN DIRECT — storage.remove du contexte autonome.
 //
 // ⚠️ La revalidation dans retention.js est une barrière ; storage.remove en est une AUTRE, à la

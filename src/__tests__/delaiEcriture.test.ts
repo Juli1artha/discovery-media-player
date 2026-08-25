@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE REQUÊTE QUI NE REVIENT PAS BLOQUAIT TOUT CE QUI L'ATTENDAIT.
 //
 // ⚠️ CE RISQUE EST NÉ D'UN CORRECTIF, ET C'EST LE POINT DE CE FICHIER. Avant 0.1.41 l'ordonnanceur

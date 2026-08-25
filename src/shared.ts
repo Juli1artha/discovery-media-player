@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // CE QUE LE NAVIGATEUR ET LE SERVEUR PARTAGENT, EN UN SEUL EXEMPLAIRE.
 //
 // Point d'entrée du module `server/shared.generated.js`. Son en-tête généré dit pourquoi il existe :

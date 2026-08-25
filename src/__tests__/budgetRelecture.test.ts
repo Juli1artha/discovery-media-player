@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LA LIMITE DE 0.1.42 A CRÉÉ UN DÉNI DE SERVICE SUR L'AUDIENCE.
 //
 // Le quota serveur est par ADRESSE, et je l'ai calibré sur ce qu'un usage légitime consomme. Mais la

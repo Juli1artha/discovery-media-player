@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE CLIENT PORTE LE JETON DE PRÉSENCE — vérifié sur la VRAIE SOURCE du gabarit, pas sur une copie.
 //
 // ⚠️ P1c étape 2, incrément 3. `sendAttend` (server/gabarit-live.js) doit : demander l'émission au

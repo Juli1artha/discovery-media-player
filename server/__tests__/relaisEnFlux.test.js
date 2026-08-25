@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // ⚠️ LE PLAFOND ANNONCÉ CROIT L'AMONT SUR PAROLE — CE QUI N'EN FAIT PAS UNE PROTECTION.
 //
 // Un stockage qui n'annonce aucune taille, ou qui en annonce une fausse, traversait le relais sans

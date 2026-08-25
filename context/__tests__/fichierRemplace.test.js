@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // DEUX RÉSOLUTIONS DU MÊME NOM, À DEUX INSTANTS.
 //
 // `readLocal` faisait `stat(chemin)` puis, plus bas, `open(chemin)`. Ce sont deux résolutions du

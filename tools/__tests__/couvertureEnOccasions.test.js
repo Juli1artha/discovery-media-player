@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // UNE GARDE A DEUX COUVERTURES : EN SURFACE, ET EN OCCASIONS.
 //
 // ⚠️ LA SECONDE NE SE VOIT NULLE PART, et c'est le second hôte qui l'a nommée. Nous avions passé la

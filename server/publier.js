@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // AUCUNE ADRESSE NE SORT — LA CATÉGORIE, PAS LES QUATRE CHEMINS CONNUS.
 //
 // Nous avions corrigé quatre chemins qui portaient l'adresse d'un membre : les champs publics du

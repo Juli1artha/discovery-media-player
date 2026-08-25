@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // Marque affichée par le loader d'un document — celle du CLIENT dont on montre le document.
 //
 // ⚠️ **Résolue à l'affichage, jamais recopiée dans le lien.** Un lien tracé vit des semaines dans

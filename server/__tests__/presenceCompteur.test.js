@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // LE COMPTEUR DE TRANSITION DU JETON DE PRÉSENCE — avecJeton / sansJeton, ENSEMBLES QUI SE RECOUVRENT.
 //
 // ⚠️ P1c étape 2. `?schema=1` rend `presence: { avecJeton, sansJeton, tronque }` sur 24 h. `sansJeton===0`

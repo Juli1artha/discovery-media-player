@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // CE QU'UN GESTE COÛTE À LA BASE — compté, pas estimé, et BORNÉ par des budgets qui rougissent.
 //
 // ⚠️ POURQUOI COMPTER PLUTÔT QUE CHRONOMÉTRER. Une latence mesurée sur une base mutualisée n'est pas
