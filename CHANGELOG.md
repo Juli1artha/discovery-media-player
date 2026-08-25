@@ -10,7 +10,22 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
-## [Unreleased]
+## [0.1.137] — 2026-08-25
+
+**One host-visible fix, one tightened declaration, one new field on the identity card.** Measured on
+the two tarballs rather than claimed: **0 files added, 0 removed, 35 changed** — and **30 of those
+35 differ only by their two SPDX licence lines**. The five that carry real changes are
+`server/routes-agent.js`, `server/handler.js`, `docs/HOST-CONTRACT.md`, `package.json`, and
+`server/browser.generated.js` — the last of which changed only in its embedded source digest: the
+browser bundle a visitor actually executes is **byte-identical across the two releases**
+(`sha256 c399acaed0caf66e…`, 15 863 bytes).
+
+### Fixed
+- ⚠️ **`bot-tts` returned 500 on the first synthesis, on any runtime whose global `crypto` has no
+  `createHash`.** The lot-3 extraction moved the route out of `handler.js` without bringing
+  `require("node:crypto")` with it, so it leaned on `globalThis.crypto` — whose shape varies by
+  runtime. Where only WebCrypto is exposed, the first call to voice synthesis failed. The import is
+  now explicit, and the bench fails without it.
 
 ### Changed
 - ⚠️ **`engines.node` is now `>=22.13.0`, up from `>=22`.** This is a correction, not a new
@@ -50,6 +65,12 @@ the notes there are this file's section for that version.
     hand. Compare them with your own semver.
   - The patch level is given, not just major.minor — the floor is patch-level (`>=22.13.0`), so a
     truncated version would not answer the one question the field exists for.
+- **The three example wirings declare the real floor**, and the rule that checks them derives it.
+  It used to demand the literal string `">=22"`, in `examples/demo` alone — so the moment the floor
+  moved it refused the *correct* value and named only one of three files. It now compares
+  **intervals** against `package.json#engines`: stricter than us is fine, more permissive is not.
+  An example is copied verbatim into an integrator's project; the floor it announces has to be the
+  package's, not the one true on the day the rule was written.
 - **The production floor is written in the document a host actually receives.** `engines` is
   machine-readable and npm only *warns* below it; the only human-readable statement was a
   shields.io badge in the README — a remote image, invisible offline and inside `node_modules`,
@@ -3933,7 +3954,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.136...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.137...HEAD
+[0.1.137]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.136...v0.1.137
 [0.1.136]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.135...v0.1.136
 [0.1.135]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.134...v0.1.135
 [0.1.134]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.133...v0.1.134
