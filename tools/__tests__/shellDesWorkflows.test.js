@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
 // CHAQUE BLOC `run:` DES WORKFLOWS DOIT ÊTRE DU SHELL VALIDE.
 //
 // ⚠️ Un bloc `run:` n'est analysé par personne avant de s'exécuter — et pour un workflow de sortie,
