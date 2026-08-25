@@ -500,6 +500,13 @@ jobs:
       # disparaîtrait des notes sans un mot, et le lecteur croirait qu'il n'y avait rien à dire.
       # « On n'a pas pu regarder » et « rien n'a changé » ne se ressemblent que si on les tait.
       - name: What changed in the package, by zone, measured on the two tarballs
+        env:
+          # ⚠️ LA VALEUR SORT DU TEXTE. Interpolée dans le script, elle serait relue par une
+          # grammaire qui n'est pas la sienne — et tout caractère auquel CETTE grammaire donne un
+          # sens devient un piège, qu'il ferme quelque chose ou non. Par l'environnement, il n'y a
+          # plus de grammaire, donc plus de caractère spécial : la question ne se pose plus au lieu
+          # de se poser mieux.
+          CHEMIN_PAQUET: ${{ steps.paquet.outputs.chemin }}
         run: |
           V=$(node -p 'require("./package.json").version')
           BLOC=/tmp/sortie/zones.md
@@ -514,7 +521,7 @@ jobs:
           elif ! ( cd /tmp/precedent && npm pack "discovery-media-player@$PREC" >/dev/null 2>&1 ); then
             printf '%s\n' "_The previous package (\`$PREC\`) could not be fetched, so the per-zone comparison was **not made**. This says nothing about what changed._" > "$BLOC"
           else
-            node tools/zones-du-tarball.mjs "$(ls /tmp/precedent/*.tgz)" "${{ steps.paquet.outputs.chemin }}" "$PREC" "$V" > "$BLOC"
+            node tools/zones-du-tarball.mjs "$(ls /tmp/precedent/*.tgz)" "$CHEMIN_PAQUET" "$PREC" "$V" > "$BLOC"
           fi
           cat "$BLOC"
 
@@ -550,9 +557,13 @@ jobs:
       #
       # Un nom affirme un format, donc le format se vérifie AVANT de poser « .sigstore.json ».
       - name: Gather what the Release will carry — the bundle under its recognized name
+        env:
+          # ⚠️ Même raison qu'au-dessus : une valeur qui partage une ligne avec de la syntaxe ne
+          # peut pas être délimitée sans lire son contenu — et ce qu'un lecteur ne peut pas
+          # délimiter, un analyseur extérieur ne le peut pas non plus.
+          BUNDLE: ${{ steps.attestation.outputs.bundle-path }}
         run: |
           V=$(node -p 'require("./package.json").version')
-          BUNDLE="${{ steps.attestation.outputs.bundle-path }}"
           MT=$(jq -r '.mediaType // ""' "$BUNDLE")
           case "$MT" in
             application/vnd.dev.sigstore.bundle*)
