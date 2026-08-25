@@ -21,7 +21,13 @@ the notes there are this file's section for that version.
   reading the code, not by watching it.
   - It was a repeated omission, not a doctrine: `handler.js`, `presentations.js` and `retention.js`
     have captured for a long time, and exactly one of the ten route catches did. All nine now
-    report the error and name their route before returning 500.
+    report the error and name the request's **actual action** before returning 500 — each catch
+    covers a *block* of actions (the one in `routes-agent` covers eight), so a fixed label would
+    have lied on eight calls out of nine.
+  - All nine paths are covered by a bench, not just the one that broke. The first version covered
+    `bot-tts` alone and said so; CI refused it on coverage, and was right — nine silent failures
+    replaced by nine untested reporting paths is the same fault, smaller. Statement coverage goes
+    from 90.31% to **90.81%**.
 
 ### Added
 - **A guard that refuses a Node-only `crypto` method called on the global.** `crypto` has been a

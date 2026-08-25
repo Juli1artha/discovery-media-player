@@ -108,7 +108,7 @@ async function traiter(req, res, body, _slug) {
             }
           } catch { /* sans alignement → synchro estimée côté client */ }
           return jp(200, { ok: true, url: pub, align: hasAlign ? pubAlign : null, spoken: spoken !== text ? spoken : undefined });
-        } catch (e) { try { PLAYER.errors.capture(e, { route: "bot-tts" }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
+        } catch (e) { try { PLAYER.errors.capture(e, { route: String(body.action || "(sans action)") }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
       }
       if (body.action === "bot-start" || body.action === "bot-say" || body.action === "bot-history" || body.action === "bot-nudge" || body.action === "bot-book" || body.action === "bot-contact" || body.action === "bot-rate" || body.action === "bot-script") {
         const jp = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
@@ -224,7 +224,7 @@ async function traiter(req, res, body, _slug) {
           const r = await docbot.botSay(String(body.sessionId || ""), share, text, pages, mobile, blang);
           if (r.error) return jp(400, { ok: false, error: r.error });
           return jp(200, { ok: true, ...r });
-        } catch (e) { try { PLAYER.errors.capture(e, { route: "bot-contact" }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
+        } catch (e) { try { PLAYER.errors.capture(e, { route: String(body.action || "(sans action)") }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
       }
       // Assistance (heartbeat) : PUBLIC (l'audience est anonyme). Journalise qui suit / combien de temps / pages vues.
       // Rate-limit généreux par IP (heartbeat ≈ 145/h/participant) : bloque le spam d'assistants factices sans

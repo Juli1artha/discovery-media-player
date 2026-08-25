@@ -248,7 +248,7 @@ async function traiter(req, res, body, slug) {
         }
         const { slug } = await createShare({ brandKey: body.brandKey, docId: body.docId, docTitle: body.docTitle, fileUrl: body.fileUrl, fileName: body.fileName, recipientEmail: body.recipientEmail, recipientName: body.recipientName, createdBy: u.email, bot: body.bot, botScript: body.botScript, guided: body.guided, profileId: body.profileId, allowDownload: body.allowDownload, videoLayout: body.videoLayout, logo: body.logo, logoDark: body.logoDark });
         return jd(200, { ok: true, slug });
-        } catch (e) { try { PLAYER.errors.capture(e, { route: "docshare.revoke" }); } catch { /* jamais bloquant */ } return jd(500, { ok: false }); }
+        } catch (e) { try { PLAYER.errors.capture(e, { route: String(body.action || "(sans action)") }); } catch { /* jamais bloquant */ } return jd(500, { ok: false }); }
       }
 
       // Re-partage (forward depuis la visionneuse) : crée un lien enfant tracé, et envoie l'email via 3D

@@ -30,8 +30,10 @@ function contexte(captures, quiLeve) {
     storage: { isAllowedUrl: () => false, async fetchFile() { return null; }, async put() {} },
     db: { async request() { if (quiLeve) throw new Error("base injoignable"); return []; }, async selectAll() { return []; } },
     mail: { async send() {} },
-    identity: { async verifyToken() { return null; }, roleOf: () => "", isAdmin: () => false, async canManageShares() { return false; } },
-    limits: { async allow() { return true; } },
+    // ⚠️ AUTHENTIFIÉ : `present-content` et `docshare.revoke` rendent 401 AVANT leur `try`, donc
+    // sans identité le banc ne mesurait pas ce qu'il croyait — il mesurait un refus d'accès.
+    identity: { async verifyToken() { return { email: "op@exemple.test" }; }, roleOf: () => "admin", isAdmin: () => true, async canManageShares() { return true; } },
+    limits: { async allow() { if (quiLeve) throw new Error("base injoignable"); return true; } },
     branding: { async logo() { return ""; }, name: "", poweredBy: "", loaderName: "", async forKey() { return null; }, title: (b) => b },
     errors: { async capture(e, meta) { captures.push({ message: String(e && e.message), meta }); } },
     legal: { sourceUrl: "", legalUrl: "", privacyUrl: "", trackingNotice: "" },
@@ -39,7 +41,7 @@ function contexte(captures, quiLeve) {
   };
 }
 
-async function appelerBotTts({ quiLeve }) {
+async function appeler(corps, { quiLeve }) {
   const captures = [];
   player.init(contexte(captures, quiLeve));
   const res = {
@@ -48,12 +50,13 @@ async function appelerBotTts({ quiLeve }) {
     end(b) { this.body = String(b == null ? "" : b); },
   };
   await player.handler(
-    { method: "POST", headers: { "content-type": "application/json" }, socket: {}, url: "/api/doc",
-      body: { action: "bot-tts", slug: "un-lien", text: "bonjour" } },
+    { method: "POST", headers: { "content-type": "application/json" }, socket: {}, url: "/api/doc", body: corps },
     res,
   );
   return { res, captures };
 }
+
+const appelerBotTts = (opts) => appeler({ action: "bot-tts", slug: "un-lien", text: "bonjour" }, opts);
 
 describe("une panne dans bot-tts", () => {
   const avant = process.env.ELEVENLABS_API_KEY;
@@ -76,4 +79,40 @@ describe("une panne dans bot-tts", () => {
     const { captures } = await appelerBotTts({ quiLeve: false });
     expect(captures).toEqual([]);
   });
+});
+
+// ⚠️ LES NEUF CHEMINS, PAS SEULEMENT CELUI QUI A CASSÉ. La première version de ce banc n'éprouvait
+// que `bot-tts` et le disait — « les huit autres ne sont pas couvertes ». La CI a refusé, sur la
+// couverture, et elle avait raison : neuf pannes muettes remplacées par neuf chemins de signalement
+// non éprouvés, c'est la même faute en plus petit.
+//
+// ⚠️ ET L'ÉTIQUETTE N'EST PLUS CHOISIE À LA MAIN. Chaque `catch` couvre un BLOC de plusieurs
+// actions — celui de `routes-agent` en porte huit — donc un nom fixe aurait menti sur huit appels
+// sur neuf. Ce qui est signalé est l'action RÉELLE de la requête, dérivée du corps.
+describe("chaque route qui rend 500 signale ce qui l'a fait tomber", () => {
+  const avant = process.env.ELEVENLABS_API_KEY;
+  beforeAll(() => { process.env.ELEVENLABS_API_KEY = "cle-de-banc"; });
+  afterAll(() => { if (avant === undefined) delete process.env.ELEVENLABS_API_KEY; else process.env.ELEVENLABS_API_KEY = avant; });
+
+  const CAS = [
+    { action: "bot-tts", corps: { slug: "s", text: "bonjour" } },
+    { action: "bot-say", corps: { slug: "s", sessionId: "x", text: "bonjour" } },
+    { action: "present-attend", corps: { slug: "s" } },
+    { action: "present-content", corps: { slug: "s", content: {} } },
+    { action: "present-chat", corps: { slug: "s", body: "coucou" } },
+    { action: "present-upload-url", corps: { slug: "s", name: "a.png", type: "image/png" } },
+    { action: "present-msg-delete", corps: { slug: "s", msgId: "1" } },
+    { action: "present-react", corps: { slug: "s", msgId: "1", emoji: "👍" } },
+    { action: "docshare.revoke", corps: { slug: "s" } },
+  ];
+
+  for (const { action, corps } of CAS) {
+    it(`« ${action} » : 500 signalé, et l'action nommée`, async () => {
+      const { res, captures } = await appeler({ action, ...corps }, { quiLeve: true });
+      expect(res.statusCode).toBe(500);
+      expect(captures).toHaveLength(1);
+      expect(captures[0].meta).toEqual({ route: action });
+      expect(captures[0].message).toContain("base injoignable");
+    });
+  }
 });
