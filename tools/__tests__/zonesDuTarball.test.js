@@ -13,7 +13,7 @@ const inv = (o) => o;
 describe("ranger un chemin", () => {
   it("chaque zone porte un nom et ce qu'elle veut dire", () => {
     for (const z of ZONES) {
-      expect(z.nom, JSON.stringify(z)).toMatch(/^[a-z]+$/);
+      expect(z.nom, JSON.stringify(z)).toMatch(/^[a-z][a-z-]*$/);
       expect(z.quoi.length, z.nom).toBeGreaterThan(10);
     }
   });
@@ -23,6 +23,20 @@ describe("ranger un chemin", () => {
     expect(zoneDe("server/handler.js")).toBe("server");
     expect(zoneDe("package.json")).toBe("manifest");
     expect(zoneDe("LICENSE-MIT")).toBe("documents");
+  });
+
+  it("⚠️ dist/ se coupe au SUFFIXE : la page exécute le .js, le tsc de l'hôte lit le .d.ts", () => {
+    // Un seul suffixe sépare deux artefacts qui n'ont pas le même consommateur — et pas le même
+    // incident : l'un casse à l'exécution, l'autre au build.
+    expect(zoneDe("dist/bridge.js")).toBe("browser");
+    expect(zoneDe("dist/bridge.d.ts")).toBe("browser-types");
+    // ⚠️ Le reste de dist/ est chargé par la page, dont son package.json qui déclare le type.
+    expect(zoneDe("dist/package.json")).toBe("browser");
+  });
+
+  it("⚠️ « types » est types/, PAS les déclarations de dist/ — le nom peut égarer", () => {
+    expect(zoneDe("types/index.d.ts")).toBe("types");
+    expect(zoneDe("dist/bridge.d.ts")).not.toBe("types");
   });
 
   it("rend null pour ce qu'aucune zone ne réclame", () => {
@@ -93,6 +107,38 @@ describe("les deux archives réellement publiées", () => {
   it("⚠️ et le banc rougirait si un fichier d'exécution avait bougé", () => {
     const { parZone } = ecarts(avant, { ...apres, "server/handler.js": "b" });
     expect(parZone.get("server").modifies).toEqual(["server/handler.js"]);
+  });
+});
+
+describe("l'alarme d'une zone", () => {
+  const mig = (n) => `supabase/migrations/${n}.sql`;
+
+  it("⚠️ une migration MODIFIÉE crie hors de la table, et dit quoi faire", () => {
+    const md = rapport("a", "b", { [mig("003")]: "1" }, { [mig("003")]: "2" });
+    expect(md).toContain("⚠️ `database`");
+    expect(md).toContain("must be immutable");
+    expect(md).toContain(mig("003"));
+  });
+
+  it("⚠️ une migration AJOUTÉE ne crie PAS — c'est une action, pas un arrêt", () => {
+    const md = rapport("a", "b", { [mig("003")]: "1" }, { [mig("003")]: "1", [mig("004")]: "1" });
+    expect(md).not.toContain("must be immutable");
+    expect(md).toContain(mig("004"));
+  });
+
+  it("⚠️ et elle ne sonne pas quand rien ne bouge — une alarme qui sonne au repos n'apprend qu'à cliquer à côté", () => {
+    expect(rapport("a", "b", { [mig("003")]: "1" }, { [mig("003")]: "1" })).not.toContain("⚠️ `database`");
+  });
+
+  it("un fichier modifié dans une zone SANS alarme reste un simple compte", () => {
+    const md = rapport("a", "b", { "server/h.js": "1" }, { "server/h.js": "2" });
+    expect(md).not.toMatch(/> ### ⚠️/);
+  });
+
+  it("seule « database » déclare une alarme aujourd'hui, et elle porte sa raison", () => {
+    const avec = ZONES.filter((z) => z.alarmeSiModifie);
+    expect(avec.map((z) => z.nom)).toEqual(["database"]);
+    expect(avec[0].alarmeSiModifie.length).toBeGreaterThan(40);
   });
 });
 
