@@ -13,8 +13,17 @@ npm run typecheck
 npm run build     # regenerates the browser bundle (committed — see below)
 ```
 
-Node ≥ 22. There is nothing else to install: the tests spin the player up in-process against a
-temporary folder, so they run offline and finish in seconds.
+**Node ≥ 22.22.2** — or ≥ 24.15.0. There is nothing else to install: the tests spin the player up
+in-process against a temporary folder, so they run offline and finish in seconds.
+
+That floor is `jsdom`'s, not ours, and below it `vitest` does not start. What it prints instead is
+a `Startup Error` about an npm bug with optional dependencies, advising you to delete
+`package-lock.json` — following that advice edits a tracked file for a problem that is your Node
+version. Measured on a host running 20.18.1, on 25/08.
+
+The **player** needs less: Node ≥ 22.13.0, which is what `engines` declares, and which is the floor
+its one production dependency imposes. Both numbers are derived from the lockfile rather than
+chosen — `node tools/plancher-de-node.mjs` recomputes them and refuses if this page has drifted.
 
 ### The browser bench
 

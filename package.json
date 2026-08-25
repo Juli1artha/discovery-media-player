@@ -77,7 +77,7 @@
     "test:campagne": "node -e \"require('fs').existsSync('vitest.campagne.config.mjs')||(console.error('Ce banc ne vit pas dans le paquet publié - le champ scripts annonce plus que le tarball ne contient. Clonez le depot puis npm ci : https://github.com/Juli1artha/discovery-media-player'),process.exit(1))\" && vitest run --config vitest.campagne.config.mjs"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -89,6 +89,7 @@
     "fast-check": "4.9.0",
     "jsdom": "^30.0.1",
     "playwright-core": "^1.62.1",
+    "semver": "^7.8.5",
     "typescript": "^5.5.4",
     "typescript-eslint": "^8.46.4",
     "vitest": "^4.1.10",

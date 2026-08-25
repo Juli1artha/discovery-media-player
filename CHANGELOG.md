@@ -10,6 +10,35 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [Unreleased]
+
+### Changed
+- ⚠️ **`engines.node` is now `>=22.13.0`, up from `>=22`.** This is a correction, not a new
+  requirement: `pdfjs-dist@6.2.108` — the player's only production dependency, the one that renders
+  documents — has always declared `>=22.13.0 || >=24`. Between Node 22.0 and 22.12 the package
+  said it was supported and ran its rendering engine on a version that engine calls unsupported.
+  npm never stopped it: `engine-strict` is `false` by default, so it prints an `EBADENGINE` line in
+  the noise of an install and installs anyway.
+  - If you self-host on Node 22.0–22.12, **nothing about the player changed** — but you were
+    already outside `pdfjs-dist`'s support, and `npm install` will now say so. Move to 22.13 or
+    later.
+  - The number is derived from the lockfile, not chosen. `node tools/plancher-de-node.mjs`
+    recomputes it.
+
+### Added
+- **A guard confronting the declared Node floor with the real one.** CI could not have caught the
+  above by simply running: `node-version: "22"` resolves to the latest 22.x, so the runner always
+  lands above the floor, whatever it is. A rule the verifying environment satisfies by construction
+  is assumed, not verified — so the guard reads the version ranges instead of testing them by its
+  own presence. It works from `package-lock.json` alone: no `node_modules`, no network, and it
+  measures what will actually be installed rather than what happens to sit in a folder.
+- **The development floor is now written where a contributor reads it**, and kept honest. It is
+  higher than the package's and unrelated to it (`jsdom` requires `^22.22.2 || ^24.15.0 ||
+  >=26.0.0`); below it `vitest` does not start, and what it prints instead is a `Startup Error`
+  about an npm bug advising you to delete `package-lock.json` — advice that edits a tracked file
+  for a problem that is a Node version. Measured on a host running 20.18.1. `CONTRIBUTING.md`
+  carries the number and the guard refuses if it drifts from the lockfile.
+
 ## [0.1.136] — 2026-08-25
 
 **Nothing in this release changes what a host runs.** Measured on the shipped paths rather than
