@@ -663,6 +663,41 @@ alter table public.commercial_doc_shares
 alter table public.commercial_doc_shares
   add column if not exists revoked_at timestamptz;
 update public.commercial_doc_shares set revoked_at = now() where revoked = true and revoked_at is null;
+
+-- ⚠️ ET LE RATTRAPAGE VAUT AUSSI POUR LES CONTRAINTES, PAS SEULEMENT POUR LES COLONNES (0020).
+-- Elles sont déclarées dans le corps des tables ci-dessus, ce qui règle la base VIERGE — et ne
+-- touche pas une base déjà installée, où `create table if not exists` ne fait rien. Le scénario
+-- « init v0.1.64 → rejeu de l'init actuel » a refusé exactement ça : la base neuve portait les six
+-- bornes, la base rattrapée non, et les deux formes divergeaient en silence.
+--
+-- Même ordre que la migration, et pour la même raison : `not valid`, on répare, puis on valide.
+-- Une contrainte validée d'emblée échoue sur une table déjà empoisonnée, et une réparation qui
+-- échoue sur la donnée qu'elle vient réparer ne se relance plus.
+do $$
+declare
+  c record;
+begin
+  for c in
+    select * from (values
+      ('commercial_doc_views',    'ck_views_page_borne',             'page',          10000),
+      ('commercial_doc_views',    'ck_views_max_page_borne',         'max_page',      10000),
+      ('commercial_doc_views',    'ck_views_seconds_borne',          'seconds',       86400),
+      ('commercial_doc_sessions', 'ck_sessions_max_page_borne',      'max_page',      10000),
+      ('commercial_doc_sessions', 'ck_sessions_num_pages_borne',     'num_pages',     10000),
+      ('commercial_doc_sessions', 'ck_sessions_total_seconds_borne', 'total_seconds', 86400)
+    ) as t(tab, nom, col, maxi)
+  loop
+    if not exists (select 1 from pg_constraint where conname = c.nom) then
+      execute format(
+        'alter table public.%I add constraint %I check (%I is null or (%I >= 0 and %I <= %s)) not valid',
+        c.tab, c.nom, c.col, c.col, c.col, c.maxi);
+    end if;
+    execute format(
+      'update public.%I set %I = least(greatest(%I, 0), %s) where %I is not null and (%I < 0 or %I > %s)',
+      c.tab, c.col, c.col, c.maxi, c.col, c.col, c.col, c.maxi);
+    execute format('alter table public.%I validate constraint %I', c.tab, c.nom);
+  end loop;
+end $$;
 -- Une base née d'un init.sql d'avant la 0008 porte un NOT NULL qui rend la clôture impossible.
 alter table public.doc_presentations
   alter column control_hash drop not null;
