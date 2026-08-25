@@ -88,6 +88,14 @@ En écrivant une migration qui touche un objet existant, donnez-lui donc l'un de
 - ou un objet qu'elle seule crée. `0015` n'a que celui-là : elle ne supprime rien, et sans
   `idx_attendees_slug_creator` elle serait aujourd'hui invisible.
 
+Un signe n'a pas besoin d'être un objet : une colonne ajoutée, une contrainte relâchée, une
+identité de réplication, **ou le texte d'un commentaire** en sont, parce qu'un hôte peut les lire —
+`information_schema.columns`, `is_nullable`, `pg_class.relreplident`, `col_description()`.
+
+⚠️ Et c'est bien le **texte** du commentaire, pas sa présence. `0012` ne fait que remplacer celui
+que `0011` avait posé sur la même colonne : « cette colonne est-elle commentée ? » répond oui pour
+les deux, et seul ce qu'il dit les sépare.
+
 [`tools/migrations-detectables.mjs`](../tools/migrations-detectables.mjs) refuse une migration sans
 signe propre, en nommant celle avec qui elle se confond.
 

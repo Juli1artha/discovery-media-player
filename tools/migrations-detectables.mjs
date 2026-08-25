@@ -31,6 +31,7 @@
 //
 // Usage : node tools/migrations-detectables.mjs
 
+import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -69,6 +70,34 @@ export function signesDe(sql) {
   for (const [, genre, nom] of t.matchAll(/\bcreate\s+(?:unique\s+)?(table|index|view|policy|type|trigger)\s+(?:if\s+not\s+exists\s+)?([\w.]+)/gi)) {
     signes.add(`${genre.toLowerCase()} ${nom}`);
   }
+
+  // ⚠️ SEPT MIGRATIONS SUR DIX-NEUF N'AVAIENT AUCUN SIGNE, et la garde les SAUTAIT en annonçant
+  // « chacune prouvable ». Elles en laissaient pourtant toutes — c'est la sonde qui ne les cherchait
+  // pas. Une couverture affirmée plus large qu'elle n'est vaut moins que pas de couverture : on
+  // cesse de vérifier ce qu'on croit déjà tenu.
+  //
+  // Les quatre formes qui manquaient, chacune sondable :
+  //   colonne ajoutée      information_schema.columns
+  //   commentaire posé     col_description() — 0012 ne repose QUE là-dessus
+  //   contrainte relâchée  is_nullable
+  //   identité de réplic.  pg_class.relreplident
+  for (const [, table, colonne] of t.matchAll(/\balter\s+table\s+(?:if\s+exists\s+)?([\w.]+)[\s\S]{0,200}?\badd\s+column\s+(?:if\s+not\s+exists\s+)?([\w.]+)/gi)) {
+    signes.add(`column ${table}.${colonne}`);
+  }
+  // ⚠️ LE SIGNE D'UN COMMENTAIRE EST SON TEXTE, PAS SA PRÉSENCE. 0012 REMPLACE le commentaire que
+  // 0011 avait posé sur la même colonne : « cette colonne est-elle commentée ? » répond oui pour
+  // les deux. Ce qui les sépare est ce que le commentaire DIT — et `col_description()` le rend,
+  // donc c'est sondable. Un condensat court suffit à distinguer sans embarquer la prose ici.
+  for (const [, cible, texte] of t.matchAll(/\bcomment\s+on\s+(?:column|table|function|index)\s+([\w.]+)\s+is\s+([\s\S]*?);/gi)) {
+    const empreinte = createHash("sha256").update(texte.replace(/\s+/g, " ").trim()).digest("hex").slice(0, 8);
+    signes.add(`comment ${cible} #${empreinte}`);
+  }
+  for (const [, table, colonne, sens] of t.matchAll(/\balter\s+table\s+(?:if\s+exists\s+)?([\w.]+)[\s\S]{0,200}?\balter\s+column\s+([\w.]+)\s+(drop|set)\s+not\s+null/gi)) {
+    signes.add(`nullability ${table}.${colonne} ${sens.toLowerCase()}`);
+  }
+  for (const [, table, mode] of t.matchAll(/\balter\s+table\s+(?:if\s+exists\s+)?([\w.]+)\s+replica\s+identity\s+(\w+)/gi)) {
+    signes.add(`replica identity ${table} ${mode.toLowerCase()}`);
+  }
   return [...signes].sort();
 }
 
@@ -90,8 +119,12 @@ export function improuvables(parFichier) {
   const porteurs = new Map();
   for (const f of noms) for (const s of parFichier[f]) porteurs.set(s, [...(porteurs.get(s) || []), f]);
 
+  // ⚠️ UNE MIGRATION SANS AUCUN SIGNE N'EST PLUS SAUTÉE. Le filtre disait `parFichier[f].length &&`,
+  // donc sept migrations passaient sans être regardées pendant que la garde annonçait « chacune
+  // prouvable ». N'avoir aucun signe est PIRE que se confondre avec une voisine : on ne peut même
+  // pas nommer ce qu'il faudrait sonder.
   return noms
-    .filter((f) => parFichier[f].length && !parFichier[f].some((s) => porteurs.get(s).length === 1))
+    .filter((f) => !parFichier[f].some((s) => porteurs.get(s).length === 1))
     .map((f) => ({
       fichier: f,
       confondueAvec: [...new Set(parFichier[f].flatMap((s) => porteurs.get(s)).filter((x) => x !== f))].sort(),
@@ -104,8 +137,10 @@ export function ecarts(parFichier, declarees = INDISTINGUABLES_DECLAREES) {
   const fautives = improuvables(parFichier);
   const soucis = fautives
     .filter((x) => !declarees[cleDe(x)])
-    .map((x) => `${x.fichier} n'a AUCUN signe qui lui soit propre — elle se confond avec ${x.confondueAvec.join(", ")}, ` +
-      `et un hôte ne peut pas prouver qu'elle a tourné en sondant sa base. Ajoutez-lui un « drop » de la signature ` +
+    .map((x) => (x.confondueAvec.length
+      ? `${x.fichier} n'a AUCUN signe qui lui soit propre — elle se confond avec ${x.confondueAvec.join(", ")}, `
+      : `${x.fichier} ne laisse AUCUN signe sondable — pire que se confondre : on ne peut même pas nommer ce qu'il faudrait chercher, `) +
+      `et un hôte ne peut pas prouver qu'elle a tourné en sondant sa base. Donnez-lui un « drop » de la signature ` +
       `précédente, ou un objet qu'elle seule crée. Si c'est impossible, déclarez-la dans ` +
       `tools/migrations-detectables.mjs avec ce que ça coûte à l'hôte.`);
 
@@ -128,7 +163,12 @@ if (estExecuteDirectement(import.meta.url)) {
     if (!n) throw new Error(`aucune migration sous ${DOSSIER} — la sonde vise à côté`);
     const soucis = ecarts(parFichier);
     if (soucis.length) return violation(soucis);
+    // ⚠️ LE RÉSUMÉ DIT CE QU'ON A MESURÉ, PAS CE QU'ON EN CONCLUT. Il annonçait « chacune prouvable
+    // sur ses effets » pendant que SEPT migrations sur dix-neuf n'avaient aucun signe et étaient
+    // sautées. Compter les signes relevés rend le mensonge impossible : une sonde qui cesserait de
+    // voir une forme ferait chuter ce nombre à vue d'œil.
     const declarees = Object.keys(INDISTINGUABLES_DECLAREES).length;
-    return conforme(`migrations : ${n} lues, chacune prouvable sur ses effets — ${declarees} déclarée(s) improuvable(s)`);
+    const signes = Object.values(parFichier).reduce((t, x) => t + x.length, 0);
+    return conforme(`migrations : ${n} lues, ${signes} signes sondables relevés, aucune muette — ${declarees} déclarée(s) improuvable(s)`);
   }));
 }
