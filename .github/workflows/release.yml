@@ -89,6 +89,25 @@ jobs:
           # TOUT commit, y compris légitime — une garde qui refuse tout ne garde rien.
           fetch-depth: 0
 
+      # ⚠️ L'ATTESTATION GRAVE LE COMMIT DU RUN, PAS CELUI DU TAG — ET LA 0.1.136 L'A PAYÉ.
+      # Sa récupération a été dispatchée depuis `main` : chaque job a bien extrait le TAG (les
+      # octets publiés sont ceux du tag), mais `attest-build-provenance` enregistre `github.sha` —
+      # la tête de `main` à cet instant. Résultat, consigné dans docs/VERIFYING-RELEASES.md : une
+      # provenance qui nomme un commit dont la reconstruction NE REPRODUIT PAS l'archive,
+      # indiscernable d'une substitution pour qui ne sait pas. Divulguer après coup ne suffit pas
+      # (contre-audit du 25/08) : on refuse ICI, avant tout artefact — `verifier` gate publier,
+      # eprouver, attester et annoncer. Un rejeu honnête existe et reste complet : lancer le
+      # dispatch sur la RÉF DU TAG elle-même (« Use workflow from » → v0.1.X) — `github.sha` est
+      # alors le commit du tag, et la provenance redevient vraie.
+      - name: The run's own commit is the tag's — provenance will name what built the bytes
+        run: |
+          sha_du_tag=$(git rev-parse HEAD)
+          if [ "$sha_du_tag" != "$GITHUB_SHA" ]; then
+            echo "::error::ce run porte github.sha=$GITHUB_SHA mais ${TAG} désigne $sha_du_tag — l'attestation nommerait un commit qui ne construit pas ces octets (incident 0.1.136, docs/VERIFYING-RELEASES.md). Relancez le dispatch sur la réf du tag : Actions → Release → Run workflow → « Use workflow from » → ${TAG}."
+            exit 1
+          fi
+          echo "github.sha == ${TAG} ($sha_du_tag) : la provenance nommera le commit qui construit les octets"
+
       # ⚠️ UNE CI VERTE NE DIT PAS QUE LE COMMIT EST DANS `main`.
       #
       # Le contrôle voisin exige que la CI du commit exact soit verte. Une branche de PR a
