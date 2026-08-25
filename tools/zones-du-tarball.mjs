@@ -39,10 +39,37 @@ export const ZONES = [
   { nom: "manifest", quoi: "package.json — version, exports, dependencies", est: (f) => f === "package.json" },
   { nom: "server", quoi: "the code the host executes", est: (f) => f.startsWith("server/") },
   { nom: "context", quoi: "the injected-context implementations", est: (f) => f.startsWith("context/") },
-  { nom: "browser", quoi: "the bundle the page loads", est: (f) => f.startsWith("dist/") },
+  // ⚠️ `dist/` PORTE DEUX ARTEFACTS QUI N'ONT PAS LE MÊME CONSOMMATEUR, et un seul suffixe les
+  // sépare. `dist/bridge.js` est exécuté par la page des visiteurs ; `dist/bridge.d.ts` est lu par
+  // le `tsc` de l'hôte. L'un casse à l'exécution, l'autre au build — deux incidents différents,
+  // deux gestes différents. Fondus en une zone, « browser : 1 modifié » ne disait pas s'il fallait
+  // relire une page ou relancer un build.
+  //
+  // ⚠️ ET LA LIGNE DE PARTAGE N'EST PAS LE TYPE D'HÔTE. On l'a d'abord cherchée là — « serveur seul »
+  // contre « embarque la page ». Un hôte de production est LES DEUX à la fois, et la distinction ne
+  // l'aurait pas aidé. Elle est entre les deux artefacts, pas entre les lecteurs.
+  //
+  // ⚠️ L'ORDRE COMPTE : `.d.ts` d'abord, sinon tout `dist/` tomberait dans `browser`. Le reste de
+  // `dist/` — dont son `package.json`, qui déclare le type de module — est bien chargé par la page.
+  { nom: "browser-types", quoi: "the declarations the host's tsc reads for « ./bridge » — breaks a build, never a page", est: (f) => f.startsWith("dist/") && f.endsWith(".d.ts") },
+  { nom: "browser", quoi: "what the visitors' page executes", est: (f) => f.startsWith("dist/") },
   { nom: "cli", quoi: "the command-line entry point", est: (f) => f.startsWith("bin/") },
-  { nom: "types", quoi: "the TypeScript declarations", est: (f) => f.startsWith("types/") },
-  { nom: "database", quoi: "the schema and its migrations", est: (f) => f.startsWith("supabase/") },
+  // ⚠️ ZONE À PART, MAIS PAS POUR LA RAISON ÉVIDENTE. Ces déclarations ne changent JAMAIS
+  // l'exécution — elles cassent une CI, et un build rouge après fusion est un autre incident qu'une
+  // page qui se comporte mal. C'est ce qui justifie la zone, pas une influence sur le produit.
+  //
+  // ⚠️ ET SON NOM PEUT ÉGARER : « types » SONNE comme « la surface typée », alors qu'un hôte qui
+  // consomme le serveur en CommonJS sans `checkJs` ne les lit jamais — les types qu'il vérifie
+  // vraiment sont ceux de `dist/`. Mesuré chez un hôte de production : `types/` y est du bruit.
+  // C'est la démonstration que découper par répertoire peut égarer, gardée ici comme avertissement.
+  { nom: "types", quoi: "declarations for the server and context entry points — breaks a build, never runtime", est: (f) => f.startsWith("types/") },
+  // ⚠️ ICI « AJOUTÉ » ET « MODIFIÉ » N'ONT PAS LE MÊME SENS, et les compter côte à côte les aplatit.
+  // Le paquet porte dix-neuf migrations que l'hôte applique lui-même. Une migration AJOUTÉE est une
+  // action : l'appliquer, dans l'ordre. Une migration MODIFIÉE est une alarme : ce qui a déjà été
+  // appliqué ailleurs doit être immuable, et un fichier qui change sous des bases qui l'ont déjà
+  // joué n'est pas une ligne de tableau, c'est un arrêt.
+  { nom: "database", quoi: "the schema and the migrations the host applies itself", est: (f) => f.startsWith("supabase/"),
+    alarmeSiModifie: "a migration already applied elsewhere must be immutable. A changed file here is not a count — it is a stop. Do not upgrade before establishing which databases have already played it." },
 ];
 
 export const zoneDe = (fichier) => (ZONES.find((z) => z.est(fichier)) || { nom: null }).nom;
@@ -96,6 +123,21 @@ export function rapport(avantVersion, apresVersion, avant, apres) {
   } else {
     l.push("No file differs between the two packages.");
   }
+  // ⚠️ CE QUI DOIT CRIER NE SE COMPTE PAS. Une zone peut déclarer qu'une MODIFICATION y est une
+  // alarme et non une ligne : le lecteur qui parcourt une table lit des nombres, et un nombre parmi
+  // d'autres nombres ne dit pas « arrête-toi ». On le sort de la table, on nomme les fichiers, et on
+  // écrit ce qu'il faut faire — la table reste la table, l'arrêt reste un arrêt.
+  for (const z of ZONES.filter((x) => x.alarmeSiModifie)) {
+    const touches = parZone.get(z.nom).modifies;
+    if (!touches.length) continue;
+    l.push("");
+    l.push(`> ### ⚠️ \`${z.nom}\` — ${touches.length} file(s) **changed**, not added`);
+    l.push(">");
+    l.push(`> ${z.alarmeSiModifie}`);
+    l.push(">");
+    for (const f of touches) l.push(`> - \`${f}\``);
+  }
+
   if (horsZone.length) {
     l.push("");
     l.push(`⚠️ ${horsZone.length} path(s) belong to no declared zone and are therefore **not counted above** — ` +
