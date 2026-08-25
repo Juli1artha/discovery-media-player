@@ -193,31 +193,10 @@ const { adresseAppelant } = require("./appelant");
  */
 const PLAFOND_RELAIS = Number(process.env.PLAYER_MAX_RELAY_BYTES || 0) || 60 * 1024 * 1024;
 
-// ⚠️ UN REFUS EN TEXTE POSE SON TYPE, COMME TOUT LE RESTE. Ces réponses partaient avec un code et
-// un corps, sans Content-Type : le seul corps de ce serveur qu'un navigateur avait le droit de
-// deviner, alors que la règle `nosniff` est écrite partout ailleurs. Relevé par le premier scan
-// ZAP baseline (règle 10019, 24/08).
-//
-// ⚠️ ET LA CORRECTION D'ALORS N'A PAS TENU PARTOUT — trois réponses en texte lui ont échappé,
-// dont le `500` du bout de `/doc` qui ne posait AUCUN type (audit CODEX 5.6, 25/08). Ce n'est pas
-// un oubli à rattraper une fois de plus : c'est le signe qu'une règle appliquée à la main se
-// réapplique mal. Il n'y a donc plus qu'UNE fonction par laquelle un corps en texte quitte ce
-// serveur — et `bin/serve.js` l'appelle aussi, plutôt que d'en tenir une seconde copie, comme il
-// le fait déjà pour POLITIQUE_PERMISSIONS.
-//
-// ⚠️ ELLE DOIT SURVIVRE À UN EN-TÊTE DÉJÀ PARTI. Son premier appelant est le `catch` de `/doc`,
-// et une erreur peut y arriver APRÈS que `sendHtml` ait commencé à écrire : `setHeader` jette
-// alors `ERR_HTTP_HEADERS_SENT`, dans le rattrapage lui-même, ce qui transforme une erreur
-// signalée en rejet non rattrapé. On ne peut plus rien poser à ce stade — le statut est parti —
-// donc on ferme le flux et on se tait, ce qui est exactement ce que le client verra de toute
-// façon. Se taire ici n'efface rien : l'erreur a déjà été confiée à `errors.capture`.
-function refuserEnTexte(res, statut, message) {
-  if (res.headersSent) { try { res.end(); } catch { /* flux déjà clos */ } return; }
-  res.statusCode = statut;
-  res.setHeader("Content-Type", "text/plain; charset=utf-8");
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.end(message);
-}
+// ⚠️ LES PORTES DE SORTIE VIVENT DANS UN MODULE À PART, et le pourquoi est écrit là-bas : les
+// familles de routes en ont besoin AUSSI, et elles ne peuvent pas recharger `handler.js` sans
+// fermer un cycle. Une seule définition, requise par tout le monde.
+const { refuserEnTexte, repondreJson, repondreJsonTexte } = require("./reponses.js");
 
 // ⚠️ CE QUE LES PAGES N'UTILISENT PAS EST REFUSÉ PAR ÉCRIT. Sans Permissions-Policy, un script
 // tiers compromis (le risque exact que l'inventaire TIERS épingle) hérite de tout ce que le
@@ -785,8 +764,7 @@ async function handler(req, res) {
               console.warn(`[player] relectures de présentation refusées : quota horaire par adresse atteint (${PRESENT_QUOTA_PER_HOUR}/h). Une audience nombreuse derrière une sortie unique verra ses pages cesser de tourner.`);
             } catch { /* sans console */ }
           }
-          res.statusCode = 429; res.setHeader("Content-Type", "application/json"); res.setHeader("Cache-Control", "no-store");
-          res.end(JSON.stringify({ ok: false, error: "rate" }));
+          repondreJson(res, 429, { ok: false, error: "rate" }, { "Cache-Control": "no-store" });
           return;
         }
       }
@@ -879,18 +857,16 @@ async function handler(req, res) {
           // 503 réessayable dit à l'appelant d'attendre une seconde ; un 500 lui dit d'abandonner.
           // Les confondre ferait renoncer une requête que le prochain battement aurait servie.
           if (e && e.code === CODE_SATURATION) {
-            res.statusCode = 503;
-            res.setHeader("Retry-After", String(e.retryAfter || 1));
-            res.setHeader("Cache-Control", "no-store");
-            res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ ok: false, error: "busy" }));
+            repondreJson(res, 503, { ok: false, error: "busy" },
+              { "Retry-After": String(e.retryAfter || 1), "Cache-Control": "no-store" });
             return;
           }
           throw e;
         }
         if (!corps) return sendRefusal(res, "ended", embed);
-        res.statusCode = 200; res.setHeader("Content-Type", "application/json"); res.setHeader("Cache-Control", "no-store");
-        res.end(corps);
+        // ⚠️ `corps` est DÉJÀ du texte JSON, construit en amont et relu à chaque battement :
+        // l'analyser pour le re-sérialiser serait un aller-retour pur sur un chemin chaud.
+        repondreJsonTexte(res, 200, corps, { "Cache-Control": "no-store" });
         return;
       }
       // ⚠️ LA LIGNE N'EST LUE QU'ICI, ET C'EST CE QUI DONNE SON SENS AU CACHE. Elle était lue
@@ -973,7 +949,7 @@ async function handler(req, res) {
     const gated = share.require_auth === true && !visitor;
 
     if (String(q.file || "") === "1") {
-      if (gated) { res.statusCode = 401; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify({ ok: false, error: "auth" })); return; }
+      if (gated) { repondreJson(res, 401, { ok: false, error: "auth" }); return; }
       // Stream depuis le Storage en RELAYANT les requêtes Range → pdf.js charge progressivement (les 1res
       // pages s'affichent sans télécharger tout le PDF) → affichage bien plus rapide.
       const range = req.headers["range"];
@@ -1068,6 +1044,6 @@ async function handler(req, res) {
 // tenir une seconde liste — c'est la seule façon qu'une empreinte périmée finisse par se voir.
 // ⚠️ Exporté pour être ÉPROUVÉ, pas pour être appelé : le plafond du relais ne se vérifie qu en
 // regardant si le corps a été lu, ce qu aucune route ne peut montrer de l extérieur.
-module.exports = { handler, init, TIERS, POLITIQUE_PERMISSIONS, refuserEnTexte, __relayerFichier: relayerFichier, __jsonPourScript: jsonPourScript };
+module.exports = { handler, init, TIERS, POLITIQUE_PERMISSIONS, refuserEnTexte, repondreJson, __relayerFichier: relayerFichier, __jsonPourScript: jsonPourScript };
 
 // redeploy: forcer le build production (Vercel a sauté la prod du merge #463 — wording re-partage).

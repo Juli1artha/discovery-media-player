@@ -13,6 +13,22 @@ the notes there are this file's section for that version.
 ## [Unreleased]
 
 ### Fixed
+- ⚠️ **Twenty JSON responses declared their type and none forbade sniffing.** The JSON reply helper
+  was defined **thirteen times**, identically, under four names (`jp`, `jd`, `j`, `jv`) across four
+  route files — plus seven bodies written out by hand and five inline replies elsewhere. Found by
+  measuring the text fix below, not by looking for it.
+  - **This is not twenty oversights.** It is what a recipe becomes once it is copied: the first
+    copy was correct, and it is the *correction* that does not propagate. `nosniff` was added
+    repository-wide in 0.1.7; the API routes were the one place the rule stopped, because no scan
+    visits them.
+  - There is now **one** module holding the doors — `server/reponses.js`, depending on nothing, so
+    the route families can require it without closing a cycle with `handler.js`. The short local
+    names stay, as a **single line that delegates**: the convenience was legitimate, the recipe
+    inside it was not. **The 95 call sites do not move** — a fix that rewrites 95 lines to correct
+    13 reads badly and verifies worse.
+  - **The bodies are unchanged, byte for byte** — measured, because a body that changes shape would
+    change the contract hosts depend on. `{"ok":false,"error":"unknown-action"}` still goes out
+    exactly as it did.
 - ⚠️ **Three text responses left this server without the rule the repository had already written.**
   The `500` at the end of `/doc` posted a status and a body and **nothing else** — no
   `Content-Type` at all, the one body a browser was allowed to guess. The `400` "no document
@@ -84,6 +100,13 @@ the notes there are this file's section for that version.
 - **A guard that refuses a hand-written text body sent without its type and `nosniff`.** It reads an
   **AST**, not a pattern: this repository has paid three times for regex guards — `uses:`, `FROM`,
   and `crypto`, where the last one accused the very file it had just had fixed.
+  - **A second rule closes the JSON door rather than counting oversights.** The thirteen copies all
+    sent a *computed* body (`res.end(JSON.stringify(obj))`), which the first rule does not look at
+    and should not. What they had in common was **declaring the type** — each deciding, on its own,
+    what accompanies that declaration. So outside `server/reponses.js`, no file may declare
+    `application/json`. A fourteenth copy is refused. Other types (`text/html`, `text/javascript`,
+    `application/pdf`) are deliberately outside this rule and the guard's header says so: they have
+    their own senders, which already set `nosniff`.
   - ⚠️ **Its first version was wrong, and measuring said so.** It flagged every string literal and
     accused seven `res.end('{"ok":…}')` in `routes-liens.js` — seven JSON bodies that post their
     type, line by line. Seven false accusations out of seven findings, the same failure as the

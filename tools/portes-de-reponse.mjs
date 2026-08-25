@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright © 2026 3D Discovery
-// UN CORPS ÉCRIT EN DUR NE QUITTE CE SERVEUR QUE PAR UNE SEULE PORTE.
+// UNE RÉPONSE NE QUITTE CE SERVEUR QUE PAR UNE PORTE, ET LA PORTE POSE LA RÈGLE.
 //
 // ⚠️ LA RÈGLE A DÉJÀ ÉTÉ POSÉE UNE FOIS, ET ELLE N'A TENU QUE LÀ OÙ ELLE ÉTAIT ÉCRITE. Le premier
 // scan ZAP baseline (règle 10019, 24/08) a trouvé des refus qui partaient avec un code et un corps
@@ -21,12 +21,24 @@
 // corriger. `typescript` analyse le JavaScript et rend un arbre : un « .end » dans un commentaire
 // ou dans une chaîne n'est pas un appel, et il n'a pas besoin qu'on le lui explique.
 //
-// ⚠️ CE QUE CETTE GARDE NE COUVRE PAS, dit plutôt qu'à moitié couvert : un corps CALCULÉ
-// (`res.end(variable)`) lui échappe, et c'est voulu — c'est la forme légitime, celle de
-// `refuserEnTexte` elle-même et celle des pages, des actifs et du JSON, qui posent tous leur type
-// explicitement. La garde vise la forme qui a fui : un texte écrit à l'endroit où on l'envoie.
+// ⚠️ ET LE JSON A REFAIT LA MÊME CHOSE, EN PLUS GRAND. Trouvé en mesurant le premier volet :
+// l'aide de réponse JSON était définie TREIZE fois, à l'identique, sous quatre noms (`jp`, `jd`,
+// `j`, `jv`), plus sept corps écrits à la main et cinq réponses inline — vingt endroits, et AUCUN
+// ne posait `nosniff`. Ce n'est pas vingt oublis : c'est ce qu'une recette recopiée devient. La
+// copie initiale était juste ; c'est la CORRECTION qui ne se propage pas.
 //
-// Usage : node tools/corps-en-texte.mjs [fichiers…]
+// Le second volet ne compte donc pas les oublis, il ferme la porte : hors de `server/reponses.js`,
+// AUCUN fichier ne déclare `application/json`. Le JSON sort par la porte, ou il ne sort pas.
+//
+// ⚠️ CE QUE CETTE GARDE NE COUVRE PAS, dit plutôt qu'à moitié couvert.
+//   - Un corps CALCULÉ en texte (`res.end(variable)`) échappe au premier volet, et c'est voulu :
+//     c'est la forme légitime, celle de `refuserEnTexte` elle-même.
+//   - Les AUTRES types — `text/html`, `text/javascript`, `application/pdf` — ne sont pas soumis au
+//     second volet. Ils ont déjà leurs propres envoyeurs dans `handler.js` (`sendHtml`, l'actif
+//     pdf.js, le relais de fichier), qui posent tous `nosniff`, et les rassembler serait un autre
+//     changement que celui-ci. Une garde qui prétend couvrir ce qu'elle ne regarde pas ment.
+//
+// Usage : node tools/portes-de-reponse.mjs [fichiers…]
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -41,8 +53,14 @@ import { estExecuteDirectement } from "./execute-directement.mjs";
  */
 const REPOND_AUX_REQUETES = /^(server|bin)\/[^/]*\.(js|cjs|mjs)$/;
 
-/** La porte unique. Elle reçoit son message en paramètre, donc n'écrit aucun littéral. */
+/** La porte du texte. Elle reçoit son message en paramètre, donc n'écrit aucun littéral. */
 export const PORTE = "refuserEnTexte";
+
+/** Le module qui tient les portes — le seul autorisé à déclarer le type d'une réponse JSON. */
+export const MODULE_DES_PORTES = "server/reponses.js";
+
+/** Le type dont la déclaration est réservée à la porte. */
+export const TYPE_RESERVE = "application/json";
 
 /** Un texte écrit sur place : littéral, gabarit, ou concaténation de ceux-là. */
 export function estTexteEcrit(noeud) {
@@ -137,6 +155,33 @@ export function corpsEcrits(fichier, source) {
 export const manquements = (trouves) =>
   trouves.map((t) => `${t.fichier}:${t.ligne} — \`.end(${t.texte}…)\` part avec ${t.manque} : un corps en texte que le navigateur a le droit de requalifier. Passez par \`${PORTE}(res, statut, message)\`, qui pose le type ET nosniff en une fois`);
 
+/**
+ * Les déclarations de `application/json` faites ailleurs que dans le module des portes.
+ *
+ * ⚠️ ON VISE LA DÉCLARATION, PAS LE CORPS — et c'est ce qui rend ce volet utile là où le premier
+ * ne peut rien. Les treize copies faisaient `res.end(JSON.stringify(obj))` : un corps CALCULÉ, que
+ * le premier volet ne voit pas et ne doit pas voir. Ce qu'elles avaient toutes en commun, en
+ * revanche, c'est de DÉCLARER le type — donc de décider, chacune dans son coin, ce qui accompagne
+ * cette déclaration. C'est cette décision qui ne doit exister qu'en un exemplaire.
+ */
+export function typesReserves(fichier, source) {
+  if (fichier.endsWith(MODULE_DES_PORTES)) return [];
+  const arbre = ts.createSourceFile(fichier, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const trouves = [];
+  const visiter = (n) => {
+    if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression)) {
+      const poses = entetesDe(n);
+      if (poses.get("content-type") === TYPE_RESERVE) {
+        const { line } = arbre.getLineAndCharacterOfPosition(n.getStart(arbre));
+        trouves.push(`${fichier}:${line + 1} — cette réponse déclare elle-même \`${TYPE_RESERVE}\` : passez par \`repondreJson(res, statut, valeur)\` de \`${MODULE_DES_PORTES}\`, sinon la prochaine correction du type ou de \`nosniff\` ne s'appliquera qu'ici`);
+      }
+    }
+    ts.forEachChild(n, visiter);
+  };
+  ts.forEachChild(arbre, visiter);
+  return trouves;
+}
+
 if (estExecuteDirectement(import.meta.url)) {
   conclure(tenter(() => {
     const fichiers = process.argv.slice(2).length ? process.argv.slice(2)
@@ -146,8 +191,12 @@ if (estExecuteDirectement(import.meta.url)) {
     if (!fichiers.length) {
       return inconclusif("aucun fichier de server/ ou bin/ relevé par git ls-files — la sonde vise à côté, ou le dépôt n'est pas là");
     }
-    const trouves = fichiers.flatMap((f) => corpsEcrits(f, readFileSync(f, "utf8")));
-    if (trouves.length) return violation(manquements(trouves));
-    return conforme(`corps en texte : ${fichiers.length} fichier(s) serveur, aucun corps écrit sur place ne part sans type ni nosniff — les refus passent par \`${PORTE}\``);
+    const lus = fichiers.map((f) => [f, readFileSync(f, "utf8")]);
+    const soucis = [
+      ...manquements(lus.flatMap(([f, src]) => corpsEcrits(f, src))),
+      ...lus.flatMap(([f, src]) => typesReserves(f, src)),
+    ];
+    if (soucis.length) return violation(soucis);
+    return conforme(`portes de réponse : ${fichiers.length} fichier(s) serveur — aucun corps en texte écrit sur place ne part sans type ni nosniff, et \`${TYPE_RESERVE}\` n'est déclaré que dans ${MODULE_DES_PORTES}`);
   }));
 }

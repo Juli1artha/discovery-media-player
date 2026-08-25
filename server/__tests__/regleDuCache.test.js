@@ -42,10 +42,17 @@ describe("toute lecture publique passe par le cache", () => {
 
   // ⚠️ LE CŒUR DE LA GARDE, ET C'EST UNE FORME.
   //
-  // Le chemin mis en cache ne sérialise JAMAIS au moment de répondre : il rend `res.end(corps)`, la
-  // sérialisation ayant eu lieu dans le producteur, à l'intérieur du cache. Une branche qui écrit
-  // `res.end(JSON.stringify(…))` dans ce bloc est donc, par construction, une route qui répond SANS
-  // passer par le cache — quel que soit son nom, et même si personne n'a pensé à l'ajouter ici.
+  // Le chemin mis en cache ne sérialise JAMAIS au moment de répondre : la sérialisation a eu lieu
+  // dans le producteur, à l'intérieur du cache. Une branche qui sérialise ICI est donc, par
+  // construction, une route qui répond SANS passer par le cache — quel que soit son nom, et même
+  // si personne n'a pensé à l'ajouter ici.
+  //
+  // ⚠️ LA FORME A CHANGÉ DE NOM, ET ELLE S'EST DURCIE. C'était `res.end(JSON.stringify(…))` contre
+  // `res.end(corps)` ; depuis que toutes les réponses JSON passent par une porte unique, c'est
+  // `repondreJson` (sérialise maintenant) contre `repondreJsonTexte` (déjà sérialisé, donc venu du
+  // cache). La distinction n'est plus une nuance d'écriture : elle est dans le nom appelé. Et le
+  // statut n'est plus « le dernier `res.statusCode` dans les 400 caractères qui précèdent » — il
+  // est le deuxième argument, lu tel quel.
   //
   // Les exceptions sont les REFUS — quota, saturation d'admission : ce ne sont pas des charges
   // partagées mais des erreurs, et les mettre en cache servirait le refus d'un appelant à un autre.
@@ -56,7 +63,7 @@ describe("toute lecture publique passe par le cache", () => {
   // On décrit donc ce qui distingue un refus d'un CONTENU — `ok: false` avec un `error` — et la
   // règle tient sans être touchée au prochain refus. (Le second hôte a nommé cette classe.)
   it("aucune branche ne sérialise un CONTENU au moment de répondre", () => {
-    const directes = [...bloc.matchAll(/res\.end\(JSON\.stringify\(([^\n]*)/g)].map((m) => m[1]);
+    const directes = [...bloc.matchAll(/repondreJson\(res,\s*\d{3},([^\n]*)/g)].map((m) => m[1]);
     const estRefus = (l) => /ok:\s*false\s*,\s*error:/.test(l);
     const horsRegle = directes.filter((l) => !estRefus(l));
     expect(horsRegle,
@@ -71,23 +78,28 @@ describe("toute lecture publique passe par le cache", () => {
   // contenu en `{ ok: false, error: … }` pour sortir du cache — l'exception de forme deviendrait une
   // porte. On vérifie donc que chaque sérialisation directe est précédée d'un statut d'ERREUR.
   it("et chaque réponse directe pose bien un statut d'erreur (4xx/5xx)", () => {
-    const positions = [...bloc.matchAll(/res\.end\(JSON\.stringify\(/g)].map((m) => m.index);
-    expect(positions.length, "témoin daté : 2 réponses directes le 2026-08-21 (quota, saturation)")
+    const statuts = [...bloc.matchAll(/repondreJson\(res,\s*(\d{3})/g)].map((m) => Number(m[1]));
+    expect(statuts.length, "témoin daté : 2 réponses directes le 2026-08-21 (quota, saturation)")
       .toBeGreaterThan(0);
-    for (const i of positions) {
-      const avant = bloc.slice(Math.max(0, i - 400), i);
-      const statuts = [...avant.matchAll(/res\.statusCode\s*=\s*(\d{3})/g)].map((m) => Number(m[1]));
-      const dernier = statuts.length ? statuts[statuts.length - 1] : 200;
-      expect(dernier,
-        `une réponse directe est servie avec le statut ${dernier} : si ce n'est pas une erreur, ce\n`
+    for (const statut of statuts) {
+      expect(statut,
+        `une réponse directe est servie avec le statut ${statut} : si ce n'est pas une erreur, ce\n`
         + "n'est pas un refus, et elle doit passer par le cache comme toutes les autres lectures.")
         .toBeGreaterThanOrEqual(400);
     }
   });
 
+  // ⚠️ ET LE CHEMIN DU CACHE DOIT RESTER VISIBLE. Sans ce témoin, retirer la lecture en cache
+  // rendrait les deux règles ci-dessus vertes en n'ayant plus rien à regarder — le vert qui ne
+  // prouve rien, contre lequel ce fichier a été écrit.
+  it("la lecture servie depuis le cache passe bien par la porte du déjà-sérialisé", () => {
+    expect(bloc, "un corps venu du cache est déjà du texte : le re-sérialiser serait un aller-retour pur")
+      .toMatch(/repondreJsonTexte\(res,\s*200,\s*corps/);
+  });
+
   it("le refus de quota, lui, reste hors cache — et c'est délibéré", () => {
     expect(bloc, "mettre une erreur en cache la servirait à qui ne l'a pas déclenchée")
-      .toMatch(/res\.end\(JSON\.stringify\(\{ ok: false, error: "rate" \}\)\)/);
+      .toMatch(/repondreJson\(res, 429, \{ ok: false, error: "rate" \}/);
   });
 
   // ⚠️ La table doit rester une table : deux entrées aujourd'hui, et la garde ne dit rien du nombre.

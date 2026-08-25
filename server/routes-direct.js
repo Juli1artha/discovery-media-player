@@ -4,6 +4,7 @@
 // Reste à PLAT dans server/ (les gardes de forge ciblent server/*.js).
 
 const { adresseAppelant, lcMembre, cleAnonyme, profilDuJeton } = require("./appelant");
+const { jsonPour } = require("./reponses.js");
 
 const { createPresentation, getPresentation, setPage, endPresentation, addMessage, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent } = require("./presentations");
 // Cadence de présence et cible de mutualisation par IP (P1 performance). L'intervalle DOIT
@@ -22,7 +23,7 @@ const isAllowedStorageUrl = (url) => PLAYER.storage.isAllowedUrl(url);
 // sur res.writableEnded, absent des `res` postiches des bancs comme de certains hôtes.
 async function traiter(req, res, body, _slug) {
       if (body.action === "present-start" || body.action === "present-page" || body.action === "present-end" || body.action === "present-touch") {
-        const jp = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
+        const jp = jsonPour(res);
         try {
           if (body.action === "present-start") {
             if (!isAllowedStorageUrl(String(body.fileUrl || ""))) return jp(400, { ok: false, error: "url" });
@@ -58,7 +59,7 @@ async function traiter(req, res, body, _slug) {
       // « tts-cache » (nom = hash voix+modèle+texte) → un message identique n'est synthétisé qu'une fois.
 
       if (body.action === "present-attend") {
-        const jp = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
+        const jp = jsonPour(res);
         try {
           const ip = adresseAppelant(req) || "anon";
           // ⚠️ QUOTA DÉRIVÉ DE LA CADENCE, PAS 1000 EN DUR (P1 performance). Un participant émet un
@@ -225,7 +226,7 @@ async function traiter(req, res, body, _slug) {
       }
       // Gestion des présentations (membre AUTHENTIFIÉ requis) : liste / reprise / transfert / stats / historique doc.
       if (body.action === "present-list" || body.action === "present-reclaim" || body.action === "present-handover" || body.action === "present-owner-end" || body.action === "present-stats" || body.action === "present-doc-list" || body.action === "present-switch" || body.action === "present-content") {
-        const jp = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
+        const jp = jsonPour(res);
         try {
           const u = await PLAYER.identity.verifyToken(req.headers.authorization);
           // ⚠️ UNE EXCEPTION, ET UNE SEULE. `present-content` pilote ce que la présentation AFFICHE,
@@ -279,7 +280,7 @@ async function traiter(req, res, body, _slug) {
       // Chat de présentation (historisé) : n'importe quel participant (présentateur ou audience) poste un
       // message. Écriture via service role ; anti-spam par IP (60/h). La présentation doit exister.
       if (body.action === "present-chat") {
-        const jp = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
+        const jp = jsonPour(res);
         try {
           const pres = await getPresentation(String(body.slug || ""));
           if (!pres) return jp(404, { ok: false });
@@ -304,7 +305,7 @@ async function traiter(req, res, body, _slug) {
       }
       // Pièce jointe : URL d'upload signée (la présentation doit exister ; rate-limit).
       if (body.action === "present-upload-url") {
-        const jp = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
+        const jp = jsonPour(res);
         try {
           const pres = await getPresentation(String(body.slug || ""));
           if (!pres) return jp(404, { ok: false });
@@ -317,7 +318,7 @@ async function traiter(req, res, body, _slug) {
       }
       // Chat : éditer / supprimer un message, verrouiller le chat.
       if (body.action === "present-msg-edit" || body.action === "present-msg-delete" || body.action === "present-chatlock") {
-        const jp = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
+        const jp = jsonPour(res);
         try {
           let r;
           if (body.action === "present-msg-edit") r = await editMessage(String(body.slug || ""), body.msgId, String(body.authorToken || ""), body.body);
@@ -328,7 +329,7 @@ async function traiter(req, res, body, _slug) {
       }
       // Réaction emoji (toggle) sur un message du chat de présentation.
       if (body.action === "present-react") {
-        const jp = (status, obj) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
+        const jp = jsonPour(res);
         try {
           const ip = adresseAppelant(req) || "anon";
           const allowed = await PLAYER.limits.allow(`preact:${ip}`, 200, 3600);
