@@ -1,0 +1,10 @@
+# Bundles produits par `build/bundle.mjs`. Marques `linguist-generated` : leur diff est replie
+# dans les PR et ils ne comptent pas dans les statistiques de langage du depot.
+#
+# Le motif couvre les futurs bundles sans qu'on ait a revenir ici. `tools/attributs-des-generes.mjs`
+# verifie que TOUTE sortie declaree par le constructeur est bien couverte — la liste vient du
+# constructeur, jamais d'ici.
+*.generated.js linguist-generated=true
+
+# Fins de ligne normalisees : un depot lu et ecrit depuis macOS, Linux et des runners Windows.
+* text=auto eol=lf
