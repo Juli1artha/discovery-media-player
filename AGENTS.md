@@ -193,9 +193,28 @@ been an incident — a probe hardened where the measurement showed zero occurren
 evidence of a defect that never existed, unless the count is written beside it. `0 occurrences
 today; the count is unchanged; this closes a door` is a proof. "Hardened the probe" is a verdict.
 
+⚠️ **Shape the record so a verdict has nowhere to go.** A rule you must remember is held until the
+day someone is tired; a form with no cell for "verified" refuses on your behalf. Measured on the two
+tables this repository writes — eleven columns between them, and not one where a verdict fits:
+
+```
+what was compared | Version | Date | Release .tgz sha256 | Identical to npm | Who looked | Also checked
+zones touched     | Zone | What it is | Added | Removed | Changed
+```
+
+A row whose "what was compared" cell cannot be filled is a row nobody writes — not out of virtue,
+but because there is nowhere to put the void. This is `readdirSync(withFileTypes)` applied to the
+medium instead of the code: don't remember to do the thing, make the other option not exist.
+
+⚠️ And it only protects where a table exists. Prose has no columns, which is exactly where a verdict
+slips through leaving no trace — so the limit below is real, it is just narrower than it looks: it
+bears on prose, not on records.
+
 ⚠️ Two readers with different blind spots are the *condition* for any of this to work; a written
 proof is what makes them able to act. Over two days, every fix here found the defect in the one
-before it, and neither author found their own.
+before it, and neither author found their own. Nothing in that is self-sustaining: it held because
+both sides kept publishing proofs at a pace, and the day one of them records a verdict out of
+fatigue, the other has nothing left to bite on — and will not know it.
 
 ## An assertion that costs its author is still an assertion
 
