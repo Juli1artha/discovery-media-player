@@ -46,6 +46,14 @@ Only from the public npm registry, over HTTPS, and only through `npm ci`:
   `@sha256:` digest and GitHub Actions carry 40-character commit SHAs. Both are enforced —
   `tools/images-epinglees.mjs` and `tools/actions-epinglees.mjs` fail CI on a floating reference,
   because a tag is a name its owner can move and a digest is not.
+- **Images the CI itself pulls are pinned the same way**, and that rule is a writing convention
+  before it is a check: a registry image is *declared* in YAML — `services.<name>.image`,
+  `container:`, or an `env:` variable whose name starts with `IMAGE_` — never written inside the
+  body of a `run:` command. `tools/images-des-workflows.mjs` reads those declarations and requires
+  an `@sha256:` digest on each; it also fails if a command uses `$IMAGE_…` that no `env:` declares.
+  The convention exists because a `run:` block is shell: telling an image apart from an argument
+  there means re-implementing `docker run`'s grammar, and a first attempt that tried produced
+  three false accusations out of three findings.
 - **`tools/actions-versions.mjs` goes further** and checks that the version comment written beside
   each SHA tells the truth. A pinned SHA labelled `# v3` that actually resolves to v4 is a major
   upgrade of a security tool arriving disguised as a patch; that happened once, and the guard

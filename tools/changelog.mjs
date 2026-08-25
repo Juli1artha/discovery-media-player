@@ -23,6 +23,31 @@ export const DEPOT = "https://github.com/Juli1artha/discovery-media-player";
 /** Les versions, dans l'ordre du fichier — la plus récente d'abord. */
 export const sections = (txt) => [...txt.matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)].map((m) => m[1]);
 
+/**
+ * TOUS les titres de section tels qu'écrits — `[Unreleased]` compris, pas seulement les versions.
+ *
+ * ⚠️ CE QUE `sections` NE VOIT PAS, ET QUI EST ARRIVÉ. `sections` ne relève que les numéros de
+ * version : `## [Unreleased]` écrit DEUX fois lui était invisible. C'est exactement ce que deux
+ * branches produisent quand chacune ouvre la sienne — git fusionne les deux sans conflit, parce
+ * qu'elles ne touchent pas les mêmes lignes.
+ */
+export const titres = (txt) => [...txt.matchAll(/^## \[([^\]]+)\]/gm)].map((m) => m[1]);
+
+/**
+ * Les titres écrits plus d'une fois.
+ *
+ * ⚠️ ET LA CONSÉQUENCE N'EST PAS COSMÉTIQUE : `sectionDe()` s'arrête au titre SUIVANT, donc elle
+ * rend la première moitié et le préflight de sortie publie des notes amputées — sans que rien ne
+ * manque à l'œil, puisque le fichier, lui, contient tout.
+ */
+export function titresRepetes(txt) {
+  const comptes = new Map();
+  for (const t of titres(txt)) comptes.set(t, (comptes.get(t) || 0) + 1);
+  return [...comptes]
+    .filter(([, n]) => n > 1)
+    .map(([t, n]) => `section « ${t} » écrite ${n} fois — les notes de sortie s'arrêtent à la première, et la suite ne se publierait pas`);
+}
+
 /** Les références de bas de page, telles qu'écrites. */
 export const references = (txt) =>
   new Map([...txt.matchAll(/^\[(\d+\.\d+\.\d+)\]: (.+)$/gm)].map((m) => [m[1], m[2].trim()]));
@@ -43,7 +68,7 @@ export function urlAttendue(versions, i) {
 export function ecarts(txt) {
   const versions = sections(txt);
   const refs = references(txt);
-  const soucis = [];
+  const soucis = titresRepetes(txt);
   if (!versions.length) return ["aucune section de version — ce n'est pas un changelog"];
 
   versions.forEach((v, i) => {
@@ -105,6 +130,6 @@ if (estExecuteDirectement(import.meta.url)) {
     if (!vues.length) return inconclusif("aucune section de version dans CHANGELOG.md — la sonde vise à côté, ou le fichier a changé de forme");
     const soucis = ecarts(txt);
     if (soucis.length) return violation(soucis.map((s) => "CHANGELOG désaccordé — " + s));
-    return conforme(`changelog : ${vues.length} sections, chaque référence exacte, [Unreleased] à jour`);
+    return conforme(`changelog : ${vues.length} sections, aucun titre en double, chaque référence exacte, [Unreleased] à jour`);
   }));
 }

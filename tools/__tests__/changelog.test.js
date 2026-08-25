@@ -12,7 +12,7 @@
 
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-import { ecarts, sections, references, urlAttendue, blocReferences, sectionDe, DEPOT } from "../changelog.mjs";
+import { ecarts, sections, titres, titresRepetes, references, urlAttendue, blocReferences, sectionDe, DEPOT } from "../changelog.mjs";
 
 const CHL = (corps) => corps.trim() + "\n";
 const accorde = CHL(`
@@ -70,6 +70,38 @@ describe("les quatre désaccords que la garde doit voir", () => {
   });
 });
 
+describe("un titre écrit deux fois", () => {
+  // ⚠️ CE N'EST PAS UN CAS D'ÉCOLE : deux branches ont chacune ouvert leur `## [Unreleased]`, git
+  // les a fusionnées SANS CONFLIT (lignes différentes), et la garde n'a rien dit parce qu'elle ne
+  // relevait que des numéros de version. `sectionDe()` s'arrête au titre suivant : la sortie
+  // aurait publié la première moitié des notes, l'autre restant dans le fichier.
+  const double = "## [Unreleased]\n### Fixed\n- ici\n\n"
+    + accorde.replace("## [0.1.1]", "## [Unreleased]\n### Added\n- ailleurs\n\n## [0.1.1]");
+
+  it("relève TOUS les titres, `[Unreleased]` compris — ce que `sections` ne fait pas", () => {
+    expect(titres(double)).toEqual(["Unreleased", "0.1.3", "Unreleased", "0.1.1"]);
+    expect(sections(double)).toEqual(["0.1.3", "0.1.1"]);
+  });
+
+  it("⚠️ est refusé, en disant ce qui se perdrait", () => {
+    expect(titresRepetes(double)).toHaveLength(1);
+    expect(ecarts(double).join(" ")).toMatch(/« Unreleased » écrite 2 fois/);
+    expect(ecarts(double).join(" ")).toMatch(/les notes de sortie s'arrêtent à la première/);
+  });
+
+  it("⚠️ et la conséquence est mesurée, pas supposée : la moitié des notes disparaît", () => {
+    expect(sectionDe(double, "Unreleased")).not.toContain("ailleurs");
+  });
+
+  it("une version écrite deux fois est refusée par la même règle", () => {
+    expect(titresRepetes(accorde.replace("## [0.1.1]", "## [0.1.3]"))).toHaveLength(1);
+  });
+
+  it("se tait sur un fichier dont chaque titre est unique", () => {
+    expect(titresRepetes(accorde)).toEqual([]);
+  });
+});
+
 describe("le bloc régénéré", () => {
   it("reproduit exactement ce qu'un fichier accordé contient déjà", () => {
     const bloc = blocReferences(accorde);
@@ -108,6 +140,10 @@ describe("le CHANGELOG réel du dépôt", () => {
 
   it("est accordé", () => {
     expect(ecarts(reel)).toEqual([]);
+  });
+
+  it("⚠️ n'a qu'un seul `[Unreleased]` — il en a porté deux, et personne ne l'a vu", () => {
+    expect(titres(reel).filter((t) => t === "Unreleased")).toHaveLength(1);
   });
 
   it("contient bien la discontinuité qui interdit le calcul naïf", () => {

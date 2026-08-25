@@ -540,6 +540,24 @@ jobs:
         if: matrix.node == '22'
         run: node tools/images-epinglees.mjs Dockerfile .zap/Dockerfile
 
+      # ⚠️ ET ELLE NE S'APPLIQUAIT ENCORE QU'À MOITIÉ — au FICHIER, pas à la RÈGLE. L'étape
+      # ci-dessus refuse une étiquette mobile dans un `Dockerfile` ; pendant ce temps la forge
+      # lançait `postgres:16-alpine` en service et `postgrest/postgrest:v12.2.3` dans un
+      # `docker run` (audit CODEX 5.6, 25/08). Ces deux images-là font tourner les bancs de BASE :
+      # contraintes, atomicité, migrations réelles. Une preuve produite contre un PostgreSQL qui
+      # n'est pas celui qu'on croit reste une preuve, mais plus personne ne sait de quoi.
+      #
+      # ⚠️ LA SONDE NE LIT QUE DU YAML, ET C'EST UN CHOIX PAYÉ D'UN ÉCHEC. Un premier essai
+      # cherchait les images dans les blocs `run:` : il a accusé `host` (pris dans
+      # `--network host`) et deux images construites sur place, qui n'ont pas de registre et donc
+      # rien à épingler — trois faux positifs sur trois trouvailles. D'où la règle d'ÉCRITURE du
+      # dépôt : une image de registre se DÉCLARE (`services.*.image`, `container:`, ou un `env:`
+      # nommé `IMAGE_…`), jamais dans le corps d'une commande. La garde refuse aussi un
+      # `$IMAGE_…` employé sans déclaration, pour que la convention ne tienne pas au souvenir.
+      - name: Registry images pulled by the forge are pinned to a digest
+        if: matrix.node == '22'
+        run: node tools/images-des-workflows.mjs
+
       # ⚠️ LE SEUL DÉFAUT DE CE DÉPÔT QU'UN COMMIT NE CORRIGE PAS. `.gitignore` exclut `.env` et
       # `.env.*`, et aucun secret n'a jamais été commité — mais `.gitignore` ne protège qu'un
       # CHEMIN, et « ça n'est jamais arrivé » décrit le passé. Un jeton collé dans un test, une clé
@@ -718,7 +736,11 @@ jobs:
       postgres:
         # Un vrai Postgres, parce que le double en mémoire le dit lui-même : « pas de contraintes,
         # pas de transactions… PAS un substitut pour vérifier ce qui relève du SGBD ».
-        image: postgres:16-alpine
+        # ⚠️ ÉPINGLÉE PAR CONDENSAT, comme le Dockerfile et pour la même raison : `16-alpine`
+        # désigne une image différente chaque semaine, et deux exécutions du MÊME commit ne
+        # prouvent alors pas la même chose. L'étiquette reste à côté pour qu'un humain lise ce
+        # qu'il est censé lire ; le condensat fait foi (audit CODEX 5.6, 25/08).
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
         env:
           POSTGRES_PASSWORD: player
           POSTGRES_DB: player
@@ -953,6 +975,13 @@ jobs:
           # Valeur de banc, pas un identifiant : elle n'ouvre qu'un Postgres jetable créé six
           # étapes plus haut et détruit avec le conteneur. PostgREST exige 32 caractères en HS256.
           JWT: banc-vraie-base-secret-de-quarante-deux-caracteres
+          # ⚠️ L'IMAGE EST DÉCLARÉE, PAS ÉCRITE DANS LA COMMANDE — et c'est ce qui la rend
+          # vérifiable. Une référence noyée dans un bloc `run:` vit dans du SHELL : aucune sonde ne
+          # peut dire « ceci est une image » sans réécrire la grammaire de `docker run`, et un
+          # premier essai a accusé `host` (de `--network host`) et deux images construites sur
+          # place. Hissée en `env:`, elle est du YAML — lue, pas devinée. Le préfixe `IMAGE_` n'est
+          # pas décoratif : c'est lui que `tools/images-des-workflows.mjs` cherche.
+          IMAGE_POSTGREST: postgrest/postgrest:v12.2.3@sha256:729bf65c733b73f5b52777f0e4b853f22ed73aa67a22d38269d289779b0a8401
         run: |
           echo "PLAYER_TEST_JWT_SECRET=$JWT" >> "$GITHUB_ENV"
           docker run -d --name postgrest --network host \
@@ -961,7 +990,7 @@ jobs:
             -e PGRST_DB_SCHEMAS=public \
             -e PGRST_JWT_SECRET="$JWT" \
             -e PGRST_SERVER_PORT=3001 \
-            postgrest/postgrest:v12.2.3
+            "$IMAGE_POSTGREST"
           for i in $(seq 1 40); do curl -fsS localhost:3001/ >/dev/null 2>&1 && break || sleep 1; done
           curl -fsS localhost:3001/ >/dev/null || { echo "::error::PostgREST n'a pas démarré"; docker logs postgrest; exit 1; }
           # Supabase sert PostgREST sous /rest/v1 ; un PostgREST nu le sert à la racine. Ce renvoi
