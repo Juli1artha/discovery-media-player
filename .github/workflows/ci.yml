@@ -334,6 +334,18 @@ jobs:
         if: matrix.node == '22'
         run: node tools/plancher-de-node.mjs
 
+      # ⚠️ `crypto` EST UN GLOBAL DEPUIS NODE 18, ET CE N'EST PAS LE MÊME. L'extraction du lot 3 a
+      # déplacé `bot-tts` hors de `handler.js` sans emporter son `require` : `crypto.createHash(…)`
+      # a désigné WebCrypto, qui n'a pas cette méthode. `no-undef` ne pouvait rien voir — la
+      # variable EXISTE, elle désigne autre chose. Signalé par un hôte qui exécutait la panne.
+      #
+      # ⚠️ ET LA PANNE ÉTAIT TOTALE. `keyFor()` construit la clé du cache, donc il est appelé AVANT
+      # de le lire : le jet précède toujours la consultation, aucun « cache hit » ne protège. 500 à
+      # chaque appel, pendant deux versions, sur toute instance dont `plugins.bot` est posé.
+      - name: Node-only crypto methods are called on the module, never on the global
+        if: matrix.node == '22'
+        run: node tools/liaison-de-crypto.mjs
+
       # ⚠️ LA CARTE D'IDENTITÉ EST LA SEULE CHOSE QUE LES HÔTES ÉPINGLENT. Le contrat en montrait
       # une version périmée de cinq publications, à laquelle il manquait deux capacités. Un hôte
       # qui teste la présence d'une capacité d'après la doc conclut qu'elle n'existe pas. La
