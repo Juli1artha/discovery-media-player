@@ -23,7 +23,7 @@
 // Usage : node tools/zones-du-tarball.mjs <avant.tgz> <apres.tgz>
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, mkdtempSync, rmSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { createHash } from "node:crypto";
@@ -130,11 +130,15 @@ export function inventaireDuTarball(chemin) {
     execFileSync("tar", ["-xzf", chemin, "-C", dir], { stdio: ["ignore", "ignore", "pipe"] });
     const racine = join(dir, "package");
     const out = {};
+    // ⚠️ `withFileTypes` PLUTÔT QU'UN `statSync` SÉPARÉ. Interroger le type par un second appel
+    // ouvre une fenêtre entre le contrôle et l'usage — CodeQL l'a refusé, à raison sur la forme
+    // même si le répertoire vient d'être créé ici. Le type arrive avec l'entrée, donc il n'y a
+    // plus de « on a vérifié, puis on a fait » : il n'y a qu'un « on a lu ».
     const parcourir = (d) => {
-      for (const e of readdirSync(d)) {
-        const p = join(d, e);
-        if (statSync(p).isDirectory()) parcourir(p);
-        else out[relative(racine, p)] = createHash("sha256").update(readFileSync(p)).digest("hex");
+      for (const e of readdirSync(d, { withFileTypes: true })) {
+        const p = join(d, e.name);
+        if (e.isDirectory()) parcourir(p);
+        else if (e.isFile()) out[relative(racine, p)] = createHash("sha256").update(readFileSync(p)).digest("hex");
       }
     };
     parcourir(racine);
