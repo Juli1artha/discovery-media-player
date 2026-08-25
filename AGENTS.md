@@ -87,6 +87,30 @@ if (ACTIONS_LIEES_A_UNE_SESSION.has(body.action)) {
 this repository on 24/08, in two independent sessions, on the same day. **Re-read the region you
 edited.** Neither case was caught by a tool; both were caught by reading.
 
+## A check can only refuse if its two inputs stay distinguishable
+
+**Name both of them in the code, not only in the sentence.** Count the distinct nouns in the
+sentence describing your check; count the distinct handles in the code that runs it. If the code
+has fewer, the distinction was erased before the comparison and the check can no longer refuse.
+
+⚠️ Two of these landed on 24/08, in two sessions, on the same day — and neither was caught by a
+test, because both were green:
+
+| The sentence | Its nouns | The handle in the code |
+|---|---|---|
+| "compare the registry archive with the Release archive" | two | one — both files are `discovery-media-player-X.tgz`, downloaded into the same directory |
+| "count the remaining calls in the code" | two (calls, code) | one — the lines a `grep` returns, where a comment and a call are the same thing |
+
+In both cases the instrument was applied **downstream of the point where the property was still
+visible**: a file path carries no notion of provenance, a line carries no notion of being
+executable. After that, no amount of care in the comparison can restore it.
+
+**The three-second test:** try to give one of the two inputs a deliberately different value. If you
+cannot do it without changing the setup — because they share the handle — that is the proof.
+
+This is not "make sure your check can fail", which says nothing about where to look. It says the
+boundary to inspect is the one between your sentence and your wiring.
+
 ## An assertion that costs its author is still an assertion
 
 **Nobody re-checks a claim that makes its author look bad.** It reads as expensive, therefore
