@@ -48,6 +48,17 @@ import { estExecuteDirectement } from "./execute-directement.mjs";
 export const OU_EST_ECRIT_LE_PLANCHER_DEV = "CONTRIBUTING.md";
 
 /**
+ * Le document où le plancher de PRODUCTION est écrit pour qui installe le paquet.
+ *
+ * ⚠️ `engines` NE SE LIT PAS HORS LIGNE PAR UN HUMAIN. Relevé le 25/08 : sur les cinq documents que
+ * le tarball emporte, `docs/HOST-CONTRACT.md` — celui que les hôtes épinglent — ne contenait pas une
+ * occurrence du mot « node ». Le seul énoncé lisible du plancher était un badge shields.io du
+ * README : une IMAGE DISTANTE, donc invisible dans `node_modules`, c'est-à-dire exactement là où un
+ * auto-hébergeur lit. `CONTRIBUTING.md` ne voyage pas, et il porte l'autre plancher.
+ */
+export const OU_EST_ECRIT_LE_PLANCHER_PROD = "docs/HOST-CONTRACT.md";
+
+/**
  * Ce que les paquets du verrou exigent de Node.
  *
  * ⚠️ `production: true` retient les entrées SANS le drapeau `dev` — celles qu'un `npm i` d'un
@@ -180,9 +191,19 @@ if (estExecuteDirectement(import.meta.url)) {
       );
     }
 
+    // ⚠️ MÊME CONFRONTATION QUE POUR CONTRIBUTING, SUR L'AUTRE PLANCHER ET L'AUTRE LECTEUR. Un
+    // hôte ne clone rien : ce qu'il reçoit, c'est le tarball. Si le nombre n'est pas dans le
+    // document qui voyage, il n'existe pas pour lui.
     const plancherProd = semver.minVersion(declare);
+    const contrat = readFileSync(OU_EST_ECRIT_LE_PLANCHER_PROD, "utf8");
+    if (!plancherEcritDans(contrat, plancherProd.version)) {
+      return violation(
+        `${OU_EST_ECRIT_LE_PLANCHER_PROD} n'écrit nulle part le plancher de production (node ${plancherProd.version}, dérivé de engines ${declare}) — c'est le seul document que le tarball emporte où un auto-hébergeur puisse le lire hors ligne, et npm ne fait qu'avertir sous le plancher`,
+      );
+    }
+
     return conforme(
-      `plancher de node : engines dit ${declare} (soit ${plancherProd} au plus bas), et aucune des ${prod.exigences.length} dépendance(s) de production n'exige davantage — plancher de développement mesuré à ${plancherDev.version}, écrit dans ${OU_EST_ECRIT_LE_PLANCHER_DEV} (${tout.exigences.length} exigences lues au total)`,
+      `plancher de node : engines dit ${declare} (soit ${plancherProd} au plus bas), et aucune des ${prod.exigences.length} dépendance(s) de production n'exige davantage — production ${plancherProd} écrite dans ${OU_EST_ECRIT_LE_PLANCHER_PROD}, développement ${plancherDev.version} écrit dans ${OU_EST_ECRIT_LE_PLANCHER_DEV} (${tout.exigences.length} exigences lues au total)`,
     );
   }));
 }

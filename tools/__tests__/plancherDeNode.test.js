@@ -13,6 +13,10 @@
 
 import { readFileSync } from "node:fs";
 
+import semver from "semver";
+
+import { PROMIS } from "../documents-publies.mjs";
+
 import { describe, it, expect } from "vitest";
 
 import {
@@ -21,6 +25,7 @@ import {
   plancherProuve,
   plancherEcritDans,
   OU_EST_ECRIT_LE_PLANCHER_DEV,
+  OU_EST_ECRIT_LE_PLANCHER_PROD,
 } from "../plancher-de-node.mjs";
 
 /** Un verrou minimal : l'entrée `""` est le paquet lui-même, comme npm l'écrit. */
@@ -160,6 +165,19 @@ describe("le dépôt tel qu'il est", () => {
     expect(illisibles).toEqual([]);
     expect(exigences.length).toBeGreaterThan(0);
     expect(tropLarges(paquet.engines.node, exigences)).toEqual([]);
+  });
+
+  it("⚠️ le plancher de production est écrit dans le SEUL document où un hôte puisse le lire hors ligne", () => {
+    // `engines` est machine-lisible et npm ne fait qu'AVERTIR en dessous. Le badge du README qui
+    // l'affichait est une image distante : invisible dans `node_modules`, là où l'hôte lit.
+    const plancher = semver.minVersion(paquet.engines.node).version;
+    expect(plancherEcritDans(readFileSync(OU_EST_ECRIT_LE_PLANCHER_PROD, "utf8"), plancher)).toBe(true);
+  });
+
+  it("⚠️ et ce document VOYAGE — un plancher écrit dans un fichier que le tarball laisse ne sert à personne", () => {
+    // Pas une heuristique sur `files` : la liste de ce qui part est déjà décidée et gardée
+    // ailleurs, avec la raison de chaque entrée. On interroge CETTE liste, pas une seconde copie.
+    expect(Object.keys(PROMIS)).toContain(OU_EST_ECRIT_LE_PLANCHER_PROD);
   });
 
   it("⚠️ le plancher de développement mesuré est écrit dans le document que lit un contributeur", () => {
