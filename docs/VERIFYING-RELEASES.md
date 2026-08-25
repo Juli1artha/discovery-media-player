@@ -182,6 +182,27 @@ an artefact nobody has opened until someone opens it, and the failure mode it hi
 pattern in `package.json#files` that removes one entry too many takes a needed document with it,
 and no test fails.
 
+## The signature bundle on the Release
+
+Each Release carries the Sigstore bundle that signs its tarball, named for its version —
+`discovery-media-player-0.1.135.sigstore.json`. The name is deliberate twice over: `.sigstore.json`
+is the extension the Sigstore bundle specification prescribes for JSON-serialised bundles, and it is
+also a suffix the OpenSSF Scorecard recognises as a release signature. The same bytes used to ship
+as `attestation.json` — a real signature that scored zero on the Signed-Releases check, because no
+asset name said "signature" in a vocabulary the tool reads. The workflow checks the file's
+`mediaType` is a Sigstore bundle *before* giving it that name: the name asserts a format, so the
+format is verified first.
+
+Verification never depended on the asset name — `gh attestation verify` fetches the attestation
+from GitHub's store by the artifact's digest:
+
+```bash
+gh attestation verify discovery-media-player-0.1.135.tgz --repo Juli1artha/discovery-media-player
+```
+
+Releases up to 0.1.135 published the bundle as `attestation.json`. Where a release carries both
+names, they are the same bytes — compare their `sha256` if you want to see it rather than read it.
+
 ## The container image
 
 The image is built multi-architecture with an SBOM and full provenance
@@ -209,7 +230,7 @@ docker buildx imagetools inspect ghcr.io/juli1artha/discovery-media-player:v0.1.
 ## The software bill of materials
 
 Each GitHub Release carries a CycloneDX SBOM named for its version —
-`discovery-media-player-v0.1.128.cdx.json` — listing the production dependency tree of the
+`discovery-media-player-0.1.135.cdx.json` — listing the production dependency tree of the
 published package. It is generated at build time by `npm sbom` from the same installed tree the
 tarball is published from, in the release workflow, and the workflow fails if it comes out empty.
 

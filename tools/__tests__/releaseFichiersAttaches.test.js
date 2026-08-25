@@ -1,7 +1,7 @@
 // LES FICHIERS QUE LA RELEASE PROMET, ET CEUX QU'ELLE VÉRIFIE, SONT LA MÊME LISTE.
 //
 // ⚠️ CE QUI EST ARRIVÉ (rejeu du 22/08). `files:` disait `paquet/*.jsonl` ; le bundle produit par
-// l'action d'attestation s'appelle `attestation.json`. Le motif ne correspondait à rien —
+// l'action d'attestation s'appelait alors `attestation.json`. Le motif ne correspondait à rien —
 // `softprops/action-gh-release` IGNORE SILENCIEUSEMENT un motif sans correspondance. La Release a
 // donc reçu deux fichiers sur les trois annoncés, avec les cinq jobs au vert et pas un mot.
 //
@@ -45,10 +45,38 @@ describe("⚠️ LA RELEASE NE PEUT PAS PROMETTRE UN FICHIER QU'ELLE NE CONTRÔL
     expect(motifsDeLaGarde(etapes[indexGarde].run)).toEqual(motifsPromis(etapes[indexRelease].with.files));
   });
 
-  it("elle en promet quatre : le tarball, son condensat, sa provenance, son SBOM", () => {
+  it("elle en promet quatre : le tarball, son condensat, sa signature, son SBOM", () => {
     // Le compte est le fait qui a été rompu en silence. Ce banc avait prévu le cas : « un jour on
     // en attachera un quatrième — il faudra alors le dire ici ». C'est fait, et le quatrième est
     // le SBOM CycloneDX du paquet, produit par `attester` à côté du tarball qu'il décrit.
     expect(motifsPromis(etapes[indexRelease].with.files)).toHaveLength(4);
+  });
+
+  it("⚠️ au moins un actif promis porte un suffixe que Scorecard reconnaît comme signature", () => {
+    // ⚠️ UNE VRAIE SIGNATURE SOUS LE MAUVAIS NOM COMPTE ZÉRO, ET C'EST ARRIVÉ ICI. L'OpenSSF
+    // Scorecard — v5.5.0, celle qu'embarque l'action épinglée par scorecard.yml — ne reconnaît
+    // une release comme signée qu'à un suffixe de sa liste (probes/releasesAreSigned/impl.go,
+    // lue sur le source du tag) : .asc, .minisig, .sig, .sign, .sigstore, .sigstore.json.
+    // Le bundle s'appelait `attestation.json` — chaque sortie signée depuis la 0.1.130, et
+    // Signed-Releases à 0/10, parce qu'aucun nom d'actif ne le DISAIT dans un vocabulaire
+    // que l'outil comprend.
+    //
+    // Ce test empêche le retour silencieux de ce faux négatif : renommer le bundle hors de la
+    // liste — revenir au nom de l'action, « simplifier » l'extension — rend le score faux sans
+    // rien casser d'autre, et c'est précisément la classe de dérive qu'un banc doit attraper.
+    // La liste est recopiée ici EN DUR, comme l'étiquette d'à côté d'un SHA : si Scorecard
+    // change la sienne, c'est une montée de version à relire, pas une constante à suivre.
+    const SUFFIXES_SCORECARD = [".asc", ".minisig", ".sig", ".sign", ".sigstore", ".sigstore.json"];
+    const promis = motifsPromis(etapes[indexRelease].with.files);
+    const reconnus = promis.filter((p) => SUFFIXES_SCORECARD.some((s) => p.endsWith(s)));
+    expect(reconnus, "aucun actif promis ne porte un suffixe de signature reconnu — Signed-Releases retomberait à 0 en silence")
+      .not.toHaveLength(0);
+  });
+
+  it("le bundle promis porte la version, pas un nom générique", () => {
+    // `attestation.json` était aussi un nom ANONYME : détaché de la release, il ne dit pas ce
+    // qu'il signe. Le motif promis doit être versionné comme le tarball et le SBOM le sont.
+    const sigstore = motifsPromis(etapes[indexRelease].with.files).find((p) => p.endsWith(".sigstore.json"));
+    expect(sigstore).toMatch(/discovery-media-player-.*\.sigstore\.json$|\*\.sigstore\.json$/);
   });
 });
