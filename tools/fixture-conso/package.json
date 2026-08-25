@@ -1,0 +1,9 @@
+{
+  "name": "fixture-conso",
+  "private": true,
+  "description": "Éprouvette consommateur des bancs CI : les dépendances qu'un consommateur du tarball reçoit, épinglées par empreinte (package-lock commité, npm ci). Le player lui-même est posé depuis le tarball du commit, par tar. Cohérence avec la racine tenue par tools/__tests__/fixtureConso.test.js.",
+  "dependencies": {
+    "pdfjs-dist": "6.2.108",
+    "typescript": "5.9.3"
+  }
+}
