@@ -346,6 +346,21 @@ jobs:
         if: matrix.node == '22'
         run: node tools/liaison-de-crypto.mjs
 
+      # ⚠️ LA RÈGLE A DÉJÀ ÉTÉ POSÉE UNE FOIS, ET ELLE N'A TENU QUE LÀ OÙ ELLE ÉTAIT ÉCRITE. Le
+      # premier scan ZAP baseline (règle 10019, 24/08) a trouvé des refus qui partaient avec un
+      # code et un corps et RIEN d'autre : pas de `Content-Type`, donc le seul corps de ce serveur
+      # qu'un navigateur avait le droit de deviner. `refuserEnTexte` est née là. Un mois plus tard,
+      # l'audit CODEX 5.6 en trouvait trois autres — le `500` du bout de `/doc`, sans aucun type ;
+      # le `400` « aucun document demandé », typé mais sans `nosniff` ; et les deux réponses de
+      # `bin/serve.js`. Une règle réappliquée à la main se réapplique mal.
+      #
+      # ⚠️ ET ZAP NE POUVAIT PAS LES VOIR. Le scan visite trois surfaces servies ; un `500`
+      # d'exception et un `400` de paramètre manquant ne sont sur aucune d'elles. Ce qu'un scanner
+      # atteint dépend de ce qu'on lui donne à visiter — la garde, elle, lit les 25 fichiers.
+      - name: A hand-written text body never leaves without its type and nosniff
+        if: matrix.node == '22'
+        run: node tools/corps-en-texte.mjs
+
       # ⚠️ LA CARTE D'IDENTITÉ EST LA SEULE CHOSE QUE LES HÔTES ÉPINGLENT. Le contrat en montrait
       # une version périmée de cinq publications, à laquelle il manquait deux capacités. Un hôte
       # qui teste la présence d'une capacité d'après la doc conclut qu'elle n'existe pas. La

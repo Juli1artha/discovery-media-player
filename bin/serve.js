@@ -144,8 +144,11 @@ const serveur = http.createServer(async (req, res) => {
     url.pathname === "/api/doc" || url.pathname === "/doc" || url.pathname === "/present" ||
     q.slug || q.present || q.preview || q.contract;
   if (!routeConnue) {
-    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end("Not found");
+    // ⚠️ LA MÊME FONCTION QUE LE PLAYER, PAS LA MÊME RECETTE ÉCRITE DEUX FOIS. Ces deux réponses
+    // posaient leur `Content-Type` mais PAS `nosniff` — la moitié de la règle, appliquée à la
+    // main, dans le seul fichier où le player ne pouvait pas la poser lui-même. Même raison que
+    // POLITIQUE_PERMISSIONS quelques lignes plus haut : deux exemplaires d'un fait divergent.
+    player.refuserEnTexte(res, 404, "Not found");
     return;
   }
 
@@ -159,8 +162,9 @@ const serveur = http.createServer(async (req, res) => {
     await player.handler(req, res);
   } catch (error) {
     console.error("[player] erreur non rattrapée", error);
-    if (!res.headersSent) res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end("Erreur");
+    // `refuserEnTexte` porte elle-même la garde `headersSent` : une erreur survenue APRÈS le début
+    // de l'écriture ne peut plus rien poser, et tenter de le faire jetterait dans le rattrapage.
+    player.refuserEnTexte(res, 500, "Erreur");
   }
 });
 

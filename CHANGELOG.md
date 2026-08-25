@@ -13,6 +13,27 @@ the notes there are this file's section for that version.
 ## [Unreleased]
 
 ### Fixed
+- ⚠️ **Three text responses left this server without the rule the repository had already written.**
+  The `500` at the end of `/doc` posted a status and a body and **nothing else** — no
+  `Content-Type` at all, the one body a browser was allowed to guess. The `400` "no document
+  requested" posted the type but not `nosniff`. And both text responses of `bin/serve.js` rewrote
+  the recipe by hand, in the one file where the player could not post it itself. Found by the CODEX
+  5.6 audit, 25/08.
+  - The rule was not new: `refuserEnTexte()` exists precisely for this, added a month earlier when
+    the first ZAP baseline scan (rule 10019) found the relay's refusals bare. **A rule reapplied by
+    hand is reapplied badly** — the same lesson as the funnel bounds written in two places out of
+    three. So there is now **one** function through which a text body leaves this server, and
+    `bin/serve.js` calls it rather than keeping a second copy, exactly as it already does for
+    `POLITIQUE_PERMISSIONS`.
+  - ⚠️ **It now survives headers that have already gone out.** Its first caller is the `catch` of
+    `/doc`, and an error can arrive there *after* `sendHtml` has begun writing: `setHeader` then
+    throws `ERR_HTTP_HEADERS_SENT` **inside the recovery itself**, turning a reported error into an
+    unhandled rejection. A naive fix would have introduced that. Nothing can be posted at that
+    point, so it closes the stream and stays quiet — the error has already gone to
+    `errors.capture`.
+  - ⚠️ **ZAP could not have seen any of this.** The scan visits three served surfaces; an exception
+    `500` and a missing-parameter `400` are on none of them. What a scanner reaches depends on what
+    it is given to visit — which is exactly why the guard below reads files instead.
 - ⚠️ **The `[Unreleased]` section had been written twice.** Two branches each opened their own,
   git merged both without a conflict — the file then carried two identical titles, and
   `sectionDe()` (which the release preflight uses to extract a version's notes) stops at the first.
@@ -60,6 +81,15 @@ the notes there are this file's section for that version.
     from 90.31% to **90.81%**.
 
 ### Added
+- **A guard that refuses a hand-written text body sent without its type and `nosniff`.** It reads an
+  **AST**, not a pattern: this repository has paid three times for regex guards — `uses:`, `FROM`,
+  and `crypto`, where the last one accused the very file it had just had fixed.
+  - ⚠️ **Its first version was wrong, and measuring said so.** It flagged every string literal and
+    accused seven `res.end('{"ok":…}')` in `routes-liens.js` — seven JSON bodies that post their
+    type, line by line. Seven false accusations out of seven findings, the same failure as the
+    `docker run` pattern the day before. Corrected in the guard, not in the correct code: the rule
+    is the one written by hand three times — *a body in **text** (type absent, or `text/…`) must
+    forbid sniffing*. A JSON body declaring `application/json` is not that fault.
 - **The registry images CI pulls are pinned by digest.** `postgres:16-alpine` (the real-database
   benches) and `postgrest/postgrest:v12.2.3` ran on moving tags: two runs of the *same* commit
   could prove different things, and a version tag is a publisher's convention, not a property of

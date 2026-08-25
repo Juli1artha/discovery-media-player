@@ -163,6 +163,30 @@ describe("les en-têtes de la page d'accueil", () => {
   });
 });
 
+// ⚠️ LES DEUX RÉPONSES EN TEXTE DE CE FICHIER POSAIENT LEUR TYPE, MAIS PAS `nosniff` — la moitié
+// de la règle. Elles la réécrivaient à la main dans le seul fichier où le player ne pouvait pas la
+// poser lui-même (audit CODEX 5.6, 25/08). Elles appellent maintenant la MÊME fonction que les
+// refus du player, comme POLITIQUE_PERMISSIONS l'est déjà : deux exemplaires d'un fait divergent.
+describe("les refus en texte du serveur autonome", () => {
+  const { serveur } = require("../serve.js");
+  const repondre = serveur.listeners("request")[0];
+
+  const resTexte = () => ({
+    statusCode: 0, entetes: {}, corps: null, headersSent: false,
+    setHeader(k, v) { this.entetes[k] = v; },
+    writeHead(c, h) { this.statusCode = c; Object.assign(this.entetes, h || {}); },
+    end(b) { if (b !== undefined) this.corps = String(b); this.headersSent = true; },
+  });
+
+  it("⚠️ une route inconnue : 404, type ET nosniff", async () => {
+    const res = resTexte();
+    await repondre({ url: "/rien-du-tout", headers: {}, method: "GET" }, res);
+    expect(res.statusCode).toBe(404);
+    expect(res.entetes["Content-Type"]).toBe("text/plain; charset=utf-8");
+    expect(res.entetes["X-Content-Type-Options"], "un corps en texte que le navigateur peut requalifier").toBe("nosniff");
+  });
+});
+
 // ⚠️ LA PAGE DE PREMIER CONTACT NE DOIT PROMETTRE QUE CE QUE LA VISIONNEUSE SAIT OUVRIR.
 //
 // Elle tenait sa propre liste d'extensions, qui contenait encore `.svg` après son retrait de la

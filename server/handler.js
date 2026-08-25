@@ -197,7 +197,22 @@ const PLAFOND_RELAIS = Number(process.env.PLAYER_MAX_RELAY_BYTES || 0) || 60 * 1
 // un corps, sans Content-Type : le seul corps de ce serveur qu'un navigateur avait le droit de
 // deviner, alors que la règle `nosniff` est écrite partout ailleurs. Relevé par le premier scan
 // ZAP baseline (règle 10019, 24/08).
+//
+// ⚠️ ET LA CORRECTION D'ALORS N'A PAS TENU PARTOUT — trois réponses en texte lui ont échappé,
+// dont le `500` du bout de `/doc` qui ne posait AUCUN type (audit CODEX 5.6, 25/08). Ce n'est pas
+// un oubli à rattraper une fois de plus : c'est le signe qu'une règle appliquée à la main se
+// réapplique mal. Il n'y a donc plus qu'UNE fonction par laquelle un corps en texte quitte ce
+// serveur — et `bin/serve.js` l'appelle aussi, plutôt que d'en tenir une seconde copie, comme il
+// le fait déjà pour POLITIQUE_PERMISSIONS.
+//
+// ⚠️ ELLE DOIT SURVIVRE À UN EN-TÊTE DÉJÀ PARTI. Son premier appelant est le `catch` de `/doc`,
+// et une erreur peut y arriver APRÈS que `sendHtml` ait commencé à écrire : `setHeader` jette
+// alors `ERR_HTTP_HEADERS_SENT`, dans le rattrapage lui-même, ce qui transforme une erreur
+// signalée en rejet non rattrapé. On ne peut plus rien poser à ce stade — le statut est parti —
+// donc on ferme le flux et on se tait, ce qui est exactement ce que le client verra de toute
+// façon. Se taire ici n'efface rien : l'erreur a déjà été confiée à `errors.capture`.
 function refuserEnTexte(res, statut, message) {
+  if (res.headersSent) { try { res.end(); } catch { /* flux déjà clos */ } return; }
   res.statusCode = statut;
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -540,10 +555,9 @@ async function handler(req, res) {
     // rien à afficher, et ce n'est pas un refus. Le dire franchement évite qu'un intégrateur
     // cherche un lien révoqué là où il lui manque un paramètre.
     if (req.method === "GET" && !slug && !q.present && !q.preview && !q.contract && !q.asset) {
-      res.statusCode = 400;
-      res.setHeader("Content-Type", "text/plain; charset=utf-8");
-      res.end("Aucun document demandé. Attendu : ?slug=… , ?present=… , ?preview=1, ?contract=1 ou ?asset=….\n" +
-              "Si vous intégrez le player, vérifiez que la plateforme fournit les paramètres de requête.");
+      refuserEnTexte(res, 400,
+        "Aucun document demandé. Attendu : ?slug=… , ?present=… , ?preview=1, ?contract=1 ou ?asset=….\n" +
+        "Si vous intégrez le player, vérifiez que la plateforme fournit les paramètres de requête.");
       return;
     }
 
@@ -1045,7 +1059,7 @@ async function handler(req, res) {
     return sendHtml(res, 200, viewerHtml(share, nonce, logoUrl, pitch), `'nonce-${nonce}'`, originesImages(logoUrl, share), frameAncestors);
   } catch (error) {
     try { await PLAYER.errors.capture(error, { route: "doc", method: req.method }); } catch { /* ignore */ }
-    res.statusCode = 500; res.end("Erreur");
+    refuserEnTexte(res, 500, "Erreur");
   }
 }
 
@@ -1054,6 +1068,6 @@ async function handler(req, res) {
 // tenir une seconde liste — c'est la seule façon qu'une empreinte périmée finisse par se voir.
 // ⚠️ Exporté pour être ÉPROUVÉ, pas pour être appelé : le plafond du relais ne se vérifie qu en
 // regardant si le corps a été lu, ce qu aucune route ne peut montrer de l extérieur.
-module.exports = { handler, init, TIERS, POLITIQUE_PERMISSIONS, __relayerFichier: relayerFichier, __jsonPourScript: jsonPourScript };
+module.exports = { handler, init, TIERS, POLITIQUE_PERMISSIONS, refuserEnTexte, __relayerFichier: relayerFichier, __jsonPourScript: jsonPourScript };
 
 // redeploy: forcer le build production (Vercel a sauté la prod du merge #463 — wording re-partage).
