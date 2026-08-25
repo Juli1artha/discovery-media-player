@@ -763,6 +763,10 @@ jobs:
           union all select 'replident', relname, c.relreplident::text, '', ''
             from pg_class c join pg_namespace n on n.oid=c.relnamespace
             where n.nspname='public' and c.relkind='r'
+          union all select 'contrainte', rel.relname, con.conname,
+                 pg_get_constraintdef(con.oid) || ' valid=' || con.convalidated::text, ''
+            from pg_constraint con join pg_class rel on rel.oid=con.conrelid
+            join pg_namespace n on n.oid=rel.relnamespace where n.nspname='public'
           order by 1,2,3,4;
           SQL
           $PSQL -f /tmp/forme.sql > /tmp/avant.txt
