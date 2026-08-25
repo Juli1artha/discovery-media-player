@@ -10,6 +10,58 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [0.1.136] — 2026-08-25
+
+**Nothing in this release changes what a host runs.** Measured on the shipped paths rather than
+claimed: between `v0.1.135` and this commit, the only file inside the package that differs is
+`package.json` — the version, and one development-only tool. `server/`, `context/`, `dist/`,
+`bin/`, `types/`, `supabase/` and every published document are untouched.
+
+The Release notes below carry that same fact, computed independently by the release workflow from
+the two published tarballs. If the two disagree, believe the tarballs and open an issue.
+
+### Fixed
+- **A real signature was scoring zero.** OpenSSF Scorecard rated `Signed-Releases` **0/10** on a
+  project that has signed every release since 0.1.130. Not a signature defect — a **naming** one:
+  Scorecard v5.5.0 recognises a release signature only by its suffix, from a closed list
+  (`.asc`, `.minisig`, `.sig`, `.sign`, `.sigstore`, `.sigstore.json`), read in the source of tag
+  v5.5.0 rather than taken on trust. Our Sigstore bundle — with certificate, Rekor entry, DSSE
+  envelope and SLSA provenance — was called `attestation.json`, the temporary name the action gives
+  it, and counted for nothing.
+  - ⚠️ **Release assets are renamed**: the bundle is now
+    `discovery-media-player-<version>.sigstore.json`, versioned like the tarball and the SBOM. If
+    you script a verification against the asset name, this is the release that changes it. The
+    workflow verifies the Sigstore mediaType **before** applying that name — a name asserts a
+    format, so the format is checked first.
+
+### Added
+- **Release notes now say what changed in the package, by zone.** Computed by the workflow on the
+  two published tarballs, never typed: `server`, `context`, `browser`, `browser-types`, `cli`,
+  `types`, `database`, `documents`, `manifest` — each with how many files were added, removed and
+  changed. A path no zone claims is **named**, not swallowed.
+  - The cut inside `dist/` is on the suffix, because the two artefacts have different consumers:
+    `dist/*.js` is what the visitors' page executes, `dist/*.d.ts` is what your `tsc` reads. One
+    breaks at runtime, the other at build time.
+- **A changed migration now stops the reader instead of being counted.** In `database`, *added* is
+  an action and *changed* is an alarm — a migration already applied elsewhere must be immutable.
+  The block leaves the table, names the files, and carries the unified diff plus the objects the
+  migration touches, so you can probe your own database instead of guessing which object to look
+  for.
+  - ⚠️ It sends you to the **objects**, not to a migration registry. Measured on a production
+    database: its registry recorded 9 of the 17 migrations it had actually applied. A registry only
+    records what went through one particular path.
+- **CI refuses a migration that leaves no sign of its own** — one that cannot be told apart from
+  its neighbour by probing a database. See [`docs/MIGRATIONS.md`](docs/MIGRATIONS.md).
+
+### Changed
+- **[`docs/VERIFYING-RELEASES.md`](docs/VERIFYING-RELEASES.md) says what a reader cannot establish
+  alone.** Two attestations exist per version and neither speaks for the other; the workflow
+  already refuses to attach an archive whose digest differs from the registry's, so the gap is not
+  in the pipeline but in what someone downloading can prove for themselves. The page adds the step
+  that ties a verified archive to the copy you actually install — your own lockfile's `integrity` —
+  and records what was checked, when, and by whom.
+- **The roadmap states its refusals**, and coverage is published rather than asserted.
+
 ## [0.1.135] — 2026-08-24
 
 A train about **what the package actually hands you**. Nothing here changes what the player does;
@@ -3834,7 +3886,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.135...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.136...HEAD
+[0.1.136]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.135...v0.1.136
 [0.1.135]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.134...v0.1.135
 [0.1.134]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.133...v0.1.134
 [0.1.133]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.132...v0.1.133
