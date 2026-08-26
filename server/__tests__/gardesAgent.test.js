@@ -178,10 +178,15 @@ describe("⚠️ ON COMPTE LES ACTIONS, PAS LES IMPLÉMENTATIONS", () => {
   // action ajoutée à l'un sans l'autre le fait rougir, sans que personne ait à y penser.
   const source = readFileSync(require.resolve("../routes-agent.js"), "utf8");
 
+  // ⚠️ ON LIT TOUT LE FICHIER, PAS LA SEULE LIGNE D'AIGUILLAGE DE L'ASSISTANT. `bot-tts` est
+  // aiguillée PLUS HAUT, dans son propre bloc : une sonde qui ne regardait que la ligne du bloc
+  // assistant l'aurait déclarée « absente de l'aiguillage » alors qu'elle y est, ailleurs. La
+  // propriété gardée est « toute action de l'assistant prouve sa session », pas « toute action
+  // écrite sur CETTE ligne ». La ligne reste vérifiée juste en dessous, pour l'anti-vacuité.
   const actionsDeLAiguillage = () => {
     const ligne = source.split("\n").find((l) => (l.match(/body\.action === "bot-/g) || []).length >= 3);
     expect(ligne, "l'aiguillage de l'assistant n'a pas été retrouvé : la sonde vise à côté").toBeTruthy();
-    return [...ligne.matchAll(/body\.action === "([^"]+)"/g)].map((m) => m[1]);
+    return [...new Set([...source.matchAll(/body\.action === "(bot-[^"]+)"/g)].map((m) => m[1]))];
   };
 
   const listeDeclaree = () => {
@@ -210,7 +215,12 @@ describe("⚠️ ON COMPTE LES ACTIONS, PAS LES IMPLÉMENTATIONS", () => {
   it("⚠️ et la liaison n'est écrite QU'UNE FOIS", () => {
     // Écrite sept fois, elle serait oubliée une huitième au prochain ajout. Le défaut n'était pas
     // la ligne absente : c'était que sa présence dépende de la mémoire de qui écrit l'action.
-    expect((source.match(/share_slug !== share\.slug/g) || []).length).toBe(1);
+    //
+    // ⚠️ LE MOTIF ACCEPTE LES DEUX SENS DE LA COMPARAISON, ET C'EST UNE LEÇON. Il ne cherchait que
+    // `!==` ; le jour où la liaison est devenue une FONCTION NOMMÉE — donc écrite `===` —, la garde
+    // a compté ZÉRO occurrence et rougi sur un dépôt devenu plus propre, pas moins. Une sonde qui
+    // épingle une écriture au lieu d'une propriété refuse le refactor qui sert son intention.
+    expect((source.match(/share_slug\s*[!=]==\s*share\.slug/g) || []).length).toBe(1);
   });
 
   for (const [action, corps] of [

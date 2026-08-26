@@ -80,7 +80,7 @@ const SYNTHESES_SIMULTANEES = 4;
 const cacheSynthese = creerCache({ ttlMs: 60_000, max: 500, maxEnVol: SYNTHESES_SIMULTANEES });
 
 /** Bornes et mémoire de la synthèse, exposées pour les bancs et l'exploitation. */
-const _tts = { cache: cacheSynthese, SYNTHESES_SIMULTANEES, MAX_REPONSE_OCTETS, DELAI_SYNTHESE_MS };
+const _tts = { cache: cacheSynthese, SYNTHESES_SIMULTANEES, MAX_REPONSE_OCTETS, DELAI_SYNTHESE_MS, ditsParAssistant };
 let PLAYER = null; let docbot = null;
 const init = (ctx) => { PLAYER = ctx; docbot = ctx.plugins.bot; };
 
@@ -97,7 +97,55 @@ const init = (ctx) => { PLAYER = ctx; docbot = ctx.plugins.bot; };
  */
 const ACTIONS_LIEES_A_UNE_SESSION = new Set([
   "bot-say", "bot-history", "bot-nudge", "bot-book", "bot-contact", "bot-rate", "bot-script",
+  // ⚠️ `bot-tts` REJOINT LA LISTE LE 26/08, ET ELLE N'EN FAISAIT PARTIE D'AUCUNE MANIÈRE.
+  // Elle acceptait `body.text` tel quel : un slug public valide suffisait, aucune session n'était
+  // exigée, et rien ne rattachait le texte à une réponse réellement produite. C'est la seule route
+  // de ce dépôt qui DÉPENSE DE L'ARGENT — chaque appel non caché est une facture ElevenLabs.
+  // Elle est aiguillée plus haut que le bloc assistant, donc elle applique la liaison elle-même ;
+  // c'est `gardesAgent.test.js` qui confronte cette liste à l'aiguillage pour qu'un oubli rougisse.
+  "bot-tts",
 ]);
+
+/** Les rôles sous lesquels un hôte peut désigner l'assistant. Ce que le visiteur écrit n'en est pas. */
+const ROLES_ASSISTANT = new Set(["bot", "assistant", "ai"]);
+
+/** La normalisation d'un texte à synthétiser — une seule définition, deux côtés de la confrontation. */
+const normaliserTexte = (t) => String(t == null ? "" : t).replace(/\s+/g, " ").trim().slice(0, 700);
+
+/**
+ * Ce que l'assistant a RÉELLEMENT dit dans cette session, sous sa forme PRONONCÉE.
+ *
+ * ⚠️ ON COMPARE LE PRONONCÉ, PAS L'ÉCRIT, ET C'EST PLUS FORT. `pronFix` peut envoyer deux
+ * orthographes différentes sur la même prononciation ; or c'est le prononcé qui fait l'empreinte du
+ * cache. Un texte accepté est donc SOIT un message réel, SOIT un texte dont l'extrait est déjà en
+ * cache — dans les deux cas, aucune facture nouvelle. Comparer l'écrit refuserait des cas légitimes
+ * ET laisserait passer des cas payants. Suggestion d'un hôte intégrateur, meilleure que la nôtre.
+ *
+ * ⚠️ ET ON REFUSE PAR DÉFAUT. La forme d'un message vient du greffon de l'hôte, qu'aucun contrat
+ * n'écrit aujourd'hui. Un message sans rôle reconnu n'est PAS traité comme venant de l'assistant :
+ * un jeu de messages illisible rend un ensemble vide, donc tout est refusé. Sur une route qui
+ * dépense, « je n'ai pas su vérifier » doit se lire « non », jamais « d'accord ».
+ */
+function ditsParAssistant(messages, prononcer) {
+  const dits = new Set();
+  for (const m of Array.isArray(messages) ? messages : []) {
+    if (!m || typeof m !== "object") continue;
+    if (!ROLES_ASSISTANT.has(String(m.role || "").toLowerCase())) continue;
+    const brut = typeof m.text === "string" ? m.text : typeof m.content === "string" ? m.content : "";
+    const t = normaliserTexte(brut);
+    if (t) dits.add(prononcer(t));
+  }
+  return dits;
+}
+
+/**
+ * Une session appartient-elle au document demandé ? UNE définition, deux appelants — c'est la leçon
+ * déjà tirée dans le bloc assistant : une garde recopiée est une garde qu'on oublie quelque part.
+ */
+async function sessionDuDocument(sessionId, share) {
+  const liee = await docbot.getSession(String(sessionId || ""));
+  return !!(liee && liee.share_slug === share.slug);
+}
 
 async function traiter(req, res, body, _slug) {
       if (body.action === "bot-tts") {
@@ -108,10 +156,20 @@ async function traiter(req, res, body, _slug) {
           if (!apiKey) return jp(200, { ok: false, disabled: true });
           const share = await getShareBySlug(String(body.slug || ""));
           if (!share || !share.bot_enabled) return jp(404, { ok: false, error: "bot" });
-          const text = String(body.text || "").replace(/\s+/g, " ").trim().slice(0, 700);
+          const text = normaliserTexte(body.text);
           if (!text) return jp(400, { ok: false, error: "empty" });
           const ip = adresseAppelant(req) || "anon";
           if (!(await PLAYER.limits.allow(`doctts:${ip}`, 400, 3600))) return jp(429, { ok: false, error: "rate" });
+          // ⚠️ LA LIAISON VIENT APRÈS LE PLAFOND DE DÉBIT, ET L'ORDRE EST UNE PROPRIÉTÉ.
+          // Posée avant, elle offrait une LECTURE EN BASE par requête à qui n'a même pas de session
+          // — un travail non borné déclenché sous le limiteur, c'est-à-dire exactement ce que le
+          // limiteur existe pour empêcher. Trouvé par le banc du plafond, qui exigeait 429 « avant
+          // tout appel » et a reçu 500 : il gardait déjà cette propriété sans que je la voie.
+          //
+          // C'est la même liaison que les sept autres actions du bloc assistant, appliquée ici parce
+          // que cette route est aiguillée avant lui. Sans elle, un `sessionId` d'un AUTRE document
+          // ferait l'affaire, et la confrontation plus bas perdrait tout son sens.
+          if (!(await sessionDuDocument(body.sessionId, share))) return jp(400, { ok: false, error: "session" });
           const defaultVoiceId = process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
           let voiceId = defaultVoiceId;
           // Voix PAR AGENT : le profil du lien peut porter sa propre voix ElevenLabs (behavior.voice.id).
@@ -121,7 +179,31 @@ async function traiter(req, res, body, _slug) {
           // DIRE ≠ MONTRER : la prononciation (behavior.voice.pron) s'applique ICI, côté serveur — le client
           // envoie et affiche l'ORTHOGRAPHE, la synthèse (et son cache) travaille sur la version phonétique.
           // `spoken` est renvoyé quand il diffère → le viewer aligne le karaoké dessus (mapping mot à mot).
-          const spoken = (() => { if (!pron) return text; try { const s = pron(text).replace(/\s+/g, " ").trim().slice(0, 700); return s || text; } catch { return text; } })();
+          const prononcer = (t) => { if (!pron) return t; try { const p2 = normaliserTexte(pron(t)); return p2 || t; } catch { return t; } };
+          const spoken = prononcer(text);
+
+          // ⚠️ LE TEXTE DOIT AVOIR ÉTÉ DIT PAR L'ASSISTANT — C'EST TOUTE LA SÉCURITÉ DE CETTE ROUTE.
+          // Jusqu'au 26/08, n'importe qui muni d'un lien public pouvait faire synthétiser n'importe
+          // quoi aux frais de l'hôte. Les bornes posées le même jour (regroupement, 4 synthèses
+          // simultanées, 8 Mio, délais) bornaient le DÉBIT du dégât, pas sa NATURE.
+          //
+          // ⚠️ ON NE DÉLÈGUE PAS CETTE VÉRIFICATION AU GREFFON, pour la raison déjà écrite plus bas
+          // à propos de `bot-history` : `docbot` est fourni par l'hôte, et une propriété de sécurité
+          // du player ne peut pas dépendre d'un code qu'il ne contient pas. On lit les messages, on
+          // décide ici.
+          //
+          // ⚠️ UNE LECTURE DE PLUS PAR SYNTHÈSE, ASSUMÉE. Elle a lieu AVANT le cache : servir un
+          // extrait déjà payé resterait un moyen d'énumérer ce que d'autres sessions ont fait dire.
+          let dits;
+          try {
+            dits = ditsParAssistant(await docbot.listMessages(String(body.sessionId || "")), prononcer);
+          } catch (e) {
+            // Une lecture qui échoue n'est pas un texte invalide : le dire au bon code, et le dire
+            // tout court — un refus muet ici serait indistinguable d'un texte refusé.
+            try { await PLAYER.errors.capture(e, { where: "bot-tts", quoi: "listMessages" }); } catch { /* noop */ }
+            return jp(503, { ok: false, error: "indisponible" });
+          }
+          if (!dits.has(spoken)) return jp(400, { ok: false, error: "texte" });
           const modelId = process.env.ELEVENLABS_MODEL || "eleven_multilingual_v2";
           const base = (PLAYER.config && PLAYER.config.supabaseUrl) || "";
           // « v2 » = version du format de cache : les extraits v1 (sans alignement timestamps) sont ignorés
@@ -290,8 +372,7 @@ async function traiter(req, res, body, _slug) {
           // ⚠️ `bot-start` EST EXCLUE, ET C'EST LA SEULE. Elle CRÉE la session : exiger qu'elle en
           // prouve une fermerait l'assistant à tout le monde.
           if (ACTIONS_LIEES_A_UNE_SESSION.has(body.action)) {
-            const liee = await docbot.getSession(String(body.sessionId || ""));
-            if (!liee || liee.share_slug !== share.slug) return jp(400, { ok: false, error: "session" });
+            if (!(await sessionDuDocument(body.sessionId, share))) return jp(400, { ok: false, error: "session" });
           }
           const pages = Math.max(0, Math.min(500, Number(body.pages) || 0));
           const mobile = body.mobile === 1 || body.mobile === true; // téléphone → messages courts + autoplay steps
