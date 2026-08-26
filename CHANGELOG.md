@@ -10,6 +10,17 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [Unreleased]
+
+### Fixed
+- **`docs/RELEASING.md` gave a command that returns `404`.** Its post-release checklist said
+  `docker manifest inspect ghcr.io/…:<version>`, but `image.yml` pushes the git tag verbatim, so the
+  image is `:v0.1.138`. The `gh release view v<version>` two lines above already carried the `v` —
+  the inconsistency lived four lines apart. Found by following the page during the 0.1.138 release
+  and getting the 404, which is the only way it could have been found: a registry answers `404` for
+  *does not exist* and for *you asked for the wrong name* with the same three digits. The page's own
+  closing rule applies to it — *a procedure that cannot be carried out is worse than no procedure*.
+
 ## [0.1.138] — 2026-08-26
 
 **A security fix, and two doors that did not exist.** A visitor holding a valid link could store a

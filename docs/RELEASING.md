@@ -150,8 +150,15 @@ anyone noticing — the person publishing was watching `npm view`, one artefact 
 ```bash
 npm view discovery-media-player version            # the registry serves it
 gh release view v<version>                         # the release exists, with its notes
-docker manifest inspect ghcr.io/juli1artha/discovery-media-player:<version>
+docker manifest inspect ghcr.io/juli1artha/discovery-media-player:v<version>
 ```
+
+⚠️ **The image tag carries the `v`.** [`image.yml`](../.github/workflows/image.yml) pushes the git
+tag verbatim, so the image is `:v0.1.138`, not `:0.1.138`. This line said `:<version>` while the
+`gh release view` two lines above said `v<version>` — the inconsistency lived four lines apart, and
+it was found the only way it could be, by someone following the page and getting a `404` on the one
+artefact of the five that is hardest to check another way. A registry answers `404` for *does not
+exist* and for *you asked for the wrong name* with the same three digits.
 
 An hourly guard ([`publication.yml`](../.github/workflows/publication.yml)) opens an issue when
 `main` declares a version the registry does not serve for more than an hour, and closes it by
