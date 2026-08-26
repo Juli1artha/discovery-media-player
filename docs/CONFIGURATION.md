@@ -7,6 +7,24 @@ see in one place.
 Copy [`.env.example`](../.env.example) to start.
 
 
+### `PLAYER_SHUTDOWN_GRACE_MS`
+
+How long the standalone server (`bin/serve.js`) may take to finish in-flight requests after
+`SIGTERM` or `SIGINT`, in milliseconds (default **8000**). It stops accepting connections
+immediately, closes the idle keep-alive ones, and lets the requests still being served finish.
+Past the deadline, whatever remains is cut.
+
+⚠️ **Keep it below your orchestrator's kill delay.** `docker stop` waits **10 s** by default and
+then sends `SIGKILL`; a grace period longer than that never elapses, so the process is killed
+exactly as before — only later. If you raise this, raise `docker stop --time` (or your platform's
+`terminationGracePeriodSeconds`) with it.
+
+⚠️ **This is a ceiling, not a wait.** A shutdown with nothing in flight exits at once. The value
+only matters for what a slow upstream is still streaming when the signal arrives.
+
+A second `SIGTERM` or `SIGINT` exits immediately, without waiting: pressing Ctrl-C twice asks for
+the process to stop, not for an explanation.
+
 ### `PLAYER_MAX_RELAY_BYTES`
 
 Ceiling, in bytes, for a file relayed through the player (default **60 MB**). Above it the relay

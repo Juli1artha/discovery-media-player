@@ -13,6 +13,17 @@ the notes there are this file's section for that version.
 ## [Unreleased]
 
 ### Fixed
+- **The startup line printed the port it was asked for, not the one it got.** With `PORT=0` — where
+  the OS picks a free one — it announced `localhost:0`, an address that leads nowhere, at exactly
+  the moment you need to know where to knock. Found by the shutdown bench, which could not reach
+  the server it had just started.
+- **`Dockerfile`: `dumb-init`'s stated justification no longer held.** It said Node had no default
+  signal handler, which was true and is not any more. What remains is zombie reaping — real in
+  general, **empty here**: this runtime spawns no subprocess (checked: no `spawn`, `execFile` or
+  `fork` in `server/`, `bin/` or `context/`). It is kept out of caution rather than demonstrated
+  need, and the comment now says so instead of asserting a reason that has been fixed elsewhere.
+  It also records that `dumb-init` is **the one unpinned input** of that image, and why the version
+  could not be resolved from where this was prepared.
 - ⚠️ **The hourly publication guard had been dead for nineteen hours, and nobody could have seen
   it.** `publication.yml` only does a `checkout` — no `npm ci` — because none of the tools it ran
   had ever needed `node_modules`. Then `exemples-epingles.mjs` gained a dependency on `semver` in
@@ -59,6 +70,26 @@ the notes there are this file's section for that version.
     through any third-party app installed on the repository.
 
 ### Added
+- ⚠️ **The standalone server shuts down gracefully — nothing listened for `SIGTERM` before.** The
+  choice was between *slow* and *abrupt*, and the third way had never been put. Without a handler,
+  Node as PID 1 **ignores** `SIGTERM` (the kernel discards a signal on PID 1 only when no handler
+  exists), so `docker stop` waited ten seconds and killed. `dumb-init` fixed that by being PID 1
+  itself, making Node a child — where the relayed signal triggers the default action: **immediate
+  termination**. Fast, but a document being relayed, a presentation read, a heartbeat were cut
+  mid-flight at *every deployment*.
+  - It now stops accepting, closes idle keep-alive connections, lets in-flight requests finish, and
+    exits — **with or without `dumb-init`**.
+  - ⚠️ **`close()` alone never completes**: it waits for every connection, and keep-alive holds idle
+    sockets open for seconds after their last request. A shutdown that waits for those overruns the
+    orchestrator's deadline and gets killed anyway — an abrupt shutdown, only *slower*.
+    `closeIdleConnections()` closes what is no longer serving, without touching what is.
+  - ⚠️ **The grace period is bounded**, and deliberately under `docker stop`'s ten-second default: a
+    deadline that falls after the axe is no deadline. `PLAYER_SHUTDOWN_GRACE_MS` (default **8000**)
+    is documented, along with the rule that raising it means raising the orchestrator's too.
+  - A second signal exits at once — pressing Ctrl-C twice asks for a stop, not an explanation. The
+    handlers are installed **only** on direct execution, like `listen`: installed on import they
+    would hijack the Ctrl-C of whatever imported the module.
+  - Benched against a **real child process and real signals** — a simulated signal proves nothing.
 - **The identity card reports what the read cache actually refused.** `lectureSaturee` gives
   `{ total, fenetreS, derniereIlYaS }` on `GET /api/doc?contract=1`. The admission ceiling has
   answered `503 Retry-After: 1` for a long time — a refusal, deliberately distinguishable from a
