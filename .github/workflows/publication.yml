@@ -44,6 +44,24 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: { fetch-depth: 0 }
 
+      # ⚠️ CE JOB N'INSTALLAIT RIEN, ET SA DERNIÈRE ÉTAPE EST MORTE EN SILENCE PENDANT DIX-NEUF
+      # HEURES. `tools/exemples-en-retard.mjs` importe `exemples-epingles.mjs`, qui a gagné une
+      # dépendance à `semver` dans la 0.1.137 (#386) — pour comparer des INTERVALLES de version au
+      # lieu d'exiger une chaîne littérale, ce qui était le bon changement. À partir de cette
+      # publication, l'étape jetait `ERR_MODULE_NOT_FOUND` avant d'avoir rien mesuré.
+      #
+      # ⚠️ ET C'EST LE PIRE ENDROIT OÙ CASSER. Le job devient rouge, donc « ça se voit » — mais sur
+      # la page des exécutions planifiées, que personne n'ouvre. Pendant ce temps l'issue que cette
+      # étape entretient restait FIGÉE sur son dernier état vrai (elle annonçait encore 0.1.128
+      # alors que le registre servait 0.1.138) : une alerte périmée qui a l'air vivante est pire
+      # qu'une alerte absente. Les étapes précédentes, elles, ont continué de fonctionner — c'est
+      # pourquoi l'écart de version s'est bien signalé puis refermé tout seul.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+
       - id: mesure
         name: What main declares vs what the registry serves
         run: |

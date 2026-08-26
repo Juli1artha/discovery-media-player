@@ -383,6 +383,22 @@ jobs:
         if: matrix.node == '22'
         run: node tools/image-documentee.mjs
 
+      # ⚠️ UNE GARDE PLANIFIÉE QUI MEURT NE SE VOIT PAS. `publication.yml` ne fait qu'un `checkout` ;
+      # quand `exemples-epingles.mjs` a gagné une dépendance à `semver` (0.1.137), sa dernière étape
+      # s'est mise à jeter ERR_MODULE_NOT_FOUND avant d'avoir rien mesuré. Le job devenait rouge —
+      # sur la page des exécutions planifiées, que personne n'ouvre. Pendant dix-neuf heures,
+      # l'issue que cette étape entretient est restée FIGÉE sur son dernier état vrai : elle
+      # annonçait 0.1.128 pendant que le registre servait 0.1.138. Une alerte périmée qui a l'air
+      # vivante est pire qu'une alerte absente.
+      #
+      # ⚠️ CE N'EST PAS UN OUBLI, C'EST UNE DISTANCE. Celui qui ajoute un `import` à un outil ne
+      # relit pas les neuf workflows pour voir lesquels le lancent — et il a raison, ce n'est pas
+      # un travail de mémoire. La règle est donc portée ici, et elle suit la dépendance À TRAVERS
+      # les imports : `exemples-en-retard` n'importe pas `semver`, il importe le module qui l'importe.
+      - name: Every tool a workflow runs has what it needs to run
+        if: matrix.node == '22'
+        run: node tools/outils-servis.mjs
+
       # ⚠️ LA CARTE D'IDENTITÉ EST LA SEULE CHOSE QUE LES HÔTES ÉPINGLENT. Le contrat en montrait
       # une version périmée de cinq publications, à laquelle il manquait deux capacités. Un hôte
       # qui teste la présence d'une capacité d'après la doc conclut qu'elle n'existe pas. La

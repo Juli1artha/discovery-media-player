@@ -21,7 +21,33 @@ the notes there are this file's section for that version.
   *does not exist* and for *you asked for the wrong name* with the same three digits. The page's own
   closing rule applies to it — *a procedure that cannot be carried out is worse than no procedure*.
 
+### Fixed
+- ⚠️ **The hourly publication guard had been dead for nineteen hours, and nobody could have seen
+  it.** `publication.yml` only does a `checkout` — no `npm ci` — because none of the tools it ran
+  had ever needed `node_modules`. Then `exemples-epingles.mjs` gained a dependency on `semver` in
+  0.1.137, to compare version *intervals* instead of demanding a literal string. That was the right
+  change; the workflow did not move with it. From that publication on, the step threw
+  `ERR_MODULE_NOT_FOUND` before measuring anything.
+  - **It is the worst place to break.** The job goes red — on the *scheduled runs* page, which
+    nobody opens. Meanwhile the issue that step maintains stayed **frozen on its last true state**:
+    it still announced `0.1.128` while the registry served `0.1.138`. A stale alert that looks alive
+    is worse than an absent one — it is `AGENTS.md`'s third storey, an action that resembles a
+    success.
+  - The breakage was **contained**: the earlier steps of the same job kept working, which is why
+    the version-gap alert for 0.1.138 opened and closed itself correctly. Found by reading that
+    job's log after noticing it was red on three consecutive runs — not by an alert.
+
 ### Added
+- **A guard that refuses a workflow step running a tool the job cannot serve.** If a job runs
+  `node tools/…` and that tool needs an installed package, the job must carry `npm ci`.
+  - ⚠️ **It follows the dependency *through* the imports**, because that is where the defect lived:
+    `exemples-en-retard.mjs` does not import `semver` — it imports `exemples-epingles.mjs`, which
+    does. A probe reading only the file named on the command line would have gone green on the exact
+    fault it was written for.
+  - It is **not** an oversight rule, it is a distance rule. Whoever adds an `import` to a tool does
+    not re-read nine workflows to see which ones run it, and is right not to: that is not work done
+    from memory. Three tools legitimately run with no installation, need nothing, and the guard says
+    so in its green line rather than staying silent about them.
 - **A guard that refuses a documented image reference the registry would not serve.** Outside the
   workflows, every `ghcr.io/…` reference must be untagged, `latest`, or `v`-prefixed — the form
   `image.yml` actually publishes. It does not hold a second copy of that fact: it **confronts**
