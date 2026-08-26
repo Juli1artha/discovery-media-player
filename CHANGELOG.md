@@ -10,7 +10,33 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
-## [Unreleased]
+## [0.1.139] — 2026-08-26
+
+**A graceful stop, an image with nothing left to fetch, and a guard that had died in silence.**
+
+⚠️ **This train leaves out of cadence, and none of the three exceptions applies.**
+[`docs/RELEASING.md`](docs/RELEASING.md) allows one train per day; 0.1.138 shipped this morning.
+This is not a security fix, not a broken package on the registry, and not a repair of the release
+pipeline — 0.1.138 published all five of its artefacts. It ships today because the maintainer
+decided it does, which is what that page says the decision is. Nothing here forced it.
+
+**Nothing an operator runs changes shape.** Measured on the two tarballs rather than claimed:
+**64 files → 64**, none added, none removed, **five changed** — `package.json`, `docs/HOST-CONTRACT.md`,
+`server/cache.js`, `server/handler.js`, `bin/serve.js`. `context`, `types`, `database` and `browser`
+are untouched, and the bundle a visitor's page executes is **byte-identical** to 0.1.138
+(`server/browser.generated.js`, `sha256 ad3af9dc56479147…`, 16 809 bytes; `shared.generated.js` and
+`dist/bridge.js` likewise).
+
+⚠️ **Two changes are worth reading before you deploy**, both about how the container stops and what
+it contains:
+
+- `docker stop` now **drains** instead of cutting. In-flight requests get up to
+  `PLAYER_SHUTDOWN_GRACE_MS` (default 8 s) to finish. **Keep it below your orchestrator's kill
+  delay** — `docker stop` waits 10 s by default.
+- The image **no longer carries `dumb-init`**. Node runs as PID 1 and handles the signal itself. If
+  you extend the image with something that spawns child processes, add an init back or start it
+  with `docker run --init`.
+
 
 ### Fixed
 - ⚠️ **The `.env.example` check read prose as data.** It lived inline in `ci.yml` and pulled *every*
@@ -4282,7 +4308,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.138...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.139...HEAD
+[0.1.139]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.138...v0.1.139
 [0.1.138]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.137...v0.1.138
 [0.1.137]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.136...v0.1.137
 [0.1.136]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.135...v0.1.136
