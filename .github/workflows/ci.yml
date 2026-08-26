@@ -105,7 +105,7 @@ jobs:
           mkdir -p node_modules/discovery-media-player
           tar -xzf "$GITHUB_WORKSPACE"/discovery-media-player-*.tgz -C node_modules/discovery-media-player --strip-components=1
           cd node_modules/discovery-media-player
-          for banc in test test:e2e test:base test:charge test:campagne; do
+          for banc in test test:e2e test:base test:charge test:campagne test:endurance; do
             if sortie=$(npm run "$banc" 2>&1); then
               echo "::error::npm run $banc a RÉUSSI depuis une installation consommatrice — il n'a rien pu mesurer"
               exit 1
@@ -1098,6 +1098,25 @@ jobs:
           # le volume peut casser sans qu'aucun code ne soit fautif.
           PLAYER_CHARGE_SPECTATEURS: "1000"
         run: npm run test:campagne
+
+      # ── L'ENDURANCE : CE QU'UNE RAFALE NE PEUT PAS MONTRER ────────────────────────────────────
+      # ⚠️ COURT ICI, ET C'EST LE POINT. Tous les bancs de charge de ce dépôt sont INSTANTANÉS : N
+      # appels lancés ensemble, un relevé, fini. Une mémoire qui monte lentement, un cache qui ne
+      # sature qu'après plusieurs minutes, une boucle qui décroche quand les gestes se MÉLANGENT ne
+      # se voient pas en trois secondes. Vingt-cinq secondes à chaque course prouvent que le
+      # scénario tient debout ; la vraie campagne se lance à la main avec
+      # `PLAYER_ENDURANCE_SECONDES=1800`.
+      #
+      # ⚠️ Un banc qui ne tournerait qu'à la main serait un banc MORT — ce dépôt a laissé une garde
+      # de publication morte dix-neuf heures sans que personne le voie. Il tourne donc à chaque
+      # course, court, plutôt que longuement et jamais.
+      - name: Endurance — the mixed scenario, over time
+        env:
+          # Le même renvoi /rest/v1 que les deux étapes précédentes (3002, pas le PostgREST nu de
+          # 3001) ; `PLAYER_TEST_JWT_SECRET` est déjà dans $GITHUB_ENV depuis le démarrage.
+          PLAYER_TEST_POSTGREST_URL: http://127.0.0.1:3002
+          PLAYER_ENDURANCE_SECONDES: "25"
+        run: npm run test:endurance
 
       # ⚠️ LE BANC DE CHARGE COMPTE, IL NE CHRONOMÈTRE PAS — il tourne donc ici, sans base ni service :
       # ce qu'il mesure (le nombre d'allers-retours qu'un geste coûte) est déterministe. Sa SORTIE est
