@@ -11,6 +11,7 @@ const { pipeline } = require("node:stream/promises");
 const { getShareBySlug } = require("./shares");
 const { PRESENT_QUOTA_PER_HOUR, PRESENT_CACHE_MS, estSlug } = require("./shared.generated.js");
 const { creerCache, CODE_SATURATION } = require("./cache.js");
+const mesures = require("./mesures.js");
 
 // ⚠️ UN SEUL CACHE POUR TOUT LE PROCESSUS, ET C'EST LE POINT. Le créer par requête reviendrait à
 // n'en avoir aucun : chaque appelant repartirait d'une table vide, et l'effondrement qu'on
@@ -27,6 +28,12 @@ const { getPresentation, listMessages } = require("./presentations");
 // Vercel (api/doc.js) est le seul à connaître le studio.
 let PLAYER = null;
 function init(ctx) {
+  // ⚠️ LA LATENCE DE LA BASE SE MESURE AU SEAM, PAS À SOIXANTE-SEPT SITES D'APPEL. La capacité est
+  // fournie par l'HÔTE : se souvenir de chronométrer à chaque appel demanderait de ne jamais
+  // oublier, et le premier oubli passerait inaperçu. Enveloppée ici, la mesure couvre AUSSI ce que
+  // personne n'a encore écrit. Le décorateur rend la même forme, les mêmes valeurs et les mêmes
+  // rejets : un décorateur qui change le contrat mesurerait autre chose que la production.
+  if (ctx && ctx.db) ctx = { ...ctx, db: mesures.observerBase(ctx.db) };
   PLAYER = ctx;
   // Le domaine reçoit le même contexte : une seule construction pour tout le player.
   require("./shares").init(ctx);
@@ -512,7 +519,39 @@ function parametres(req) {
   }
 }
 
+/**
+ * ⚠️ UNE FAMILLE PAR NATURE DE TRAVAIL, PAS PAR ACTION. Une clé par action rendrait le relevé aussi
+ * long que la liste des routes et aussi instable qu'elle — et il faudrait la tenir à jour à la
+ * main, ce que ce dépôt a déjà payé trois fois. Six familles suffisent à répondre à « qu'est-ce
+ * qui est lent ici ? » ; le détail se cherche ensuite, avec la question déjà posée.
+ */
+function familleDe(req, q) {
+  if (req.method === "POST") return "action";
+  if (q.contract) return "carte";
+  if (q.asset || q.stream || q.file) return "fichier";
+  if (q.present) return "presentation";
+  if (q.slug || q.preview) return "document";
+  return "autre";
+}
+
+/**
+ * ⚠️ LE CHRONOMÈTRE ENVELOPPE, IL NE S'INSÈRE PAS. Le gestionnaire sort par des dizaines de
+ * `return` ; poser une mesure à chacun serait une liste à tenir, donc une liste qui divergera. Le
+ * statut se lit sur `res` APRÈS coup — c'est la porte de réponse qui l'a posé, et elle est unique
+ * (`server/reponses.js`). Le `finally` couvre aussi le chemin d'exception : une requête qui casse
+ * est précisément celle qu'on veut voir comptée.
+ */
 async function handler(req, res) {
+  let fin = () => {};
+  try { fin = mesures.chrono(familleDe(req, parametres(req))); } catch { /* jamais bloquant */ }
+  try {
+    return await handlerMesure(req, res);
+  } finally {
+    try { fin(res && res.statusCode); } catch { /* jamais bloquant */ }
+  }
+}
+
+async function handlerMesure(req, res) {
   try {
     const q = parametres(req);
     const slug = String(q.slug || "").trim();
@@ -718,6 +757,24 @@ async function handler(req, res) {
             derniereIlYaS: dernier == null ? null : Math.max(0, Math.round((Date.now() - dernier) / 1000)),
           };
         })(),
+        // ⚠️ CE QUE CETTE INSTANCE A VÉCU — parce que `lectureSaturee` ne répondait qu'à UNE
+        // question. « La route est-elle lente ? », « lesquelles ? », « la base ou nous ? »,
+        // « combien de 5xx ? », « la boucle décroche-t-elle ? » n'avaient aucune réponse
+        // observable, et les deux hôtes intégrateurs ont confirmé ne pas pouvoir la produire
+        // depuis chez eux. Décider d'optimiser sans ça, c'est deviner (audit CODEX 5.6, §2).
+        //
+        // ⚠️ DES BORNES, PAS DES VALEURS : `p95sousMs: 250` se lit « 95 % des appels sous
+        // 250 ms ». L'échelle des seaux est publiée AVEC les chiffres — sans elle, un lecteur ne
+        // peut pas juger de la précision de ce qu'il lit. Voir `server/mesures.js`.
+        //
+        // ⚠️ AUCUN SLUG, AUCUNE ADRESSE, AUCUN TEXTE : des compteurs et des durées. Rien ici ne
+        // désigne un visiteur, un document ou une présentation — c'est ce qui permet de le
+        // publier sur une carte qu'un hôte lit sans cérémonie.
+        //
+        // ⚠️ PROCESSUS-LOCAL, comme `lectureSaturee` et les champs de présence : une instance qui
+        // répond n'est pas toutes les instances, et tout repart à zéro au déploiement. Agréger
+        // est le travail de l'hôte ; `fenetreS` est là pour qu'il sache sur quoi il agrège.
+        mesures: mesures.relever(),
         // ⚠️ LE BALAYAGE DE RÉTENTION EST-IL ARMÉ ? La capacité `retention` dit que l'instance PEUT
         // purger ; ce booléen dit si le balayage automatique TOURNE (`config.retention.balayage`).
         // Sans lui, une instance armée est indiscernable d'une instance éteinte — et une purge qui

@@ -41,6 +41,7 @@ need.
   "presenceDurcissement": "inconnu",
   "presenceFusion": "inconnu",
   "lectureSaturee": { "total": 0, "fenetreS": 0, "derniereIlYaS": null },
+  "mesures": { "fenetreS": 0, "seauxMs": [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000], "routes": {}, "base": { "n": 0 }, "statuts": { "ok": 0, "refus4xx": 0, "debit429": 0, "occupe503": 0, "erreur5xx": 0 }, "memoireMio": { "rss": 0, "heap": 0, "tampons": 0 }, "boucleMs": { "n": 0, "moyen": null, "p99": null, "resolutionMs": 20 } },
   "retentionSweep": false,
   "hostShare": true,
   "hostMail": true,
@@ -91,6 +92,43 @@ The three `presence*` fields report what the host has **observed**, not what it 
 | `presenceStrict` | **effective** — `PLAYER_PRESENCE_STRICT` is set *and* tokens can be issued. A closed door announced over an open one would be the worse failure |
 | `presenceDurcissement` | `actif` (a hardened call came back), `degrade` (migration 0018 is missing), `inconnu` (nothing attempted in this process — **not** a green light, and process-local: another instance may have seen otherwise) |
 | `presenceFusion` | `actif` (a heartbeat used the fused contract — one round trip instead of two), `degrade` (migration 0019 is missing: heartbeats cost 3 round trips instead of 2, nothing breaks), `inconnu` (no heartbeat served in this process). Same three states, same trap, same reading rule as the row above |
+
+### `mesures` — what this instance has actually lived through
+
+`lectureSaturee` (below) answers exactly one question. *Is a route slow? which ones? us or the
+database? how many 5xx? is the event loop slipping?* had **no observable answer at all** — and
+deciding to optimise without them is guessing. Both integrating hosts confirmed they cannot produce
+these numbers from their side.
+
+| key | meaning |
+|---|---|
+| `fenetreS` | seconds this process has been running — **the window every total below was counted over** |
+| `seauxMs` | the bucket ladder the percentiles are read off, published **with** the numbers |
+| `routes` | one entry per family of work — `document`, `presentation`, `action`, `fichier`, `carte`, `autre`. Families absent from the object were never exercised in this process |
+| `base` | the same shape, for calls through the `db` capability **you** supply — measured at the seam, so it covers every call, including ones nobody has written yet |
+| `statuts` | responses by class: `ok` (<400), `refus4xx`, `debit429`, `occupe503`, `erreur5xx` |
+| `memoireMio` | `rss`, `heap` (heap used), `tampons` (`arrayBuffers`) in MiB, read at the moment of the request |
+| `boucleMs` | event-loop **delay** — `moyen` and `p99` in ms, with `n` samples and the sampler's `resolutionMs` |
+
+⚠️ **A percentile over buckets is a bound, not a value.** `p95sousMs: 250` reads *"95% of calls
+under 250 ms"* — never *"the 95th is 250 ms"*. That is why the key is named `sousMs`, and why
+`seauxMs` ships alongside: without the ladder you cannot judge how precise the number you are
+reading is. `null` means *past the top of the ladder* (over 10 s), which is itself the answer.
+
+⚠️ **`n: 0` is not `0 ms`.** A family that was never exercised reports `{ "n": 0 }` and nothing
+else, and `boucleMs` with no samples reports `moyen: null` — not a zero that would read as *healthy*.
+
+⚠️ **`boucleMs` is the delay, not the interval.** The sampler observes how long its own timer
+actually took, which at rest equals its resolution; the resolution is subtracted, so an idle
+instance reports about `0` rather than a permanent `20` that would send you hunting a fault that
+does not exist.
+
+⚠️ **No slug, no address, no text.** These are counters and durations. Nothing here names a visitor,
+a document or a presentation — which is what makes it publishable on a card you read without
+ceremony.
+
+⚠️ **Process-local, and reset by every deployment**, exactly like `lectureSaturee` below. Behind a
+load balancer this is the instance that answered, not your deployment. Aggregating is your job.
 
 ### `lectureSaturee` — what this instance actually refused
 
