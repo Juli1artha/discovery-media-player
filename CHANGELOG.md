@@ -68,6 +68,30 @@ the notes there are this file's section for that version.
   *does not exist* and for *you asked for the wrong name* with the same three digits. The page's own
   closing rule applies to it — *a procedure that cannot be carried out is worse than no procedure*.
 
+### Removed
+- ⚠️ **`dumb-init` is gone from the container image, and the image now fetches nothing at build
+  time.** Its written justification — *"Node is PID 1 and has no default signal handler, so
+  `docker stop` would wait ten seconds before killing"* — was correct, and died when `bin/serve.js`
+  gained a `SIGTERM` handler: the kernel discards a signal on PID 1 **only** when no handler exists.
+  What remained was zombie reaping, a real job **that is empty here** — this runtime spawns no
+  subprocess.
+  - **It was the one unpinned input of the image.** `apk add` fetched the package over the network
+    with no version: same Dockerfile, same base digest, two different `dumb-init` three months
+    apart. Pinning it by checksum **was written, then discarded**: four moving parts — a build-time
+    network dependency, two digests to maintain, an architecture branch, and a hand-rolled
+    downloader because the alpine image carries no certificate store — for a component whose job is
+    empty. Removing it deletes the problem instead of checking it, and makes the build reproducible
+    **unconditionally**.
+  - ⚠️ **The assumption is guarded, not left in a comment.** `bin/__tests__/sansSousProcessus.test.js`
+    refuses the first `child_process` added to `server/`, `bin/` or `context/` — and its message
+    says the gesture: put an init back, or document `docker run --init`, then update the bench. The
+    decision is re-asked at the exact moment it becomes true again, instead of sleeping.
+  - ⚠️ **The `CMD` stays in exec form, and that now matters.** `CMD node bin/serve.js` would put
+    `/bin/sh` at PID 1, and a shell **does not relay signals to its child**: the handler would never
+    run and the graceful shutdown would be worthless. The bench holds that too.
+  - Operators who need reaping are not stuck: `docker run --init` injects one without touching the
+    image, and `docs/CONFIGURATION.md` says so.
+
 ### Changed
 - **`claude[bot]` joins the CLA exemption list, on the maintainer's explicit decision.** It is the
   *same agent* as `claude`, under the identity GitHub assigns depending on how the contribution
