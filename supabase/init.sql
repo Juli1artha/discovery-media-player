@@ -698,6 +698,16 @@ update public.commercial_doc_shares set revoked_at = now() where revoked = true 
 -- Même ordre que la migration, et pour la même raison : `not valid`, on répare, puis on valide.
 -- Une contrainte validée d'emblée échoue sur une table déjà empoisonnée, et une réparation qui
 -- échoue sur la donnée qu'elle vient réparer ne se relance plus.
+--
+-- ⚠️ ET L'ENTRELACEMENT DE CETTE BOUCLE N'EST PAS UN DÉTAIL DE STYLE : NE LA DÉGROUPEZ PAS.
+-- Chaque tour pose UNE contrainte, répare SA colonne, puis la valide — donc au moment où un tour
+-- réécrit une ligne, les seules contraintes en vigueur portent sur des colonnes DÉJÀ réparées.
+-- Sortir les `add constraint` de la boucle pour les faire tous d'abord — la forme qu'avaient les
+-- migrations 0020 et 0023 jusqu'au 26/08 — casse ça : une contrainte `not valid` laisse passer
+-- l'historique mais contrôle TOUTE LIGNE RÉÉCRITE, donc réparer `page` échouerait sur une ligne
+-- dont `max_page` est encore hors plage. C'est exactement ce qui rendait la 0020 incapable de
+-- réparer la ligne de l'incident du 25/08. Ce fichier-ci était correct ; il l'était sans que
+-- personne l'ait écrit, et c'est la raison de ce paragraphe.
 do $$
 declare
   c record;

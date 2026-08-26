@@ -59,15 +59,24 @@ end $$;
 -- ── 2. L'historique ramené dans la plage ───────────────────────────────────────────────────────
 -- `least`/`greatest` plutôt qu'une suppression : la ligne dit qu'une lecture a eu lieu, et ça reste
 -- vrai. C'est son AMPLEUR qui était fausse. Effacer la mesure effacerait aussi l'événement.
+--
+-- ⚠️ UNE SEULE ÉCRITURE PAR LIGNE, TOUTES COLONNES ENSEMBLE. Une contrainte `not valid` laisse
+-- passer l'historique mais contrôle TOUTE LIGNE RÉÉCRITE : en trois `update` séparés, réparer
+-- `num_pages` réécrivait une ligne dont `max_page` était encore hors plage, et la contrainte posée
+-- à l'étape 1 refusait. La migration s'arrêtait sur la donnée qu'elle vient réparer — exactement
+-- ce que l'en-tête de ce fichier promet d'éviter, pour une raison qu'il n'avait pas vue. Le même
+-- défaut a été trouvé et corrigé dans la 0020, reproduit contre un vrai PostgreSQL 16 le 26/08.
+--
+-- ⚠️ LE `case` N'EST PAS DÉCORATIF : `greatest(null, 0)` vaut `0` en PostgreSQL, pas `null`. Sans
+-- lui, l'écriture groupée transformerait en zéro toute mesure INCONNUE d'une ligne dont une seule
+-- colonne était fautive. Les `where` par colonne protégeaient les `null` par construction.
 update public.commercial_doc_internal_sessions
-   set num_pages = least(greatest(num_pages, 0), 10000)
- where num_pages is not null and (num_pages < 0 or num_pages > 10000);
-update public.commercial_doc_internal_sessions
-   set max_page = least(greatest(max_page, 0), 10000)
- where max_page is not null and (max_page < 0 or max_page > 10000);
-update public.commercial_doc_internal_sessions
-   set total_seconds = least(greatest(total_seconds, 0), 86400)
- where total_seconds is not null and (total_seconds < 0 or total_seconds > 86400);
+   set num_pages     = case when num_pages     is null then null else least(greatest(num_pages, 0), 10000) end,
+       max_page      = case when max_page      is null then null else least(greatest(max_page, 0), 10000) end,
+       total_seconds = case when total_seconds is null then null else least(greatest(total_seconds, 0), 86400) end
+ where (num_pages     is not null and (num_pages     < 0 or num_pages     > 10000))
+    or (max_page      is not null and (max_page      < 0 or max_page      > 10000))
+    or (total_seconds is not null and (total_seconds < 0 or total_seconds > 86400));
 
 -- ── 3. Validation, maintenant que la table est propre ──────────────────────────────────────────
 alter table public.commercial_doc_internal_sessions validate constraint ck_internes_num_pages_borne;
