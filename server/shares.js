@@ -589,8 +589,6 @@ function bornerPagesTime(brut) {
 // nommé laisserait croire qu'il sert : c'est comme ça qu'une donnée revient dans une ligne où elle
 // n'a rien à faire. Une lecture interne, c'est un collègue ; on ne conserve pas son adresse.
 async function upsertInternalSession(p, { ip: _ip, ua }) {
-  const num = (v) => (Number.isFinite(+v) ? Math.trunc(+v) : null);
-  const borne = (v, max) => { const n = num(v); return n == null ? null : Math.max(0, Math.min(n, max)); };
   const sessionId = String(p.sessionId || "").slice(0, 64);
   // ⚠️ UN REJET MUET A COÛTÉ DES SEMAINES À UN HÔTE.
   //
@@ -618,22 +616,18 @@ async function upsertInternalSession(p, { ip: _ip, ua }) {
   const row = {
     session_id: sessionId, doc_id: String(p.docId).slice(0, 200), user_email: low(p.userEmail).slice(0, 160) || null,
     user_name: (p.userName || "").trim().slice(0, 120) || null,
-    num_pages: borne(p.numPages, BORNES.pages), max_page: borne(p.maxPage, BORNES.pages),
-    total_seconds: borne(p.totalSeconds, BORNES.secondes) || 0,
+    // ⚠️ LES MÊMES BORNES QUE `upsertSession`, PAS UNE SECONDE ÉCRITURE DES MÊMES BORNES. Cette
+    // fonction redéfinissait `num`, `borne` et la boucle de `pages_time` en tête de son corps,
+    // alors que `bornerNombre` et `bornerPagesTime` vivaient quarante lignes plus haut et faisaient
+    // caractère pour caractère la même chose. Le comportement était le même — c'est précisément ce
+    // qui rend ce doublon dangereux : rien ne le signalait, et rien n'aurait signalé le jour où
+    // l'une des deux copies aurait bougé. Un fait écrit à deux endroits diverge tant que personne
+    // ne les confronte, et ici personne ne pouvait. (Audit CODEX du 26/08, P3.)
+    num_pages: bornerNombre(p.numPages, BORNES.pages), max_page: bornerNombre(p.maxPage, BORNES.pages),
+    total_seconds: bornerNombre(p.totalSeconds, BORNES.secondes) || 0,
     // ⚠️ Un objet libre venu du dehors : sans plafond, un seul appel peut écrire un JSON de la
     // taille qu'il veut, autant de fois qu'il veut. On garde la forme, bornée.
-    pages_time: (() => {
-      const src = (p.pagesTime && typeof p.pagesTime === "object" && !Array.isArray(p.pagesTime)) ? p.pagesTime : {};
-      const out = {};
-      let n = 0;
-      for (const k in src) {
-        if (++n > BORNES.entreesPagesTime) break;
-        const page = num(k);
-        if (page == null || page < 0 || page > BORNES.pages) continue;
-        out[String(page)] = borne(src[k], BORNES.secondes) || 0;
-      }
-      return out;
-    })(),
+    pages_time: bornerPagesTime(p.pagesTime),
     // ⚠️ NI `ua` NI `ip` ICI, ET C'EST LE CORRECTIF — PAS UNE COLONNE À AJOUTER.
     //
     // Ces deux champs partaient vers une table qui ne les a pas. PostgREST refusait l'insertion

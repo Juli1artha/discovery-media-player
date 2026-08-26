@@ -66,6 +66,23 @@ the notes there are this file's section for that version.
     awaits the promise. Restoring the old line turns the bench red.
 
 ### Added
+- **The bounds of an internal reading session, in one place — and a guard for the class, not the
+  case.** `upsertInternalSession` redefined `num`, `borne` and the whole `pages_time` loop at the
+  top of its body, while `bornerNombre` and `bornerPagesTime` sat forty lines above doing
+  character-for-character the same thing. The behaviour was identical — which is exactly what makes
+  such a duplicate dangerous: nothing flagged it, and nothing would have flagged the day one of the
+  two copies moved. Reported by the CODEX audit of 26 August, P3.
+  - **Migration 0023** gives `commercial_doc_internal_sessions` the constraints migration 0020 gave
+    the other two tables. It carries exactly the same columns, written by the same bounded code, and
+    had received nothing — nobody noticed for a day, because **an absence writes itself nowhere**.
+  - ⚠️ **So CI now guards the rule rather than the table.** A probe requires every visitor-reported
+    measurement column — in *any* table — to carry a **validated** constraint. A fourth table added
+    tomorrow with a `max_page` goes red until it is bounded, and nobody has to remember. It checks
+    `convalidated`, not mere existence: a constraint left `not valid` protects new writes and lets
+    history through — a legitimate state *during* a migration, never an arrival state.
+  - What the probe does **not** watch is written down rather than implied: `current_page`, written
+    by the presenter and read by no aggregation, is not bounded in the database today. A recorded
+    decision, not an oversight — the day an aggregation reads it, it joins the list.
 - **Analytics aggregation moved into the database — and the JavaScript stays, on purpose.**
   `listSharesForDoc` and `overview` read `commercial_doc_views` over a rolling 24-month window. The
   window bounds **time, not the number of rows**: the index serves the filter and does nothing else

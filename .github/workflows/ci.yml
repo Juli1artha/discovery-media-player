@@ -1137,6 +1137,54 @@ jobs:
       - name: What each gesture costs the database
         run: npm run test:charge
 
+      # ── AUCUNE MESURE SANS BORNE EN BASE — LA CLASSE, PAS LE CAS ─────────────────────────────
+      # ⚠️ LA 0020 A BORNÉ DEUX TABLES SUR TROIS, ET RIEN NE L'A DIT. `commercial_doc_views` et
+      # `commercial_doc_sessions` ont reçu leurs contraintes le 25/08, après qu'un visiteur eut
+      # posté `page: 2147483647` ; `commercial_doc_internal_sessions` porte exactement les mêmes
+      # colonnes, écrites par le même code borné, et n'avait rien reçu. Une absence ne s'écrit nulle
+      # part : il a fallu un audit externe pour la voir, un jour plus tard.
+      #
+      # Cette sonde ne garde donc pas la troisième table — elle garde la RÈGLE : toute colonne de
+      # mesure, dans n'importe quelle table, porte une contrainte VALIDÉE. Une quatrième table
+      # ajoutée demain avec un `max_page` rougira jusqu'à ce qu'elle soit bornée, et personne
+      # n'aura à s'en souvenir.
+      #
+      # `convalidated` et pas seulement l'existence : une contrainte posée `not valid` et jamais
+      # validée protège les écritures nouvelles et laisse passer l'historique — c'est un état
+      # intermédiaire légitime PENDANT une migration, jamais un état d'arrivée.
+      #
+      # ⚠️ CE QUE CETTE SONDE NE REGARDE PAS, DIT PLUTÔT QUE SOUS-ENTENDU. Elle surveille les cinq
+      # noms de colonnes que RAPPORTE UN VISITEUR (`page`, `max_page`, `num_pages`, `seconds`,
+      # `total_seconds`) — la classe exacte du défaut de la 0020. Elle ne surveille PAS
+      # `current_page` (deux tables), qui est écrite par le présentateur et qu'aucune agrégation ne
+      # parcourt : elle n'est pas bornée en base aujourd'hui, et c'est une décision consignée ici,
+      # pas un oubli. Le jour où une agrégation la lit, elle rejoint la liste.
+      - name: No measurement column without a validated bound
+        run: |
+          nues=$($PSQL <<'SQL'
+          select c.relname || '.' || a.attname
+            from pg_attribute a
+            join pg_class c on c.oid = a.attrelid
+            join pg_namespace n on n.oid = c.relnamespace
+           where n.nspname = 'public' and c.relkind = 'r'
+             and a.attnum > 0 and not a.attisdropped
+             and a.attname in ('page', 'max_page', 'num_pages', 'seconds', 'total_seconds')
+             and not exists (
+               select 1 from pg_constraint k
+                where k.conrelid = c.oid and k.contype = 'c' and k.convalidated
+                  and a.attnum = any (k.conkey))
+           order by 1;
+          SQL
+          )
+          # ⚠️ ANTI-VACUITÉ : si la requête ne voyait plus AUCUNE colonne de mesure, elle rendrait
+          # zéro coupable et la garde se féliciterait sur une base vide. On exige d'abord qu'elle
+          # en trouve — c'est la sonde qu'on vérifie, avant ce qu'elle affirme.
+          vues=$($PSQL -c "select count(*) from pg_attribute a join pg_class c on c.oid = a.attrelid join pg_namespace n on n.oid = c.relnamespace where n.nspname='public' and c.relkind='r' and a.attnum>0 and not a.attisdropped and a.attname in ('page','max_page','num_pages','seconds','total_seconds')")
+          [ "$vues" -ge 6 ] || { echo "::error::la sonde ne voit que $vues colonne(s) de mesure — elle ne regarde plus au bon endroit"; exit 1; }
+          echo "colonnes de mesure examinées : $vues"
+          [ -z "$nues" ] || { echo "::error::colonne(s) de mesure sans contrainte VALIDÉE : $(echo "$nues" | tr '\n' ' ')"; exit 1; }
+          echo "toute colonne de mesure porte une borne validée"
+
       # ── LA SECONDE MOITIÉ DU CONTRAT DE RÉTENTION : LE RECENSEMENT INDÉPENDANT ───────────────
       # Le banc base vient de semer des lignes vieilles et de lancer la purge. Ce recensement — un
       # SQL nu qui ne partage NI fonction NI filtre avec server/retention.js — recompte ce qui
