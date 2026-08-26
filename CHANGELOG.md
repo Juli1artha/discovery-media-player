@@ -93,6 +93,12 @@ the notes there are this file's section for that version.
   - ⚠️ **No slug, no address, no text** — counters and durations only, checked structurally by a
     bench that walks every leaf. That is what makes it publishable on a card a host reads without
     ceremony. Process-local and reset by every deployment, like `lectureSaturee`.
+  - ⚠️ **The wrapper delegates to the live object; it does not photograph its methods.** The first
+    version captured `db.request` at wrap time, so anything replacing it *after* `init` stopped
+    being called — silently. Not a hypothetical: CI went red on it. A bench installs its probe after
+    `init`, and a host has exactly the same right (a retry wrapper, a lazily wired client,
+    instrumentation). The context itself is inherited rather than copied, for the same reason.
+    **A measurement that changes what runs is not a measurement.**
   - The event-loop sampler is enabled at import, and **the graceful-shutdown bench is what guards
     it**: `bin/serve.js` loads this module, so if the histogram held the loop open, `SIGTERM` would
     stop exiting 0 and that bench would go red.

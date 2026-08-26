@@ -33,7 +33,12 @@ function init(ctx) {
   // oublier, et le premier oubli passerait inaperçu. Enveloppée ici, la mesure couvre AUSSI ce que
   // personne n'a encore écrit. Le décorateur rend la même forme, les mêmes valeurs et les mêmes
   // rejets : un décorateur qui change le contrat mesurerait autre chose que la production.
-  if (ctx && ctx.db) ctx = { ...ctx, db: mesures.observerBase(ctx.db) };
+  //
+  // ⚠️ `Object.create`, PAS UNE COPIE — le contexte reste VIVANT. Un `{ ...ctx }` figerait tout ce
+  // que l'hôte pourrait poser ou remplacer APRÈS `init`, et le player continuerait d'utiliser la
+  // photo. C'est exactement ce qui a rougi la forge : un banc pose sa sonde sur `db.request` après
+  // `init`, et un hôte a le même droit. On n'ajoute qu'une chose, on n'en fige aucune.
+  if (ctx && ctx.db) { const vu = Object.create(ctx); vu.db = mesures.observerBase(ctx.db); ctx = vu; }
   PLAYER = ctx;
   // Le domaine reçoit le même contexte : une seule construction pour tout le player.
   require("./shares").init(ctx);
@@ -1125,6 +1130,7 @@ async function handlerMesure(req, res) {
 // tenir une seconde liste — c'est la seule façon qu'une empreinte périmée finisse par se voir.
 // ⚠️ Exporté pour être ÉPROUVÉ, pas pour être appelé : le plafond du relais ne se vérifie qu en
 // regardant si le corps a été lu, ce qu aucune route ne peut montrer de l extérieur.
-module.exports = { handler, init, TIERS, POLITIQUE_PERMISSIONS, refuserEnTexte, repondreJson, __relayerFichier: relayerFichier, __jsonPourScript: jsonPourScript };
+// ⚠️ Exporté pour être ÉPROUVÉ : « le contexte reste vivant » ne se vérifie pas de l'extérieur.
+module.exports = { __contexte: () => PLAYER, handler, init, TIERS, POLITIQUE_PERMISSIONS, refuserEnTexte, repondreJson, __relayerFichier: relayerFichier, __jsonPourScript: jsonPourScript };
 
 // redeploy: forcer le build production (Vercel a sauté la prod du merge #463 — wording re-partage).

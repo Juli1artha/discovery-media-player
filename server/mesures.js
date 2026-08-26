@@ -111,19 +111,25 @@ function chrono(famille) {
  */
 function observerBase(db) {
   if (!db || typeof db.request !== "function" || db.__mesuree) return db;
-  // ⚠️ DEUX ENVELOPPES ÉCRITES, PAS UNE BOUCLE SUR DES NOMS. La boucle était plus courte et
-  // strictement moins claire : elle écrivait `vu[nom]`, c'est-à-dire une propriété calculée sur un
-  // objet ordinaire — la forme exacte que `proprieteEcrite.test.js` refuse, et il a raison de la
-  // refuser même quand la clé vient de chez nous, parce qu'une garde qui juge au cas par cas finit
-  // par se tromper de cas. Écrites, les deux méthodes se lisent aussi sans se demander lesquelles.
-  const mesurer = (original) => async (...args) => {
+  // ⚠️ ON DÉLÈGUE À L'OBJET VIVANT, ON NE PHOTOGRAPHIE PAS SES MÉTHODES. La première version
+  // capturait `db.request` à l'enveloppement et appelait la fonction capturée : tout ce qui
+  // remplaçait `db.request` APRÈS `init` cessait alors d'être appelé — en silence. Ce n'est pas un
+  // cas d'école, c'est ce qui a rougi la forge : un banc pose sa sonde après `init`, et un hôte a
+  // exactement le même droit (enveloppe de réessai, client câblé paresseusement, instrumentation).
+  // Une mesure qui change ce qui s'exécute n'est plus une mesure.
+  //
+  // ⚠️ ET `Object.create(db)` PLUTÔT QU'UNE COPIE, POUR LA MÊME RAISON. Un `{ ...db }` fige AUSSI
+  // les champs qui ne sont pas des méthodes (`configuree`…) à leur valeur du moment. L'héritage
+  // laisse passer tout ce qu'on ne redéfinit pas, vivant.
+  const mesurer = (nom) => async (...args) => {
     const debut = maintenant();
-    try { return await original.apply(db, args); }
+    try { return await db[nom](...args); }
     finally { try { histoBase.poser(Math.max(0, maintenant() - debut)); } catch { /* noop */ } }
   };
-  const vu = { ...db, __mesuree: true };
-  vu.request = mesurer(db.request);
-  if (typeof db.selectAll === "function") vu.selectAll = mesurer(db.selectAll);
+  const vu = Object.create(db);
+  vu.__mesuree = true;
+  vu.request = mesurer("request");
+  if (typeof db.selectAll === "function") vu.selectAll = mesurer("selectAll");
   return vu;
 }
 

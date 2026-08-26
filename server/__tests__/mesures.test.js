@@ -147,6 +147,24 @@ describe("l'enveloppe de la base mesure sans rien changer", () => {
     expect(mesures.__histoBase.compte(), "un contexte réinjecté ne doit pas fausser la latence").toBe(avant + 1);
   });
 
+  it("⚠️ une méthode REMPLACÉE APRÈS l'enveloppement est bien celle qui s'exécute", async () => {
+    // C'est la forge qui l'a trouvé : un banc pose sa sonde APRÈS `init`, et un hôte a exactement
+    // le même droit (enveloppe de réessai, client câblé paresseusement, instrumentation). La
+    // première version photographiait `db.request` : tout ce qui la remplaçait ensuite cessait
+    // d'être appelé, EN SILENCE. Une mesure qui change ce qui s'exécute n'est plus une mesure.
+    const vraie = { request: async () => "originale" };
+    const vu = mesures.observerBase(vraie);
+    vraie.request = async () => "posée après";
+    expect(await vu.request("x")).toBe("posée après");
+  });
+
+  it("un champ qui n'est pas une méthode reste VIVANT, lui aussi", async () => {
+    const vraie = { request: async () => [], configuree: false };
+    const vu = mesures.observerBase(vraie);
+    vraie.configuree = true;
+    expect(vu.configuree, "une copie l'aurait figé à `false` au moment de l'enveloppement").toBe(true);
+  });
+
   it("une capacité absente traverse sans exploser", () => {
     expect(mesures.observerBase(null)).toBeNull();
     expect(mesures.observerBase({})).toEqual({});
@@ -174,5 +192,53 @@ describe("ce que le relevé ne contient pas", () => {
       + JSON.stringify(nonNumeriques)).toEqual([]);
     // Et les CLÉS de `routes` ne peuvent être que des familles déclarées, jamais un slug.
     for (const cle of Object.keys(r.routes)) expect(mesures.FAMILLES).toContain(cle);
+  });
+});
+
+// ⚠️ CE BANC EXISTE PARCE QUE LA FORGE A ROUGI, ET QU'ELLE AVAIT RAISON. `handler.init` enveloppe
+// la capacité `db` pour en mesurer la latence. La première version en faisait une COPIE : tout ce
+// qu'un hôte posait ou remplaçait APRÈS `init` cessait d'être utilisé — en silence. Le banc de base
+// `presenceFusionnee` pose sa sonde après `init` et a compté zéro appel sortant ; un hôte a
+// exactement le même droit (enveloppe de réessai, client câblé paresseusement, instrumentation).
+//
+// Une mesure qui change ce qui s'exécute n'est plus une mesure : c'est une panne avec un graphique.
+describe("mesurer la base ne doit RIEN changer à ce qui s'exécute", () => {
+  const player = require("../handler.js");
+
+  function contexteNu() {
+    return {
+      db: { request: async () => [], selectAll: async () => [] },
+      limits: { allow: async () => true },
+      errors: { capture() {} },
+      config: {}, plugins: {}, branding: {}, storage: {},
+    };
+  }
+
+  it("⚠️ une sonde posée APRÈS `init` voit bien passer les appels", async () => {
+    const contexte = contexteNu();
+    player.init(contexte);
+
+    const journal = [];
+    const vraie = contexte.db.request.bind(contexte.db);
+    contexte.db.request = async (chemin, o) => { journal.push(chemin); return vraie(chemin, o); };
+
+    const res = {
+      statusCode: 0, entetes: {}, corps: "",
+      setHeader(k, v) { this.entetes[k] = v; },
+      writeHead(c) { this.statusCode = c; },
+      end(b) { this.corps = String(b || ""); },
+    };
+    await player.handler({ method: "GET", headers: {}, socket: {}, query: { slug: "inexistant-xyz" } }, res);
+
+    expect(journal.length, "zéro appel vu = l'enveloppe a photographié la méthode").toBeGreaterThan(0);
+    expect(journal[0]).toContain("commercial_doc_shares");
+  });
+
+  it("un champ posé après `init` est visible du player", () => {
+    const contexte = contexteNu();
+    player.init(contexte);
+    contexte.config = { supabaseUrl: "https://pose-apres.example" };
+    // La carte lit `PLAYER.config` : si `init` en avait pris une copie, elle lirait l'ancienne.
+    expect(player.__contexte().config.supabaseUrl).toBe("https://pose-apres.example");
   });
 });

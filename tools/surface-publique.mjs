@@ -130,7 +130,10 @@ export function ecartsDoc(txtDoc) {
  * tout nouveau venu doit être décidé plutôt que découvert.
  */
 export const INTERNES_TOLERES = {
-  ".": ["__relayerFichier", "__jsonPourScript"],
+  // ⚠️ `__contexte` : DÉCIDÉ, pas subi. « Le contexte de l'hôte reste vivant après `init` » ne se
+  // vérifie pas du dehors — et c'est précisément la propriété qu'une enveloppe de mesure a cassée
+  // une fois (la forge l'a vue, pas nous). L'exporter est le prix d'un banc qui la garde.
+  ".": ["__relayerFichier", "__jsonPourScript", "__contexte"],
 };
 
 export function ecartsInternes(sousChemin, symboles) {
