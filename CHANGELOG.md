@@ -40,8 +40,44 @@ the notes there are this file's section for that version.
     fingerprint, while `spoken !== text` holds for only one of them. Memoising the whole reply would
     have handed the second caller the first one's spelling, and the karaoke would have aligned on
     the wrong string.
-  - Still open, and deliberately a separate piece of work: **nothing yet binds the text to an answer
-    the bot produced.** That needs a signed ticket, and it changes the protocol.
+  - ⚠️ **AND THE BINDING ITSELF IS NOW CLOSED — this bullet said "still open" for a few hours.** A
+    call must carry a `sessionId`, that session must belong to the requested `slug`, and the text
+    must match something the assistant said **in that session**. Refused with `session` (absent, or
+    opened on another document) or `texte` (never said). No signed ticket was needed: the truth
+    comes from the database that produced the message, not from a token the client holds — so there
+    is no new secret to rotate, and a secret you never rotate is the one you forget to rotate.
+  - **The comparison is on the *spoken* form, not the written one, and that is stronger.** `pronFix`
+    can map two spellings onto the same pronunciation, and the pronunciation is what makes the cache
+    fingerprint. So an accepted text is either a real message, or one whose clip is already paid
+    for. Comparing spellings would refuse legitimate cases *and* admit billable ones. The idea came
+    from an integrating host and was better than ours.
+  - **It refuses by default.** A message's shape comes from the host's plugin, which no contract
+    described. An unrecognised `role` is not treated as the assistant's, so an unreadable set yields
+    an empty one and everything is refused. On a route that spends money, *"I could not verify"*
+    must read as **no**. A read that *fails* answers `503 indisponible` and is recorded — an
+    operator does not look in the same place for a broken read and a rejected text.
+  - ⚠️ **The order of the guards is itself a property.** Placed before the rate limit, the binding
+    offered a database read per request to a caller with no session at all — unbounded work
+    triggered under the limiter, which is what the limiter exists to prevent. Found by the existing
+    ceiling bench, which required `429` *"before any call"* and got `500`. It was already guarding
+    the property; we were not seeing it.
+
+- **Setting `ELEVENLABS_API_KEY` made voice controls appear that nothing in this package wires.**
+  The key proves the *server* can synthesise; it says nothing about what happens on click — and this
+  package wires **none** of the sixty-four controls in the assistant, which is markup it ships and
+  behaviour the host ships. Three voice buttons and the audio-consent step were the only ones whose
+  appearance was driven by a server secret, so the key read as *"the feature is on"* and a visitor
+  who clicked got silence. Your `bot` plugin must now declare `wiresVoice: true`; absent — or merely
+  truthy rather than exactly `true` — the four controls are not rendered. Reported on 26 August by
+  an integrating host who went looking for the caller of `bot-tts` and found none.
+  - ⚠️ **This file's own bench already carried the rule and looked at the wrong side.** It says, word
+    for word, *"a door that leads to silence is a broken promise"* — and checked it **without** the
+    key, the one case where the door could not exist.
+  - ⚠️ **And `docs/CONFIGURATION.md` claimed the opposite**, twice: *"the browser asks this
+    instance"*. A host reading it set a **paid** API key and concluded voice worked. It has never
+    been wired, in the whole history of the repository — the route and the buttons both shipped from
+    the first commit, the handler never did. `bot-tts` is documented as what it is: an **integration
+    point**, not a feature.
 
 ### Fixed
 - **A malformed `Host` header could stop the standalone server. One anonymous request, no
