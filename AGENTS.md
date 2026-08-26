@@ -315,6 +315,50 @@ So: verify a self-accusation with the same suspicion as a self-congratulation, e
 reaches a page someone will act on. And prefer stating where a property is *held* over stating that
 it is missing — the first is checkable against a file, the second against nothing.
 
+## A guard checks the code — never who the code was for
+
+**Every rule in `tools/` compares a file to a property.** A declared type, a pinned digest, a tool
+its job can serve, a heading written once. Eleven of them were added between 23 and 26 August. Not
+one of them can say that correct work was addressed to nobody.
+
+⚠️ This happened on 26/08, and it cost a release headline. `dumb-init` was the one unpinned input
+of the container image; pinning it by checksum was written, then discarded in favour of removing it,
+which was the better call and remains one. The graceful shutdown that made the removal possible was
+right too, and benched against real signals. **Both integrating hosts run serverless.** Neither
+consumes the image. The headline of 0.1.139 serves, today, nobody we know of.
+
+Nothing was wrong with the work. The question *"who runs this?"* was never asked, and no red could
+have asked it: **a defect that was hiding and a question that was not asked are not found by the
+same means.** The first yields to a probe. The second only yields to someone asking.
+
+The same day, a briefing sent to those hosts spent two of its six sections on Docker. It branched on
+*versions* — which it could read — and never on *topology*, which it could not.
+
+⚠️ **And topology is not derivable, which was measured rather than assumed.** The STUDIO session
+tried to remove the need instead of remembering it: `lectureSaturee.fenetreS` is `process.uptime()`,
+so a function process should stay young while a container ages — the field would betray the topology
+with nobody declaring it. They measured before proposing. Five readings, 25 seconds apart, on their
+production:
+
+```
+224s   249s   274s   300s   325s
+```
+
+**+25 for 25, five times.** The same warm lambda answers every call, and its uptime accumulates
+exactly like a container's. At that scale the field discriminates nothing; separating the two would
+need hours of sampling, and a statistical signal is unusable in a document read once.
+
+So the remedy is not discipline but necessity: **an integrator must declare their topology, because
+it cannot be deduced from any field we expose.**
+
+Two rules come out of this, and the second is the cheaper one:
+
+- Before work whose value depends on who runs it, establish who runs it. No guard will do it, and
+  finishing it correctly is not the same as it being needed.
+- **Send the dead idea, with its numbers.** Three paragraphs now, against half a day for whoever
+  re-derives it in three months without knowing it was already tried. That measurement above is in
+  this file for exactly that reason.
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives
