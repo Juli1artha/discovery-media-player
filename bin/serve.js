@@ -108,8 +108,33 @@ async function pageAccueil(racine) {
 </div></body></html>`;
 }
 
-const serveur = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+/**
+ * ⚠️ LE TRAITEMENT VIT DANS UNE FONCTION, ET C'EST L'ÉCOUTEUR QUI RATTRAPE. Ce corps était passé
+ * directement à `createServer` en fonction `async` : `http` n'attend pas la promesse rendue, donc
+ * TOUTE exception levée hors du `try` du bas — analyse de l'URL, page d'accueil, lecture du corps —
+ * devenait un rejet non géré, et Node sort du processus sur un rejet non géré. UNE SEULE REQUÊTE
+ * ANONYME ARRÊTAIT DONC LE SERVEUR : constaté sur la v0.1.139, code de sortie 1, port fermé, les
+ * requêtes suivantes refusées. Le `try` existant ne couvrait que `player.handler`.
+ *
+ * ⚠️ ET LA BASE DE L'URL EST FIXE — L'EN-TÊTE `Host` DU CLIENT N'EN EST PAS UNE. Écrire
+ * `new URL(req.url, "http://" + host)` fait entrer une chaîne choisie par l'appelant dans un
+ * analyseur qui jette : `Host: [` donne la base `http://[`, invalide, exception. Or rien ici ne lit
+ * l'hôte — seuls `pathname` et `searchParams` servent : il n'apportait QUE sa panne.
+ *
+ * ⚠️ LA BONNE FORME ÉTAIT DÉJÀ ÉCRITE À CÔTÉ, ET CELLE-CI ÉTAIT LA COPIE DIVERGENTE.
+ * `server/handler.js` analyse depuis une base interne fixe, et le lien des courriels de re-partage
+ * a quitté `req.headers.host` pour `PLAYER_PUBLIC_URL` (cf. `server/__tests__/originePublique.test.js`).
+ * Deux fois la même leçon : une origine publique se DÉCLARE, elle ne se devine pas dans un en-tête.
+ */
+async function servir(req, res) {
+  let url;
+  try {
+    url = new URL(req.url || "/", "http://interne");
+  } catch {
+    // La cible de requête elle-même est malformée : c'est le client qui a tort, pas le serveur.
+    player.refuserEnTexte(res, 400, "Bad request");
+    return;
+  }
 
   // Point de santé : un orchestrateur doit pouvoir savoir si le processus répond sans ouvrir un
   // document ni toucher la base.
@@ -165,6 +190,17 @@ const serveur = http.createServer(async (req, res) => {
     // de l'écriture ne peut plus rien poser, et tenter de le faire jetterait dans le rattrapage.
     player.refuserEnTexte(res, 500, "Erreur");
   }
+}
+
+const serveur = http.createServer((req, res) => {
+  // ⚠️ L'ÉCOUTEUR N'EST PAS `async` : il RATTRAPE. `void servir(...).catch(...)` est précisément ce
+  // qui transforme un rejet fatal en réponse. Le `try` autour de `player.handler` reste — il
+  // distingue une erreur du player d'une erreur du serveur — ; celui-ci est le filet de tout le
+  // reste, y compris de ce que personne n'a encore ajouté au-dessus.
+  void servir(req, res).catch((error) => {
+    console.error("[player] erreur non rattrapée", error);
+    player.refuserEnTexte(res, 500, "Erreur");
+  });
 });
 
 /** Corps JSON, borné. Un corps sans fin est une façon peu coûteuse de faire tomber un serveur. */
@@ -250,4 +286,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { serveur, versParametres, pageAccueil, __arreterProprement: arreterProprement, DELAI_ARRET_MS };
+module.exports = { serveur, servir, versParametres, pageAccueil, __arreterProprement: arreterProprement, DELAI_ARRET_MS };

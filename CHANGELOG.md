@@ -12,6 +12,28 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Fixed
+- **A malformed `Host` header could stop the standalone server. One anonymous request, no
+  configuration, no account.** `bin/serve.js` built the request URL as
+  `new URL(req.url, "http://" + req.headers.host)`. `Host: [` yields the base `http://[`, which
+  `new URL` rejects — and the throw happened in an `async` listener whose promise `http` never
+  awaits, so it became an unhandled rejection and Node exited the process with code 1. Reproduced
+  on v0.1.139 before the fix: the connection is cut, the port closes, every later request is
+  refused. Reported by the CODEX audit of 26 August; the defect predates 0.1.139.
+  - ⚠️ **Nothing here ever read the host.** Only `pathname` and `searchParams` are used, so the
+    header contributed its failure and nothing else. The URL is now parsed against a fixed internal
+    base, and a malformed request-target answers `400` instead of raising.
+  - ⚠️ **The correct form was already written one file away, and this was the diverging copy.**
+    `server/handler.js` parses against a fixed base, and the re-share email link left
+    `req.headers.host` for `PLAYER_PUBLIC_URL` some versions ago. Twice the same lesson: a public
+    origin is *declared*, never guessed from a header.
+  - ⚠️ **The catch now wraps the whole request, not just `player.handler`.** The old `try` covered
+    the handler only; URL parsing, the folder-mode home page and the JSON body read sat outside it.
+    Whatever is added above the handler next is covered by construction.
+  - Benched in a **real child process**, because the defect does not exist anywhere else: called
+    directly the function merely rejects and the caller learns of it — what kills is that nobody
+    awaits the promise. Restoring the old line turns the bench red.
+
 ### Added
 - **`AGENTS.md` records the one thing no guard in this repository can check: who the work was for.**
   Eleven rules were added to `tools/` between 23 and 26 August; every one of them compares a file to

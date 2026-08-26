@@ -143,10 +143,15 @@ describe("page d'accueil du mode dossier", () => {
 // irréprochable, parce que ses en-têtes passent par des aides dédiées. Cette route-ci écrivait
 // les siens à la main, et la règle ne l'avait pas suivie.
 describe("les en-têtes de la page d'accueil", () => {
-  const { serveur } = require("../serve.js");
-  // Le serveur n'écoute pas pendant les tests (garde dans serve.js) : on appelle son gestionnaire
-  // de requêtes directement, comme les tests du player appellent `handler`.
-  const repondre = serveur.listeners("request")[0];
+  // Le serveur n'écoute pas pendant les tests (garde dans serve.js) : on appelle le traitement
+  // directement, comme les tests du player appellent `handler`.
+  //
+  // ⚠️ ET C'EST `servir`, PAS L'ÉCOUTEUR. Ce banc prenait `serveur.listeners("request")[0]` et
+  // l'attendait ; depuis le correctif du `Host` malformé, l'écouteur ne rend PLUS de promesse —
+  // c'est précisément ce qui empêche un rejet de tuer le processus. `await` sur lui n'attendait
+  // donc plus rien et le corps était encore vide à l'assertion. L'enveloppe, elle, est gardée par
+  // le banc à vrai processus plus bas ; ici on veut le traitement.
+  const { servir: repondre } = require("../serve.js");
 
   it("pose CSP, nosniff et interdit l'encadrement", async () => {
     const res = { entetes: null, corps: "", writeHead(_c, h) { this.entetes = h; }, end(b) { this.corps = String(b || ""); } };
@@ -218,11 +223,17 @@ describe("ce que la page d'accueil propose", () => {
   });
 });
 
-// ⚠️ AUCUN SIGNAL N'ÉTAIT ÉCOUTÉ : le choix était entre LENT et BRUTAL. Sans gestionnaire, Node
-// PID 1 ignore `SIGTERM` et `docker stop` attend dix secondes puis tue ; avec `dumb-init`, le signal
-// relayé déclenche l'action par défaut sur un processus qui n'est plus PID 1 — terminaison
-// immédiate, requêtes en vol tranchées, à chaque déploiement. Ce banc tient la troisième voie.
-describe("l'arrêt gracieux du serveur autonome", () => {
+// DEUX PROPRIÉTÉS QUI N'EXISTENT QUE DANS UN PROCESSUS RÉEL — d'où le `spawn`.
+//
+// ⚠️ L'ARRÊT : aucun signal n'était écouté, le choix était entre LENT et BRUTAL. Sans gestionnaire,
+// Node PID 1 ignore `SIGTERM` et `docker stop` attend dix secondes puis tue ; avec `dumb-init`, le
+// signal relayé déclenche l'action par défaut sur un processus qui n'est plus PID 1 — terminaison
+// immédiate, requêtes en vol tranchées, à chaque déploiement. Ces bancs tiennent la troisième voie.
+//
+// ⚠️ LA SURVIE : une exception dans l'écouteur HTTP ne se voit pas depuis un appel direct — la
+// fonction rejette, l'appelant l'apprend, tout va bien. Ce qui tue, c'est que PERSONNE n'attende
+// la promesse. Ça ne se rejoue que là où `http` appelle vraiment.
+describe("le serveur autonome, dans un vrai processus", () => {
   const { spawn } = require("node:child_process");
   const path = require("node:path");
 
@@ -243,6 +254,47 @@ describe("l'arrêt gracieux du serveur autonome", () => {
   }
 
   const fin = (p) => new Promise((resolve) => p.on("exit", (code, sig) => resolve({ code, sig })));
+
+  // ⚠️ UNE SEULE REQUÊTE ANONYME ARRÊTAIT LE SERVEUR. `Host: [` donnait la base `http://[` à
+  // `new URL` : exception — dans un écouteur `async` dont `http` n'attend pas la promesse, donc
+  // rejet non géré, donc sortie du processus avec le code 1. Pas de base, pas de configuration,
+  // pas d'authentification : n'importe qui, une fois. Et c'est ce serveur-là que l'image publiée
+  // et `npx` exposent. Relevé par l'audit CODEX du 26/08 sur la v0.1.139, reproduit avant correctif.
+  //
+  // ⚠️ CE BANC LANCE UN VRAI PROCESSUS PARCE QUE LA PANNE N'EXISTE QUE LÀ. Appelée en direct, la
+  // fonction rejette et l'appelant voit le rejet : tout va bien. Ce qui tue, c'est que PERSONNE
+  // n'attende la promesse — un fait du serveur HTTP, pas de la fonction. Remettre l'ancienne ligne
+  // (`new URL(req.url, "http://" + req.headers.host)`) rend ce banc rouge.
+  it("⚠️ un `Host` malformé ne peut pas arrêter le serveur — et la requête suivante répond", async () => {
+    const net = require("node:net");
+    const { p, pret } = lancer();
+    const port = await pret;
+
+    const brut = (requete) => new Promise((resolve) => {
+      const prise = net.connect(port, "127.0.0.1");
+      let recu = "";
+      prise.on("connect", () => prise.write(requete));
+      prise.on("data", (d) => { recu += String(d); });
+      prise.on("close", () => resolve(recu));
+      prise.on("error", () => resolve(recu));
+    });
+
+    const malForme = await brut("GET /healthz HTTP/1.1\r\nHost: [\r\nConnection: close\r\n\r\n");
+    expect(malForme, "l'hôte n'est lu nulle part ici — il ne doit RIEN changer").toContain("200 OK");
+
+    // Une cible de requête en forme absolue, elle, peut être invalide sans que Node la rejette :
+    // c'est le client qui a tort, et ça se dit avec un 400 — pas avec une pile d'appels.
+    const cibleInvalide = await brut("GET http://[ HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n");
+    expect(cibleInvalide).toContain("400");
+
+    // L'ASSERTION QUI PORTE LE DÉFAUT : le processus a survécu, et il sert encore.
+    expect(p.exitCode, "le processus est sorti — c'est exactement la panne").toBe(null);
+    const suivante = await fetch(`http://127.0.0.1:${port}/healthz`);
+    expect(suivante.status, "un serveur mort ne répond pas à la requête d'après").toBe(200);
+
+    p.kill("SIGTERM");
+    await fin(p);
+  }, 20000);
 
   it("⚠️ SIGTERM fait sortir le processus au lieu d'attendre le couperet de l'orchestrateur", async () => {
     const { p, pret, lu } = lancer();
