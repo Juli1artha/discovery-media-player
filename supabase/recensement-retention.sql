@@ -18,6 +18,7 @@
 \if :{?journaux_mois}\else \set journaux_mois 13 \endif
 \if :{?presentations_mois}\else \set presentations_mois 12 \endif
 \if :{?liens_mois}\else \set liens_mois 13 \endif
+\if :{?voix_mois}\else \set voix_mois 13 \endif
 select 'commercial_doc_views' as perimetre, count(*) as restantes
   from public.commercial_doc_views
   where at < now() - make_interval(months => :journaux_mois)
@@ -60,4 +61,13 @@ select 'doc_presentation_attendees_orphelins', count(*)
   where not exists (
     select 1 from public.doc_presentations p
     where p.slug = a.slug
-      and (p.active or p.updated_at >= now() - make_interval(months => :presentations_mois)));
+      and (p.active or p.updated_at >= now() - make_interval(months => :presentations_mois)))
+union all
+-- ⚠️ CE RECENSEMENT COMPTE DES LIGNES, ET LE PÉRIMÈTRE RÉEL EST UN BUCKET. Il dit qu'aucune trace
+-- hors fenêtre ne subsiste ; il ne peut PAS dire que les deux objets correspondants ont quitté
+-- `tts-cache`, parce que rien en SQL ne voit le stockage. Ce qui reste vrai : sans trace hors
+-- fenêtre, il ne reste plus rien que la purge saurait viser — un objet écrit avant la migration
+-- 0021, lui, n'a jamais eu de trace et n'en aura pas. `docs/RETENTION.md` le dit comme une limite.
+select 'doc_tts_objects', count(*)
+  from public.doc_tts_objects
+  where created_at < now() - make_interval(months => :voix_mois);

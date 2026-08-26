@@ -341,6 +341,31 @@ comment on table public.player_rate_limits is
   'Compteurs de débit partagés entre instances. Une ligne par clé et par fenêtre ; les lignes '
   'périmées sont écrasées à la première demande suivante, il n''y a rien à purger.';
 
+-- ── LA TRACE DU CACHE DE VOIX ───────────────────────────────────────────────────────────────────
+-- ⚠️ SANS ELLE, LE BUCKET `tts-cache` EST IMPURGEABLE PAR CONSTRUCTION. Chaque synthèse y écrit
+-- `<empreinte>.mp3` et `<empreinte>.json` ; l'empreinte est un condensat (voix + modèle + texte
+-- prononcé) qui ne se rattache à aucune ligne. Le balayage de rétention efface des LIGNES, et pour
+-- les fichiers il efface ceux dont une ligne porte le chemin — la capacité `storage` du contrat
+-- expose `put` et `remove`, jamais `list`. Sans trace, il n'a rien à parcourir. Voir la migration
+-- 0021 et docs/RETENTION.md.
+--
+-- On note l'empreinte et la date, JAMAIS le texte : l'écrire ici recréerait dans la base la donnée
+-- personnelle que le bucket contient peut-être déjà, en la rendant cette fois interrogeable.
+create table if not exists public.doc_tts_objects (
+  hash        text primary key,
+  created_at  timestamptz not null default now()
+);
+create index if not exists doc_tts_objects_created_idx
+  on public.doc_tts_objects (created_at);
+-- RLS activée SANS politique : sous RLS, l'absence de politique refuse tout — seul le rôle de
+-- service passe. Même posture que `player_rate_limits`, et pour la même raison : ni un visiteur ni
+-- l'équipe n'ont de raison de lire cette table.
+alter table public.doc_tts_objects enable row level security;
+comment on table public.doc_tts_objects is
+  'Trace des objets écrits dans le bucket public tts-cache : une empreinte, une date, jamais le '
+  'texte. Sans elle le bucket serait impurgeable — la capacité storage du contrat n''expose pas '
+  'de listage. Voir docs/RETENTION.md.';
+
 -- ⚠️ ET LIRE PUIS ÉCRIRE N'EST PAS ATOMIQUE. Deux appels simultanés lisent le même compte et
 -- écrivent la même valeur : la limite laisse passer le double. L'incrément se fait donc en UNE
 -- instruction, côté serveur.
