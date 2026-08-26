@@ -32,7 +32,7 @@ function jeton() {
   return `${tete}.${corps}.${sig}`;
 }
 
-let shares, contexte, docId, autreDoc;
+let shares, contexte, docId, autreDoc, A, B, Z, C;
 
 decrire("les statistiques : en base et en mémoire, le même résultat", () => {
   beforeAll(async () => {
@@ -44,6 +44,15 @@ decrire("les statistiques : en base et en mémoire, le même résultat", () => {
 
     docId = "stats-" + crypto.randomBytes(4).toString("hex");
     autreDoc = "stats-" + crypto.randomBytes(4).toString("hex");
+    // ⚠️ DES SLUGS UNIQUES, PARCE QUE CE FICHIER TOURNE DEUX FOIS. `vitest.base.config.mjs` prend
+    // `base/**/*.test.js` : ce banc est donc exécuté par `test:base` PUIS par `test:stats`, dans la
+    // même base. Avec des slugs écrits en dur, la seconde exécution butait sur la clé primaire de
+    // `commercial_doc_shares` — exactement la graine non idempotente que `retention.test.js` a déjà
+    // payée, et dont `vitest.campagne.config.mjs` garde la trace écrite. Une graine de banc doit
+    // pouvoir être semée deux fois : c'est une propriété du banc, pas une hypothèse sur son
+    // ordonnanceur.
+    const suffixe = crypto.randomBytes(4).toString("hex");
+    A = "lien-a-" + suffixe; B = "lien-b-" + suffixe; Z = "lien-z-" + suffixe; C = "lien-c-" + suffixe;
     const maintenant = Date.now();
     const il_y_a = (min) => new Date(maintenant - min * 60000).toISOString();
 
@@ -53,27 +62,27 @@ decrire("les statistiques : en base et en mémoire, le même résultat", () => {
     // n'entre pas dans l'entonnoir, la casse des e-mails internes, l'ordre d'arrivée face à
     // « dernière activité », et deux liens du même document qu'il ne faut pas confondre.
     const lignes = [
-      { doc_id: docId, slug: "lien-a", event: "open", page: 3, max_page: 5, seconds: 12, session_id: "s1", at: il_y_a(50) },
-      { doc_id: docId, slug: "lien-a", event: "page", page: 5, max_page: 5, seconds: 40, session_id: "s1", at: il_y_a(10) },
-      { doc_id: docId, slug: "lien-a", event: "open", page: 1, max_page: 2, seconds: 3, session_id: "s2", at: il_y_a(30) },
+      { doc_id: docId, slug: A, event: "open", page: 3, max_page: 5, seconds: 12, session_id: "s1", at: il_y_a(50) },
+      { doc_id: docId, slug: A, event: "page", page: 5, max_page: 5, seconds: 40, session_id: "s1", at: il_y_a(10) },
+      { doc_id: docId, slug: A, event: "open", page: 1, max_page: 2, seconds: 3, session_id: "s2", at: il_y_a(30) },
       // Session absente : l'entonnoir doit retomber sur le slug, des deux côtés.
-      { doc_id: docId, slug: "lien-a", event: "page", page: 2, max_page: 2, seconds: 5, session_id: null, at: il_y_a(20) },
+      { doc_id: docId, slug: A, event: "page", page: 2, max_page: 2, seconds: 5, session_id: null, at: il_y_a(20) },
       // Chaîne VIDE : ni `if (v.session_id)` ni `coalesce(...) <> ''` ne doivent la compter.
-      { doc_id: docId, slug: "lien-b", event: "open", page: 1, max_page: 1, seconds: 1, session_id: "", at: il_y_a(40) },
+      { doc_id: docId, slug: B, event: "open", page: 1, max_page: 1, seconds: 1, session_id: "", at: il_y_a(40) },
       // Page zéro : hors entonnoir, mais la ligne existe et compte comme ouverture.
-      { doc_id: docId, slug: "lien-b", event: "open", page: 0, max_page: 0, seconds: 0, session_id: "s3", at: il_y_a(5) },
+      { doc_id: docId, slug: B, event: "open", page: 0, max_page: 0, seconds: 0, session_id: "s3", at: il_y_a(5) },
       // ⚠️ ARRIVÉE DANS LE DÉSORDRE : « dernière activité » se calcule, elle ne se déduit pas du tri.
-      { doc_id: docId, slug: "lien-b", event: "page", page: 4, max_page: 4, seconds: 7, session_id: "s3", at: il_y_a(120) },
+      { doc_id: docId, slug: B, event: "page", page: 4, max_page: 4, seconds: 7, session_id: "s3", at: il_y_a(120) },
       // Un autre document : la vue d'ensemble ne doit pas les mélanger.
-      { doc_id: autreDoc, slug: "lien-c", event: "open", page: 9, max_page: 9, seconds: 2, session_id: "s9", at: il_y_a(15) },
+      { doc_id: autreDoc, slug: C, event: "open", page: 9, max_page: 9, seconds: 2, session_id: "s9", at: il_y_a(15) },
     ];
     await contexte.db.request("commercial_doc_views", { method: "POST", headers: { Prefer: "return=minimal" }, body: lignes });
 
     await contexte.db.request("commercial_doc_shares", { method: "POST", headers: { Prefer: "return=minimal" }, body: [
-      { doc_id: docId, slug: "lien-a", file_url: "file:///x.pdf", idem_key: "stats:" + docId + ":a" },
-      { doc_id: docId, slug: "lien-b", file_url: "file:///x.pdf", idem_key: "stats:" + docId + ":b" },
+      { doc_id: docId, slug: A, file_url: "file:///x.pdf", idem_key: "stats:" + docId + ":a" },
+      { doc_id: docId, slug: B, file_url: "file:///x.pdf", idem_key: "stats:" + docId + ":b" },
       // Un lien SANS aucune vue : les deux chemins doivent le rendre à zéro, pas l'omettre.
-      { doc_id: docId, slug: "lien-z", file_url: "file:///x.pdf", idem_key: "stats:" + docId + ":z" },
+      { doc_id: docId, slug: Z, file_url: "file:///x.pdf", idem_key: "stats:" + docId + ":z" },
     ] });
 
     await contexte.db.request("commercial_doc_internal_sessions", { method: "POST", headers: { Prefer: "return=minimal" }, body: [
