@@ -176,6 +176,17 @@ function creerCache(options) {
       return promesse;
     },
 
+    /**
+     * Oublie ce qui est RETENU, jamais ce qui est en vol — la même règle que l'éviction : retirer
+     * une demande en cours ne libère rien et casserait le regroupement pour ses appelants.
+     *
+     * ⚠️ EXISTE PARCE QU'UN CACHE DE MODULE SURVIT À UN BANC. Deux bancs qui demandent la même clé
+     * dans le même processus : le second est servi par la mémoire du premier et n'observe donc PAS
+     * ce qu'il croit observer — il a compté zéro appel réseau et conclu que la route n'appelait
+     * pas. Un banc qui ne remet pas cet état à zéro mesure le banc d'avant.
+     */
+    vider() { for (const [k, e] of [...entrees]) if (!e.enVol) oublier(k); },
+
     /** Pour les tests et l'exploitation : ce que la table contient réellement. */
     taille: () => entrees.size,
     /** Poids cumulé des résultats retenus, en OCTETS UTF-8. */

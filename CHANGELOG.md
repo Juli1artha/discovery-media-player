@@ -12,6 +12,37 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Security
+- **The voice route could be used as a public, paid API — and the bill was ours.** `bot-tts` accepts
+  `body.text` as given: a valid public slug is enough, no session is required, and nothing ties the
+  text to an answer the bot actually produced. The per-IP rate limit (400/h) bounds a single
+  address's *cadence*; it bounds neither the cost per call, nor the number of concurrent outbound
+  calls, nor the size of what we accept back. Three bounds now exist, none of which changes the
+  protocol. Reported by the CODEX audit of 26 August.
+  - ⚠️ **A hundred concurrent requests for the same text produced a hundred syntheses.** The cache
+    check is a `HEAD`, and a `HEAD` cannot see what has not been written yet — so a burst missed the
+    cache together and paid for the same clip a hundred times. Requests are now grouped by
+    fingerprint: one synthesis, one stored object, one bill, all hundred served.
+  - ⚠️ **And the same primitive supplies the ceiling on concurrent paid calls.** `creerCache`'s
+    admission limit refuses the request past the ceiling with a retryable `503` instead of admitting
+    it. `503` tells the caller to wait a second; `500` would tell it to give up.
+  - ⚠️ **The three outbound `fetch` calls had no deadline at all.** A provider that answers slowly —
+    or stops answering — held the request, its socket and its admission slot until the platform
+    killed the function. `appelHote` and the file relay already carry this lesson; this was the
+    route it had not reached. A real abort (`AbortSignal`), not a promise race: a race returns
+    without cancelling, so it frees nothing.
+  - ⚠️ **The response body is bounded before allocation.** `gen.json()` read whatever arrived,
+    base64 audio and alignment array included; the body is a third party's, so its size was not
+    ours to assume. It is now read against a ceiling and refused at the first byte past it, without
+    reaching storage.
+  - What is memoised is what is *shareable*, and nothing more: `spoken` is composed per caller.
+    Two different texts can share one pronunciation — that is what `pronFix` is for — hence one
+    fingerprint, while `spoken !== text` holds for only one of them. Memoising the whole reply would
+    have handed the second caller the first one's spelling, and the karaoke would have aligned on
+    the wrong string.
+  - Still open, and deliberately a separate piece of work: **nothing yet binds the text to an answer
+    the bot produced.** That needs a signed ticket, and it changes the protocol.
+
 ### Fixed
 - **A malformed `Host` header could stop the standalone server. One anonymous request, no
   configuration, no account.** `bin/serve.js` built the request URL as

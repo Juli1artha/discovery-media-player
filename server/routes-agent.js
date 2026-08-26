@@ -13,6 +13,74 @@ const { adresseAppelant } = require("./appelant");
 const { jsonPour } = require("./reponses.js");
 
 const { getShareBySlug } = require("./shares");
+const { creerCache, CODE_SATURATION } = require("./cache.js");
+
+// ⚠️ TROIS BORNES SUR UN APPEL SORTANT PAYANT, PARCE QU'IL N'EN AVAIT AUCUNE.
+//
+// `bot-tts` parle à ElevenLabs et écrit dans le stockage. Les trois `fetch` partaient SANS DÉLAI :
+// un fournisseur qui répond lentement (ou plus du tout) immobilisait la requête, sa socket et la
+// place d'admission du cache jusqu'à ce que la plateforme tue la fonction. C'est la même leçon
+// qu'`appelHote` et que le relais de fichiers, qui la portent déjà — celle-ci était la route
+// oubliée. Un abandon RÉEL (`AbortSignal`), pas une course de promesses : une course rendrait la
+// main sans annuler l'appel, donc sans libérer quoi que ce soit.
+//
+// Ces valeurs ne sont pas réglables par l'exploitant, et c'est délibéré : ce sont des bornes de
+// protocole, pas des réglages de déploiement. Une synthèse de 700 caractères qui met plus de trente
+// secondes n'arrivera pas.
+const DELAI_TETE_MS = 5000;        // un HEAD sur un CDN : s'il tarde, l'extrait n'est pas en cache
+const DELAI_VOIX_MS = 8000;        // ajout d'une voix : accessoire, jamais bloquant
+const DELAI_SYNTHESE_MS = 30000;   // la synthèse elle-même, seule opération réellement longue
+
+// ⚠️ LA RÉPONSE VIENT D'UN TIERS : SA TAILLE N'EST PAS LA NÔTRE. `gen.json()` lit tout ce qui
+// arrive, sans plafond — audio base64 et tableau d'alignement compris. Le corps est donc lu BORNÉ,
+// et refusé au premier octet de trop.
+const MAX_REPONSE_OCTETS = 8 * 1024 * 1024;
+
+// ⚠️ UN ÉCHEC DE SYNTHÈSE N'EST PAS UNE ERREUR DE SERVEUR — il ressort en 200 `{ ok:false }`, comme
+// avant. Il est typé pour traverser le cache en REJET : une promesse rompue n'est pas mémorisée,
+// donc un hoquet d'ElevenLabs ne se sert pas pendant toute la fenêtre.
+const ECHEC_SYNTHESE = "tts-echec";
+const echecSynthese = () => Object.assign(new Error("synthèse indisponible"), { code: ECHEC_SYNTHESE });
+
+/**
+ * Corps lu en TEXTE, borné avant allocation. Rend `null` si la réponse dépasse le plafond —
+ * annoncé (`content-length`) ou constaté en cours de lecture.
+ */
+async function lireBorne(reponse, maxOctets) {
+  const annonce = Number(reponse.headers && reponse.headers.get ? reponse.headers.get("content-length") || 0 : 0);
+  if (annonce > maxOctets) return null;
+  const flux = reponse.body;
+  // ⚠️ LE FLUX D'ABORD : c'est le seul chemin qui refuse AVANT d'avoir tout en mémoire. `text()`
+  // alloue le corps entier puis mesure — le plafond y arrive trop tard, mais vaut mieux que rien.
+  if (!flux || typeof flux.getReader !== "function") {
+    if (typeof reponse.text !== "function") return null;
+    const t = await reponse.text();
+    return Buffer.byteLength(t, "utf8") > maxOctets ? null : t;
+  }
+  const lecteur = flux.getReader();
+  const morceaux = [];
+  let taille = 0;
+  for (;;) {
+    const { done, value } = await lecteur.read();
+    if (done) break;
+    taille += value.byteLength;
+    if (taille > maxOctets) { try { await lecteur.cancel(); } catch { /* déjà clos */ } return null; }
+    morceaux.push(Buffer.from(value));
+  }
+  return Buffer.concat(morceaux).toString("utf8");
+}
+
+// ⚠️ REGROUPEMENT PAR EMPREINTE **ET** PLAFOND DE SYNTHÈSES SIMULTANÉES — LE MÊME OUTIL POUR LES
+// DEUX. Cent appels concurrents sur le même texte produisaient cent synthèses, cent écritures et
+// cent factures pour un seul objet : la vérification de cache est un HEAD, et un HEAD ne voit pas
+// ce qui n'est pas encore écrit. `creerCache` fait déjà exactement ça pour les lectures publiques —
+// la promesse est partagée, et `maxEnVol` REFUSE la demande de trop (503 réessayable) au lieu de
+// l'admettre. C'est le seul endroit d'où puisse sortir un plafond sur les appels sortants payants.
+const SYNTHESES_SIMULTANEES = 4;
+const cacheSynthese = creerCache({ ttlMs: 60_000, max: 500, maxEnVol: SYNTHESES_SIMULTANEES });
+
+/** Bornes et mémoire de la synthèse, exposées pour les bancs et l'exploitation. */
+const _tts = { cache: cacheSynthese, SYNTHESES_SIMULTANEES, MAX_REPONSE_OCTETS, DELAI_SYNTHESE_MS };
 let PLAYER = null; let docbot = null;
 const init = (ctx) => { PLAYER = ctx; docbot = ctx.plugins.bot; };
 
@@ -59,56 +127,102 @@ async function traiter(req, res, body, _slug) {
           // « v2 » = version du format de cache : les extraits v1 (sans alignement timestamps) sont ignorés
           // d'office et tout se régénère AVEC l'horodatage par caractère (karaoké exact). Anciens fichiers = poids mort minime.
           const keyFor = (vid) => crypto.createHash("sha256").update(vid + "|" + modelId + "|v2|" + spoken).digest("hex");
-          let hash = keyFor(voiceId);
-          let objPath = hash + ".mp3";
-          let pub = base + "/storage/v1/object/public/tts-cache/" + objPath;
-          let pubAlign = base + "/storage/v1/object/public/tts-cache/" + hash + ".json";
-          // Cache hit ? On sert directement l'URL CDN (coût ElevenLabs = 0). align : les anciens extraits
-          // n'ont pas de JSON (404) → le client retombe sur la synchro estimée, rien ne casse.
-          try { const head = await fetch(pub, { method: "HEAD" }); if (head.ok) return jp(200, { ok: true, url: pub, align: pubAlign, cached: true, spoken: spoken !== text ? spoken : undefined }); } catch { /* miss */ }
-          // WITH-TIMESTAMPS : audio + horodatage PAR CARACTÈRE → surlignage karaoké EXACT côté client.
-          const synth = (vid) => fetch("https://api.elevenlabs.io/v1/text-to-speech/" + encodeURIComponent(vid) + "/with-timestamps", {
-            method: "POST",
-            headers: { "xi-api-key": apiKey, "Content-Type": "application/json", accept: "application/json" },
-            body: JSON.stringify({ text: spoken, model_id: modelId, voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true } }),
-          });
-          let gen = await synth(voiceId);
-          // Voix de la BIBLIOTHÈQUE pas encore dans le compte → ajout automatique puis nouvel essai ;
-          // si l'ajout échoue (quota de slots), on REPLIE sur la voix par défaut : jamais de présentation muette.
-          if (!gen.ok && voiceOwner && /^[A-Za-z0-9_-]{8,80}$/.test(voiceOwner)) {
-            try {
-              await fetch("https://api.elevenlabs.io/v1/voices/add/" + encodeURIComponent(voiceOwner) + "/" + encodeURIComponent(voiceId), {
-                method: "POST", headers: { "xi-api-key": apiKey, "Content-Type": "application/json" },
-                body: JSON.stringify({ new_name: (voiceName || `Voix ${PLAYER.branding.name || "player"}`).slice(0, 80) }),
-              });
-            } catch { /* repli défaut ci-dessous */ }
-            gen = await synth(voiceId);
-          }
-          if (!gen.ok && voiceId !== defaultVoiceId) {
-            voiceId = defaultVoiceId; gen = await synth(voiceId);
-            // Le repli se met en cache SOUS SA PROPRE clé (voix par défaut) — souvent déjà présente.
-            hash = keyFor(voiceId); objPath = hash + ".mp3";
-            pub = base + "/storage/v1/object/public/tts-cache/" + objPath;
-            pubAlign = base + "/storage/v1/object/public/tts-cache/" + hash + ".json";
-          }
-          if (!gen.ok) { try { await PLAYER.errors.capture(new Error("elevenlabs " + gen.status), { where: "bot-tts" }); } catch { /* noop */ } return jp(200, { ok: false }); }
-          const data = await gen.json().catch(() => null);
-          const buf = data && data.audio_base64 ? Buffer.from(data.audio_base64, "base64") : Buffer.alloc(0);
-          if (!buf.length) return jp(200, { ok: false });
-          const up = await PLAYER.storage.put("tts-cache", objPath, buf, "audio/mpeg");
-          // Surveillance du réservoir ElevenLabs (throttlée 1×/h) — cf. _provider-quotas.js.
-          try { await PLAYER.plugins.providerQuotas?.tick("elevenlabs"); } catch { /* jamais bloquant */ }
-          if (!up) return jp(200, { ok: false });
-          // Alignement compact : instants de DÉBUT par caractère (ms) — mêmes index que le texte envoyé.
-          let hasAlign = false;
+          const empreinte = keyFor(voiceId);
+
+          // ⚠️ CE QUI EST MÉMORISÉ EST CE QUI SE PARTAGE, ET RIEN DE PLUS. `spoken` se compose
+          // DEHORS, par appelant. Deux textes différents peuvent donner la même prononciation —
+          // c'est précisément le travail de `pronFix` —, donc la même empreinte ; mais
+          // `spoken !== text` n'est vrai que pour l'un des deux. Mémoriser la réponse entière aurait
+          // renvoyé au second l'orthographe du premier, et le karaoké se serait aligné sur la
+          // mauvaise chaîne, servi depuis la mémoire, sans jamais repasser par la synthèse.
+          let extrait;
           try {
-            const al = data.alignment || data.normalized_alignment;
-            if (al && Array.isArray(al.character_start_times_seconds)) {
-              const tms = al.character_start_times_seconds.map((x) => Math.round(Number(x) * 1000));
-              hasAlign = await PLAYER.storage.put("tts-cache", hash + ".json", Buffer.from(JSON.stringify({ t: tms })), "application/json");
+            extrait = await cacheSynthese.lire(empreinte, async () => {
+              let hash = empreinte;
+              let objPath = hash + ".mp3";
+              let pub = base + "/storage/v1/object/public/tts-cache/" + objPath;
+              let pubAlign = base + "/storage/v1/object/public/tts-cache/" + hash + ".json";
+              // Cache hit ? On sert directement l'URL CDN (coût ElevenLabs = 0). align : les anciens extraits
+              // n'ont pas de JSON (404) → le client retombe sur la synchro estimée, rien ne casse.
+              try {
+                const head = await fetch(pub, { method: "HEAD", signal: AbortSignal.timeout(DELAI_TETE_MS) });
+                if (head.ok) return { url: pub, align: pubAlign, cached: true };
+              } catch { /* miss, ou HEAD trop lent : on synthétise */ }
+              // WITH-TIMESTAMPS : audio + horodatage PAR CARACTÈRE → surlignage karaoké EXACT côté client.
+              const synth = (vid) => fetch("https://api.elevenlabs.io/v1/text-to-speech/" + encodeURIComponent(vid) + "/with-timestamps", {
+                method: "POST",
+                headers: { "xi-api-key": apiKey, "Content-Type": "application/json", accept: "application/json" },
+                body: JSON.stringify({ text: spoken, model_id: modelId, voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true } }),
+                signal: AbortSignal.timeout(DELAI_SYNTHESE_MS),
+              });
+              // ⚠️ UN ABANDON EST UN ÉCHEC DE SYNTHÈSE, PAS UNE PANNE DU PLAYER. Sans ce rattrapage,
+              // le rejet d'`AbortSignal` remonterait en 500 et ferait perdre le repli sur la voix
+              // par défaut — le pire des deux mondes : muet ET bruyant.
+              const essayer = async (vid) => { try { return await synth(vid); } catch { return { ok: false, status: 0 }; } };
+              let gen = await essayer(voiceId);
+              // Voix de la BIBLIOTHÈQUE pas encore dans le compte → ajout automatique puis nouvel essai ;
+              // si l'ajout échoue (quota de slots), on REPLIE sur la voix par défaut : jamais de présentation muette.
+              if (!gen.ok && voiceOwner && /^[A-Za-z0-9_-]{8,80}$/.test(voiceOwner)) {
+                try {
+                  await fetch("https://api.elevenlabs.io/v1/voices/add/" + encodeURIComponent(voiceOwner) + "/" + encodeURIComponent(voiceId), {
+                    method: "POST", headers: { "xi-api-key": apiKey, "Content-Type": "application/json" },
+                    body: JSON.stringify({ new_name: (voiceName || `Voix ${PLAYER.branding.name || "player"}`).slice(0, 80) }),
+                    signal: AbortSignal.timeout(DELAI_VOIX_MS),
+                  });
+                } catch { /* repli défaut ci-dessous */ }
+                gen = await essayer(voiceId);
+              }
+              if (!gen.ok && voiceId !== defaultVoiceId) {
+                voiceId = defaultVoiceId; gen = await essayer(voiceId);
+                // Le repli se met en cache SOUS SA PROPRE clé (voix par défaut) — souvent déjà présente.
+                hash = keyFor(voiceId); objPath = hash + ".mp3";
+                pub = base + "/storage/v1/object/public/tts-cache/" + objPath;
+                pubAlign = base + "/storage/v1/object/public/tts-cache/" + hash + ".json";
+              }
+              if (!gen.ok) { try { await PLAYER.errors.capture(new Error("elevenlabs " + gen.status), { where: "bot-tts" }); } catch { /* noop */ } throw echecSynthese(); }
+              // ⚠️ BORNÉ AVANT ALLOCATION. Le corps est écrit par un tiers : sa taille n'est pas la
+              // nôtre, et `gen.json()` l'aurait pris en entier quelle qu'elle soit.
+              const corpsBrut = await lireBorne(gen, MAX_REPONSE_OCTETS);
+              if (corpsBrut == null) {
+                try { await PLAYER.errors.capture(new Error("elevenlabs : réponse au-delà de " + MAX_REPONSE_OCTETS + " octets"), { where: "bot-tts" }); } catch { /* noop */ }
+                throw echecSynthese();
+              }
+              let data = null;
+              try { data = JSON.parse(corpsBrut); } catch { /* corps illisible : traité comme un échec */ }
+              const buf = data && typeof data.audio_base64 === "string" && data.audio_base64
+                ? Buffer.from(data.audio_base64, "base64") : Buffer.alloc(0);
+              if (!buf.length) throw echecSynthese();
+              const up = await PLAYER.storage.put("tts-cache", objPath, buf, "audio/mpeg");
+              // Surveillance du réservoir ElevenLabs (throttlée 1×/h) — cf. _provider-quotas.js.
+              try { await PLAYER.plugins.providerQuotas?.tick("elevenlabs"); } catch { /* jamais bloquant */ }
+              if (!up) throw echecSynthese();
+              // Alignement compact : instants de DÉBUT par caractère (ms) — mêmes index que le texte envoyé.
+              let hasAlign = false;
+              try {
+                const al = data.alignment || data.normalized_alignment;
+                if (al && Array.isArray(al.character_start_times_seconds)) {
+                  const tms = al.character_start_times_seconds.map((x) => Math.round(Number(x) * 1000));
+                  hasAlign = await PLAYER.storage.put("tts-cache", hash + ".json", Buffer.from(JSON.stringify({ t: tms })), "application/json");
+                }
+              } catch { /* sans alignement → synchro estimée côté client */ }
+              return { url: pub, align: hasAlign ? pubAlign : null };
+            });
+          } catch (e) {
+            // ⚠️ « NOUS REFUSONS UNE SYNTHÈSE DE PLUS » N'EST PAS « LA SYNTHÈSE A ÉCHOUÉ ». Le 503
+            // réessayable dit au client d'attendre une seconde ; le 200 `{ ok:false }` lui dit de
+            // se passer de voix. Les confondre rendrait muette une présentation que la seconde
+            // d'après aurait servie.
+            if (e && e.code === CODE_SATURATION) {
+              return jp(503, { ok: false, error: "busy" }, { "Retry-After": String(e.retryAfter || 1) });
             }
-          } catch { /* sans alignement → synchro estimée côté client */ }
-          return jp(200, { ok: true, url: pub, align: hasAlign ? pubAlign : null, spoken: spoken !== text ? spoken : undefined });
+            if (e && e.code === ECHEC_SYNTHESE) return jp(200, { ok: false });
+            throw e;
+          }
+          return jp(200, {
+            ok: true, url: extrait.url, align: extrait.align || null,
+            cached: extrait.cached || undefined,
+            spoken: spoken !== text ? spoken : undefined,
+          });
         } catch (e) { try { PLAYER.errors.capture(e, { route: String(body.action || "(sans action)") }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
       }
       if (body.action === "bot-start" || body.action === "bot-say" || body.action === "bot-history" || body.action === "bot-nudge" || body.action === "bot-book" || body.action === "bot-contact" || body.action === "bot-rate" || body.action === "bot-script") {
@@ -233,4 +347,4 @@ async function traiter(req, res, body, _slug) {
   return false;
 }
 
-module.exports = { init, traiter };
+module.exports = { init, traiter, _tts };
