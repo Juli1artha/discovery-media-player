@@ -66,6 +66,31 @@ the notes there are this file's section for that version.
     awaits the promise. Restoring the old line turns the bench red.
 
 ### Added
+- **An endurance bench: what a burst cannot show — duration.** Every load bench in this repository
+  is *instantaneous*: N calls fired together, one reading, done. `chargeReelle` already covers
+  concurrent heartbeats, twenty simultaneous presentations, the file relay, a slowed database, a
+  dying database and cost linearity; `coutParGeste` counts round trips; `multiProcessus` holds the
+  advisory lock against real system parallelism. None of them can answer *"and if it lasts?"* — a
+  slowly rising memory, a cache that only saturates after minutes, an event loop that slips when
+  gestures are **mixed**. Three failures invisible in three seconds, and exactly the ones an
+  operator meets in production. Asked for by the CODEX audit of 26 August, §3.
+  - **It runs short by default, on purpose.** A bench that only runs by hand is a dead bench — this
+    repository left a publication guard dead for nineteen hours without anyone noticing. Twenty-five
+    seconds on every CI run prove the scenario stands up; the real campaign is
+    `PLAYER_ENDURANCE_SECONDES=1800 npm run test:endurance`.
+  - **A mixed scenario, not one gesture repeated** — weighted heartbeats, state reads, chat reads,
+    card reads and refusals. The mix is what puts the paths in contention for the same database.
+  - ⚠️ **The instrument is confronted with reality.** The `mesures` reading was born hours before
+    this bench, and a counter that is wrong is worse than no counter: it grants a confidence no
+    measurement carries. The bench keeps its own independent tally and requires the two to agree
+    exactly.
+  - ⚠️ **The saturation ceiling is finally measured** — the one thing both integrating hosts said
+    they could not produce. Two hundred distinct keys against a ceiling of 128, under a database at
+    +400 ms: the margin is structural, not chronometric. The bench requires that saturation
+    *happened* — otherwise a ceiling that became unreachable would leave it green having observed
+    nothing, claiming refusals are clean without ever having seen one.
+  - Thresholds are drift detectors, wide on purpose, same doctrine as `coutParGeste`. What is
+    absolute is **no 5xx** — a server error under nominal load is a defect, not a tolerance.
 - **`mesures` on the contract card: what this instance has actually lived through.** `lectureSaturee`
   (0.1.139) answers exactly one question. *Is a route slow? which ones? us or the database? how many
   5xx? is the event loop slipping?* had **no observable answer at all** — and deciding to optimise
