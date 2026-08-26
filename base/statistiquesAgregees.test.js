@@ -51,8 +51,15 @@ decrire("les statistiques : en base et en mémoire, le même résultat", () => {
     // payée, et dont `vitest.campagne.config.mjs` garde la trace écrite. Une graine de banc doit
     // pouvoir être semée deux fois : c'est une propriété du banc, pas une hypothèse sur son
     // ordonnanceur.
+    // ⚠️ TOUTES LES CLÉS PRIMAIRES DE LA GRAINE, PAS LA PREMIÈRE QUE LA FORGE A NOMMÉE. J'ai
+    // d'abord rendu les slugs uniques et laissé `i1/i2/i3` en dur : la course suivante a buté sur
+    // `commercial_doc_internal_sessions_pkey`, exactement de la même manière. Un correctif guidé
+    // par le message d'erreur corrige le cas cité ; ce qu'il faut corriger, c'est la RÈGLE — ici
+    // « aucune clé primaire écrite en dur ». Les trois tables semées ci-dessous ont chacune la
+    // leur : `commercial_doc_views` engendre la sienne, les deux autres non.
     const suffixe = crypto.randomBytes(4).toString("hex");
     A = "lien-a-" + suffixe; B = "lien-b-" + suffixe; Z = "lien-z-" + suffixe; C = "lien-c-" + suffixe;
+    const I = (n) => `i${n}-${suffixe}`;
     const maintenant = Date.now();
     const il_y_a = (min) => new Date(maintenant - min * 60000).toISOString();
 
@@ -87,9 +94,9 @@ decrire("les statistiques : en base et en mémoire, le même résultat", () => {
 
     await contexte.db.request("commercial_doc_internal_sessions", { method: "POST", headers: { Prefer: "return=minimal" }, body: [
       // MÊME personne, deux casses : une seule lectrice interne des deux côtés.
-      { session_id: "i1", doc_id: docId, user_email: "Equipe@Exemple.test", last_at: il_y_a(60) },
-      { session_id: "i2", doc_id: docId, user_email: "equipe@exemple.test", last_at: il_y_a(11) },
-      { session_id: "i3", doc_id: docId, user_email: null, last_at: il_y_a(9) },
+      { session_id: I(1), doc_id: docId, user_email: "Equipe@Exemple.test", last_at: il_y_a(60) },
+      { session_id: I(2), doc_id: docId, user_email: "equipe@exemple.test", last_at: il_y_a(11) },
+      { session_id: I(3), doc_id: docId, user_email: null, last_at: il_y_a(9) },
     ] });
   });
 
