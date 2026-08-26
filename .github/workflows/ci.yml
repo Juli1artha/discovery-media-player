@@ -1119,14 +1119,18 @@ jobs:
           restes=$(awk -F'|' '{s+=$2} END {print s+0}' /tmp/recensement.txt)
           [ "$restes" = "0" ] || { echo "::error::le recensement indépendant trouve $restes ligne(s) dans le périmètre revendiqué"; exit 1; }
           lignes=$(grep -c '|' /tmp/recensement.txt | tr -d ' ')
-          [ "$lignes" = "9" ] || { echo "::error::le recensement rend $lignes périmètres au lieu de 9 — la sonde s'est déformée"; exit 1; }
+          # ⚠️ LE COMPTE EST ÉCRIT ICI POUR QU'UN PÉRIMÈTRE AJOUTÉ SOIT DÉCLARÉ, PAS DÉCOUVERT. Un
+          # recensement qui rétrécit sans qu'on le dise se lit comme un recensement qui trouve zéro.
+          # 10 depuis la 0.1.140 : le cache de voix (`doc_tts_objects`) est entré dans le périmètre.
+          [ "$lignes" = "10" ] || { echo "::error::le recensement rend $lignes périmètres au lieu de 10 — la sonde s'est déformée"; exit 1; }
           # ⚠️ Fenêtres NON STANDARD (neuvième audit) : les variables psql doivent être câblées —
           # sinon un hôte à durées personnalisées verrait le recensement contrôler une AUTRE
-          # politique que sa purge. On l'exécute avec des mois resserrés et on exige 9 lignes
-          # valides (le SQL tient sous substitution).
-          $PSQL -v journaux_mois=1 -v presentations_mois=1 -v liens_mois=1 -f supabase/recensement-retention.sql > /tmp/recens-perso.txt
+          # politique que sa purge. On l'exécute avec des mois resserrés et on exige 10 lignes
+          # valides (le SQL tient sous substitution). `voix_mois` est passé pour la même raison que
+          # les trois autres : une variable non câblée retomberait sur son défaut EN SILENCE.
+          $PSQL -v journaux_mois=1 -v presentations_mois=1 -v liens_mois=1 -v voix_mois=1 -f supabase/recensement-retention.sql > /tmp/recens-perso.txt
           lignes2=$(grep -c '|' /tmp/recens-perso.txt | tr -d ' ')
-          [ "$lignes2" = "9" ] || { echo "::error::recensement à fenêtres personnalisées cassé ($lignes2 lignes)"; cat /tmp/recens-perso.txt; exit 1; }
+          [ "$lignes2" = "10" ] || { echo "::error::recensement à fenêtres personnalisées cassé ($lignes2 lignes)"; cat /tmp/recens-perso.txt; exit 1; }
           echo "recensement paramétrable : OK sous fenêtres non standard"
 
   docker:
