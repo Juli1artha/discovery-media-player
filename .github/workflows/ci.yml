@@ -267,13 +267,23 @@ jobs:
       # n'existe pas pour lui — il ne la découvre qu'en cherchant pourquoi quelque chose ne marche
       # pas. `PLAYER_AUTH_URL` a vécu une demi-journée dans ce trou, le jour même de sa sortie :
       # la doc l'annonçait, le fichier à copier l'ignorait.
+      #
+      # ⚠️ CETTE RÈGLE VIVAIT ICI EN SHELL, ET ELLE LISAIT DE LA PROSE COMME DE LA DONNÉE. Elle
+      # relevait TOUT jeton majuscule entre accents graves de la page. Le jour où celle-ci a
+      # mentionné `SIGTERM`, `SIGINT` et `SIGKILL` — des noms de SIGNAUX, dans une phrase — elle les
+      # a exigés dans `.env.example`. Un contrôle qui demande de tordre la prose pour lui plaire
+      # apprend à ses lecteurs à écrire pour la machine.
+      #
+      # ⚠️ ET LE REMÈDE ÉVIDENT ÉTAIT PIRE — mesuré avant d'être écarté. « Ne lire que les titres »
+      # semblait propre : la page n'en porte que DEUX, alors qu'elle documente trente-neuf variables
+      # ailleurs. La garde serait devenue verte en ne regardant presque plus rien.
+      #
+      # Ce qui distingue une variable d'un mot, c'est qu'elle EXISTE ailleurs — le code la lit, ou
+      # l'exemple la porte. La règle vit donc dans un outil qui demande son inventaire à l'AST au
+      # lieu d'en tenir un second, et qui COMPTE ce qu'il écarte.
       - name: The example env file matches the documented variables
         if: matrix.node == '22'
-        run: |
-          grep -oE '`[A-Z][A-Z0-9_]{2,}`' docs/CONFIGURATION.md | tr -d '`' | sort -u > /tmp/doc.txt
-          grep -oE '^[A-Z][A-Z0-9_]+'     .env.example          | sort -u > /tmp/env.txt
-          diff=$(comm -3 /tmp/doc.txt /tmp/env.txt) || true
-          [ -z "$diff" ] || { echo "::error::.env.example and docs/CONFIGURATION.md disagree:"; echo "$diff"; exit 1; }
+        run: node tools/env-exemple.mjs
 
       # ⚠️ LA PARITÉ DOC↔EXEMPLE NE VOIT PAS LE CODE. Les deux textes ci-dessus peuvent être
       # parfaitement d'accord… sur une liste incomplète : ELEVENLABS_API_KEY, _VOICE_ID, _MODEL et

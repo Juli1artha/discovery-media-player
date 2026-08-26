@@ -185,13 +185,69 @@ function lireCorpsJson(req, maxOctets = 1_000_000) {
   });
 }
 
-// N'écoute QUE lorsqu'on lance ce fichier. Sans cette garde, un test qui l'importe ouvrirait un
-// port — et deux tests en parallèle s'attraperaient sur le même.
-if (require.main === module) serveur.listen(PORT, HOST, () => {
-  const racine = process.env.PLAYER_LOCAL_ROOT;
-  console.log(`Discovery Media Player — http://localhost:${PORT}`);
-  console.log(racine ? `  documents : ${racine}` : "  documents : aucun dossier local (PLAYER_LOCAL_ROOT)");
-  console.log(`  état      : http://localhost:${PORT}/api/doc?contract=1`);
-});
+/**
+ * ⚠️ AUCUN SIGNAL N'ÉTAIT ÉCOUTÉ, ET LE CHOIX ÉTAIT ENTRE LENT ET BRUTAL. Sans gestionnaire, Node
+ * PID 1 IGNORE `SIGTERM` (le noyau ne délivre pas à PID 1 un signal sans gestionnaire) : `docker
+ * stop` attend dix secondes puis tue. C'est ce que `dumb-init` corrige — il est PID 1, Node est son
+ * ENFANT, donc le signal relayé y déclenche l'action par défaut : terminaison IMMÉDIATE. Rapide,
+ * mais net : un document en cours de relais, une lecture de présentation, un battement — tranchés
+ * au milieu, à CHAQUE déploiement. La troisième voie n'avait jamais été posée.
+ *
+ * Ici : on cesse d'accepter, on laisse finir ce qui est en vol, on sort. Avec ou sans `dumb-init`.
+ *
+ * ⚠️ PREMIER PIÈGE — `close()` SEUL N'ARRIVE JAMAIS AU BOUT. Il attend que TOUTES les connexions se
+ * ferment, or le keep-alive en garde d'oisives ouvertes plusieurs secondes après leur dernière
+ * requête. Un arrêt qui attend ces sockets-là dépasse le délai de l'orchestrateur et se fait tuer :
+ * on aurait remplacé un arrêt brutal par un arrêt brutal PLUS LENT. `closeIdleConnections()` ferme
+ * ce qui ne sert plus, sans toucher à ce qui travaille.
+ *
+ * ⚠️ SECOND PIÈGE — SANS ÉCHÉANCE, UNE SEULE REQUÊTE BLOQUÉE TIENT TOUT. Un relais vers un stockage
+ * qui ne répond plus n'a aucune raison de finir. Le délai est donc BORNÉ, et volontairement sous le
+ * défaut de `docker stop` (dix secondes) : une échéance qui tombe après le couperet ne sert à rien.
+ * Passé le délai on coupe ce qui reste — c'est exactement l'ancien comportement, mais seulement pour
+ * ce qui n'a pas su finir, et après l'avoir DIT.
+ *
+ * ⚠️ Le minuteur est `unref()` : un compte à rebours qui empêcherait le processus de sortir
+ * retiendrait précisément l'arrêt qu'il surveille.
+ */
+const DELAI_ARRET_MS = Math.max(0, Number(process.env.PLAYER_SHUTDOWN_GRACE_MS) || 0) || 8000;
 
-module.exports = { serveur, versParametres, pageAccueil };
+function arreterProprement(signal) {
+  // ⚠️ UN SECOND SIGNAL SORT TOUT DE SUITE. Qui appuie deux fois sur Ctrl-C demande l'arrêt, pas
+  // une explication — et un gestionnaire qui insiste après un second ordre est un processus qu'on
+  // finit par tuer à la main.
+  if (arreterProprement.enCours) { process.exit(130); return; }
+  arreterProprement.enCours = true;
+  console.log(`${signal} reçu — arrêt : plus de nouvelle connexion, ${DELAI_ARRET_MS} ms pour finir ce qui est en vol`);
+
+  const couperet = setTimeout(() => {
+    console.warn(`arrêt : délai de ${DELAI_ARRET_MS} ms dépassé, les requêtes encore en vol sont coupées`);
+    serveur.closeAllConnections();
+    process.exit(1);
+  }, DELAI_ARRET_MS);
+  couperet.unref();
+
+  serveur.close(() => { clearTimeout(couperet); console.log("arrêt : tout est fini, sortie propre"); process.exit(0); });
+  serveur.closeIdleConnections();
+}
+
+// N'écoute QUE lorsqu'on lance ce fichier. Sans cette garde, un test qui l'importe ouvrirait un
+// port — et deux tests en parallèle s'attraperaient sur le même. Les signaux suivent la même règle,
+// et pour une raison de plus : un gestionnaire posé par un IMPORT vit dans le processus de qui
+// importe, et détournerait le Ctrl-C d'un banc qui ne demandait qu'à lire une fonction.
+if (require.main === module) {
+  for (const signal of ["SIGTERM", "SIGINT"]) process.on(signal, () => arreterProprement(signal));
+  serveur.listen(PORT, HOST, () => {
+    const racine = process.env.PLAYER_LOCAL_ROOT;
+    // ⚠️ LE PORT OBTENU, PAS LE PORT DEMANDÉ. `PORT=0` demande à l'OS d'en choisir un libre — la
+    // ligne affichait alors « localhost:0 », une adresse qui ne mène nulle part, au moment précis
+    // où l'on a besoin de savoir où frapper. Une trace de démarrage qui n'aide pas à joindre le
+    // serveur ne sert à rien.
+    const ouvert = (serveur.address() || {}).port || PORT;
+    console.log(`Discovery Media Player — http://localhost:${ouvert}`);
+    console.log(racine ? `  documents : ${racine}` : "  documents : aucun dossier local (PLAYER_LOCAL_ROOT)");
+    console.log(`  état      : http://localhost:${ouvert}/api/doc?contract=1`);
+  });
+}
+
+module.exports = { serveur, versParametres, pageAccueil, __arreterProprement: arreterProprement, DELAI_ARRET_MS };

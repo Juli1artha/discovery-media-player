@@ -217,3 +217,91 @@ describe("ce que la page d'accueil propose", () => {
     }
   });
 });
+
+// ⚠️ AUCUN SIGNAL N'ÉTAIT ÉCOUTÉ : le choix était entre LENT et BRUTAL. Sans gestionnaire, Node
+// PID 1 ignore `SIGTERM` et `docker stop` attend dix secondes puis tue ; avec `dumb-init`, le signal
+// relayé déclenche l'action par défaut sur un processus qui n'est plus PID 1 — terminaison
+// immédiate, requêtes en vol tranchées, à chaque déploiement. Ce banc tient la troisième voie.
+describe("l'arrêt gracieux du serveur autonome", () => {
+  const { spawn } = require("node:child_process");
+  const path = require("node:path");
+
+  /** Lance le VRAI serveur, dans un vrai processus : un signal ne se simule pas. */
+  function lancer(env = {}) {
+    const p = spawn(process.execPath, [path.join(__dirname, "..", "serve.js")], {
+      env: { ...process.env, PORT: "0", PLAYER_LOCAL_ROOT: racine, ...env },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let sortie = "";
+    p.stdout.on("data", (d) => { sortie += String(d); });
+    p.stderr.on("data", (d) => { sortie += String(d); });
+    const pret = new Promise((resolve) => {
+      const voir = () => { const m = /http:\/\/localhost:(\d+)/.exec(sortie); if (m) resolve(Number(m[1])); else setTimeout(voir, 20); };
+      voir();
+    });
+    return { p, pret, lu: () => sortie };
+  }
+
+  const fin = (p) => new Promise((resolve) => p.on("exit", (code, sig) => resolve({ code, sig })));
+
+  it("⚠️ SIGTERM fait sortir le processus au lieu d'attendre le couperet de l'orchestrateur", async () => {
+    const { p, pret, lu } = lancer();
+    await pret;
+    p.kill("SIGTERM");
+    const { code } = await fin(p);
+    expect(code, "un arrêt sans rien en vol doit être immédiat et propre").toBe(0);
+    expect(lu()).toContain("SIGTERM reçu");
+    expect(lu(), "l'opérateur doit savoir que le serveur draine, pas qu'il est mort").toContain("plus de nouvelle connexion");
+  }, 20000);
+
+  it("⚠️ une connexion keep-alive OISIVE ne retient pas l'arrêt — sinon `close()` n'arrive jamais au bout", async () => {
+    const { p, pret } = lancer();
+    const port = await pret;
+    // Une requête aboutie laisse la socket ouverte : c'est exactement ce qui bloquait `close()`.
+    const r = await fetch(`http://127.0.0.1:${port}/healthz`);
+    expect(r.status).toBe(200);
+    p.kill("SIGTERM");
+    const { code } = await fin(p);
+    expect(code, "l'oisive doit être fermée, pas attendue").toBe(0);
+  }, 20000);
+
+  it("⚠️ le délai est BORNÉ : ce qui ne finit pas est coupé, et le processus le DIT", async () => {
+    // Délai minuscule : on ne teste pas la durée, on teste que le couperet existe et parle.
+    const { p, pret, lu } = lancer({ PLAYER_SHUTDOWN_GRACE_MS: "1" });
+    const port = await pret;
+    // Une socket ouverte SANS requête complète : le serveur ne peut pas savoir qu'elle a fini.
+    const net = require("node:net");
+    const prise = net.connect(port, "127.0.0.1");
+    await new Promise((r) => prise.on("connect", r));
+    prise.write("GET /healthz HTTP/1.1\r\nHost: x\r\n");   // en-têtes incomplets, volontairement
+    await new Promise((r) => setTimeout(r, 50));
+    p.kill("SIGTERM");
+    const { code } = await fin(p);
+    prise.destroy();
+    expect(code, "passé le délai, on coupe — c'est l'ancien comportement, mais borné et annoncé").toBe(1);
+    expect(lu()).toContain("délai");
+  }, 20000);
+
+  it("⚠️ un SECOND signal sort tout de suite — deux Ctrl-C demandent l'arrêt, pas une explication", async () => {
+    const { p, pret } = lancer({ PLAYER_SHUTDOWN_GRACE_MS: "9000" });
+    const port = await pret;
+    const net = require("node:net");
+    const prise = net.connect(port, "127.0.0.1");
+    await new Promise((r) => prise.on("connect", r));
+    prise.write("GET /healthz HTTP/1.1\r\nHost: x\r\n");
+    await new Promise((r) => setTimeout(r, 50));
+    p.kill("SIGTERM");
+    await new Promise((r) => setTimeout(r, 100));
+    p.kill("SIGTERM");                       // le second, avant l'échéance de 9 s
+    const { code } = await fin(p);
+    prise.destroy();
+    expect(code, "sans ce chemin, l'opérateur attendrait le délai entier ou tuerait à la main").toBe(130);
+  }, 20000);
+
+  it("importer le module n'installe AUCUN gestionnaire — il vivrait dans le processus de qui importe", () => {
+    // Ce banc importe `serve.js` depuis sa première ligne : si les gestionnaires étaient posés à
+    // l'import, ils détourneraient le Ctrl-C de vitest lui-même.
+    const nôtres = process.listeners("SIGTERM").filter((f) => String(f).includes("arreterProprement"));
+    expect(nôtres, "les signaux suivent la même garde que `listen` : uniquement en exécution directe").toEqual([]);
+  });
+});

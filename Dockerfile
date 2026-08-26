@@ -44,8 +44,23 @@ RUN npm run build
 FROM node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43
 WORKDIR /app
 ENV NODE_ENV=production
-# `dumb-init` : sans lui, le processus Node est PID 1 et n'a pas de gestionnaire de signal par
-# défaut — `docker stop` attendrait dix secondes avant de tuer, à chaque déploiement.
+# ⚠️ `dumb-init` : SA JUSTIFICATION D'ORIGINE NE TIENT PLUS, ET C'EST ÉCRIT PLUTÔT QUE LAISSÉ EN
+# L'ÉTAT. Elle disait : « sans lui, Node est PID 1 et n'a pas de gestionnaire de signal par défaut —
+# `docker stop` attendrait dix secondes avant de tuer ». C'était exact, et ça ne l'est plus :
+# `bin/serve.js` installe désormais un gestionnaire de `SIGTERM`, et le noyau ne discarde un signal
+# sur PID 1 que s'il n'y a AUCUN gestionnaire. L'arrêt gracieux fonctionne donc avec ou sans lui.
+#
+# ⚠️ CE QU'IL LUI RESTE, ET POURQUOI ON LE GARDE QUAND MÊME. Il moissonne les processus zombies — un
+# travail réel en général, VIDE ici : ce runtime ne lance aucun sous-processus (vérifié : ni `spawn`,
+# ni `execFile`, ni `fork` dans `server/`, `bin/` ou `context/`). On le garde par prudence, pas par
+# nécessité démontrée, et le retirer est une décision distincte que ce commentaire rend possible.
+#
+# ⚠️ IL N'EST PAS ÉPINGLÉ, et c'est le seul intrant de cette image qui ne le soit pas. `apk` va
+# chercher le paquet SUR LE RÉSEAU au moment du build : même Dockerfile, même digest de base, deux
+# `dumb-init` différents à trois mois d'écart. La règle que `images-epinglees.mjs` tient pour `FROM`
+# ne regarde pas les paquets système. Résoudre la version demande d'atteindre l'index Alpine, ce que
+# l'environnement de préparation ne peut pas (sept voies essayées, toutes fermées) — donc c'est dit,
+# pas inventé.
 RUN apk add --no-cache dumb-init
 
 COPY package*.json ./
