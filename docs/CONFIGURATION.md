@@ -453,17 +453,34 @@ which has already cost one host half a day.
 | `DOC_FRAME_ANCESTORS` | domains allowed to frame the viewer (`?embed=1`) — **see the warning below** |
 | `PLAYER_PLUGINS_OFF` | disable optional modules: `bot`, `botBrowser`, `avatarClips`, `brandIntro`, `visitors`, `providerQuotas` |
 | `GOOGLE_MAPS_API_KEY` | map and Street View in presentations (restrict it by referrer) |
-| `ELEVENLABS_API_KEY` | gives the `bot` module a voice (ElevenLabs text-to-speech). Absent ⇒ the voice controls disappear and the assistant stays written |
+| `ELEVENLABS_API_KEY` | enables the `bot-tts` route and makes the voice controls appear in the assistant markup. Absent ⇒ the controls disappear and the assistant stays written. **This package ships no client that calls the route** — see the warning below |
 | `ELEVENLABS_VOICE_ID` | default voice, used when an agent profile does not carry its own. Empty ⇒ a stock ElevenLabs voice |
 | `ELEVENLABS_MODEL` | synthesis model. Empty ⇒ `eleven_multilingual_v2` |
 
-⚠️ **`ELEVENLABS_API_KEY` is a server secret against a paid API.** It never reaches the page: the
-browser asks this instance, which synthesises server-side, stores the clip in the public
+⚠️ **`ELEVENLABS_API_KEY` is a server secret against a paid API.** It never reaches the page: a
+caller asks this instance, which synthesises server-side, stores the clip in the public
 `tts-cache` storage bucket, and returns that URL — a sentence already spoken costs ElevenLabs
 nothing, whoever replays it. The route is rate-limited per caller, and with no key it declines
-quietly (the interface hides its voice buttons rather than erroring). An agent profile may carry
-its own voice; a library voice not yet in your account is added automatically, and if that fails
-the default voice speaks — never a silent presentation.
+quietly. An agent profile may carry its own voice; a library voice not yet in your account is
+added automatically, and if that fails the default voice speaks.
+
+⚠️ **THE VOICE BUTTONS ARE MARKUP, NOT BEHAVIOUR — THIS PACKAGE SHIPS NO CLIENT THAT CALLS
+`bot-tts`.** Setting the key makes three controls appear in the assistant (`botcVoice`,
+`botpVoice`, `botcVoice2`), and **nothing in this package wires them to anything**: no browser
+bundle, no inline script, no template. A visitor who clicks them gets silence. It has been that
+way since the first commit — the route and the buttons both shipped, the handler never did.
+
+So `bot-tts` is an **integration point, not a feature**: a host that wants a speaking assistant
+issues an HTTP POST of `{ action: "bot-tts", slug, text }` from its own front end, and wires those
+controls itself. Reported on 26/08 by an integrating host who went looking for the caller and
+found none — with 908 objects in its own `tts-cache` bucket, written by its own code.
+
+⚠️ **AND THAT IS WHY THE ROUTE ACCEPTS ANY TEXT.** Nothing ties `text` to something the assistant
+actually said; a valid public slug is enough, no session is required. Reachable only by a direct
+API call — no visitor triggers it by clicking, since nothing is wired — but a public slug is by
+definition obtainable. If you set this key, you are paying for whatever anyone with a link sends.
+The route is bounded (grouped by fingerprint, 4 concurrent syntheses, an 8 MiB response cap, and
+5/8/30 s deadlines), which bounds the *rate* of the damage, not its *nature*.
 
 ⚠️ **Without `DOC_FRAME_ANCESTORS`, nobody can display the viewer in an iframe** — and the failure
 is the worst kind. Only a same-origin page and `*.vercel.app` may frame it by default; any other
