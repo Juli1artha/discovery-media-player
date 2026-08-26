@@ -42,10 +42,13 @@ function bornesDuCode() {
   const nombre = (cle) => {
     const t = new RegExp(cle + "\\s*:\\s*([0-9_ *+]+)").exec(m[1]);
     if (!t) throw new Error(`GARDE NON CONCLUANTE : la clé « ${cle} » n'est plus lisible dans BORNES`);
-    // `10_000` et `24 * 3600` sont des littéraux, pas des expressions arbitraires.
+    // ⚠️ UNE SOMME DE PRODUITS, PAS UN ÉVALUATEUR. `10_000` et `24 * 3600` sont les deux formes
+    // qu'on lit ; les calculer à la main tient en une ligne, alors qu'un `Function(…)` mettrait un
+    // évaluateur dynamique dans un banc pour économiser cette ligne-là. La garde de forme est déjà
+    // passée au-dessus : ce qui arrive ici ne contient que des chiffres, des `*` et des `+`.
     if (!/^[0-9_ *+]+$/.test(t[1])) throw new Error(`GARDE NON CONCLUANTE : « ${cle} » n'est plus un littéral`);
-    // eslint-disable-next-line no-new-func
-    return Function(`"use strict"; return (${t[1].replace(/_/g, "")});`)();
+    return t[1].replace(/_/g, "").split("+")
+      .reduce((somme, terme) => somme + terme.split("*").reduce((produit, f) => produit * Number(f.trim()), 1), 0);
   };
   return { pages: nombre("pages"), secondes: nombre("secondes") };
 }
