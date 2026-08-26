@@ -453,7 +453,7 @@ which has already cost one host half a day.
 | `DOC_FRAME_ANCESTORS` | domains allowed to frame the viewer (`?embed=1`) — **see the warning below** |
 | `PLAYER_PLUGINS_OFF` | disable optional modules: `bot`, `botBrowser`, `avatarClips`, `brandIntro`, `visitors`, `providerQuotas` |
 | `GOOGLE_MAPS_API_KEY` | map and Street View in presentations (restrict it by referrer) |
-| `ELEVENLABS_API_KEY` | enables the `bot-tts` route and makes the voice controls appear in the assistant markup. Absent ⇒ the controls disappear and the assistant stays written. **This package ships no client that calls the route** — see the warning below |
+| `ELEVENLABS_API_KEY` | enables the `bot-tts` route. Absent ⇒ the route declines quietly and the assistant stays written. It no longer makes the voice controls appear on its own — your `bot` plugin must also declare `wiresVoice: true`. **This package ships no client that calls the route** — see the warning below |
 | `ELEVENLABS_VOICE_ID` | default voice, used when an agent profile does not carry its own. Empty ⇒ a stock ElevenLabs voice |
 | `ELEVENLABS_MODEL` | synthesis model. Empty ⇒ `eleven_multilingual_v2` |
 
@@ -465,10 +465,18 @@ quietly. An agent profile may carry its own voice; a library voice not yet in yo
 added automatically, and if that fails the default voice speaks.
 
 ⚠️ **THE VOICE BUTTONS ARE MARKUP, NOT BEHAVIOUR — THIS PACKAGE SHIPS NO CLIENT THAT CALLS
-`bot-tts`.** Setting the key makes three controls appear in the assistant (`botcVoice`,
-`botpVoice`, `botcVoice2`), and **nothing in this package wires them to anything**: no browser
-bundle, no inline script, no template. A visitor who clicks them gets silence. It has been that
-way since the first commit — the route and the buttons both shipped, the handler never did.
+`bot-tts`.** The assistant's three voice controls (`botcVoice`, `botpVoice`, `botcVoice2`) and its
+audio-consent step (`botw-s2`) are **markup only**: no browser bundle, no inline script, no
+template wires them. That is true of all sixty-four controls in this assistant — the package ships
+the markup, you ship the behaviour — and it has been true since the first commit.
+
+⚠️ **SO THE KEY NO LONGER MAKES THEM APPEAR — YOUR PLUGIN MUST SAY IT WIRES THEM.** Set
+`wiresVoice: true` on the `bot` plugin you pass as `ctx.plugins.bot`. Absent, or merely truthy
+rather than exactly `true`, and the four controls are not rendered at all. The key proves the
+*server* can synthesise; it says nothing about what happens on click, and until 26/08 setting it
+was enough to show a button that led to silence. The other sixty controls always render, so a host
+embedding this assistant knows it must wire them; these four were the only ones whose appearance
+was driven by a server secret.
 
 So `bot-tts` is an **integration point, not a feature**: a host that wants a speaking assistant
 issues an HTTP POST of `{ action: "bot-tts", slug, text }` from its own front end, and wires those

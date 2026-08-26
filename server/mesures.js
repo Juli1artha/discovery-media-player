@@ -142,6 +142,22 @@ const centiles = (h) => {
 const mio = (octets) => Math.round((octets / 1048576) * 10) / 10;
 
 /**
+ * Des nanosecondes rapportées par l'échantillonneur au RETARD réel, en millisecondes.
+ *
+ * ⚠️ LA RÉSOLUTION EST RETRANCHÉE. `monitorEventLoopDelay` observe la durée réelle de son propre
+ * minuteur : au repos elle vaut la résolution, pas zéro. Sans cette soustraction, une instance
+ * parfaitement oisive annoncerait 20 ms de retard en permanence et ferait chercher une panne qui
+ * n'existe pas.
+ *
+ * ⚠️ ET C'EST UNE FONCTION NOMMÉE PARCE QUE SON BANC LE DEMANDAIT. Écrite dans le corps de
+ * `relever`, elle n'était éprouvable qu'en MESURANT une boucle réelle — donc par un seuil de
+ * grandeur (« au repos, moins de 10 ms »), qui dépend de la charge de la machine et a rougi deux
+ * fois le 26/08 sur un conteneur occupé. Le seuil ne gardait pas la soustraction : il gardait le
+ * calme de la machine. La propriété, elle, est arithmétique et se vérifie sans chronomètre.
+ */
+const retardMs = (ns) => Math.max(0, Math.round((ns / 1e6 - RESOLUTION_BOUCLE_MS) * 10) / 10);
+
+/**
  * Le relevé, tel que la carte le publie.
  *
  * ⚠️ AUCUN SLUG, AUCUNE ADRESSE, AUCUN TEXTE. Ce sont des compteurs et des durées : rien ici ne
@@ -172,9 +188,8 @@ function relever() {
     // DÉLIBÉRÉMENT, avec `n`, plutôt que de publier un zéro qui se lirait « la boucle est saine ».
     boucleMs: (() => {
       const n = boucle.count || 0;
-      const retard = (ns) => Math.max(0, Math.round((ns / 1e6 - RESOLUTION_BOUCLE_MS) * 10) / 10);
       return n
-        ? { n, moyen: retard(boucle.mean), p99: retard(boucle.percentile(99)), resolutionMs: RESOLUTION_BOUCLE_MS }
+        ? { n, moyen: retardMs(boucle.mean), p99: retardMs(boucle.percentile(99)), resolutionMs: RESOLUTION_BOUCLE_MS }
         : { n: 0, moyen: null, p99: null, resolutionMs: RESOLUTION_BOUCLE_MS };
     })(),
   };
@@ -188,4 +203,4 @@ function vider() {
   statuts.ok = 0; statuts.refus4xx = 0; statuts.debit429 = 0; statuts.occupe503 = 0; statuts.erreur5xx = 0;
 }
 
-module.exports = { chrono, observerBase, relever, vider, FAMILLES, SEAUX_MS, __histoBase: histoBase };
+module.exports = { chrono, observerBase, relever, vider, FAMILLES, SEAUX_MS, __histoBase: histoBase, __retardMs: retardMs };

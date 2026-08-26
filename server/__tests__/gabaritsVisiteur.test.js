@@ -13,8 +13,12 @@
 const routesGabarit = require("../gabarit-agent.js");
 const { softWallHtml, notFoundHtml } = require("../page-mur.js");
 
-const PLAYER = { branding: { name: "Studio" } };
+// ⚠️ `wiresVoice` EST UNE DÉCLARATION DE L'HÔTE, PAS UNE CAPACITÉ DU SERVEUR. Elle dit « je câble
+// les contrôles de voix » — le seul fait que ce paquet ne peut pas constater lui-même, puisqu'il ne
+// câble aucun des soixante-quatre contrôles de cet assistant.
+const PLAYER = { branding: { name: "Studio" }, plugins: { bot: { wiresVoice: true } } };
 routesGabarit.init(PLAYER);
+const avecHote = (bot) => routesGabarit.init({ ...PLAYER, plugins: { bot } });
 require("../page-mur.js").init(PLAYER);
 
 const PARTAGE = { bot_name: "Léa", bot_tagline: "Votre guide", bot_accent: "#123456" };
@@ -50,6 +54,8 @@ describe("botMarkup : ce qui vient de la base ressort inoffensif", () => {
 });
 
 describe("botMarkup : le consentement audio ne se propose que si une voix existe", () => {
+  afterEach(() => { delete process.env.ELEVENLABS_API_KEY; avecHote({ wiresVoice: true }); });
+
   it("sans clé de synthèse côté serveur : ni bouton voix, ni étape de choix audio", () => {
     const html = routesGabarit.botMarkup(PARTAGE, "");
     // Une porte « écouter la présentation » qui mène au silence est une promesse cassée — le
@@ -58,8 +64,28 @@ describe("botMarkup : le consentement audio ne se propose que si une voix existe
     expect(html).not.toContain("botcVoice");
   });
 
-  it("avec une clé : l'étape de consentement existe, et la porte vidéo n'apparaît qu'avec des clips", () => {
+  // ⚠️ LA CLÉ SEULE NE SUFFIT PLUS, ET C'EST LE CORRECTIF DU 26/08. Elle prouve que le SERVEUR sait
+  // synthétiser ; elle ne prouve rien de ce qui arrive quand on clique. Ce paquet ne câble aucun
+  // contrôle de cet assistant : sans déclaration de l'hôte, la porte mène au silence — exactement
+  // la promesse cassée que le banc au-dessus interdit, dans le seul cas où il ne regardait pas.
+  for (const [nom, bot] of [
+    ["aucun greffon", null],
+    ["un greffon qui ne déclare rien", {}],
+    ["une déclaration seulement VÉRIDIQUE, pas `true`", { wiresVoice: "oui" }],
+  ]) {
+    it(`avec une clé mais ${nom} : aucun contrôle de voix, aucune étape audio`, () => {
+      process.env.ELEVENLABS_API_KEY = "cle";
+      avecHote(bot);
+      const html = routesGabarit.botMarkup(PARTAGE, "");
+      expect(html, "un bouton de voix que rien ne câble est une porte vers le silence").not.toContain("botcVoice");
+      expect(html).not.toContain("botpVoice");
+      expect(html).not.toContain("botw-s2");
+    });
+  }
+
+  it("avec une clé ET un hôte qui déclare câbler : l'étape de consentement existe, et la porte vidéo n'apparaît qu'avec des clips", () => {
     process.env.ELEVENLABS_API_KEY = "cle";
+    avecHote({ wiresVoice: true });
     const sansClips = routesGabarit.botMarkup(PARTAGE, "");
     expect(sansClips).toContain("botw-s2");
     expect(sansClips).not.toContain("doorVideo");
@@ -69,6 +95,11 @@ describe("botMarkup : le consentement audio ne se propose que si une voix existe
     const bientot = routesGabarit.botMarkup({ ...PARTAGE, video_layout: "face" }, "");
     expect(bientot).toContain("arrive bientôt");
     expect(bientot).not.toContain("doorVideo");
+    // Témoin : sans ces trois-là, les refus ci-dessus seraient satisfaits par un gabarit qui ne
+    // rend JAMAIS de voix — c'est-à-dire par la suppression de la fonctionnalité.
+    expect(sansClips).toContain("botcVoice");
+    expect(sansClips).toContain("botpVoice");
+    expect(sansClips).toContain("botcVoice2");
   });
 });
 
