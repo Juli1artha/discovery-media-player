@@ -90,9 +90,11 @@ const unTour = () => new Promise((r) => setTimeout(r, 0));
 
 /** Contexte nominal : chaque capacité ENREGISTRE pour que le test affirme ce qui s'est passé. */
 function contexte(surcharges = {}) {
-  const poses = []; const captures = [];
+  const poses = []; const captures = []; const ecritures = [];
   const ctx = {
-    poses, captures,
+    poses, captures, ecritures,
+    // La base n'est touchée QUE pour la trace du cache de voix — chaque écriture est enregistrée.
+    db: { request: async (chemin, o = {}) => { ecritures.push({ chemin, methode: o.method || "GET", corps: o.body || null, entetes: o.headers || {} }); return null; } },
     limits: { allow: async () => true },
     storage: { put: async (bucket, chemin, buf, type) => { poses.push({ bucket, chemin, octets: buf.length, type }); return true; } },
     errors: { capture: async (e) => { captures.push(String(e && e.message)); } },
@@ -329,5 +331,63 @@ describe("les bornes de la synthèse : coût, concurrence, taille", () => {
     expect(sorties.some((s) => s.methode === "HEAD")).toBe(true);
     expect(sorties.some((s) => s.url.includes("/voices/add/"))).toBe(true);
     expect(sorties.some((s) => s.url.includes("/text-to-speech/"))).toBe(true);
+  });
+});
+
+// ⚠️ LE BUCKET `tts-cache` ÉTAIT IMPURGEABLE PAR CONSTRUCTION — pas par oubli de configuration.
+// Chaque synthèse y écrit `<empreinte>.mp3` et `<empreinte>.json` ; l'empreinte est un condensat
+// (voix + modèle + texte prononcé) qui ne se rattachait à AUCUNE ligne. Le balayage de rétention
+// efface des lignes, et pour les fichiers il efface ceux dont une ligne porte le chemin — la
+// capacité `storage` du contrat expose `put` et `remove`, jamais `list`. Il n'y avait rien à
+// parcourir. L'audit CODEX du 26/08 rangeait ça en « ajouter une politique, 0,5 jour » : ce n'était
+// pas une politique qui manquait, c'était la trace. (Migration 0021.)
+describe("la trace qui rend le cache de voix purgeable", () => {
+  it("⚠️ un objet écrit laisse une empreinte datée — et JAMAIS le texte", async () => {
+    const ctx = contexte(); reseau();
+    await dire("Une phrase à prononcer");
+
+    const traces = ctx.ecritures.filter((e) => e.chemin.startsWith("doc_tts_objects"));
+    expect(traces, "sans elle, rien ne pourra jamais purger ces deux objets").toHaveLength(1);
+    expect(traces[0].methode).toBe("POST");
+    expect(traces[0].entetes.Prefer, "rejouer une empreinte déjà connue ne doit pas être une erreur")
+      .toContain("ignore-duplicates");
+
+    const [ligne] = traces[0].corps;
+    expect(Object.keys(ligne), "l'empreinte suffit à retrouver les deux objets").toEqual(["hash"]);
+    expect(ligne.hash).toBe(cleDeCache(VOIX_DEFAUT, "Une phrase à prononcer"));
+    // La donnée personnelle éventuelle vit déjà dans le bucket ; l'écrire ICI la rendrait
+    // interrogeable, ce qui est strictement pire que de ne pas l'avoir.
+    expect(JSON.stringify(traces[0].corps)).not.toContain("Une phrase");
+  });
+
+  it("l'empreinte tracée est celle de la voix RÉELLEMENT utilisée, repli compris", async () => {
+    const ctx = contexte();
+    ctx.plugins.bot.getProfile = async () => ({ behavior: { voice: { id: "VoixDuProfil" } } });
+    reseau({ voixEnEchec: ["VoixDuProfil"] });
+
+    await dire("Bonjour");
+    const [trace] = ctx.ecritures.filter((e) => e.chemin.startsWith("doc_tts_objects"));
+    // Le repli écrit l'objet sous SA clé : tracer l'autre laisserait un objet orphelin, éternel.
+    expect(trace.corps[0].hash).toBe(cleDeCache(VOIX_DEFAUT, "Bonjour"));
+  });
+
+  it("⚠️ une trace qui échoue ne rend pas la présentation muette — mais elle est DITE", async () => {
+    const ctx = contexte({ db: { request: async () => { throw new Error("base injoignable"); } } });
+    reseau();
+
+    const res = await dire("Bonjour");
+    expect(res.corps.ok, "la voix passe avant la trace").toBe(true);
+    // Un rejet muet est indistinguable d'un cache vide : personne ne va chercher une panne
+    // qu'aucun signal n'annonce. C'est la leçon de la session interne jetée en silence.
+    expect(ctx.captures.join(" ")).toMatch(/trace du cache de voix non écrite/);
+    expect(ctx.captures.join(" ")).toMatch(/hors de toute fenêtre de rétention/);
+  });
+
+  it("un extrait SERVI DEPUIS LE CACHE n'écrit pas de trace — il n'a rien créé", async () => {
+    const ctx = contexte(); reseau({ enCache: true });
+    const res = await dire("Déjà connue");
+    expect(res.corps.cached).toBe(true);
+    expect(ctx.ecritures.filter((e) => e.chemin.startsWith("doc_tts_objects")),
+      "la trace du premier passage existe déjà ; une seconde ligne ne dirait rien de plus").toHaveLength(0);
   });
 });

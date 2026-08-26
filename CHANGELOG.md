@@ -66,6 +66,30 @@ the notes there are this file's section for that version.
     awaits the promise. Restoring the old line turns the bench red.
 
 ### Added
+- **The voice cache was unpurgeable by construction — not for want of a policy.** Every synthesis
+  writes two objects to the **public** `tts-cache` bucket, `<fingerprint>.mp3` and
+  `<fingerprint>.json`. The fingerprint is a digest of voice + model + spoken text, and it tied back
+  to **no row anywhere**. The retention sweep erases rows, and for files it erases the ones a row
+  points at — the host `storage` capability exposes `put` and `remove`, never `list`. There was
+  literally nothing to walk: no window, no setting and no policy could reach that bucket. The CODEX
+  audit of 26 August costed this at "half a day of policy"; what was missing was not a policy, it
+  was the trace.
+  - **Migration 0021** adds `doc_tts_objects`: a fingerprint and a date, and **never the text** —
+    writing the text there would recreate, inside the database, whatever personal data the bucket
+    may already hold, and make it queryable, which is strictly worse than not having it. RLS on with
+    no policy: under RLS an absent policy refuses everyone, service role aside.
+  - The sweep now purges the voice cache **13 months** after `created_at`, through the same single
+    destruction door the whole engine uses — `retirerFichier` takes its bucket as an argument rather
+    than gaining a twin, which is exactly what `retentionUnePorte.test.js` exists to prevent.
+  - ⚠️ **The row leaves after the objects, never before.** Erasing the trace first would leave both
+    objects permanently unreachable — we would have purged the only means of purging them.
+  - ⚠️ **The trace is never blocking, and never silent.** A failed write must not leave a
+    presentation mute, so the voice wins; but a silent rejection is indistinguishable from an empty
+    cache — the lesson of the internal session dropped without a word, which cost a host weeks. Said
+    once an hour, with what it costs: those objects will sit outside every window.
+  - Stated rather than simulated, in `docs/RETENTION.md`: **objects written before migration 0021
+    have no trace and never will.** The sweep only reaches what a row points at. The census counts
+    rows, so it can say "no trace past the window survives" — never "the bucket is clean".
 - **`AGENTS.md` records the one thing no guard in this repository can check: who the work was for.**
   Eleven rules were added to `tools/` between 23 and 26 August; every one of them compares a file to
   a property, and none can say that correct work was addressed to nobody.

@@ -21,7 +21,7 @@ const init = (ctx) => { PLAYER = ctx; };
 const enc = encodeURIComponent;
 
 // Fenêtres par défaut de docs/RETENTION.md — l'hôte ajuste via `config.retention`.
-const FENETRES = { journauxMois: 13, presentationsMois: 12, liensRevoquesMois: 13 };
+const FENETRES = { journauxMois: 13, presentationsMois: 12, liensRevoquesMois: 13, voixMois: 13 };
 const CLES_FENETRE = Object.keys(FENETRES);
 const MIN_MOIS = 1, MAX_MOIS = 120;
 
@@ -107,11 +107,15 @@ async function effacerParIds(table, colId, ids, opts) {
   const del = await PLAYER.db.request(`${table}?${colId}=in.(${ids.map(guill).join(",")})&select=${colId}`, { method: "DELETE", headers: { Prefer: "return=representation" } });
   return Array.isArray(del) ? del.length : 0;   // lignes RENDUES, pas ids présélectionnés
 }
-async function retirerFichier(chemin, opts) {
+// ⚠️ LE BUCKET EST UN PARAMÈTRE, PAS UNE CONSTANTE — ET LA PORTE RESTE UNIQUE. Deux périmètres
+// écrivent des fichiers (`present-attachments` et `tts-cache`) ; leur donner deux fonctions de
+// retrait donnerait deux chemins de destruction, dont un seul serait gardé. C'est exactement ce que
+// `retentionUnePorte.test.js` refuse de laisser arriver.
+async function retirerFichier(bucket, chemin, opts) {
   if (opts.dryRun || !chemin) return null;   // null = rien tenté ; true = retiré ; false = échec
   const retirer = PLAYER.storage && typeof PLAYER.storage.remove === "function" ? PLAYER.storage.remove.bind(PLAYER.storage) : null;
   if (!retirer) return null;
-  try { return !!(await retirer("present-attachments", chemin)); } catch { return false; }
+  try { return !!(await retirer(bucket, chemin)); } catch { return false; }
 }
 
 // ⚠️ PURGE PAR LOTS BORNÉS (P2 huitième audit). On SÉLECTIONNE un lot d'identifiants (borné,
@@ -201,10 +205,57 @@ async function purgerMessagesPresentation(slug, opts, base, plafond) {
       const url = j.attachment && (typeof j.attachment === "object" ? j.attachment.url : j.attachment);
       const chemin = cheminSurSlug(url, slug, base);   // hors du dossier du slug → null → jamais retiré (barrière 2)
       if (chemin) fichiersCandidats += 1;              // compté même en dry-run (ce que la vraie purge tenterait)
-      const issue = await retirerFichier(chemin, { dryRun });
+      const issue = await retirerFichier("present-attachments", chemin, { dryRun });
       if (issue === true) fichiers += 1; else if (issue === false) fichiersErreur += 1;   // false = échec compté
     }
     supprimees += await effacerParIds("doc_presentation_messages", "id", lot.map((r) => r.id).filter((v) => v != null), { dryRun });
+    if (lot.length < limite) break;
+  }
+  return { supprimees, fichiers, fichiersErreur, fichiersCandidats, examinees, tronque };
+}
+
+/**
+ * Le cache de voix : deux objets par empreinte, et une ligne pour savoir qu'ils existent.
+ *
+ * ⚠️ SANS LA TABLE, CE PÉRIMÈTRE EST INATTEIGNABLE — ce n'est pas une fenêtre qui manquait. Les
+ * objets de `tts-cache` sont nommés par un condensat (voix + modèle + texte prononcé) qui ne se
+ * rattache à aucune ligne, et la capacité `storage` du contrat expose `put` et `remove`, jamais
+ * `list` : il n'y avait littéralement rien à parcourir. `doc_tts_objects` (migration 0021) est la
+ * trace, et c'est elle qui rend cette purge possible.
+ *
+ * ⚠️ ET C'EST UN VISITEUR QUI DÉCIDE DE CE QUI Y ENTRE. `bot-tts` accepte le texte de l'appelant :
+ * un texte unique laisse un MP3 et un JSON dans un bucket PUBLIC. Les plafonds de la 0.1.140
+ * bornent le coût par heure ; seule cette fenêtre borne la DURÉE.
+ */
+async function purgerCacheDeVoix(opts, borneDate) {
+  const { dryRun, taille, plafond } = opts;
+  const filtre = `created_at=lt.${enc(borneDate)}`;
+  let supprimees = 0, fichiers = 0, fichiersErreur = 0, fichiersCandidats = 0, examinees = 0, tronque = false, curseur = null;
+  for (;;) {
+    const reste = plafond - examinees;
+    if (reste <= 0) { tronque = await resteEncore("doc_tts_objects", filtre, "hash", curseur, dryRun); break; }
+    const limite = Math.min(taille, reste);
+    const borneCur = curseur != null ? `&hash=gt.${enc(String(curseur))}` : "";
+    const lot = await PLAYER.db.request(`doc_tts_objects?${filtre}${borneCur}&select=hash&order=hash.asc&limit=${limite}`);
+    if (!Array.isArray(lot) || !lot.length) break;
+    examinees += lot.length;
+    curseur = lot[lot.length - 1].hash;
+    for (const o of lot) {
+      const h = o && o.hash;
+      if (!h) continue;
+      // ⚠️ DEUX OBJETS PAR EMPREINTE : l'audio, et son alignement par caractère. Le second n'existe
+      // pas toujours — les extraits antérieurs au format « v2 » n'en ont pas. Ce que `remove` en dit
+      // remonte TEL QUEL dans `fichiersErreur` : on ne masque pas un retrait raté pour obtenir un
+      // compte propre, parce qu'un rapport qui ment sur ce qu'il a fait ne sert plus à rien.
+      for (const suffixe of [".mp3", ".json"]) {
+        fichiersCandidats += 1;   // compté même en dry-run : ce que la vraie purge tenterait
+        const issue = await retirerFichier("tts-cache", h + suffixe, { dryRun });
+        if (issue === true) fichiers += 1; else if (issue === false) fichiersErreur += 1;
+      }
+    }
+    // ⚠️ LA LIGNE PART APRÈS LES OBJETS, JAMAIS AVANT. Effacer la trace d'abord rendrait les deux
+    // objets définitivement inatteignables — on aurait purgé le seul moyen de les purger.
+    supprimees += await effacerParIds("doc_tts_objects", "hash", lot.map((r) => r.hash).filter((v) => v != null), { dryRun });
     if (lot.length < limite) break;
   }
   return { supprimees, fichiers, fichiersErreur, fichiersCandidats, examinees, tronque };
@@ -241,6 +292,9 @@ async function purgerRetention(now, optsBrutes = {}) {
   rapport.commercial_doc_shares = dateDispo
     ? await purgerParLots("commercial_doc_shares", `revoked=eq.true&revoked_at=lt.${enc(borne(now, f.liensRevoquesMois))}`, "slug", opts)
     : { examinees: 0, supprimees: 0, tronque: false };
+
+  // Cache de voix : les objets d'abord, la trace ensuite. Voir `purgerCacheDeVoix`.
+  rapport.doc_tts_objects = await purgerCacheDeVoix(opts, borne(now, f.voixMois));
 
   // Présentations mortes : bornées à PLAFOND_PRESENTATIONS par exécution ; la ligne, ses messages,
   // ses présences — et les fichiers du bucket si storage.remove est fourni (OPTIONNELLE).
@@ -297,6 +351,7 @@ async function purgerRetention(now, optsBrutes = {}) {
     doc_bot_sessions: rapport.doc_bot_sessions.supprimees,
     player_rate_limits: rapport.player_rate_limits.supprimees,
     commercial_doc_shares: rapport.commercial_doc_shares.supprimees,
+    doc_tts_objects: rapport.doc_tts_objects.supprimees,
     doc_presentations: presRapport.supprimees,
     doc_presentation_messages: presRapport.messages,
     doc_presentation_attendees: presRapport.presences,

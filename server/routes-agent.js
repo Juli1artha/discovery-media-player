@@ -196,6 +196,36 @@ async function traiter(req, res, body, _slug) {
               // Surveillance du réservoir ElevenLabs (throttlée 1×/h) — cf. _provider-quotas.js.
               try { await PLAYER.plugins.providerQuotas?.tick("elevenlabs"); } catch { /* jamais bloquant */ }
               if (!up) throw echecSynthese();
+              // ⚠️ LA TRACE, SINON LE BUCKET EST IMPURGEABLE. Rien d'autre ne note qu'un objet a été
+              // écrit : l'empreinte ne se rattache à aucune ligne, et la capacité `storage` du
+              // contrat expose `put` et `remove`, jamais `list`. Sans cette écriture, le balayage de
+              // rétention n'a littéralement rien à parcourir et le cache de voix grossit sans
+              // fenêtre, dans un bucket PUBLIC dont un visiteur choisit le contenu.
+              //
+              // L'EMPREINTE ET LA DATE, JAMAIS LE TEXTE : l'écrire recréerait dans la base la donnée
+              // personnelle que le bucket contient peut-être déjà, en la rendant interrogeable.
+              //
+              // ⚠️ JAMAIS BLOQUANT, MAIS JAMAIS MUET. Une trace qui échoue ne doit pas rendre une
+              // présentation muette — on perd la purge de cet objet-là, pas la voix. Mais un rejet
+              // silencieux est indistinguable d'un cache vide : c'est la leçon de la session interne
+              // jetée sans rien dire, qui a coûté des semaines à un hôte. Dit une fois par heure,
+              // pour qu'un exploitant qui ouvre ses journaux tombe dessus.
+              try {
+                await PLAYER.db.request("doc_tts_objects", {
+                  method: "POST",
+                  headers: { Prefer: "resolution=ignore-duplicates,return=minimal" },
+                  body: [{ hash }],
+                });
+              } catch (eTrace) {
+                try {
+                  if (await PLAYER.limits.allow("ttstrace:jetee", 1, 3600)) {
+                    await PLAYER.errors.capture(
+                      new Error(`trace du cache de voix non écrite (${eTrace && eTrace.message}) — ces objets resteront hors de toute fenêtre de rétention`),
+                      { route: "bot-tts" },
+                    );
+                  }
+                } catch { /* un journal ne doit jamais empêcher une voix */ }
+              }
               // Alignement compact : instants de DÉBUT par caractère (ms) — mêmes index que le texte envoyé.
               let hasAlign = false;
               try {

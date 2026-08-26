@@ -111,8 +111,36 @@ Agent-guided walkthrough: **purged 13 months** after `last_at`.
 |---|---|---|
 | `player_rate_limits.key` | may contain an **IP in the clear** (`hshare:<ip>`) or an email | row purged as soon as `expires_at` has passed (opportunistically, on every pass) |
 
+## Voice cache (`doc_tts_objects` + the `tts-cache` bucket)
+
+Every synthesis writes two objects to the **public** `tts-cache` bucket — `<fingerprint>.mp3` and
+`<fingerprint>.json` (per-character alignment). The fingerprint is a digest of voice + model +
+**spoken** text. They are **purged 13 months** after `created_at`: the two objects first, then the
+row — never the other way round, because erasing the trace first would leave the objects
+permanently unreachable.
+
+| column | contents | fate |
+|---|---|---|
+| `doc_tts_objects.hash` | the fingerprint — **never the text** | purged with the row, after both bucket objects |
+| `doc_tts_objects.created_at` | when the object was written | the window is measured on it |
+
+⚠️ **Why a table exists at all.** The objects are named by a digest that ties back to no row, and
+the host `storage` capability exposes `put` and `remove` — never `list`. Before this table the
+bucket could not be swept at all: there was nothing to walk. This is not a policy that was missing,
+it is the trace. The row records a fingerprint and a date and nothing else: writing the text here
+would recreate, inside the database, whatever personal data the bucket may already hold — and make
+it queryable, which is strictly worse than not having it.
+
+⚠️ **A visitor chooses what goes in.** `bot-tts` accepts the caller's text, so a unique text leaves
+an MP3 and a JSON in a public bucket. The grouping and ceilings added in 0.1.140 bound the cost per
+hour; only this window bounds the **duration**.
+
 ## Limits stated rather than left unsaid
 
+- **Voice-cache objects written before migration 0021 have no trace, and never will.** The sweep
+  can only reach what a row points at, and no row was ever written for them. They stay in the
+  bucket until an operator removes them by hand. The census counts rows, so it cannot see them
+  either — it can say "no trace past the window survives", never "the bucket is clean".
 - **Orphaned attachments**: purging the rows erases the bucket file only if the host context
   provides `storage.remove` (an optional capability). Without it, the URL becomes unreachable from
   the product but the object survives in the bucket — said here rather than simulated.
