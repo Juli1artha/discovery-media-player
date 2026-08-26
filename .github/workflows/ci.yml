@@ -105,7 +105,7 @@ jobs:
           mkdir -p node_modules/discovery-media-player
           tar -xzf "$GITHUB_WORKSPACE"/discovery-media-player-*.tgz -C node_modules/discovery-media-player --strip-components=1
           cd node_modules/discovery-media-player
-          for banc in test test:e2e test:base test:charge test:campagne test:endurance; do
+          for banc in test test:e2e test:base test:charge test:campagne test:endurance test:stats; do
             if sortie=$(npm run "$banc" 2>&1); then
               echo "::error::npm run $banc a RÉUSSI depuis une installation consommatrice — il n'a rien pu mesurer"
               exit 1
@@ -1110,6 +1110,18 @@ jobs:
       # ⚠️ Un banc qui ne tournerait qu'à la main serait un banc MORT — ce dépôt a laissé une garde
       # de publication morte dix-neuf heures sans que personne le voie. Il tourne donc à chaque
       # course, court, plutôt que longuement et jamais.
+      # ── DEUX TEXTES POUR LE MÊME CALCUL, CONFRONTÉS SUR LES MÊMES LIGNES ─────────────────────
+      # ⚠️ La migration 0022 déplace l'agrégation analytique en base ; le JavaScript reste, parce
+      # qu'un hôte n'applique pas forcément la dernière migration. Deux définitions du même fait
+      # divergent tant que personne ne les confronte — la même règle que `init.sql` et ses
+      # migrations, que `docs/API.md` et le code, que la purge de rétention et son recensement.
+      # Ce banc n'affirme pas que les chiffres sont BONS : il exige qu'ils soient LES MÊMES, ce qui
+      # est plus fort — une erreur ne passe que si elle est commise deux fois, séparément.
+      - name: Aggregated statistics — SQL and JavaScript must agree exactly
+        env:
+          PLAYER_TEST_POSTGREST_URL: http://127.0.0.1:3002
+        run: npm run test:stats
+
       - name: Endurance — the mixed scenario, over time
         env:
           # Le même renvoi /rest/v1 que les deux étapes précédentes (3002, pas le PostgREST nu de

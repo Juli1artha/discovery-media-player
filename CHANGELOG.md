@@ -66,6 +66,36 @@ the notes there are this file's section for that version.
     awaits the promise. Restoring the old line turns the bench red.
 
 ### Added
+- **Analytics aggregation moved into the database — and the JavaScript stays, on purpose.**
+  `listSharesForDoc` and `overview` read `commercial_doc_views` over a rolling 24-month window. The
+  window bounds **time, not the number of rows**: the index serves the filter and does nothing else
+  — it removes neither the PostgREST → Node transfer, nor the full pagination, nor the arrays in
+  memory, nor the cost of aggregating in JavaScript. On a very active document, 24 months can be
+  millions of events for a reply of a few dozen lines. Migration 0022 adds five aggregating
+  functions; the reply is unchanged. Reported by the CODEX audit of 26 August, §3.
+  - ⚠️ **Today this hurts nobody, and that is written down so it stays true.** The worst measured
+    document carries 662 rows. This is not an incident fix — it is changing the structure *before*
+    the volume forces it, while both paths can still be compared line by line.
+  - ⚠️ **The in-memory path is not dead code, it is the reference definition.** A host does not
+    necessarily apply the latest migration, so it is also the real fallback. A bench against a real
+    PostgreSQL runs both on the same rows and requires an **exactly identical** result — two texts
+    written separately that cannot be wrong the same way, like the retention purge and its census.
+    It does not assert that the numbers are *right*: it requires them to be *the same*, which is
+    stronger — an error has to be made twice, separately, in SQL and in JavaScript.
+  - ⚠️ **The fallback is narrow, and that is all that makes it safe.** Only `PGRST202` ("no function
+    of that name") falls back. An unreachable database, a missing grant or a timeout **propagate** —
+    falling back on those would produce numbers computed over whatever answered, and *"wrong
+    statistics"* reads exactly like *"statistics"*. Four benches hold that, mutation-checked; a
+    fifth holds that an **empty** result is not an absent function.
+  - The read-time clamp is reproduced in SQL, including what the JavaScript does *not* do —
+    `seconds` is not capped on read. Reproducing faithfully means reproducing the silences too.
+    Since migration 0020 the database refuses an out-of-range page, so the legacy row that used to
+    trigger the analytics DoS can no longer be seeded: the SQL function is confronted with the
+    JavaScript **directly**, on the values a pre-0020 base can still hold.
+  - `signatureAbsente` moves from `presentations.js` to `erreurs-base.js` — "this function does not
+    exist here" belongs with "this conflict is a conflict". Three modules need it now; copying it
+    would have created two definitions of one fact, which is what that file exists to prevent.
+    `presentations.js` re-exports it: its public surface does not move.
 - **An endurance bench: what a burst cannot show — duration.** Every load bench in this repository
   is *instantaneous*: N calls fired together, one reading, done. `chargeReelle` already covers
   concurrent heartbeats, twenty simultaneous presentations, the file relay, a slowed database, a

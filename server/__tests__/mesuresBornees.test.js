@@ -27,7 +27,7 @@ const MAX = 2147483647;
 function contexte(capture) {
   return {
     db: {
-      async request(_url, opts) { if (opts && opts.body) capture.ecrit = opts.body[0]; return capture.lignes || []; },
+      async request(url, opts) { sans0022(url); if (opts && opts.body) capture.ecrit = opts.body[0]; return capture.lignes || []; },
       async selectAll() { return capture.vues || []; },
     },
     errors: { async capture() {} },
@@ -35,6 +35,18 @@ function contexte(capture) {
 }
 
 const lien = { slug: "s", doc_id: "d", recipient_email: "a@b.c", is_test: false };
+
+// ⚠️ UN `rpc/` INCONNU JETTE — c'est ce que fait PostgREST, et un faux qui rend `[]` raconte une
+// base qui possède TOUTES les fonctions et où elles sont toutes vides. Depuis la migration 0022,
+// `listSharesForDoc` et `overview` agrègent EN BASE et ne retombent en mémoire que sur `PGRST202` :
+// un faux complaisant ferait donc croire à zéro statistique partout. Ces bancs-ci éprouvent le
+// chemin de REPLI — celui d'un hôte sans la 0022 —, et ils doivent le dire en simulant son refus.
+const sans0022 = (chemin) => {
+  if (!String(chemin).startsWith("rpc/player_stats")) return false;
+  const e = new Error("Could not find the function public.player_stats… (PGRST202)");
+  e.statusCode = 404; e.details = { code: "PGRST202" };
+  throw e;
+};
 
 describe("ce qui entre en base", () => {
   it("⚠️ REJOUE LE 25/08 : une mesure à 2 147 483 647 est bornée avant l'écriture", async () => {

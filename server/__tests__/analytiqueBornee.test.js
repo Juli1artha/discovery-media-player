@@ -18,11 +18,25 @@
 const shares = require("../shares.js");
 const fc = require("fast-check");
 
+// ⚠️ UN `rpc/` INCONNU JETTE — c'est ce que fait PostgREST, et un faux qui rend `[]` raconte une
+// base qui possède TOUTES les fonctions et où elles sont toutes vides. Depuis la migration 0022,
+// `listSharesForDoc` et `overview` agrègent EN BASE et ne retombent en mémoire que sur `PGRST202` :
+// un faux complaisant ferait donc croire à zéro statistique partout. Ces bancs-ci éprouvent le
+// chemin de REPLI — celui d'un hôte sans la 0022 —, et ils doivent le dire en simulant son refus.
+const sans0022 = (chemin) => {
+  if (!String(chemin).startsWith("rpc/player_stats")) return false;
+  const e = new Error("Could not find the function public.player_stats… (PGRST202)");
+  e.statusCode = 404; e.details = { code: "PGRST202" };
+  throw e;
+};
+
+
 /** Un faux qui RETIENT les chemins demandés — la borne se vérifie sur ce qui est demandé. */
 function base(vues, liens = [{ slug: "s1", created_at: "2026-01-01T00:00:00Z" }]) {
   const chemins = [];
   const rendre = (c) => {
     chemins.push(c);
+    sans0022(c);
     if (c.startsWith("commercial_doc_shares")) return liens;
     if (c.startsWith("commercial_doc_views")) return vues;
     return [];
