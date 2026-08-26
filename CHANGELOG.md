@@ -83,6 +83,14 @@ the notes there are this file's section for that version.
   - What the probe does **not** watch is written down rather than implied: `current_page`, written
     by the presenter and read by no aggregation, is not bounded in the database today. A recorded
     decision, not an oversight — the day an aggregation reads it, it joins the list.
+  - ⚠️ **And closing that duplicate opened a bigger one, so it is guarded too.** `10000` and `86400`
+    — the values of `BORNES` in `server/shares.js` — are now copied into the SQL constraints: 18
+    times in migration 0020, 9 in 0023, 16 in `init.sql`. Raising `BORNES` without the database
+    makes it **refuse** writes the code believes valid; lowering it makes the database laxer than
+    the code, and the "last line of defence" the migrations claim stops being one. Neither goes red.
+    A bench now reads `BORNES` at its source and requires every **ceiling** in those three files to
+    be one of its values — ceilings, not occurrences: only a `check … <=` comparison and the
+    `least(greatest(col, 0), N)` repair express one.
 - **Analytics aggregation moved into the database — and the JavaScript stays, on purpose.**
   `listSharesForDoc` and `overview` read `commercial_doc_views` over a rolling 24-month window. The
   window bounds **time, not the number of rows**: the index serves the filter and does nothing else
