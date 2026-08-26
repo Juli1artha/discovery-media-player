@@ -50,21 +50,43 @@ const cleDeCache = (voix, dit) => crypto.createHash("sha256").update(voix + "|" 
 /** Le faux réseau : HEAD du cache, synthèses par voix, ajout de voix — tout est ENREGISTRÉ. */
 const vraiFetch = global.fetch;
 let sorties = [];
-function reseau({ enCache = false, voixEnEchec = [], ajoutVoixOk = true, audio = "QUJD", alignement = [0, 0.12, 0.3] } = {}) {
+
+// ⚠️ DE VRAIS `Response`, PAS DES OBJETS QUI Y RESSEMBLENT. Ce faux réseau rendait `{ ok, json }` —
+// une forme qu'aucun serveur ne produit : ni `headers`, ni `body`, ni `status` sur le chemin
+// heureux. Tant que la route se contentait de `gen.json()`, ça passait ; le jour où elle a lu son
+// corps BORNÉ (la réponse vient d'un tiers, sa taille n'est pas la nôtre), le banc s'est mis à
+// prouver le contraire de la réalité. `new Response(...)` est du vrai, il coûte une ligne, et il
+// n'a aucune raison de diverger de ce qu'ElevenLabs enverra.
+const reponseJson = (valeur, statut = 200) =>
+  new Response(JSON.stringify(valeur), { status: statut, headers: { "content-type": "application/json" } });
+
+function reseau({ enCache = false, voixEnEchec = [], ajoutVoixOk = true, audio = "QUJD", alignement = [0, 0.12, 0.3], attendre = null } = {}) {
   sorties = [];
   global.fetch = async (url, init = {}) => {
     const u = String(url);
-    sorties.push({ url: u, methode: init.method || "GET", corps: init.body ? JSON.parse(init.body) : null });
-    if (init.method === "HEAD" || (!init.method && u.includes("/object/public/"))) return { ok: enCache };
-    if (u.includes("/voices/add/")) return { ok: ajoutVoixOk, json: async () => ({}) };
+    // `signal` est ENREGISTRÉ : un appel sortant sans abandon est une propriété qui se vérifie.
+    sorties.push({ url: u, methode: init.method || "GET", corps: init.body ? JSON.parse(init.body) : null, abandon: !!init.signal });
+    if (init.method === "HEAD" || (!init.method && u.includes("/object/public/"))) return new Response(null, { status: enCache ? 200 : 404 });
+    if (u.includes("/voices/add/")) return reponseJson({}, ajoutVoixOk ? 200 : 402);
     if (u.includes("/text-to-speech/")) {
+      // La barrière permet de tenir des synthèses EN VOL — sans elle, « concurrent » ne veut rien
+      // dire dans un banc : chaque appel se résoudrait avant que le suivant ne commence.
+      if (attendre) await attendre;
       const voix = decodeURIComponent(u.split("/text-to-speech/")[1].split("/")[0]);
-      if (voixEnEchec.includes(voix)) return { ok: false, status: 402, json: async () => ({}) };
-      return { ok: true, json: async () => ({ audio_base64: audio, alignment: alignement ? { character_start_times_seconds: alignement } : undefined }) };
+      if (voixEnEchec.includes(voix)) return reponseJson({}, 402);
+      return reponseJson({ audio_base64: audio, alignment: alignement ? { character_start_times_seconds: alignement } : undefined });
     }
     throw new Error("appel inattendu : " + u);
   };
 }
+
+/** Une barrière que le banc ouvre quand il veut : `{ barriere, liberer }`. */
+function barriere() {
+  let liberer;
+  const attendre = new Promise((r) => { liberer = r; });
+  return { attendre, liberer };
+}
+const unTour = () => new Promise((r) => setTimeout(r, 0));
 
 /** Contexte nominal : chaque capacité ENREGISTRE pour que le test affirme ce qui s'est passé. */
 function contexte(surcharges = {}) {
@@ -89,7 +111,10 @@ const dire = async (texte = "Bonjour à tous") => {
   return res;
 };
 
-beforeEach(() => { partageRendu = PARTAGE; process.env.ELEVENLABS_API_KEY = "cle-11labs"; });
+// ⚠️ LE CACHE DE SYNTHÈSE VIT DANS LE MODULE, DONC IL SURVIT À CHAQUE BANC. Sans cette remise à
+// zéro, le second banc qui prononce le même texte est servi par la mémoire du premier : il compte
+// zéro appel à ElevenLabs et en conclut que la route n'appelle pas. Il mesurerait le banc d'avant.
+beforeEach(() => { partageRendu = PARTAGE; process.env.ELEVENLABS_API_KEY = "cle-11labs"; routes._tts.cache.vider(); });
 afterEach(() => { delete process.env.ELEVENLABS_API_KEY; delete process.env.ELEVENLABS_VOICE_ID; global.fetch = vraiFetch; });
 
 describe("les refus de bot-tts, chacun avec son code", () => {
@@ -226,5 +251,83 @@ describe("dire ≠ montrer : la prononciation s'applique côté serveur", () => 
     const res = await dire("Bonjour");
     expect(res.corps.ok).toBe(true);
     expect(res.corps.spoken).toBeUndefined();
+  });
+});
+
+// ⚠️ CE QUE LE VISITEUR CHOISIT, C'EST CE QUE VOTRE COMPTE ELEVENLABS SYNTHÉTISE — ET ÇA SE PAIE.
+//
+// `bot-tts` accepte `body.text` tel quel : un slug public valide suffit, aucune session n'est
+// exigée, et rien ne rattache le texte à une réponse du bot. Le plafond de débit (400/h/IP) ne
+// borne que la CADENCE d'une adresse ; il ne borne ni le coût par appel, ni le nombre d'appels
+// sortants simultanés, ni la taille de ce qu'on accepte en retour. Le ticket signé qui liera texte
+// et réponse du bot est un autre chantier. Ces bancs-ci tiennent les trois bornes qui ne demandent
+// aucun changement de protocole — et qui manquaient toutes les trois. (Audit CODEX du 26/08.)
+describe("les bornes de la synthèse : coût, concurrence, taille", () => {
+  it("⚠️ cent appels SIMULTANÉS sur le même texte ne produisent QU'UNE synthèse", async () => {
+    const { attendre, liberer } = barriere();
+    const ctx = contexte(); reseau({ attendre });
+
+    // Le HEAD du cache ne voit pas ce qui n'est pas encore écrit : sans regroupement, ces cent
+    // appels manquaient tous le cache ensemble et payaient cent fois le même extrait.
+    const tous = Array.from({ length: 100 }, () => dire("Le même texte pour tout le monde"));
+    await unTour();
+    liberer();
+    const reponses = await Promise.all(tous);
+
+    const syntheses = sorties.filter((s) => s.url.includes("/text-to-speech/"));
+    expect(syntheses, "une synthèse pour cent demandes identiques").toHaveLength(1);
+    expect(ctx.poses.filter((p) => p.chemin.endsWith(".mp3")), "un seul objet écrit").toHaveLength(1);
+    expect(reponses.every((r) => r.statusCode === 200 && r.corps.ok), "les cent sont servis").toBe(true);
+    const urls = new Set(reponses.map((r) => r.corps.url));
+    expect(urls.size, "tous reçoivent le MÊME extrait").toBe(1);
+  });
+
+  it("⚠️ au-delà du plafond de synthèses simultanées : 503 réessayable, pas un appel de plus", async () => {
+    const { attendre, liberer } = barriere();
+    contexte(); reseau({ attendre });
+
+    // Des textes DIFFÉRENTS : le regroupement ne peut rien pour eux, chacun coûte un appel.
+    const enVol = Array.from({ length: routes._tts.SYNTHESES_SIMULTANEES }, (_, i) => dire(`Texte numéro ${i}`));
+    await unTour();
+
+    const refuse = await dire("Le texte de trop");
+    expect(refuse.statusCode, "503 dit « attends une seconde » ; 500 dirait « abandonne »").toBe(503);
+    expect(refuse.corps).toEqual({ ok: false, error: "busy" });
+    expect(refuse.entetes["retry-after"]).toBe("1");
+    expect(sorties.filter((s) => s.url.includes("/text-to-speech/")),
+      "le refus doit être ANTÉRIEUR à l'appel payant — sinon il ne borne rien")
+      .toHaveLength(routes._tts.SYNTHESES_SIMULTANEES);
+
+    liberer();
+    await Promise.all(enVol);
+  });
+
+  it("⚠️ une réponse au-delà du plafond est refusée SANS être stockée, et l'échec est dit", async () => {
+    const ctx = contexte();
+    // Un corps volontairement plus gros que ce qu'on accepte : `gen.json()` l'aurait pris entier.
+    reseau({ audio: "Q".repeat(routes._tts.MAX_REPONSE_OCTETS + 1024) });
+
+    const res = await dire("Un texte quelconque");
+    expect(res.statusCode).toBe(200);
+    expect(res.corps, "côté visiteur : pas de voix, pas d'erreur").toEqual({ ok: false });
+    expect(ctx.poses, "rien ne doit atteindre le stockage").toEqual([]);
+    expect(ctx.captures.join(" "), "côté exploitant : dire POURQUOI").toMatch(/au-delà de/);
+  });
+
+  it("⚠️ AUCUN appel sortant ne part sans abandon — HEAD, ajout de voix et synthèse", async () => {
+    const ctx = contexte();
+    ctx.plugins.bot.getProfile = async () => ({ behavior: { voice: { id: "VoixDuProfil", owner: "proprietaire-x" } } });
+    reseau({ voixEnEchec: ["VoixDuProfil"] });
+
+    await dire("Bonjour");
+    const sansAbandon = sorties.filter((s) => !s.abandon).map((s) => s.url);
+    expect(sansAbandon,
+      "un fetch sans signal immobilise sa socket ET sa place d'admission jusqu'à ce que la "
+      + "plateforme tue la fonction — c'est la panne qu'`appelHote` a déjà corrigée ailleurs")
+      .toEqual([]);
+    // Le banc ne prouve rien s'il n'a rien vu partir : les trois familles d'appel sont exercées.
+    expect(sorties.some((s) => s.methode === "HEAD")).toBe(true);
+    expect(sorties.some((s) => s.url.includes("/voices/add/"))).toBe(true);
+    expect(sorties.some((s) => s.url.includes("/text-to-speech/"))).toBe(true);
   });
 });
