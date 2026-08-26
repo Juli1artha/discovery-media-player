@@ -18,9 +18,16 @@
 // en disant lequel. Ce qu'on refuse, c'est que le premier `fork` passe sans que personne ne repose
 // la question.
 
-import { describe, it, expect } from "vitest";
-import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+// ⚠️ COMMONJS, comme tout `bin/` — eslint applique `sourceType: "commonjs"` à ce dossier, et un
+// `import` y échoue à l'analyse. Écrit en ESM au premier jet, ce fichier a été refusé par la CI :
+// c'est bien le linter qui a raison, et ce banc-ci est le seul de `bin/__tests__` à avoir voulu
+// dire autrement que ses voisins.
+//
+// ⚠️ ET `child_process` EST IMPORTÉ ICI, DANS UN BANC QUI LE REFUSE AILLEURS. Ce n'est pas une
+// contradiction : le périmètre gardé est le RUNTIME — ce qui tourne dans le conteneur —, et les
+// bancs n'y sont pas. `DU_RUNTIME` les écarte nommément.
+const { execFileSync } = require("node:child_process");
+const { readFileSync } = require("node:fs");
 
 /** Les fichiers qui tournent dans le conteneur — pas les bancs, qui ont le droit de forker. */
 const DU_RUNTIME = (f) => /^(server|bin|context)\/[^/]*\.(js|cjs|mjs)$/.test(f)
