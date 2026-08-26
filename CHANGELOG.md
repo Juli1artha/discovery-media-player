@@ -21,6 +21,22 @@ the notes there are this file's section for that version.
   *does not exist* and for *you asked for the wrong name* with the same three digits. The page's own
   closing rule applies to it — *a procedure that cannot be carried out is worse than no procedure*.
 
+### Added
+- **A guard that refuses a documented image reference the registry would not serve.** Outside the
+  workflows, every `ghcr.io/…` reference must be untagged, `latest`, or `v`-prefixed — the form
+  `image.yml` actually publishes. It does not hold a second copy of that fact: it **confronts**
+  `image.yml`, and if the workflow stops requiring `^v[0-9]+\.[0-9]+\.[0-9]+$` the guard reports
+  *inconclusive* rather than keep enforcing a rule the forge no longer applies.
+  - ⚠️ **Its first version missed the very defect it was written for.** `<` was not in the tag's
+    character class, so `:<version>` — a documentation *placeholder*, not a real tag — read as
+    "no tag at all" and passed. Green on the exact line that had prompted it. The bench caught it;
+    this is the third pattern written too tight this week.
+  - The rule is deliberately permissive: a tag without the `v` is the fault, an unexpected tag is
+    not. Demanding an exact version shape would accuse `latest`, an example, or a shell variable.
+    Registry API URLs (`https://ghcr.io/v2/…`) are excluded by the `://` before them, and the
+    changelog's own quotation of the bad form excludes itself — `…` is not an OCI character, so no
+    filename exception has to be remembered.
+
 ## [0.1.138] — 2026-08-26
 
 **A security fix, and two doors that did not exist.** A visitor holding a valid link could store a
