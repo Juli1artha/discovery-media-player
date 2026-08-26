@@ -44,24 +44,28 @@ RUN npm run build
 FROM node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43
 WORKDIR /app
 ENV NODE_ENV=production
-# ⚠️ `dumb-init` : SA JUSTIFICATION D'ORIGINE NE TIENT PLUS, ET C'EST ÉCRIT PLUTÔT QUE LAISSÉ EN
-# L'ÉTAT. Elle disait : « sans lui, Node est PID 1 et n'a pas de gestionnaire de signal par défaut —
-# `docker stop` attendrait dix secondes avant de tuer ». C'était exact, et ça ne l'est plus :
-# `bin/serve.js` installe désormais un gestionnaire de `SIGTERM`, et le noyau ne discarde un signal
-# sur PID 1 que s'il n'y a AUCUN gestionnaire. L'arrêt gracieux fonctionne donc avec ou sans lui.
+# ⚠️ PAS D'INIT DANS CETTE IMAGE, ET C'EST UN CHOIX MESURÉ — PAS UN OUBLI. `dumb-init` a vécu ici,
+# pour une raison qui était juste et qui est morte : « Node est PID 1 et n'a pas de gestionnaire de
+# signal par défaut, donc `docker stop` attendrait dix secondes avant de tuer ». `bin/serve.js` en
+# installe un désormais, et le noyau ne discarde un signal sur PID 1 QUE s'il n'y en a aucun. Node
+# reçoit donc `SIGTERM`, draine ce qui est en vol, et sort — sans intermédiaire.
 #
-# ⚠️ CE QU'IL LUI RESTE, ET POURQUOI ON LE GARDE QUAND MÊME. Il moissonne les processus zombies — un
-# travail réel en général, VIDE ici : ce runtime ne lance aucun sous-processus (vérifié : ni `spawn`,
-# ni `execFile`, ni `fork` dans `server/`, `bin/` ou `context/`). On le garde par prudence, pas par
-# nécessité démontrée, et le retirer est une décision distincte que ce commentaire rend possible.
+# ⚠️ IL LUI RESTAIT LE MOISSONNAGE DES ZOMBIES, ET CE TRAVAIL EST VIDE ICI. Ce runtime ne lance
+# AUCUN sous-processus — vérifié, et tenu par un banc (`bin/__tests__/sansSousProcessus.test.js`)
+# qui refusera le premier `child_process` ajouté à `server/`, `bin/` ou `context/`. La décision se
+# reposera donc au moment exact où elle redeviendra vraie, au lieu de dormir dans ce commentaire.
+# (`docker exec` ne crée pas d'enfants de PID 1 : ce chemin-là n'a jamais rien à moissonner.)
 #
-# ⚠️ IL N'EST PAS ÉPINGLÉ, et c'est le seul intrant de cette image qui ne le soit pas. `apk` va
-# chercher le paquet SUR LE RÉSEAU au moment du build : même Dockerfile, même digest de base, deux
-# `dumb-init` différents à trois mois d'écart. La règle que `images-epinglees.mjs` tient pour `FROM`
-# ne regarde pas les paquets système. Résoudre la version demande d'atteindre l'index Alpine, ce que
-# l'environnement de préparation ne peut pas (sept voies essayées, toutes fermées) — donc c'est dit,
-# pas inventé.
-RUN apk add --no-cache dumb-init
+# ⚠️ CE QUE SON RETRAIT ACHÈTE. Il était le SEUL intrant non épinglé de cette image : `apk add`
+# allait chercher le paquet sur le réseau, sans version — même Dockerfile, même digest de base, deux
+# `dumb-init` différents à trois mois d'écart. L'épinglage par condensat a été écrit, puis écarté :
+# quatre pièces mobiles (dépendance réseau au build, deux condensats à maintenir, un embranchement
+# d'architecture, un téléchargeur ad hoc faute de certificats dans l'image) pour un composant dont
+# le travail est vide. Le retirer supprime le problème au lieu de le vérifier, et rend la
+# construction reproductible SANS CONDITION — plus rien à aller chercher.
+#
+# ⚠️ SI VOUS EN AVIEZ BESOIN, VOUS N'ÊTES PAS COINCÉ : `docker run --init` injecte un init sans
+# toucher à cette image, et c'est le bon geste le jour où vous lancez un sous-processus dedans.
 
 COPY package*.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
@@ -81,5 +85,8 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-ENTRYPOINT ["dumb-init", "--"]
+# ⚠️ FORME EXEC, PAS FORME SHELL — et ce n'est pas cosmétique maintenant qu'il n'y a plus d'init.
+# `CMD node bin/serve.js` lancerait un `/bin/sh` comme PID 1, qui NE RELAIE PAS les signaux à son
+# enfant : le gestionnaire de `SIGTERM` ne serait jamais appelé et l'arrêt gracieux ne servirait à
+# rien. Sous cette forme, Node EST PID 1 et reçoit le signal lui-même.
 CMD ["node", "bin/serve.js"]

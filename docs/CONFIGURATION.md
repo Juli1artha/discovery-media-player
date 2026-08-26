@@ -25,6 +25,11 @@ only matters for what a slow upstream is still streaming when the signal arrives
 A second `SIGTERM` or `SIGINT` exits immediately, without waiting: pressing Ctrl-C twice asks for
 the process to stop, not for an explanation.
 
+⚠️ **The container image carries no init process**, and this handler is why it does not need one:
+Node runs as PID 1 and receives the signal itself. If you extend the image with something that
+spawns child processes, add an init back — or start it with `docker run --init`, which injects one
+without touching the image.
+
 ### `PLAYER_MAX_RELAY_BYTES`
 
 Ceiling, in bytes, for a file relayed through the player (default **60 MB**). Above it the relay
