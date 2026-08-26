@@ -13,6 +13,22 @@ the notes there are this file's section for that version.
 ## [Unreleased]
 
 ### Fixed
+- ⚠️ **The `.env.example` check read prose as data.** It lived inline in `ci.yml` and pulled *every*
+  backtick-quoted uppercase token out of `docs/CONFIGURATION.md`. The day that page mentioned
+  `SIGTERM`, `SIGINT` and `SIGKILL` — **signal names, in a sentence** — it demanded them in
+  `.env.example`. A check that asks you to bend your prose to please it teaches its readers to write
+  for the machine.
+  - ⚠️ **The obvious remedy was worse, and measuring said so before it was written.** *"Read only
+    the `### \`NAME\`` headings"* looked clean: the page carries **two**, while documenting
+    thirty-nine variables elsewhere in tables and inline mentions. The guard would have gone green
+    by looking at almost nothing — the too-tight pattern, fourth time this week.
+  - What actually tells a variable from a word is that it **exists elsewhere**: the code reads it,
+    or the example file carries it. The rule now lives in `tools/env-exemple.mjs`, which asks
+    `env-lues.mjs` for its AST inventory instead of keeping a second one — and **counts and names
+    what it sets aside**, because a guard that hides what it did not look at claims coverage it does
+    not have.
+  - The set-aside is not an escape hatch: a variable the code *reads* is kept, even when both files
+    forget it. Otherwise the exception would swallow the rule.
 - **The startup line printed the port it was asked for, not the one it got.** With `PORT=0` — where
   the OS picks a free one — it announced `localhost:0`, an address that leads nowhere, at exactly
   the moment you need to know where to knock. Found by the shutdown bench, which could not reach
