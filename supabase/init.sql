@@ -719,7 +719,17 @@ begin
       ('commercial_doc_views',    'ck_views_seconds_borne',          'seconds',       86400),
       ('commercial_doc_sessions', 'ck_sessions_max_page_borne',      'max_page',      10000),
       ('commercial_doc_sessions', 'ck_sessions_num_pages_borne',     'num_pages',     10000),
-      ('commercial_doc_sessions', 'ck_sessions_total_seconds_borne', 'total_seconds', 86400)
+      ('commercial_doc_sessions', 'ck_sessions_total_seconds_borne', 'total_seconds', 86400),
+      -- ⚠️ LES TROIS DE LA 0023 ÉTAIENT DÉCLARÉES DANS LE CORPS DE LA TABLE, ET NULLE PART AILLEURS —
+      -- donc une base VIERGE les recevait et une base DÉJÀ INSTALLÉE jamais. C'est mot pour mot le
+      -- défaut que le paragraphe ci-dessus décrit, recommis un jour plus tard sur la table suivante.
+      -- Refusé par la forge : le scénario « base 0.1.64 → rejeu de l'init actuel » a rendu une forme
+      -- amputée de ces trois lignes. Un oubli ici ne casse RIEN et ne se voit nulle part : la table
+      -- accepte simplement n'importe quelle valeur, comme avant, chez les hôtes déjà installés — les
+      -- seuls qui comptent.
+      ('commercial_doc_internal_sessions', 'ck_internes_max_page_borne',      'max_page',      10000),
+      ('commercial_doc_internal_sessions', 'ck_internes_num_pages_borne',     'num_pages',     10000),
+      ('commercial_doc_internal_sessions', 'ck_internes_total_seconds_borne', 'total_seconds', 86400)
     ) as t(tab, nom, col, maxi)
   loop
     if not exists (select 1 from pg_constraint where conname = c.nom) then
