@@ -66,6 +66,42 @@ the notes there are this file's section for that version.
     awaits the promise. Restoring the old line turns the bench red.
 
 ### Added
+- **`mesures` on the contract card: what this instance has actually lived through.** `lectureSaturee`
+  (0.1.139) answers exactly one question. *Is a route slow? which ones? us or the database? how many
+  5xx? is the event loop slipping?* had **no observable answer at all** — and deciding to optimise
+  without them is guessing. Both integrating hosts confirmed independently that they cannot produce
+  these numbers from their side. Per family of work: `n`, `p50/p95/p99`, `maxMs`; plus response
+  classes (`ok`, `refus4xx`, `debit429`, `occupe503`, `erreur5xx`), `rss`/`heap`/`arrayBuffers`,
+  event-loop delay, and the latency of the `db` capability. Asked for by the CODEX audit of
+  26 August, §2.
+  - ⚠️ **Buckets, not samples.** Keeping durations to compute a true percentile would mean a table
+    that grows with traffic — a memory leak driven from outside, the trap `server/cache.js` already
+    documents. The ladder is fixed, so this module's memory is bounded by construction. There is a
+    bench: one call versus five thousand differ by the length of the digits.
+  - ⚠️ **A percentile over buckets is a bound, not a value.** `p95sousMs: 250` reads *"95% of calls
+    under 250 ms"*, never *"the 95th is 250 ms"* — hence the key name, and hence `seauxMs` shipping
+    beside the numbers: without the ladder you cannot judge how precise what you are reading is.
+  - ⚠️ **"Not measured" is never rendered as zero.** A family never exercised is absent; an
+    event-loop histogram with no samples reports `moyen: null`. A `0` there would read as *healthy*.
+    And the loop delay has its sampler resolution subtracted — otherwise a perfectly idle instance
+    would report a permanent 20 ms and send someone hunting a fault that does not exist.
+  - ⚠️ **The database is measured at the seam, not at 67 call sites.** The capability is supplied by
+    the host; remembering to time each call would mean never forgetting once, and the first lapse
+    would go unnoticed. Wrapped at `init`, it covers calls nobody has written yet. Benched to return
+    the same values and the same rejections: a decorator that changes the contract measures
+    something other than production.
+  - ⚠️ **No slug, no address, no text** — counters and durations only, checked structurally by a
+    bench that walks every leaf. That is what makes it publishable on a card a host reads without
+    ceremony. Process-local and reset by every deployment, like `lectureSaturee`.
+  - ⚠️ **The wrapper delegates to the live object; it does not photograph its methods.** The first
+    version captured `db.request` at wrap time, so anything replacing it *after* `init` stopped
+    being called — silently. Not a hypothetical: CI went red on it. A bench installs its probe after
+    `init`, and a host has exactly the same right (a retry wrapper, a lazily wired client,
+    instrumentation). The context itself is inherited rather than copied, for the same reason.
+    **A measurement that changes what runs is not a measurement.**
+  - The event-loop sampler is enabled at import, and **the graceful-shutdown bench is what guards
+    it**: `bin/serve.js` loads this module, so if the histogram held the loop open, `SIGTERM` would
+    stop exiting 0 and that bench would go red.
 - **The voice cache was unpurgeable by construction — not for want of a policy.** Every synthesis
   writes two objects to the **public** `tts-cache` bucket, `<fingerprint>.mp3` and
   `<fingerprint>.json`. The fingerprint is a digest of voice + model + spoken text, and it tied back
