@@ -151,6 +151,22 @@ describe("qui doit encore signer", () => {
     expect(DISPENSES).toContain("claude");
   });
 
+  it("⚠️ `claude[bot]` est le MÊME agent que `claude`, sous l'identité que GitHub donne à l'API", () => {
+    // Le cas réel : la PR #392, ouverte par l'API, est sortie signée `claude[bot]` et ce contrôle
+    // l'a refusée — sur un contenu identique à celui qui passait la veille sous `claude`. Deux
+    // identités pour une même main, selon le CHEMIN par lequel la contribution arrive.
+    expect(nonSignes(["claude[bot]"], [])).toEqual([]);
+    expect(DISPENSES).toContain("claude[bot]");
+  });
+
+  it("⚠️ et l'élargissement s'arrête là : un login qui ressemble à un bot dispensé signe quand même", () => {
+    // La dispense couvre des identités NOMMÉES, jamais une forme. Sans ce banc, la liste pourrait
+    // dériver vers « tout ce qui finit par [bot] », ce qui laisserait passer n'importe quelle
+    // application tierce installée sur le dépôt.
+    expect(nonSignes(["claude-fork[bot]", "notclaude[bot]", "claudebot"], []))
+      .toEqual(["claude-fork[bot]", "notclaude[bot]", "claudebot"]);
+  });
+
   it("une dispense ne couvre pas un inconnu qui lui ressemble", () => {
     expect(nonSignes(["Juli1artha-bis"], [])).toEqual(["Juli1artha-bis"]);
   });

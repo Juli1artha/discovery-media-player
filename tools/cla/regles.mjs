@@ -24,8 +24,21 @@ export const PHRASE_DE_SIGNATURE = "I have read the CLA Document and I hereby si
  * ⚠️ LE MAINTENEUR EST LE CONCÉDANT : il ne s'accorde pas une licence à lui-même. Les bots ne
  * produisent pas d'œuvre de l'esprit — rien à concéder non plus. `claude` est l'identité des
  * commits produits par l'agent, ajoutée sur décision explicite du mainteneur (PR #256).
+ *
+ * ⚠️ `claude` ET `claude[bot]` SONT LE MÊME AGENT SOUS DEUX IDENTITÉS, et seule la première était
+ * ici. Ce n'est pas une nuance de nommage : GitHub attribue l'une ou l'autre selon le CHEMIN par
+ * lequel la contribution arrive — une PR ouverte par l'API sort signée `claude[bot]`, la même
+ * ouverte autrement sort signée `claude`. Constaté le 25/08 : la PR #392 a été refusée par ce
+ * contrôle pour cette seule raison, sur un contenu identique à celui qui passait la veille.
+ *
+ * ⚠️ CE N'EST PAS UN CORRECTIF TECHNIQUE, ET IL A ATTENDU EXPRÈS. Élargir une liste de dispense de
+ * CLA, c'est décider QUI CONTRIBUE SANS SIGNER — une question de gouvernance, pas d'outillage. Le
+ * jour où le refus est tombé, la tentation était de desserrer la garde pour débloquer une PR ;
+ * c'est précisément ce qu'on ne fait pas. La PR a été refermée et rouverte par le chemin normal,
+ * l'écart a été signalé, et la liste n'a bougé que sur décision explicite du mainteneur (26/08) —
+ * par le même raisonnement que ses deux voisines, qui y figurent déjà sous leur forme `[bot]`.
  */
-export const DISPENSES = ["Juli1artha", "dependabot[bot]", "github-actions[bot]", "claude"];
+export const DISPENSES = ["Juli1artha", "dependabot[bot]", "github-actions[bot]", "claude", "claude[bot]"];
 
 /** Un login GitHub, tel que la forge les forme. Sert à REFUSER tout le reste. */
 const LOGIN_VALIDE = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}(?:\[bot\])?$/;

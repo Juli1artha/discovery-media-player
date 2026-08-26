@@ -48,6 +48,34 @@ export function titresRepetes(txt) {
     .map(([t, n]) => `section « ${t} » écrite ${n} fois — les notes de sortie s'arrêtent à la première, et la suite ne se publierait pas`);
 }
 
+/**
+ * Les sous-sections (`### Added`, `### Fixed`…) répétées DANS une même version.
+ *
+ * ⚠️ UNE RÈGLE CORRIGÉE À UN NIVEAU NE PROTÈGE PAS CELUI DU DESSOUS, et ce dépôt l'a payé deux
+ * jours de suite. `titresRepetes` est né d'un `## [Unreleased]` écrit deux fois ; le lendemain, un
+ * merge a produit deux `### Fixed` sous une même version — même cause exactement (deux branches
+ * ouvrent chacune la leur, git fusionne sans conflit, les lignes ne se touchent pas), et la garde
+ * est restée verte parce qu'elle ne relevait que les titres `##`.
+ *
+ * ⚠️ ICI LA CONSÉQUENCE N'EST PAS UNE AMPUTATION, C'EST UNE DISPERSION. Les notes partent
+ * entières, mais un lecteur qui cherche les correctifs d'une version en trouve la moitié, s'arrête,
+ * et manque le reste — d'autant plus sûrement que la seconde liste ressemble à celle d'une autre
+ * version. Un journal de sortie se lit une fois, vite, par quelqu'un qui décide s'il met à jour.
+ */
+export function sousSectionsRepetees(txt) {
+  const soucis = [];
+  const bornes = [...txt.matchAll(/^## \[([^\]]+)\]/gm)];
+  bornes.forEach((m, i) => {
+    const corps = txt.slice(m.index, i + 1 < bornes.length ? bornes[i + 1].index : txt.length);
+    const comptes = new Map();
+    for (const [, nom] of corps.matchAll(/^### (.+)$/gm)) comptes.set(nom.trim(), (comptes.get(nom.trim()) || 0) + 1);
+    for (const [nom, n] of comptes) {
+      if (n > 1) soucis.push(`dans « ${m[1]} », la sous-section « ${nom} » est écrite ${n} fois — un lecteur qui cherche ces entrées en trouvera la moitié et s'arrêtera là`);
+    }
+  });
+  return soucis;
+}
+
 /** Les références de bas de page, telles qu'écrites. */
 export const references = (txt) =>
   new Map([...txt.matchAll(/^\[(\d+\.\d+\.\d+)\]: (.+)$/gm)].map((m) => [m[1], m[2].trim()]));
@@ -68,7 +96,7 @@ export function urlAttendue(versions, i) {
 export function ecarts(txt) {
   const versions = sections(txt);
   const refs = references(txt);
-  const soucis = titresRepetes(txt);
+  const soucis = [...titresRepetes(txt), ...sousSectionsRepetees(txt)];
   if (!versions.length) return ["aucune section de version — ce n'est pas un changelog"];
 
   versions.forEach((v, i) => {
@@ -130,6 +158,6 @@ if (estExecuteDirectement(import.meta.url)) {
     if (!vues.length) return inconclusif("aucune section de version dans CHANGELOG.md — la sonde vise à côté, ou le fichier a changé de forme");
     const soucis = ecarts(txt);
     if (soucis.length) return violation(soucis.map((s) => "CHANGELOG désaccordé — " + s));
-    return conforme(`changelog : ${vues.length} sections, aucun titre en double, chaque référence exacte, [Unreleased] à jour`);
+    return conforme(`changelog : ${vues.length} sections, aucun titre ni sous-titre en double, chaque référence exacte, [Unreleased] à jour`);
   }));
 }

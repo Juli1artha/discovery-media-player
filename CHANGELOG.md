@@ -13,15 +13,6 @@ the notes there are this file's section for that version.
 ## [Unreleased]
 
 ### Fixed
-- **`docs/RELEASING.md` gave a command that returns `404`.** Its post-release checklist said
-  `docker manifest inspect ghcr.io/…:<version>`, but `image.yml` pushes the git tag verbatim, so the
-  image is `:v0.1.138`. The `gh release view v<version>` two lines above already carried the `v` —
-  the inconsistency lived four lines apart. Found by following the page during the 0.1.138 release
-  and getting the 404, which is the only way it could have been found: a registry answers `404` for
-  *does not exist* and for *you asked for the wrong name* with the same three digits. The page's own
-  closing rule applies to it — *a procedure that cannot be carried out is worse than no procedure*.
-
-### Fixed
 - ⚠️ **The hourly publication guard had been dead for nineteen hours, and nobody could have seen
   it.** `publication.yml` only does a `checkout` — no `npm ci` — because none of the tools it ran
   had ever needed `node_modules`. Then `exemples-epingles.mjs` gained a dependency on `semver` in
@@ -36,6 +27,36 @@ the notes there are this file's section for that version.
   - The breakage was **contained**: the earlier steps of the same job kept working, which is why
     the version-gap alert for 0.1.138 opened and closed itself correctly. Found by reading that
     job's log after noticing it was red on three consecutive runs — not by an alert.
+- ⚠️ **The changelog carried two `### Fixed` sections under one version.** Same shape as the doubled
+  `## [Unreleased]` closed a day earlier, one level down: two branches each opened their own
+  subsection, git merged both without a conflict. The guard added for the first case reads only
+  `##` titles, so it stayed green — **a rule fixed at one level does not protect the level below**.
+  It now refuses a repeated `###` inside a version too. Found the same way as the first: by a merge,
+  not by the guard.
+- **`docs/RELEASING.md` gave a command that returns `404`.** Its post-release checklist said
+  `docker manifest inspect ghcr.io/…:<version>`, but `image.yml` pushes the git tag verbatim, so the
+  image is `:v0.1.138`. The `gh release view v<version>` two lines above already carried the `v` —
+  the inconsistency lived four lines apart. Found by following the page during the 0.1.138 release
+  and getting the 404, which is the only way it could have been found: a registry answers `404` for
+  *does not exist* and for *you asked for the wrong name* with the same three digits. The page's own
+  closing rule applies to it — *a procedure that cannot be carried out is worse than no procedure*.
+
+### Changed
+- **`claude[bot]` joins the CLA exemption list, on the maintainer's explicit decision.** It is the
+  *same agent* as `claude`, under the identity GitHub assigns depending on how the contribution
+  arrives: a pull request opened through the API comes out authored by `claude[bot]`, the same one
+  opened otherwise comes out as `claude`. Measured on 25/08 — PR #392 was refused by this check for
+  that reason alone, on content identical to what had passed the day before.
+  - ⚠️ **This is not a technical fix, and it waited on purpose.** Widening a CLA exemption list
+    decides *who contributes without signing* — governance, not tooling. On the day the refusal
+    landed, the tempting move was to loosen the guard to unblock a pull request; that is precisely
+    what one does not do. The PR was closed and reopened through the normal path, the gap was
+    reported, and the list moved only once the maintainer decided (26/08) — by the same reasoning as
+    its two neighbours, which are already there in their `[bot]` form.
+  - **The widening stops at named identities.** A bench holds that `claude-fork[bot]`,
+    `notclaude[bot]` and `claudebot` still have to sign: the exemption covers accounts, never a
+    shape. Without it the list could drift toward *anything ending in `[bot]`*, which would let
+    through any third-party app installed on the repository.
 
 ### Added
 - **The identity card reports what the read cache actually refused.** `lectureSaturee` gives

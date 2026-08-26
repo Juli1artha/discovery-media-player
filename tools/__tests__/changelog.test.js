@@ -12,7 +12,7 @@
 
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-import { ecarts, sections, titres, titresRepetes, references, urlAttendue, blocReferences, sectionDe, DEPOT } from "../changelog.mjs";
+import { ecarts, sections, titres, titresRepetes, sousSectionsRepetees, references, urlAttendue, blocReferences, sectionDe, DEPOT } from "../changelog.mjs";
 
 const CHL = (corps) => corps.trim() + "\n";
 const accorde = CHL(`
@@ -99,6 +99,55 @@ describe("un titre écrit deux fois", () => {
 
   it("se tait sur un fichier dont chaque titre est unique", () => {
     expect(titresRepetes(accorde)).toEqual([]);
+  });
+});
+
+describe("une sous-section écrite deux fois dans la même version", () => {
+  // ⚠️ UNE RÈGLE CORRIGÉE À UN NIVEAU NE PROTÈGE PAS CELUI DU DESSOUS, et ce dépôt l'a payé deux
+  // jours de suite. `titresRepetes` est né d'un `## [Unreleased]` doublé ; le lendemain, un merge a
+  // produit deux `### Fixed` sous une même version — même cause exactement (deux branches ouvrent
+  // chacune la leur, git fusionne sans conflit) — et la garde est restée VERTE, parce qu'elle ne
+  // relevait que les titres `##`.
+  const double = CHL(`
+## [Unreleased]
+### Fixed
+- ici
+
+### Fixed
+- ailleurs
+
+## [0.1.1] — 2026-01-01
+### Added
+- un
+
+[Unreleased]: ${DEPOT}/compare/v0.1.1...HEAD
+[0.1.1]: ${DEPOT}/releases/tag/v0.1.1
+`);
+
+  it("⚠️ est refusée, en nommant la version ET la sous-section", () => {
+    const [souci] = sousSectionsRepetees(double);
+    expect(souci).toContain("Unreleased");
+    expect(souci).toContain("Fixed");
+    expect(souci, "le message doit dire ce que ça coûte au lecteur").toContain("en trouvera la moitié");
+  });
+
+  it("`ecarts` la remonte — sinon la règle existerait sans être appliquée", () => {
+    expect(ecarts(double).join(" ")).toMatch(/sous-section « Fixed » est écrite 2 fois/);
+  });
+
+  it("⚠️ la garde du niveau au-dessus ne la voyait PAS — c'est tout le sujet", () => {
+    expect(titresRepetes(double), "les titres `##` sont uniques ici, et pourtant le fichier est fautif").toEqual([]);
+  });
+
+  it("⚠️ mais deux versions ayant CHACUNE sa `### Fixed` sont parfaitement normales", () => {
+    // Le faux positif à ne pas commettre : c'est la répétition DANS une version qui est fautive,
+    // pas la présence du même intitulé d'une version à l'autre — ce qui est le cas de tout le
+    // fichier réel, sur 138 sections.
+    expect(sousSectionsRepetees(accorde.replace("### Fixed", "### Fixed").replace("### Added", "### Fixed"))).toEqual([]);
+  });
+
+  it("se tait sur le CHANGELOG réel du dépôt", () => {
+    expect(sousSectionsRepetees(readFileSync("CHANGELOG.md", "utf8"))).toEqual([]);
   });
 });
 
