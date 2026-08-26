@@ -10,13 +10,12 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
-## [0.1.138] — 2026-08-25
+## [0.1.138] — 2026-08-26
 
-**A security fix, and two doors that did not exist.** This train leaves on the same day as 0.1.137,
-which the release pace normally forbids — the exception it uses is the first one written down:
-*a security fix leaves as soon as it is green*. A visitor holding a valid link could store a value
-that made the statistics page exhaust the heap, and that is not a defect that waits for tomorrow's
-train.
+**A security fix, and two doors that did not exist.** A visitor holding a valid link could store a
+value that made the statistics page exhaust the heap — one row was enough, it persisted, and it
+fired when somebody else opened the overview. If you run an instance with tracked links, this is
+the release to take.
 
 **⚠️ Operators: apply migration `0020` before or with this upgrade.** It adds bounds to
 `commercial_doc_views` and `commercial_doc_sessions`, repairs any out-of-range history, and only
@@ -87,7 +86,8 @@ byte-identical across the two releases** (`server/browser.generated.js`, `sha256
     the two *session* paths. `logView` was the third path, missed when the other two were closed.
     So the fix is not "bound here too": there is now **one** function through which a measurement
     enters the database, and one through which a page is read back. There is no second place left
-    to forget. (`AGENTS.md`, same day: you do not check the crossing, you remove it.)
+    to forget. (`AGENTS.md`, the rule written while fixing this: you do not check the crossing, you
+    remove it.)
   - **The database is no longer assumed clean.** Bounding writes protects future rows; the ones
     already stored remain. Every read of a page value is clamped, including the ones that are only
     *displayed* — "this reader reached page 2 147 483 647" is a false number served to a human who
