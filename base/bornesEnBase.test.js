@@ -71,6 +71,32 @@ decrire("les bornes que la base fait respecter", () => {
     });
   }
 
+  // ⚠️ LA TROISIÈME TABLE, QUE LA 0020 AVAIT LAISSÉE DE CÔTÉ (migration 0023).
+  // `commercial_doc_internal_sessions` porte EXACTEMENT les mêmes colonnes que les deux autres,
+  // écrites par le même code borné — et n'avait reçu aucune contrainte. Personne ne l'avait
+  // remarqué pendant un jour : c'est le genre d'absence qui ne s'écrit nulle part, comme la borne
+  // temporelle manquante de `listSharesForDoc`. (Audit CODEX du 26/08, P3.)
+  const ligneInterne = (col, valeur) => ({
+    session_id: "borne-" + crypto.randomBytes(6).toString("hex"),
+    doc_id: "d", [col]: valeur,
+  });
+  const poserInterne = (row) =>
+    base.request("commercial_doc_internal_sessions", { method: "POST", headers: { Prefer: "return=minimal" }, body: [row] });
+
+  for (const [col, max] of [["num_pages", 10000], ["max_page", 10000], ["total_seconds", 86400]]) {
+    it(`⚠️ sessions internes : REFUSE ${col} = 2147483647`, async () => {
+      await expect(poserInterne(ligneInterne(col, 2147483647))).rejects.toThrow();
+    });
+
+    it(`sessions internes : accepte ${col} à la borne exacte (${max})`, async () => {
+      await expect(poserInterne(ligneInterne(col, max))).resolves.not.toThrow();
+    });
+
+    it(`sessions internes : refuse ${col} négatif`, async () => {
+      await expect(poserInterne(ligneInterne(col, -1))).rejects.toThrow();
+    });
+  }
+
   // ⚠️ CE QUE CE BANC NE PEUT PAS PROUVER, ET QUI SE PROUVE AILLEURS. PostgREST n'expose pas
   // `pg_constraint` : « la contrainte est-elle VALIDÉE, ou seulement posée `not valid` ? » ne se
   // demande pas d'ici. La réponse vient de la migration elle-même — son `validate constraint`

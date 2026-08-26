@@ -73,24 +73,36 @@ end $$;
 -- ── 2. L'historique ramené dans la plage ───────────────────────────────────────────────────────
 -- `least`/`greatest` plutôt qu'une suppression : la ligne dit qu'une lecture a eu lieu, et ça reste
 -- vrai. C'est son AMPLEUR qui était fausse. Effacer la mesure effacerait aussi l'événement.
+--
+-- ⚠️ UNE SEULE ÉCRITURE PAR LIGNE, TOUTES COLONNES ENSEMBLE — ET C'EST LA CORRECTION D'UN DÉFAUT
+-- QUI FAISAIT ÉCHOUER CETTE MIGRATION SUR LA DONNÉE MÊME QU'ELLE VIENT RÉPARER. Une contrainte
+-- `not valid` ne contrôle pas l'historique, mais elle contrôle TOUTE LIGNE RÉÉCRITE. En trois
+-- `update` séparés, réparer `page` réécrivait la ligne pendant que son `max_page` était encore
+-- hors plage : `ck_views_max_page_borne` refusait, la migration s'arrêtait, la base restait à
+-- moitié migrée — contraintes posées mais jamais validées, historique intact.
+--
+-- Ce n'est pas un cas de laboratoire : `pageLue` déduit `max_page` de `page`, donc la ligne de
+-- l'incident du 25/08 (`page: 2147483647`) portait DEUX colonnes hors plage. Reproduit contre un
+-- vrai PostgreSQL 16 le 26/08 — la 0020 telle qu'elle était fusionnée échouait dessus.
+--
+-- ⚠️ LE `case` N'EST PAS DÉCORATIF : `greatest(null, 0)` vaut `0` en PostgreSQL, pas `null`. Écrire
+-- les trois colonnes d'un coup sans lui transformerait chaque mesure INCONNUE en zéro mesuré, sur
+-- des lignes dont une seule colonne était fautive. Les `where` par colonne protégeaient les `null`
+-- par construction ; l'écriture groupée doit le faire explicitement.
 update public.commercial_doc_views
-   set page = least(greatest(page, 0), 10000)
- where page is not null and (page < 0 or page > 10000);
-update public.commercial_doc_views
-   set max_page = least(greatest(max_page, 0), 10000)
- where max_page is not null and (max_page < 0 or max_page > 10000);
-update public.commercial_doc_views
-   set seconds = least(greatest(seconds, 0), 86400)
- where seconds is not null and (seconds < 0 or seconds > 86400);
+   set page     = case when page     is null then null else least(greatest(page, 0), 10000) end,
+       max_page = case when max_page is null then null else least(greatest(max_page, 0), 10000) end,
+       seconds  = case when seconds  is null then null else least(greatest(seconds, 0), 86400) end
+ where (page     is not null and (page     < 0 or page     > 10000))
+    or (max_page is not null and (max_page < 0 or max_page > 10000))
+    or (seconds  is not null and (seconds  < 0 or seconds  > 86400));
 update public.commercial_doc_sessions
-   set max_page = least(greatest(max_page, 0), 10000)
- where max_page is not null and (max_page < 0 or max_page > 10000);
-update public.commercial_doc_sessions
-   set num_pages = least(greatest(num_pages, 0), 10000)
- where num_pages is not null and (num_pages < 0 or num_pages > 10000);
-update public.commercial_doc_sessions
-   set total_seconds = least(greatest(total_seconds, 0), 86400)
- where total_seconds is not null and (total_seconds < 0 or total_seconds > 86400);
+   set max_page      = case when max_page      is null then null else least(greatest(max_page, 0), 10000) end,
+       num_pages     = case when num_pages     is null then null else least(greatest(num_pages, 0), 10000) end,
+       total_seconds = case when total_seconds is null then null else least(greatest(total_seconds, 0), 86400) end
+ where (max_page      is not null and (max_page      < 0 or max_page      > 10000))
+    or (num_pages     is not null and (num_pages     < 0 or num_pages     > 10000))
+    or (total_seconds is not null and (total_seconds < 0 or total_seconds > 86400));
 
 -- ── 3. Validation, maintenant que la table est propre ──────────────────────────────────────────
 alter table public.commercial_doc_views       validate constraint ck_views_page_borne;

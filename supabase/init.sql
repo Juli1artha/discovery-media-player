@@ -145,9 +145,9 @@ create table if not exists public.commercial_doc_internal_sessions (
   doc_id        text,
   user_email    text,
   user_name     text,
-  num_pages     integer,
-  max_page      integer,
-  total_seconds integer default 0,
+  num_pages     integer constraint ck_internes_num_pages_borne check (num_pages is null or (num_pages >= 0 and num_pages <= 10000)),
+  max_page      integer constraint ck_internes_max_page_borne check (max_page is null or (max_page >= 0 and max_page <= 10000)),
+  total_seconds integer default 0 constraint ck_internes_total_seconds_borne check (total_seconds is null or (total_seconds >= 0 and total_seconds <= 86400)),
   pages_time    jsonb   default '{}'::jsonb,
   device        text,
   os            text,
@@ -698,6 +698,16 @@ update public.commercial_doc_shares set revoked_at = now() where revoked = true 
 -- Même ordre que la migration, et pour la même raison : `not valid`, on répare, puis on valide.
 -- Une contrainte validée d'emblée échoue sur une table déjà empoisonnée, et une réparation qui
 -- échoue sur la donnée qu'elle vient réparer ne se relance plus.
+--
+-- ⚠️ ET L'ENTRELACEMENT DE CETTE BOUCLE N'EST PAS UN DÉTAIL DE STYLE : NE LA DÉGROUPEZ PAS.
+-- Chaque tour pose UNE contrainte, répare SA colonne, puis la valide — donc au moment où un tour
+-- réécrit une ligne, les seules contraintes en vigueur portent sur des colonnes DÉJÀ réparées.
+-- Sortir les `add constraint` de la boucle pour les faire tous d'abord — la forme qu'avaient les
+-- migrations 0020 et 0023 jusqu'au 26/08 — casse ça : une contrainte `not valid` laisse passer
+-- l'historique mais contrôle TOUTE LIGNE RÉÉCRITE, donc réparer `page` échouerait sur une ligne
+-- dont `max_page` est encore hors plage. C'est exactement ce qui rendait la 0020 incapable de
+-- réparer la ligne de l'incident du 25/08. Ce fichier-ci était correct ; il l'était sans que
+-- personne l'ait écrit, et c'est la raison de ce paragraphe.
 do $$
 declare
   c record;
@@ -709,7 +719,17 @@ begin
       ('commercial_doc_views',    'ck_views_seconds_borne',          'seconds',       86400),
       ('commercial_doc_sessions', 'ck_sessions_max_page_borne',      'max_page',      10000),
       ('commercial_doc_sessions', 'ck_sessions_num_pages_borne',     'num_pages',     10000),
-      ('commercial_doc_sessions', 'ck_sessions_total_seconds_borne', 'total_seconds', 86400)
+      ('commercial_doc_sessions', 'ck_sessions_total_seconds_borne', 'total_seconds', 86400),
+      -- ⚠️ LES TROIS DE LA 0023 ÉTAIENT DÉCLARÉES DANS LE CORPS DE LA TABLE, ET NULLE PART AILLEURS —
+      -- donc une base VIERGE les recevait et une base DÉJÀ INSTALLÉE jamais. C'est mot pour mot le
+      -- défaut que le paragraphe ci-dessus décrit, recommis un jour plus tard sur la table suivante.
+      -- Refusé par la forge : le scénario « base 0.1.64 → rejeu de l'init actuel » a rendu une forme
+      -- amputée de ces trois lignes. Un oubli ici ne casse RIEN et ne se voit nulle part : la table
+      -- accepte simplement n'importe quelle valeur, comme avant, chez les hôtes déjà installés — les
+      -- seuls qui comptent.
+      ('commercial_doc_internal_sessions', 'ck_internes_max_page_borne',      'max_page',      10000),
+      ('commercial_doc_internal_sessions', 'ck_internes_num_pages_borne',     'num_pages',     10000),
+      ('commercial_doc_internal_sessions', 'ck_internes_total_seconds_borne', 'total_seconds', 86400)
     ) as t(tab, nom, col, maxi)
   loop
     if not exists (select 1 from pg_constraint where conname = c.nom) then

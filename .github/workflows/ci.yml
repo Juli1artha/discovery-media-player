@@ -1137,6 +1137,195 @@ jobs:
       - name: What each gesture costs the database
         run: npm run test:charge
 
+      # ── AUCUNE MESURE SANS BORNE EN BASE — LA CLASSE, PAS LE CAS ─────────────────────────────
+      # ⚠️ LA 0020 A BORNÉ DEUX TABLES SUR TROIS, ET RIEN NE L'A DIT. `commercial_doc_views` et
+      # `commercial_doc_sessions` ont reçu leurs contraintes le 25/08, après qu'un visiteur eut
+      # posté `page: 2147483647` ; `commercial_doc_internal_sessions` porte exactement les mêmes
+      # colonnes, écrites par le même code borné, et n'avait rien reçu. Une absence ne s'écrit nulle
+      # part : il a fallu un audit externe pour la voir, un jour plus tard.
+      #
+      # Cette sonde ne garde donc pas la troisième table — elle garde la RÈGLE : toute colonne de
+      # mesure, dans n'importe quelle table, porte une contrainte VALIDÉE. Une quatrième table
+      # ajoutée demain avec un `max_page` rougira jusqu'à ce qu'elle soit bornée, et personne
+      # n'aura à s'en souvenir.
+      #
+      # `convalidated` et pas seulement l'existence : une contrainte posée `not valid` et jamais
+      # validée protège les écritures nouvelles et laisse passer l'historique — c'est un état
+      # intermédiaire légitime PENDANT une migration, jamais un état d'arrivée.
+      #
+      # ⚠️ CE QUE CETTE SONDE NE REGARDE PAS, DIT PLUTÔT QUE SOUS-ENTENDU. Elle surveille les cinq
+      # noms de colonnes que RAPPORTE UN VISITEUR (`page`, `max_page`, `num_pages`, `seconds`,
+      # `total_seconds`) — la classe exacte du défaut de la 0020. Elle ne surveille PAS
+      # `current_page` (deux tables), qui est écrite par le présentateur et qu'aucune agrégation ne
+      # parcourt : elle n'est pas bornée en base aujourd'hui, et c'est une décision consignée ici,
+      # pas un oubli. Le jour où une agrégation la lit, elle rejoint la liste.
+      - name: No measurement column without a validated bound
+        run: |
+          nues=$($PSQL <<'SQL'
+          select c.relname || '.' || a.attname
+            from pg_attribute a
+            join pg_class c on c.oid = a.attrelid
+            join pg_namespace n on n.oid = c.relnamespace
+           where n.nspname = 'public' and c.relkind = 'r'
+             and a.attnum > 0 and not a.attisdropped
+             and a.attname in ('page', 'max_page', 'num_pages', 'seconds', 'total_seconds')
+             and not exists (
+               select 1 from pg_constraint k
+                where k.conrelid = c.oid and k.contype = 'c' and k.convalidated
+                  and a.attnum = any (k.conkey))
+           order by 1;
+          SQL
+          )
+          # ⚠️ ANTI-VACUITÉ : si la requête ne voyait plus AUCUNE colonne de mesure, elle rendrait
+          # zéro coupable et la garde se féliciterait sur une base vide. On exige d'abord qu'elle
+          # en trouve — c'est la sonde qu'on vérifie, avant ce qu'elle affirme.
+          vues=$($PSQL -c "select count(*) from pg_attribute a join pg_class c on c.oid = a.attrelid join pg_namespace n on n.oid = c.relnamespace where n.nspname='public' and c.relkind='r' and a.attnum>0 and not a.attisdropped and a.attname in ('page','max_page','num_pages','seconds','total_seconds')")
+          [ "$vues" -ge 6 ] || { echo "::error::la sonde ne voit que $vues colonne(s) de mesure — elle ne regarde plus au bon endroit"; exit 1; }
+          echo "colonnes de mesure examinées : $vues"
+          [ -z "$nues" ] || { echo "::error::colonne(s) de mesure sans contrainte VALIDÉE : $(echo "$nues" | tr '\n' ' ')"; exit 1; }
+          echo "toute colonne de mesure porte une borne validée"
+
+      # ── LE CHEMIN DE RÉPARATION D'UNE MIGRATION N'EST JAMAIS JOUÉ ICI — SAUF SI ON L'EXIGE ─────
+      # ⚠️ UN ANGLE MORT PAR CONSTRUCTION, ET IL A CACHÉ UNE MIGRATION CASSÉE PENDANT UN JOUR.
+      # L'étape « Replaying every migration changes nothing » exige que `init.sql` porte déjà tout
+      # ce que les migrations apportent. C'est une bonne propriété, et elle a un prix qui n'était
+      # écrit nulle part : les migrations tournent alors TOUJOURS sur une base propre, où leurs
+      # `update` de rabattement ne touchent aucune ligne. Le seul code qu'un hôte à l'historique
+      # chargé exécutera vraiment est exactement celui que la forge n'exécutait jamais.
+      #
+      # ⚠️ CE QUE ÇA A LAISSÉ PASSER, reproduit le 26/08 contre un vrai PostgreSQL 16. Une contrainte
+      # `not valid` ne contrôle pas l'historique, mais elle contrôle TOUTE LIGNE RÉÉCRITE. Les 0020
+      # et 0023 posaient toutes leurs contraintes, PUIS rabattaient colonne par colonne : réparer
+      # `page` réécrivait une ligne dont `max_page` était encore hors plage, et la contrainte posée
+      # dix lignes plus haut refusait. La 0020 échouait donc sur la ligne MÊME de l'incident du
+      # 25/08 — `pageLue` déduit `max_page` de `page`, les deux valaient 2147483647 — et laissait la
+      # base à moitié migrée : bornes posées, jamais validées, historique intact.
+      #
+      # ⚠️ CETTE SONDE GARDE LA CLASSE, PAS LES TROIS TABLES D'AUJOURD'HUI. Elle retire toutes les
+      # contraintes `ck_%_borne`, sème dans CHAQUE table de mesure une ligne dont toutes les
+      # colonnes sont hors plage et une seconde dont une seule l'est (les autres NULLES), rejoue la
+      # chaîne entière, puis exige quatre choses : qu'aucune migration n'échoue, qu'il ne reste
+      # aucune valeur hors plage, que les bornes finissent VALIDÉES, et que les cellules NULLES
+      # soient encore nulles. Cette dernière n'est pas décorative : `greatest(null, 0)` vaut `0` en
+      # PostgreSQL, donc une écriture groupée sans garde transforme une mesure INCONNUE en zéro
+      # mesuré — silencieusement, et avec un code de sortie vert.
+      #
+      # Éprouvée par mutation : les deux migrations d'avant rougissent, le retrait du `case` rougit
+      # sur le compte des nulles.
+      - name: A poisoned base is repaired by its migrations, not stopped by them
+        run: |
+          psql -v ON_ERROR_STOP=1 -h localhost -U postgres -qtA -c "create database empoisonnee"
+          POI="psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d empoisonnee -qtA"
+          $POI -f supabase/init.sql > /dev/null
+
+          # La même liste de colonnes que la sonde ci-dessus, et pour la même raison : ce qu'un
+          # visiteur RAPPORTE. Une quatrième table portant un `max_page` sera empoisonnée sans que
+          # personne ait à s'en souvenir. Elle est injectée par substitution plutôt que par
+          # expansion : les corps SQL ci-dessous contiennent des `$$` et des antislashs qu'un
+          # heredoc non protégé mangerait.
+          MESURES="'page', 'max_page', 'num_pages', 'seconds', 'total_seconds'"
+
+          cat > /tmp/poison.sql <<'SQL'
+          do $$
+          declare k record;
+          begin
+            for k in select c.relname as tab, con.conname as nom from pg_constraint con
+                       join pg_class c on c.oid = con.conrelid
+                       join pg_namespace n on n.oid = c.relnamespace
+                      where n.nspname='public' and con.contype='c' and con.conname like 'ck\_%\_borne'
+            loop execute format('alter table public.%I drop constraint %I', k.tab, k.nom); end loop;
+          end $$;
+
+          do $$
+          declare t record; cols text; valsa text; valsb text; mes text;
+          begin
+            for t in select c.oid as reloid, c.relname as tab, array_agg(a.attname order by a.attnum) as mesures
+                       from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                       join pg_attribute a on a.attrelid = c.oid
+                      where n.nspname='public' and c.relkind='r' and a.attnum>0 and not a.attisdropped
+                        and a.attname in (@MESURES@)
+                      group by c.oid, c.relname
+            loop
+              -- Les colonnes NOT NULL sans défaut reçoivent une valeur synthétique typée : la
+              -- graine ne connaît aucune table par son nom, elle les découvre.
+              select string_agg(quote_ident(a.attname), ', ' order by a.attnum),
+                     string_agg(case when format_type(a.atttypid,null) like 'timestamp%' then 'now()'
+                                     when format_type(a.atttypid,null) in ('integer','bigint','smallint') then '0'
+                                     when format_type(a.atttypid,null)='jsonb' then '''{}''::jsonb'
+                                     when format_type(a.atttypid,null)='boolean' then 'false'
+                                     else quote_literal('poison-a-'||a.attname) end, ', ' order by a.attnum),
+                     string_agg(case when format_type(a.atttypid,null) like 'timestamp%' then 'now()'
+                                     when format_type(a.atttypid,null) in ('integer','bigint','smallint') then '0'
+                                     when format_type(a.atttypid,null)='jsonb' then '''{}''::jsonb'
+                                     when format_type(a.atttypid,null)='boolean' then 'false'
+                                     else quote_literal('poison-b-'||a.attname) end, ', ' order by a.attnum)
+                into cols, valsa, valsb
+                from pg_attribute a
+               where a.attrelid=t.reloid and a.attnum>0 and not a.attisdropped and a.attnotnull
+                 and not exists (select 1 from pg_attrdef d where d.adrelid=a.attrelid and d.adnum=a.attnum)
+                 and not (a.attname = any (t.mesures));
+              select string_agg(quote_ident(m), ', ') into mes from unnest(t.mesures) as m;
+              -- Ligne A : TOUTES les colonnes de mesure hors plage — le cas que des `update`
+              -- séparés ne savent pas réparer.
+              execute format('insert into public.%I (%s, %s) values (%s, %s)', t.tab, cols, mes, valsa,
+                (select string_agg('2147483647', ', ') from unnest(t.mesures)));
+              -- Ligne B : une seule hors plage, en négatif, les autres NULLES.
+              execute format('insert into public.%I (%s, %s) values (%s, %s)', t.tab, cols, mes, valsb,
+                (select string_agg(case when i=1 then '-7' else 'null' end, ', ')
+                   from unnest(t.mesures) with ordinality as u(m, i)));
+            end loop;
+          end $$;
+          SQL
+
+          # Deux relevés génériques : aucune table n'y est nommée, donc aucun ne rétrécit en
+          # silence le jour où le schéma bouge.
+          cat > /tmp/nuls.sql <<'SQL'
+          select coalesce(sum(((xpath('/row/c/text()', query_to_xml(
+                   format('select count(*) as c from public.%I where %I is null', c.relname, a.attname),
+                   false, true, '')))[1]::text)::bigint), 0)
+            from pg_attribute a join pg_class c on c.oid=a.attrelid
+            join pg_namespace n on n.oid=c.relnamespace
+           where n.nspname='public' and c.relkind='r' and a.attnum>0 and not a.attisdropped
+             and a.attname in (@MESURES@);
+          SQL
+          cat > /tmp/horsplage.sql <<'SQL'
+          select coalesce(sum(((xpath('/row/c/text()', query_to_xml(
+                   format('select count(*) as c from public.%I where %I is not null and (%I < 0 or %I > %s)',
+                          c.relname, a.attname, a.attname, a.attname,
+                          case when a.attname in ('seconds','total_seconds') then 86400 else 10000 end),
+                   false, true, '')))[1]::text)::bigint), 0)
+            from pg_attribute a join pg_class c on c.oid=a.attrelid
+            join pg_namespace n on n.oid=c.relnamespace
+           where n.nspname='public' and c.relkind='r' and a.attnum>0 and not a.attisdropped
+             and a.attname in (@MESURES@);
+          SQL
+          sed -i "s/@MESURES@/$MESURES/g" /tmp/poison.sql /tmp/nuls.sql /tmp/horsplage.sql
+          $POI -f /tmp/poison.sql > /dev/null
+
+          # ⚠️ ANTI-VACUITÉ, DEUX FOIS : une graine qui ne sème rien rend une base saine, et une
+          # base saine se lit exactement comme une base réparée.
+          tables=$($POI -c "select count(distinct c.relname) from pg_attribute a join pg_class c on c.oid=a.attrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and a.attnum>0 and not a.attisdropped and a.attname in ($MESURES)")
+          [ "$tables" -ge 3 ] || { echo "::error::seulement $tables table(s) de mesure — la graine ne regarde plus au bon endroit"; exit 1; }
+          hors_avant=$($POI -f /tmp/horsplage.sql)
+          nuls_avant=$($POI -f /tmp/nuls.sql)
+          [ "$hors_avant" -ge 12 ] || { echo "::error::la graine n'a semé que $hors_avant valeur(s) hors plage"; exit 1; }
+          echo "$tables tables empoisonnées, $hors_avant valeurs hors plage, $nuls_avant cellules nulles à préserver"
+
+          for f in supabase/migrations/*.sql; do
+            $POI -f "$f" > /dev/null \
+              || { echo "::error::$f échoue sur une base à l'historique hors plage — c'est-à-dire sur la donnée qu'elle vient réparer. Un exploitant ne relance pas une migration qui s'arrête à mi-chemin."; exit 1; }
+          done
+
+          hors_apres=$($POI -f /tmp/horsplage.sql)
+          [ "$hors_apres" = "0" ] || { echo "::error::$hors_apres valeur(s) encore hors plage après la chaîne complète"; exit 1; }
+          nuls_apres=$($POI -f /tmp/nuls.sql)
+          [ "$nuls_apres" = "$nuls_avant" ] || { echo "::error::$nuls_avant cellules nulles avant, $nuls_apres après — une mesure INCONNUE a été réécrite en zéro mesuré"; exit 1; }
+          nues=$($POI -c "select count(*) from pg_constraint where conname like 'ck\_%\_borne' and not convalidated")
+          [ "$nues" = "0" ] || { echo "::error::$nues borne(s) restée(s) NON VALIDÉES : la migration s'est arrêtée entre poser et valider"; exit 1; }
+          validees=$($POI -c "select count(*) from pg_constraint where conname like 'ck\_%\_borne' and convalidated")
+          [ "$validees" -ge 9 ] || { echo "::error::seulement $validees borne(s) revalidées"; exit 1; }
+          echo "base empoisonnée réparée : $hors_avant valeurs rabattues, $nuls_avant nulles préservées, $validees bornes revalidées"
+
       # ── LA SECONDE MOITIÉ DU CONTRAT DE RÉTENTION : LE RECENSEMENT INDÉPENDANT ───────────────
       # Le banc base vient de semer des lignes vieilles et de lancer la purge. Ce recensement — un
       # SQL nu qui ne partage NI fonction NI filtre avec server/retention.js — recompte ce qui
