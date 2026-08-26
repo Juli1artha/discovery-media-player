@@ -694,6 +694,30 @@ async function handler(req, res) {
             return typeof signer === "function" && !!signer("carte-sonde", "carte-sonde", 60);
           } catch { return false; }
         })(),
+        // ⚠️ CE QUE LE PLAFOND D'ADMISSION A REFUSÉ — la seule question dont dépend la décision
+        // d'optimiser le chemin chaud, et elle n'avait aucune réponse observable. Le cache de
+        // lecture refuse une demande de trop par un 503 réessayable depuis longtemps ; rien ne
+        // comptait combien de fois. « Faut-il fusionner les opérations du battement ? » se
+        // tranchait donc au flair (audit CODEX 5.6, §2 — qui disait lui-même d'attendre une mesure).
+        //
+        // ⚠️ ET `fenetreS` N'EST PAS UN ORNEMENT : SANS ELLE LE TOTAL MENT PAR OMISSION. « 0 refus »
+        // ne veut pas dire « on ne sature pas » — ça peut vouloir dire « ce processus a démarré il y
+        // a quatre secondes ». Le total et la fenêtre qui l'a produit ne se lisent QUE ensemble,
+        // exactement comme `presenceFusion` ne se lit pas sans savoir que `inconnu` veut dire
+        // « personne n'a regardé ». On les rend donc dans le même objet, jamais séparés.
+        //
+        // ⚠️ PROCESSUS-LOCAL, comme les champs de présence. Une instance qui répond n'est pas
+        // toutes les instances : derrière un répartiteur, ce compte est celui de CELLE qui a
+        // répondu. Agréger est le travail de l'hôte, et lui laisser croire l'inverse serait pire
+        // que de ne rien rendre.
+        lectureSaturee: (() => {
+          const { total, dernier } = cacheLecture.satures();
+          return {
+            total,
+            fenetreS: Math.round(process.uptime()),
+            derniereIlYaS: dernier == null ? null : Math.max(0, Math.round((Date.now() - dernier) / 1000)),
+          };
+        })(),
         // ⚠️ LE BALAYAGE DE RÉTENTION EST-IL ARMÉ ? La capacité `retention` dit que l'instance PEUT
         // purger ; ce booléen dit si le balayage automatique TOURNE (`config.retention.balayage`).
         // Sans lui, une instance armée est indiscernable d'une instance éteinte — et une purge qui

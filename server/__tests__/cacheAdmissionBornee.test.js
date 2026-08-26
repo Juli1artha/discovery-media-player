@@ -132,3 +132,45 @@ describe("le contexte autonome abandonne réellement une requête base qui ne r�
     expect(src).toMatch(/options\.signal/);
   });
 });
+
+// ⚠️ CE QUE LE PLAFOND REFUSE NE LAISSAIT AUCUNE TRACE. Il rend un 503 propre depuis longtemps —
+// mais rien ne comptait combien de fois il avait servi, donc la question « sature-t-on, en vrai ? »
+// n'avait aucune réponse observable. C'est précisément celle dont dépend la décision d'optimiser le
+// chemin chaud du battement (audit CODEX 5.6, §2, qui disait lui-même d'attendre une mesure).
+describe("le plafond compte ce qu'il refuse", () => {
+  const jamais = () => new Promise(() => {});
+
+  it("au repos : aucun refus, et aucune date", () => {
+    expect(creerCache({ ttlMs: 400, maxEnVol: 2 }).satures()).toEqual({ total: 0, dernier: null });
+  });
+
+  it("⚠️ compte un refus, et retient QUAND — un total sans date ne se lit pas", async () => {
+    let t = 1000;
+    const c = creerCache({ ttlMs: 400, maxEnVol: 2, now: () => t });
+    c.lire("a", jamais); c.lire("b", jamais);
+    t = 1500;
+    await expect(c.lire("c", jamais)).rejects.toMatchObject({ code: CODE_SATURATION });
+    expect(c.satures()).toEqual({ total: 1, dernier: 1500 });
+  });
+
+  it("⚠️ ne compte PAS un appelant que le regroupement a servi — il n'a rien coûté de plus", async () => {
+    const c = creerCache({ ttlMs: 400, maxEnVol: 1 });
+    c.lire("meme", jamais);
+    c.lire("meme", jamais);          // même clé : partagée, jamais refusée, même au plafond
+    expect(c.satures().total, "compter un partage gonflerait la mesure qui doit décider").toBe(0);
+  });
+
+  it("cumule les refus successifs", async () => {
+    const c = creerCache({ ttlMs: 400, maxEnVol: 1 });
+    c.lire("a", jamais);
+    for (const k of ["b", "c", "d"]) await expect(c.lire(k, jamais)).rejects.toMatchObject({ code: CODE_SATURATION });
+    expect(c.satures().total).toBe(3);
+  });
+
+  it("⚠️ une place rendue rouvre l'admission — le compteur mesure des refus, pas un état définitif", async () => {
+    const c = creerCache({ ttlMs: 400, maxEnVol: 1 });
+    await c.lire("a", async () => "fait");
+    await expect(c.lire("b", async () => "aussi")).resolves.toBe("aussi");
+    expect(c.satures().total, "sans libération, tout ce qui suit serait refusé et le compte s'emballerait").toBe(0);
+  });
+});

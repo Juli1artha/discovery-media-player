@@ -40,6 +40,7 @@ need.
   "presenceJetons": true,
   "presenceDurcissement": "inconnu",
   "presenceFusion": "inconnu",
+  "lectureSaturee": { "total": 0, "fenetreS": 0, "derniereIlYaS": null },
   "retentionSweep": false,
   "hostShare": true,
   "hostMail": true,
@@ -90,6 +91,29 @@ The three `presence*` fields report what the host has **observed**, not what it 
 | `presenceStrict` | **effective** — `PLAYER_PRESENCE_STRICT` is set *and* tokens can be issued. A closed door announced over an open one would be the worse failure |
 | `presenceDurcissement` | `actif` (a hardened call came back), `degrade` (migration 0018 is missing), `inconnu` (nothing attempted in this process — **not** a green light, and process-local: another instance may have seen otherwise) |
 | `presenceFusion` | `actif` (a heartbeat used the fused contract — one round trip instead of two), `degrade` (migration 0019 is missing: heartbeats cost 3 round trips instead of 2, nothing breaks), `inconnu` (no heartbeat served in this process). Same three states, same trap, same reading rule as the row above |
+
+### `lectureSaturee` — what this instance actually refused
+
+The read cache groups concurrent requests for the same presentation state and admits a bounded
+number of them in flight. Past that ceiling it answers **`503` with `Retry-After: 1`** — a refusal,
+not a failure, and deliberately distinguishable from a `500`. That ceiling has existed for a long
+time; **nothing counted how often it was reached**, so the question *"do we actually saturate?"* had
+no observable answer.
+
+| key | meaning |
+|---|---|
+| `total` | refusals since this process started |
+| `fenetreS` | how long this process has been running, in seconds — **the window `total` was counted over** |
+| `derniereIlYaS` | seconds since the most recent refusal, or `null` if there has been none |
+
+⚠️ **`total` and `fenetreS` only mean anything together.** `total: 0` does not say *we do not
+saturate*; on a process that started four seconds ago it says *nobody has looked yet*. That is the
+same trap as `inconnu` in the two rows above, and the reason the three keys are returned as one
+object rather than as separate fields you could read apart.
+
+⚠️ **It is process-local.** Behind a load balancer this is the count of the instance that answered,
+not of your deployment. Aggregating is your job — and letting you believe otherwise would be worse
+than returning nothing.
 
 ⚠️ **Before you upgrade, do not read `presenceDurcissement` or `presenceFusion`.** They are *reports
 of execution*: on an instance where nothing is running they say `inconnu`, which means *nobody

@@ -81,3 +81,35 @@ describe("le contrat écrit décrit la carte réellement publiée", () => {
       .toEqual([]);
   });
 });
+
+// ⚠️ LE CHAMP EXISTE POUR RÉPONDRE À UNE QUESTION QUI N'EN AVAIT PAS. Le plafond d'admission du
+// cache de lecture rend un 503 réessayable depuis longtemps ; rien ne comptait combien de fois. La
+// décision d'optimiser le chemin chaud du battement se tranchait donc au flair.
+describe("lectureSaturee — un compte, et la fenêtre qui le rend lisible", () => {
+  const champ = async () => (await carteReelle()).lectureSaturee;
+
+  it("rend les trois clés, jamais l'une sans les autres", async () => {
+    expect(Object.keys(await champ()).sort()).toEqual(["derniereIlYaS", "fenetreS", "total"]);
+  });
+
+  it("⚠️ `fenetreS` accompagne TOUJOURS `total` — sans elle, « 0 refus » se lit « on ne sature pas »", async () => {
+    const c = await champ();
+    // Le piège exact : un processus qui vient de démarrer n'a rien observé. Le total ne dit alors
+    // rien du système, seulement de la durée pendant laquelle on a regardé. Même règle que
+    // `presenceFusion: "inconnu"`, qui veut dire « personne n'a regardé » et non « tout va bien ».
+    expect(typeof c.fenetreS, "un total sans sa fenêtre ment par omission").toBe("number");
+    expect(c.fenetreS).toBeGreaterThanOrEqual(0);
+  });
+
+  it("`derniereIlYaS` vaut `null` quand rien n'a été refusé — pas 0, qui se lirait « à l'instant »", async () => {
+    expect((await champ()).derniereIlYaS).toBeNull();
+  });
+
+  it("le contrat DÉCRIT le piège, il ne se contente pas de nommer les clés", () => {
+    // `CONTRAT` est déjà lu en tête de fichier, sur un chemin ABSOLU : le relire ici avec un chemin
+    // relatif ferait dépendre le banc du répertoire d'où on le lance.
+    expect(CONTRAT).toContain("lectureSaturee");
+    expect(CONTRAT, "un hôte qui lit `total` seul en tirera une conclusion fausse").toContain("only mean anything together");
+    expect(CONTRAT, "derrière un répartiteur, ce compte est celui de l'instance qui a répondu").toContain("process-local");
+  });
+});
