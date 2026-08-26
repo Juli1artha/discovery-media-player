@@ -368,6 +368,21 @@ jobs:
         if: matrix.node == '22'
         run: node tools/portes-de-reponse.mjs
 
+      # ⚠️ UNE PROCÉDURE QU'ON NE PEUT PAS EXÉCUTER EST PIRE QU'UNE ABSENCE DE PROCÉDURE, et
+      # `docs/RELEASING.md` l'écrit lui-même — puis listait `ghcr.io/…:<version>` dans sa liste de
+      # vérification d'après-sortie, alors que la forge publie `:v0.1.138`. Trouvé en suivant la
+      # page pendant la sortie de la 0.1.138 (mesuré : `…/manifests/0.1.138` → 404,
+      # `…/manifests/v0.1.138` → 200). Le `gh release view v<version>` deux lignes plus haut portait
+      # déjà le `v` : l'incohérence vivait à quatre lignes d'écart, depuis des mois.
+      #
+      # ⚠️ ET ELLE NE POUVAIT SE VOIR QU'EN LA SUIVANT. Un registre répond 404 pour « n'existe
+      # pas » et pour « tu as demandé le mauvais nom » avec les mêmes trois chiffres — donc une
+      # ligne fausse est indiscernable d'un pipeline qui a sauté l'image, ce que cette liste existe
+      # justement pour attraper (0.1.67 → 0.1.69, trois sorties muettes d'affilée).
+      - name: A documented image reference carries the tag the forge publishes
+        if: matrix.node == '22'
+        run: node tools/image-documentee.mjs
+
       # ⚠️ LA CARTE D'IDENTITÉ EST LA SEULE CHOSE QUE LES HÔTES ÉPINGLENT. Le contrat en montrait
       # une version périmée de cinq publications, à laquelle il manquait deux capacités. Un hôte
       # qui teste la présence d'une capacité d'après la doc conclut qu'elle n'existe pas. La
