@@ -38,6 +38,23 @@ the notes there are this file's section for that version.
     job's log after noticing it was red on three consecutive runs — not by an alert.
 
 ### Added
+- **The identity card reports what the read cache actually refused.** `lectureSaturee` gives
+  `{ total, fenetreS, derniereIlYaS }` on `GET /api/doc?contract=1`. The admission ceiling has
+  answered `503 Retry-After: 1` for a long time — a refusal, deliberately distinguishable from a
+  `500` — but **nothing counted how often it was reached**, so *"do we actually saturate?"* had no
+  observable answer. That is the one question §2 of the CODEX 5.6 audit turns on, and the audit
+  itself said to wait for a measurement before merging anything on the hot path. This is that
+  measurement; no behaviour changes.
+  - ⚠️ **`total` never travels without `fenetreS`.** `total: 0` does not mean *we do not saturate*
+    — on a process that started four seconds ago it means *nobody has looked yet*. That is the same
+    trap as `presenceFusion: "inconnu"`, and it is why the three keys are one object rather than
+    three fields a host could read apart.
+  - `derniereIlYaS` is `null` when there has been no refusal, not `0` — which would read as
+    *just now*.
+  - **Process-local**, like the `presence*` fields: behind a load balancer this is the count of the
+    instance that answered. Aggregating is the host's job, and implying otherwise would be worse
+    than returning nothing.
+  - Additive, so the `contract` number does not move (rule 2).
 - **A guard that refuses a workflow step running a tool the job cannot serve.** If a job runs
   `node tools/…` and that tool needs an installed package, the job must carry `npm ci`.
   - ⚠️ **It follows the dependency *through* the imports**, because that is where the defect lived:

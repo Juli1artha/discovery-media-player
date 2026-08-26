@@ -75,6 +75,12 @@ function creerCache(options) {
   // résultat en mémoire.
   const maxEnVol = Math.max(1, Number(options && options.maxEnVol) || 128);
   const now = (options && options.now) || (() => Date.now());
+  // ⚠️ CE QUI EST REFUSÉ NE LAISSAIT AUCUNE TRACE. Le plafond d'admission existe depuis longtemps
+  // et il rend un 503 propre — mais rien ne comptait combien de fois il avait servi. La question
+  // « sature-t-on, en vrai ? » n'avait donc AUCUNE réponse observable, et c'est précisément celle
+  // dont dépend la décision d'optimiser ou non le chemin chaud. Optimiser sans elle, c'est deviner.
+  let nSatures = 0;
+  let dernierSature = null;
   /** @type {Map<string, { echeance: number, promesse: Promise<unknown>, poids: number, enVol: boolean, rendrePlace?: () => void }>} */
   const entrees = new Map();
   let poidsTotal = 0;
@@ -123,7 +129,11 @@ function creerCache(options) {
       // existe pour absorber. On ne refuse que ce qui coûterait une requête DE PLUS.
       if (vue && (vue.enVol || vue.echeance > t)) return vue.promesse;
 
-      if (nEnVol >= maxEnVol) throw erreurSaturation(maxEnVol);
+      if (nEnVol >= maxEnVol) {
+        nSatures += 1;
+        dernierSature = t;
+        throw erreurSaturation(maxEnVol);
+      }
 
       const promesse = Promise.resolve().then(produire);
       // ⚠️ UN DÉCOMPTE IDEMPOTENT PAR PROMESSE. Deux chemins libèrent la place (résolution, et
@@ -172,6 +182,16 @@ function creerCache(options) {
     poids: () => poidsTotal,
     /** Demandes actuellement en vol — ce que le plafond d'admission borne. */
     enVol: () => nEnVol,
+    /**
+     * Ce que le plafond a refusé depuis le démarrage de ce processus.
+     *
+     * ⚠️ UN TOTAL SEUL MENT PAR OMISSION, et c'est pour ça que `dernier` l'accompagne. « 0 refus »
+     * ne veut pas dire « on ne sature pas » : ça peut vouloir dire « ce processus vient de
+     * démarrer ». La même règle que `presenceFusion` dans la carte — un rapport d'exécution n'est
+     * pas un inventaire, et une absence d'observation n'est pas une preuve. Celui qui LIT reste
+     * responsable de savoir depuis quand ce processus regarde ; la carte, elle, le lui dit.
+     */
+    satures: () => ({ total: nSatures, dernier: dernierSature }),
   };
 }
 
