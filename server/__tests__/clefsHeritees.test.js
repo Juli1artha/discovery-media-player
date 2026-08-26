@@ -41,9 +41,21 @@ afterEach(() => {
 });
 
 function db(chemin, lignes) {
-  return { async request(c) { return c.startsWith(chemin) ? lignes : []; },
+  return { async request(c) { sans0022(c); return c.startsWith(chemin) ? lignes : []; },
     async selectAll(c) { return c.startsWith(chemin) ? lignes : []; } };
 }
+
+// ⚠️ UN `rpc/` INCONNU JETTE — c'est ce que fait PostgREST, et un faux qui rend `[]` raconte une
+// base qui possède TOUTES les fonctions et où elles sont toutes vides. Depuis la migration 0022,
+// `listSharesForDoc` et `overview` agrègent EN BASE et ne retombent en mémoire que sur `PGRST202` :
+// un faux complaisant ferait donc croire à zéro statistique partout. Ces bancs-ci éprouvent le
+// chemin de REPLI — celui d'un hôte sans la 0022 —, et ils doivent le dire en simulant son refus.
+const sans0022 = (chemin) => {
+  if (!String(chemin).startsWith("rpc/player_stats")) return false;
+  const e = new Error("Could not find the function public.player_stats… (PGRST202)");
+  e.statusCode = 404; e.details = { code: "PGRST202" };
+  throw e;
+};
 
 describe("l'agrégat par document survit à une clé héritée", () => {
   it.each(HERITEES)("doc_id=%s ne lève pas et ne touche pas le prototype", async (cle) => {

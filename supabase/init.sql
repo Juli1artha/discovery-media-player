@@ -728,3 +728,133 @@ alter table public.doc_presentations
   alter column control_hash drop not null;
 alter table public.doc_presentation_messages
   add column if not exists reactions_seq bigint not null default 0;
+
+-- ── LES STATISTIQUES AGRÉGÉES EN BASE (migration 0022) ────────────────────────────────────────
+-- ⚠️ LA FENÊTRE ANALYTIQUE BORNE LE TEMPS, PAS LE NOMBRE DE LIGNES. Sans ces fonctions, une vue
+-- d'ensemble transfère vingt-quatre mois d'événements vers Node pour en rendre quelques dizaines
+-- de lignes. Le player sait s'en passer — il reborne et agrège en mémoire, et c'est son repli sur
+-- `PGRST202` — mais il n'a alors aucun moyen de ne pas grandir avec l'historique.
+--
+-- Le bornage de lecture (`player_page_lue`) reproduit `pageLue` du JavaScript, y compris ce que
+-- celui-ci NE fait pas : `seconds` n'est pas plafonné à la lecture. Reproduire fidèlement, c'est
+-- reproduire aussi les silences.
+-- ── Le même bornage que `pageLue`, écrit une fois ──────────────────────────────────────────────
+create or replace function public.player_page_lue(p_page integer, p_max_page integer)
+returns integer
+language sql
+immutable
+set search_path = public
+as $$
+  select least(greatest(0, coalesce(p_page, 0), coalesce(p_max_page, 0)), 10000);
+$$;
+
+-- ── Vue d'ensemble : les liens tracés, agrégés par document ────────────────────────────────────
+create or replace function public.player_stats_overview(p_depuis timestamptz)
+returns table (doc_id text, opens bigint, readers bigint, max_page integer, last_at timestamptz)
+language sql
+stable
+set search_path = public
+as $$
+  select v.doc_id,
+         count(*) filter (where v.event = 'open')                                    as opens,
+         count(distinct v.session_id) filter (where coalesce(v.session_id, '') <> '') as readers,
+         coalesce(max(public.player_page_lue(v.page, v.max_page)), 0)                as max_page,
+         max(v.at)                                                                   as last_at
+    from public.commercial_doc_views v
+   where v.at >= p_depuis
+     and coalesce(v.doc_id, '') <> ''
+   group by v.doc_id;
+$$;
+
+-- ── Vue d'ensemble : les consultations internes, jamais mélangées aux ouvertures client ────────
+create or replace function public.player_stats_overview_internes(p_depuis timestamptz)
+returns table (doc_id text, opens bigint, readers bigint, last_at timestamptz)
+language sql
+stable
+set search_path = public
+as $$
+  select s.doc_id,
+         count(*)                                                                            as opens,
+         count(distinct lower(s.user_email)) filter (where coalesce(s.user_email, '') <> '') as readers,
+         max(s.last_at)                                                                      as last_at
+    from public.commercial_doc_internal_sessions s
+   where s.last_at >= p_depuis
+     and coalesce(s.doc_id, '') <> ''
+   group by s.doc_id;
+$$;
+
+-- ── Un document : ses liens, agrégés par slug ─────────────────────────────────────────────────
+create or replace function public.player_stats_doc(p_doc_id text, p_depuis timestamptz)
+returns table (slug text, opens bigint, sessions bigint, max_page integer, seconds integer, last_at timestamptz)
+language sql
+stable
+set search_path = public
+as $$
+  select v.slug,
+         count(*) filter (where v.event = 'open')                                     as opens,
+         count(distinct v.session_id) filter (where coalesce(v.session_id, '') <> '') as sessions,
+         coalesce(max(public.player_page_lue(v.page, v.max_page)), 0)                 as max_page,
+         -- ⚠️ `seconds` N'EST PAS BORNÉ EN HAUT À LA LECTURE, et le JS ne le borne pas non plus :
+         -- reproduire fidèlement veut dire reproduire AUSSI ce qui n'est pas fait. Le plancher à
+         -- zéro, lui, vient du `Math.max(0, …)` de l'accumulateur.
+         greatest(0, coalesce(max(coalesce(v.seconds, 0)), 0))                        as seconds,
+         max(v.at)                                                                    as last_at
+    from public.commercial_doc_views v
+   where v.doc_id = p_doc_id
+     and v.at >= p_depuis
+   group by v.slug;
+$$;
+
+-- ── L'entonnoir : page maximale PAR SESSION, rendue en histogramme ────────────────────────────
+-- ⚠️ UN HISTOGRAMME, PAS UN CUMUL. Le cumul descendant (« combien ont atteint AU MOINS la page p »)
+-- reste en JavaScript : c'est une passe sur le nombre de PAGES, pas sur le nombre de lignes, et la
+-- garder d'un seul côté évite d'avoir la même définition d'entonnoir écrite à deux endroits. Ce que
+-- cette fonction supprime, c'est le transfert d'une ligne par événement — pas le calcul.
+create or replace function public.player_stats_doc_funnel(p_doc_id text, p_depuis timestamptz)
+returns table (page integer, sessions bigint)
+language sql
+stable
+set search_path = public
+as $$
+  with par_session as (
+    -- La clé de session du JS est `session_id || slug` : une session absente retombe sur le lien.
+    select coalesce(nullif(v.session_id, ''), v.slug)               as cle,
+           max(public.player_page_lue(v.page, v.max_page))          as page_max
+      from public.commercial_doc_views v
+     where v.doc_id = p_doc_id
+       and v.at >= p_depuis
+     group by coalesce(nullif(v.session_id, ''), v.slug)
+  )
+  select page_max as page, count(*) as sessions
+    from par_session
+   where page_max > 0
+   group by page_max;
+$$;
+
+-- ── Les droits : refusés à tous, accordés au seul rôle de service ─────────────────────────────
+-- Même posture que `player_attendance_bump` : ces fonctions lisent des tables sous RLS, et rien ne
+-- justifie qu'un rôle public puisse seulement les appeler.
+do $$
+declare
+  f text;
+  r text;
+begin
+  foreach f in array array[
+    'public.player_page_lue(integer, integer)',
+    'public.player_stats_overview(timestamptz)',
+    'public.player_stats_overview_internes(timestamptz)',
+    'public.player_stats_doc(text, timestamptz)',
+    'public.player_stats_doc_funnel(text, timestamptz)'
+  ] loop
+    execute format('revoke all on function %s from public', f);
+    foreach r in array array['anon', 'authenticated'] loop
+      if exists (select 1 from pg_roles where rolname = r) then
+        execute format('revoke all on function %s from %I', f, r);
+      end if;
+    end loop;
+    if exists (select 1 from pg_roles where rolname = 'service_role') then
+      execute format('grant execute on function %s to service_role', f);
+    end if;
+  end loop;
+end
+$$;

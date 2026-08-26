@@ -117,7 +117,13 @@ describe("aucune écriture de mesure n'est rattrapée en silence", () => {
           const fin = suite.findIndex((l, n) => n > 0 && /^(async\s+)?function\s/.test(l));
           return (fin > 0 ? suite.slice(0, fin) : suite).join("\n");
         };
-        const DIT = /capture\s*\(|console\.(warn|error)|statusCode\s*=\s*5|\b\w+\(5\d\d\s*,/;
+        // ⚠️ RELANCER, C'EST PARLER — et la règle écrite dix lignes plus haut le disait déjà :
+        // « parler, c'est journaliser OU répondre une erreur à l'appelant ». Un `throw` dans un
+        // `catch` est la forme la plus directe de la seconde branche, et elle manquait au motif :
+        // la garde accusait donc un rattrapage qui trie (« ce cas-ci je le connais, tout le reste
+        // remonte ») — c'est-à-dire le contraire d'un silence. Cinquième correction de cette
+        // sonde, et toujours la même : elle vaut ce que vaut sa lecture.
+        const DIT = /capture\s*\(|console\.(warn|error)|statusCode\s*=\s*5|\b\w+\(5\d\d\s*,|\bthrow\b/;
         const appeles = [...corps.matchAll(/(?:await\s+)?([A-Za-z_$][\w$]*)\s*\(/g)].map((m) => m[1]);
         const parle = DIT.test(corps) || appeles.some((nom) => DIT.test(corpsDe(nom)));
         if (!parle) muets.push(`${path.basename(f)}:${i + 1}  ${ligne.trim().slice(0, 70)}`);

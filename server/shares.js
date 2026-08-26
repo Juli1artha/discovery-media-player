@@ -3,6 +3,7 @@
 // GED commerciale : liens de partage tracés (un par destinataire) + agrégation des consultations.
 // Tables service-role only (cf. migration v12321) → tout passe par le service role ici.
 const crypto = require("crypto");
+const { signatureAbsente } = require("./erreurs-base.js");
 // Tout ce qui vient de l'hôte passe par le contexte injecté — base, email, marque. C'est ce qui
 // permettra à ce fichier de partir dans le dépôt du player sans emporter le studio avec lui.
 // ⚠️ Le contexte est REÇU, pas construit. Ce module ne doit pas savoir d'où il vient : c'est ce
@@ -194,21 +195,68 @@ const FENETRE_ANALYTIQUE_MOIS = 24;
 const depuisFenetre = () =>
   new Date(Date.now() - FENETRE_ANALYTIQUE_MOIS * 30 * 24 * 60 * 60 * 1000).toISOString();
 
-async function listSharesForDoc(docId, owner) {
-  const id = enc(String(docId || ""));
-  const filtreOwner = owner ? `&created_by=eq.${enc(low(owner))}` : "";
-  const [shares, views] = await Promise.all([
-    PLAYER.db.request(`commercial_doc_shares?doc_id=eq.${id}&is_test=not.is.true${filtreOwner}&select=*&order=created_at.desc`),
-    PLAYER.db.selectAll(`commercial_doc_views?doc_id=eq.${id}&select=slug,event,page,max_page,seconds,session_id,at&at=gte.${enc(depuisFenetre())}&order=at.asc`),
-  ]);
-  const shareList = Array.isArray(shares) ? shares : [];
-  const viewList = Array.isArray(views) ? views : [];
-  // Le slug est engendré par le serveur, donc celui-ci n'était pas atteignable — on le convertit
-  // quand même. Un agrégateur qui doit se justifier au cas par cas finit par se tromper de cas :
-  // la règle « toute clé venue d'une ligne va dans une Map » se relit sans réfléchir.
+/**
+ * Appelle une fonction d'agrégation en base. Rend `null` — et RIEN d'autre — quand la fonction
+ * n'existe pas sur cet hôte.
+ *
+ * ⚠️ LE REPLI EST ÉTROIT, ET C'EST TOUT CE QUI LE REND SÛR. `PGRST202` veut dire « aucune fonction
+ * de ce nom » : la migration 0022 n'est pas appliquée, on agrège en mémoire comme avant. N'importe
+ * quelle AUTRE erreur — base injoignable, droits, délai — remonte. Replier dessus rendrait des
+ * chiffres calculés sur un sous-ensemble silencieux, et « statistiques fausses » se lit exactement
+ * comme « statistiques ». Même règle étroite que le repli de la présence.
+ */
+async function agregerEnBase(fonction, corps, projeter) {
+  try {
+    const lignes = await PLAYER.db.request(`rpc/${fonction}`, { method: "POST", body: corps });
+    // ⚠️ LA PROJECTION EST UN PARAMÈTRE, PAS UNE POLITESSE. Une aide générique qui rendrait les
+    // lignes telles quelles ferait sortir une réponse de base non projetée — ce que
+    // `sortieProjetee.test.js` refuse, et il a raison : la forme rendue par PostgREST n'est pas la
+    // nôtre, et la laisser traverser, c'est laisser une colonne ajoutée demain traverser aussi.
+    // Passée en argument, elle oblige chaque appelant à NOMMER les champs dont il se sert.
+    return Array.isArray(lignes) ? lignes.map(projeter) : [];
+  } catch (erreur) {
+    if (signatureAbsente(erreur)) return null;
+    throw erreur;
+  }
+}
+
+/**
+ * Agrégats par lien et histogramme de l'entonnoir, calculés EN BASE.
+ *
+ * Rend `null` si la migration 0022 n'est pas appliquée — l'appelant reprend alors le chemin en
+ * mémoire, qui reste la définition de référence.
+ */
+async function agregatsDocEnBase(docId, since) {
+  const args = { p_doc_id: String(docId || ""), p_depuis: since };
+  const parSlug = await agregerEnBase("player_stats_doc", args, (r) => [String(r.slug), {
+    opens: Number(r.opens) || 0,
+    sessions: Number(r.sessions) || 0,
+    maxPage: Number(r.max_page) || 0,
+    seconds: Number(r.seconds) || 0,
+    lastAt: r.last_at || null,
+  }]);
+  if (parSlug === null) return null;
+  const histo = await agregerEnBase("player_stats_doc_funnel", args, (r) => [Number(r.page) || 0, Number(r.sessions) || 0]);
+  if (histo === null) return null;
+  // ⚠️ UNE `Map`, PAS UN OBJET — le slug vient d'une ligne. Voir l'explication complète sur `byDoc`.
+  return { bySlug: new Map(parSlug), histo };
+}
+
+/**
+ * Les mêmes agrégats, calculés EN MÉMOIRE sur les lignes brutes.
+ *
+ * ⚠️ CE CHEMIN N'EST PAS DU CODE MORT, C'EST LA DÉFINITION DE RÉFÉRENCE. Le banc de base confronte
+ * les deux sur les mêmes lignes et exige un résultat identique : deux textes écrits séparément qui
+ * ne peuvent pas être faux de la même manière, comme la purge de rétention et son recensement. Et
+ * il sert pour de vrai — un hôte n'applique pas forcément la dernière migration.
+ */
+function agregatsDocEnMemoire(viewList) {
   const bySlug = new Map();
   for (const v of viewList) {
     let s = bySlug.get(v.slug);
+    // Le slug est engendré par le serveur, donc celui-ci n'était pas atteignable — on le convertit
+    // quand même. Un agrégateur qui doit se justifier au cas par cas finit par se tromper de cas :
+    // la règle « toute clé venue d'une ligne va dans une Map » se relit sans réfléchir.
     if (!s) { s = { opens: 0, maxPage: 0, seconds: 0, sessions: new Set(), lastAt: null }; bySlug.set(v.slug, s); }
     if (v.event === "open") s.opens++;
     const mp = pageLue(v.page, v.max_page);
@@ -222,11 +270,7 @@ async function listSharesForDoc(docId, owner) {
     // bouge. L'agrégation ne dépend plus de l'ordre : elle le calcule.
     if (!s.lastAt || String(v.at) > String(s.lastAt)) s.lastAt = v.at;
   }
-  const enriched = shareList.map((sh) => {
-    const a = bySlug.get(sh.slug) || { opens: 0, maxPage: 0, seconds: 0, sessions: new Set(), lastAt: null };
-    return { slug: sh.slug, parent_slug: sh.parent_slug || null, recipient_email: sh.recipient_email, recipient_name: sh.recipient_name, created_by: sh.created_by, created_at: sh.created_at, revoked: sh.revoked, opens: a.opens, sessions: a.sessions.size, maxPage: a.maxPage, seconds: a.seconds, lastAt: a.lastAt };
-  });
-  // Entonnoir de lecture : page max atteinte PAR SESSION → combien de lecteurs ont atteint AU MOINS la page p.
+  // Entonnoir de lecture : page max atteinte PAR SESSION → l'histogramme, cumulé plus bas.
   // ⚠️ UNE `Map`, PAS UN OBJET — la clé vient du dehors. Voir l'explication complète sur `byDoc`.
   const sessMax = new Map();
   for (const v of viewList) {
@@ -238,15 +282,48 @@ async function listSharesForDoc(docId, owner) {
     const mp = pageLue(v.page, v.max_page);
     if (mp > 0) sessMax.set(sid, Math.max(sessMax.get(sid) || 0, mp));
   }
-  const reached = [...sessMax.values()];
-  const maxReached = reached.reduce((m, x) => Math.max(m, x), 0);
+  const compte = new Map();
+  for (const x of sessMax.values()) compte.set(x, (compte.get(x) || 0) + 1);
+  return {
+    bySlug: new Map([...bySlug].map(([k, a]) => [k, { ...a, sessions: a.sessions.size }])),
+    histo: [...compte],
+  };
+}
+
+async function listSharesForDoc(docId, owner) {
+  const id = enc(String(docId || ""));
+  const filtreOwner = owner ? `&created_by=eq.${enc(low(owner))}` : "";
+  const since = depuisFenetre();
+  // ⚠️ LA LISTE DES LIENS RESTE UNE LECTURE DE LIGNES, et c'est voulu : elle rend UNE ligne par
+  // lien, pas une par événement. C'est le journal d'événements qui grandit sans fin, pas elle.
+  const shares = await PLAYER.db.request(`commercial_doc_shares?doc_id=eq.${id}&is_test=not.is.true${filtreOwner}&select=*&order=created_at.desc`);
+  // ⚠️ AGRÉGER EN BASE D'ABORD, LIRE LES LIGNES EN REPLI. La fenêtre borne le TEMPS, pas le nombre
+  // de lignes : sur un document très actif, vingt-quatre mois peuvent faire des millions
+  // d'événements transférés pour rendre quelques dizaines de lignes.
+  const agregats = await agregatsDocEnBase(docId, since)
+    || agregatsDocEnMemoire(await PLAYER.db.selectAll(`commercial_doc_views?doc_id=eq.${id}&select=slug,event,page,max_page,seconds,session_id,at&at=gte.${enc(since)}&order=at.asc`).then((r) => (Array.isArray(r) ? r : [])));
+
+  const shareList = Array.isArray(shares) ? shares : [];
+  const VIDE = { opens: 0, maxPage: 0, seconds: 0, sessions: 0, lastAt: null };
+  const enriched = shareList.map((sh) => {
+    const a = agregats.bySlug.get(sh.slug) || VIDE;
+    return { slug: sh.slug, parent_slug: sh.parent_slug || null, recipient_email: sh.recipient_email, recipient_name: sh.recipient_name, created_by: sh.created_by, created_at: sh.created_at, revoked: sh.revoked, opens: a.opens, sessions: a.sessions, maxPage: a.maxPage, seconds: a.seconds, lastAt: a.lastAt };
+  });
+
   // ⚠️ HISTOGRAMME PUIS CUMUL DESCENDANT — O(pages + sessions) au lieu de O(pages × sessions).
-  // L'écriture précédente rebalayait TOUTES les sessions à chaque page : avec le rebornage
-  // ci-dessus le pire cas passe de 2,1 milliards d'itérations à 10 000, mais le quadratique
-  // restait payé sur des valeurs parfaitement légitimes — 10 000 pages × 500 sessions font cinq
-  // millions de comparaisons pour un résultat que deux passes donnent exactement.
+  // L'écriture précédente rebalayait TOUTES les sessions à chaque page : avec le rebornage de
+  // lecture le pire cas passe de 2,1 milliards d'itérations à 10 000, mais le quadratique restait
+  // payé sur des valeurs parfaitement légitimes — 10 000 pages × 500 sessions font cinq millions de
+  // comparaisons pour un résultat que deux passes donnent exactement.
+  //
+  // ⚠️ ET LE CUMUL RESTE ICI, D'UN SEUL CÔTÉ. La base rend l'histogramme (une ligne par page
+  // atteinte), le cumul se fait en JavaScript : c'est une passe sur le nombre de PAGES, jamais sur
+  // le nombre d'événements. Écrire la définition de l'entonnoir des deux côtés en donnerait deux,
+  // qui divergeraient.
+  let maxReached = 0, readers = 0;
+  for (const [page, n] of agregats.histo) { if (page > maxReached) maxReached = page; readers += n; }
   const parPage = new Array(maxReached + 2).fill(0);
-  for (const x of reached) parPage[x] += 1;
+  for (const [page, n] of agregats.histo) parPage[page] += n;
   const funnel = new Array(maxReached);
   let cumul = 0;
   for (let p = maxReached; p >= 1; p--) { cumul += parPage[p]; funnel[p - 1] = cumul; }
@@ -256,7 +333,7 @@ async function listSharesForDoc(docId, owner) {
     opened: enriched.filter((x) => x.opens > 0).length,
     opens: enriched.reduce((s, x) => s + x.opens, 0),
     maxPage: enriched.reduce((m, x) => Math.max(m, x.maxPage), 0),
-    readers: reached.length, // sessions distinctes ayant tourné au moins une page
+    readers, // sessions distinctes ayant tourné au moins une page
   };
   // ⚠️ « PARLANT » : la réponse DIT ce qu'elle couvre. Une analytique bornée qui ne l'annonce pas
   // est indiscernable d'une analytique complète — le lecteur y voit des chiffres définitifs. Le champ
@@ -269,18 +346,40 @@ async function listSharesForDoc(docId, owner) {
 // Sépare bien les OUVERTURES CLIENT (liens tracés = commercial_doc_views) des CONSULTATIONS INTERNES
 // (équipe 3D Discovery = commercial_doc_internal_sessions) → la liste peut afficher « vu par l'équipe »
 // vs « ouvert par le client » sans mélanger la métrique commerciale.
-async function overview() {
-  // Borne glissante généreuse (24 mois) : ces tables d'événements grossissent sans fin ; sans filtre, le
-  // scan intégral se dégrade avec le temps. 24 mois couvre tout l'historique utile pour la vue d'ensemble
-  // (opens / lecteurs / dernière activité) sans changer les chiffres actuels. Filtre servi par l'index sur `at`.
-  const since = depuisFenetre();
-  const [views, internal] = await Promise.all([
-    // PAGINÉ : au-delà de 1 000 lignes, PostgREST tronquait en silence — et comme le tri
-    // est ascendant, c'est le RÉCENT qui disparaissait. Les consultations des trois dernières
-    // semaines étaient invisibles du tableau de bord (0 ouverture affichée sur des plans lus).
-    PLAYER.db.selectAll(`commercial_doc_views?select=doc_id,event,session_id,page,max_page,at&at=gte.${since}&order=at.asc`),
-    PLAYER.db.selectAll(`commercial_doc_internal_sessions?select=doc_id,user_email,last_at&last_at=gte.${since}&order=last_at.asc`).catch(() => []),
-  ]);
+/**
+ * Vue d'ensemble agrégée EN BASE. Rend `null` si la migration 0022 n'est pas appliquée.
+ */
+async function overviewEnBase(since) {
+  const vues = await agregerEnBase("player_stats_overview", { p_depuis: since }, (r) => [String(r.doc_id), {
+    opens: Number(r.opens) || 0,
+    readers: Number(r.readers) || 0,
+    maxPage: Number(r.max_page) || 0,
+    lastAt: r.last_at || null,
+  }]);
+  if (vues === null) return null;
+  // ⚠️ LES CONSULTATIONS INTERNES PEUVENT MANQUER, ET ÇA NE DOIT PAS TAIRE LE RESTE. Une base
+  // ancienne n'a pas forcément la table ; la vue d'ensemble reste juste pour les ouvertures client.
+  // Mais un `catch` qui rend `[]` sans rien dire fait disparaître une moitié du tableau de bord
+  // sans laisser de trace — c'est la leçon de la session interne jetée en silence, qui a coûté des
+  // semaines à un hôte. On replie ET on le dit.
+  let internes = [];
+  try {
+    internes = (await agregerEnBase("player_stats_overview_internes", { p_depuis: since }, (r) => [String(r.doc_id), {
+      opens: Number(r.opens) || 0,
+      users: Number(r.readers) || 0,
+      lastAt: r.last_at || null,
+    }])) || [];
+  } catch (erreur) {
+    try { PLAYER.errors.capture(erreur, { route: "overview", indice: "consultations internes indisponibles — la vue d'ensemble ne montrera que les ouvertures client" }); } catch { /* jamais bloquant */ }
+  }
+  return { byDoc: new Map(vues), intByDoc: new Map(internes) };
+}
+
+/**
+ * La même vue d'ensemble, agrégée EN MÉMOIRE — la définition de référence, et le repli d'un hôte
+ * qui n'a pas la 0022. Le banc de base confronte les deux sur les mêmes lignes.
+ */
+function overviewEnMemoire(views, internal) {
   const list = Array.isArray(views) ? views : [];
   // ⚠️ POURQUOI DES `Map` DANS TOUT CE FICHIER, ET PAS DES OBJETS.
   //
@@ -327,13 +426,38 @@ async function overview() {
     if (s.user_email) b.users.add(String(s.user_email).toLowerCase());
     b.lastAt = s.last_at;
   }
+  return {
+    byDoc: new Map([...byDoc].map(([k, a]) => [k, { opens: a.opens, readers: a.readers.size, maxPage: a.maxPage, lastAt: a.lastAt }])),
+    intByDoc: new Map([...intByDoc].map(([k, b]) => [k, { opens: b.opens, users: b.users.size, lastAt: b.lastAt }])),
+  };
+}
+
+async function overview() {
+  // Borne glissante généreuse (24 mois) : ces tables d'événements grossissent sans fin ; sans filtre, le
+  // scan intégral se dégrade avec le temps. 24 mois couvre tout l'historique utile pour la vue d'ensemble
+  // (opens / lecteurs / dernière activité) sans changer les chiffres actuels. Filtre servi par l'index sur `at`.
+  const since = depuisFenetre();
+  // ⚠️ AGRÉGER EN BASE D'ABORD. La fenêtre borne le TEMPS, pas le nombre de lignes : rapatrier
+  // vingt-quatre mois d'événements pour en rendre quelques dizaines de lignes est un coût qui
+  // grandit avec l'historique, pas avec la réponse.
+  const agregats = await overviewEnBase(since) || overviewEnMemoire(...await Promise.all([
+    // PAGINÉ : au-delà de 1 000 lignes, PostgREST tronquait en silence — et comme le tri
+    // est ascendant, c'est le RÉCENT qui disparaissait. Les consultations des trois dernières
+    // semaines étaient invisibles du tableau de bord (0 ouverture affichée sur des plans lus).
+    PLAYER.db.selectAll(`commercial_doc_views?select=doc_id,event,session_id,page,max_page,at&at=gte.${since}&order=at.asc`),
+    PLAYER.db.selectAll(`commercial_doc_internal_sessions?select=doc_id,user_email,last_at&last_at=gte.${since}&order=last_at.asc`).catch(() => []),
+  ]));
+  const { byDoc, intByDoc } = agregats;
   // La sortie est rendue en JSON : un objet SANS prototype, pour qu'une clé héritée y reste une
   // clé ordinaire jusqu'au bout de la chaîne.
   const out = Object.create(null);
   for (const id of new Set([...byDoc.keys(), ...intByDoc.keys()])) {
-    const a = byDoc.get(id) || { opens: 0, readers: new Set(), maxPage: 0, lastAt: null };
-    const b = intByDoc.get(id) || { opens: 0, users: new Set(), lastAt: null };
-    out[id] = { opens: a.opens, readers: a.readers.size, maxPage: a.maxPage, lastAt: a.lastAt, internalOpens: b.opens, internalReaders: b.users.size, internalLastAt: b.lastAt };
+    // ⚠️ DES NOMBRES DES DEUX CÔTÉS. Les `Set` ne vivent plus que DANS l'agrégation en mémoire, qui
+    // les convertit avant de rendre : c'est ce qui permet aux deux chemins — base et mémoire —
+    // d'avoir exactement la même forme, donc à un banc de les confronter champ à champ.
+    const a = byDoc.get(id) || { opens: 0, readers: 0, maxPage: 0, lastAt: null };
+    const b = intByDoc.get(id) || { opens: 0, users: 0, lastAt: null };
+    out[id] = { opens: a.opens, readers: a.readers, maxPage: a.maxPage, lastAt: a.lastAt, internalOpens: b.opens, internalReaders: b.users, internalLastAt: b.lastAt };
   }
   return out;
 }

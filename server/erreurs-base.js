@@ -57,4 +57,37 @@ function estConflit(erreur) {
   return /→\s*409\b/.test(String((erreur && erreur.message) || ""));
 }
 
-module.exports = { estConflit };
+// ⚠️ « CETTE FONCTION N'EXISTE PAS ICI » VIT AVEC « CE CONFLIT EST UN CONFLIT », ET PAS AILLEURS.
+// Elle habitait `presentations.js`, où elle était née ; deux autres modules en ont désormais besoin
+// pour replier sur un chemin en mémoire quand une migration n'a pas été appliquée. La recopier
+// aurait donné deux définitions d'un même fait — exactement ce que ce fichier existe pour empêcher.
+// `presentations.js` la ré-exporte : sa surface publique ne bouge pas.
+/**
+ * Cette erreur dit-elle « CETTE SIGNATURE N'EXISTE PAS », et rien d'autre ?
+ *
+ * ⚠️ C'EST LA QUESTION QUI MANQUAIT, ET SON ABSENCE RETIRAIT UNE PROTECTION. Le repli vers l'ancien
+ * contrat se déclenchait sur N'IMPORTE QUELLE exception : un `ECONNRESET`, un 500, un délai dépassé
+ * valaient « migration 0018 absente », et le processus restait dégradé — sans contrôle anti-usurpation
+ * — jusqu'à son redémarrage. Une panne réseau d'une seconde désarmait une garde de sécurité sur une
+ * base pourtant entièrement migrée.
+ *
+ * C'est la règle du jour appliquée au code de production : **un mécanisme qui ne peut pas mesurer doit
+ * refuser de conclure, pas conclure par défaut.** Ici, ne pas savoir distinguer PGRST202 d'un timeout
+ * ne rendait pas le repli prudent — il le rendait automatique.
+ *
+ * PostgREST rend `PGRST202` quand aucune fonction ne correspond au jeu d'arguments nommés. On accepte
+ * les DEUX formes que nos contextes produisent (code analysé, ou message contenant le code / la phrase
+ * de PostgREST) — et RIEN d'autre : un statut 404 seul ne suffit pas, il peut venir d'ailleurs.
+ */
+function signatureAbsente(erreur) {
+  if (!erreur) return false;
+  const code = erreur.details && (erreur.details.code || (erreur.details.error && erreur.details.error.code));
+  if (code === "PGRST202") return true;
+  // ⚠️ PAS DE `erreur &&` ICI : la garde de la première ligne l'a déjà tranché. Le garder ne
+  // protégeait de rien et APPRENAIT AU LECTEUR QUE `erreur` PEUT ÊTRE NULLE À CET ENDROIT — ce qui
+  // est faux. Un test qui ne peut pas échouer ne coûte pas un cycle, il coûte une lecture.
+  const texte = String(erreur.message || "");
+  return texte.includes("PGRST202") || /Could not find the function/i.test(texte);
+}
+
+module.exports = { estConflit, signatureAbsente };
