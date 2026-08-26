@@ -10,6 +10,26 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [Unreleased]
+
+### Added
+- **`AGENTS.md` records the one thing no guard in this repository can check: who the work was for.**
+  Eleven rules were added to `tools/` between 23 and 26 August; every one of them compares a file to
+  a property, and none can say that correct work was addressed to nobody.
+  - ⚠️ **The incident is the 0.1.139 headline itself.** Removing `dumb-init` was the better call and
+    remains one; the graceful shutdown that made it possible was right and benched against real
+    signals. **Both integrating hosts run serverless** and consume no image. Nothing was wrong with
+    the work — the question *"who runs this?"* was never asked, and **a defect that was hiding and a
+    question that was not asked are not found by the same means**. The first yields to a probe.
+  - ⚠️ **And the topology turns out not to be derivable — measured, not assumed.** An integrating
+    session tried to remove the need rather than remember it: `lectureSaturee.fenetreS` is
+    `process.uptime()`, so a function process should stay young while a container ages. Five
+    readings 25 s apart on their production: `224 249 274 300 325` — **+25 for 25, five times**. The
+    same warm lambda answers every call and ages exactly like a container. The remedy is therefore
+    not discipline but necessity: an integrator has to *declare* their topology.
+  - The dead idea is recorded with its numbers, on purpose: three paragraphs now against half a day
+    for whoever re-derives it in three months without knowing it was tried.
+
 ## [0.1.139] — 2026-08-26
 
 **A graceful stop, an image with nothing left to fetch, and a guard that had died in silence.**
