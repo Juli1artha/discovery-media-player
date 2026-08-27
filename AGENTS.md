@@ -448,14 +448,39 @@ outputs of this repository, without exception:**
 
 > **An output is read only if it prevents something.**
 
-Three of the eleven are read: CI, because it blocks the merge; the `pre-push` hook, because it
-blocks the push; the CLA check, because its red box sits in the pull request. One is seen and stops
-nothing — ZAP fails its job, but it is not a required check, so a merge can land beside it. The
-remaining **seven have no established reader**: `publication.yml`'s four issue alarms, the three run
-summaries (`release.yml` twice, `ci.yml` once), two external dashboards (CodeQL's Security tab,
-OSSF Scorecard) and one weekly scheduled repair. So the useful question about a silent alarm is
-never *"which channel would be better?"* but *"what does it prevent?"*. If the answer is *nothing*,
-changing the channel moves the silence without closing it.
+**Four of the eleven are read**, and only one of those four is a fact this file can hold: the
+`pre-push` hook, which blocks the push because a file in this repository says so. The other three —
+CI, the CLA check, ZAP — are read because a **ruleset** requires them, and that ruleset is a
+repository setting, not a file. A snapshot, read on 27/08 and **not a specification**: eight
+required checks (`check (22)`, `check (24)`, `navigateur`, `schema`, `docker`, `cla`, `CodeQL`,
+`zap`), a pull request before merging, conversation resolution, branches up to date, no force
+pushes, zero required approvals — that last one deliberate, since a lone maintainer cannot approve
+their own work and `MAINTAINERS.md` says so. **Go and read it; do not trust this paragraph**
+(`Settings → Rules → Rulesets`, *not* `Settings → Branches`, which shows only the classic
+mechanism and reads *"Classic branch protections have not been configured"* on this repository —
+which has eight).
+
+⚠️ This snapshot was **already incomplete before it merged**: conversation resolution was switched
+on while this very correction sat in review. That is the second drift in three hours, and it is not
+a reason to write the list more carefully — it is the reason the list is dated, hedged, and followed
+by an address.
+
+The remaining **seven have no established reader**: `publication.yml`'s four issue alarms, the three
+run summaries (`release.yml` twice, `ci.yml` once), two external dashboards (CodeQL's Security tab,
+OSSF Scorecard) and one weekly scheduled repair. Those seven are facts about files, so they hold
+until a file changes. So the useful question about a silent alarm is never *"which channel would be
+better?"* but *"what does it prevent?"*. If the answer is *nothing*, changing the channel moves the
+silence without closing it.
+
+⚠️ **This paragraph was false within the hour, and how it happened is the lesson.** It first said
+ZAP *"is seen and stops nothing — not a required check, so a merge can land beside it"*. That was
+true when written at 09:11 on 27/08. The maintainer added `zap` to the ruleset before 10:00, and
+the sentence became false without anyone touching the repository. Nothing could have gone red: the
+claim lives in prose here, the fact lives in a GitHub setting, and **no guard in `tools/` can reach
+across that boundary** — a merged document quietly describing a configuration someone else can
+change is a second source that rots by design. Hence the shape above: the count and the principle
+stay, the enumeration carries the date it was read, and the sentence sends you to the setting
+instead of standing in for it.
 
 ⚠️ **The answer is almost never "nobody" — it is "someone, at a moment when it no longer helps".**
 A release summary has a reader: whoever comes to investigate afterwards. An issue has a reader:
