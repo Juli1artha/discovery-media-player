@@ -626,6 +626,19 @@ about the phrasing, never about the subject; the same trap caught an integrating
 earlier, on a difference of case. **When a search says nothing is there, search again for the
 thing, not for your name for it.**
 
+The workable form of that, proposed by the same host and measured here on the very case:
+**search the object the rule is about, or two independent phrasings — never one name you just
+invented.** On this file, before the section existed:
+
+```
+grammatical|tense|present.*past   → 0 hits      the name being coined
+date                              → 5 hits, 3 of them the rule itself
+```
+
+A case difference is repaired by `-i`. A vocabulary difference has no mechanical counter-measure
+at all — which is why the fallback has to be the subject rather than the wording. The two cases
+are the same failure at two depths, and only the deeper one is invisible to tooling.
+
 ## Present in the file, absent for the reader
 
 **Two ways a true sentence does no work.** Both were measured on 27/08, both are ours, and
