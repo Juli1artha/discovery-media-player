@@ -244,9 +244,20 @@ async function purgerCacheDeVoix(opts, borneDate) {
       const h = o && o.hash;
       if (!h) continue;
       // ⚠️ DEUX OBJETS PAR EMPREINTE : l'audio, et son alignement par caractère. Le second n'existe
-      // pas toujours — les extraits antérieurs au format « v2 » n'en ont pas. Ce que `remove` en dit
-      // remonte TEL QUEL dans `fichiersErreur` : on ne masque pas un retrait raté pour obtenir un
-      // compte propre, parce qu'un rapport qui ment sur ce qu'il a fait ne sert plus à rien.
+      // pas toujours. Ce que `remove` en dit remonte TEL QUEL dans `fichiersErreur` : on ne masque
+      // pas un retrait raté pour obtenir un compte propre, parce qu'un rapport qui ment sur ce
+      // qu'il a fait ne sert plus à rien.
+      //
+      // ⚠️ ET LA RAISON ÉCRITE ICI ÉTAIT INCOMPLÈTE — « les extraits antérieurs au format v2 n'en
+      // ont pas ». C'est vrai et ce n'est pas la cause principale : un hôte a mesuré son bucket le
+      // 27/08 et y a trouvé 552 `.mp3` pour 356 `.json`. Cent quatre-vingt-seize audios SEULS, non
+      // pas parce qu'ils sont vieux, mais parce que le fournisseur ne rend pas toujours
+      // d'alignement. C'est un cas VIVANT, pas un vestige.
+      //
+      // Conséquence pour qui lit le rapport : `fichiersErreur` peut être élevé sans qu'aucune purge
+      // ait échoué — un tiers des empreintes n'a légitimement pas de compagnon à retirer. Le compte
+      // reste non masqué, mais sa lecture demande ce paragraphe : un exploitant qui découvrirait
+      // deux cents « erreurs » à sa première purge chercherait une panne qui n'existe pas.
       for (const suffixe of [".mp3", ".json"]) {
         fichiersCandidats += 1;   // compté même en dry-run : ce que la vraie purge tenterait
         const issue = await retirerFichier("tts-cache", h + suffixe, { dryRun });

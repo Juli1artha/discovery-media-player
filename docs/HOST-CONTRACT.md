@@ -524,6 +524,46 @@ claimed the opposite. Two consequences you must act on:
 about session binding: a security property of the player cannot depend on code the player does not
 contain. It reads the messages and decides itself.
 
+The message text is read from `text`, `content` or `body`, first non-empty wins. `body` is there
+because a host said so **before** hitting it: its messages carry `body` and nothing else, its `role`
+was a correct `bot`, and the reader would have returned an empty string for every message — an empty
+set, so every request refused, on a perfectly correct integration. If your field is none of those
+three, tell us and we widen the list. The field name carries no security; the **role** filter does.
+
+**If you write to the `tts-cache` bucket yourself, write the trace too.** Retention removes an object
+only when its fingerprint has a row in `doc_tts_objects`, and only the player's own route writes that
+row. Anything your code puts in that bucket is therefore invisible to the sweep — **permanently**,
+not just for the objects already there.
+
+This is not hypothetical: an integrating host reported 908 objects it had written itself, under
+**exactly** the player's naming — same digest, same two files, same bucket root. Its own comment says
+the parity was deliberate, so that one clip serves both surfaces. Nothing about the name distinguishes
+its objects from the player's; only the missing row does.
+
+So `doc_tts_objects` is a **host write point**, not an internal table. Write it with the same
+fingerprint the player computes, and nothing else:
+
+```
+hash = sha256(voiceId + "|" + modelId + "|v2|" + spokenText)   -- hex, lowercase
+```
+
+```sql
+insert into public.doc_tts_objects (hash) values ($1)
+on conflict (hash) do nothing;
+```
+
+⚠️ **Never write the text**, in any column. The table holds a fingerprint and a date on purpose: the
+bucket may already hold personal data, and writing the text would recreate it in the database — this
+time queryable. `hash` is the primary key, so the insert is idempotent; a clip regenerated under a new
+voice yields a new fingerprint and a new row, which is correct.
+
+RLS is on with **no policy**, so nothing reaches it except a role that bypasses RLS — the
+`service_role` key the `db` capability already uses. No grant, no schema change, no new migration:
+apply `0021` and write.
+
+Objects written before you start writing the trace stay untraceable for good. The sweep counts rows,
+so it can say *"no trace outside the window survives"* — never *"the bucket is clean"*.
+
 **A database error carries its status as a number, not inside its message.** Set `statusCode` (or
 `status`) on whatever `db.request` throws. Both contexts shipped here already do; a host that
 implements the seam itself may not, and the player then has to guess from the text.

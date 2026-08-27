@@ -137,6 +137,15 @@ hour; only this window bounds the **duration**.
 
 ## Limits stated rather than left unsaid
 
+- ⚠️ **`fichiersErreur` can be high without any removal having failed.** Each fingerprint has two
+  objects, and the alignment `.json` is not always there — the provider does not always return one.
+  Measured on an integrating host's bucket on 27/08: **552 `.mp3` for 356 `.json`**, so 196 audio
+  files legitimately have no companion to remove. The count is deliberately not masked, but read it
+  with that in mind: a first sweep reporting two hundred "errors" may have failed at nothing.
+- **If you write to the `tts-cache` bucket yourself, write the trace too**, or your objects are
+  invisible to the sweep permanently — see *Voice* in `docs/HOST-CONTRACT.md` for the exact
+  fingerprint and the insert. The same host had written **908 objects under the player's exact
+  naming**; nothing but the missing row distinguished them.
 - **Voice-cache objects written before migration 0021 have no trace, and never will.** The sweep
   can only reach what a row points at, and no row was ever written for them. They stay in the
   bucket until an operator removes them by hand. The census counts rows, so it cannot see them

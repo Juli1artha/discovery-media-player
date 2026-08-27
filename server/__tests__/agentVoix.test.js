@@ -500,6 +500,32 @@ describe("le texte doit avoir été dit par l'assistant", () => {
     expect(ctx.captures.some((c) => c.includes("base injoignable")), "un refus muet est indistinguable d'un cache vide").toBe(true);
   });
 
+  it("⚠️ le texte se lit dans `text`, `content` OU `body` — un hôte réel utilise le troisième", async () => {
+    // ⚠️ SIGNALÉ PAR UN HÔTE AVANT QU'IL NE BUTE DESSUS, le 27/08. Ses messages portent leur texte
+    // dans `body` ; son `role` valait bien `bot`, donc ce n'était pas le rôle qui cassait. Sans ce
+    // champ, notre lecteur rendait une chaîne vide pour CHACUN de ses messages — ensemble vide,
+    // donc TOUT refusé, sur une intégration parfaitement correcte.
+    for (const champ of ["text", "content", "body"]) {
+      routes._tts.cache.vider();
+      MESSAGES_BOT = [];
+      contexte(); reseau();
+      MESSAGES_BOT.push({ role: "bot", [champ]: `Phrase portée par ${champ}` });
+      const res = await dire(`Phrase portée par ${champ}`, { sansAvoirEteDit: true });
+      expect(res.statusCode, `le texte porté par « ${champ} » doit être lu`).toBe(200);
+      expect(res.corps.ok).toBe(true);
+    }
+  });
+
+  it("⚠️ et un champ vide ne fait pas écran au suivant", async () => {
+    // Un hôte peut porter les deux, l'un vide. Prendre le premier PRÉSENT plutôt que le premier
+    // NON VIDE refuserait un message que l'assistant a bel et bien dit.
+    contexte(); reseau();
+    MESSAGES_BOT.push({ role: "bot", text: "", body: "Le vrai texte" });
+    const res = await dire("Le vrai texte", { sansAvoirEteDit: true });
+    expect(res.statusCode).toBe(200);
+    expect(res.corps.ok).toBe(true);
+  });
+
   it("⚠️ des messages illisibles ne valent pas accord : ensemble vide, tout refusé", async () => {
     // La forme d'un message vient du greffon de l'hôte, qu'aucun contrat n'écrit. Si elle change,
     // la garde doit se fermer, pas s'ouvrir.
