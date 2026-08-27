@@ -599,6 +599,13 @@ it across their own files and found two survivors worth naming, both of which th
 - *"≈ 1 in 26 000"*, a collision odds. Recomputed: 10 windows / 64³ = 1 in 26 214 — a constant
   **derived** from the slug alphabet, not a reading of any mutable state.
 
+**The two-bounds test tells them apart in ten seconds**, and both halves are needed: *an
+approximation whose two plausible bounds carry the same message is a characterisation; one that
+stands in for a number you could have counted is a degraded measurement.* "A few hundred lines"
+says the same thing at 400 and at 700 — that is the information. "~1 800 tests" also survives 1 700
+and 1 900, but an exact count would say strictly more, so it fails the second half. The first
+belongs; the second is a measurement someone rounded.
+
 The same sort was run here and cleared three: the audit reports' `236 tests` and `329 tests`
 (dated records of a past measurement), and a quoted verdict line inside an example. Nothing to
 touch. **A probe that only says *fix this* is worth half a probe that also says *leave this
