@@ -568,6 +568,37 @@ A report obliges someone to open the file; a correct one does that no better tha
 So send what you are only half sure of, **saying which half** — the worst case is being corrected,
 and that correction happens with someone looking.
 
+## Present in the file, absent for the reader
+
+**Two ways a true sentence does no work.** Both were measured on 27/08, both are ours, and
+neither is a matter of care — the text is correct in each case, and lands nowhere.
+
+⚠️ **Distance is a form of absence, and it is measurable.** `docs/HOST-CONTRACT.md` warned that
+the schema probe is lazy and process-local. The warning was exact. It sat 140 lines from the
+verdict table it governs, while its neighbour `presenceDurcissement` carried the same caveat
+**inside its own cell**. That day two integrating hosts, independently, came within one message of
+reporting the same regression that did not exist — one read three verdicts in a day on an unchanged
+database, the other says they would have filed at the first `partiel`.
+
+The test is the incident: **when two attentive readers miss a written warning on the same day, the
+warning is not written where it is read.** Moving it into the cell was not cosmetic; it was the
+only available fix, because nothing about the sentence was wrong.
+
+⚠️ **A conditional is honest only if it names who lifts the doubt.** Writing to a host about a
+bucket, this repository said *"if you write to `tts-cache`, do not realign your formula"*. That
+reads as a precaution and functions as an undeclared assumption: it had not been established that
+they wrote there at all — they do not — and the shape of the sentence transfers the burden without
+saying so. **The reader believes their case was considered, when it was merely left open.**
+
+The honest form names the gap and its owner: *"I do not know whether you write to this bucket; if
+you do, here is what must not be done — tell me and I will stop guessing."* Same content, and the
+doubt now has an address. The host who received the first version put it best: a conditional that
+does not say who resolves it transfers the charge silently.
+
+Both cases have the same shape as the corollary two sections up, applied to a sentence rather than
+an output: **being present is not the same as being read.** A warning too far from its subject, and
+an assumption dressed as a precaution, are two ways of being present and doing nothing.
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives
