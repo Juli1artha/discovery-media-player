@@ -206,6 +206,7 @@ jobs:
           SIGNALER: ${{ steps.retard.outputs.signaler }}
           DERNIERE: ${{ steps.retard.outputs.derniere }}
           CORPS: ${{ steps.retard.outputs.corps }}
+          MARQUEUR: ${{ steps.retard.outputs.marqueur }}
         run: |
           TITRE="Les exemples prennent du retard sur le registre"
           existante=$(gh issue list --state open --search "$TITRE in:title" --json number --jq '.[0].number // empty')
@@ -220,4 +221,20 @@ jobs:
             exit 0
           fi
 
-          if [ -n "$existante" ]; then gh issue comment "$existante" --body "$CORPS"; else gh issue create --title "$TITRE" --body "$CORPS"; fi
+          if [ -z "$existante" ]; then gh issue create --title "$TITRE" --body "$CORPS"; exit 0; fi
+
+          # ⚠️ ON NE REDIT PAS UN FAIT DÉJÀ ANNONCÉ, et c'est un correctif du 27/08. Cette étape
+          # commentait à CHAQUE tour : l'issue #412 a reçu son corps puis quatre commentaires
+          # identiques au caractère près, en dix heures, pour zéro information nouvelle. Ce fichier
+          # s'ouvre en condamnant exactement ça — « une alarme qui se déclenche à chaque fusion
+          # serait ignorée en une semaine » — et la sentinelle se l'appliquait à elle-même.
+          #
+          # ⚠️ ON COMPARE AU DERNIER ÉNONCÉ, PAS À TOUT LE FIL : un aller-retour (sursis, rattrapé,
+          # de nouveau en retard sur la même version) est un fait NEUF, et c'est précisément le cas
+          # où quelqu'un a défait un correctif sans le savoir. Le marqueur porte le fait, pas la date.
+          dernier=$(gh issue view "$existante" --json body,comments \
+            --jq 'if (.comments | length) > 0 then .comments[-1].body else .body end')
+          case "$dernier" in
+            *"$MARQUEUR"*) echo "::notice::fait déjà annoncé sur #$existante — rien à ajouter" ;;
+            *) gh issue comment "$existante" --body "$CORPS" ;;
+          esac

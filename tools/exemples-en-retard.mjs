@@ -69,6 +69,42 @@ export function diagnostic(publiees, exemples) {
   };
 }
 
+/**
+ * ⚠️ CE QUI A DÉJÀ ÉTÉ DIT NE SE REDIT PAS — ET C'EST UN CORRECTIF, PAS UN CONFORT.
+ *
+ * Mesuré le 27/08 sur l'issue #412 : le corps, puis QUATRE commentaires à 15:53, 17:27, 19:19 et
+ * 23:36, identiques au caractère près. Zéro information nouvelle, quatre notifications. C'est le
+ * mécanisme que l'en-tête de ce fichier condamne — « une alarme qui se déclenche à chaque fusion
+ * serait ignorée en une semaine » — appliqué par la sentinelle à elle-même.
+ *
+ * L'empreinte change quand le FAIT change : la version servie, ou l'état d'un exemple. Elle ne
+ * change pas quand l'horloge tourne. Une alarme reste ouverte tant que le problème dure — l'issue
+ * s'en charge — mais elle ne notifie qu'à ce qui est nouveau.
+ */
+export const empreinte = (d) =>
+  [d.derniere, ...d.etats.map((e) => `${e.fichier}=${e.version}:${e.etat}`).sort()].join("|");
+
+/**
+ * Le marqueur posé dans le corps, que la forge relit pour savoir si le fait est déjà annoncé.
+ *
+ * ⚠️ IL NE PEUT PAS SORTIR DE SON COMMENTAIRE, ET CE N'EST PAS THÉORIQUE. L'empreinte est bâtie
+ * sur des CHEMINS LUS SUR LE DISQUE (`exemplesDuDepot`) : un répertoire nommé avec un `>` fermerait
+ * le commentaire en avance. Le reste de l'empreinte deviendrait du texte visible dans l'issue —
+ * cosmétique — mais surtout `dejaDit` comparerait à un marqueur qui n'est pas celui qui a été
+ * publié, donc l'alarme se répéterait sans fin ou se tairait pour toujours. On retire donc ce qui
+ * peut structurer, plutôt que d'espérer qu'un chemin reste sage. (Relevé par CodeQL sur le banc
+ * qui vérifiait cette forme, le 27/08 : l'alerte portait sur l'assertion, le défaut était sous elle.)
+ */
+export const marqueur = (d) => `<!-- retard ${empreinte(d).replace(/[<>]/g, "")} -->`;
+
+/**
+ * ⚠️ ON COMPARE AU DERNIER ÉNONCÉ, PAS À TOUTE L'HISTOIRE. Un aller-retour — sursis, rattrapage,
+ * retard à nouveau sur la MÊME version — est un fait neuf : il doit re-notifier. Chercher
+ * l'empreinte n'importe où dans le fil ferait taire ce cas-là, qui est justement celui où
+ * quelqu'un a défait un correctif sans le savoir.
+ */
+export const dejaDit = (dernierEnonce, d) => String(dernierEnonce || "").includes(marqueur(d));
+
 /** Le corps de l'issue — il dit ce qui va casser, quand, et le geste exact qui l'évite. */
 export function message(d) {
   const lignes = [];
@@ -96,6 +132,9 @@ export function message(d) {
     "```",
     "",
     "_Cette issue se referme seule quand les exemples rattrapent._",
+    // Invisible au lecteur, lu par la forge : il porte le FAIT annoncé, pour qu'un fait déjà
+    // annoncé ne le soit pas une seconde fois.
+    marqueur(d),
   );
   return lignes.join("\n");
 }
@@ -135,5 +174,6 @@ if (estExecuteDirectement(import.meta.url)) {
     poser("signaler", "oui");
     poser("derniere", d.derniere);
     poser("corps", message(d));
+    poser("marqueur", marqueur(d));
   }
 }

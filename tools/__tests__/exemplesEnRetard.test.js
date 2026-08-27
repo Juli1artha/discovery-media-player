@@ -11,8 +11,10 @@
 // d'une publication entre « plus la dernière » et « plus dans les deux dernières ».
 
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+
 import {
-  A_JOUR, SURSIS, ROUGE, deuxDernieres, etatDe, diagnostic, message,
+  A_JOUR, SURSIS, ROUGE, deuxDernieres, etatDe, diagnostic, message, empreinte, marqueur, dejaDit,
 } from "../exemples-en-retard.mjs";
 import { exemplesDuDepot } from "../exemples-epingles.mjs";
 
@@ -146,5 +148,135 @@ describe("⚠️ QUAND LES DEUX GROUPES COEXISTENT", () => {
     expect(m).toMatch(/sont DÉJÀ refusés/);
     expect(m).toMatch(/sont en sursis/);
     expect(m.indexOf("DÉJÀ refusés")).toBeLessThan(m.indexOf("en sursis"));
+  });
+});
+
+// ⚠️ LA SENTINELLE SE TAISAIT SUR LE FOND ET PARLAIT SUR L'HORLOGE — LE CORRECTIF DU 27/08.
+//
+// Mesuré sur l'issue #412 : son corps le 26/08 à 13:18, puis QUATRE commentaires à 15:53, 17:27,
+// 19:19 et 23:36, identiques au caractère près. Dix heures, cinq énoncés, zéro information
+// nouvelle — et personne n'a lu. Le nombre n'est pas la cause du silence, mais il est le
+// mécanisme que l'en-tête de ce fichier condamne chez les autres : « une alarme qui se déclenche
+// à chaque fusion serait ignorée en une semaine ». La sentinelle se l'appliquait à elle-même.
+describe("⚠️ UN FAIT DÉJÀ ANNONCÉ NE SE RÉANNONCE PAS", () => {
+  const dEtat = (versions, publiees = PUBLIEES) =>
+    diagnostic(publiees, versions.map(([n, v]) => ex(n, v)));
+
+  it("l'empreinte ne bouge pas quand seule l'horloge tourne", () => {
+    // Deux tours de la sentinelle sur le même dépôt et le même registre : même fait, même
+    // empreinte. C'est la propriété qui rend le silence possible.
+    const a = dEtat([["demo", "0.1.127"], ["vercel", "0.1.127"]]);
+    const b = dEtat([["demo", "0.1.127"], ["vercel", "0.1.127"]]);
+    expect(empreinte(a)).toBe(empreinte(b));
+  });
+
+  it("⚠️ mais elle bouge dès qu'un FAIT change — sinon le silence couvrirait une aggravation", () => {
+    const sursis = dEtat([["demo", "0.1.127"]]);
+    const rouge = dEtat([["demo", "0.1.126"]]);
+    expect(empreinte(sursis)).not.toBe(empreinte(rouge));
+
+    // Une publication de plus, le même exemple : passé de sursis à rouge sans qu'on y touche.
+    const apresPublication = dEtat([["demo", "0.1.127"]], [...PUBLIEES, "0.1.129"]);
+    expect(empreinte(sursis)).not.toBe(empreinte(apresPublication));
+
+    // Un SECOND exemple qui décroche, alors que le premier n'a pas bougé.
+    const unSeul = dEtat([["demo", "0.1.127"], ["vercel", "0.1.128"]]);
+    const lesDeux = dEtat([["demo", "0.1.127"], ["vercel", "0.1.127"]]);
+    expect(empreinte(unSeul)).not.toBe(empreinte(lesDeux));
+  });
+
+  it("⚠️ et l'ÉTAT compte, même quand la version et la dernière servie ne bougent pas", () => {
+    // ⚠️ CE BANC EXISTE PARCE QUE SA MUTATION AVAIT SURVÉCU. Retirer `:${e.etat}` de l'empreinte
+    // laissait les cinq autres au vert : l'état se DÉDUIT de la version et de la dernière servie…
+    // sauf ici. Une version dépubliée fait glisser l'avant-dernière SANS toucher à la dernière :
+    //
+    //     servies [126, 127, 128], exemple sur 127  →  fenêtre [128, 127]  →  SURSIS
+    //     127 dépubliée   [126, 128], exemple sur 127  →  fenêtre [128, 126]  →  ROUGE
+    //
+    // Même version épinglée, même `derniere`, état renversé — et c'est le tour où il faut parler.
+    const avant = dEtat([["demo", "0.1.127"]], ["0.1.126", "0.1.127", "0.1.128"]);
+    const apres = dEtat([["demo", "0.1.127"]], ["0.1.126", "0.1.128"]);
+    expect(avant.etats[0].etat).toBe(SURSIS);
+    expect(apres.etats[0].etat).toBe(ROUGE);
+    expect(avant.derniere, "la dernière servie ne bouge pas — c'est tout l'intérêt du cas").toBe(apres.derniere);
+    expect(empreinte(avant), "un renversement d'état passerait en silence").not.toBe(empreinte(apres));
+  });
+
+  it("l'ordre des exemples ne fabrique pas un fait neuf", () => {
+    // Sans le tri, l'ordre de lecture du disque suffirait à re-notifier — une alarme qui dépend
+    // de `readdir` est une alarme qui sonne au hasard.
+    const a = dEtat([["demo", "0.1.127"], ["vercel", "0.1.126"]]);
+    const b = dEtat([["vercel", "0.1.126"], ["demo", "0.1.127"]]);
+    expect(empreinte(a)).toBe(empreinte(b));
+  });
+
+  it("le marqueur voyage DANS le corps — c'est ce que la forge relit", () => {
+    const d = dEtat([["demo", "0.1.127"]]);
+    expect(message(d)).toContain(marqueur(d));
+    // Invisible au lecteur : un commentaire HTML, sur UNE ligne, pas une ligne de plus à lire.
+    const m = marqueur(d);
+    expect(m.startsWith("<!--") && m.endsWith("-->"), `le marqueur n'est plus un commentaire : ${m}`).toBe(true);
+    expect(m, "un marqueur multiligne ne se retrouve pas par une comparaison de texte").not.toContain("\n");
+  });
+
+  it("⚠️ un chemin hostile ne peut pas SORTIR du commentaire", () => {
+    // ⚠️ RELEVÉ PAR CODEQL LE 27/08, SUR L'ASSERTION CI-DESSUS — et le défaut était sous elle.
+    // L'empreinte est bâtie sur des chemins LUS SUR LE DISQUE. Un `>` les ferme en avance : la
+    // queue de l'empreinte devient du texte visible (cosmétique), et surtout `dejaDit` compare à
+    // un marqueur qui n'est pas celui qui a été publié — donc l'alarme se répète sans fin, ou se
+    // tait pour toujours. C'est la garde qui manquait, pas une expression régulière plus fine.
+    const hostile = {
+      fichier: "examples/a--><script>alert(1)</script>/package.json",
+      version: "0.1.127",
+    };
+    const d = diagnostic(PUBLIEES, [hostile]);
+    const m = marqueur(d);
+    expect(m.startsWith("<!--") && m.endsWith("-->")).toBe(true);
+    // Le corps du marqueur — entre les délimiteurs — ne porte plus rien qui structure.
+    const corps = m.slice(4, -3);
+    expect(corps, "un chevron a traversé : le commentaire peut se fermer en avance").not.toMatch(/[<>]/);
+    expect(m.indexOf("-->"), "le premier `-->` doit être celui de la fin").toBe(m.length - 3);
+    // Et l'aller-retour tient : ce qu'on publie est ce qu'on reconnaîtra.
+    expect(dejaDit(message(d), d)).toBe(true);
+  });
+
+  it("⚠️ `dejaDit` reconnaît son propre message, et REFUSE celui d'un autre fait", () => {
+    const sursis = dEtat([["demo", "0.1.127"]]);
+    const rouge = dEtat([["demo", "0.1.126"]]);
+    expect(dejaDit(message(sursis), sursis)).toBe(true);
+    expect(dejaDit(message(rouge), sursis)).toBe(false);
+    expect(dejaDit(message(sursis), rouge)).toBe(false);
+  });
+
+  it("⚠️ un fil VIDE de tout marqueur n'est jamais « déjà dit »", () => {
+    // Le cas du premier tour après le correctif : l'issue #412 existe, son corps est ANTÉRIEUR au
+    // marqueur. Se taire là-dessus laisserait l'alarme muette sur un fait jamais annoncé.
+    const d = dEtat([["demo", "0.1.127"]]);
+    expect(dejaDit("**3 exemple(s) sont en sursis** :\n- `examples/demo/package.json` …", d)).toBe(false);
+    expect(dejaDit("", d)).toBe(false);
+    expect(dejaDit(null, d)).toBe(false);
+    expect(dejaDit(undefined, d)).toBe(false);
+  });
+});
+
+// ⚠️ LA FORGE DOIT VRAIMENT S'EN SERVIR — sinon les cinq bancs ci-dessus prouvent une propriété
+// que personne n'exerce, ce qui est exactement le défaut qu'on vient de corriger ailleurs.
+describe("⚠️ ET L'ÉTAPE DE PUBLICATION LIT CE MARQUEUR", () => {
+  const yml = readFileSync(new URL("../../.github/workflows/publication.yml", import.meta.url), "utf8");
+
+  it("l'étape pose `marqueur` en sortie et le confronte au dernier énoncé", () => {
+    expect(yml, "publication.yml ne lit plus la sortie `marqueur`").toContain("MARQUEUR: ${{ steps.retard.outputs.marqueur }}");
+    expect(yml, "rien ne relit ce que l'issue dit déjà").toMatch(/gh issue view .*--json body,comments/);
+    expect(yml, "le dernier énoncé doit être le DERNIER commentaire, ou le corps s'il n'y en a aucun")
+      .toContain(".comments[-1].body else .body end");
+  });
+
+  it("⚠️ le commentaire est CONDITIONNÉ, pas inconditionnel", () => {
+    // La forme d'avant — `gh issue comment` posé à la suite du `if`, sans garde — est exactement
+    // ce qui a produit quatre commentaires identiques. On exige que l'appel vive dans la branche
+    // qui ne reconnaît pas le marqueur.
+    const bloc = yml.slice(yml.indexOf('case "$dernier" in'));
+    expect(bloc, "le `case` sur le dernier énoncé a disparu").toContain('*"$MARQUEUR"*)');
+    expect(bloc.indexOf("gh issue comment"), "le commentaire ne dépend plus du marqueur").toBeGreaterThan(0);
   });
 });

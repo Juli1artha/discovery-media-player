@@ -54,6 +54,20 @@ need.
 never by order. `plugins` lets you refuse to start when you depend on an optional module this
 instance does not have.
 
+⚠️ **`ctx.has(name)` is that same question in code — and it is documented here because it was, until
+27/08, an accident.** The injected context carries it: `has(name)` answers whether the named plugin
+is present, the same truth the `plugins` field above reports over HTTP. Supply it as
+`has: (name) => !!plugins[name]`; the standalone context returns `false` for everything, having no
+plugins at all.
+
+**Nothing in `server/` calls it today** — that is measured, not an omission of this paragraph, and
+it is why implementing it buys you nothing immediately and skipping it costs you nothing. It is
+written down for the opposite reason: one host was found to implement it *correctly and without
+knowing*, because the type declared it, while the shape was recorded in no document and in 57 test
+fixtures. A seam that exists, works, and is written nowhere is one rename away from being deleted
+as dead — and it would not have been dead. If a future feature needs to ask *"does this host have
+that plugin?"*, this is the spelling, and there should not be a second one.
+
 ⚠️ **`runtime` is the only way to see what the player is actually running on.** `nodeRequired` is
 the floor the package declares, `node` is what the process reports — two numbers, no verdict:
 compare them with your own semver rather than trusting a field we compute for you.
@@ -217,10 +231,20 @@ it. `verdict` is then one of:
 
 | verdict | meaning |
 |---|---|
-| `non-sonde` | nothing asked yet — **not** *nothing missing* |
-| `partiel` | some expectations checked, none of them missing |
+| `non-sonde` | nothing asked yet — **not** *nothing missing*, and **process-local**: this process has looked at nothing; another instance may have looked at everything |
+| `partiel` | some checked, none of them missing — the probe is **lazy**: a column is inspected only once something touches it, so this is *how much has been exercised*, never *how much exists* |
 | `complet` | all checked, all present |
 | `incomplet` | at least one is missing — `manquant` names the file and the sleeping feature |
+| `indetermine` | the database did not answer; this measurement did not happen |
+
+⚠️ **The first two rows are one trap, and it fires on every deploy.** Because the probe is lazy and
+lives in the process, a fresh instance answers `non-sonde`, then `partiel`, then `complet` as
+traffic exercises columns — on a database that never changed. Measured at an integrating host on
+27/08, on one unchanged base: `sondees=9 complet` on the old instance, `sondees=0 non-sonde` right
+after the deploy, `sondees=1 partiel` sixty-seven minutes later. They looked three times before
+concluding, because a neighbouring field had already taught them to distrust that zero — and they
+were about to report a regression that did not exist. Read these two verdicts as *what this
+process has asked so far*, never as a statement about the schema.
 
 Each `manquant` entry has **exactly this shape** — pin your parser to it, not to what a schema
 probe "should" return:
@@ -240,7 +264,6 @@ If you consume this card, test your parser against the JSON above, not against a
 ⚠️ **A card without a `schema` field is an alert, not a success**: it signals an instance older
 than 0.1.58 — a version that cannot answer the question. (Rule contributed by the second host, for
 exactly the monitoring case where "no data" would otherwise read as "all clear".)
-| `indetermine` | the database did not answer; this measurement did not happen |
 
 ⚠️ **`incomplet` wins over `partiel`**: a missing column is a positive fact and settles the verdict
 on its own, even when the rest has not been checked.
@@ -540,12 +563,38 @@ This is not hypothetical: an integrating host reported 908 objects it had writte
 the parity was deliberate, so that one clip serves both surfaces. Nothing about the name distinguishes
 its objects from the player's; only the missing row does.
 
-So `doc_tts_objects` is a **host write point**, not an internal table. Write it with the same
-fingerprint the player computes, and nothing else:
+So `doc_tts_objects` is a **host write point**, not an internal table. What the sweep needs from
+you is **one property, and only this one**:
+
+> the `hash` you write in the row **is** the object's base name — the file is `<hash>.mp3`, its
+> alignment is `<hash>.json`, and nothing else has to be true.
+
+⚠️ **How you compute that digest is yours, and this page used to say otherwise.** It read *"write
+it with the same fingerprint the player computes, and nothing else"*, which made a perfectly safe
+host non-compliant on paper — and the obvious fix, realigning the formula, is the one thing that
+would break: the objects already in the bucket carry the **old** digest in their names, so a row
+written with a new one points at nothing, and the real name loses its only row. Reported on 27/08
+by a host whose third writer uses `preview-fr-v2` where the player uses `v2`. Their five write
+sites are correct as they stand.
+
+The sweep never recomputes anything: it reads `hash` from the row and removes `hash + ".mp3"` and
+`hash + ".json"` (`server/retention.js`). A bench holds that property rather than a comment —
+`retentionCacheDeVoix.test.js` builds its rows with `hash: "aaa"`, which is the sha256 of nothing,
+and requires `tts-cache/aaa.mp3` to be the file removed.
+
+**The player's own formula matters for one thing only, and it is not retention** — sharing. Its
+route recomputes this digest to find a clip it already paid for, so match it *if* you want one clip
+to serve both surfaces (as one host deliberately does, for 908 objects). If you don't, the player
+simply synthesises its own, and nothing else changes:
 
 ```
 hash = sha256(voiceId + "|" + modelId + "|v2|" + spokenText)   -- hex, lowercase
 ```
+
+| requirement | mandatory? | if you don't |
+|---|---|---|
+| the row's `hash` is the object's base name | **yes, always** | the object is invisible to the sweep, permanently |
+| the digest matches the player's formula | no — only to share a clip | the player synthesises its own, and pays for it |
 
 ```sql
 insert into public.doc_tts_objects (hash) values ($1)
