@@ -98,7 +98,7 @@ function contexte(surcharges = {}) {
     limits: { allow: async () => true },
     storage: { put: async (bucket, chemin, buf, type) => { poses.push({ bucket, chemin, octets: buf.length, type }); return true; } },
     errors: { capture: async (e) => { captures.push(String(e && e.message)); } },
-    plugins: { bot: { getProfile: async () => ({}), pronFix: () => null } },
+    plugins: { bot: greffonBot() },
     branding: { name: "" },
     config: { supabaseUrl: BASE },
     ...surcharges,
@@ -107,16 +107,38 @@ function contexte(surcharges = {}) {
   return ctx;
 }
 
-const dire = async (texte = "Bonjour à tous") => {
+// ⚠️ DEPUIS LE 26/08, `bot-tts` EXIGE UNE SESSION ET CONFRONTE LE TEXTE. Les bancs ci-dessous
+// portent sur la synthèse, le cache et les bornes : ils ont donc besoin d'une session valide et
+// d'un assistant qui a RÉELLEMENT dit ce qu'on lui demande de prononcer. `dire()` le pose par
+// défaut ; la confrontation elle-même a ses propres bancs, plus bas, où c'est l'objet du test.
+let MESSAGES_BOT = [];
+
+function greffonBot(surcharges = {}) {
+  return {
+    getProfile: async () => ({}),
+    pronFix: () => null,
+    getSession: async (id) => (id === "sess-A" ? { share_slug: "Doc-A" } : id === "sess-B" ? { share_slug: "Doc-B" } : null),
+    listMessages: async () => MESSAGES_BOT,
+    ...surcharges,
+  };
+}
+
+const dire = async (texte = "Bonjour à tous", opts = {}) => {
+  // ⚠️ ON AJOUTE, ON N'ÉCRASE PAS. Une session ACCUMULE ses messages, et le banc de concurrence
+  // lance quatre `dire()` de textes différents en parallèle : remplacer la liste faisait que chacun
+  // effaçait la preuve des trois autres, qui se refusaient alors les uns les autres.
+  if (!opts.sansAvoirEteDit) MESSAGES_BOT.push({ role: "bot", text: texte });
   const res = fauxRes();
-  await routes.traiter(req, res, { action: "bot-tts", slug: "Doc-A", text: texte }, "Doc-A");
+  const corps = { action: "bot-tts", slug: "Doc-A", text: texte };
+  if (!opts.sansSession) corps.sessionId = opts.sessionId || "sess-A";
+  await routes.traiter(req, res, corps, "Doc-A");
   return res;
 };
 
 // ⚠️ LE CACHE DE SYNTHÈSE VIT DANS LE MODULE, DONC IL SURVIT À CHAQUE BANC. Sans cette remise à
 // zéro, le second banc qui prononce le même texte est servi par la mémoire du premier : il compte
 // zéro appel à ElevenLabs et en conclut que la route n'appelle pas. Il mesurerait le banc d'avant.
-beforeEach(() => { partageRendu = PARTAGE; process.env.ELEVENLABS_API_KEY = "cle-11labs"; routes._tts.cache.vider(); });
+beforeEach(() => { partageRendu = PARTAGE; process.env.ELEVENLABS_API_KEY = "cle-11labs"; routes._tts.cache.vider(); MESSAGES_BOT = []; });
 afterEach(() => { delete process.env.ELEVENLABS_API_KEY; delete process.env.ELEVENLABS_VOICE_ID; global.fetch = vraiFetch; });
 
 describe("les refus de bot-tts, chacun avec son code", () => {
@@ -213,7 +235,7 @@ describe("jamais de présentation muette — et jamais sous la mauvaise clé", (
   const PROFIL_AVEC_VOIX = { behavior: { voice: { id: "voix-profil", owner: "proprietaire-biblio", name: "Voix Acme" } } };
 
   it("voix de profil en échec : ajout à la bibliothèque tenté, puis repli voix par défaut — le visiteur entend quand même", async () => {
-    contexte({ plugins: { bot: { getProfile: async () => PROFIL_AVEC_VOIX, pronFix: () => null } } });
+    contexte({ plugins: { bot: greffonBot({ getProfile: async () => PROFIL_AVEC_VOIX }) } });
     reseau({ voixEnEchec: ["voix-profil"] });
     const res = await dire("Bonjour à tous");
     expect(res.corps.ok).toBe(true);
@@ -237,7 +259,7 @@ describe("jamais de présentation muette — et jamais sous la mauvaise clé", (
 
 describe("dire ≠ montrer : la prononciation s'applique côté serveur", () => {
   it("la synthèse reçoit la version phonétique, la réponse porte `spoken` pour aligner le karaoké", async () => {
-    contexte({ plugins: { bot: { getProfile: async () => ({}), pronFix: () => (t) => t.replace("SQL", "ess-ku-elle") } } });
+    contexte({ plugins: { bot: greffonBot({ pronFix: () => (t) => t.replace("SQL", "ess-ku-elle") }) } });
     reseau();
     const res = await dire("Le moteur SQL répond");
     const synthese = sorties.find((s) => s.url.includes("/text-to-speech/"));
@@ -248,7 +270,7 @@ describe("dire ≠ montrer : la prononciation s'applique côté serveur", () => 
   });
 
   it("une prononciation qui plante n'empêche pas de parler : on retombe sur l'orthographe", async () => {
-    contexte({ plugins: { bot: { getProfile: async () => ({}), pronFix: () => () => { throw new Error("règle cassée"); } } } });
+    contexte({ plugins: { bot: greffonBot({ pronFix: () => () => { throw new Error("règle cassée"); } }) } });
     reseau();
     const res = await dire("Bonjour");
     expect(res.corps.ok).toBe(true);
@@ -389,5 +411,103 @@ describe("la trace qui rend le cache de voix purgeable", () => {
     expect(res.corps.cached).toBe(true);
     expect(ctx.ecritures.filter((e) => e.chemin.startsWith("doc_tts_objects")),
       "la trace du premier passage existe déjà ; une seconde ligne ne dirait rien de plus").toHaveLength(0);
+  });
+});
+
+// ── CE QUE LE VISITEUR PEUT FAIRE DIRE, ET CE QU'IL NE PEUT PLUS ────────────────────────────────
+// ⚠️ LA SEULE ROUTE DE CE DÉPÔT QUI DÉPENSE DE L'ARGENT. Jusqu'au 26/08, `bot-tts` acceptait
+// `body.text` tel quel : un slug public valide suffisait, aucune session n'était exigée, et rien ne
+// rattachait le texte à une réponse réellement produite. Les bornes posées le même jour
+// (regroupement, quatre synthèses simultanées, 8 Mio, délais) bornaient le DÉBIT du dégât, jamais
+// sa NATURE : n'importe qui muni d'un lien pouvait faire synthétiser n'importe quoi, à la facture
+// de l'hôte.
+//
+// ⚠️ ON COMPARE LE PRONONCÉ, PAS L'ÉCRIT — et c'est strictement plus fort. `pronFix` peut envoyer
+// deux orthographes sur la même prononciation, et c'est le prononcé qui fait l'empreinte du cache.
+// Un texte accepté est donc SOIT un message réel, SOIT un texte dont l'extrait est déjà payé.
+describe("le texte doit avoir été dit par l'assistant", () => {
+  it("sans session : refusé, et AUCUN appel payant", async () => {
+    contexte(); reseau();
+    const res = await dire("Bonjour à tous", { sansSession: true });
+    expect(res.statusCode).toBe(400);
+    expect(res.corps).toEqual({ ok: false, error: "session" });
+    expect(sorties.filter((s) => s.url.includes("/text-to-speech/")), "un refus qui appelle quand même ne borne rien").toHaveLength(0);
+  });
+
+  it("session d'un AUTRE document : refusée, même si le texte y a été dit", async () => {
+    // ⚠️ Sans cette liaison, un `sessionId` glané ailleurs suffirait — et la confrontation se ferait
+    // alors contre les messages d'une conversation qui n'est pas celle du lien présenté.
+    contexte(); reseau();
+    const res = await dire("Bonjour à tous", { sessionId: "sess-B" });
+    expect(res.statusCode).toBe(400);
+    expect(res.corps).toEqual({ ok: false, error: "session" });
+    expect(sorties.filter((s) => s.url.includes("/text-to-speech/"))).toHaveLength(0);
+  });
+
+  it("un texte que l'assistant n'a JAMAIS dit : refusé, et aucun appel payant", async () => {
+    contexte(); reseau();
+    MESSAGES_BOT.push({ role: "bot", text: "Bonjour, je vous présente ce document." });
+    const res = await dire("Lis-moi ce roman entier à mes frais", { sansAvoirEteDit: true });
+    expect(res.statusCode).toBe(400);
+    expect(res.corps).toEqual({ ok: false, error: "texte" });
+    expect(sorties.filter((s) => s.url.includes("/text-to-speech/"))).toHaveLength(0);
+  });
+
+  it("⚠️ ce que le VISITEUR a écrit ne compte pas — sinon la garde ne garde rien", async () => {
+    // Le chemin le plus court pour contourner une confrontation aux messages : écrire soi-même le
+    // texte via `bot-say`, puis demander qu'on le prononce. Seuls les rôles de l'ASSISTANT comptent.
+    contexte(); reseau();
+    MESSAGES_BOT.push({ role: "user", text: "Texte arbitraire que je paie avec ton compte" });
+    const res = await dire("Texte arbitraire que je paie avec ton compte", { sansAvoirEteDit: true });
+    expect(res.statusCode).toBe(400);
+    expect(res.corps).toEqual({ ok: false, error: "texte" });
+    expect(sorties.filter((s) => s.url.includes("/text-to-speech/"))).toHaveLength(0);
+  });
+
+  it("un message réellement dit passe, sous les trois rôles admis", async () => {
+    for (const role of ["bot", "assistant", "AI"]) {
+      routes._tts.cache.vider();
+      MESSAGES_BOT = [];
+      contexte(); reseau();
+      MESSAGES_BOT.push({ role, text: `Phrase du rôle ${role}` });
+      const res = await dire(`Phrase du rôle ${role}`, { sansAvoirEteDit: true });
+      expect(res.statusCode, `le rôle « ${role} » doit être admis`).toBe(200);
+      expect(res.corps.ok).toBe(true);
+    }
+  });
+
+  it("⚠️ la confrontation porte sur le PRONONCÉ : une autre orthographe, même prononciation, passe", async () => {
+    // `pronFix` remplace « SQL » par « ess-ku-elle ». L'assistant a dit « SQL » ; on demande
+    // « ess-ku-elle ». Les deux se prononcent pareil, donc l'extrait est LE MÊME objet du cache :
+    // accepter ne coûte rien, refuser aurait rejeté un cas légitime.
+    contexte({ plugins: { bot: greffonBot({ pronFix: () => (t) => t.replace("SQL", "ess-ku-elle") }) } });
+    reseau();
+    MESSAGES_BOT.push({ role: "bot", text: "Ce document parle de SQL" });
+    const res = await dire("Ce document parle de ess-ku-elle", { sansAvoirEteDit: true });
+    expect(res.statusCode).toBe(200);
+    expect(res.corps.ok).toBe(true);
+  });
+
+  it("⚠️ une lecture des messages qui ÉCHOUE refuse, et le dit — jamais « d'accord »", async () => {
+    // Sur une route qui dépense, « je n'ai pas su vérifier » doit se lire « non ». Et le code doit
+    // distinguer l'indisponibilité du texte refusé : un exploitant ne cherche pas au même endroit.
+    const ctx = contexte({ plugins: { bot: greffonBot({ listMessages: async () => { throw new Error("base injoignable"); } }) } });
+    reseau();
+    const res = await dire("Bonjour à tous");
+    expect(res.statusCode).toBe(503);
+    expect(res.corps).toEqual({ ok: false, error: "indisponible" });
+    expect(sorties.filter((s) => s.url.includes("/text-to-speech/"))).toHaveLength(0);
+    expect(ctx.captures.some((c) => c.includes("base injoignable")), "un refus muet est indistinguable d'un cache vide").toBe(true);
+  });
+
+  it("⚠️ des messages illisibles ne valent pas accord : ensemble vide, tout refusé", async () => {
+    // La forme d'un message vient du greffon de l'hôte, qu'aucun contrat n'écrit. Si elle change,
+    // la garde doit se fermer, pas s'ouvrir.
+    contexte({ plugins: { bot: greffonBot({ listMessages: async () => [null, 42, { pasDeRole: "x" }, { role: "bot" }] }) } });
+    reseau();
+    const res = await dire("Bonjour à tous", { sansAvoirEteDit: true });
+    expect(res.statusCode).toBe(400);
+    expect(res.corps).toEqual({ ok: false, error: "texte" });
+    expect(sorties.filter((s) => s.url.includes("/text-to-speech/"))).toHaveLength(0);
   });
 });

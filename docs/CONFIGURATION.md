@@ -453,17 +453,62 @@ which has already cost one host half a day.
 | `DOC_FRAME_ANCESTORS` | domains allowed to frame the viewer (`?embed=1`) — **see the warning below** |
 | `PLAYER_PLUGINS_OFF` | disable optional modules: `bot`, `botBrowser`, `avatarClips`, `brandIntro`, `visitors`, `providerQuotas` |
 | `GOOGLE_MAPS_API_KEY` | map and Street View in presentations (restrict it by referrer) |
-| `ELEVENLABS_API_KEY` | gives the `bot` module a voice (ElevenLabs text-to-speech). Absent ⇒ the voice controls disappear and the assistant stays written |
+| `ELEVENLABS_API_KEY` | enables the `bot-tts` route. Absent ⇒ the route declines quietly and the assistant stays written. It no longer makes the voice controls appear on its own — your `bot` plugin must also declare `wiresVoice: true`. **This package ships no client that calls the route** — see the warning below |
 | `ELEVENLABS_VOICE_ID` | default voice, used when an agent profile does not carry its own. Empty ⇒ a stock ElevenLabs voice |
 | `ELEVENLABS_MODEL` | synthesis model. Empty ⇒ `eleven_multilingual_v2` |
 
-⚠️ **`ELEVENLABS_API_KEY` is a server secret against a paid API.** It never reaches the page: the
-browser asks this instance, which synthesises server-side, stores the clip in the public
+⚠️ **`ELEVENLABS_API_KEY` is a server secret against a paid API.** It never reaches the page: a
+caller asks this instance, which synthesises server-side, stores the clip in the public
 `tts-cache` storage bucket, and returns that URL — a sentence already spoken costs ElevenLabs
 nothing, whoever replays it. The route is rate-limited per caller, and with no key it declines
-quietly (the interface hides its voice buttons rather than erroring). An agent profile may carry
-its own voice; a library voice not yet in your account is added automatically, and if that fails
-the default voice speaks — never a silent presentation.
+quietly. An agent profile may carry its own voice; a library voice not yet in your account is
+added automatically, and if that fails the default voice speaks.
+
+⚠️ **THE VOICE BUTTONS ARE MARKUP, NOT BEHAVIOUR — THIS PACKAGE SHIPS NO CLIENT THAT CALLS
+`bot-tts`.** The assistant's three voice controls (`botcVoice`, `botpVoice`, `botcVoice2`) and its
+audio-consent step (`botw-s2`) are **markup only**: no browser bundle, no inline script, no
+template wires them. That is true of all sixty-four controls in this assistant — the package ships
+the markup, you ship the behaviour — and it has been true since the first commit.
+
+⚠️ **SO THE KEY NO LONGER MAKES THEM APPEAR — YOUR PLUGIN MUST SAY IT WIRES THEM.** Set
+`wiresVoice: true` on the `bot` plugin you pass as `ctx.plugins.bot`. Absent, or merely truthy
+rather than exactly `true`, and the four controls are not rendered at all. The key proves the
+*server* can synthesise; it says nothing about what happens on click, and until 26/08 setting it
+was enough to show a button that led to silence. The other sixty controls always render, so a host
+embedding this assistant knows it must wire them; these four were the only ones whose appearance
+was driven by a server secret.
+
+So `bot-tts` is an **integration point, not a feature**: a host that wants a speaking assistant
+issues an HTTP POST of `{ action: "bot-tts", slug, text }` from its own front end, and wires those
+controls itself. Reported on 26/08 by an integrating host who went looking for the caller and
+found none — with 908 objects in its own `tts-cache` bucket, written by its own code.
+
+⚠️ **THE ROUTE ONLY SPEAKS WHAT THE ASSISTANT ACTUALLY SAID.** Until 26/08 it accepted `text` as
+given: a valid public slug was enough, no session required, and nothing tied the text to a real
+reply — so anyone with a link could have anything synthesised on the host's invoice. The bounds
+added the same day (grouped by fingerprint, 4 concurrent syntheses, an 8 MiB response cap, 5/8/30 s
+deadlines) bounded the *rate* of that damage, never its *nature*.
+
+A call must now carry a `sessionId`, that session must belong to the requested `slug`, and the text
+must match something the assistant said **in that session**. Requests are refused with `session`
+(no session, or one from another document) or `texte` (never said).
+
+**The comparison is on the spoken form, not the written one** — and that is stronger, not looser.
+`pronFix` can map two spellings onto the same pronunciation, and the pronunciation is what makes the
+cache fingerprint. So an accepted text is either a real message, or one whose clip is already paid
+for. Comparing spellings would refuse legitimate cases *and* admit billable ones.
+
+⚠️ **WHAT THIS ASKS OF YOUR `bot` PLUGIN.** The check reads `listMessages(sessionId)` and treats a
+message as the assistant's when its `role` is `bot`, `assistant` or `ai`, taking the text from
+`text` or `content`. **Anything it cannot read counts as "not said"**: an unrecognised shape yields
+an empty set and every request is refused. On a route that spends money, "I could not verify" must
+read as *no*, never as *go ahead*. If `listMessages` itself fails, the route answers `503`
+`indisponible` and records the failure — an operator does not look in the same place for a broken
+read as for a rejected text.
+
+⚠️ **THE PLAYER DOES NOT DELEGATE THIS CHECK.** `bot` is your plugin; a security property of the
+player cannot depend on code the player does not contain. It reads the messages and decides itself
+— the same rule already applied to `bot-history` and its six neighbours.
 
 ⚠️ **Without `DOC_FRAME_ANCESTORS`, nobody can display the viewer in an iframe** — and the failure
 is the worst kind. Only a same-origin page and `*.vercel.app` may frame it by default; any other

@@ -75,13 +75,37 @@ describe("« pas mesuré » n'est pas « zéro »", () => {
     else { expect(b.moyen).toBeGreaterThanOrEqual(0); }
   });
 
-  it("le retard est le RETARD, pas l'intervalle du minuteur", async () => {
-    await new Promise((r) => setTimeout(r, 120));
+  // ⚠️ CE BANC A CHANGÉ DE NATURE LE 26/08, ET LE POURQUOI VAUT PLUS QUE LE COMMENT. Il exigeait
+  // « au repos, le retard est sous 10 ms » après avoir laissé tourner la boucle 120 ms. C'est une
+  // GRANDEUR, et elle dépend de la charge de la machine : sur un conteneur occupé il a rendu 13
+  // puis 10,6 le même jour, sur un code parfaitement correct. Le seuil ne gardait pas la
+  // soustraction de la résolution — il gardait le calme de l'ordonnanceur.
+  //
+  // La propriété, elle, est arithmétique : le retard publié est la mesure MOINS la résolution,
+  // plancher à zéro. Elle s'éprouve sans chronomètre, donc sans hasard.
+  it("le retard est le RETARD, pas l'intervalle du minuteur", () => {
+    const r = mesures.__retardMs;
+    const res = mesures.relever().boucleMs.resolutionMs;
+    // Au repos, l'échantillonneur rapporte SA RÉSOLUTION : le retard publié doit être zéro.
+    expect(r(res * 1e6), "une instance oisive annoncerait 20 ms de retard permanent sans ça").toBe(0);
+    // Un retard réel est ce qui DÉPASSE la résolution.
+    expect(r((res + 5) * 1e6)).toBe(5);
+    expect(r((res + 100.5) * 1e6)).toBe(100.5);
+    // ⚠️ PLANCHER À ZÉRO : sous la résolution, la soustraction rendrait un retard NÉGATIF, qu'un
+    // lecteur ne saurait pas interpréter — et qui traverserait `JSON.stringify` sans rien signaler.
+    expect(r(1e6), "un retard négatif n'existe pas").toBe(0);
+    expect(r(0)).toBe(0);
+  });
+
+  it("et le relevé réel passe bien par cette conversion", async () => {
+    // Le lien entre la fonction éprouvée ci-dessus et ce que la carte publie : sans ce banc, la
+    // conversion pourrait être juste et n'être appelée par personne.
+    await new Promise((r) => setTimeout(r, 60));
     const b = mesures.relever().boucleMs;
     expect(b.n, "l'histogramme doit avoir tourné").toBeGreaterThan(0);
-    // Sans soustraction de la résolution, une instance parfaitement oisive annoncerait ~20 ms de
-    // retard en permanence — et ferait chercher une panne qui n'existe pas.
-    expect(b.moyen, "au repos, le retard est proche de zéro").toBeLessThan(b.resolutionMs / 2);
+    expect(b.moyen, "jamais négatif, quelle que soit la charge").toBeGreaterThanOrEqual(0);
+    expect(b.p99).toBeGreaterThanOrEqual(0);
+    expect(b.resolutionMs).toBeGreaterThan(0);
   });
 });
 

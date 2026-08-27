@@ -503,6 +503,27 @@ not from a list of column names borrowed from someone else's — a coarse check 
 positives to excuse, it has a pattern to derive. The question each row must be able to answer is
 *which document was this written for*; the key that answers it is yours to name.
 
+**Your `bot` plugin owns the assistant's behaviour — all of it.** The player ships the assistant's
+markup and wires **none** of its sixty-four controls: no browser bundle, no inline script. That has
+been true since the first commit, and until 26/08 it was undocumented while `docs/CONFIGURATION.md`
+claimed the opposite. Two consequences you must act on:
+
+- **Declare `wiresVoice: true`** on the object you pass as `ctx.plugins.bot` if you wire the voice
+  controls. Without it — or with a merely truthy value rather than exactly `true` — the three voice
+  buttons and the audio-consent step are not rendered at all. `ELEVENLABS_API_KEY` alone no longer
+  shows them: the key proves the *server* can synthesise, never that a click leads anywhere, and a
+  button that leads to silence is a broken promise made in your name.
+- **`bot-tts` now requires a `sessionId`**, bound to the requested `slug`, and the text must match
+  something the assistant said in that session. The player reads `listMessages(sessionId)` and
+  treats a message as the assistant's when its `role` is `bot`, `assistant` or `ai`, taking the text
+  from `text` or `content`. **Anything it cannot read counts as "not said"** — an unrecognised shape
+  yields an empty set and every request is refused. On the one route that spends money, *"I could
+  not verify"* must read as **no**, never as *go ahead*.
+
+⚠️ **The player does not delegate that check to your plugin**, for the reason already stated above
+about session binding: a security property of the player cannot depend on code the player does not
+contain. It reads the messages and decides itself.
+
 **A database error carries its status as a number, not inside its message.** Set `statusCode` (or
 `status`) on whatever `db.request` throws. Both contexts shipped here already do; a host that
 implements the seam itself may not, and the player then has to guess from the text.
