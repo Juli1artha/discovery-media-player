@@ -84,8 +84,18 @@ export function diagnostic(publiees, exemples) {
 export const empreinte = (d) =>
   [d.derniere, ...d.etats.map((e) => `${e.fichier}=${e.version}:${e.etat}`).sort()].join("|");
 
-/** Le marqueur posé dans le corps, que la forge relit pour savoir si le fait est déjà annoncé. */
-export const marqueur = (d) => `<!-- retard ${empreinte(d)} -->`;
+/**
+ * Le marqueur posé dans le corps, que la forge relit pour savoir si le fait est déjà annoncé.
+ *
+ * ⚠️ IL NE PEUT PAS SORTIR DE SON COMMENTAIRE, ET CE N'EST PAS THÉORIQUE. L'empreinte est bâtie
+ * sur des CHEMINS LUS SUR LE DISQUE (`exemplesDuDepot`) : un répertoire nommé avec un `>` fermerait
+ * le commentaire en avance. Le reste de l'empreinte deviendrait du texte visible dans l'issue —
+ * cosmétique — mais surtout `dejaDit` comparerait à un marqueur qui n'est pas celui qui a été
+ * publié, donc l'alarme se répéterait sans fin ou se tairait pour toujours. On retire donc ce qui
+ * peut structurer, plutôt que d'espérer qu'un chemin reste sage. (Relevé par CodeQL sur le banc
+ * qui vérifiait cette forme, le 27/08 : l'alerte portait sur l'assertion, le défaut était sous elle.)
+ */
+export const marqueur = (d) => `<!-- retard ${empreinte(d).replace(/[<>]/g, "")} -->`;
 
 /**
  * ⚠️ ON COMPARE AU DERNIER ÉNONCÉ, PAS À TOUTE L'HISTOIRE. Un aller-retour — sursis, rattrapage,

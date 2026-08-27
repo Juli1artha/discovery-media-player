@@ -213,8 +213,31 @@ describe("⚠️ UN FAIT DÉJÀ ANNONCÉ NE SE RÉANNONCE PAS", () => {
   it("le marqueur voyage DANS le corps — c'est ce que la forge relit", () => {
     const d = dEtat([["demo", "0.1.127"]]);
     expect(message(d)).toContain(marqueur(d));
-    // Et il est invisible au lecteur : un commentaire HTML, pas une ligne de plus à lire.
-    expect(marqueur(d)).toMatch(/^<!--.*-->$/);
+    // Invisible au lecteur : un commentaire HTML, sur UNE ligne, pas une ligne de plus à lire.
+    const m = marqueur(d);
+    expect(m.startsWith("<!--") && m.endsWith("-->"), `le marqueur n'est plus un commentaire : ${m}`).toBe(true);
+    expect(m, "un marqueur multiligne ne se retrouve pas par une comparaison de texte").not.toContain("\n");
+  });
+
+  it("⚠️ un chemin hostile ne peut pas SORTIR du commentaire", () => {
+    // ⚠️ RELEVÉ PAR CODEQL LE 27/08, SUR L'ASSERTION CI-DESSUS — et le défaut était sous elle.
+    // L'empreinte est bâtie sur des chemins LUS SUR LE DISQUE. Un `>` les ferme en avance : la
+    // queue de l'empreinte devient du texte visible (cosmétique), et surtout `dejaDit` compare à
+    // un marqueur qui n'est pas celui qui a été publié — donc l'alarme se répète sans fin, ou se
+    // tait pour toujours. C'est la garde qui manquait, pas une expression régulière plus fine.
+    const hostile = {
+      fichier: "examples/a--><script>alert(1)</script>/package.json",
+      version: "0.1.127",
+    };
+    const d = diagnostic(PUBLIEES, [hostile]);
+    const m = marqueur(d);
+    expect(m.startsWith("<!--") && m.endsWith("-->")).toBe(true);
+    // Le corps du marqueur — entre les délimiteurs — ne porte plus rien qui structure.
+    const corps = m.slice(4, -3);
+    expect(corps, "un chevron a traversé : le commentaire peut se fermer en avance").not.toMatch(/[<>]/);
+    expect(m.indexOf("-->"), "le premier `-->` doit être celui de la fin").toBe(m.length - 3);
+    // Et l'aller-retour tient : ce qu'on publie est ce qu'on reconnaîtra.
+    expect(dejaDit(message(d), d)).toBe(true);
   });
 
   it("⚠️ `dejaDit` reconnaît son propre message, et REFUSE celui d'un autre fait", () => {

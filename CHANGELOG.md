@@ -36,6 +36,10 @@ the notes there are this file's section for that version.
   le mécanisme de fatigue d'alarme que l'en-tête de `publication.yml` condamne chez les autres.
   Elle ne parle désormais que sur changement de FAIT (version servie ou état d'un exemple), via une
   empreinte portée dans le corps de l'issue. Un aller-retour sur la même version reste un fait neuf.
+  ⚠️ Et ce marqueur ne peut plus sortir de son commentaire : l'empreinte est bâtie sur des chemins
+  lus sur le disque, et un `>` les fermait en avance — auquel cas la forge aurait comparé à un
+  marqueur différent de celui publié, donc alarme répétée sans fin ou muette pour toujours. Relevé
+  par CodeQL sur le banc qui vérifiait la forme ; le défaut était sous l'assertion, pas dedans.
 
 ### Added
 
