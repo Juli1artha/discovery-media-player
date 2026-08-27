@@ -81,4 +81,35 @@ function repondreJson(res, statut, valeur, entetes) {
  */
 const jsonPour = (res) => (statut, valeur, entetes) => repondreJson(res, statut, valeur, entetes);
 
-module.exports = { refuserEnTexte, repondreJson, repondreJsonTexte, jsonPour };
+/**
+ * L'ÉTIQUETTE DE ROUTE D'UNE ERREUR CAPTURÉE — bornée, parce que l'appelant la choisit.
+ *
+ * ⚠️ NEUF SITES LA POSAIENT À L'IDENTIQUE, ET AUCUN NE LA BORNAIT :
+ * `route: String(body.action || "(sans action)")`. `body.action` vient du corps de la requête, donc
+ * de n'importe qui : un mégaoctet de texte, des retours à la ligne, des guillemets, des octets de
+ * contrôle. Ça part ensuite dans le puits d'erreurs de l'HÔTE — Sentry, un journal, un fichier —
+ * c'est-à-dire dans un système qu'on ne contrôle pas et dont on ne connaît pas les échappements.
+ *
+ * ⚠️ CE QU'ON EMPÊCHE N'EST PAS « UNE GROSSE CHAÎNE », C'EST LA FORGERIE DE STRUCTURE. Un saut de
+ * ligne dans un journal ligne-par-ligne ouvre une entrée qui n'a jamais eu lieu ; un guillemet dans
+ * un puits qui concatène du JSON en ouvre un champ. On ne garde donc que les caractères dont une
+ * action est faite — lettres, chiffres, `.`, `_`, `:`, `-` — et rien d'autre ne traverse.
+ *
+ * ⚠️ ET ON DIT LA TRONCATURE PLUTÔT QUE DE LA TAIRE. Une étiquette coupée en silence se lit comme
+ * une action qui s'appelle vraiment comme ça. Le `…` final est la différence entre « voici le nom »
+ * et « voici ce qu'il en restait ».
+ *
+ * Rendre `(action illisible)` plutôt que du vide quand tout a été retiré : « aucune action » et
+ * « une action dont il ne reste rien de lisible » sont deux constats différents, et un exploitant
+ * qui voit le second sait qu'on lui a envoyé quelque chose d'anormal.
+ */
+const ETIQUETTE_MAX = 64;
+function etiquetteRoute(action) {
+  const brut = String(action == null ? "" : action).trim();
+  if (!brut) return "(sans action)";
+  const propre = brut.replace(/[^A-Za-z0-9._:-]/g, "");
+  if (!propre) return "(action illisible)";
+  return propre.length > ETIQUETTE_MAX ? propre.slice(0, ETIQUETTE_MAX) + "…" : propre;
+}
+
+module.exports = { refuserEnTexte, repondreJson, repondreJsonTexte, jsonPour, etiquetteRoute };

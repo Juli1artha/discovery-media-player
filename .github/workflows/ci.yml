@@ -4,6 +4,16 @@ on:
   push:
     branches: [main]
   pull_request:
+  # ⚠️ RELANÇABLE À LA MAIN, PARCE QUE LA FORGE S'EST TUE DEUX FOIS LE 26/08. Un incident Actions
+  # (« issue with a database primary ») a laissé des courses en file pendant une heure : ni relance
+  # (403 « already running ») ni annulation (409 « not been queued yet ») ne répondaient, et `ci.yml`
+  # n'avait aucun déclencheur manuel. Il n'y avait littéralement rien à faire — sauf pousser un
+  # commit vide pour réveiller la forge, ce que ce dépôt s'interdit.
+  #
+  # ⚠️ CE N'EST PAS UNE PORTE DÉROBÉE : `workflow_dispatch` n'est offert qu'à qui peut déjà écrire
+  # dans le dépôt, et ce workflow ne porte que `contents: read`. Il ne publie rien, ne signe rien,
+  # n'écrit nulle part — le relancer ne peut produire qu'un verdict.
+  workflow_dispatch:
 
 permissions:
   contents: read
