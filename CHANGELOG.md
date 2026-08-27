@@ -10,7 +10,20 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
-## [0.1.141] — 2026-08-27
+## [0.1.142] — 2026-08-27
+
+⚠️ **La 0.1.141 n'existe pas, et voici pourquoi.** Son tag a été poussé sur le commit de `main`
+*précédent* la fusion du train — un commit où `package.json` déclare encore `0.1.140` et où cette
+section n'existait pas. Le job `verifier` a refusé (`tag v0.1.141 != package.json version`) et
+**rien n'a été publié** : ni npm, ni Release, ni attestation. La garde a fait exactement son
+travail, sur la sortie même du dépôt.
+
+Le tag ne peut pas être retiré — le ruleset des tags interdit leur suppression, ce que
+`docs/RELEASING.md` annonçait déjà (*« tag protection then makes awkward to withdraw »*). Plutôt
+que de désarmer cette protection pour contourner sa propre garde, ce train sort en **0.1.142** : le
+tag mort cesse alors d'être le plus haut, et `image-reconcile` — qui exige que le plus haut tag ait
+une image servie — redevient sain sans qu'on touche à rien. Le numéro sauté est le prix, et il est
+écrit ici pour qu'aucun lecteur n'ait à deviner.
 
 ### Security
 
@@ -4667,8 +4680,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.141...HEAD
-[0.1.141]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.140...v0.1.141
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.142...HEAD
+[0.1.142]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.140...v0.1.142
 [0.1.140]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.139...v0.1.140
 [0.1.139]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.138...v0.1.139
 [0.1.138]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.137...v0.1.138

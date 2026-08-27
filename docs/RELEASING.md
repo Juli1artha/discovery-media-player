@@ -72,6 +72,22 @@ both commits and warns that a rebuild from the attested one will not match.
 
 ## Before the tag
 
+⚠️ **Tag the release commit, not the `main` you fetched before merging it.** On 27/08 `v0.1.141`
+was pushed onto the commit *preceding* the release merge — a commit still declaring `0.1.140`, with
+no `[0.1.141]` changelog section. `verifier` refused (`tag v0.1.141 != package.json version`) and
+nothing was published: no npm, no Release, no attestation. The preflight had refused too, on its own
+output, one screen earlier — it printed **`Préflight de publication — v0.1.140`** and
+**`REFUSÉ : 2 contrôle(s) en échec`**, and the tag went out anyway. **Read the version the preflight
+names: if it is not the one you are cutting, you are on the wrong commit.**
+
+⚠️ **And a tag cannot be taken back.** The tag ruleset forbids deletion — `GH013 … Cannot delete
+this tag`. So the recovery is not to move the tag but to **cut the next number**: with `v0.1.142`
+present, the dead tag stops being the highest, and `image-reconcile` — which requires the highest
+tag to have a served image — is healthy again without disarming any protection. The skipped number
+is the price, and the changelog section says why so nobody has to guess. Relaxing the ruleset to
+tidy up would be using a guard's own switch to get past it, which this repository refuses
+everywhere else.
+
 ```bash
 node tools/release-preflight.mjs
 ```
