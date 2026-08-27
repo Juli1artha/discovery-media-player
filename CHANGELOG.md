@@ -62,6 +62,33 @@ the notes there are this file's section for that version.
     ceiling bench, which required `429` *"before any call"* and got `500`. It was already guarding
     the property; we were not seeing it.
 
+- **A host's messages carry their text in `body`, and the reader would have refused all of them.**
+  `bot-tts` read the text from `text` or `content`. An integrating host reported — **before hitting
+  it** — that its messages use `body` and nothing else, with a correct `role: "bot"`. The reader
+  would have returned an empty string for every message, yielding an empty set, so every request
+  refused with `400 texte`: refuse-by-default doing exactly what it must, against a perfectly correct
+  integration. The list is now `text`, `content`, `body`, first **non-empty** wins — a present but
+  empty field no longer masks the next one.
+  - The host offered to project `body` into `text` in its own plugin instead. We widened the reader:
+    `listMessages` is the host's, and asking every host to rename columns for an undocumented
+    preference moves the transformation into all of them, forever, where forgetting it means a total
+    silent refusal. The field name carries no security — the **role** filter does, and it is unchanged.
+- **`doc_tts_objects` is documented as a host write point, not an internal table.** The sweep removes
+  an object only when its fingerprint has a row, and only the player's route wrote one — so anything a
+  host puts in the `tts-cache` bucket itself was invisible to retention **permanently**, not just for
+  what was already there. The same host measured **908 objects it had written**, under the player's
+  *exact* naming (same digest, same two files, same root) — a parity its own code says was deliberate,
+  so that one clip serves both surfaces. Nothing but the missing row distinguished them.
+  `docs/HOST-CONTRACT.md` now carries the fingerprint recipe and the idempotent insert. No schema
+  change, no grant: RLS is on with no policy, and the `service_role` key the `db` capability already
+  uses bypasses it.
+- **The sweep's report says why `fichiersErreur` can be high without anything having failed.** The
+  code claimed the missing alignment `.json` came from pre-`v2` extracts. True, and not the main
+  cause: the provider does not always return an alignment. Measured on that host's bucket, **552
+  `.mp3` for 356 `.json`** — 196 audio files with no companion to remove, a live case rather than a
+  relic. The count stays unmasked; an operator finding two hundred "errors" on a first sweep would
+  otherwise hunt a failure that does not exist.
+
 - **Setting `ELEVENLABS_API_KEY` made voice controls appear that nothing in this package wires.**
   The key proves the *server* can synthesise; it says nothing about what happens on click — and this
   package wires **none** of the sixty-four controls in the assistant, which is markup it ships and

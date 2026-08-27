@@ -109,6 +109,25 @@ const ACTIONS_LIEES_A_UNE_SESSION = new Set([
 /** Les rôles sous lesquels un hôte peut désigner l'assistant. Ce que le visiteur écrit n'en est pas. */
 const ROLES_ASSISTANT = new Set(["bot", "assistant", "ai"]);
 
+/**
+ * Les champs où un message d'assistant peut porter son texte, dans l'ordre où on les essaie.
+ *
+ * ⚠️ `body` A ÉTÉ AJOUTÉ LE 27/08 PARCE QU'UN HÔTE L'A DIT AVANT DE BUTER DESSUS. Ses messages
+ * portent leur texte dans `body` — ni `text`, ni `content`. Son `role` valait bien `bot`, donc ce
+ * n'était pas le rôle qui cassait : c'était le CHAMP. Notre lecteur aurait rendu une chaîne vide
+ * pour chacun de ses messages, l'ensemble aurait été vide, et TOUT aurait été refusé en
+ * `400 { error: "texte" }` — le refus par défaut faisant exactement ce qu'il doit faire, sur une
+ * intégration parfaitement correcte.
+ *
+ * ⚠️ ÉLARGIR LE LECTEUR PLUTÔT QUE DEMANDER À L'HÔTE DE PROJETER. Il proposait les deux ; on prend
+ * celle-ci. `listMessages` est fourni par l'hôte : lui demander de renommer ses colonnes pour
+ * satisfaire une préférence que rien ne documentait déplacerait la transformation chez CHAQUE hôte,
+ * pour toujours — et celui qui l'oublierait se ferait refuser en bloc, sans que rien ne dise
+ * pourquoi. Le nom du champ ne porte aucune sécurité : c'est le filtre de RÔLE qui fait ce
+ * travail-là, et il ne bouge pas.
+ */
+const CHAMPS_TEXTE = ["text", "content", "body"];
+
 /** La normalisation d'un texte à synthétiser — une seule définition, deux côtés de la confrontation. */
 const normaliserTexte = (t) => String(t == null ? "" : t).replace(/\s+/g, " ").trim().slice(0, 700);
 
@@ -131,7 +150,8 @@ function ditsParAssistant(messages, prononcer) {
   for (const m of Array.isArray(messages) ? messages : []) {
     if (!m || typeof m !== "object") continue;
     if (!ROLES_ASSISTANT.has(String(m.role || "").toLowerCase())) continue;
-    const brut = typeof m.text === "string" ? m.text : typeof m.content === "string" ? m.content : "";
+    let brut = "";
+    for (const champ of CHAMPS_TEXTE) { if (typeof m[champ] === "string" && m[champ]) { brut = m[champ]; break; } }
     const t = normaliserTexte(brut);
     if (t) dits.add(prononcer(t));
   }
