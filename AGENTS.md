@@ -568,6 +568,108 @@ A report obliges someone to open the file; a correct one does that no better tha
 So send what you are only half sure of, **saying which half** — the worst case is being corrected,
 and that correction happens with someone looking.
 
+## A number in the present tense rots; a number in the past tense is a fact
+
+**The test is grammatical, and it takes a second.** Read the sentence with the verb moved to the
+past. If it still reads true in six months that way, it is a record and needs nothing. If only the
+present tense makes it worth writing, it is a description of a live state, and it will be wrong
+without anyone touching it — so it needs a date, an address, or removal.
+
+⚠️ Four catches on 27/08, in one morning, in this repository:
+
+| what it said | what was true |
+|---|---|
+| `npm test  # 1100+ tests` | 2206 — a **floor**, so never false, and understating by half |
+| `ROADMAP.md`: *a suite of ~1 800 tests* | 2206 — an **approximation**, same trap under another notation |
+| `AGENTS.md`: *Measured here on 26/08* | the counting was done on the **27th**; the date came from the subject, not the measurement |
+| `docs/HOST-CONTRACT.md`: *nothing in `server/` calls it today — that is measured* | present tense, undated, in the **published** page — written an hour before the date above was fixed, and left alone because the fix had been applied to the file that was pointed at rather than to the class |
+
+**A floor and an approximation are not precautions.** `1100+` and `~1 800` announce *imprecision*,
+never *perishability*: they protect against being false and leave the rotting untouched, which is
+worse, because a false number eventually hits someone and a surviving floor misinforms quietly and
+forever. Prefer the command that prints the number to any way of writing it down.
+
+⚠️ **But the test must also say what to leave alone, or it does damage.** An integrating host ran
+it across their own files and found two survivors worth naming, both of which they would have
+"fixed" without the check:
+
+- *"a few hundred lines"*, describing the wiring a host writes. Measured: 552 lines, 248 of real
+  code. **Replacing it with 552 would have turned a characterisation that never rots into a number
+  that does.** An approximation that *characterises* is not an approximate measurement.
+- *"≈ 1 in 26 000"*, a collision odds. Recomputed: 10 windows / 64³ = 1 in 26 214 — a constant
+  **derived** from the slug alphabet, not a reading of any mutable state.
+
+**The two-bounds test tells them apart in ten seconds**, and both halves are needed: *an
+approximation whose two plausible bounds carry the same message is a characterisation; one that
+stands in for a number you could have counted is a degraded measurement.* "A few hundred lines"
+says the same thing at 400 and at 700 — that is the information. "~1 800 tests" also survives 1 700
+and 1 900, but an exact count would say strictly more, so it fails the second half. The first
+belongs; the second is a measurement someone rounded.
+
+The same sort was run here and cleared three: the audit reports' `236 tests` and `329 tests`
+(dated records of a past measurement), and a quoted verdict line inside an example. Nothing to
+touch. **A probe that only says *fix this* is worth half a probe that also says *leave this
+alone*** — the second protects against corrections that quietly degrade a document.
+
+⚠️ **A first version of this paragraph claimed the rule existed "nowhere in this file". That was
+false, and the way it was reached is the point.** The idea was already here, twice, merged the same
+morning: *"the list is dated, hedged, and followed by an address"*, and *"a second source that rots
+by design"*. What was missing is narrower and worse: the rule was never stated **as a rule**, only
+inside an incident about a GitHub setting — filed under *why this paragraph is dated*, never under
+*how to write a number*. Nobody about to write one has any reason to open the section explaining a
+past correction.
+
+⚠️ **And the search that concluded "nowhere" was its own failure.** It looked for `present.*past`,
+`grammatical`, `tense` — the words of the formulation being written, not the words of the idea as
+it had actually been recorded. A probe built from the phrasing you have in mind returns a negative
+about the phrasing, never about the subject; the same trap caught an integrating host an hour
+earlier, on a difference of case. **When a search says nothing is there, search again for the
+thing, not for your name for it.**
+
+The workable form of that, proposed by the same host and measured here on the very case:
+**search the object the rule is about, or two independent phrasings — never one name you just
+invented.** On this file, before the section existed:
+
+```
+grammatical|tense|present.*past   → 0 hits      the name being coined
+date                              → 5 hits, 3 of them the rule itself
+```
+
+A case difference is repaired by `-i`. A vocabulary difference has no mechanical counter-measure
+at all — which is why the fallback has to be the subject rather than the wording. The two cases
+are the same failure at two depths, and only the deeper one is invisible to tooling.
+
+## Present in the file, absent for the reader
+
+**Two ways a true sentence does no work.** Both were measured on 27/08, both are ours, and
+neither is a matter of care — the text is correct in each case, and lands nowhere.
+
+⚠️ **Distance is a form of absence, and it is measurable.** `docs/HOST-CONTRACT.md` warned that
+the schema probe is lazy and process-local. The warning was exact. It sat 140 lines from the
+verdict table it governs, while its neighbour `presenceDurcissement` carried the same caveat
+**inside its own cell**. That day two integrating hosts, independently, came within one message of
+reporting the same regression that did not exist — one read three verdicts in a day on an unchanged
+database, the other says they would have filed at the first `partiel`.
+
+The test is the incident: **when two attentive readers miss a written warning on the same day, the
+warning is not written where it is read.** Moving it into the cell was not cosmetic; it was the
+only available fix, because nothing about the sentence was wrong.
+
+⚠️ **A conditional is honest only if it names who lifts the doubt.** Writing to a host about a
+bucket, this repository said *"if you write to `tts-cache`, do not realign your formula"*. That
+reads as a precaution and functions as an undeclared assumption: it had not been established that
+they wrote there at all — they do not — and the shape of the sentence transfers the burden without
+saying so. **The reader believes their case was considered, when it was merely left open.**
+
+The honest form names the gap and its owner: *"I do not know whether you write to this bucket; if
+you do, here is what must not be done — tell me and I will stop guessing."* Same content, and the
+doubt now has an address. The host who received the first version put it best: a conditional that
+does not say who resolves it transfers the charge silently.
+
+Both cases have the same shape as the corollary two sections up, applied to a sentence rather than
+an output: **being present is not the same as being read.** A warning too far from its subject, and
+an assumption dressed as a precaution, are two ways of being present and doing nothing.
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives
