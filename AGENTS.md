@@ -359,6 +359,58 @@ Two rules come out of this, and the second is the cheaper one:
   re-derives it in three months without knowing it was already tried. That measurement above is in
   this file for exactly that reason.
 
+## A green tells you nothing until you know what could have made it red
+
+**Two questions, before believing any green.** *Was the threshold written down before the
+measurement?* And *could the subject have been present in the setup I looked at?* A green says "I
+found nothing". Only those two questions separate that from "there was nothing to find" and from "I
+decided, afterwards, that this was enough".
+
+⚠️ Six instances in one week — four ours, two from an integrating host, none of them a wrong
+measurement. Every one measured correctly, either in a place where the subject could not appear, or
+against a bar chosen once the reading was in:
+
+| The green | Why it could not have been red |
+|---|---|
+| our voice bench — *"une porte « écouter la présentation » qui mène au silence est une promesse cassée"* | it asserted the buttons are absent **with no API key**; with the key they appear and lead nowhere. The one case it existed for was the one case it never entered |
+| our migration chain in CI | migrations always replayed on a **clean** base, where a catch-up loop has nothing to catch up — and an already-installed base is its entire reason to exist |
+| the host's Sentry query — *"no `createHash` error"* | 4 errors in 90 days, across the whole organisation. A search returning nothing, on an instrument that records almost nothing |
+| the host's key check — *"`ELEVENLABS_API_KEY` absent"* | the key was set. The API had answered `403` |
+| my CI-outage call | no `pull_request` run for four minutes → outage. They started one minute later. Nothing was wrong with the setup; *how long is too long* was picked after the silence began |
+| my tag push | `403`, retried on the network backoff, four times, before reading the code. A policy denial does not become an allowance on the fourth attempt — the retry rule was written for a different failure and applied for its shape |
+
+The first two are closed — the voice bench now runs the key-present case, and CI replays the
+migration chain against a deliberately poisoned installed base — but neither was closed by looking
+harder at the green. The first fell to a question from outside: an integrating host went looking for
+who calls `bot-tts` in this package, and found nobody. The second fell to a setup built for another
+purpose — the `0.1.64 → replay` job created the one thing CI had never had, an already-installed
+base.
+
+**The split is the point.** The first four fail the second question: the subject was outside the
+frame. The last two fail the first: the frame was fine and the bar moved. Either half alone passes
+four of the six.
+
+The remedy for the second question has a house form, and the count is worth writing down rather
+than the impression: **three test files carry an explicit anti-vacuity
+case** — `gardesAgent`, `voixNonCablee`, `etiquetteBornee`, added 24, 27 and 27 August — where the
+probe fails when it finds nothing to read (fewer than five browser artefacts, fewer than ten captures). In
+`tools/`, exit code `2` is the same idea given a name: *checked nothing* is not *found nothing*.
+Everywhere else it is still a thing to remember, which is to say it is not yet held. And it is only
+half: the other half — **run the probe in the configuration where the defect would live** — no
+anti-vacuity case can supply, because a probe that reads plenty and still cannot meet the subject
+looks exactly like one that read plenty and found it absent.
+
+The remedy for the first is one sentence written before the reading: *what value would make me
+conclude the opposite?* If you cannot state it in advance, you are not measuring, you are narrating
+what happened to arrive.
+
+⚠️ And in all six the reasoning was sound. That is why "be more careful" is not available as a
+remedy here: nothing in the moment feels like an error, because nothing is one — the mistake is
+entirely in what the setup was able to show, and the setup is the part nobody re-reads. It is also
+why an absence-of-evidence green is the single kind of result whose author has nothing to hold: a
+count that drops can be argued with, a "found nothing" cannot. Prefer, here as in the rule above,
+saying **where a property is held** over saying that nothing contradicted it.
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives

@@ -23,6 +23,20 @@
 # le fichier raconterait faux. Ils sont donc CONFRONTÉS : le job `docker` de la CI construit
 # l'image, lui demande sa version de Node, et la compare à la majeure écrite sur cette ligne.
 #
+# ⚠️ UNE ÉTAPE QUI DÉPEND DE L'ARCHITECTURE S'ÉCRIT SUR `uname -m`, PAS SUR `ARG TARGETARCH` —
+# et la raison n'est pas un goût, c'est que les deux workflows ne construisent PAS pareil.
+# `image.yml` passe par buildx et déclare ses cibles (`platforms: linux/amd64,linux/arm64`) ;
+# `ci.yml` fait un `docker build` nu — ni `setup-buildx-action`, ni `DOCKER_BUILDKIT`. Or
+# `TARGETARCH` n'est renseigné QUE par BuildKit : sous le constructeur historique il est vide.
+# Lequel des deux le runner choisit par défaut n'est écrit NULLE PART DANS CE DÉPÔT, ne se
+# mesure pas d'ici, et peut changer avec l'image de runner sans que rien chez nous ne bouge —
+# et c'est exactement l'objection. Une étape branchée sur `TARGETARCH` tirerait donc sa valeur
+# d'un constructeur qu'on ne choisit pas, dans le workflow qui GARDE les fusions, pendant que
+# celui qui PUBLIE la choisit explicitement : verte ici, fausse là, sans un rouge pour le dire.
+# `uname -m` répond la même chose sous les deux. (Écrit le 27/08 en démontant la branche
+# `claude/dumb-init-epingle`, où ce choix avait été fait pour la bonne raison ; le reste de ce
+# travail est mort avec le retrait de `dumb-init`, ce fait-là ne l'est pas.)
+#
 # ⚠️ `server/*.generated.js` sont committés (les plateformes serverless ne construisent rien) —
 # on les REconstruit ici quand même. Une image qui embarquerait un bundle plus ancien que sa
 # source servirait du code périmé sans que rien ne le signale, et c'est exactement le défaut que
