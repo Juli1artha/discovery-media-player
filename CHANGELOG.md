@@ -10,6 +10,41 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [Unreleased]
+
+### Fixed
+
+- ⚠️ **`docs/HOST-CONTRACT.md` demandait aux hôtes plus que ce dont la purge a besoin, et le geste
+  « évident » pour s'y conformer aurait été destructeur.** La page disait *« write it with the same
+  fingerprint the player computes, and nothing else »* ; la seule propriété nécessaire est que le
+  `hash` de la ligne soit le nom de base de l'objet. Un hôte a rapporté le 27/08 un troisième
+  écrivain utilisant `preview-fr-v2` là où le lecteur utilise `v2` : parfaitement sain, non conforme
+  sur le papier, et réaligner sa formule aurait orphelinné définitivement 908 objets — les fichiers
+  portent l'ANCIENNE empreinte dans leur nom. La page distingue désormais l'exigence (le balayage)
+  de l'option (partager un clip avec la route du lecteur), et nomme le banc qui tient la propriété.
+- **Le tableau des verdicts de `schema` avait perdu sa cinquième valeur.** `indetermine` vivait
+  depuis la 0.1.64 (18/08) en ligne de tableau avalée par le paragraphe précédent, faute d'une ligne
+  vide — donc rendue en prose, au milieu d'un avertissement sur un autre sujet. Un hôte qui parse ce
+  tableau y trouvait quatre valeurs pour cinq possibles.
+- **`non-sonde` et `partiel` portent maintenant leur piège dans leur cellule**, comme le fait déjà
+  `presenceDurcissement` trois lignes plus haut : la sonde est PARESSEUSE et locale au processus,
+  donc ces deux verdicts disent *ce que ce processus a demandé jusqu'ici*, jamais l'état du schéma.
+  Un hôte a relevé trois valeurs différentes en une journée sur une base inchangée et a failli
+  signaler une régression inexistante.
+- ⚠️ **La sentinelle des exemples se réannonçait à chaque tour.** L'issue #412 a reçu son corps puis
+  quatre commentaires identiques au caractère près en dix heures, pour zéro information nouvelle —
+  le mécanisme de fatigue d'alarme que l'en-tête de `publication.yml` condamne chez les autres.
+  Elle ne parle désormais que sur changement de FAIT (version servie ou état d'un exemple), via une
+  empreinte portée dans le corps de l'issue. Un aller-retour sur la même version reste un fait neuf.
+
+### Added
+
+- **`ctx.has(name)` est documentée**, après avoir été mesurée : implémentée dans le contexte
+  autonome, appelée par aucune ligne de `server/`, absente du contrat, et recopiée dans 57 fixtures
+  sur 45 fichiers. Un hôte l'implémentait correctement sans le savoir, parce que le type la
+  déclarait. Rien n'est câblé — la page dit ce qu'elle est, pour qu'une couture qui fonctionne
+  cesse d'être un accident à un renommage près de la suppression.
+
 ## [0.1.140] — 2026-08-27
 
 **Deux routes qui pouvaient coûter — l'une la disponibilité du serveur, l'autre de l'argent — une

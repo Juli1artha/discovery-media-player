@@ -411,6 +411,136 @@ why an absence-of-evidence green is the single kind of result whose author has n
 count that drops can be argued with, a "found nothing" cannot. Prefer, here as in the rule above,
 saying **where a property is held** over saying that nothing contradicted it.
 
+## Ask who reads an output, and when — no probe answers this one
+
+**A third question, and it is the one no tool can hold.** *Was the threshold written in advance?*
+and *could the subject have been there?* both get answered by reading the repository. **Who reads
+this output, and at what moment?** is answered only by naming someone, or by finding there is
+nobody. It came from an integrating host, who put it this way after two of their own cases and two
+of ours.
+
+⚠️ Four cases, two theirs and two ours, and none of them is a wrong measurement:
+
+| The output | Who read it |
+|---|---|
+| our examples sentinel — issue #412, opened 26/08 13:18, then 4 comments identical to the character | **nobody.** It named the exact command, ten hours before the red it predicted |
+| `release.yml`'s demo-lag notice, fired 26/08 11:52 and 27/08 06:43:56 | **nobody** — and the second one landed eleven seconds before CI went red on the same subject |
+| the host's `dumb-init` pinning, and our removal that replaced it | nobody who runs this image: both integrating hosts are serverless |
+| the host's two SQL probes, headed *"nothing runs this for you"* | nobody, and the header said so — a limit they filed as assumed, therefore as handled |
+
+**Writing that an output has no reader does not give it one.** That is the host's own verdict on
+their case, and it is the sharpest form of the rule.
+
+⚠️ **And ours is worse than theirs, because it denies the limit instead of assuming it.**
+`release.yml`'s own comment, three lines apart:
+
+> […] and **nobody looks at a demo that works**: it stayed three versions behind with nothing to
+> signal it. […] But it is written in the release summary, **where it gets read**.
+
+The first half diagnoses the defect exactly. The second routes the remedy into the summary of a
+**successful** run — and asserts, with no measurement and nobody named, that this is read. Three
+paragraphs into `publication.yml`, the repository had already written the opposite: *"a warning in
+a summary is only seen IF SOMEONE OPENS THE RUN"*. It knew, it had written it down, and it put the
+next warning in a summary.
+
+**The corollary is what makes the question usable, and it cut cleanly across all eleven automatic
+outputs of this repository, without exception:**
+
+> **An output is read only if it prevents something.**
+
+Three of the eleven are read: CI, because it blocks the merge; the `pre-push` hook, because it
+blocks the push; the CLA check, because its red box sits in the pull request. One is seen and stops
+nothing — ZAP fails its job, but it is not a required check, so a merge can land beside it. The
+remaining **seven have no established reader**: `publication.yml`'s four issue alarms, the three run
+summaries (`release.yml` twice, `ci.yml` once), two external dashboards (CodeQL's Security tab,
+OSSF Scorecard) and one weekly scheduled repair. So the useful question about a silent alarm is
+never *"which channel would be better?"* but *"what does it prevent?"*. If the answer is *nothing*,
+changing the channel moves the silence without closing it.
+
+⚠️ **The answer is almost never "nobody" — it is "someone, at a moment when it no longer helps".**
+A release summary has a reader: whoever comes to investigate afterwards. An issue has a reader:
+whoever opens the tab, one day. A health page has a reader — the host measured exactly that, a
+week late, and it was themselves. That is why the question carries *and at what moment*: what
+blocks is read when it counts, **because the blocking imposes the moment**. Everything else is
+read when someone has time, which is to say after.
+
+⚠️ **Two other things get read without a reader being scheduled, and they bound the rule:**
+
+| what | why it lands |
+|---|---|
+| what blocks | the moment is imposed, not chosen |
+| what contradicts itself **in its meaning** | it cannot be read without being resolved |
+
+The second has a threshold, and the host found it by hitting it: a grep of theirs returned
+twenty-eight supposedly missing context fields including `method`, `query`, `to` and `subject` —
+fields of a request and of a message, not of a context. They saw it instantly, because it attacks
+what the reader *knows about the domain*. Meanwhile line 243 of `docs/HOST-CONTRACT.md` was a
+table row swallowed into an unrelated paragraph **from 18/08 to 27/08** — nine days, from 0.1.64
+to 0.1.140, past every reader of that page including its own author — because a stray pipe attacks
+only the **typography**, and a reader forgives a typo without thinking. **An inconsistency is seen
+without looking only when it bears on the meaning, never on the form.**
+
+## The mirror of that corollary, on the way in
+
+**An inherited capability is found only when something forces you to look for it.** The same host
+caught themselves three times in a week proposing to add what their code already had, and named
+why: *"I look for the capability in the code I have just written, never in the code I inherited"*.
+
+⚠️ Measured here on 26/08, and the numbers are the argument:
+
+```
+context/standalone.js:293      has() { return false; }      a capability probe
+
+calls in server/                0
+lines in docs/HOST-CONTRACT.md  0      (until 27/08)
+copies in test fixtures        57      across 45 files
+```
+
+Wiring `wiresVoice` that day meant inventing a declaration mechanism while an undocumented one sat
+in the injected context. `wiresVoice` is probably still the right call — `has()` returns `false` in
+the only context we ship, and no key vocabulary is defined anywhere. But it was never weighed and
+rejected: **its existence was unknown**, on a field that 45 test files carry.
+
+Which is the point of the count. `has()` was not hidden; it was in front of every author who ever
+wrote a test fixture, this one included. **Copying is not looking.** The difference is not
+attention — code you just wrote is in your head, inherited code is reached only by a query you must
+think to run — and that is exactly what makes this a question to ask rather than a rule to follow.
+
+⚠️ And the same host, reading this, found they *implement* `has()` correctly — because a type
+declared it, and nobody ever asked who called it. Neither side knew: we did not know it existed,
+they did not know they were supplying it. **A mechanism carrying a requirement alone eventually
+produces exactly that: something correct that nobody knows they have.**
+
+## A rule without its case is approved, not transmitted
+
+**Write the incident, not only the maxim.** Every rule above carries the day, the file and the
+number that produced it, and that is not decoration.
+
+⚠️ The host stated why, about themselves: *"I distrusted the zero because you taught me to. I did
+not distrust an absence in a document, because nothing had made me."* They had the case *a zero can
+mean no observation*, and they applied it, carefully, three times. They did not have the case *an
+absence in a document can mean I am reading the wrong section* — and asserted that a trap was
+undocumented when it was written, in bold, in the cell where it mattered, 140 lines from where they
+were looking. **The two are the same thing. Knowing one does not give you the other.**
+
+So: **distrust transmits by case, never by class.** A rule stated alone is agreed with; a rule
+carrying its incident is the only kind that arrives.
+
+⚠️ **And the moment you are least likely to apply a rule is while you are applying it to someone
+else.** Correcting that host on an unverified absence, in the same message, with the file open, this
+repository asserted a consequence it had not measured — *"a host reading the table finds four
+values, the code returns five"* — while line 268 explains the fifth at length. Fifth occurrence in
+one week of a rule broken by the hand writing it. Not a coincidence: **the rule you have just
+formulated is the one you are most certain you already hold**, so it is the only one you do not
+re-apply to yourself.
+
+⚠️ **Last, and it is the least intuitive result of that week: the value of a report does not lie in
+its being right.** Two of the three defects then found in `docs/HOST-CONTRACT.md` exist only
+because that host reported something **false** and it had to be refuted — with the file open.
+A report obliges someone to open the file; a correct one does that no better than a wrong one.
+So send what you are only half sure of, **saying which half** — the worst case is being corrected,
+and that correction happens with someone looking.
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives
