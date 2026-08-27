@@ -10,7 +10,22 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
-## [Unreleased]
+## [0.1.141] — 2026-08-27
+
+### Security
+
+- ⚠️ **Dix étiquettes d'erreur que l'appelant choisissait, et rien ne les bornait.**
+  `route: String(body.action || "(sans action)")`, écrit dix fois à l'identique dans trois fichiers
+  de routes. `body.action` vient du corps de la requête, donc de n'importe qui muni d'un lien : un
+  mégaoctet de texte, des retours à la ligne, des guillemets, des octets de contrôle. Ça partait
+  ensuite dans le puits d'erreurs de **l'hôte** — Sentry, un journal ligne-par-ligne, un fichier —
+  dont ce paquet ne connaît ni le format ni les échappements.
+  ⚠️ **Ce qui est empêché n'est pas « une grosse chaîne », c'est la forgerie de structure** : un
+  saut de ligne ouvre une entrée de journal qui n'a jamais eu lieu, un guillemet ouvre un champ dans
+  un puits qui concatène du JSON. Seuls les caractères dont une action est faite traversent
+  désormais, et la troncature **se dit** (`…`) plutôt que de se lire comme un nom véritable.
+  `(sans action)` et `(action illisible)` restent deux constats distincts. Aucune action légitime
+  n'est affectée. **Rien à faire côté hôte.**
 
 ### Fixed
 
@@ -4652,7 +4667,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.140...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.141...HEAD
+[0.1.141]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.140...v0.1.141
 [0.1.140]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.139...v0.1.140
 [0.1.139]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.138...v0.1.139
 [0.1.138]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.137...v0.1.138
