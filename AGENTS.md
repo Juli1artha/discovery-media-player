@@ -568,6 +568,46 @@ A report obliges someone to open the file; a correct one does that no better tha
 So send what you are only half sure of, **saying which half** — the worst case is being corrected,
 and that correction happens with someone looking.
 
+## A number in the present tense rots; a number in the past tense is a fact
+
+**The test is grammatical, and it takes a second.** Read the sentence with the verb moved to the
+past. If it still reads true in six months that way, it is a record and needs nothing. If only the
+present tense makes it worth writing, it is a description of a live state, and it will be wrong
+without anyone touching it — so it needs a date, an address, or removal.
+
+⚠️ Four catches on 27/08, in one morning, in this repository:
+
+| what it said | what was true |
+|---|---|
+| `npm test  # 1100+ tests` | 2206 — a **floor**, so never false, and understating by half |
+| `ROADMAP.md`: *a suite of ~1 800 tests* | 2206 — an **approximation**, same trap under another notation |
+| `AGENTS.md`: *Measured here on 26/08* | the counting was done on the **27th**; the date came from the subject, not the measurement |
+| `docs/HOST-CONTRACT.md`: *nothing in `server/` calls it today — that is measured* | present tense, undated, in the **published** page — written an hour before the date above was fixed, and left alone because the fix had been applied to the file that was pointed at rather than to the class |
+
+**A floor and an approximation are not precautions.** `1100+` and `~1 800` announce *imprecision*,
+never *perishability*: they protect against being false and leave the rotting untouched, which is
+worse, because a false number eventually hits someone and a surviving floor misinforms quietly and
+forever. Prefer the command that prints the number to any way of writing it down.
+
+⚠️ **But the test must also say what to leave alone, or it does damage.** An integrating host ran
+it across their own files and found two survivors worth naming, both of which they would have
+"fixed" without the check:
+
+- *"a few hundred lines"*, describing the wiring a host writes. Measured: 552 lines, 248 of real
+  code. **Replacing it with 552 would have turned a characterisation that never rots into a number
+  that does.** An approximation that *characterises* is not an approximate measurement.
+- *"≈ 1 in 26 000"*, a collision odds. Recomputed: 10 windows / 64³ = 1 in 26 214 — a constant
+  **derived** from the slug alphabet, not a reading of any mutable state.
+
+The same sort was run here and cleared three: the audit reports' `236 tests` and `329 tests`
+(dated records of a past measurement), and a quoted verdict line inside an example. Nothing to
+touch. **A probe that only says *fix this* is worth half a probe that also says *leave this
+alone*** — the second protects against corrections that quietly degrade a document.
+
+⚠️ And this rule produced those four catches on the morning of 27/08 while existing **nowhere in
+this file** — it lived in commit messages and in a letter to a host, which is to say it had no
+reader. It is written here for exactly the reason the two sections above give.
+
 ## Present in the file, absent for the reader
 
 **Two ways a true sentence does no work.** Both were measured on 27/08, both are ours, and
