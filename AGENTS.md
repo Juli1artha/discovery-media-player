@@ -604,9 +604,20 @@ The same sort was run here and cleared three: the audit reports' `236 tests` and
 touch. **A probe that only says *fix this* is worth half a probe that also says *leave this
 alone*** — the second protects against corrections that quietly degrade a document.
 
-⚠️ And this rule produced those four catches on the morning of 27/08 while existing **nowhere in
-this file** — it lived in commit messages and in a letter to a host, which is to say it had no
-reader. It is written here for exactly the reason the two sections above give.
+⚠️ **A first version of this paragraph claimed the rule existed "nowhere in this file". That was
+false, and the way it was reached is the point.** The idea was already here, twice, merged the same
+morning: *"the list is dated, hedged, and followed by an address"*, and *"a second source that rots
+by design"*. What was missing is narrower and worse: the rule was never stated **as a rule**, only
+inside an incident about a GitHub setting — filed under *why this paragraph is dated*, never under
+*how to write a number*. Nobody about to write one has any reason to open the section explaining a
+past correction.
+
+⚠️ **And the search that concluded "nowhere" was its own failure.** It looked for `present.*past`,
+`grammatical`, `tense` — the words of the formulation being written, not the words of the idea as
+it had actually been recorded. A probe built from the phrasing you have in mind returns a negative
+about the phrasing, never about the subject; the same trap caught an integrating host an hour
+earlier, on a difference of case. **When a search says nothing is there, search again for the
+thing, not for your name for it.**
 
 ## Present in the file, absent for the reader
 
