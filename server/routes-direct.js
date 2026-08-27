@@ -4,7 +4,7 @@
 // Reste à PLAT dans server/ (les gardes de forge ciblent server/*.js).
 
 const { adresseAppelant, lcMembre, cleAnonyme, profilDuJeton } = require("./appelant");
-const { jsonPour } = require("./reponses.js");
+const { jsonPour, etiquetteRoute } = require("./reponses.js");
 
 const { createPresentation, getPresentation, setPage, endPresentation, addMessage, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent } = require("./presentations");
 // Cadence de présence et cible de mutualisation par IP (P1 performance). L'intervalle DOIT
@@ -49,7 +49,7 @@ async function traiter(req, res, body, _slug) {
           // hôte, chaque « Terminer » échouait en 23502 (marqueur d'archive NOT NULL) — et ce 500
           // muet ne laissait RIEN, même pas une ligne dans le journal d'erreurs. Un journal que
           // personne ne lit vaut peu ; aucun journal ne vaut rien du tout.
-          try { PLAYER.errors.capture(erreur instanceof Error ? erreur : new Error(String(erreur)), { route: "present-" + String(body.action || "").replace(/^present-/, "") }); } catch { /* jamais bloquant */ }
+          try { PLAYER.errors.capture(erreur instanceof Error ? erreur : new Error(String(erreur)), { route: etiquetteRoute("present-" + String(body.action || "").replace(/^present-/, "")) }); } catch { /* jamais bloquant */ }
           return jp(500, { ok: false });
         }
       }
@@ -222,7 +222,7 @@ async function traiter(req, res, body, _slug) {
           // des présences) : une présentation close refuse toute écriture, jeton valide ou non.
           const pt = (r.ok && jetonCandidat) ? jetonCandidat : "";
           return jp(r.ok ? 200 : (r.status || 400), pt ? { ...r, pt } : r);
-        } catch (e) { try { PLAYER.errors.capture(e, { route: String(body.action || "(sans action)") }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
+        } catch (e) { try { PLAYER.errors.capture(e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
       }
       // Gestion des présentations (membre AUTHENTIFIÉ requis) : liste / reprise / transfert / stats / historique doc.
       if (body.action === "present-list" || body.action === "present-reclaim" || body.action === "present-handover" || body.action === "present-owner-end" || body.action === "present-stats" || body.action === "present-doc-list" || body.action === "present-switch" || body.action === "present-content") {
@@ -275,7 +275,7 @@ async function traiter(req, res, body, _slug) {
           else if (body.action === "present-content") r = await setPresentationContent(String(body.slug || ""), (u && u.email) || "", isAdmin, body.content, String(body.control || ""));
           else r = await handoverPresentation(String(body.slug || ""), u.email, body.newOwner);
           return jp(r.ok ? 200 : (r.status || 400), r);
-        } catch (e) { try { PLAYER.errors.capture(e, { route: String(body.action || "(sans action)") }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
+        } catch (e) { try { PLAYER.errors.capture(e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
       }
       // Chat de présentation (historisé) : n'importe quel participant (présentateur ou audience) poste un
       // message. Écriture via service role ; anti-spam par IP (60/h). La présentation doit exister.
@@ -301,7 +301,7 @@ async function traiter(req, res, body, _slug) {
             avatar: (profil && profil.avatar) || body.avatar,
             isPresenter: validControl, isMember: !!profil, body: body.body, replyTo: body.replyTo, replyName: body.replyName, replyText: body.replyText, authorToken: body.authorToken, attachment: body.attachment , clientKey: body.clientKey });
           return jp(r.ok ? 200 : (r.status || 400), r);
-        } catch (e) { try { PLAYER.errors.capture(e, { route: String(body.action || "(sans action)") }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
+        } catch (e) { try { PLAYER.errors.capture(e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
       }
       // Pièce jointe : URL d'upload signée (la présentation doit exister ; rate-limit).
       if (body.action === "present-upload-url") {
@@ -314,7 +314,7 @@ async function traiter(req, res, body, _slug) {
           if (!allowed) return jp(429, { ok: false, error: "rate" });
           const r = await createUploadUrl(String(body.slug || ""), body.name, body.type);
           return jp(r.ok ? 200 : (r.status || 400), r);
-        } catch (e) { try { PLAYER.errors.capture(e, { route: String(body.action || "(sans action)") }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
+        } catch (e) { try { PLAYER.errors.capture(e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
       }
       // Chat : éditer / supprimer un message, verrouiller le chat.
       if (body.action === "present-msg-edit" || body.action === "present-msg-delete" || body.action === "present-chatlock") {
@@ -325,7 +325,7 @@ async function traiter(req, res, body, _slug) {
           else if (body.action === "present-msg-delete") r = await deleteMessage(String(body.slug || ""), body.msgId, { authorToken: body.authorToken, control: body.control });
           else r = await setChatLock(String(body.slug || ""), String(body.control || ""), !!body.locked);
           return jp(r.ok ? 200 : (r.status || 400), r);
-        } catch (e) { try { PLAYER.errors.capture(e, { route: String(body.action || "(sans action)") }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
+        } catch (e) { try { PLAYER.errors.capture(e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
       }
       // Réaction emoji (toggle) sur un message du chat de présentation.
       if (body.action === "present-react") {
@@ -345,7 +345,7 @@ async function traiter(req, res, body, _slug) {
           const reacteur = require("./presentations").reacteurDepuisJeton(body.authorToken);
           const r = await toggleReaction(String(body.slug || ""), body.msgId, body.emoji, reacteur, body.etat);
           return jp(r.ok ? 200 : (r.status || 400), r);
-        } catch (e) { try { PLAYER.errors.capture(e, { route: String(body.action || "(sans action)") }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
+        } catch (e) { try { PLAYER.errors.capture(e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
       }
   return false;
 }
