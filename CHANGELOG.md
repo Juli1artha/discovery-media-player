@@ -10,7 +10,36 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
-## [Unreleased]
+## [0.1.140] — 2026-08-27
+
+**Deux routes qui pouvaient coûter — l'une la disponibilité du serveur, l'autre de l'argent — une
+migration qui échouait sur la donnée qu'elle venait réparer, et un assistant qui promettait une voix
+que ce paquet ne câble pas.**
+
+⚠️ **CE TRAIN SORT SOUS L'EXCEPTION « CORRECTIF DE SÉCURITÉ », ET DEUX FOIS PLUTÔT QU'UNE.**
+`docs/RELEASING.md` autorise un train par jour ; celui-ci part le lendemain de la 0.1.139, donc la
+cadence n'est même pas en cause. Ce qui l'est : `bin/serve.js` s'arrêtait sur un en-tête `Host`
+malformé — une requête anonyme, sans configuration ni compte — et `bot-tts` acceptait n'importe
+quel texte d'un porteur de lien public, à la facture de l'hôte. Les deux partent dès qu'ils sont
+verts, ce que cette page appelle par son nom.
+
+⚠️ **ET UNE MIGRATION DÉJÀ PUBLIÉE EST CORRIGÉE SUR PLACE**, ce que ce dépôt interdit par écrit.
+La 0020 (sortie en 0.1.135) s'arrêtait à mi-chemin sur toute base portant deux colonnes hors plage
+dans une même ligne, laissant les contraintes posées et jamais validées. Un fichier 0024 aurait été
+plus orthodoxe et **inopérant** : une base ancienne rejouant la chaîne s'arrête à la 0020 et ne
+l'atteint jamais. Pour un hôte où elle est passée, le fichier corrigé est un no-op strict, vérifié
+contre un vrai PostgreSQL 16. `zones-du-tarball` lèvera son alarme « a migration already applied
+elsewhere must be immutable » sur cette livraison : c'est le traitement que ce changement mérite,
+et il est attendu.
+
+⚠️ **LA FRONTIÈRE HÔTE A BOUGÉ TROIS FOIS**, toutes additives. `wiresVoice` conditionne l'affichage
+des contrôles de voix ; `bot-tts` exige un `sessionId` ; `doc_tts_objects` devient un point
+d'écriture pour l'hôte. Un hôte qui ne touche à rien n'est affecté par aucune : la voix n'était
+câblée nulle part, `bot-tts` n'était appelée par personne, et ne rien écrire dans `tts-cache` reste
+sans conséquence. `docs/HOST-CONTRACT.md` porte les trois.
+
+Signalé par l'audit CODEX du 26/08, puis par deux hôtes intégrateurs dont l'un a trouvé ce que ni la
+forge ni l'audit n'avaient vu.
 
 ### Security
 - **The voice route could be used as a public, paid API — and the bill was ours.** `bot-tts` accepts
@@ -4584,7 +4613,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.139...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.140...HEAD
+[0.1.140]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.139...v0.1.140
 [0.1.139]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.138...v0.1.139
 [0.1.138]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.137...v0.1.138
 [0.1.137]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.136...v0.1.137
