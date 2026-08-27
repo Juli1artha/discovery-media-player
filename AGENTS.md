@@ -451,11 +451,19 @@ outputs of this repository, without exception:**
 **Four of the eleven are read**, and only one of those four is a fact this file can hold: the
 `pre-push` hook, which blocks the push because a file in this repository says so. The other three —
 CI, the CLA check, ZAP — are read because a **ruleset** requires them, and that ruleset is a
-repository setting, not a file. As read on 27/08 it requires eight checks: `check (22)`,
-`check (24)`, `navigateur`, `schema`, `docker`, `cla`, `CodeQL`, `zap` — plus a pull request before
-merging, branches up to date, and no force pushes. **Go and read it; do not trust this paragraph**
+repository setting, not a file. A snapshot, read on 27/08 and **not a specification**: eight
+required checks (`check (22)`, `check (24)`, `navigateur`, `schema`, `docker`, `cla`, `CodeQL`,
+`zap`), a pull request before merging, conversation resolution, branches up to date, no force
+pushes, zero required approvals — that last one deliberate, since a lone maintainer cannot approve
+their own work and `MAINTAINERS.md` says so. **Go and read it; do not trust this paragraph**
 (`Settings → Rules → Rulesets`, *not* `Settings → Branches`, which shows only the classic
-mechanism and is empty here).
+mechanism and reads *"Classic branch protections have not been configured"* on this repository —
+which has eight).
+
+⚠️ This snapshot was **already incomplete before it merged**: conversation resolution was switched
+on while this very correction sat in review. That is the second drift in three hours, and it is not
+a reason to write the list more carefully — it is the reason the list is dated, hedged, and followed
+by an address.
 
 The remaining **seven have no established reader**: `publication.yml`'s four issue alarms, the three
 run summaries (`release.yml` twice, `ci.yml` once), two external dashboards (CodeQL's Security tab,
