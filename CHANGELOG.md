@@ -10,6 +10,32 @@ The **host contract** has its own version, independent of the package version: i
 Each released version below is also a [GitHub Release](https://github.com/Juli1artha/discovery-media-player/releases);
 the notes there are this file's section for that version.
 
+## [Unreleased]
+
+### Fixed
+
+- ⚠️ **Le scan ZAP annonçait « alerte non triée » quand il ne s'était pas terminé du tout, et
+  envoyait son lecteur trier ce qui n'existait pas.** Le 27/08 (course 33102994676),
+  `zap-baseline.py` s'est interrompu sur la surface `doc` après trente secondes : aucune ligne
+  `PASS:`, aucune ligne de synthèse `FAIL-NEW: … PASS: …` là où les deux autres surfaces en
+  impriment soixante-trois et une. Un témoin indépendant le confirme deux étapes plus bas — « there
+  will be 2 files uploaded », **deux** rapports pour **trois** surfaces. Il n'y avait pas d'alerte
+  non triée : il n'y avait pas eu de tri. Le message renvoyait pourtant vers `.zap/rules.tsv`, où
+  il n'y avait rien à trier, et vers un rapport jamais écrit.
+  ⚠️ **La cause tenait en deux caractères** : `|| echec="$echec $cible"` écrasait tous les codes non
+  nuls en un seul fait, puis la ligne suivante nommait celui qu'elle savait dire. C'est la classe de
+  défaut que ce dépôt retire partout ailleurs depuis le 21/08 — deux rouges différents sous un seul
+  code — et l'étape ZAP était le dernier endroit où elle vivait, dans du shell plutôt que dans du
+  JavaScript. La décision vit maintenant dans `tools/verdict-zap.mjs`, avec `resultat-garde` :
+  **violation** (le scan a conclu, l'alerte attend dans la branche) ou **non concluant** (le scan
+  n'a pas conclu, le correctif n'est pas dans la branche).
+  ⚠️ **Et le vert était aussi vulnérable que le rouge** : rien ne vérifiait qu'un scan sorti en 0
+  avait écrit son rapport. Un scanner muet rendant 0 passait pour une surface saine — la vacuité que
+  l'en-tête du même fichier condamne deux étapes plus haut (*« un scan d'un 404 est vert et vide »*).
+  Le rapport HTML est désormais la **preuve** exigée de chaque surface, et c'est son croisement avec
+  le code de sortie qui donne le verdict — jamais le code seul, dont la table n'est pas mesurable
+  hors CI. Six mutations, six rouges. **Rien à faire côté hôte.**
+
 ## [0.1.142] — 2026-08-27
 
 ⚠️ **La 0.1.141 n'existe pas, et voici pourquoi.** Son tag a été poussé sur le commit de `main`
