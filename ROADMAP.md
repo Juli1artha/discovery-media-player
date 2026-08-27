@@ -10,8 +10,8 @@ The core promise is shipped and enforced: a self-hosted document viewer — per-
 links, reading analytics, live presentation — whose core knows nothing about the application
 hosting it. Around it, the evidence is public rather than claimed: signed releases with
 [verification instructions](docs/VERIFYING-RELEASES.md), an SBOM per release, a
-[threat model](docs/THREAT-MODEL.md), and a suite of ~1 800 tests where each one names the failure
-it prevents.
+[threat model](docs/THREAT-MODEL.md), and a test suite where every single test names the failure it
+prevents — `npm test` prints how many there are.
 
 The number that shapes everything below: **one maintainer**.
 

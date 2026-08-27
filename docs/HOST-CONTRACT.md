@@ -60,13 +60,14 @@ is present, the same truth the `plugins` field above reports over HTTP. Supply i
 `has: (name) => !!plugins[name]`; the standalone context returns `false` for everything, having no
 plugins at all.
 
-**Nothing in `server/` calls it today** — that is measured, not an omission of this paragraph, and
-it is why implementing it buys you nothing immediately and skipping it costs you nothing. It is
-written down for the opposite reason: one host was found to implement it *correctly and without
-knowing*, because the type declared it, while the shape was recorded in no document and in 57 test
-fixtures. A seam that exists, works, and is written nowhere is one rename away from being deleted
-as dead — and it would not have been dead. If a future feature needs to ask *"does this host have
-that plugin?"*, this is the spelling, and there should not be a second one.
+**As measured on 27/08, nothing in `server/` called it** — that is a reading, not an omission of
+this paragraph, and it is why implementing it buys you nothing immediately and skipping it costs
+you nothing. It is written down for the opposite reason: on that day one host was found to
+implement it *correctly and without knowing*, because the type declared it, while the shape lived
+in 57 test fixtures and, **until this paragraph existed**, in no document at all. A seam that
+exists, works, and is written nowhere is one rename away from being deleted as dead — and it would
+not have been dead. If a future feature needs to ask *"does this host have that plugin?"*, this is
+the spelling, and there should not be a second one.
 
 ⚠️ **`runtime` is the only way to see what the player is actually running on.** `nodeRequired` is
 the floor the package declares, `node` is what the process reports — two numbers, no verdict:
