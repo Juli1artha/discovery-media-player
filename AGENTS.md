@@ -10,7 +10,7 @@ the violation.
 
 ```bash
 npm ci
-npm test              # 1100+ tests, in-process, no network, no database — seconds
+npm test              # in-process, no network, no database — seconds. It prints its own count
 npm run lint
 npm run typecheck
 npm run build         # regenerates server/*.generated.js + dist/ — see below
@@ -511,7 +511,9 @@ without looking only when it bears on the meaning, never on the form.**
 caught themselves three times in a week proposing to add what their code already had, and named
 why: *"I look for the capability in the code I have just written, never in the code I inherited"*.
 
-⚠️ Measured here on 26/08, and the numbers are the argument:
+⚠️ Measured here on **27/08** — the wiring below is from the 26th, the counting is from the
+day after, and mixing the two is exactly the kind of slip a date is supposed to prevent. The
+numbers are the argument:
 
 ```
 context/standalone.js:293      has() { return false; }      a capability probe
