@@ -18,6 +18,14 @@
 # ⚠️ TOUTE ALERTE NON TRIÉE BLOQUE. La baseline sort en erreur dès qu'une alerte reste au niveau
 # WARN (son défaut). Le tri vit dans `.zap/rules.tsv`, une décision écrite par règle — pas de
 # `-I` qui transformerait le garde en rapport que personne ne lit.
+#
+# ⚠️ ET UN SCAN INTERROMPU N'EST PAS UNE ALERTE NON TRIÉE — DEUX ROUGES, DEUX DESTINATAIRES. Le
+# 27/08 (course 33102994676), `zap-baseline.py` s'est arrêté sur la surface `doc` sans rendre de
+# verdict : pas de ligne de synthèse, et deux rapports téléversés pour trois surfaces. L'étape a
+# pourtant annoncé « alerte non triée », envoyant son lecteur trier ce qui n'existait pas. Le
+# croisement qui sépare les deux — le code du scanner ET la preuve qu'il a conclu, son rapport —
+# vit désormais dans `tools/verdict-zap.mjs`, éprouvé par `tools/__tests__/verdictZap.test.js`.
+# Un `||` dans un bloc `run:` ne s'éprouve pas ; c'est pour ça que la décision en est sortie.
 name: ZAP
 
 on:
@@ -113,17 +121,27 @@ jobs:
       - name: Baseline scan — three surfaces, untriaged warnings block
         run: |
           mkdir -p /tmp/zap-wrk && cp .zap/rules.tsv /tmp/zap-wrk/ && chmod -R a+rwx /tmp/zap-wrk
-          echec=""
+          annonces=""
           for paire in "accueil=http://localhost:3000/" "doc=http://localhost:3000/doc/zap-doc" "present=http://localhost:3000/present/zap-direct"; do
             nom="${paire%%=*}" cible="${paire#*=}"
             echo "── scan : $cible"
             # `-r` : le rapport HTML complet, par surface, dans /zap/wrk — la sortie du job ne
             # montre que 5 URL d'exemple par règle ; le rapport montre tout, et c'est lui qu'on
-            # ouvre pour trier une alerte nouvelle sans rejouer le scan.
+            # ouvre pour trier une alerte nouvelle sans rejouer le scan. C'est AUSSI la preuve
+            # qu'un scan est allé au bout : sans lui, un code non nul ne dit rien de ce qu'il a vu.
+            code=0
             docker run --rm --network host -v /tmp/zap-wrk:/zap/wrk zap-epingle \
-              zap-baseline.py -t "$cible" -c rules.tsv -r "rapport-$nom.html" || echec="$echec $cible"
+              zap-baseline.py -t "$cible" -c rules.tsv -r "rapport-$nom.html" || code=$?
+            annonces="$annonces $nom=$cible=$code"
           done
-          [ -z "$echec" ] || { echo "::error::alerte non triée sur :$echec — le tri (une décision écrite par règle) vit dans .zap/rules.tsv, le détail dans l'artefact rapports-zap"; exit 1; }
+          # ⚠️ LE VERDICT N'EST PLUS DANS CE SHELL, ET C'EST LE CORRECTIF. Cette ligne portait un
+          # `|| echec="$echec $cible"` qui écrasait tous les codes non nuls en un seul fait, puis
+          # annonçait « alerte non triée » quelle qu'en fût la cause. Le 27/08, un scan interrompu
+          # sans avoir rien trié a donc envoyé son lecteur vers `.zap/rules.tsv`, où il n'y avait
+          # rien, et vers un rapport qui n'avait pas été écrit. La décision vit maintenant dans
+          # `tools/verdict-zap.mjs`, avec le banc qui la tient — un shell ne s'éprouve pas.
+          # shellcheck disable=SC2086 — la séparation en mots EST le passage des annonces.
+          node tools/verdict-zap.mjs /tmp/zap-wrk $annonces
 
       # ⚠️ `if: always()` — c'est quand le scan est ROUGE que le rapport sert : le lire est le
       # premier geste du tri, et il n'existerait pas si l'étape ne s'exécutait qu'au vert.
