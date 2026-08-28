@@ -638,6 +638,24 @@ without anyone touching it — so it needs a date, an address, or removal.
 | `AGENTS.md`: *Measured here on 26/08* | the counting was done on the **27th**; the date came from the subject, not the measurement |
 | `docs/HOST-CONTRACT.md`: *nothing in `server/` calls it today — that is measured* | present tense, undated, in the **published** page — written an hour before the date above was fixed, and left alone because the fix had been applied to the file that was pointed at rather than to the class |
 
+⚠️ **A *position* is one of these numbers too — and neither this repository nor the host who caught
+it had read that into the rule.** Every catch above is a count or a date, so the rule reads as being
+about counts, and a cross-reference by line number slips underneath it. Two did, **in this very
+file**, pointing into `docs/HOST-CONTRACT.md`; both were stale within hours of being written, and
+both survived the morning that produced the four catches above. The host who found them named the
+miss better than the catch:
+
+> je cherchais des COMPTES, pas des POSITIONS. La règle était juste, ma lecture de son périmètre
+> était trop étroite.
+
+They then found two of their own, one written the previous day against a release four versions back
+and already false. **A position is the most perishable present-tense number there is**: a count
+survives an edit that adds nothing to count, while a position survives no insertion above it, in a
+file nobody is editing. And it rots on the *reader's* side, silently — a stale pointer returns no
+error, it returns other content, plausible, and manufactures a finding of absence. The remedy in
+prose is to designate the **object**: quote the sentence, name the table row, give the section
+title. `tools/renvois-par-position.mjs` now refuses positions in the documents people navigate by.
+
 **A floor and an approximation are not precautions.** `1100+` and `~1 800` announce *imprecision*,
 never *perishability*: they protect against being false and leave the rotting untouched, which is
 worse, because a false number eventually hits someone and a surviving floor misinforms quietly and

@@ -598,6 +598,21 @@ $$;
 -- la seconde couche l'écrit chez lui (`revoke select … from anon, authenticated`) ; ce dépôt ne la
 -- pose pas à sa place, ces rôles étant ceux de son installation et non de Postgres.
 --
+-- ⚠️ ET CE CONSEIL ÉTAIT INCOMPLET — SA PRÉCONDITION MANQUAIT, ET SANS ELLE IL CASSE. Un `revoke`
+-- global n'est sûr QUE là où aucune politique n'accorde. Là où une politique permissive nomme
+-- `anon`, la RLS dit oui et le droit dit non : la surface publique tombe, sans erreur de
+-- configuration nulle part. Sur les tables de CE fichier la condition est remplie — zéro politique,
+-- rien d'ouvert à refermer — mais un hôte qui généralise le geste à SA base applicative peut y
+-- perdre une carte publique. Un hôte l'a mesuré le 28/08 : il a posé le `revoke` sur les dix tables
+-- du player, et ne l'a PAS posé sur ses 221 tables applicatives, dont trois portent une politique
+-- nommant `anon`. La condition se vérifie en une requête :
+--
+--     select schemaname, tablename, policyname, roles
+--       from pg_policies
+--      where schemaname = 'public' and roles::text like '%anon%';
+--
+-- Rien en retour : le `revoke` est sûr. Une ligne : il ne l'est pas, et cette ligne dit où.
+--
 -- ⚠️ ET CETTE POSTURE EST DÉSORMAIS MESURÉE, PAS SEULEMENT ÉCRITE. Elle l'était ici dix fois et
 -- confrontée zéro fois — aucun banc, aucune étape ne demandait à la base si elle en avait tenu
 -- compte. Le job `schema` relève maintenant ce que ces fichiers DÉCLARENT et le confronte à ce que

@@ -14,6 +14,38 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- ⚠️ **La règle « un nombre au présent rouille » se lisait plus étroite qu'elle n'est — elle ne
+  nommait que des comptes et des dates.** Ses quatre cas travaillés sont des décomptes de tests et
+  des dates de mesure ; aucun n'est une POSITION. C'est pourquoi deux renvois par numéro de ligne
+  ont survécu, dans le fichier même qui porte la règle, à la matinée qui a produit ces quatre cas.
+  Un hôte a fait le même constat chez lui le 28/08 et l'a mieux formulé que nous : *« je cherchais
+  des COMPTES, pas des POSITIONS. La règle était juste, ma lecture de son périmètre était trop
+  étroite. »* Il en a trouvé deux, dont un écrit la veille contre une version d'il y a quatre
+  publications, déjà faux. La règle nomme désormais la position comme cas, avec ce qui la rend le
+  plus périssable des nombres au présent : **un compte survit à une édition qui n'ajoute rien à
+  compter ; une position ne survit à aucune insertion au-dessus d'elle, dans un fichier qu'on
+  n'édite même pas.** **Rien à faire côté hôte.**
+
+
+- ⚠️ **Le conseil du `revoke` que ce dépôt donne aux hôtes était incomplet — sa précondition
+  manquait, et sans elle il casse.** Les en-têtes de `0021` et d'`init.sql` invitaient un hôte à
+  poser `revoke select … from anon, authenticated` comme seconde couche sous la RLS. Vrai sur les
+  tables du player — zéro politique, rien d'ouvert à refermer. **Faux dès qu'une politique permissive
+  nomme `anon`** : la RLS dit oui, le droit dit non, et la surface publique tombe sans qu'aucune
+  configuration paraisse fautive. Un hôte l'a mesuré le 28/08 en généralisant le geste : posé sur les
+  dix tables du player, **pas** posé sur ses 221 tables applicatives, dont trois portent une telle
+  politique. Sa formulation est reprise — *« un `revoke` global n'est sûr que là où aucune politique
+  n'accorde »* — avec la requête d'une ligne qui vérifie la condition.
+- **Le contrat dit désormais que `&schema=1` rend les verdicts paresseux inobservables.** Cette
+  requête sonde toutes les attentes AVANT de répondre, puis retient pour la vie du processus : son
+  verdict vaut `complet`, ou `indetermine` si le témoin ne répond pas — jamais `non-sonde`. Un hôte
+  qui interroge la carte ainsi ne peut donc pas rencontrer la dégradation contre laquelle la page le
+  met en garde. **Les lecteurs qui ont besoin de l'avertissement et ceux qui le rencontrent sont
+  disjoints**, et la page le dit maintenant plutôt que de laisser chacun vérifier un avertissement
+  qui ne parle pas de son instance. Relevé par un hôte qui lisait `complet` depuis une semaine et
+  l'attribuait à la chance. **Rien à faire côté hôte.**
+
+
 - ⚠️ **`AGENTS.md` renvoyait deux fois à `docs/HOST-CONTRACT.md` par numéro de ligne, et les deux
   renvois étaient faux.** Pas « devenus faux un jour » : faux dès le commit suivant qui a touché la
   page visée, quelques heures après avoir été écrits. Le premier menait à un séparateur de tableau,
