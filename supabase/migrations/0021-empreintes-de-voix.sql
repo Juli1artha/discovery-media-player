@@ -41,6 +41,19 @@ create index if not exists doc_tts_objects_created_idx
 -- politique n'est pas « ouverte par défaut » : sous RLS, l'absence de politique REFUSE tout. C'est
 -- la même posture que `player_rate_limits`, et elle est délibérée : cette table n'a aucune raison
 -- d'être lue par un visiteur, ni par l'équipe.
+--
+-- ⚠️ ET « PERSONNE » EST VRAI EN EFFET, PAS EN DROIT — LA NUANCE EST TOUT CE QUI VOUS PROTÈGE.
+-- Un hôte l'a relevé le 27/08 en appliquant cette migration : sur une installation de type
+-- Supabase, `anon` possède le droit SELECT sur cette table, hérité des privilèges par défaut du
+-- schéma `public`. Ce n'est donc PAS l'absence de `grant` qui ferme la table — c'est UNIQUEMENT la
+-- RLS, et il n'y a rien en dessous. Le jour où quelqu'un ajoute une politique permissive « pour
+-- débloquer un cas », il ne retire pas une protection sur deux : il retire la seule. Si vous
+-- voulez la seconde couche, elle s'écrit chez vous (`revoke select on public.doc_tts_objects from
+-- anon, authenticated;`) — ce dépôt ne la pose pas à votre place, parce que ces rôles sont ceux de
+-- votre installation, pas de Postgres.
+--
+-- Ce que la forge vérifie désormais à chaque course, contre une vraie base : que la RLS déclarée
+-- ici est bien RETENUE par le moteur, et qu'AUCUNE politique n'ouvre cette table.
 alter table public.doc_tts_objects enable row level security;
 
 comment on table public.doc_tts_objects is

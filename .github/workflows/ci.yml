@@ -1018,6 +1018,63 @@ jobs:
           $PSQL -f /tmp/forme.sql > /tmp/rejoue.txt
           diff -u /tmp/avant.txt /tmp/rejoue.txt || { echo "::error::rejouer init.sql modifie la base"; exit 1; }
 
+      # ⚠️ DIX TABLES DÉCLARAIENT LA RLS, ET RIEN NE LE VÉRIFIAIT. Un hôte a appliqué la 0021 le
+      # 27/08 et a rapporté le geste qui manque ici : « ma première vérification lisait la table en
+      # anon : 0 ligne. C'est le résultat attendu — et il était compatible avec deux explications,
+      # "la RLS refuse" et "la table est vide", qui rendent exactement le même nombre sur une table
+      # neuve. » Il a refait la mesure en posant une ligne d'abord. De notre côté, la propriété
+      # n'était mesurée d'AUCUNE façon : `enable row level security` était écrit dix fois dans
+      # `supabase/`, et zéro banc, zéro étape ne demandait à la base si elle en avait tenu compte.
+      # Une posture de sécurité affirmée en commentaire et jamais confrontée est une affirmation,
+      # pas une propriété.
+      #
+      # ⚠️ LA LISTE VIENT DES SOURCES, PAS D'ICI. Une liste écrite dans cette étape serait un second
+      # exemplaire d'un fait — elle se périmerait au premier `create table` et l'étape resterait
+      # verte sur une table neuve non protégée. On relève donc ce que `supabase/` DÉCLARE, et on le
+      # confronte à ce que la base a RETENU.
+      - name: Tables that claim row-level security actually have it, and nothing opens them
+        run: |
+          grep -rhoE 'alter table (public\.)?[a-z_]+[[:space:]]+enable row level security' \
+            supabase/init.sql supabase/migrations/*.sql \
+            | sed -E 's/alter table (public\.)?//; s/[[:space:]]+enable row level security//' \
+            | sort -u > /tmp/rls-declarees.txt
+          test -s /tmp/rls-declarees.txt || { echo "::error::aucune table ne déclare la RLS dans supabase/ — la sonde vise à côté"; exit 1; }
+          echo "déclarées dans les sources : $(wc -l < /tmp/rls-declarees.txt) table(s)"
+
+          $PSQL -c "select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                    where n.nspname = 'public' and c.relkind = 'r' and c.relrowsecurity
+                    order by 1;" > /tmp/rls-actives.txt
+          manque=0
+          while read -r t; do
+            grep -qxF "$t" /tmp/rls-actives.txt \
+              || { echo "::error::$t déclare « enable row level security » et la base ne l'a pas retenue — la posture est écrite, pas tenue"; manque=1; }
+          done < /tmp/rls-declarees.txt
+
+          # ⚠️ LE CONTRÔLE POSITIF, ET C'EST LUI QUI FAIT LA VALEUR DE L'ÉTAPE. « Aucune politique »
+          # est un constat d'ABSENCE : il est maximalement confondable avec une sonde qui vise à
+          # côté — un nom de vue erroné, un schéma mal filtré, et le zéro arrive tout seul. On pose
+          # donc une politique dont on sait qu'elle existe, on vérifie que la sonde la VOIT, et on
+          # l'enlève. Sans ce détour, le zéro qui suit ne prouverait rien.
+          $PSQL -c "create table public.__rls_temoin (id int);
+                    alter table public.__rls_temoin enable row level security;
+                    create policy __temoin on public.__rls_temoin for select using (true);"
+          vues=$($PSQL -c "select count(*) from pg_policies where schemaname = 'public' and tablename = '__rls_temoin';")
+          $PSQL -c "drop table public.__rls_temoin;"
+          [ "$vues" = "1" ] || { echo "::error::la sonde n'a pas vu une politique qu'on venait de poser — elle vise à côté, et son « zéro » ne prouve rien"; exit 1; }
+
+          # ⚠️ AUCUNE POLITIQUE, ET C'EST LA POSTURE ÉCRITE PARTOUT DANS `supabase/` : sous RLS,
+          # l'absence de politique REFUSE tout, et seul un rôle en `bypassrls` (`service_role`)
+          # passe. Une politique ajoutée « pour débloquer un cas » retirerait cette protection sans
+          # qu'aucune autre ne soit dessous — c'est précisément ce que l'hôte a signalé.
+          ouvertes=$($PSQL -c "select tablename || ' ← ' || policyname from pg_policies where schemaname = 'public' order by 1;")
+          if [ -n "$ouvertes" ]; then
+            echo "::error::une politique ouvre une table que supabase/ dit fermée : $ouvertes"
+            manque=1
+          fi
+
+          [ "$manque" = "0" ] || exit 1
+          echo "$(wc -l < /tmp/rls-declarees.txt) table(s) déclarent la RLS, la base les confirme, aucune politique ne les ouvre"
+
       # ─────────────────────────────────────────────────────────────────────────────────────────
       # ⚠️ LE DOUBLE POSTGREST EN MÉMOIRE DIT LUI-MÊME CE QU'IL NE SAIT PAS FAIRE : « pas de
       # contraintes, pas de transactions… PAS un substitut pour vérifier ce qui relève du SGBD ».

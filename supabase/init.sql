@@ -359,7 +359,8 @@ create index if not exists doc_tts_objects_created_idx
   on public.doc_tts_objects (created_at);
 -- RLS activée SANS politique : sous RLS, l'absence de politique refuse tout — seul le rôle de
 -- service passe. Même posture que `player_rate_limits`, et pour la même raison : ni un visiteur ni
--- l'équipe n'ont de raison de lire cette table.
+-- l'équipe n'ont de raison de lire cette table. ⚠️ « Seul le rôle de service » est vrai en effet,
+-- pas en droit : voir le bloc « Accès » plus bas, et l'en-tête de la migration 0021.
 alter table public.doc_tts_objects enable row level security;
 comment on table public.doc_tts_objects is
   'Trace des objets écrits dans le bucket public tts-cache : une empreinte, une date, jamais le '
@@ -588,6 +589,19 @@ $$;
 -- RLS activé SANS politique permissive : seul `service_role` (donc la route du player) passe.
 -- ⚠️ N'ajoutez pas de politique de lecture publique « pour que le direct fonctionne ». C'est
 -- précisément l'état dont l'hôte historique a dû sortir : le suivi passe par broadcast.
+--
+-- ⚠️ ET « SEUL `service_role` PASSE » EST VRAI EN EFFET, PAS EN DROIT. Un hôte l'a relevé le 27/08 :
+-- sur une installation de type Supabase, `anon` possède le droit SELECT sur ces tables, hérité des
+-- privilèges par défaut du schéma `public`. Ce n'est donc pas l'absence de `grant` qui les ferme,
+-- c'est UNIQUEMENT la RLS — et il n'y a rien en dessous. Une politique permissive ajoutée « pour
+-- débloquer un cas » ne retire pas une protection sur deux : elle retire la seule. Un hôte qui veut
+-- la seconde couche l'écrit chez lui (`revoke select … from anon, authenticated`) ; ce dépôt ne la
+-- pose pas à sa place, ces rôles étant ceux de son installation et non de Postgres.
+--
+-- ⚠️ ET CETTE POSTURE EST DÉSORMAIS MESURÉE, PAS SEULEMENT ÉCRITE. Elle l'était ici dix fois et
+-- confrontée zéro fois — aucun banc, aucune étape ne demandait à la base si elle en avait tenu
+-- compte. Le job `schema` relève maintenant ce que ces fichiers DÉCLARENT et le confronte à ce que
+-- le moteur a RETENU, politiques comprises.
 alter table public.commercial_doc_shares             enable row level security;
 alter table public.commercial_doc_views              enable row level security;
 alter table public.commercial_doc_sessions           enable row level security;
