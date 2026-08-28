@@ -15,10 +15,23 @@
 // plausible, et fabrique un constat de manque.
 
 import { describe, it, expect } from "vitest";
-import { execFileSync } from "node:child_process";
 
 import { estUnGuide, renvois, verifier } from "../renvois-par-position.mjs";
 import { CONFORME, VIOLATION, INCONCLUSIF } from "../resultat-garde.mjs";
+
+// ⚠️ LE TEXTE HISTORIQUE LUI-MÊME, PAS LE MOYEN D'ALLER LE CHERCHER. La première écriture de ce banc
+// lisait l'ancien fichier avec `git show 3ebb504:AGENTS.md`. Vert ici, ROUGE en forge :
+// `fatal: invalid object name '3ebb504'` — le `checkout` de la CI est SUPERFICIEL, l'historique n'y
+// est pas. Un contrôle positif qui ne tient que sur le poste de son auteur ne contrôle rien là où
+// ça compte, et ce dépôt refuse un banc qui s'esquive dans la forge.
+//
+// Les deux lignes ci-dessous sont donc recopiées AU CARACTÈRE PRÈS depuis `AGENTS.md` tel qu'il
+// était au commit 3ebb504 (lignes 521 et 578), avant la correction. Elles ne sont pas un exemple
+// inventé : ce sont les deux défauts réels, et c'est ce qui rend ce banc probant.
+const AVANT_CORRECTION = [
+  "what the reader *knows about the domain*. Meanwhile line 243 of `docs/HOST-CONTRACT.md` was a",
+  'values, the code returns five"* — while line 268 explains the fifth at length. Fifth occurrence in',
+].join("\n");
 
 describe("reconnaître un renvoi par position", () => {
   it("un renvoi qui nomme le fichier", () => {
@@ -71,13 +84,29 @@ describe("la garde sur le dépôt", () => {
     expect(r.resume).toMatch(/document\(s\) de navigation relus/);
   });
 
-  // ⚠️ LE CONTRÔLE POSITIF SUR DONNÉE RÉELLE, PAS SUR FIXTURE. On rejoue la sonde sur l'`AGENTS.md`
-  // d'avant la correction : elle DOIT y voir les deux renvois. Sans ce banc, « zéro renvoi » sur le
-  // dépôt d'aujourd'hui serait indiscernable d'une sonde qui ne sait rien voir.
-  it("⚠️ sur l'AGENTS.md d'avant correction, elle voit les DEUX renvois périmés", () => {
-    const avant = execFileSync("git", ["show", "3ebb504:AGENTS.md"], { encoding: "utf8", maxBuffer: 1 << 24 });
-    const vus = renvois(avant);
+  // ⚠️ LE CONTRÔLE POSITIF SUR LE TEXTE RÉEL. Sans lui, « zéro renvoi » sur le dépôt d'aujourd'hui
+  // serait indiscernable d'une sonde qui ne sait rien voir. Les deux lignes sont celles d'avant la
+  // correction, recopiées au caractère près — voir l'en-tête de ce fichier pour ce qui a rendu la
+  // première écriture rouge en forge et verte ici.
+  it("⚠️ sur le texte d'avant correction, elle voit les DEUX renvois périmés", () => {
+    const vus = renvois(AVANT_CORRECTION);
     expect(vus.map((v) => v.extrait), "les deux défauts réels du 28/08").toEqual(["line 243", "line 268"]);
+  });
+
+  // ⚠️ ET LE BANC NE DÉPEND DE RIEN D'AUTRE QUE DU DÉPÔT SUR DISQUE. C'est la propriété qui manquait
+  // à sa première écriture : elle exigeait l'historique git, absent d'un `checkout` superficiel.
+  // ⚠️ LES NOMS INTERDITS SONT CONSTRUITS, PAS ÉCRITS — sinon ce banc s'accuse lui-même, et c'est
+  // arrivé à sa première écriture : le motif contenait le mot qu'il cherchait, donc il échouait
+  // toujours. Même remède que `idiomeUneSeuleOrthographe` : le fichier n'en contient aucun en clair.
+  it("⚠️ aucune dépendance à l'historique git : le banc tient dans un clone superficiel", async () => {
+    const interdits = [["child", "_process"], ["exec", "FileSync"], ["exec", "Sync"]].map((p) => p.join(""));
+    const source = await import("node:fs").then((fs) =>
+      fs.readFileSync(new URL("./renvoisParPosition.test.js", import.meta.url), "utf8"));
+    const code = source.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+    for (const nom of interdits) {
+      expect(code.includes(nom), `un banc qui appelle « ${nom} » s'esquive là où la forge est superficielle`)
+        .toBe(false);
+    }
   });
 
   it("un document de navigation fautif la fait rougir, en nommant l'extrait", () => {
