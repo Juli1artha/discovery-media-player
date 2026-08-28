@@ -14,6 +14,19 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- ⚠️ **La règle « un nombre au présent rouille » se lisait plus étroite qu'elle n'est — elle ne
+  nommait que des comptes et des dates.** Ses quatre cas travaillés sont des décomptes de tests et
+  des dates de mesure ; aucun n'est une POSITION. C'est pourquoi deux renvois par numéro de ligne
+  ont survécu, dans le fichier même qui porte la règle, à la matinée qui a produit ces quatre cas.
+  Un hôte a fait le même constat chez lui le 28/08 et l'a mieux formulé que nous : *« je cherchais
+  des COMPTES, pas des POSITIONS. La règle était juste, ma lecture de son périmètre était trop
+  étroite. »* Il en a trouvé deux, dont un écrit la veille contre une version d'il y a quatre
+  publications, déjà faux. La règle nomme désormais la position comme cas, avec ce qui la rend le
+  plus périssable des nombres au présent : **un compte survit à une édition qui n'ajoute rien à
+  compter ; une position ne survit à aucune insertion au-dessus d'elle, dans un fichier qu'on
+  n'édite même pas.** **Rien à faire côté hôte.**
+
+
 - ⚠️ **Le conseil du `revoke` que ce dépôt donne aux hôtes était incomplet — sa précondition
   manquait, et sans elle il casse.** Les en-têtes de `0021` et d'`init.sql` invitaient un hôte à
   poser `revoke select … from anon, authenticated` comme seconde couche sous la RLS. Vrai sur les
