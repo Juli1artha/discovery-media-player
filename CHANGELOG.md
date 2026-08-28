@@ -12,6 +12,46 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Security
+
+- ⚠️ **Dix tables déclaraient la RLS, et rien ne demandait jamais à la base si elle en avait tenu
+  compte.** `enable row level security` est écrit dix fois dans `supabase/` — et zéro banc, zéro
+  étape ne le confrontait au moteur. Une posture de sécurité affirmée en commentaire et jamais
+  vérifiée est une affirmation, pas une propriété ; elle serait tombée sans bruit le jour où une
+  migration aurait créé une table en oubliant la ligne. Le job `schema` relève désormais ce que les
+  sources **déclarent** et le confronte à ce que la base a **retenu** (`pg_class.relrowsecurity`),
+  puis vérifie qu'**aucune politique** n'ouvre ces tables.
+  ⚠️ **Avec son contrôle positif, et c'est lui qui fait la valeur de l'étape.** « Aucune politique »
+  est un constat d'absence, donc indiscernable d'une sonde qui vise à côté : l'étape pose une
+  politique témoin, vérifie que la sonde la **voit**, puis l'enlève. Sans ce détour, le zéro qui
+  suit ne prouverait rien. Mesuré contre un vrai Postgres : quatre mutations, quatre rouges — RLS
+  désactivée en base, politique permissive ajoutée, contrôle positif débranché, relevé des sources
+  vide. **Rien à faire côté hôte** : la propriété tient déjà, personne ne la mesurait.
+- ⚠️ **Un `grep` sans `-a` saute un fichier contenant un octet de contrôle sans dire un mot.** Un
+  hôte a relu le 27/08 les occurrences restantes d'une forme corrigée dans `server/` et a conclu
+  « quatre sites, zéro manqué ». Il y en avait **cinq** : la cinquième vit dans un banc qui contient
+  un octet NUL — délibérément, puisqu'il éprouve les caractères de contrôle. GNU grep classe alors
+  le fichier comme binaire et n'imprime aucune ligne.
+  ⚠️ **Ce n'est pas un faux négatif ordinaire, c'est un saut muet** : la sonde ne dit pas « je n'ai
+  pas pu lire ce fichier », elle rend un nombre plus petit, d'apparence normale, sur lequel on
+  conclut. Aucune de nos étapes n'était aveugle — leurs globs ne descendaient pas dans `__tests__/`
+  — mais la propriété tenait par la forme d'un glob, pas par une décision. `tools/greps-sans-angle-mort.mjs`
+  garde désormais la classe : tout `grep` d'un workflow qui lit du source porte `-a`.
+  ⚠️ **Et cette garde était VERTE sur ses trois propres violations à sa première exécution** : elle
+  cherchait le jeton `grep` alors que le jeton réel est `sans_commentaires=$(grep`. Verte, et
+  fausse — la question 2 de `AGENTS.md` retournée contre la garde qui venait l'écrire. Le banc porte
+  ce cas nommément. Six mutations, six rouges, dont une qui a d'abord survécu : le banc du « motif
+  cité » passait pour la mauvaise raison, et il a fallu un motif contenant une espace pour le rendre
+  probant. **Rien à faire côté hôte.**
+- ⚠️ **« Personne, sauf le rôle de service » était vrai en effet, pas en droit — et la nuance est
+  toute la protection.** Un hôte l'a relevé le 27/08 en appliquant la 0021 : sur une installation
+  de type Supabase, `anon` possède le droit SELECT sur ces tables, hérité des privilèges par défaut
+  du schéma `public`. Ce n'est donc pas l'absence de `grant` qui les ferme, c'est **uniquement** la
+  RLS, et il n'y a rien en dessous. Une politique permissive ajoutée « pour débloquer un cas » ne
+  retire pas une protection sur deux : elle retire la seule. Les en-têtes de `0021` et de `init.sql`
+  le disent maintenant, et nomment le `revoke` que l'hôte peut poser chez lui — ce dépôt ne le pose
+  pas à sa place, ces rôles étant ceux de son installation et non de Postgres.
+
 ### Fixed
 
 - ⚠️ **Le scan ZAP annonçait « alerte non triée » quand il ne s'était pas terminé du tout, et

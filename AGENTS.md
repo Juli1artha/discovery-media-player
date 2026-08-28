@@ -411,6 +411,25 @@ why an absence-of-evidence green is the single kind of result whose author has n
 count that drops can be argued with, a "found nothing" cannot. Prefer, here as in the rule above,
 saying **where a property is held** over saying that nothing contradicted it.
 
+⚠️ **One more, after those six — and the host who caught it named the class better than this file
+did.**
+Applying migration 0021 on 27/08, they verified the table's RLS by reading it as `anon` and getting
+0 rows — the expected result. Then they stopped: *"il était compatible avec deux explications, « la
+RLS refuse » et « la table est vide », qui rendent exactement le même nombre sur une table neuve."*
+They redid it with a row in place: `service_role` sees 1, `anon` sees 0. **The zero becomes a
+measurement instead of a coincidence.** Their formulation, which is question 2 sharpened to a point:
+
+> **un détecteur d'absence est maximalement confondable avec sa propre panne** — et une table vide
+> est le meilleur imitateur d'une RLS qui marche
+
+The practical form is the **positive control**: before believing a zero, make the thing appear once
+and check the probe sees it. Our own version of the same failure was worse than theirs and is now
+fixed — `enable row level security` was written ten times across `supabase/`, and **no bench and no
+step ever asked the database whether it had taken any notice**. A security posture asserted in a
+comment and never confronted is an assertion, not a property. The `schema` job now collects what
+the sources *declare* and confronts it with what the engine *retained*, policies included — with
+the positive control inside it, because "no policy" is itself an absence.
+
 ## Ask who reads an output, and when — no probe answers this one
 
 **A third question, and it is the one no tool can hold.** *Was the threshold written in advance?*
