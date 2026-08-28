@@ -14,6 +14,27 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- ⚠️ **`AGENTS.md` renvoyait deux fois à `docs/HOST-CONTRACT.md` par numéro de ligne, et les deux
+  renvois étaient faux.** Pas « devenus faux un jour » : faux dès le commit suivant qui a touché la
+  page visée, quelques heures après avoir été écrits. Le premier menait à un séparateur de tableau,
+  le second à un tout autre sujet — l'explication qu'il annonçait avait glissé d'une trentaine de
+  positions. Le fichier qui porte la section *« A number in the present tense rots »* le violait
+  deux cents lignes plus haut : un numéro de ligne EST un nombre au présent, et le plus fragile qui
+  soit — il ne survit à aucune insertion au-dessus de lui, dans un fichier qu'on n'édite même pas.
+  ⚠️ **Et il rouille du côté du lecteur, en silence.** Relevé par un hôte qui vérifiait nos renvois,
+  et qui en a nommé le coût : un lecteur qui suit un renvoi périmé lit un autre contenu, plausible,
+  ne trouve pas ce qu'il cherche, et **peut conclure à une absence**. C'est le champ que personne ne
+  relit parce qu'il est presque toujours juste. Les deux renvois désignent désormais leur objet — la
+  ligne du tableau, la phrase d'ouverture du paragraphe — et `tools/renvois-par-position.mjs` tient
+  la classe sur les documents de navigation (`AGENTS.md`, `README.md`, `docs/`). Le CHANGELOG en est
+  exclu comme classe et non comme exception : ses sections sont datées et figées, et personne n'y
+  cherche son chemin.
+  ⚠️ **La première écriture de la garde ne voyait qu'un des deux défauts** — elle exigeait qu'un nom
+  de fichier suive le numéro, et le renvoi nu est pourtant le pire : le lecteur ne sait même pas
+  quelle page ouvrir. Mesuré en rejouant la sonde sur la version d'avant correction : 1 sur 2, puis
+  2 sur 2. Cinq mutations, cinq rouges. **Rien à faire côté hôte.**
+
+
 - ⚠️ **Le contrat d'hôte demandait implicitement de signaler les écarts — une consigne que personne
   ne peut appliquer.** Une sixième règle la remplace : **décrire ce qu'on fait, y compris ce qu'on
   croit trivial.** Un hôte ne peut pas savoir ce qui est un écart sans connaître cette page mieux

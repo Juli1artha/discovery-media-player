@@ -552,8 +552,8 @@ read when someone has time, which is to say after.
 The second has a threshold, and the host found it by hitting it: a grep of theirs returned
 twenty-eight supposedly missing context fields including `method`, `query`, `to` and `subject` —
 fields of a request and of a message, not of a context. They saw it instantly, because it attacks
-what the reader *knows about the domain*. Meanwhile line 243 of `docs/HOST-CONTRACT.md` was a
-table row swallowed into an unrelated paragraph **from 18/08 to 27/08** — nine days, from 0.1.64
+what the reader *knows about the domain*. Meanwhile the `indetermine` row of the verdict table in
+`docs/HOST-CONTRACT.md` was swallowed into an unrelated paragraph **from 18/08 to 27/08** — nine days, from 0.1.64
 to 0.1.140, past every reader of that page including its own author — because a stray pipe attacks
 only the **typography**, and a reader forgives a typo without thinking. **An inconsistency is seen
 without looking only when it bears on the meaning, never on the form.**
@@ -609,7 +609,8 @@ carrying its incident is the only kind that arrives.
 ⚠️ **And the moment you are least likely to apply a rule is while you are applying it to someone
 else.** Correcting that host on an unverified absence, in the same message, with the file open, this
 repository asserted a consequence it had not measured — *"a host reading the table finds four
-values, the code returns five"* — while line 268 explains the fifth at length. Fifth occurrence in
+values, the code returns five"* — while the paragraph opening *"`indetermine` is not a failure of
+the card"* explains the fifth at length. Fifth occurrence in
 one week of a rule broken by the hand writing it. Not a coincidence: **the rule you have just
 formulated is the one you are most certain you already hold**, so it is the only one you do not
 re-apply to yourself.

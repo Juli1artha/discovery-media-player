@@ -220,6 +220,13 @@ jobs:
         if: matrix.node == '22'
         run: node tools/greps-sans-angle-mort.mjs
 
+      # ⚠️ Un numéro de ligne est un nombre AU PRÉSENT, et le plus fragile qui soit : il ne survit à
+      # aucune insertion au-dessus de lui. `AGENTS.md` en portait deux vers `docs/HOST-CONTRACT.md`,
+      # faux dès le commit suivant — dans le fichier même qui enseigne la règle. Relevé par un hôte.
+      - name: No navigation document points by line number
+        if: matrix.node == '22'
+        run: node tools/renvois-par-position.mjs
+
       # ⚠️ UN `.d.ts` PARFAIT DANS LE CLONE PEUT ÊTRE ABSENT DU PAQUET PUBLIÉ — il suffit que
       # `files` ne l'embarque pas, et c'est exactement ce qui était arrivé au contrat et à la
       # rétention. On compile donc un consommateur RÉEL contre le TARBALL, en mode strict et
