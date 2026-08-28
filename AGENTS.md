@@ -81,6 +81,18 @@ alone.
 - **Do not bump the version or add a CHANGELOG section.** Releasing is a separate, deliberate
   act (`chore(release)` + tag) with its own gated workflow and its own document —
   [`docs/RELEASING.md`](docs/RELEASING.md). A code or docs PR ships without touching either.
+- **A correction that removes a form names, in its note, the occurrences that *remain* — and their
+  nature.** Not the ones it removed: those are gone, and nobody can confront a number against an
+  absence. ⚠️ The measured cost of the old habit, on 27/08: the 0.1.142 note said the pattern was
+  *"écrit dix fois à l'identique dans trois fichiers"*, an integrating host's probe found **four**
+  remaining, and the two numbers can never meet — one counts what left, the other what stays. A
+  remaining count is the only one a host can re-derive on the published tarball, which turns a
+  silent absence into a **mismatch between two sources** — the one signal that costs no vigilance.
+  Name the traps with it: an occurrence in a file carrying a control byte is invisible to a plain
+  `grep`, and saying so is the whole difference between finding four of five and *knowing* you
+  found four of five. ⚠️ This is in the list people enforce, not the guards': no check can know
+  that a release note *should* have carried a count. So a missing count is not a wrong count — its
+  absence must never be read as "nothing to report", here or by a host.
 
 ## When you edit a file with a script
 
