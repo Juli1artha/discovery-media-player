@@ -213,6 +213,13 @@ jobs:
         if: matrix.node == '22'
         run: node tools/shell-des-workflows.mjs
 
+      # ⚠️ Un `grep` sans `-a` saute un fichier contenant un octet de contrôle SANS un mot : il rend
+      # un nombre plus petit, d'apparence normale, sur lequel on conclut. Relevé par un hôte le
+      # 27/08 sur notre propre dépôt — quatre occurrences vues, cinq existantes.
+      - name: No grep over source has a silent blind spot
+        if: matrix.node == '22'
+        run: node tools/greps-sans-angle-mort.mjs
+
       # ⚠️ UN `.d.ts` PARFAIT DANS LE CLONE PEUT ÊTRE ABSENT DU PAQUET PUBLIÉ — il suffit que
       # `files` ne l'embarque pas, et c'est exactement ce qui était arrivé au contrat et à la
       # rétention. On compile donc un consommateur RÉEL contre le TARBALL, en mode strict et
@@ -474,7 +481,7 @@ jobs:
           #
           # Une sonde qui lit du commentaire invente des coupables. Même correction que celle faite
           # le même jour sur la sonde des colonnes de schéma, pour la même raison.
-          sans_commentaires=$(grep -vE '^[[:space:]]*//' server/*.js --with-filename --line-number || true)
+          sans_commentaires=$(grep -avE '^[[:space:]]*//' server/*.js --with-filename --line-number || true)
           exotique=$(printf '%s\n' "$sans_commentaires" | grep -E 'select=[^&`"]*\(|[?&]or=\(|[?&]and=\(|offset=' || true)
           [ -z "$exotique" ] || { echo "::error::PostgREST-specific syntax raises the porting cost:"; echo "$exotique"; exit 1; }
           # ⚠️ ON COMPARE, ON N'AFFICHE PAS. Cette étape se contentait d'imprimer le compte en
@@ -512,9 +519,9 @@ jobs:
       - name: Schema expectations go through the declared inventory
         if: matrix.node == '22'
         run: |
-          hors=$(grep -rn 'aLaColonne(' server/*.js | grep -v '^server/schema.js:' || true)
+          hors=$(grep -arn 'aLaColonne(' server/*.js | grep -v '^server/schema.js:' || true)
           [ -z "$hors" ] || { echo "::error::sonde de schéma hors inventaire — utilisez attendue(nom) :"; echo "$hors"; exit 1; }
-          n=$(grep -c 'migration: "supabase/migrations/' server/schema.js)
+          n=$(grep -ac 'migration: "supabase/migrations/' server/schema.js)
           echo "attentes de schéma déclarées : $n"
 
       - name: Third-party scripts are pinned and fingerprinted

@@ -27,6 +27,22 @@ the notes there are this file's section for that version.
   suit ne prouverait rien. Mesuré contre un vrai Postgres : quatre mutations, quatre rouges — RLS
   désactivée en base, politique permissive ajoutée, contrôle positif débranché, relevé des sources
   vide. **Rien à faire côté hôte** : la propriété tient déjà, personne ne la mesurait.
+- ⚠️ **Un `grep` sans `-a` saute un fichier contenant un octet de contrôle sans dire un mot.** Un
+  hôte a relu le 27/08 les occurrences restantes d'une forme corrigée dans `server/` et a conclu
+  « quatre sites, zéro manqué ». Il y en avait **cinq** : la cinquième vit dans un banc qui contient
+  un octet NUL — délibérément, puisqu'il éprouve les caractères de contrôle. GNU grep classe alors
+  le fichier comme binaire et n'imprime aucune ligne.
+  ⚠️ **Ce n'est pas un faux négatif ordinaire, c'est un saut muet** : la sonde ne dit pas « je n'ai
+  pas pu lire ce fichier », elle rend un nombre plus petit, d'apparence normale, sur lequel on
+  conclut. Aucune de nos étapes n'était aveugle — leurs globs ne descendaient pas dans `__tests__/`
+  — mais la propriété tenait par la forme d'un glob, pas par une décision. `tools/greps-sans-angle-mort.mjs`
+  garde désormais la classe : tout `grep` d'un workflow qui lit du source porte `-a`.
+  ⚠️ **Et cette garde était VERTE sur ses trois propres violations à sa première exécution** : elle
+  cherchait le jeton `grep` alors que le jeton réel est `sans_commentaires=$(grep`. Verte, et
+  fausse — la question 2 de `AGENTS.md` retournée contre la garde qui venait l'écrire. Le banc porte
+  ce cas nommément. Six mutations, six rouges, dont une qui a d'abord survécu : le banc du « motif
+  cité » passait pour la mauvaise raison, et il a fallu un motif contenant une espace pour le rendre
+  probant. **Rien à faire côté hôte.**
 - ⚠️ **« Personne, sauf le rôle de service » était vrai en effet, pas en droit — et la nuance est
   toute la protection.** Un hôte l'a relevé le 27/08 en appliquant la 0021 : sur une installation
   de type Supabase, `anon` possède le droit SELECT sur ces tables, hérité des privilèges par défaut
