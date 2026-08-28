@@ -9,7 +9,7 @@ What a host application may call, what it must implement, and what will not chan
 version bump. If you are integrating the player, this page and [`API.md`](https://github.com/Juli1artha/discovery-media-player/blob/main/docs/API.md) are the two you
 need.
 
-## Five rules
+## Six rules
 
 1. **One source of truth.** Fix the player in the player's repository, never in a host — not even
    in a host that once contained it. A fix written host-side is a copy, and copies drift.
@@ -23,6 +23,15 @@ need.
    the context and often the fix. Releasing stays with the maintainer because publishing a version
    decides deploy order. A local workaround is fine when you are blocked, on two conditions: report
    it the same day, and remove it when the release lands.
+6. **Describe what you do — including what you think is trivial.** Not *"report deviations"*: you
+   cannot know what one is, because that would mean knowing this page better than we do. ⚠️ The
+   over-specified sentence in [the `tts-cache` section](#four-things-that-will-bite) stood for
+   weeks, and it took a host mentioning its own naming **as a curiosity** for anyone to look. Its
+   own account of it, on 27/08: *"je ne l'ai décrite que parce que je citais `preview-fr-v2` comme
+   une curiosité, sans savoir que c'était un écart. Si j'avais su que votre page l'interdisait, je
+   me serais probablement conformé."* Complying would have orphaned **908 objects, permanently**.
+   A rule that asks you to spot the deviation cannot work; a rule that asks you to describe your
+   integration asks for nothing you do not already have. Boring descriptions are the useful ones.
 
 ## Identity card
 

@@ -12,6 +12,26 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Changed
+
+- ⚠️ **Le contrat d'hôte demandait implicitement de signaler les écarts — une consigne que personne
+  ne peut appliquer.** Une sixième règle la remplace : **décrire ce qu'on fait, y compris ce qu'on
+  croit trivial.** Un hôte ne peut pas savoir ce qui est un écart sans connaître cette page mieux
+  que nous — or la phrase sur-spécifiée de la section `tts-cache` y a vécu des semaines. Il a fallu
+  qu'un hôte cite son propre nommage **comme une curiosité** pour que quiconque regarde. Dans ses
+  mots (27/08) : *« je ne l'ai décrite que parce que je citais `preview-fr-v2` comme une curiosité,
+  sans savoir que c'était un écart. Si j'avais su que votre page l'interdisait, je me serais
+  probablement conformé. »* S'y conformer aurait orphelinné **908 objets, définitivement**. Une
+  règle qui demande de repérer l'écart ne peut pas marcher ; une règle qui demande de décrire son
+  intégration n'exige rien que l'hôte n'ait déjà. **Rien à faire côté hôte** — c'est une invitation,
+  pas une obligation.
+- **`AGENTS.md` gagne la règle des deux instruments**, formulée par un hôte et plus nette que la
+  nôtre : *« une sonde qui compte avec `grep` et classe avec du code hérite des angles morts du
+  premier sans hériter de sa visibilité »*. Quand un outil décide *combien* et un autre *quoi*, le
+  chiffre porte la portée du premier et l'autorité du second. Écrite à côté de la règle voisine sur
+  les deux entrées d'un contrôle, avec le cas mesuré la veille — quatre sites rendus là où cinq
+  existaient.
+
 ### Security
 
 - ⚠️ **Dix tables déclaraient la RLS, et rien ne demandait jamais à la base si elle en avait tenu

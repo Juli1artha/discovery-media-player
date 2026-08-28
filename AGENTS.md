@@ -128,6 +128,28 @@ boundary to inspect is the one between your sentence and your wiring.
 **And naming both inputs is only the catch-up. The closure is getting both facts from a single
 operation** — then there is no window to name, because there is no second moment.
 
+## A count from one instrument and a verdict from another: the number inherits the blind spot, not the visibility
+
+**When one tool decides *how many* and a second decides *what*, the figure carries the reach of the
+first and the authority of the second.** The second cannot recover what the first never handed it,
+and nothing in the output says so. The host who named this had already done the hard half — their
+probe filtered comments, with a positive control proving the pattern could tell prose from a call —
+and was caught anyway, because the *count* came from `grep` and only the *classification* was theirs:
+
+> le décompte et la classification passaient par deux outils différents, et seul le second savait ce
+> qu'il regardait. Une sonde qui compte avec `grep` et classe avec du code hérite des angles morts du
+> premier sans hériter de sa visibilité.
+
+Our own instance, same day: `grep` over `server/` returned four sites where five existed. The fifth
+sits in a bench that deliberately contains a NUL byte, so GNU grep called the file binary and printed
+no line at all. Note what makes this worse than a plain miss: **`grep` does have the right to skip a
+file — it does not have the right to skip it without the output saying so.** The exclusion is
+announced on the same stream as the results, is lost in a pipe, and leaves nothing in the count. The
+guard is `tools/greps-sans-angle-mort.mjs`; the mechanical part of the remedy is `-a`, and the
+general part is this: **when a probe spans two tools, the weaker one sets what the number can mean.**
+Either measure and classify with the same instrument, or state the floor of the weaker one beside
+the figure.
+
 ⚠️ A third instance, the same evening, in the file that adds this rule: `statSync(p).isDirectory()`
 followed by `readFileSync(p)`. CodeQL caught it; the author did not. The fix was not a more careful
 comparison but `readdirSync(dir, { withFileTypes: true })`, where the type arrives **with** the
