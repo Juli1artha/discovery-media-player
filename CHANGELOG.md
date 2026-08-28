@@ -14,6 +14,25 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- ⚠️ **La requête de diagnostic que ce dépôt donnait aux hôtes rendait un zéro rassurant sur une base
+  au maximum exposée.** Elle filtrait `roles::text like '%anon%'` — alors que le geste qu'elle
+  vérifie retire le droit à `anon` **et** à `authenticated`. Une base dont toutes les politiques
+  nomment `authenticated` obtient donc **zéro ligne**, c'est-à-dire un feu vert, pendant que chacune
+  de ses politiques mourrait au premier `revoke`. Relevé par un hôte le 28/08, chez qui **28
+  politiques sur 28 nomment `authenticated` et aucune `anon`** — le profil exact que la sonde ne
+  voyait pas. Une sonde dont le filtre est plus étroit que le geste qu'elle vérifie rend un zéro qui
+  veut dire « je n'ai pas regardé », pas « il n'y a rien ».
+  ⚠️ **Et la deuxième écriture portait le même défaut d'un cran plus bas** : elle choisissait UN rôle
+  par politique. Sur une politique nommant les deux rôles où seul `authenticated` a perdu le droit,
+  elle inspecte `anon`, le trouve intact, et se tait. Mesuré contre un vrai Postgres monté pour
+  l'occasion, sur trois profils de politique : la première écriture voit 0 des cas
+  `{authenticated}`, la deuxième 1 des 2 tables cassées, la troisième les voit toutes.
+  La forme retenue déplie **chaque rôle nommé** et mesure l'**état résultant**
+  (`has_table_privilege`) au lieu de demander si le `revoke` a été posé — c'est la seule chose qui
+  compte pour l'hôte, et elle répond avant comme après. **Rien à faire côté hôte, sauf si vous aviez
+  lancé la version étroite : relancez celle-ci.**
+
+
 - ⚠️ **La règle « un nombre au présent rouille » se lisait plus étroite qu'elle n'est — elle ne
   nommait que des comptes et des dates.** Ses quatre cas travaillés sont des décomptes de tests et
   des dates de mesure ; aucun n'est une POSITION. C'est pourquoi deux renvois par numéro de ligne

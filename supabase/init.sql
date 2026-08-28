@@ -605,13 +605,34 @@ $$;
 -- rien d'ouvert à refermer — mais un hôte qui généralise le geste à SA base applicative peut y
 -- perdre une carte publique. Un hôte l'a mesuré le 28/08 : il a posé le `revoke` sur les dix tables
 -- du player, et ne l'a PAS posé sur ses 221 tables applicatives, dont trois portent une politique
--- nommant `anon`. La condition se vérifie en une requête :
+-- nommant `anon`.
 --
---     select schemaname, tablename, policyname, roles
---       from pg_policies
---      where schemaname = 'public' and roles::text like '%anon%';
+-- ⚠️ ET LA VÉRIFICATION QUI TRANCHE N'EST PAS CELLE QU'ON CROIT — TROIS ÉCRITURES, TROIS PORTÉES.
+-- La première proposée ici filtrait `roles::text like '%anon%'`. Or le geste conseillé retire le
+-- droit à `anon` ET à `authenticated` : une base dont toutes les politiques nomment
+-- `authenticated` obtient donc ZÉRO LIGNE — un feu vert — alors qu'elle est au maximum exposée.
+-- Relevé par un hôte le 28/08, chez qui 28 politiques sur 28 nomment `authenticated` et aucune
+-- `anon`. Une sonde dont le filtre est plus étroit que le geste qu'elle vérifie rend un zéro qui
+-- veut dire « je n'ai pas regardé », pas « il n'y a rien ».
 --
--- Rien en retour : le `revoke` est sûr. Une ligne : il ne l'est pas, et cette ligne dit où.
+-- ⚠️ ET LA DEUXIÈME ÉCRITURE AVAIT LE MÊME DÉFAUT D'UN CRAN PLUS BAS : elle choisissait UN rôle par
+-- politique (`case when … then 'anon' else 'authenticated' end`). Sur une politique qui nomme les
+-- deux et où seul `authenticated` a perdu le droit, elle regarde `anon`, le trouve intact, et ne
+-- dit rien. Mesuré contre un vrai Postgres : elle voit 1 des 2 tables cassées.
+--
+-- La forme qui tient déplie CHAQUE rôle nommé, et mesure l'ÉTAT RÉSULTANT plutôt que de demander si
+-- le `revoke` a été posé — c'est la seule chose qui compte pour l'hôte :
+--
+--     select p.schemaname, p.tablename, p.policyname, r.role
+--       from pg_policies p
+--       cross join lateral unnest(p.roles) as r(role)
+--       join pg_class c on c.relname = p.tablename
+--       join pg_namespace n on n.oid = c.relnamespace and n.nspname = p.schemaname
+--      where r.role::text in ('anon', 'authenticated')
+--        and not has_table_privilege(r.role::text, c.oid, 'SELECT');
+--
+-- Rien en retour : aucune politique n'est privée du droit qu'elle suppose. Une ligne : cette
+-- politique est MORTE — la RLS dit oui, le droit dit non — et la ligne nomme la table et le rôle.
 --
 -- ⚠️ ET CETTE POSTURE EST DÉSORMAIS MESURÉE, PAS SEULEMENT ÉCRITE. Elle l'était ici dix fois et
 -- confrontée zéro fois — aucun banc, aucune étape ne demandait à la base si elle en avait tenu
