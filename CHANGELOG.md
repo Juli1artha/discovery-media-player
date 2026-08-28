@@ -14,6 +14,25 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- ⚠️ **Le conseil du `revoke` que ce dépôt donne aux hôtes était incomplet — sa précondition
+  manquait, et sans elle il casse.** Les en-têtes de `0021` et d'`init.sql` invitaient un hôte à
+  poser `revoke select … from anon, authenticated` comme seconde couche sous la RLS. Vrai sur les
+  tables du player — zéro politique, rien d'ouvert à refermer. **Faux dès qu'une politique permissive
+  nomme `anon`** : la RLS dit oui, le droit dit non, et la surface publique tombe sans qu'aucune
+  configuration paraisse fautive. Un hôte l'a mesuré le 28/08 en généralisant le geste : posé sur les
+  dix tables du player, **pas** posé sur ses 221 tables applicatives, dont trois portent une telle
+  politique. Sa formulation est reprise — *« un `revoke` global n'est sûr que là où aucune politique
+  n'accorde »* — avec la requête d'une ligne qui vérifie la condition.
+- **Le contrat dit désormais que `&schema=1` rend les verdicts paresseux inobservables.** Cette
+  requête sonde toutes les attentes AVANT de répondre, puis retient pour la vie du processus : son
+  verdict vaut `complet`, ou `indetermine` si le témoin ne répond pas — jamais `non-sonde`. Un hôte
+  qui interroge la carte ainsi ne peut donc pas rencontrer la dégradation contre laquelle la page le
+  met en garde. **Les lecteurs qui ont besoin de l'avertissement et ceux qui le rencontrent sont
+  disjoints**, et la page le dit maintenant plutôt que de laisser chacun vérifier un avertissement
+  qui ne parle pas de son instance. Relevé par un hôte qui lisait `complet` depuis une semaine et
+  l'attribuait à la chance. **Rien à faire côté hôte.**
+
+
 - ⚠️ **`AGENTS.md` renvoyait deux fois à `docs/HOST-CONTRACT.md` par numéro de ligne, et les deux
   renvois étaient faux.** Pas « devenus faux un jour » : faux dès le commit suivant qui a touché la
   page visée, quelques heures après avoir été écrits. Le premier menait à un séparateur de tableau,

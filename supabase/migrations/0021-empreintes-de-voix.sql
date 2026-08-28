@@ -52,6 +52,13 @@ create index if not exists doc_tts_objects_created_idx
 -- anon, authenticated;`) — ce dépôt ne la pose pas à votre place, parce que ces rôles sont ceux de
 -- votre installation, pas de Postgres.
 --
+-- ⚠️ ET LA PRÉCONDITION DE CE CONSEIL, QUI MANQUAIT : un `revoke` n'est sûr QUE là où aucune
+-- politique n'accorde. Sur cette table la condition est remplie (zéro politique). Sur VOTRE base
+-- applicative, une politique permissive qui nomme `anon` ferait dire oui à la RLS et non au droit :
+-- la surface publique tombe sans qu'aucune configuration paraisse fautive. Vérifiable en une
+-- requête — `select policyname, roles from pg_policies where schemaname='public' and roles::text
+-- like '%anon%'` : rien en retour, le geste est sûr ; une ligne, il ne l'est pas, et elle dit où.
+--
 -- Ce que la forge vérifie désormais à chaque course, contre une vraie base : que la RLS déclarée
 -- ici est bien RETENUE par le moteur, et qu'AUCUNE politique n'ouvre cette table.
 alter table public.doc_tts_objects enable row level security;

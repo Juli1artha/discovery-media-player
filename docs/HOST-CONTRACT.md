@@ -108,6 +108,20 @@ different question when you want a real answer:
 GET /api/doc?contract=1&schema=1
 ```
 
+⚠️ **And if that is what you poll, the lazy verdicts are ones you will never see — which is the
+whole point, and worth knowing before you read a warning aimed at somebody else.** `&schema=1`
+probes every expectation *before answering*, then keeps the answers for the life of the process. So
+its verdict is `complet`, or `indetermine` when the witness row itself does not answer — **never**
+`non-sonde`, and `partiel` only in the window where two of them race. A plain `?contract=1` on that
+same process reports `complet` afterwards too, because the probing already happened.
+
+The consequence is a split an integrating host measured on 28/08, having read `complet` for a week
+from a daily cron and put it down to luck: **the readers who need the "do not mistake this for a
+regression" warning and the readers who ever meet it are disjoint.** Poll with `&schema=1` and you
+cannot observe the degradation the warning describes; read `?contract=1` alone and you meet it
+without having asked for a probe. Neither is a defect. But if you are checking that warning against
+what you see, and you poll with `&schema=1`, **your instance is not the one it is about**.
+
 The three `presence*` fields report what the host has **observed**, not what it is configured to do:
 
 | field | meaning |
