@@ -81,6 +81,18 @@ alone.
 - **Do not bump the version or add a CHANGELOG section.** Releasing is a separate, deliberate
   act (`chore(release)` + tag) with its own gated workflow and its own document —
   [`docs/RELEASING.md`](docs/RELEASING.md). A code or docs PR ships without touching either.
+- **A correction that removes a form names, in its note, the occurrences that *remain* — and their
+  nature.** Not the ones it removed: those are gone, and nobody can confront a number against an
+  absence. ⚠️ The measured cost of the old habit, on 27/08: the 0.1.142 note said the pattern was
+  *"écrit dix fois à l'identique dans trois fichiers"*, an integrating host's probe found **four**
+  remaining, and the two numbers can never meet — one counts what left, the other what stays. A
+  remaining count is the only one a host can re-derive on the published tarball, which turns a
+  silent absence into a **mismatch between two sources** — the one signal that costs no vigilance.
+  Name the traps with it: an occurrence in a file carrying a control byte is invisible to a plain
+  `grep`, and saying so is the whole difference between finding four of five and *knowing* you
+  found four of five. ⚠️ This is in the list people enforce, not the guards': no check can know
+  that a release note *should* have carried a count. So a missing count is not a wrong count — its
+  absence must never be read as "nothing to report", here or by a host.
 
 ## When you edit a file with a script
 
@@ -127,6 +139,28 @@ boundary to inspect is the one between your sentence and your wiring.
 
 **And naming both inputs is only the catch-up. The closure is getting both facts from a single
 operation** — then there is no window to name, because there is no second moment.
+
+## A count from one instrument and a verdict from another: the number inherits the blind spot, not the visibility
+
+**When one tool decides *how many* and a second decides *what*, the figure carries the reach of the
+first and the authority of the second.** The second cannot recover what the first never handed it,
+and nothing in the output says so. The host who named this had already done the hard half — their
+probe filtered comments, with a positive control proving the pattern could tell prose from a call —
+and was caught anyway, because the *count* came from `grep` and only the *classification* was theirs:
+
+> le décompte et la classification passaient par deux outils différents, et seul le second savait ce
+> qu'il regardait. Une sonde qui compte avec `grep` et classe avec du code hérite des angles morts du
+> premier sans hériter de sa visibilité.
+
+Our own instance, same day: `grep` over `server/` returned four sites where five existed. The fifth
+sits in a bench that deliberately contains a NUL byte, so GNU grep called the file binary and printed
+no line at all. Note what makes this worse than a plain miss: **`grep` does have the right to skip a
+file — it does not have the right to skip it without the output saying so.** The exclusion is
+announced on the same stream as the results, is lost in a pipe, and leaves nothing in the count. The
+guard is `tools/greps-sans-angle-mort.mjs`; the mechanical part of the remedy is `-a`, and the
+general part is this: **when a probe spans two tools, the weaker one sets what the number can mean.**
+Either measure and classify with the same instrument, or state the floor of the weaker one beside
+the figure.
 
 ⚠️ A third instance, the same evening, in the file that adds this rule: `statSync(p).isDirectory()`
 followed by `readFileSync(p)`. CodeQL caught it; the author did not. The fix was not a more careful
