@@ -112,6 +112,44 @@ alone.
   therefore names the superseded messages, and retracts by name the sentences that pointed at the
   repository. ⚠️ This is in the list people enforce for a reason no guard can cover: nothing in a
   repository can know what is sitting unsent in someone's drafts.
+- **A probe that asks *"did it fail?"* of a question that is *"what does it return?"* reports on
+  itself, not on its subject.** ⚠️ The measured cost, on 29/08: two checks written to prove a SQL
+  query was safe on installations lacking the `anon` role tested only the exit code. Both passed —
+  on a query returning two wrong rows. The same day, on a genuinely role-free cluster, the real
+  behaviour turned out to be worse than either reading: `has_table_privilege('anon', …)` does not
+  return false, it **raises**, so the query was not *"less precise"* off Supabase, it was
+  **unrunnable**, and three successive writings had all missed it. A host who had made the same
+  mistake three times that week gave the sharpest version of the cost — *"j'ai annoncé « 0 échec »
+  alors que zéro test avait tourné"*. Assert on the **output**; an exit code is at best a second
+  signal, never the only one.
+  ⚠️ **And this is one case of a wider displacement, which the same host generalised past what we
+  had written:** *"chaque fois qu'un instrument échoue, ce qu'il rend décrit l'instrument"*. This
+  repository has catalogued three others without seeing they were the same move — the sha256 of an
+  empty file, a 403 read as an absence, a `grep` over a file it cannot read. In each, the probe
+  failed and its output was taken as a statement about the subject. **When a probe can fail, its
+  result answers "what happened to me", not "what is true of the thing" — so it must say which of
+  the two it is returning**, which is why this repository's guards separate INCONCLUSIVE from
+  VIOLATION rather than collapsing both into a non-zero exit.
+- **Enumerating the values of one variable is not a coverage argument — the next defect arrives on
+  an axis the enumeration does not vary.** ⚠️ Measured across the same episode: a bench was built
+  over the four values `pg_policies.roles` can take, and the two defects that actually bit came from
+  elsewhere — the *gesture's* role list against the *policy's* (nothing to do with which value a
+  policy carries), then the **cluster's role inventory**, which is not a property of any policy at
+  all. The host who found the second named the rule:
+
+  > Un cinquième profil, s'il existe, ne sera pas une cinquième valeur de `roles` — ce sera une
+  > autre dimension. Le vôtre en a déjà trouvé une : le cluster sans les rôles.
+
+  ⚠️ **The failure mode is that an exhaustive axis *reads* as coverage**, and the more complete the
+  enumeration, the more it does. So a bench states which dimensions it varies **and which it holds
+  fixed** — the fixed ones are where the next report comes from. Naming them is not a disclaimer:
+  it is the only thing that keeps a reader from mistaking a full row for a full table.
+  ⚠️ **And *"we looked and concluded not"* is not *"this bench does not exercise it"*.** Both land in
+  the same "not measured" paragraph, and only the second survives the person reading it in six
+  months: a reader can reopen "not exercised", and will not reopen "we concluded not", because
+  nothing tells them it is reopenable — the conclusion travels on, detached from the day and the
+  judgement that produced it. List a dimension as **held fixed** even when you have reasoned it
+  away; the reasoning goes next to it, never in place of it.
 
 ## When you edit a file with a script
 

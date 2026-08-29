@@ -1108,7 +1108,28 @@ jobs:
       # le banc reste vert sur un texte que personne n'applique pendant que les hôtes appliquent
       # celui du fichier. Même défaut que « un compte d'un instrument, un verdict d'un autre ».
       # ─────────────────────────────────────────────────────────────────────────────────────────
-      - name: The diagnostic query init.sql hands to hosts names the dead policy, on all three profiles
+      # ⚠️ CE QUE CE BANC FAIT VARIER, ET CE QU'IL TIENT FIXE — parce qu'un axe exhaustif SE LIT
+      # comme une couverture, et d'autant mieux que l'énumération est complète. Les deux défauts qui
+      # ont mordu ici ne venaient PAS d'une cinquième valeur de `roles` : l'un venait de l'écart
+      # entre les rôles du geste et ceux de la politique, l'autre de l'inventaire de rôles du
+      # CLUSTER — qui n'est la propriété d'aucune politique. C'est un hôte qui l'a nommé.
+      #
+      #   VARIE   la valeur de `pg_policies.roles` : {authenticated}, {anon,authenticated}, {anon},
+      #           {public} — les quatre formes possibles, `TO public, anon` retombant sur {public}
+      #   VARIE   quel rôle perd le droit (cinq scénarios : un par profil, deux pour {public})
+      #   VARIE   la présence des rôles `anon`/`authenticated` dans le cluster (contrôle en tête)
+      #
+      #   FIXE    une seule version majeure de Postgres — celle de l'image épinglée
+      #   FIXE    un seul privilège : SELECT
+      #   FIXE    des politiques PERMISSIVES ; aucune restrictive
+      #   FIXE    aucune hiérarchie de rôles (`grant role to role`) n'est exercée ici
+      #   FIXE    une politique nommant un rôle TIERS à côté d'`anon` (`{anon,svc}`) — mesurée à la
+      #           main le 29/08 et correctement traitée, mais ce banc ne la rejoue pas
+      #
+      # Les lignes FIXE sont l'endroit d'où viendra le prochain signalement. Les écrire n'est pas une
+      # clause de style : c'est ce qui empêche un lecteur de prendre une ligne pleine pour un tableau
+      # plein.
+      - name: The diagnostic query init.sql hands to hosts names the dead policy and the dead role, on four policy profiles
         run: |
           node tools/requete-diagnostic.mjs > /tmp/requete-retenue.sql
           echo "── la requête telle que l'hôte la lit dans init.sql, et telle qu'elle va être exécutée ──"
