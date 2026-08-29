@@ -14,6 +14,20 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- ⚠️ **Deux règles de revue tirées de l'épisode de la requête de diagnostic, l'une de nous, l'autre
+  d'un hôte.** La première : *une sonde qui demande « est-ce que ça échoue ? » à une question qui est
+  « qu'est-ce que ça rend ? » rend compte d'elle-même, pas de son sujet.* Deux de nos vérifications
+  n'ont regardé que le code de sortie et ont déclaré sûre une requête qui rendait deux lignes
+  fausses ; un hôte, qui dit avoir fait la même erreur trois fois dans la semaine, en a donné la
+  version la plus nette — *« j'ai annoncé "0 échec" alors que zéro test avait tourné »*.
+  La seconde, entièrement de lui : *énumérer les valeurs d'une variable n'est pas un argument de
+  couverture.* Notre banc couvre les quatre valeurs que `pg_policies.roles` peut porter, et les deux
+  défauts qui ont réellement mordu venaient d'ailleurs — l'écart entre les rôles du geste et ceux de
+  la politique, puis l'inventaire de rôles du CLUSTER, qui n'est la propriété d'aucune politique.
+  ⚠️ **Et le défaut est qu'un axe exhaustif SE LIT comme une couverture**, d'autant plus que
+  l'énumération est complète. Un banc dit donc désormais quelles dimensions il fait varier **et
+  lesquelles il tient fixes** : ce sont les fixes qui produiront le prochain signalement.
+
 - ⚠️ **Il y avait un QUATRIÈME profil de politique, et c'est la forme par défaut : `{public}`.**
   Trouvé par un hôte le 29/08 pendant que le banc à trois profils tournait déjà. Une politique écrite
   **sans clause `TO`** s'applique à `PUBLIC`, donc à tous les rôles y compris `anon` — et

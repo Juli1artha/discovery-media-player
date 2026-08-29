@@ -112,6 +112,30 @@ alone.
   therefore names the superseded messages, and retracts by name the sentences that pointed at the
   repository. ⚠️ This is in the list people enforce for a reason no guard can cover: nothing in a
   repository can know what is sitting unsent in someone's drafts.
+- **A probe that asks *"did it fail?"* of a question that is *"what does it return?"* reports on
+  itself, not on its subject.** ⚠️ The measured cost, on 29/08: two checks written to prove a SQL
+  query was safe on installations lacking the `anon` role tested only the exit code. Both passed —
+  on a query returning two wrong rows. The same day, on a genuinely role-free cluster, the real
+  behaviour turned out to be worse than either reading: `has_table_privilege('anon', …)` does not
+  return false, it **raises**, so the query was not *"less precise"* off Supabase, it was
+  **unrunnable**, and three successive writings had all missed it. A host who had made the same
+  mistake three times that week gave the sharpest version of the cost — *"j'ai annoncé « 0 échec »
+  alors que zéro test avait tourné"*. Assert on the **output**; an exit code is at best a second
+  signal, never the only one.
+- **Enumerating the values of one variable is not a coverage argument — the next defect arrives on
+  an axis the enumeration does not vary.** ⚠️ Measured across the same episode: a bench was built
+  over the four values `pg_policies.roles` can take, and the two defects that actually bit came from
+  elsewhere — the *gesture's* role list against the *policy's* (nothing to do with which value a
+  policy carries), then the **cluster's role inventory**, which is not a property of any policy at
+  all. The host who found the second named the rule:
+
+  > Un cinquième profil, s'il existe, ne sera pas une cinquième valeur de `roles` — ce sera une
+  > autre dimension. Le vôtre en a déjà trouvé une : le cluster sans les rôles.
+
+  ⚠️ **The failure mode is that an exhaustive axis *reads* as coverage**, and the more complete the
+  enumeration, the more it does. So a bench states which dimensions it varies **and which it holds
+  fixed** — the fixed ones are where the next report comes from. Naming them is not a disclaimer:
+  it is the only thing that keeps a reader from mistaking a full row for a full table.
 
 ## When you edit a file with a script
 
