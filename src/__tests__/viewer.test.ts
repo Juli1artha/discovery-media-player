@@ -278,6 +278,45 @@ describe("ancrageApresZoom", () => {
     expect(cas({ zoomAvant: NaN, defilement: { x: 7, y: 9 } })).toEqual({ x: 7, y: 9 });
   });
 
+  // ⚠️ LA GÉOMÉTRIE RÉELLE, RELEVÉE DANS CHROMIUM — et c'est elle qui a démasqué le modèle faux.
+  // Document de 40 pages, cadre de 1200x900, page haute de 1514 px, 16 px d'écart, 22 px de marge en
+  // haut : le haut de la page 2 est à 1552 px du début du contenu. Vérité mesurée après un zoom à
+  // 1,7 : il faut défiler à 1960 px pour que ce haut de page ne bouge pas d'un pixel à l'écran.
+  //
+  // Le premier modèle étirait la coordonnée ENTIÈRE par le rapport des tailles totales et rendait
+  // 1974,5 — quatorze pixels et demi de fuite, exactement ce que le navigateur a montré. Les espaces
+  // ENTRE les pages sont proportionnels au nombre de pages au-dessus du point visé et se comportent
+  // donc comme le contenu ; la marge du HAUT arrive avant tout et ne bouge jamais.
+  it("retrouve la position mesurée dans un vrai navigateur, à moins d'un pixel", () => {
+    const reel = {
+      defilement: { x: 0, y: 900 },
+      point: { x: 0, y: 652 },
+      cadre: { largeur: 1200, hauteur: 846 },
+      contenu: { largeur: 1200, hauteur: 61228 },
+      fixe: { largeur: 28, hauteur: 668 },
+      fixeDebut: { largeur: 14, hauteur: 22 },
+      zoomAvant: 1,
+      zoomApres: 1.7,
+    };
+    expect(ancrageApresZoom(reel).y).toBeCloseTo(1960, 0);
+  });
+
+  it("sans la tête fixe, il projette le lecteur 14 px trop bas — le défaut mesuré", () => {
+    const commun = {
+      defilement: { x: 0, y: 900 },
+      point: { x: 0, y: 652 },
+      cadre: { largeur: 1200, hauteur: 846 },
+      contenu: { largeur: 1200, hauteur: 61228 },
+      fixe: { largeur: 28, hauteur: 668 },
+      zoomAvant: 1,
+      zoomApres: 1.7,
+    };
+    const sansTete = ancrageApresZoom(commun).y;
+    const avecTete = ancrageApresZoom({ ...commun, fixeDebut: { largeur: 14, hauteur: 22 } }).y;
+    expect(sansTete - avecTete).toBeGreaterThan(13);
+    expect(sansTete - avecTete).toBeLessThan(16);
+  });
+
   // ⚠️ LE CRITÈRE D'ACCEPTATION LUI-MÊME, ÉCRIT SANS LA FORMULE. On calcule où la matière visée
   // s'affiche avant, puis où elle s'affiche après, avec une expression indépendante de la fonction —
   // et on exige que ce soit le même endroit. C'est le banc qui survit à une réécriture complète.

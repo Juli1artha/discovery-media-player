@@ -178,6 +178,15 @@ export interface AncrageInput {
    * plus de mille cinq cents pixels d'espacements fixes — l'ancrage dérive d'autant vers le bas.
    */
   fixe?: { largeur: number; hauteur: number };
+  /**
+   * Part du fixe située AVANT le contenu qui grandit : la marge haute et gauche du conteneur.
+   * ⚠️ ELLE NE SE COMPORTE PAS COMME LE RESTE DU FIXE, et la confondre coûtait 14,5 px — mesuré
+   * dans Chromium sur un document de 40 pages. Les espaces ENTRE les pages sont proportionnels au
+   * nombre de pages au-dessus du point visé, donc se comportent comme le contenu ; la marge du HAUT,
+   * elle, arrive avant tout et ne bouge jamais. L'étirer avec le reste projetait le lecteur d'autant
+   * plus bas qu'il était loin dans le document.
+   */
+  fixeDebut?: { largeur: number; hauteur: number };
   zoomAvant: number;
   zoomApres: number;
 }
@@ -197,6 +206,7 @@ function ancrerUnAxe(
   cadre: number,
   contenu: number,
   fixe: number,
+  debut: number,
   k: number,
 ): number {
   const partFixe = Math.min(Math.max(0, fixe), Math.max(0, contenu));
@@ -204,10 +214,12 @@ function ancrerUnAxe(
   // On étire la COORDONNÉE par le rapport des tailles totales, pas par le zoom : les espacements ne
   // grandissent pas, donc le document grandit moins vite que le zoom, et un point situé au bas d'un
   // long document se retrouverait sinon bien plus bas qu'il ne doit.
-  const rapport = contenu > 0 ? contenuApres / contenu : 1;
+  // Le rapport s'applique À PARTIR du début fixe : ce qui est avant lui ne bouge pas.
+  const tete = Math.min(Math.max(0, debut), Math.max(0, contenu));
+  const rapport = contenu - tete > 0 ? (contenuApres - tete) / (contenu - tete) : 1;
   const margeAvant = Math.max(0, (cadre - contenu) / 2);
   const coordonnee = point + defilement - margeAvant;
-  const cible = coordonnee * rapport - point;
+  const cible = tete + Math.max(0, coordonnee - tete) * rapport - point;
   // ⚠️ IL N'Y A PAS DE MARGE DE CENTRAGE « APRÈS », ET C'EST UNE DÉMONSTRATION, PAS UN OUBLI. La
   // symétrie appelle un `margeApres` ici ; il serait MORT. Cette marge n'est non nulle que si le
   // contenu reste plus étroit que le cadre — et dans ce cas la butée haute vaut zéro, donc la sortie
@@ -239,6 +251,7 @@ export function ancrageApresZoom(input: AncrageInput): { x: number; y: number } 
 
   const k = apres / avant;
   const fixe = input.fixe || { largeur: 0, hauteur: 0 };
+  const debut = input.fixeDebut || { largeur: 0, hauteur: 0 };
   return {
     x: ancrerUnAxe(
       defilement.x,
@@ -246,6 +259,7 @@ export function ancrageApresZoom(input: AncrageInput): { x: number; y: number } 
       nombreFini(input.cadre && input.cadre.largeur),
       nombreFini(input.contenu && input.contenu.largeur),
       nombreFini(fixe.largeur),
+      nombreFini(debut.largeur),
       k,
     ),
     y: ancrerUnAxe(
@@ -254,6 +268,7 @@ export function ancrageApresZoom(input: AncrageInput): { x: number; y: number } 
       nombreFini(input.cadre && input.cadre.hauteur),
       nombreFini(input.contenu && input.contenu.hauteur),
       nombreFini(fixe.hauteur),
+      nombreFini(debut.hauteur),
       k,
     ),
   };

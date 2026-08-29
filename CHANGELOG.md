@@ -14,6 +14,32 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- ⚠️ **Le pincement au trackpad zoomait l'écran entier — parce que personne n'écoutait.** Sur
+  trackpad, un pincement n'est pas un événement tactile : le navigateur l'envoie comme un `wheel`
+  portant `ctrlKey`. Rien dans la visionneuse ne le lisait, donc le navigateur appliquait son défaut.
+  ⚠️ **Et le défaut était plus large qu'un confort manquant** : sous 860 px la barre replie les
+  boutons de zoom, donc **sur mobile le pincement était le seul zoom qu'un lecteur pouvait tenter** —
+  et il déformait toute l'interface. Le geste est désormais réclamé sur la surface du document
+  (trackpad, Ctrl+molette, événements de geste de Safari, deux doigts), et **le zoom du navigateur
+  reste disponible sur le reste de l'interface** : le retirer partout serait une régression
+  d'accessibilité pour qui grossit le chrome plutôt que le document.
+  ⚠️ **En deux temps, parce qu'un seul ne tient pas.** Une reconstruction vide le conteneur, annule
+  les rendus en vol et recrée toutes les pages : juste pour un clic, ruineux pour un geste continu.
+  Pendant le pincement, une simple transformation ; la reconstruction arrive **une** fois, à l'arrêt.
+  Mesuré dans Chromium : **25 événements de pincement → 1 reconstruction**.
+  ⚠️ **Le point visé ne fuit plus, et la mesure a corrigé le modèle.** Première écriture : **14,1 px**
+  de fuite mesurés dans un vrai navigateur. La cause n'était pas le geste mais l'arithmétique — les
+  22 px de marge en haut du conteneur arrivent **avant** la première page et ne s'étirent pas, alors
+  que les espaces entre pages sont proportionnels au nombre de pages au-dessus du point visé.
+  Épargner cette tête ramène la fuite à **0,9 px**. Les deux valeurs sont figées dans les bancs.
+  ⚠️ **Et les boutons héritent de l'ancrage** : leur dérive — les pages changent de largeur, le
+  défilement reste en pixels — existait déjà et disparaît.
+  ⚠️ **Défaut trouvé en chemin : le zoom ne faisait rien sur un document image.** Le garde
+  `if (pdfDoc)` est faux pour une image, alors que le commentaire du rendu d'image annonce que « tout
+  le chrome — loader, zoom, plein écran… — fonctionne tel quel ». Inaperçu tant que le zoom tenait à
+  deux boutons ; intercepter le pincement sans le corriger aurait **avalé** le geste sur ces
+  documents, donc fait pire qu'avant.
+
 - **Socle du chantier « trois gestes » : l'arithmétique du zoom au geste et de la rotation entre dans
   `src/viewer.ts`, sans aucun changement visible.** Trois fonctions pures et une extension, couvertes
   par vingt-deux bancs de plus — le module sans DOM est le seul endroit où ces calculs sont

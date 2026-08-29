@@ -551,6 +551,106 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     await p.close(); await ctx.close();
   });
 
+  // ── LOT 1 : LE ZOOM AU GESTE ──────────────────────────────────────────────────────────────────
+  //
+  // ⚠️ CE QUI DOIT ÊTRE PROUVÉ N'EST PAS « le zoom marche ». Le pincement zoomait l'écran entier
+  // parce que PERSONNE n'écoutait wheel + ctrlKey — sur trackpad, un pincement arrive sous cette
+  // forme, pas comme un événement tactile. Trois choses se prouvent ici : la visionneuse RÉCLAME le
+  // geste (c'est ce qui empêche le navigateur de zoomer la page), elle ne reconstruit qu'UNE fois
+  // quel que soit le nombre d'événements, et le point visé ne fuit pas.
+  const pincer = (p, opts) => p.evaluate(({ x, y, dy, n }) => {
+    const el = document.getElementById("scroll");
+    const r = el.getBoundingClientRect();
+    let reclames = 0;
+    for (let i = 0; i < n; i++) {
+      const e = new WheelEvent("wheel", {
+        bubbles: true, cancelable: true, ctrlKey: true,
+        deltaY: dy, clientX: r.left + x, clientY: r.top + y,
+      });
+      el.dispatchEvent(e);
+      if (e.defaultPrevented) reclames++;
+    }
+    return reclames;
+  }, opts);
+
+  it("un pincement au trackpad est RÉCLAMÉ par la visionneuse, et grossit le document", async () => {
+    const ctx = await navigateur.newContext({ viewport: { width: 1200, height: 900 } });
+    const p = await pageAvecLecteur(ctx);
+    const avant = await p.evaluate(() => document.getElementById("zlbl").textContent);
+    const reclames = await pincer(p, { x: 600, y: 400, dy: -120, n: 1 });
+    expect(reclames,
+      "l'événement n'a pas été annulé — sans preventDefault le navigateur applique son défaut et\n"
+      + "zoome la PAGE ENTIÈRE. C'est le défaut que ce lot répare, et un écouteur posé en mode\n"
+      + "passif le reproduirait en silence.")
+      .toBe(1);
+    await new Promise((r) => setTimeout(r, 500));
+    const apres = await p.evaluate(() => document.getElementById("zlbl").textContent);
+    expect(parseInt(apres, 10), `le zoom n'a pas grossi (${avant} → ${apres})`)
+      .toBeGreaterThan(parseInt(avant, 10));
+    await p.close(); await ctx.close();
+  });
+
+  it("un pincement continu ne reconstruit le document qu'UNE fois", async () => {
+    const ctx = await navigateur.newContext({ viewport: { width: 1200, height: 900 } });
+    const p = await pageAvecLecteur(ctx);
+    // Une reconstruction vide #pages puis le repeuple : on compte les retraits en masse.
+    await p.evaluate(() => {
+      window.__vidages = 0;
+      new MutationObserver((ms) => {
+        for (const m of ms) if (m.type === "childList" && m.removedNodes.length > 1) window.__vidages++;
+      }).observe(document.getElementById("pages"), { childList: true });
+    });
+    const avant = await p.evaluate(() => document.getElementById("zlbl").textContent);
+    await pincer(p, { x: 600, y: 400, dy: -8, n: 25 });
+    await new Promise((r) => setTimeout(r, 700));
+    const apres = await p.evaluate(() => document.getElementById("zlbl").textContent);
+    // ⚠️ SANS CETTE LIGNE LE BANC PASSERAIT À VIDE : zéro reconstruction satisferait « exactement une »
+    // tout aussi mal, et c'est précisément ce qu'un geste ignoré produirait.
+    expect(apres, "le zoom n'a pas bougé — compter les reconstructions ne prouverait alors rien")
+      .not.toBe(avant);
+    const vidages = await p.evaluate(() => window.__vidages);
+    expect(vidages,
+      `25 événements de pincement ont déclenché ${vidages} reconstruction(s). Chacune vide le\n`
+      + "conteneur, annule les rendus en vol et recrée toutes les pages : le geste doit en coûter UNE.")
+      .toBe(1);
+    await p.close(); await ctx.close();
+  });
+
+  it("le point visé ne fuit pas sous le curseur", async () => {
+    const ctx = await navigateur.newContext({ viewport: { width: 1200, height: 900 } });
+    const p = await pageAvecLecteur(ctx);
+    await p.evaluate(() => { document.getElementById("scroll").scrollTop = 900; });
+    await new Promise((r) => setTimeout(r, 250));
+    // On vise le haut d'une page RÉELLEMENT visible : viser hors du cadre ne prouverait rien.
+    const vise = await p.evaluate(() => {
+      const r = document.getElementById("scroll").getBoundingClientRect();
+      for (const el of document.querySelectorAll("#pages .page")) {
+        const t = el.getBoundingClientRect().top;
+        if (t > r.top + 60 && t < r.bottom - 60) return { p: el.dataset.p, y: t, x: r.left + 600 };
+      }
+      return null;
+    });
+    expect(vise, "aucun haut de page dans le cadre : le banc ne viserait rien").not.toBeNull();
+    await p.evaluate(({ x, y }) => {
+      document.getElementById("scroll").dispatchEvent(new WheelEvent("wheel", {
+        bubbles: true, cancelable: true, ctrlKey: true, deltaY: -100, clientX: x, clientY: y,
+      }));
+    }, vise);
+    await new Promise((r) => setTimeout(r, 600));
+    const zoom = await p.evaluate(() => document.getElementById("zlbl").textContent);
+    expect(parseInt(zoom, 10), "le zoom n'a pas bougé : l'ancrage n'a rien eu à conserver").toBeGreaterThan(100);
+    const apres = await p.evaluate((n) =>
+      document.querySelector(`#pages .page[data-p="${n}"]`).getBoundingClientRect().top, vise.p);
+    expect(Math.abs(apres - vise.y),
+      `le haut de la page ${vise.p} était à ${Math.round(vise.y)} px et se retrouve à ${Math.round(apres)} px\n`
+      + `après un zoom à ${zoom} : le point visé a fui de ${Math.round(Math.abs(apres - vise.y))} px.\n`
+      + "Mesuré à 0,9 px sur ce document dans Chromium. Un premier modèle d'ancrage, qui étirait la\n"
+      + "coordonnée entière au lieu d'épargner la marge haute, donnait 14,1 px : cette borne est là\n"
+      + "pour que ce défaut-là ne revienne pas sans le dire.")
+      .toBeLessThanOrEqual(3);
+    await p.close(); await ctx.close();
+  });
+
   it("un canvas ne dépasse jamais son budget de pixels, quelle que soit la densité d'écran", async () => {
     const ctx = await navigateur.newContext({ deviceScaleFactor: 3, viewport: { width: 1400, height: 1000 } });
     const p3 = await ctx.newPage();

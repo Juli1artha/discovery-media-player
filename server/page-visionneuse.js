@@ -134,7 +134,7 @@ function viewerHtml(share, nonce, logoUrl, pitch) {
      cherche une sortie. Sans bordure : c'est une sortie, pas une action de plus. Elle
      reste visible sous 520px, où le titre s'efface (.bar>b{display:none}). */
   .barx{border-color:transparent;margin-right:-4px;flex:none}
-  .scroll{flex:1;overflow:auto;position:relative}
+  .scroll{flex:1;overflow:auto;position:relative;touch-action:pan-x pan-y} /* ⚠️ pan-x pan-y, PAS auto : le navigateur garde le défilement et NOUS rendons le pincement. Sans cette ligne le geste à deux doigts est happé par le zoom de page avant qu'aucun événement de pointeur ne nous parvienne. Le zoom navigateur reste disponible SUR LE RESTE de l'interface — le retirer partout serait une régression d'accessibilité pour qui grossit le chrome, pas le document. */
   #pages{display:flex;flex-direction:column;align-items:center;gap:16px;width:max-content;min-width:100%;margin:0 auto;padding:22px 14px}
   .page{position:relative;background:#fff;box-shadow:0 6px 22px #0006;border-radius:3px}
   .page canvas{display:block;border-radius:3px}
@@ -618,9 +618,156 @@ ${LEGAL_CSS}
       T.start();
       document.getElementById('zin').addEventListener('click',function(){ setZoom(zoom+0.2); });
       document.getElementById('zout').addEventListener('click',function(){ setZoom(zoom-0.2); });
+      brancherZoomAuGeste();
       render();
     }
-    function setZoom(z){ zoom=Player.viewer.clampZoom(z); document.getElementById('zlbl').textContent=Math.round(zoom*100)+'%'; if(pdfDoc) build(); }
+    // ── ZOOM AU GESTE : apercu immediat, reconstruction differee ─────────────────────────────────
+    //
+    // ⚠️ POURQUOI LE PINCEMENT ZOOMAIT L ECRAN ENTIER : PERSONNE N ECOUTAIT. Sur trackpad, un pincement
+    // n est pas un evenement tactile — le navigateur l envoie comme un wheel portant ctrlKey. Aucun
+    // ecouteur ici ne le lisait, donc le navigateur appliquait son defaut, que la balise viewport
+    // autorise explicitement. Ce n etait pas un reglage manquant, c etait un silence.
+    //
+    // ⚠️ ET LE DEFAUT ETAIT PLUS LARGE QUE LE CONFORT : sous 860 px la barre replie le bloc de zoom.
+    // Sur mobile le pincement est donc le SEUL geste qu un lecteur tente — et il deformait toute
+    // l interface. Ce bloc ne rajoute pas une commodite, il repare le seul zoom jamais essaye.
+    //
+    // ⚠️ EN DEUX TEMPS, PARCE QU UN SEUL NE TIENT PAS. build() vide le conteneur, annule les rendus en
+    // vol et recree toutes les pages : juste pour un clic, ruineux pour un pincement qui produit des
+    // dizaines d evenements par seconde. Pendant le geste on ne pose qu une transformation CSS ; la
+    // reconstruction arrive UNE fois, quand les doigts s arretent.
+    //
+    // Note de forme : ce script vit dans un litteral de gabarit — pas d accent grave ici.
+    var geste=null, tGeste=null;
+    var DELAI_CONFIRMATION=180;   // ms de silence avant de reconstruire
+
+    function majEtiquetteZoom(){ var l=document.getElementById('zlbl'); if(l)l.textContent=Math.round(zoom*100)+'%'; }
+
+    // L ancre est prise DANS LE CONTENEUR DES PAGES et une seule fois, au debut du geste : la mesurer a
+    // nouveau pendant l apercu la lirait a travers la transformation deja posee.
+    function ancreDuGeste(cx,cy){
+      var r=pagesEl.getBoundingClientRect();
+      return { x:cx-r.left, y:cy-r.top, largeur:r.width||1, cx:cx, cy:cy };
+    }
+    // ⚠️ ORIGINE EN HAUT AU CENTRE, ET UNE TRANSLATION QUI IMMOBILISE LE POINT VISE. #pages est centre
+    // (align-items:center, margin:0 auto) : grandir autour de son centre ferait FUIR le point que le
+    // lecteur regarde. La translation qui le fige vaut (ancre - origine) x (1 - facteur).
+    function poserApercu(f,ancre){
+      var tx=(ancre.x-ancre.largeur/2)*(1-f), ty=ancre.y*(1-f);
+      pagesEl.style.transformOrigin='50% 0';
+      pagesEl.style.transform='translate('+tx+'px,'+ty+'px) scale('+f+')';
+      pagesEl.style.willChange='transform';
+    }
+    function retirerApercu(){ pagesEl.style.transform=''; pagesEl.style.transformOrigin=''; pagesEl.style.willChange=''; }
+    // L apercu s arrete aux memes bornes que la reconstruction, sinon le document continue de grandir
+    // sous les doigts puis SAUTE en arriere au relachement.
+    function facteurBorne(g){ return Player.viewer.clampZoom(g.depart*g.facteur)/g.depart; }
+
+    // ⚠️ LA PART FIXE DU CONTENU N EST PAS UN DETAIL. #pages porte 22 px de marge en haut et en bas et
+    // 16 px entre chaque page : cent pages font plus de 1500 px qui ne grandissent PAS avec le zoom. Les
+    // compter comme proportionnels projette le lecteur trop bas, d autant plus qu il est loin dans le
+    // document.
+    function partFixeDuContenu(){ return { largeur:28, hauteur:44+16*Math.max(0,numPages-1) }; }
+    // ⚠️ ET LA TETE DE CE FIXE SE COMPORTE AUTREMENT : les 22 px de marge HAUTE arrivent avant la
+    // premiere page et ne bougent jamais, alors que les espaces entre pages sont proportionnels au
+    // nombre de pages au-dessus du point vise. Les confondre coutait 14,5 px de fuite, MESURES dans
+    // Chromium sur un document de 40 pages : le point vise glissait d autant plus qu on lisait loin.
+    function teteFixeDuContenu(){ return { largeur:14, hauteur:22 }; }
+
+    // Le point de passage unique : boutons, molette, trackpad et doigts finissent tous ici.
+    function confirmerZoom(z,cx,cy){
+      clearTimeout(tGeste); tGeste=null; geste=null;
+      retirerApercu();
+      var avant=zoom, apres=Player.viewer.clampZoom(z);
+      if(apres===avant){ majEtiquetteZoom(); return; }
+      var sr=scrollEl.getBoundingClientRect();
+      var cible=Player.viewer.ancrageApresZoom({
+        defilement:{x:scrollEl.scrollLeft,y:scrollEl.scrollTop},
+        point:{x:cx-sr.left,y:cy-sr.top},
+        cadre:{largeur:scrollEl.clientWidth,hauteur:scrollEl.clientHeight},
+        contenu:{largeur:scrollEl.scrollWidth,hauteur:scrollEl.scrollHeight},
+        fixe:partFixeDuContenu(), fixeDebut:teteFixeDuContenu(),
+        zoomAvant:avant, zoomApres:apres });
+      zoom=apres; majEtiquetteZoom();
+      // ⚠️ if(pdfDoc) SEUL LAISSAIT LES IMAGES SANS ZOOM. Le commentaire de renderImage annonce que
+      // « tout le chrome — loader, zoom, plein ecran… — fonctionne tel quel » : c etait faux pour le
+      // zoom, pdfDoc restant nul sur une image. Le defaut passait inapercu tant que le zoom tenait a
+      // deux boutons ; intercepter le pincement sans le corriger aurait AVALE le geste sur ces
+      // documents, donc fait pire qu avant.
+      if(!pdfDoc && !IS_IMG) return;
+      build();
+      scrollEl.scrollLeft=cible.x; scrollEl.scrollTop=cible.y;
+    }
+
+    // Les boutons visent le centre du cadre. Ils heritent donc de l ancrage, et la derive qu ils avaient
+    // deja — les pages changent de largeur, le defilement reste en pixels — disparait.
+    function setZoom(z){
+      var sr=scrollEl.getBoundingClientRect();
+      confirmerZoom(z, sr.left+scrollEl.clientWidth/2, sr.top+scrollEl.clientHeight/2);
+    }
+
+    function brancherZoomAuGeste(){
+      // A. TRACKPAD ET CTRL+MOLETTE. NON PASSIF, et c est la ligne qui compte : wheel est passif par
+      // defaut sur les navigateurs recents, et un ecouteur passif voit son preventDefault IGNORE —
+      // l ecran zoomerait quand meme, en silence.
+      scrollEl.addEventListener('wheel',function(e){
+        if(!e.ctrlKey)return;
+        e.preventDefault();
+        if(!geste) geste={ancre:ancreDuGeste(e.clientX,e.clientY),depart:zoom,facteur:1};
+        // Exponentielle plutot que lineaire : le geste devient symetrique — pincer puis ecarter d autant
+        // revient exactement au zoom de depart, ce qu une addition ne donne pas.
+        geste.facteur*=Math.exp(-e.deltaY/180);
+        geste.ancre.cx=e.clientX; geste.ancre.cy=e.clientY;
+        poserApercu(facteurBorne(geste),geste.ancre);
+        // La molette n a pas de fin declaree : le silence en tient lieu.
+        clearTimeout(tGeste);
+        tGeste=setTimeout(function(){ if(geste) confirmerZoom(geste.depart*geste.facteur,geste.ancre.cx,geste.ancre.cy); },DELAI_CONFIRMATION);
+      },{passive:false});
+
+      // B. SAFARI. Ses evenements de geste ne sont pas standard mais sont les seuls disponibles la-bas ;
+      // sans le preventDefault du gesturestart, Safari zoome la page avant nous.
+      if('ongesturestart' in window){
+        scrollEl.addEventListener('gesturestart',function(e){ e.preventDefault(); geste={ancre:ancreDuGeste(e.clientX,e.clientY),depart:zoom,facteur:1}; },{passive:false});
+        scrollEl.addEventListener('gesturechange',function(e){ e.preventDefault(); if(!geste)return; geste.facteur=e.scale||1; poserApercu(facteurBorne(geste),geste.ancre); },{passive:false});
+        scrollEl.addEventListener('gestureend',function(e){ e.preventDefault(); if(!geste)return; confirmerZoom(geste.depart*geste.facteur,geste.ancre.cx,geste.ancre.cy); },{passive:false});
+      }
+
+      // C. TACTILE A DEUX DOIGTS. On ne prend la main qu a DEUX pointeurs : un seul doigt reste le
+      // defilement du navigateur, qui le fait mieux que nous et sans a-coups.
+      var doigts=Object.create(null), nDoigts=0, ecart0=0;
+      function ecartEtMilieu(){
+        var a=null,b=null;
+        for(var k in doigts){ if(!a)a=doigts[k]; else { b=doigts[k]; break; } }
+        if(!a||!b)return null;
+        var dx=a.x-b.x, dy=a.y-b.y;
+        return { d:Math.sqrt(dx*dx+dy*dy), cx:(a.x+b.x)/2, cy:(a.y+b.y)/2 };
+      }
+      scrollEl.addEventListener('pointerdown',function(e){
+        if(e.pointerType!=='touch')return;
+        if(!doigts[e.pointerId]) nDoigts++;
+        doigts[e.pointerId]={x:e.clientX,y:e.clientY};
+        if(nDoigts===2){ var m=ecartEtMilieu(); if(m&&m.d>0){ ecart0=m.d; geste={ancre:ancreDuGeste(m.cx,m.cy),depart:zoom,facteur:1}; } }
+      },{passive:true});
+      scrollEl.addEventListener('pointermove',function(e){
+        if(e.pointerType!=='touch'||!doigts[e.pointerId])return;
+        doigts[e.pointerId]={x:e.clientX,y:e.clientY};
+        if(nDoigts!==2||!geste||!ecart0)return;
+        var m=ecartEtMilieu(); if(!m)return;
+        e.preventDefault();
+        geste.facteur=m.d/ecart0; geste.ancre.cx=m.cx; geste.ancre.cy=m.cy;
+        poserApercu(facteurBorne(geste),geste.ancre);
+      },{passive:false});
+      // ⚠️ ON CONFIRME DES QU IL NE RESTE QU UN DOIGT, pas quand ils sont tous partis : un lecteur qui
+      // leve un doigt et garde l autre pose continue a lire, et l apercu resterait fige sur une
+      // transformation que rien ne viendrait plus confirmer.
+      function doigtLeve(e){
+        if(e.pointerType!=='touch'||!doigts[e.pointerId])return;
+        delete doigts[e.pointerId]; nDoigts=Math.max(0,nDoigts-1);
+        if(nDoigts<2&&geste){ var g=geste; ecart0=0; confirmerZoom(g.depart*g.facteur,g.ancre.cx,g.ancre.cy); }
+      }
+      scrollEl.addEventListener('pointerup',doigtLeve,{passive:true});
+      scrollEl.addEventListener('pointercancel',doigtLeve,{passive:true});
+    }
     // ⚠️ UN REFUS ARRÊTE LE LECTEUR, et les deux replis plus doux ont été MESURÉS avant d'être
     // écartés — pas jugés sur leur mine :
     //
@@ -712,6 +859,10 @@ ${LEGAL_CSS}
       }).catch(function(){ loadError("Impossible d'afficher ce document."); });
     }
     function build(){
+      // Un apercu de zoom n a plus de sens des qu on reconstruit : le laisser poserait une
+      // transformation orpheline sur des pages neuves. Cas reel : un redimensionnement de
+      // fenetre pendant un pincement.
+      retirerApercu();
       // Une nouvelle construction invalide tout ce qui etait en vol : sans cela, les rendus lances
       // par la precedente peignent dans des elements DETACHES (pagesEl a ete vide) et le travail est
       // fait deux fois. C est le meme mecanisme de generation que la page audience.
