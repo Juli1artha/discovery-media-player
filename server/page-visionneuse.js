@@ -134,7 +134,7 @@ function viewerHtml(share, nonce, logoUrl, pitch) {
      cherche une sortie. Sans bordure : c'est une sortie, pas une action de plus. Elle
      reste visible sous 520px, où le titre s'efface (.bar>b{display:none}). */
   .barx{border-color:transparent;margin-right:-4px;flex:none}
-  .scroll{flex:1;overflow:auto;position:relative}
+  .scroll{flex:1;overflow:auto;position:relative;touch-action:pan-x pan-y} /* ⚠️ pan-x pan-y, PAS auto : le navigateur garde le défilement et NOUS rendons le pincement. Sans cette ligne le geste à deux doigts est happé par le zoom de page avant qu'aucun événement de pointeur ne nous parvienne. Le zoom navigateur reste disponible SUR LE RESTE de l'interface — le retirer partout serait une régression d'accessibilité pour qui grossit le chrome, pas le document. */
   #pages{display:flex;flex-direction:column;align-items:center;gap:16px;width:max-content;min-width:100%;margin:0 auto;padding:22px 14px}
   .page{position:relative;background:#fff;box-shadow:0 6px 22px #0006;border-radius:3px}
   .page canvas{display:block;border-radius:3px}
@@ -216,7 +216,7 @@ ${LEGAL_CSS}
   .barmenu button{display:block;width:100%;text-align:left;border:0;background:transparent;font:inherit;font-size:13.5px;color:#1c1c1c;padding:9px 12px;border-radius:8px;cursor:pointer}
   .barmenu button:hover{background:#f2efe9}
   @media (max-width:860px){
-    .bar .zoom,#fs,#presentBtn,#shareBtn,#dlBtn{display:none}
+    .bar .zoom,#rotL,#rotR,#vignBtn,#fs,#presentBtn,#shareBtn,#dlBtn{display:none}
     .barMore{display:inline-flex}
   }
   @media (max-width:520px){ .bar>b{display:none} }
@@ -224,6 +224,22 @@ ${LEGAL_CSS}
      → .lrow/.lmain sans flex, la fenêtre scrollait à la place du conteneur et le rendu paresseux mourait. */
   .lrow{flex:1;display:flex;min-height:0;position:relative}
   .lmain{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+    /* PANNEAU DE VIGNETTES. Largeur POSÉE D'UN COUP, sans transition : la reconstruction du
+       document mesure scrollEl.clientWidth juste après la bascule, et une largeur en cours
+       d'animation lui ferait calculer des pages à une taille qui n'existe qu'un dixième de
+       seconde. Le confort d'un glissement coûterait une mesure fausse. */
+    .vign{flex:0 0 auto;width:0;overflow:hidden;background:#0000004d;border-right:1px solid #ffffff14}
+    body.vign-on .vign{width:168px}
+    .vign-in{width:168px;height:100%;overflow-y:auto;overflow-x:hidden;padding:12px 0 24px;display:flex;flex-direction:column;align-items:center;gap:10px;scrollbar-width:thin}
+    .vg{position:relative;width:132px;flex:0 0 auto;padding:0;border:2px solid transparent;border-radius:4px;background:#ffffff10;cursor:pointer;overflow:hidden}
+    .vg canvas{display:block;width:100%;height:100%}
+    .vg:hover{border-color:#ffffff4d}
+    .vg.on{border-color:#fff;box-shadow:0 0 0 1px #0008}
+    .vg-n{position:absolute;right:3px;bottom:3px;padding:0 5px;border-radius:3px;background:#000a;color:#fff;font-size:11px;line-height:16px;pointer-events:none}
+    .vg:focus-visible{outline:2px solid #fff;outline-offset:1px}
+    /* Sous le point de rupture de la barre : TIROIR qui recouvre, pas colonne qui pousse — une
+       colonne de 168 px sur un écran de 380 px ne laisserait pas de document à lire. */
+    @media(max-width:860px){ body.vign-on .vign{position:absolute;left:0;top:0;bottom:0;z-index:7;box-shadow:0 0 24px #000a} }
   ${preview ? LIVE_CSS : ""}
   ${preview ? MAP_CSS : ""}
   ${botOn ? BOT_CSS : ""}
@@ -232,6 +248,9 @@ ${LEGAL_CSS}
   <div class=bar>${embed ? '<button class="ic barx" id=embedCloseBtn title=Fermer aria-label=Fermer><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' : ""}<b>${title}</b>${share.is_test ? '<span class=testchip>\ud83c\udfad Répétition — session de test</span>' : ""}<span class=sp></span><span class=pg id=pg></span>
     ${preview ? LIVE_BAR : ""}
     <div class=zoom><button id=zout title="Dézoomer">−</button><span id=zlbl>100%</span><button id=zin title="Zoomer">+</button></div>
+    <button class=ic id=rotL title="Pivoter à gauche" aria-label="Pivoter le document à gauche"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h11a5 5 0 0 1 5 5v1M3 8l4-4M3 8l4 4"/></svg></button>
+    <button class=ic id=rotR title="Pivoter à droite" aria-label="Pivoter le document à droite"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8H10a5 5 0 0 0-5 5v1M21 8l-4-4M21 8l-4 4"/></svg></button>
+    <button class=ic id=vignBtn title="Vignettes" aria-label="Afficher les vignettes" aria-pressed=false><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="6" height="7" rx="1"/><rect x="3" y="13" width="6" height="7" rx="1"/><path d="M13 6h8M13 12h8M13 18h8"/></svg></button>
     <button class=ic id=fs title="Plein écran"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
     ${preview ? '<button class=dl id=presentBtn title="Présenter en direct (lien public, page synchronisée)">Présenter</button>' : ''}
     <button class="dl primary" id=shareBtn>Partager</button>
@@ -239,6 +258,9 @@ ${LEGAL_CSS}
   <div class=barmenu id=barMenu>
     <button data-t=zin>Zoom avant</button>
     <button data-t=zout>Zoom arrière</button>
+    <button data-t=rotL>Pivoter à gauche</button>
+    <button data-t=rotR>Pivoter à droite</button>
+    <button data-t=vignBtn>Vignettes</button>
     <button data-t=fs>Plein écran</button>
     ${preview ? '<button data-t=presentBtn>Présenter en direct</button>' : ''}
     <button data-t=shareBtn>Partager</button>
@@ -270,6 +292,7 @@ ${LEGAL_CSS}
     </div>
   </div>
   <div class=lrow>
+    <div class=vign id=vign aria-hidden=true><div class=vign-in id=vignIn role=list aria-label="Vignettes des pages"></div></div>
     <div class=lmain>
       <div class=scroll id=scroll tabindex=0 role=region aria-label="Document">
         <div id=pages></div>
@@ -296,7 +319,7 @@ ${LEGAL_CSS}
     // renvoyé par le stockage). Une image = une page, sans pdf.js.
     var IS_IMG=Player.viewer.isImageDocument(CFG.fileName,CFG.fileUrl);
     var imgSrc='';
-    var scrollEl=document.getElementById('scroll'), pagesEl=document.getElementById('pages');
+    var scrollEl=document.getElementById('scroll'), pagesEl=document.getElementById('pages'), vignIn=document.getElementById('vignIn');
     // Suivi de lecture (temps réel à l'écran par page, page la plus loin atteinte, session) :
     // player/src/tracking.ts — typé et testé, y compris la séparation prospect / aperçu interne.
     var T=Player.tracking.createTracker({ slug:CFG.slug||'', internal:CFG.internal||null, scrollElement:scrollEl });
@@ -310,7 +333,7 @@ ${LEGAL_CSS}
       get cur(){return cur;},get numPages(){return numPages;},get pdfDoc(){return pdfDoc;},
       get onePage(){return onePage;},
       get soloOffered(){return soloOffered;},set soloOffered(v){soloOffered=!!v;}};
-    var pdfDoc=null, zoom=1, firstAspect=1.35, rendered={}, io=null, ioCur=null;
+    var pdfDoc=null, zoom=1, rot=0, firstAspect=1.35, rendered={}, io=null, ioCur=null;
     // ATTENTION : LE LECTEUR GARDAIT TOUTES LES PAGES RENDUES (P1 audit externe).
     //
     // rendered[n] n etait jamais evince, les canvas restaient dans le DOM, et un build() de refit
@@ -332,7 +355,7 @@ ${LEGAL_CSS}
     var DPR_MAX=2;            // au-dela, le gain visuel est nul et le cout quadratique
     var PIXELS_MAX=4e6;       // plafond par canvas : ~4 M pixels = ~16 Mo de tampon
     var onePage=false, soloOffered=false; // mode « une seule page » (présentation guidée) + offre de découverte solo
-    function setCur(p){ if(!p||p===cur)return; cur=p; try{ evincerLoin(p); }catch(e){} T.setPage(p); try{ if(window.__soloEnd)window.__soloEnd(p); }catch(e){} var pg=document.getElementById('pg'); if(pg&&numPages)pg.textContent='Page '+p+' / '+numPages; if(PRES) pushPage(); }
+    function setCur(p){ if(!p||p===cur)return; cur=p; try{ evincerLoin(p); }catch(e){} T.setPage(p); try{ vignMarquer(p); }catch(e){} try{ if(window.__soloEnd)window.__soloEnd(p); }catch(e){} var pg=document.getElementById('pg'); if(pg&&numPages)pg.textContent='Page '+p+' / '+numPages; if(PRES) pushPage(); }
     // Bouton « Partager » : re-partage tracé (forward) → crée un lien ENFANT et propose de l'envoyer par email.
     function wireShare(){
       var pop=document.getElementById('pop'), btn=document.getElementById('shareBtn'), err=document.getElementById('shErr');
@@ -618,9 +641,167 @@ ${LEGAL_CSS}
       T.start();
       document.getElementById('zin').addEventListener('click',function(){ setZoom(zoom+0.2); });
       document.getElementById('zout').addEventListener('click',function(){ setZoom(zoom-0.2); });
+      document.getElementById('rotL').addEventListener('click',function(){ tournerDe(-1); });
+      document.getElementById('rotR').addEventListener('click',function(){ tournerDe(1); });
+      document.getElementById('vignBtn').addEventListener('click',basculerVignettes);
+      if(vignIn){
+        var desarmer=function(){ vignSuivi=false; };
+        vignIn.addEventListener('wheel',desarmer,{passive:true});
+        vignIn.addEventListener('pointerdown',desarmer,{passive:true});
+        vignIn.addEventListener('keydown',function(e){ if(e.key==='ArrowDown'||e.key==='ArrowUp') vignSuivi=false; },{passive:true});
+      }
+      // Un document d une seule page, ou une image : le panneau n aurait rien a montrer.
+      if(IS_IMG){ var vb=document.getElementById('vignBtn'); if(vb) vb.style.display='none'; }
+      brancherZoomAuGeste();
       render();
     }
-    function setZoom(z){ zoom=Player.viewer.clampZoom(z); document.getElementById('zlbl').textContent=Math.round(zoom*100)+'%'; if(pdfDoc) build(); }
+    // ── ZOOM AU GESTE : apercu immediat, reconstruction differee ─────────────────────────────────
+    //
+    // ⚠️ POURQUOI LE PINCEMENT ZOOMAIT L ECRAN ENTIER : PERSONNE N ECOUTAIT. Sur trackpad, un pincement
+    // n est pas un evenement tactile — le navigateur l envoie comme un wheel portant ctrlKey. Aucun
+    // ecouteur ici ne le lisait, donc le navigateur appliquait son defaut, que la balise viewport
+    // autorise explicitement. Ce n etait pas un reglage manquant, c etait un silence.
+    //
+    // ⚠️ ET LE DEFAUT ETAIT PLUS LARGE QUE LE CONFORT : sous 860 px la barre replie le bloc de zoom.
+    // Sur mobile le pincement est donc le SEUL geste qu un lecteur tente — et il deformait toute
+    // l interface. Ce bloc ne rajoute pas une commodite, il repare le seul zoom jamais essaye.
+    //
+    // ⚠️ EN DEUX TEMPS, PARCE QU UN SEUL NE TIENT PAS. build() vide le conteneur, annule les rendus en
+    // vol et recree toutes les pages : juste pour un clic, ruineux pour un pincement qui produit des
+    // dizaines d evenements par seconde. Pendant le geste on ne pose qu une transformation CSS ; la
+    // reconstruction arrive UNE fois, quand les doigts s arretent.
+    //
+    // Note de forme : ce script vit dans un litteral de gabarit — pas d accent grave ici.
+    var geste=null, tGeste=null;
+    var DELAI_CONFIRMATION=180;   // ms de silence avant de reconstruire
+
+    function majEtiquetteZoom(){ var l=document.getElementById('zlbl'); if(l)l.textContent=Math.round(zoom*100)+'%'; }
+
+    // L ancre est prise DANS LE CONTENEUR DES PAGES et une seule fois, au debut du geste : la mesurer a
+    // nouveau pendant l apercu la lirait a travers la transformation deja posee.
+    function ancreDuGeste(cx,cy){
+      var r=pagesEl.getBoundingClientRect();
+      return { x:cx-r.left, y:cy-r.top, largeur:r.width||1, cx:cx, cy:cy };
+    }
+    // ⚠️ ORIGINE EN HAUT AU CENTRE, ET UNE TRANSLATION QUI IMMOBILISE LE POINT VISE. #pages est centre
+    // (align-items:center, margin:0 auto) : grandir autour de son centre ferait FUIR le point que le
+    // lecteur regarde. La translation qui le fige vaut (ancre - origine) x (1 - facteur).
+    function poserApercu(f,ancre){
+      var tx=(ancre.x-ancre.largeur/2)*(1-f), ty=ancre.y*(1-f);
+      pagesEl.style.transformOrigin='50% 0';
+      pagesEl.style.transform='translate('+tx+'px,'+ty+'px) scale('+f+')';
+      pagesEl.style.willChange='transform';
+    }
+    function retirerApercu(){ pagesEl.style.transform=''; pagesEl.style.transformOrigin=''; pagesEl.style.willChange=''; }
+    // L apercu s arrete aux memes bornes que la reconstruction, sinon le document continue de grandir
+    // sous les doigts puis SAUTE en arriere au relachement.
+    function facteurBorne(g){ return Player.viewer.clampZoom(g.depart*g.facteur)/g.depart; }
+
+    // ⚠️ LA PART FIXE DU CONTENU N EST PAS UN DETAIL. #pages porte 22 px de marge en haut et en bas et
+    // 16 px entre chaque page : cent pages font plus de 1500 px qui ne grandissent PAS avec le zoom. Les
+    // compter comme proportionnels projette le lecteur trop bas, d autant plus qu il est loin dans le
+    // document.
+    function partFixeDuContenu(){ return { largeur:28, hauteur:44+16*Math.max(0,numPages-1) }; }
+    // ⚠️ ET LA TETE DE CE FIXE SE COMPORTE AUTREMENT : les 22 px de marge HAUTE arrivent avant la
+    // premiere page et ne bougent jamais, alors que les espaces entre pages sont proportionnels au
+    // nombre de pages au-dessus du point vise. Les confondre coutait 14,5 px de fuite, MESURES dans
+    // Chromium sur un document de 40 pages : le point vise glissait d autant plus qu on lisait loin.
+    function teteFixeDuContenu(){ return { largeur:14, hauteur:22 }; }
+
+    // Le point de passage unique : boutons, molette, trackpad et doigts finissent tous ici.
+    function confirmerZoom(z,cx,cy){
+      clearTimeout(tGeste); tGeste=null; geste=null;
+      retirerApercu();
+      var avant=zoom, apres=Player.viewer.clampZoom(z);
+      if(apres===avant){ majEtiquetteZoom(); return; }
+      var sr=scrollEl.getBoundingClientRect();
+      var cible=Player.viewer.ancrageApresZoom({
+        defilement:{x:scrollEl.scrollLeft,y:scrollEl.scrollTop},
+        point:{x:cx-sr.left,y:cy-sr.top},
+        cadre:{largeur:scrollEl.clientWidth,hauteur:scrollEl.clientHeight},
+        contenu:{largeur:scrollEl.scrollWidth,hauteur:scrollEl.scrollHeight},
+        fixe:partFixeDuContenu(), fixeDebut:teteFixeDuContenu(),
+        zoomAvant:avant, zoomApres:apres });
+      zoom=apres; majEtiquetteZoom();
+      // ⚠️ if(pdfDoc) SEUL LAISSAIT LES IMAGES SANS ZOOM. Le commentaire de renderImage annonce que
+      // « tout le chrome — loader, zoom, plein ecran… — fonctionne tel quel » : c etait faux pour le
+      // zoom, pdfDoc restant nul sur une image. Le defaut passait inapercu tant que le zoom tenait a
+      // deux boutons ; intercepter le pincement sans le corriger aurait AVALE le geste sur ces
+      // documents, donc fait pire qu avant.
+      if(!pdfDoc && !IS_IMG) return;
+      build();
+      scrollEl.scrollLeft=cible.x; scrollEl.scrollTop=cible.y;
+    }
+
+    // Les boutons visent le centre du cadre. Ils heritent donc de l ancrage, et la derive qu ils avaient
+    // deja — les pages changent de largeur, le defilement reste en pixels — disparait.
+    function setZoom(z){
+      var sr=scrollEl.getBoundingClientRect();
+      confirmerZoom(z, sr.left+scrollEl.clientWidth/2, sr.top+scrollEl.clientHeight/2);
+    }
+
+    function brancherZoomAuGeste(){
+      // A. TRACKPAD ET CTRL+MOLETTE. NON PASSIF, et c est la ligne qui compte : wheel est passif par
+      // defaut sur les navigateurs recents, et un ecouteur passif voit son preventDefault IGNORE —
+      // l ecran zoomerait quand meme, en silence.
+      scrollEl.addEventListener('wheel',function(e){
+        if(!e.ctrlKey)return;
+        e.preventDefault();
+        if(!geste) geste={ancre:ancreDuGeste(e.clientX,e.clientY),depart:zoom,facteur:1};
+        // Exponentielle plutot que lineaire : le geste devient symetrique — pincer puis ecarter d autant
+        // revient exactement au zoom de depart, ce qu une addition ne donne pas.
+        geste.facteur*=Math.exp(-e.deltaY/180);
+        geste.ancre.cx=e.clientX; geste.ancre.cy=e.clientY;
+        poserApercu(facteurBorne(geste),geste.ancre);
+        // La molette n a pas de fin declaree : le silence en tient lieu.
+        clearTimeout(tGeste);
+        tGeste=setTimeout(function(){ if(geste) confirmerZoom(geste.depart*geste.facteur,geste.ancre.cx,geste.ancre.cy); },DELAI_CONFIRMATION);
+      },{passive:false});
+
+      // B. SAFARI. Ses evenements de geste ne sont pas standard mais sont les seuls disponibles la-bas ;
+      // sans le preventDefault du gesturestart, Safari zoome la page avant nous.
+      if('ongesturestart' in window){
+        scrollEl.addEventListener('gesturestart',function(e){ e.preventDefault(); geste={ancre:ancreDuGeste(e.clientX,e.clientY),depart:zoom,facteur:1}; },{passive:false});
+        scrollEl.addEventListener('gesturechange',function(e){ e.preventDefault(); if(!geste)return; geste.facteur=e.scale||1; poserApercu(facteurBorne(geste),geste.ancre); },{passive:false});
+        scrollEl.addEventListener('gestureend',function(e){ e.preventDefault(); if(!geste)return; confirmerZoom(geste.depart*geste.facteur,geste.ancre.cx,geste.ancre.cy); },{passive:false});
+      }
+
+      // C. TACTILE A DEUX DOIGTS. On ne prend la main qu a DEUX pointeurs : un seul doigt reste le
+      // defilement du navigateur, qui le fait mieux que nous et sans a-coups.
+      var doigts=Object.create(null), nDoigts=0, ecart0=0;
+      function ecartEtMilieu(){
+        var a=null,b=null;
+        for(var k in doigts){ if(!a)a=doigts[k]; else { b=doigts[k]; break; } }
+        if(!a||!b)return null;
+        var dx=a.x-b.x, dy=a.y-b.y;
+        return { d:Math.sqrt(dx*dx+dy*dy), cx:(a.x+b.x)/2, cy:(a.y+b.y)/2 };
+      }
+      scrollEl.addEventListener('pointerdown',function(e){
+        if(e.pointerType!=='touch')return;
+        if(!doigts[e.pointerId]) nDoigts++;
+        doigts[e.pointerId]={x:e.clientX,y:e.clientY};
+        if(nDoigts===2){ var m=ecartEtMilieu(); if(m&&m.d>0){ ecart0=m.d; geste={ancre:ancreDuGeste(m.cx,m.cy),depart:zoom,facteur:1}; } }
+      },{passive:true});
+      scrollEl.addEventListener('pointermove',function(e){
+        if(e.pointerType!=='touch'||!doigts[e.pointerId])return;
+        doigts[e.pointerId]={x:e.clientX,y:e.clientY};
+        if(nDoigts!==2||!geste||!ecart0)return;
+        var m=ecartEtMilieu(); if(!m)return;
+        e.preventDefault();
+        geste.facteur=m.d/ecart0; geste.ancre.cx=m.cx; geste.ancre.cy=m.cy;
+        poserApercu(facteurBorne(geste),geste.ancre);
+      },{passive:false});
+      // ⚠️ ON CONFIRME DES QU IL NE RESTE QU UN DOIGT, pas quand ils sont tous partis : un lecteur qui
+      // leve un doigt et garde l autre pose continue a lire, et l apercu resterait fige sur une
+      // transformation que rien ne viendrait plus confirmer.
+      function doigtLeve(e){
+        if(e.pointerType!=='touch'||!doigts[e.pointerId])return;
+        delete doigts[e.pointerId]; nDoigts=Math.max(0,nDoigts-1);
+        if(nDoigts<2&&geste){ var g=geste; ecart0=0; confirmerZoom(g.depart*g.facteur,g.ancre.cx,g.ancre.cy); }
+      }
+      scrollEl.addEventListener('pointerup',doigtLeve,{passive:true});
+      scrollEl.addEventListener('pointercancel',doigtLeve,{passive:true});
+    }
     // ⚠️ UN REFUS ARRÊTE LE LECTEUR, et les deux replis plus doux ont été MESURÉS avant d'être
     // écartés — pas jugés sur leur mine :
     //
@@ -682,7 +863,13 @@ ${LEGAL_CSS}
     function onePageReserve(){ var band=capReserve(); return document.body.classList.contains('botplayer')?(document.body.classList.contains('vsplit')?Math.round(window.innerHeight*0.38)+70:(isLand()?12:260)):(band?band:(document.body.classList.contains('deskaudio')?4:0)); }
     // La géométrie (bornes, respiration, seuil d'abandon) vit dans player/src/viewer.ts ; ici on ne
     // fournit que les MESURES, seules choses que le DOM connaisse.
-    function targetWidth(){ return Player.viewer.fitWidth({containerWidth:baseWidth(),containerHeight:scrollEl.clientHeight,zoom:zoom,onePage:onePage,aspect:firstAspect,overlap:botOverlap(),reserve:onePageReserve()}); }
+    // ⚠️ LA PROPORTION EFFECTIVE GOUVERNE LE SUIVI DE LECTURE, PAS SEULEMENT L AFFICHAGE. Elle fixe la
+    // hauteur des gabarits poses AVANT rendu ; ces gabarits fixent la longueur du document ; cette
+    // longueur decide de la page que l observateur d intersection appelle « courante » ; et c est cette
+    // page-la que le suivi enregistre. Une proportion non tournee a 90 degres fausse donc les
+    // statistiques d un partage, en silence et sans rien casser a l ecran.
+    function aspectEffectif(){ return Player.viewer.aspectApresRotation(firstAspect,rot); }
+    function targetWidth(){ return Player.viewer.fitWidth({containerWidth:baseWidth(),containerHeight:scrollEl.clientHeight,zoom:zoom,onePage:onePage,aspect:firstAspect,rotation:rot,overlap:botOverlap(),reserve:onePageReserve()}); }
     // IMAGE — la visionneuse ne savait lire QUE du PDF (pdf.js). Une axonométrie en .jpg
     // partait donc dans getDocument() et échouait sur « structure invalide ».
     // Elle devient une page unique : tout le chrome — loader, zoom, plein écran, Partager,
@@ -706,12 +893,18 @@ ${LEGAL_CSS}
       task.onProgress=function(p){ if(p&&p.total){ var pct=Math.max(8,Math.min(99,Math.round(p.loaded/p.total*100))); var bar=document.getElementById('lbar'); if(bar)bar.classList.remove('idle'); var f=document.getElementById('lbarFill'); if(f)f.style.width=pct+'%'; var l=document.getElementById('lpct'); if(l)l.textContent=pct+' %'; } };
       task.promise.then(function(pdf){
         pdfDoc=pdf; numPages=pdf.numPages; window.__n=pdf.numPages; T.setPageCount(pdf.numPages);
+        // Un document d une seule page : le panneau de vignettes n aurait rien a montrer.
+        if(numPages<2){ var vb1=document.getElementById('vignBtn'); if(vb1) vb1.style.display='none'; }
         document.getElementById('pg').textContent='Page 1 / '+pdf.numPages;
         pdf.getPage(1).then(function(p){ var vp=p.getViewport({scale:1}); firstAspect=vp.height/vp.width; build(); try{if(window.PlayerBot)window.PlayerBot.init(VIEWER);}catch(e){} })
           .catch(function(){ build(); try{if(window.PlayerBot)window.PlayerBot.init(VIEWER);}catch(e){} });
       }).catch(function(){ loadError("Impossible d'afficher ce document."); });
     }
     function build(){
+      // Un apercu de zoom n a plus de sens des qu on reconstruit : le laisser poserait une
+      // transformation orpheline sur des pages neuves. Cas reel : un redimensionnement de
+      // fenetre pendant un pincement.
+      retirerApercu();
       // Une nouvelle construction invalide tout ce qui etait en vol : sans cela, les rendus lances
       // par la precedente peignent dans des elements DETACHES (pagesEl a ete vide) et le travail est
       // fait deux fois. C est le meme mecanisme de generation que la page audience.
@@ -727,7 +920,7 @@ ${LEGAL_CSS}
       ioCur=new IntersectionObserver(function(es){es.forEach(function(e){ if(e.isIntersecting){ setCur(+e.target.dataset.p); } });},{root:scrollEl,rootMargin:Player.viewer.CURRENT_PAGE_MARGIN,threshold:0});
       pagesEl.innerHTML='';
       var w=Math.round(targetWidth());
-      for(var i=1;i<=numPages;i++){ var d=document.createElement('div'); d.className='page ph'; d.dataset.p=i; d.style.width=w+'px'; d.style.height=Math.round(w*firstAspect)+'px'; d.textContent='Page '+i; pagesEl.appendChild(d); io.observe(d); ioCur.observe(d); }
+      for(var i=1;i<=numPages;i++){ var d=document.createElement('div'); d.className='page ph'; d.dataset.p=i; d.style.width=w+'px'; d.style.height=Math.round(w*aspectEffectif())+'px'; d.textContent='Page '+i; pagesEl.appendChild(d); io.observe(d); ioCur.observe(d); }
       var _band=capReserve(); var _pb=document.body.classList.contains('botplayer')?(document.body.classList.contains('vsplit')?Math.round(window.innerHeight*0.38)+50:(isLand()?0:240)):(botOverlap()+(_band?_band+12:(document.body.classList.contains('deskaudio')?16:0))); pagesEl.style.paddingBottom = onePage ? (_pb+'px') : ''; // centre la page dans l'espace VISIBLE (au-dessus de la sheet mobile / du bandeau desktop / sous le header en audio seul)
       if(onePage) showPage(cur||1);
     }
@@ -737,11 +930,161 @@ ${LEGAL_CSS}
       var els=pagesEl.querySelectorAll('.page'); for(var i=0;i<els.length;i++){ els[i].classList.toggle('cur',(+els[i].dataset.p)===p); } var el=pagesEl.querySelector('.page[data-p="'+p+'"]'); if(el){ renderPage(p,el); var nx=pagesEl.querySelector('.page[data-p="'+(p+1)+'"]'); if(nx)renderPage(p+1,nx); } setCur(p); syncArrows();
       var pf=document.getElementById('pglineF'); if(pf&&numPages)pf.style.width=Player.viewer.progressPercent(p,numPages)+'%'; } // ligne de progression (mode présentation)
     function enterOnePage(){ if(onePage)return; onePage=true; document.body.classList.add('onepage'); document.body.classList.add('botlock'); if(pdfDoc){ var c=cur||1; build(); showPage(c); } syncArrows(); }
-    function exitOnePage(){ if(!onePage)return; onePage=false; soloOffered=false; document.body.classList.remove('onepage'); document.body.classList.remove('botlock'); var c=cur||1; if(pdfDoc){ build(); setTimeout(function(){ scrollToPage(c); },30); } syncArrows(); }
+    function exitOnePage(){ if(!onePage)return; onePage=false; soloOffered=false; document.body.classList.remove('onepage'); document.body.classList.remove('botlock'); var c=cur||1; if(pdfDoc){ build(); restaurerPage(c); } syncArrows(); }
     // Re-fit du document à la largeur réelle (resize fenêtre, ouverture/fermeture du chat ancré, plein écran)
     // en conservant la page courante. Débouncé pour rester fluide.
-    function scrollToPage(p){ var el=pagesEl.querySelector('.page[data-p="'+p+'"]'); if(el) el.scrollIntoView({block:'start'}); }
-    window.__refit=function(){ if(!pdfDoc)return; var c=cur||1; build(); setTimeout(function(){ scrollToPage(c); },30); };
+    // ⚠️ UN REPORT DE PAGE N EST VALABLE QUE TANT QUE PERSONNE N A NAVIGUE ENTRE-TEMPS.
+    //
+    // Une reconstruction ne peut pas restaurer la page tout de suite : les gabarits viennent d etre
+    // poses et la geometrie n est pas encore stable. On differe donc de 30 ms. Mais ce report SURVIT a
+    // une navigation faite dans l intervalle, et il la DEFAIT — le lecteur qui ouvre le panneau de
+    // vignettes puis clique aussitot une vignette est ramene la ou il etait.
+    //
+    // Trouve par la forge, pas ici : en local les vignettes ne se rendaient pas, le banc attendait donc
+    // bien au-dela des 30 ms et la course ne se produisait jamais. Reproduit ensuite en ouvrant le
+    // panneau et en cliquant dans le meme instant.
+    var tRestaurer=null;
+    function restaurerPage(c){
+      clearTimeout(tRestaurer);
+      tRestaurer=setTimeout(function(){ tRestaurer=null; scrollToPage(c); },30);
+    }
+    function scrollToPage(p){
+      // Toute navigation explicite PERIME le report en attente : c est ce qui ferme la course.
+      clearTimeout(tRestaurer); tRestaurer=null;
+      var el=pagesEl.querySelector('.page[data-p="'+p+'"]'); if(el) el.scrollIntoView({block:'start'});
+    }
+    // ⚠️ PAS window.__refit ICI : il commence par « if(!pdfDoc) return », donc il ne ferait RIEN sur un
+    // document image — le meme garde qui laissait les images sans zoom avant le lot 1.
+    // ── PANNEAU DE VIGNETTES ─────────────────────────────────────────────────────────────────────
+    //
+    // ⚠️ LE MOTEUR EXISTAIT DEJA, DANS LE CHAT — et une seule de ses parties ne se transpose pas.
+    // gabarit-live.js fabrique des vignettes de pieces jointes avec un cache borne, une file de
+    // concurrence, un chargement paresseux et des URL objet plutot que des data-URL. Tout cela sert
+    // ici. Ce qui NE se transpose pas est le getDocument suivi d un destroy : ce panneau montre les
+    // pages du document DEJA OUVERT. Le reprendre tel quel telechargerait le fichier une seconde fois
+    // et ferait tourner deux workers sur le meme PDF.
+    //
+    // ⚠️ ET LE CACHE EST BORNE PARCE QU UN DOCUMENT NE L EST PAS. Cinq cents pages font cinq cents
+    // boutons — c est peu — mais cinq cents canvas seraient le defaut que la fenetre glissante ferme
+    // deja pour les pages. On garde les derniers, on rend les autres a l etat de gabarit, et
+    // l observateur les refabrique s ils reviennent a l ecran.
+    var VIGN_LARGEUR=132, VIGN_MAX=48, VIGN_PARALLELE=2;
+    var vignOuvert=false, vignIO=null, vignFile=[], vignActifs=0, vignOrdre=[], vignFaites=Object.create(null), vignEchecs=Object.create(null);
+    // ⚠️ LE SUIVI AUTOMATIQUE SE DESARME DES QUE LE LECTEUR TOUCHE LE PANNEAU. Sans ca, parcourir les
+    // vignettes ramene sans cesse le panneau sur la page en cours et le lecteur se bat contre son
+    // outil. On ecoute les GESTES, pas l evenement scroll : un defilement que NOUS provoquons ne doit
+    // pas compter comme une intention du lecteur.
+    var vignSuivi=true;
+
+    function vignVider(bt){
+      bt.innerHTML='';
+      bt.style.height=Math.round(VIGN_LARGEUR*aspectEffectif())+'px';
+      var s=document.createElement('span'); s.className='vg-n'; s.textContent=bt.dataset.p; bt.appendChild(s);
+    }
+    function vignEvincer(){
+      while(vignOrdre.length>VIGN_MAX){
+        var vieux=vignOrdre.shift();
+        delete vignFaites[vieux];
+        var bt=vignIn.querySelector('.vg[data-p="'+vieux+'"]');
+        if(bt){ vignVider(bt); if(vignIO) vignIO.observe(bt); }
+      }
+    }
+    function vignSuivante(){
+      if(vignActifs>=VIGN_PARALLELE||!vignFile.length)return;
+      var t=vignFile.shift(); vignActifs++;
+      Promise.resolve().then(t).catch(function(){}).then(function(){ vignActifs--; vignSuivante(); });
+    }
+    function vignRendre(bt){
+      var n=+bt.dataset.p;
+      if(!pdfDoc||vignFaites[n])return;
+      vignFaites[n]=1; vignOrdre.push(n); vignEvincer();
+      // ⚠️ UN ECHEC DOIT POUVOIR ETRE RETENTE, ET C EST LE DEFAUT QUE LE CHEMIN PRINCIPAL DOCUMENTE
+      // DEJA : « on ne marque pas RENDUE avant de l avoir fait ». Ici la marque est posee AVANT, pour
+      // dedoublonner les demandes concurrentes ; il faut donc la RETIRER si le rendu echoue, sinon la
+      // vignette reste vide pour toujours et plus rien ne la redemande. Trouve en mesurant : le
+      // navigateur d essai rejetait chaque rendu, et la file avalait le rejet sans un mot.
+      //
+      // ⚠️ ET LA REPRISE EST BORNEE, PARCE QU OBSERVER UN ELEMENT DEJA VISIBLE RAPPELLE LE CALLBACK
+      // TOUT DE SUITE. Re-observer sans compter fabriquerait une BOUCLE INFINIE des que les rendus
+      // echouent en serie — un moteur trop ancien, une memoire pleine — et brulerait le processeur du
+      // lecteur en silence. Mesure sur un navigateur ou chaque rendu echoue : sans borne, la file ne
+      // se vidait jamais. Deux tentatives, puis on laisse la vignette vide plutot que de tourner.
+      var oublier=function(){
+        delete vignFaites[n];
+        var j=vignOrdre.indexOf(n); if(j>=0) vignOrdre.splice(j,1);
+        vignEchecs[n]=(vignEchecs[n]||0)+1;
+        if(vignEchecs[n]<2 && vignIO && bt.isConnected) vignIO.observe(bt);
+      };
+      vignFile.push(function(){
+        return pdfDoc.getPage(n).then(function(page){
+          if(!vignFaites[n])return;                      // evincee pendant l attente
+          var rotEff=Player.viewer.rotationEffective(page.rotate,rot);
+          var v0=page.getViewport({scale:1,rotation:rotEff});
+          var v=page.getViewport({scale:VIGN_LARGEUR/v0.width,rotation:rotEff});
+          var c=document.createElement('canvas');
+          c.width=Math.ceil(v.width); c.height=Math.ceil(v.height);
+          return page.render({canvasContext:c.getContext('2d'),viewport:v}).promise.then(function(){
+            if(!vignFaites[n])return;
+            bt.style.height=''; bt.innerHTML=''; bt.appendChild(c);
+            var s=document.createElement('span'); s.className='vg-n'; s.textContent=n; bt.appendChild(s);
+          }, oublier);
+        }, oublier);
+      });
+      vignSuivante();
+    }
+    function vignMarquer(p){
+      if(!vignOuvert||!vignIn)return;
+      var els=vignIn.querySelectorAll('.vg');
+      for(var i=0;i<els.length;i++) els[i].classList.toggle('on',(+els[i].dataset.p)===p);
+      if(!vignSuivi)return;
+      var el=vignIn.querySelector('.vg[data-p="'+p+'"]');
+      // On deplace le defilement DU PANNEAU, jamais scrollIntoView : celui-ci remonte la chaine des
+      // ancetres scrollables et emporterait le document avec lui.
+      if(el) vignIn.scrollTop=Math.max(0,el.offsetTop-(vignIn.clientHeight-el.offsetHeight)/2);
+    }
+    function vignConstruire(){
+      if(!vignIn)return;
+      if(vignIO){ vignIO.disconnect(); vignIO=null; }
+      vignIn.innerHTML=''; vignFaites=Object.create(null); vignEchecs=Object.create(null); vignOrdre=[]; vignFile=[];
+      if(!pdfDoc||numPages<2)return;
+      vignIO=new IntersectionObserver(function(es){
+        es.forEach(function(e){ if(e.isIntersecting){ vignIO.unobserve(e.target); vignRendre(e.target); } });
+      },{root:vignIn,rootMargin:'220px 0px'});
+      for(var i=1;i<=numPages;i++){
+        var bt=document.createElement('button');
+        bt.type='button'; bt.className='vg'; bt.dataset.p=i; bt.setAttribute('role','listitem');
+        bt.setAttribute('aria-label','Aller à la page '+i);
+        vignVider(bt);
+        bt.addEventListener('click',function(){
+          var n=+this.dataset.p; vignSuivi=true;
+          if(onePage) showPage(n); else scrollToPage(n);
+          vignMarquer(n);
+        });
+        vignIn.appendChild(bt); vignIO.observe(bt);
+      }
+      vignMarquer(cur||1);
+    }
+    function basculerVignettes(){
+      vignOuvert=!vignOuvert;
+      document.body.classList.toggle('vign-on',vignOuvert);
+      var b=document.getElementById('vignBtn'); if(b) b.setAttribute('aria-pressed',vignOuvert?'true':'false');
+      var v=document.getElementById('vign'); if(v) v.setAttribute('aria-hidden',vignOuvert?'false':'true');
+      if(vignOuvert){ vignSuivi=true; vignConstruire(); }
+      else if(vignIO){ vignIO.disconnect(); vignIO=null; vignIn.innerHTML=''; vignFaites=Object.create(null); vignEchecs=Object.create(null); vignOrdre=[]; vignFile=[]; }
+      // Le cadre a change de largeur : le document se recalcule, en gardant sa page.
+      var c=cur||1;
+      if(pdfDoc||IS_IMG){ build(); if(onePage) showPage(c); else restaurerPage(c); }
+    }
+
+    function tournerDe(quarts){
+      rot=Player.viewer.rotationEffective(rot,quarts*90);
+      var c=cur||1;
+      if(!pdfDoc && !IS_IMG) return;
+      build();
+      if(vignOuvert) vignConstruire();   // la proportion des vignettes a change
+      if(onePage) showPage(c); else restaurerPage(c);
+    }
+    window.__refit=function(){ if(!pdfDoc)return; var c=cur||1; build(); restaurerPage(c); };
     var _rzT; window.addEventListener('resize',function(){ clearTimeout(_rzT); _rzT=setTimeout(function(){ window.__refit(); },160); });
     // ÉCRAN PARTAGÉ mobile : le fond au-dessus/en-dessous du document prolonge les couleurs de la page
     // (échantillon des bords haut/bas du canvas) — du header jusqu'à la vidéo, dynamique à chaque page.
@@ -766,7 +1109,7 @@ ${LEGAL_CSS}
       if(taches[n]){ try{ taches[n].cancel(); }catch(e){} delete taches[n]; }
       var w=Math.round(targetWidth());
       el.innerHTML=''; el.className='page ph'; el.textContent='Page '+n;
-      el.style.width=w+'px'; el.style.height=Math.round(w*firstAspect)+'px';
+      el.style.width=w+'px'; el.style.height=Math.round(w*aspectEffectif())+'px';
       delete rendered[n]; delete enCours[n];
     }
     // ATTENTION : ON BORNE PAR UN BUDGET DE PIXELS, PAS SEULEMENT PAR UN NOMBRE DE PAGES.
@@ -805,8 +1148,21 @@ ${LEGAL_CSS}
       if(IS_IMG){
         var w=Math.round(targetWidth());
         var im=document.createElement('img');
-        im.src=imgSrc; im.alt=''; im.style.width=w+'px'; im.style.display='block';
-        el.style.height=''; el.classList.remove('ph'); el.textContent=''; el.style.width=w+'px';
+        im.src=imgSrc; im.alt=''; im.style.display='block';
+        el.classList.remove('ph'); el.textContent=''; el.style.width=w+'px';
+        // ⚠️ UN DOCUMENT IMAGE N A PAS DE VIEWPORT : sa rotation ne peut etre qu une transformation CSS.
+        // Et un element transforme occupe TOUJOURS sa boite d origine — sans echanger les dimensions du
+        // cadre et sortir l image du flux, la mise en page se disloque : la page suivante viendrait se
+        // poser par-dessus.
+        if(rot===90||rot===270){
+          im.style.width=Math.round(w/(firstAspect||1))+'px';
+          im.style.position='absolute'; im.style.left='50%'; im.style.top='50%';
+          im.style.transform='translate(-50%,-50%) rotate('+rot+'deg)';
+          el.style.height=Math.round(w*aspectEffectif())+'px';
+        } else {
+          im.style.width=w+'px'; el.style.height='';
+          if(rot===180) im.style.transform='rotate(180deg)';
+        }
         el.appendChild(im);
         im.onload=function(){ if(gen!==renderGen)return; delete enCours[n]; rendered[n]=1; hideLoader(); };
         im.onerror=function(){ delete enCours[n]; };      // reessayable
@@ -821,8 +1177,14 @@ ${LEGAL_CSS}
       // ×2 est nul, le cout est quadratique. On plafonne le DPR, puis on plafonne le NOMBRE DE
       // PIXELS du canvas : deux bornes, parce que le zoom peut faire grandir la page independamment
       // de la densite de l ecran.
-      var scale=Math.min(5,targetWidth()/page.getViewport({scale:1}).width);
-      var v=page.getViewport({scale:scale});
+      // ⚠️ ON COMPOSE, ON N ECRASE PAS. La documentation de getViewport dit : « si omise, la rotation
+      // vaut celle de la page ». Passer une valeur ABSOLUE ecraserait donc le /Rotate du fichier — que
+      // portent tres couramment les documents numerises en paysage. Un « remettre a zero » qui passerait
+      // 0 ne redresserait pas un document de travers : il COUCHERAIT un document qui etait droit. La
+      // composition vit dans src/viewer.ts, ou elle est eprouvee.
+      var rotEff=Player.viewer.rotationEffective(page.rotate,rot);
+      var scale=Math.min(5,targetWidth()/page.getViewport({scale:1,rotation:rotEff}).width);
+      var v=page.getViewport({scale:scale,rotation:rotEff});
       // ATTENTION : LE PLANCHER A 1 CREVAIT LE BUDGET, ET LE BUDGET ETAIT ANNONCE.
       //
       // L ancienne formule reduisait le DPR sans jamais le laisser descendre SOUS 1. Or au zoom

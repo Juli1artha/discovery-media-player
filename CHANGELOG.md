@@ -14,6 +14,106 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- **Panneau de vignettes, à gauche du document** — bouton dans la barre et entrée de menu, replié par
+  défaut, tiroir plutôt que colonne sous 860 px. Cliquer une vignette navigue ; la vignette courante
+  est marquée. Masqué sur un document image ou d'une seule page, où il n'aurait rien à montrer.
+  ⚠️ **Le moteur vient du chat, sauf la partie qui compte.** Le générateur de vignettes de
+  `gabarit-live.js` apporte le cache borné, la file de concurrence et le chargement paresseux. Ce qui
+  ne se transpose **pas** est son `getDocument` suivi d'un `destroy` : ce panneau montre les pages du
+  document **déjà ouvert**. Le reprendre tel quel téléchargerait le fichier une seconde fois et ferait
+  tourner deux workers sur le même PDF. Un banc compte les requêtes vers le fichier et exige zéro.
+  ⚠️ **Le suivi automatique se désarme dès que le lecteur touche le panneau** — sinon chaque
+  changement de page ramène le panneau sur la page en cours et le lecteur se bat contre son outil. On
+  écoute les gestes, pas l'événement de défilement : un défilement que nous provoquons n'est pas une
+  intention du lecteur.
+  ⚠️ **Deux défauts trouvés en mesurant, tous deux miens.** Un rendu de vignette en échec restait
+  marqué « faite » et n'était **jamais retenté** — précisément ce que le chemin principal des pages
+  documente et évite. Et le correctif naïf en introduisait un pire : ré-observer un élément déjà
+  visible rappelle l'observateur **immédiatement**, donc une **boucle infinie** sur un moteur où les
+  rendus échouent en série. La reprise est bornée à deux tentatives ; mesuré : la file s'arrête à 2
+  rejets au lieu de tourner sans fin.
+  ⚠️ **Et deux de mes sondes annonçaient « borné ✓ » et « libéré ✓ » sur zéro vignette rendue.** Un
+  zéro qui vient de ce qui n'a jamais eu lieu satisfait « au plus 48 » aussi bien qu'un moteur qui
+  marche. Les quatre bancs portent désormais un plancher qui **refuse** un panneau vide.
+  ⚠️ **Et une course, trouvée par la forge et impossible à voir ailleurs.** Ouvrir le panneau
+  reconstruit le document et **reporte de 30 ms** la restauration de la page courante — la géométrie
+  n'est pas stable avant. Ce report survivait à une navigation faite dans l'intervalle et la
+  **défaisait** : ouvrir le panneau puis cliquer aussitôt une vignette ramenait le lecteur à sa page
+  de départ. Invisible dans l'environnement de développement, où les vignettes ne se rendaient pas et
+  où le banc attendait donc bien au-delà des 30 ms. **Toute navigation explicite périme désormais un
+  report en attente**, et un banc ouvre le panneau et clique dans le même instant.
+
+- **Rotation du document à 90°, à gauche ou à droite** — dans la barre et dans le menu « ⋯ », comme
+  le zoom, et repliée dans le menu sous 860 px par la même règle. Un quart de tour par clic ; quatre
+  clics ramènent à l'identique. Rotation du **document**, pas de la page : une rotation par page est
+  un autre modèle de données et une autre interface.
+  ⚠️ **La rotation du fichier est COMPOSÉE, jamais écrasée.** `getViewport({rotation})` de pdf.js dit
+  *« si omise, elle vaut la rotation de la page »* : passer une valeur absolue écrase le `/Rotate` que
+  portent très couramment les documents numérisés en paysage. Un « remettre à zéro » naïf ne
+  redresserait pas un document de travers — il **coucherait** un document qui était droit. Un banc
+  ouvre un document portant `/Rotate 90` sans rien tourner et exige qu'il s'affiche couché.
+  ⚠️ **La proportion tournée protège le SUIVI DE LECTURE, pas seulement l'affichage.** Elle fixe la
+  hauteur des gabarits posés avant rendu, qui fixe la longueur du document, qui décide de la page que
+  l'observateur d'intersection appelle « courante » — et c'est celle-là que le suivi enregistre.
+  Mesuré : la hauteur totale change bien avec la rotation, et la page courante survit au quart de tour.
+  ⚠️ **Les documents image pivotent aussi, par un second chemin.** Sans pdf.js il n'y a pas de
+  viewport : la rotation est une transformation CSS, et un élément transformé occupe toujours sa boîte
+  d'origine — sans échanger les dimensions du cadre, la page suivante viendrait se poser par-dessus.
+  ⚠️ **Et le banc de ce cas passait à vide au premier jet** : l'image du harnais est carrée, donc
+  échanger sa largeur et sa hauteur y est invisible. Le harnais porte désormais une image franchement
+  rectangulaire, et le banc refuse de tourner sur une image carrée.
+  Mesuré aussi : tourner pendant que le document est zoomé conserve le zoom, inverse la proportion, et
+  le pire canvas reste sous le budget de pixels annoncé.
+
+- ⚠️ **Le pincement au trackpad zoomait l'écran entier — parce que personne n'écoutait.** Sur
+  trackpad, un pincement n'est pas un événement tactile : le navigateur l'envoie comme un `wheel`
+  portant `ctrlKey`. Rien dans la visionneuse ne le lisait, donc le navigateur appliquait son défaut.
+  ⚠️ **Et le défaut était plus large qu'un confort manquant** : sous 860 px la barre replie les
+  boutons de zoom, donc **sur mobile le pincement était le seul zoom qu'un lecteur pouvait tenter** —
+  et il déformait toute l'interface. Le geste est désormais réclamé sur la surface du document
+  (trackpad, Ctrl+molette, événements de geste de Safari, deux doigts), et **le zoom du navigateur
+  reste disponible sur le reste de l'interface** : le retirer partout serait une régression
+  d'accessibilité pour qui grossit le chrome plutôt que le document.
+  ⚠️ **En deux temps, parce qu'un seul ne tient pas.** Une reconstruction vide le conteneur, annule
+  les rendus en vol et recrée toutes les pages : juste pour un clic, ruineux pour un geste continu.
+  Pendant le pincement, une simple transformation ; la reconstruction arrive **une** fois, à l'arrêt.
+  Mesuré dans Chromium : **25 événements de pincement → 1 reconstruction**.
+  ⚠️ **Le point visé ne fuit plus, et la mesure a corrigé le modèle.** Première écriture : **14,1 px**
+  de fuite mesurés dans un vrai navigateur. La cause n'était pas le geste mais l'arithmétique — les
+  22 px de marge en haut du conteneur arrivent **avant** la première page et ne s'étirent pas, alors
+  que les espaces entre pages sont proportionnels au nombre de pages au-dessus du point visé.
+  Épargner cette tête ramène la fuite à **0,9 px**. Les deux valeurs sont figées dans les bancs.
+  ⚠️ **Et les boutons héritent de l'ancrage** : leur dérive — les pages changent de largeur, le
+  défilement reste en pixels — existait déjà et disparaît.
+  ⚠️ **Défaut trouvé en chemin : le zoom ne faisait rien sur un document image.** Le garde
+  `if (pdfDoc)` est faux pour une image, alors que le commentaire du rendu d'image annonce que « tout
+  le chrome — loader, zoom, plein écran… — fonctionne tel quel ». Inaperçu tant que le zoom tenait à
+  deux boutons ; intercepter le pincement sans le corriger aurait **avalé** le geste sur ces
+  documents, donc fait pire qu'avant.
+
+- **Socle du chantier « trois gestes » : l'arithmétique du zoom au geste et de la rotation entre dans
+  `src/viewer.ts`, sans aucun changement visible.** Trois fonctions pures et une extension, couvertes
+  par vingt-deux bancs de plus — le module sans DOM est le seul endroit où ces calculs sont
+  éprouvables, le reste vivant dans un littéral de gabarit qu'aucun banc n'exécute.
+  ⚠️ **`rotationEffective` COMPOSE la rotation du fichier avec celle demandée, au lieu de l'écraser.**
+  `getViewport({rotation})` de pdf.js dit : *« si omise, elle vaut la rotation de la page »* — donner
+  une valeur absolue écrase donc le `/Rotate` que portent très couramment les documents numérisés en
+  paysage. Un « remettre à zéro » naïf ne redresserait pas un document de travers : il **coucherait**
+  un document qui était droit.
+  ⚠️ **`aspectApresRotation` gouverne le suivi de lecture, pas seulement l'affichage.** La proportion
+  fixe la hauteur des gabarits, qui fixe la longueur du document, qui décide de la page que
+  l'observateur d'intersection appelle « courante » — et c'est celle-là que le suivi enregistre. Une
+  proportion non tournée à 90° fausserait les statistiques d'un partage sans rien casser à l'écran.
+  ⚠️ **`ancrageApresZoom` traite la marge de centrage**, sans quoi il ancre correctement un document
+  zoomé et fait sauter un document vu en entier — au moment exact où le lecteur commence à zoomer. Il
+  distingue aussi la part du contenu qui NE grandit pas avec le zoom : cent pages séparées de 16 px
+  portent plus de 1500 px d'espacements fixes.
+  ⚠️ **Et une mutation survivante a révélé du code mort, retiré plutôt que couvert** : la symétrie
+  appelait une marge de centrage « après » ; elle n'est non nulle que si le contenu reste plus étroit
+  que le cadre, cas où la butée haute vaut zéro et la sortie vaut zéro quoi qu'on ajoute. Les deux
+  conditions s'excluent. Un balayage de 195 840 combinaisons a confirmé zéro cas observable avant de
+  la supprimer. Les onze autres mutations rougissent.
+
 - ⚠️ **Deux règles de revue tirées de l'épisode de la requête de diagnostic, l'une de nous, l'autre
   d'un hôte.** La première : *une sonde qui demande « est-ce que ça échoue ? » à une question qui est
   « qu'est-ce que ça rend ? » rend compte d'elle-même, pas de son sujet.* Deux de nos vérifications

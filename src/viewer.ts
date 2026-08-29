@@ -64,8 +64,14 @@ export interface FitInput {
   zoom?: number;
   /** Mode « une seule page » : la page doit tenir ENTIÈREMENT dans le cadre visible. */
   onePage?: boolean;
-  /** Proportion hauteur/largeur de la première page. */
+  /** Proportion hauteur/largeur de la première page, AVANT rotation du lecteur. */
   aspect?: number;
+  /**
+   * Rotation demandée par le lecteur, en degrés. La proportion est tournée avec elle : sans ça, une
+   * page mise en paysage serait ajustée comme si elle était restée en portrait, et déborderait du
+   * cadre exactement dans le mode où elle doit y tenir entière.
+   */
+  rotation?: number;
   /** Hauteur occultée par un panneau qui recouvre le bas du document (feuille mobile). */
   overlap?: number;
   /** Hauteur réservée à un bandeau (mode barre, lecteur guidé…). */
@@ -88,7 +94,7 @@ export function fitWidth(input: FitInput): number {
   const width = Math.max(MIN_PAGE_WIDTH, input.containerWidth || 900) * zoom;
   if (!input.onePage) return width;
 
-  const aspect = input.aspect || DEFAULT_ASPECT;
+  const aspect = aspectApresRotation(input.aspect, input.rotation);
   const available = (input.containerHeight || 600) - BREATHING - (input.overlap || 0) - (input.reserve || 0);
   const maxByHeight = available / aspect;
   // Sous ce seuil la contrainte de hauteur produirait une page minuscule (panneau presque
@@ -110,3 +116,160 @@ export function isImageDocument(fileName?: string | null, fileUrl?: string | nul
   return /[.](png|jpe?g|webp|gif|avif)($|[?])/i.test(String(fileName || fileUrl || ""));
 }
 
+
+// ── Lot 0 du chantier « trois gestes » : l'arithmétique, ici, pas dans le gabarit ──────────────
+//
+// ⚠️ CE QUI SUIT NE DESSINE RIEN ET NE MESURE RIEN, comme le reste de ce module. Le zoom au geste,
+// la rotation et les vignettes ont tous besoin de calculs que le littéral de gabarit de
+// `server/page-visionneuse.js` ne peut pas éprouver — un banc ne s'y exécute pas. Les écrire ici
+// les rend testables sans navigateur, et c'est la seule raison pour laquelle ce module existe.
+
+/** Rotations que la visionneuse sait poser. Tout le reste s'y ramène par arrondi au quart de tour. */
+export const ROTATIONS = [0, 90, 180, 270] as const;
+
+const nombreFini = (v: unknown, defaut = 0): number =>
+  typeof v === "number" && Number.isFinite(v) ? v : defaut;
+
+/**
+ * Rotation À PASSER à pdf.js, composée de celle du fichier et de celle demandée par le lecteur.
+ *
+ * ⚠️ ET C'EST UNE COMPOSITION, PAS UN REMPLACEMENT — LE PIÈGE EST DANS LA DOCUMENTATION DE PDF.JS.
+ * `getViewport({rotation})` dit : « si omise, elle vaut la rotation de la page ». Donner une valeur
+ * ABSOLUE écrase donc celle que porte le fichier. Or les documents numérisés en paysage portent très
+ * couramment `/Rotate 90` : un « remettre à zéro » qui passerait 0 ne redresserait pas un document
+ * de travers, il COUCHERAIT un document qui était droit. La rotation du fichier est le point de
+ * départ, jamais une valeur à écraser.
+ *
+ * L'arrondi au quart de tour est délibéré : la spécification PDF impose un multiple de 90, des
+ * fichiers réels ne la respectent pas, et un viewport oblique casserait la couche de texte.
+ */
+export function rotationEffective(intrinseque: unknown, demandee: unknown): number {
+  const quarts = Math.round((nombreFini(intrinseque) + nombreFini(demandee)) / 90);
+  return (((quarts % 4) + 4) % 4) * 90;
+}
+
+/**
+ * Proportion hauteur/largeur d'une page une fois tournée.
+ *
+ * ⚠️ CE CALCUL GOUVERNE LE SUIVI DE LECTURE, PAS SEULEMENT L'AFFICHAGE. La proportion fixe la
+ * hauteur des gabarits posés AVANT rendu ; ces gabarits fixent la longueur du document ; cette
+ * longueur décide de la page que l'observateur d'intersection appelle « courante » — et c'est cette
+ * page-là que le suivi enregistre. Une proportion non tournée à 90° fausse donc les statistiques
+ * d'un partage, en silence et sans rien casser à l'écran.
+ */
+export function aspectApresRotation(aspect: unknown, rotation: unknown): number {
+  const a = nombreFini(aspect, 0) > 0 ? (aspect as number) : DEFAULT_ASPECT;
+  const r = rotationEffective(0, rotation);
+  return r === 90 || r === 270 ? 1 / a : a;
+}
+
+export interface AncrageInput {
+  /** Position de défilement AVANT le changement de zoom, en pixels. */
+  defilement: { x: number; y: number };
+  /** Point à garder immobile, en coordonnées du CADRE (curseur ou milieu des deux doigts). */
+  point: { x: number; y: number };
+  /** Taille visible du cadre de défilement. */
+  cadre: { largeur: number; hauteur: number };
+  /** Taille TOTALE du contenu avant le changement, marges comprises. */
+  contenu: { largeur: number; hauteur: number };
+  /**
+   * Part du contenu qui NE GRANDIT PAS avec le zoom : marges du conteneur, espaces entre les pages.
+   * ⚠️ Sans elle, le contenu est cru proportionnel au zoom alors qu'un document de cent pages porte
+   * plus de mille cinq cents pixels d'espacements fixes — l'ancrage dérive d'autant vers le bas.
+   */
+  fixe?: { largeur: number; hauteur: number };
+  /**
+   * Part du fixe située AVANT le contenu qui grandit : la marge haute et gauche du conteneur.
+   * ⚠️ ELLE NE SE COMPORTE PAS COMME LE RESTE DU FIXE, et la confondre coûtait 14,5 px — mesuré
+   * dans Chromium sur un document de 40 pages. Les espaces ENTRE les pages sont proportionnels au
+   * nombre de pages au-dessus du point visé, donc se comportent comme le contenu ; la marge du HAUT,
+   * elle, arrive avant tout et ne bouge jamais. L'étirer avec le reste projetait le lecteur d'autant
+   * plus bas qu'il était loin dans le document.
+   */
+  fixeDebut?: { largeur: number; hauteur: number };
+  zoomAvant: number;
+  zoomApres: number;
+}
+
+/**
+ * Sur un axe : où faut-il défiler pour que le point visé ne bouge pas ?
+ *
+ * ⚠️ LA MARGE DE CENTRAGE EST LA MOITIÉ DU PROBLÈME. Le conteneur des pages est centré
+ * (`align-items:center`, `min-width:100%`) : tant que le document est plus étroit que le cadre, il
+ * flotte au milieu et le défilement vaut zéro. Une formule qui ignore ce décalage ancre correctement
+ * un document zoomé et fait sauter un document dézoomé — c'est-à-dire exactement au moment où le
+ * lecteur regarde la page entière.
+ */
+function ancrerUnAxe(
+  defilement: number,
+  point: number,
+  cadre: number,
+  contenu: number,
+  fixe: number,
+  debut: number,
+  k: number,
+): number {
+  const partFixe = Math.min(Math.max(0, fixe), Math.max(0, contenu));
+  const contenuApres = partFixe + Math.max(0, contenu - partFixe) * k;
+  // On étire la COORDONNÉE par le rapport des tailles totales, pas par le zoom : les espacements ne
+  // grandissent pas, donc le document grandit moins vite que le zoom, et un point situé au bas d'un
+  // long document se retrouverait sinon bien plus bas qu'il ne doit.
+  // Le rapport s'applique À PARTIR du début fixe : ce qui est avant lui ne bouge pas.
+  const tete = Math.min(Math.max(0, debut), Math.max(0, contenu));
+  const rapport = contenu - tete > 0 ? (contenuApres - tete) / (contenu - tete) : 1;
+  const margeAvant = Math.max(0, (cadre - contenu) / 2);
+  const coordonnee = point + defilement - margeAvant;
+  const cible = tete + Math.max(0, coordonnee - tete) * rapport - point;
+  // ⚠️ IL N'Y A PAS DE MARGE DE CENTRAGE « APRÈS », ET C'EST UNE DÉMONSTRATION, PAS UN OUBLI. La
+  // symétrie appelle un `margeApres` ici ; il serait MORT. Cette marge n'est non nulle que si le
+  // contenu reste plus étroit que le cadre — et dans ce cas la butée haute vaut zéro, donc la sortie
+  // vaut zéro quoi qu'on ajoute. Les deux conditions s'excluent. Écrit d'abord avec, la mutation qui
+  // le retirait a SURVÉCU au banc : c'est ce qui a mis le code mort en évidence, puis un balayage de
+  // 195 840 combinaisons a confirmé zéro cas observable. Ne le rajoutez pas « pour la symétrie » :
+  // il donnerait à lire un traitement qui n'a jamais lieu.
+  return Math.min(Math.max(0, cible), Math.max(0, contenuApres - cadre));
+}
+
+/**
+ * Position de défilement à poser APRÈS un changement de zoom pour que le point visé reste sous le
+ * curseur ou entre les doigts.
+ *
+ * ⚠️ SANS ELLE, LE ZOOM ACTUEL DÉRIVE DÉJÀ — le pas de 0,2 des boutons le rend seulement supportable.
+ * Au pincement, la dérive devient le défaut principal : l'œil suit le point qu'il vise, et le voir
+ * fuir donne l'impression que la visionneuse résiste.
+ */
+export function ancrageApresZoom(input: AncrageInput): { x: number; y: number } {
+  const avant = nombreFini(input.zoomAvant, 0);
+  const apres = nombreFini(input.zoomApres, 0);
+  const defilement = {
+    x: nombreFini(input.defilement && input.defilement.x),
+    y: nombreFini(input.defilement && input.defilement.y),
+  };
+  // Un zoom de départ nul ou absurde ne donne aucun rapport exploitable : on ne bouge rien plutôt
+  // que de projeter le lecteur à une position inventée.
+  if (avant <= 0 || apres <= 0) return defilement;
+
+  const k = apres / avant;
+  const fixe = input.fixe || { largeur: 0, hauteur: 0 };
+  const debut = input.fixeDebut || { largeur: 0, hauteur: 0 };
+  return {
+    x: ancrerUnAxe(
+      defilement.x,
+      nombreFini(input.point && input.point.x),
+      nombreFini(input.cadre && input.cadre.largeur),
+      nombreFini(input.contenu && input.contenu.largeur),
+      nombreFini(fixe.largeur),
+      nombreFini(debut.largeur),
+      k,
+    ),
+    y: ancrerUnAxe(
+      defilement.y,
+      nombreFini(input.point && input.point.y),
+      nombreFini(input.cadre && input.cadre.hauteur),
+      nombreFini(input.contenu && input.contenu.hauteur),
+      nombreFini(fixe.hauteur),
+      nombreFini(debut.hauteur),
+      k,
+    ),
+  };
+}
