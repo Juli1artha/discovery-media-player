@@ -332,6 +332,7 @@ ${LEGAL_CSS}
       vsplitTint:vsplitTint,
       get cur(){return cur;},get numPages(){return numPages;},get pdfDoc(){return pdfDoc;},
       get onePage(){return onePage;},
+      get reportEnAttente(){return tRestaurer!==null;},
       get soloOffered(){return soloOffered;},set soloOffered(v){soloOffered=!!v;}};
     var pdfDoc=null, zoom=1, rot=0, firstAspect=1.35, rendered={}, io=null, ioCur=null;
     // ATTENTION : LE LECTEUR GARDAIT TOUTES LES PAGES RENDUES (P1 audit externe).
@@ -957,6 +958,27 @@ ${LEGAL_CSS}
       clearTimeout(tRestaurer); tRestaurer=null;
       var el=pagesEl.querySelector('.page[data-p="'+p+'"]'); if(el) el.scrollIntoView({block:'start'});
     }
+    // ⚠️ ET « NAVIGUER » NE SE RESUME PAS A CLIQUER. Le report ne se perimait qu au passage par
+    // scrollToPage — donc au clic sur une vignette, une fleche, le sommaire. Le lecteur qui ouvre le
+    // panneau puis fait DEFILER LE DOCUMENT LUI-MEME dans les 30 ms ne passe par rien de tout cela :
+    // son geste etait defait et il revenait a sa page de depart. Meme course que ci-dessus, autre
+    // porte. La forge l a trouvee en rendant les vignettes plus vite qu ici — le banc du clic, lui,
+    // passait, parce qu un clic de vignette PASSE par scrollToPage.
+    //
+    // ⚠️ ON N ECOUTE PAS 'scroll'. La reconstruction en emet elle-meme : annuler le report sur sa
+    // propre consequence le rendrait inutile, et le lecteur perdrait sa page a chaque refit — la
+    // regression exacte que ce report existe pour empecher. On ecoute donc l ENTREE DU LECTEUR,
+    // qu aucune mise en page ne fabrique.
+    //
+    // L ordre joue en notre faveur : ces evenements arrivent AVANT le clic qui arme un report (le
+    // bouton du panneau et les vignettes sont HORS de scrollEl), jamais apres. Annuler ici ne peut
+    // donc pas desarmer un report qui n existe pas encore.
+    //
+    // Ce que ca NE couvre PAS, et c est assume : une touche pressee alors que le document n a pas le
+    // focus. Elle ne fait pas defiler le document non plus, donc il n y a rien a perimer.
+    ['wheel','touchmove','pointerdown','keydown'].forEach(function(nom){
+      scrollEl.addEventListener(nom,function(){ clearTimeout(tRestaurer); tRestaurer=null; },{passive:true});
+    });
     // ⚠️ PAS window.__refit ICI : il commence par « if(!pdfDoc) return », donc il ne ferait RIEN sur un
     // document image — le meme garde qui laissait les images sans zoom avant le lot 1.
     // ── PANNEAU DE VIGNETTES ─────────────────────────────────────────────────────────────────────
