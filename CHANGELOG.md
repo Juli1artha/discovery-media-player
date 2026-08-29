@@ -14,6 +14,28 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- ⚠️ **Il y avait un QUATRIÈME profil de politique, et c'est la forme par défaut : `{public}`.**
+  Trouvé par un hôte le 29/08 pendant que le banc à trois profils tournait déjà. Une politique écrite
+  **sans clause `TO`** s'applique à `PUBLIC`, donc à tous les rôles y compris `anon` — et
+  `pg_policies` l'affiche `{public}`, jamais `{anon}`. Le filtre `in ('anon','authenticated')` la
+  sautait intégralement. Ce n'est pas un cas rare : c'est ce que produit l'interface Supabase pour un
+  bucket public, et l'hôte en a relevé cinq chez lui dont les trois qui servent ses buckets publics.
+  Un hôte qui posait le `revoke` puis lançait la requête obtenait **zéro ligne pendant que ses
+  buckets étaient morts** — le tableau exact que la requête existe pour éviter, sur le profil que
+  personne n'avait construit.
+  ⚠️ **Et la piste proposée avec le signalement portait l'angle mort que son auteur annonçait** :
+  tester `anon` comme *représentant* de `public` se tait là où seul `authenticated` est privé, et
+  nomme `public` comme rôle — ce qui laisse l'hôte sans savoir quel droit rendre. La forme retenue
+  déplie `public` en ses rôles concrets, et nomme celui qui a perdu le droit.
+  ⚠️ **Et `to_regrole` n'est pas une coquetterie** : sur une installation sans `anon` ni
+  `authenticated` — tout ce qui n'est pas Supabase — `has_table_privilege('anon', …)` ne rend pas
+  faux, il **lève**, et la requête entière échoue. Filtrer sur `pg_roles` ne suffit pas, mesuré : le
+  planificateur évalue la fonction dans le même filtre de jointure. La forge contrôle désormais ce
+  cas **avant** de créer les rôles, seul moment où sa base est dans cet état.
+  Le banc passe à **quatre profils et cinq scénarios**, et garde les **trois** écritures écartées :
+  l'écriture d'origine ne voit pas `{authenticated}`, la deuxième manque `{anon,authenticated}`, la
+  troisième manque `{public}` quand seul `authenticated` est privé.
+
 - ⚠️ **Un brouillon écrit avant une découverte n'est pas un brouillon neutre — il est faux, et il
   attend d'être envoyé.** Le 28/08, six messages aux hôtes étaient rédigés ; le défaut de la requête
   de diagnostic qu'ils portaient a été trouvé entre la rédaction et l'envoi ; **trois sont partis en

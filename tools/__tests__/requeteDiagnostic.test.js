@@ -139,4 +139,19 @@ describe("le bloc réel de supabase/init.sql", () => {
     expect(reel.sql).toContain("'anon'");
     expect(reel.sql).toContain("'authenticated'");
   });
+
+  // ⚠️ LE QUATRIÈME PROFIL, TROUVÉ PAR UN HÔTE ALORS QUE LE BANC TOURNAIT DÉJÀ SUR TROIS. Une
+  // politique sans clause `TO` porte `{public}`, jamais `{anon}` — et c'est la forme par DÉFAUT,
+  // celle que produit l'interface Supabase pour un bucket public.
+  it("traite le rôle `public`, que la troisième écriture sautait intégralement", () => {
+    expect(reel.sql).toContain("'public'");
+  });
+
+  // ⚠️ SANS `to_regrole`, LA REQUÊTE NE REND PAS FAUX : ELLE LÈVE. Sur une installation sans `anon`
+  // ni `authenticated` — tout ce qui n'est pas Supabase — `has_table_privilege('anon', …)` échoue,
+  // et la requête entière avec. Filtrer sur `pg_roles` ne suffit pas : le planificateur évalue la
+  // fonction dans le même filtre de jointure. Mesuré contre un cluster vierge.
+  it("ne lève pas là où les rôles n'existent pas", () => {
+    expect(reel.sql).toContain("to_regrole");
+  });
 });

@@ -1114,6 +1114,25 @@ jobs:
           echo "── la requête telle que l'hôte la lit dans init.sql, et telle qu'elle va être exécutée ──"
           sed 's/^/    /' /tmp/requete-retenue.sql
 
+          # ⚠️ AVANT DE CRÉER QUOI QUE CE SOIT : LA REQUÊTE NE DOIT PAS ÉCHOUER LÀ OÙ `anon` N'EXISTE PAS.
+          # Tout ce qui n'est pas Supabase est dans ce cas, et `has_table_privilege('anon', …)` n'y rend pas
+          # faux — il LÈVE. La base de la forge n'a pas encore ces rôles à cet instant : c'est le seul
+          # moment où ce contrôle est possible, et il est donc placé ici plutôt qu'à la fin.
+          $PSQL <<'SQL'
+          create table public.banc_pol_public (id int);
+          alter table public.banc_pol_public enable row level security;
+          create policy p on public.banc_pol_public for select using (true);  -- sans clause TO → {public}
+          SQL
+          # ⚠️ ET ON VÉRIFIE QUE LE CAS EST BIEN LÀ AVANT D'EN TIRER QUOI QUE CE SOIT : sans politique
+          # `{public}`, la requête n'appellerait jamais la fonction et le contrôle ne prouverait rien.
+          profil=$($PSQL -c "select roles::text from pg_policies where tablename = 'banc_pol_public';")
+          [ "$profil" = "{public}" ] || { echo "::error::le contrôle « rôles absents » est vide : la politique sans clause TO devrait porter {public}, elle porte « $profil »"; exit 1; }
+          $PSQL -c "select count(*) from pg_roles where rolname in ('anon','authenticated');" | grep -qx 0 \
+            || { echo "::error::le contrôle « rôles absents » est vide : la base porte déjà anon/authenticated à cet instant"; exit 1; }
+          sortie=$($PSQL -f /tmp/requete-retenue.sql 2>&1) \
+            || { echo "::error::sur une installation SANS les rôles anon/authenticated, la requête documentée ÉCHOUE au lieu de rendre zéro ligne — un hôte non-Supabase ne peut pas la lancer : $sortie"; exit 1; }
+          [ -z "$(printf '%s' "$sortie" | tr -d ' \n')" ] || { echo "::error::sans les rôles anon/authenticated, la requête devrait ne rien rendre ; elle rend « $sortie »"; exit 1; }
+
           # ⚠️ LES DEUX ÉCRITURES ÉCARTÉES SONT ICI EN TOUTES LETTRES, ET C'EST DÉLIBÉRÉ. Le banc ne vaut pas
           # parce que la requête retenue passe : il vaut parce qu'il DISTINGUE. Sans elles, une régression vers
           # l'une ou l'autre repasserait au vert sur le profil que ce dépôt a sous la main.
@@ -1129,6 +1148,20 @@ jobs:
              and not has_table_privilege(
                    case when p.roles::text like '%anon%' then 'anon' else 'authenticated' end, c.oid, 'SELECT')
            order by 1;
+          SQL
+
+          # ⚠️ LA TROISIÈME ÉCRITURE ÉCARTÉE, PROPOSÉE PAR L'HÔTE QUI A TROUVÉ LE PROFIL `{public}` — et
+          # qui annonçait lui-même son angle mort. Elle traite `public` en testant UN représentant (`anon`),
+          # donc elle se tait là où seul `authenticated` est privé. Elle nomme aussi `public` comme rôle, ce
+          # qui laisse l'hôte sans savoir QUEL droit rendre.
+          cat > /tmp/requete-v4-un-representant.sql <<'SQL'
+          select p.tablename, r.role from pg_policies p
+            cross join lateral unnest(p.roles) as r(role)
+            join pg_class c on c.relname = p.tablename
+            join pg_namespace n on n.oid = c.relnamespace and n.nspname = p.schemaname
+           where (r.role::text in ('anon','authenticated') or r.role::text = 'public')
+             and not has_table_privilege(
+                   case when r.role::text = 'public' then 'anon' else r.role::text end, c.oid, 'SELECT');
           SQL
 
           # Les trois profils de politique. Le troisième — celui qui nomme LES DEUX rôles — est le seul que la
@@ -1148,6 +1181,9 @@ jobs:
           create policy p on public.banc_pol_authenticated for select to authenticated       using (true);
           create policy p on public.banc_pol_deux          for select to anon, authenticated using (true);
           create policy p on public.banc_pol_anon          for select to anon                using (true);
+          -- Le quatrième profil est DÉJÀ posé plus haut (`banc_pol_public`, sans clause TO) : il a servi au
+          -- contrôle « rôles absents ». On lui donne maintenant les mêmes droits de départ que les autres.
+          grant select on public.banc_pol_public to anon, authenticated;
           SQL
 
           echoue=0
@@ -1201,13 +1237,30 @@ jobs:
           nomme "scénario C" "$c3" "banc_pol_anon" "anon"
           $PSQL -c "grant select on public.banc_pol_anon to anon;"
 
+          echo "── scénario D — politique {public} (sans clause TO), droit retiré à anon ──"
+          $PSQL -c "revoke select on public.banc_pol_public from anon;"
+          d3=$(sonde /tmp/requete-retenue.sql); d4=$(sonde /tmp/requete-v4-un-representant.sql); d1=$(sonde /tmp/requete-v1-etroite.sql)
+          echo "    retenue=[$(echo $d3)]  v4=[$(echo $d4)]  v1=[$(echo $d1)]"
+          nomme "scénario D" "$d3" "banc_pol_public" "anon"
+          case "$d1" in *banc_pol_public*) constat "scénario D : v1 ne devrait PAS voir la table cassée — une politique {public} ne nomme jamais anon" ;; esac
+          $PSQL -c "grant select on public.banc_pol_public to anon;"
+
+          echo "── scénario E — politique {public}, droit retiré à authenticated SEUL ──"
+          $PSQL -c "revoke select on public.banc_pol_public from authenticated;"
+          e3=$(sonde /tmp/requete-retenue.sql); e4=$(sonde /tmp/requete-v4-un-representant.sql)
+          echo "    retenue=[$(echo $e3)]  v4=[$(echo $e4)]"
+          nomme "scénario E" "$e3" "banc_pol_public" "authenticated"
+          case "$e4" in *banc_pol_public*) constat "scénario E : v4 voit la table cassée — or elle ne teste qu'UN représentant de public et devrait la manquer ; le banc ne distingue plus les deux écritures" ;; esac
+          $PSQL -c "grant select on public.banc_pol_public to authenticated;"
+
           $PSQL <<'SQL'
-          drop table public.banc_pol_authenticated, public.banc_pol_deux, public.banc_pol_anon;
+          drop table public.banc_pol_authenticated, public.banc_pol_deux, public.banc_pol_anon,
+                     public.banc_pol_public;
           drop role anon, authenticated;
           SQL
 
           [ "$echoue" = "0" ] || exit 1
-          echo "la requête d'init.sql nomme la table morte dans les trois profils ; v1 en manque un, v2 un autre"
+          echo "la requête d'init.sql nomme la table morte et le rôle mort dans les quatre profils ; v1, v2 et v4 en manquent chacune un"
 
       # ─────────────────────────────────────────────────────────────────────────────────────────
       # ⚠️ LE DOUBLE POSTGREST EN MÉMOIRE DIT LUI-MÊME CE QU'IL NE SAIT PAS FAIRE : « pas de
