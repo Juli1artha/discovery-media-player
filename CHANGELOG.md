@@ -14,6 +14,19 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- ⚠️ **Un brouillon écrit avant une découverte n'est pas un brouillon neutre — il est faux, et il
+  attend d'être envoyé.** Le 28/08, six messages aux hôtes étaient rédigés ; le défaut de la requête
+  de diagnostic qu'ils portaient a été trouvé entre la rédaction et l'envoi ; **trois sont partis en
+  l'affirmant quand même**, dont un vers l'hôte qui venait précisément de la démonter, lui reposant
+  sa propre question invalidée. Cet hôte a nommé ce que ça coûte du côté du destinataire — *« un
+  message qui croise n'est pas neutre : il se lit comme une réponse »* — et le second a reçu la
+  correction accompagnée de deux messages plus anciens qui la contredisaient, tous deux affirmant que
+  le dépôt avait adopté la requête étroite, ce qui était vrai à l'heure où ils avaient été écrits.
+  Deux contre un, le dépôt paraissant du mauvais côté : la correction pouvait raisonnablement passer
+  pour l'erreur. `AGENTS.md` porte désormais la règle et son remède — relire tout message non envoyé
+  à la lumière de ce qu'on a appris depuis, signaler explicitement un message qui en croise un autre,
+  et nommer dans un erratum les messages qu'il périme ainsi que les phrases qu'il retire.
+
 - ⚠️ **La requête de diagnostic donnée aux hôtes est désormais EXÉCUTÉE par la forge, contre trois
   profils de politique construits pour l'occasion — elle était jusqu'ici affirmée.** Le job `schema`
   monte un vrai Postgres, y pose trois politiques — l'une nommant `{authenticated}`, l'une

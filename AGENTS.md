@@ -93,6 +93,25 @@ alone.
   found four of five. ⚠️ This is in the list people enforce, not the guards': no check can know
   that a release note *should* have carried a count. So a missing count is not a wrong count — its
   absence must never be read as "nothing to report", here or by a host.
+- **A draft written before a discovery is not a neutral draft — it is false, and it is waiting to be
+  sent.** Re-read every unsent message against what has been learned since it was written, and say
+  explicitly when one crosses another. ⚠️ The measured cost, on 28/08: six messages to hosts were
+  drafted, the defect in the diagnostic query they carried was found between drafting and sending,
+  and **three went out asserting the disproved query anyway** — one of them to the very host who had
+  disproved it, re-posing their own invalidated question. That host named what it costs on the
+  receiving end:
+
+  > Un message qui croise n'est pas neutre — il se lit comme une réponse. Si vous ne l'aviez pas
+  > signalé, la lecture naturelle aurait été que vous mainteniez votre position après avoir lu la
+  > mienne.
+
+  ⚠️ **And a majority of stale messages beats a correct one.** The second host received the
+  correction *and* two older messages contradicting it — both claiming the repository had adopted the
+  narrow query, which had been true when they were written. Two against one, with the repository
+  apparently on the wrong side: the correction could reasonably have read as the mistake. An erratum
+  therefore names the superseded messages, and retracts by name the sentences that pointed at the
+  repository. ⚠️ This is in the list people enforce for a reason no guard can cover: nothing in a
+  repository can know what is sitting unsent in someone's drafts.
 
 ## When you edit a file with a script
 
