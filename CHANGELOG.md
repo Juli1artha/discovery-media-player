@@ -14,6 +14,29 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- **Socle du chantier « trois gestes » : l'arithmétique du zoom au geste et de la rotation entre dans
+  `src/viewer.ts`, sans aucun changement visible.** Trois fonctions pures et une extension, couvertes
+  par vingt-deux bancs de plus — le module sans DOM est le seul endroit où ces calculs sont
+  éprouvables, le reste vivant dans un littéral de gabarit qu'aucun banc n'exécute.
+  ⚠️ **`rotationEffective` COMPOSE la rotation du fichier avec celle demandée, au lieu de l'écraser.**
+  `getViewport({rotation})` de pdf.js dit : *« si omise, elle vaut la rotation de la page »* — donner
+  une valeur absolue écrase donc le `/Rotate` que portent très couramment les documents numérisés en
+  paysage. Un « remettre à zéro » naïf ne redresserait pas un document de travers : il **coucherait**
+  un document qui était droit.
+  ⚠️ **`aspectApresRotation` gouverne le suivi de lecture, pas seulement l'affichage.** La proportion
+  fixe la hauteur des gabarits, qui fixe la longueur du document, qui décide de la page que
+  l'observateur d'intersection appelle « courante » — et c'est celle-là que le suivi enregistre. Une
+  proportion non tournée à 90° fausserait les statistiques d'un partage sans rien casser à l'écran.
+  ⚠️ **`ancrageApresZoom` traite la marge de centrage**, sans quoi il ancre correctement un document
+  zoomé et fait sauter un document vu en entier — au moment exact où le lecteur commence à zoomer. Il
+  distingue aussi la part du contenu qui NE grandit pas avec le zoom : cent pages séparées de 16 px
+  portent plus de 1500 px d'espacements fixes.
+  ⚠️ **Et une mutation survivante a révélé du code mort, retiré plutôt que couvert** : la symétrie
+  appelait une marge de centrage « après » ; elle n'est non nulle que si le contenu reste plus étroit
+  que le cadre, cas où la butée haute vaut zéro et la sortie vaut zéro quoi qu'on ajoute. Les deux
+  conditions s'excluent. Un balayage de 195 840 combinaisons a confirmé zéro cas observable avant de
+  la supprimer. Les onze autres mutations rougissent.
+
 - ⚠️ **Deux règles de revue tirées de l'épisode de la requête de diagnostic, l'une de nous, l'autre
   d'un hôte.** La première : *une sonde qui demande « est-ce que ça échoue ? » à une question qui est
   « qu'est-ce que ça rend ? » rend compte d'elle-même, pas de son sujet.* Deux de nos vérifications
