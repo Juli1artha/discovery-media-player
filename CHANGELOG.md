@@ -14,6 +14,28 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- **Rotation du document à 90°, à gauche ou à droite** — dans la barre et dans le menu « ⋯ », comme
+  le zoom, et repliée dans le menu sous 860 px par la même règle. Un quart de tour par clic ; quatre
+  clics ramènent à l'identique. Rotation du **document**, pas de la page : une rotation par page est
+  un autre modèle de données et une autre interface.
+  ⚠️ **La rotation du fichier est COMPOSÉE, jamais écrasée.** `getViewport({rotation})` de pdf.js dit
+  *« si omise, elle vaut la rotation de la page »* : passer une valeur absolue écrase le `/Rotate` que
+  portent très couramment les documents numérisés en paysage. Un « remettre à zéro » naïf ne
+  redresserait pas un document de travers — il **coucherait** un document qui était droit. Un banc
+  ouvre un document portant `/Rotate 90` sans rien tourner et exige qu'il s'affiche couché.
+  ⚠️ **La proportion tournée protège le SUIVI DE LECTURE, pas seulement l'affichage.** Elle fixe la
+  hauteur des gabarits posés avant rendu, qui fixe la longueur du document, qui décide de la page que
+  l'observateur d'intersection appelle « courante » — et c'est celle-là que le suivi enregistre.
+  Mesuré : la hauteur totale change bien avec la rotation, et la page courante survit au quart de tour.
+  ⚠️ **Les documents image pivotent aussi, par un second chemin.** Sans pdf.js il n'y a pas de
+  viewport : la rotation est une transformation CSS, et un élément transformé occupe toujours sa boîte
+  d'origine — sans échanger les dimensions du cadre, la page suivante viendrait se poser par-dessus.
+  ⚠️ **Et le banc de ce cas passait à vide au premier jet** : l'image du harnais est carrée, donc
+  échanger sa largeur et sa hauteur y est invisible. Le harnais porte désormais une image franchement
+  rectangulaire, et le banc refuse de tourner sur une image carrée.
+  Mesuré aussi : tourner pendant que le document est zoomé conserve le zoom, inverse la proportion, et
+  le pire canvas reste sous le budget de pixels annoncé.
+
 - ⚠️ **Le pincement au trackpad zoomait l'écran entier — parce que personne n'écoutait.** Sur
   trackpad, un pincement n'est pas un événement tactile : le navigateur l'envoie comme un `wheel`
   portant `ctrlKey`. Rien dans la visionneuse ne le lisait, donc le navigateur appliquait son défaut.

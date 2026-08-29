@@ -65,6 +65,8 @@ const { TIERS } = require("../server/handler.js");
 const SLUG_TRACE = "essai-trace";
 const SLUG_PDF = "essai-pdf-reel";
 const SLUG_PDF_LONG = "essai-pdf-long";
+const SLUG_COUCHE = "essai-couche";
+const SLUG_IMG_LARGE = "essai-img-large";
 const SLUG_DIRECT = "essai-direct";
 const SLUG_URL_MUETTE = "url-muette";
 const SLUG_PRESENT_PDF = "direct-pdf-reel";
@@ -79,7 +81,10 @@ const octets = {};
  * pdf.js refuse une table xref fausse : ce fabriquant est la seule façon d'avoir une fixture
  * qu'on comprend octet par octet, sans dépendance.
  */
-function fabriquerPdf(nPages = 1) {
+// ⚠️ `rotate` FABRIQUE LE CAS QUI PIÈGE LA ROTATION : un document numérisé en paysage porte
+// `/Rotate 90` dans le fichier. C'est le seul document capable de montrer qu'on COMPOSE la
+// rotation du lecteur avec celle du fichier, au lieu de l'écraser.
+function fabriquerPdf(nPages = 1, rotate = null) {
   // Objets : 1 catalogue, 2 arbre de pages, 3 police, puis DEUX objets par page (page + flux).
   const objets = [];
   const idsPages = [];
@@ -89,7 +94,7 @@ function fabriquerPdf(nPages = 1) {
   objets.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
   const flux = [];
   for (let i = 0; i < nPages; i++) {
-    objets.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${5 + i * 2} 0 R /Resources << /Font << /F1 3 0 R >> >> >>`);
+    objets.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]${rotate === null ? "" : ` /Rotate ${rotate}`} /Contents ${5 + i * 2} 0 R /Resources << /Font << /F1 3 0 R >> >> >>`);
     const contenu = `BT /F1 24 Tf 72 720 Td (Page ${i + 1}) Tj ET`;
     flux.push(contenu);
     objets.push(null);                       // marque : le flux, écrit à part
@@ -115,6 +120,12 @@ function fabriquerPdf(nPages = 1) {
 
 // PNG 4×4 valide. Une IMAGE et pas un PDF : le chemin image ne demande pas pdf.js, donc le banc
 // prouve le démarrage de la page sans dépendre du rendu d'une bibliothèque tierce.
+// ⚠️ UNE IMAGE RECTANGULAIRE, ET C'EST TOUT SON INTÉRÊT. Le PNG 4x4 ci-dessous est CARRÉ :
+// échanger sa largeur et sa hauteur ne change rien, donc il ne peut pas montrer qu'une rotation
+// a bien fait pivoter la BOÎTE. Relevé en écrivant ce banc, sur un contrôle qui passait à vide.
+const PNG_40x20 =
+  "iVBORw0KGgoAAAANSUhEUgAAACgAAAAUCAIAAABwJOjsAAAAe0lEQVR42u3NkRrCYBiA0Z+iKIpGURSNomg0il6KoigajUZRNAreJ4qiKIpG0WgUjbqKLqTv3MBJCSc4xRnOMcMFLnGFOa5xgwWWuEVwh3s84BErrLHBE56xxQte8YZ3fOATX9jhG3sc8IMjfjFFHHHEEUccccQR/0/8Az50ex25bN05AAAAAElFTkSuQmCC";
+
 const PNG_4x4 =
   "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAF0lEQVR4nGP8z8Dwn4GKgImaho0aOGwMBADSlwHhSSSXfwAAAABJRU5ErkJggg==";
 
@@ -163,8 +174,21 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     fs.writeFileSync(path.join(racine, "essai-reel.pdf"), fabriquerPdf());
     // Un document LONG : c est le seul qui puisse montrer que les canvas ne s accumulent pas.
     fs.writeFileSync(path.join(racine, "essai-long.pdf"), fabriquerPdf(40));
+    // Le document DÉJÀ couché : MediaBox portrait + /Rotate 90, comme un scan de plan.
+    fs.writeFileSync(path.join(racine, "essai-couche.pdf"), fabriquerPdf(6, 90));
+    fs.writeFileSync(path.join(racine, "large.png"), Buffer.from(PNG_40x20, "base64"));
     const graine = {
       commercial_doc_shares: [{
+        id: 9, slug: SLUG_COUCHE, doc_id: "doc-couche", revoked: false, require_auth: false,
+        file_url: pathToFileURL(path.join(racine, "essai-couche.pdf")).href, file_name: "essai-couche.pdf",
+        doc_title: "Déjà couché", allow_download: false, created_by: "moi@exemple.fr",
+        recipient_email: "client@exemple.fr",
+        }, {
+          id: 10, slug: SLUG_IMG_LARGE, doc_id: "doc-img-large", revoked: false, require_auth: false,
+          file_url: pathToFileURL(path.join(racine, "large.png")).href, file_name: "large.png",
+          doc_title: "Image large", allow_download: false, created_by: "moi@exemple.fr",
+          recipient_email: "client@exemple.fr",
+        }, {
         id: 4, slug: SLUG_PDF_LONG, doc_id: "doc-pdf-long", revoked: false, require_auth: false,
         file_url: pathToFileURL(path.join(racine, "essai-long.pdf")).href, file_name: "essai-long.pdf",
         doc_title: "Document long", allow_download: false, created_by: "moi@exemple.fr",
@@ -648,6 +672,107 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
       + "coordonnée entière au lieu d'épargner la marge haute, donnait 14,1 px : cette borne est là\n"
       + "pour que ce défaut-là ne revienne pas sans le dire.")
       .toBeLessThanOrEqual(3);
+    await p.close(); await ctx.close();
+  });
+
+  // ── LOT 2 : LA ROTATION ────────────────────────────────────────────────────────────────────────
+  //
+  // ⚠️ LE PREMIER BANC EST UN CONTRÔLE POSITIF, et c'est lui qui vaut. `getViewport({rotation})` dit
+  // « si omise, elle vaut la rotation de la page » : passer une valeur ABSOLUE écrase le `/Rotate` du
+  // fichier. Un document numérisé en paysage en porte un — un « remettre à zéro » naïf ne le
+  // redresserait pas, il le COUCHERAIT. Ce banc ouvre un tel document sans rien tourner et exige
+  // qu'il s'affiche couché : si la composition disparaît, il se redresse et le banc rougit.
+  const geometrie = (p) => p.evaluate(() => {
+    const c = document.querySelector("#pages .page canvas");
+    const r = c && c.getBoundingClientRect();
+    return {
+      w: r ? Math.round(r.width) : 0, h: r ? Math.round(r.height) : 0,
+      sh: document.getElementById("scroll").scrollHeight, cur: window.__viewerEssai.cur,
+    };
+  });
+  async function pageCouchee(ctx) {
+    const p = await ctx.newPage();
+    await p.addInitScript(() => { window.PlayerBot = { init: (v) => { window.__viewerEssai = v; } }; });
+    await p.goto(`http://127.0.0.1:${port}/doc/${SLUG_COUCHE}`, { waitUntil: "load" });
+    await p.waitForFunction(() => !!window.__viewerEssai && window.__viewerEssai.numPages > 1, { timeout: 25_000 });
+    await p.waitForFunction(() => !!document.querySelector("#pages .page canvas"), { timeout: 25_000 });
+    return p;
+  }
+  const tourner = async (p, id) => { await p.click(`#${id}`); await new Promise((r) => setTimeout(r, 900)); };
+
+  it("un document portant déjà /Rotate 90 s'affiche couché — la rotation du fichier n'est pas écrasée", async () => {
+    const ctx = await navigateur.newContext({ viewport: { width: 1200, height: 900 } });
+    const p = await pageCouchee(ctx);
+    const g = await geometrie(p);
+    expect(g.w, "aucun canvas mesuré : le banc ne prouve rien").toBeGreaterThan(0);
+    expect(g.w,
+      `la page fait ${g.w} x ${g.h} : le document est rendu DEBOUT alors que son fichier porte\n`
+      + "/Rotate 90. La rotation du lecteur a été passée en valeur absolue et a écrasé celle du\n"
+      + "fichier — ce qui couche les documents qui étaient droits au lieu de redresser ceux qui ne le sont pas.")
+      .toBeGreaterThan(g.h);
+    await p.close(); await ctx.close();
+  });
+
+  it("pivoter inverse la proportion, et les gabarits suivent — sans quoi le suivi de lecture décroche", async () => {
+    const ctx = await navigateur.newContext({ viewport: { width: 1200, height: 900 } });
+    const p = await pageCouchee(ctx);
+    const avant = await geometrie(p);
+    await tourner(p, "rotR");
+    const apres = await geometrie(p);
+    expect(apres.h, `la page reste ${apres.w} x ${apres.h} après un quart de tour`).toBeGreaterThan(apres.w);
+    expect(apres.sh,
+      `la hauteur totale du document n'a pas bougé (${avant.sh}). Les gabarits sont posés AVANT rendu\n`
+      + "à partir de la proportion : s'ils gardent l'ancienne, la longueur du document est fausse, et\n"
+      + "l'observateur qui décide de la « page courante » se trompe de page — donc le suivi aussi.")
+      .not.toBe(avant.sh);
+    await p.close(); await ctx.close();
+  });
+
+  it("quatre quarts de tour ramènent le document à l'identique", async () => {
+    const ctx = await navigateur.newContext({ viewport: { width: 1200, height: 900 } });
+    const p = await pageCouchee(ctx);
+    const depart = await geometrie(p);
+    for (let i = 0; i < 4; i++) await tourner(p, "rotR");
+    const retour = await geometrie(p);
+    expect([retour.w, retour.h],
+      `départ ${depart.w} x ${depart.h}, retour ${retour.w} x ${retour.h} : la rotation ne boucle pas`)
+      .toEqual([depart.w, depart.h]);
+    await p.close(); await ctx.close();
+  });
+
+  it("la page courante survit à une rotation", async () => {
+    const ctx = await navigateur.newContext({ viewport: { width: 1200, height: 900 } });
+    const p = await pageCouchee(ctx);
+    await p.evaluate(() => { document.getElementById("scroll").scrollTop = 1600; });
+    await new Promise((r) => setTimeout(r, 700));
+    const avant = (await geometrie(p)).cur;
+    expect(avant, "on n'a pas quitté la première page : la rotation n'aurait rien à conserver").toBeGreaterThan(1);
+    await tourner(p, "rotL");
+    expect((await geometrie(p)).cur, `page ${avant} avant la rotation`).toBe(avant);
+    await p.close(); await ctx.close();
+  });
+
+  it("un document IMAGE pivote aussi — la boîte échange ses dimensions", async () => {
+    const ctx = await navigateur.newContext({ viewport: { width: 1200, height: 900 } });
+    const p = await ctx.newPage();
+    await p.goto(`http://127.0.0.1:${port}/doc/${SLUG_IMG_LARGE}`, { waitUntil: "load" });
+    await p.waitForFunction(() => !!document.querySelector("#pages .page img"), { timeout: 20_000 });
+    const cadre = () => p.evaluate(() => {
+      const r = document.querySelector("#pages .page").getBoundingClientRect();
+      return { w: Math.round(r.width), h: Math.round(r.height) };
+    });
+    const avant = await cadre();
+    // ⚠️ L'image du harnais est 40x20 et NON carrée, délibérément : sur une image carrée, échanger
+    // largeur et hauteur est invisible et ce banc passerait sans rien prouver.
+    expect(avant.w, "image carrée : l'échange de dimensions serait invisible").not.toBe(avant.h);
+    await tourner(p, "rotR");
+    const apres = await cadre();
+    expect(apres.h / apres.w,
+      `le cadre passe de ${avant.w}x${avant.h} à ${apres.w}x${apres.h} : la proportion n'a pas été\n`
+      + "inversée. Un document image n'a pas de viewport — sa rotation est une transformation CSS, et\n"
+      + "un élément transformé occupe toujours sa boîte d'origine : sans échanger les dimensions du\n"
+      + "cadre, la page suivante vient se poser par-dessus.")
+      .toBeCloseTo(avant.w / avant.h, 1);
     await p.close(); await ctx.close();
   });
 

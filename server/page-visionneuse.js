@@ -216,7 +216,7 @@ ${LEGAL_CSS}
   .barmenu button{display:block;width:100%;text-align:left;border:0;background:transparent;font:inherit;font-size:13.5px;color:#1c1c1c;padding:9px 12px;border-radius:8px;cursor:pointer}
   .barmenu button:hover{background:#f2efe9}
   @media (max-width:860px){
-    .bar .zoom,#fs,#presentBtn,#shareBtn,#dlBtn{display:none}
+    .bar .zoom,#rotL,#rotR,#fs,#presentBtn,#shareBtn,#dlBtn{display:none}
     .barMore{display:inline-flex}
   }
   @media (max-width:520px){ .bar>b{display:none} }
@@ -232,6 +232,8 @@ ${LEGAL_CSS}
   <div class=bar>${embed ? '<button class="ic barx" id=embedCloseBtn title=Fermer aria-label=Fermer><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' : ""}<b>${title}</b>${share.is_test ? '<span class=testchip>\ud83c\udfad Répétition — session de test</span>' : ""}<span class=sp></span><span class=pg id=pg></span>
     ${preview ? LIVE_BAR : ""}
     <div class=zoom><button id=zout title="Dézoomer">−</button><span id=zlbl>100%</span><button id=zin title="Zoomer">+</button></div>
+    <button class=ic id=rotL title="Pivoter à gauche" aria-label="Pivoter le document à gauche"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h11a5 5 0 0 1 5 5v1M3 8l4-4M3 8l4 4"/></svg></button>
+    <button class=ic id=rotR title="Pivoter à droite" aria-label="Pivoter le document à droite"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8H10a5 5 0 0 0-5 5v1M21 8l-4-4M21 8l-4 4"/></svg></button>
     <button class=ic id=fs title="Plein écran"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
     ${preview ? '<button class=dl id=presentBtn title="Présenter en direct (lien public, page synchronisée)">Présenter</button>' : ''}
     <button class="dl primary" id=shareBtn>Partager</button>
@@ -239,6 +241,8 @@ ${LEGAL_CSS}
   <div class=barmenu id=barMenu>
     <button data-t=zin>Zoom avant</button>
     <button data-t=zout>Zoom arrière</button>
+    <button data-t=rotL>Pivoter à gauche</button>
+    <button data-t=rotR>Pivoter à droite</button>
     <button data-t=fs>Plein écran</button>
     ${preview ? '<button data-t=presentBtn>Présenter en direct</button>' : ''}
     <button data-t=shareBtn>Partager</button>
@@ -310,7 +314,7 @@ ${LEGAL_CSS}
       get cur(){return cur;},get numPages(){return numPages;},get pdfDoc(){return pdfDoc;},
       get onePage(){return onePage;},
       get soloOffered(){return soloOffered;},set soloOffered(v){soloOffered=!!v;}};
-    var pdfDoc=null, zoom=1, firstAspect=1.35, rendered={}, io=null, ioCur=null;
+    var pdfDoc=null, zoom=1, rot=0, firstAspect=1.35, rendered={}, io=null, ioCur=null;
     // ATTENTION : LE LECTEUR GARDAIT TOUTES LES PAGES RENDUES (P1 audit externe).
     //
     // rendered[n] n etait jamais evince, les canvas restaient dans le DOM, et un build() de refit
@@ -618,6 +622,8 @@ ${LEGAL_CSS}
       T.start();
       document.getElementById('zin').addEventListener('click',function(){ setZoom(zoom+0.2); });
       document.getElementById('zout').addEventListener('click',function(){ setZoom(zoom-0.2); });
+      document.getElementById('rotL').addEventListener('click',function(){ tournerDe(-1); });
+      document.getElementById('rotR').addEventListener('click',function(){ tournerDe(1); });
       brancherZoomAuGeste();
       render();
     }
@@ -829,7 +835,13 @@ ${LEGAL_CSS}
     function onePageReserve(){ var band=capReserve(); return document.body.classList.contains('botplayer')?(document.body.classList.contains('vsplit')?Math.round(window.innerHeight*0.38)+70:(isLand()?12:260)):(band?band:(document.body.classList.contains('deskaudio')?4:0)); }
     // La géométrie (bornes, respiration, seuil d'abandon) vit dans player/src/viewer.ts ; ici on ne
     // fournit que les MESURES, seules choses que le DOM connaisse.
-    function targetWidth(){ return Player.viewer.fitWidth({containerWidth:baseWidth(),containerHeight:scrollEl.clientHeight,zoom:zoom,onePage:onePage,aspect:firstAspect,overlap:botOverlap(),reserve:onePageReserve()}); }
+    // ⚠️ LA PROPORTION EFFECTIVE GOUVERNE LE SUIVI DE LECTURE, PAS SEULEMENT L AFFICHAGE. Elle fixe la
+    // hauteur des gabarits poses AVANT rendu ; ces gabarits fixent la longueur du document ; cette
+    // longueur decide de la page que l observateur d intersection appelle « courante » ; et c est cette
+    // page-la que le suivi enregistre. Une proportion non tournee a 90 degres fausse donc les
+    // statistiques d un partage, en silence et sans rien casser a l ecran.
+    function aspectEffectif(){ return Player.viewer.aspectApresRotation(firstAspect,rot); }
+    function targetWidth(){ return Player.viewer.fitWidth({containerWidth:baseWidth(),containerHeight:scrollEl.clientHeight,zoom:zoom,onePage:onePage,aspect:firstAspect,rotation:rot,overlap:botOverlap(),reserve:onePageReserve()}); }
     // IMAGE — la visionneuse ne savait lire QUE du PDF (pdf.js). Une axonométrie en .jpg
     // partait donc dans getDocument() et échouait sur « structure invalide ».
     // Elle devient une page unique : tout le chrome — loader, zoom, plein écran, Partager,
@@ -878,7 +890,7 @@ ${LEGAL_CSS}
       ioCur=new IntersectionObserver(function(es){es.forEach(function(e){ if(e.isIntersecting){ setCur(+e.target.dataset.p); } });},{root:scrollEl,rootMargin:Player.viewer.CURRENT_PAGE_MARGIN,threshold:0});
       pagesEl.innerHTML='';
       var w=Math.round(targetWidth());
-      for(var i=1;i<=numPages;i++){ var d=document.createElement('div'); d.className='page ph'; d.dataset.p=i; d.style.width=w+'px'; d.style.height=Math.round(w*firstAspect)+'px'; d.textContent='Page '+i; pagesEl.appendChild(d); io.observe(d); ioCur.observe(d); }
+      for(var i=1;i<=numPages;i++){ var d=document.createElement('div'); d.className='page ph'; d.dataset.p=i; d.style.width=w+'px'; d.style.height=Math.round(w*aspectEffectif())+'px'; d.textContent='Page '+i; pagesEl.appendChild(d); io.observe(d); ioCur.observe(d); }
       var _band=capReserve(); var _pb=document.body.classList.contains('botplayer')?(document.body.classList.contains('vsplit')?Math.round(window.innerHeight*0.38)+50:(isLand()?0:240)):(botOverlap()+(_band?_band+12:(document.body.classList.contains('deskaudio')?16:0))); pagesEl.style.paddingBottom = onePage ? (_pb+'px') : ''; // centre la page dans l'espace VISIBLE (au-dessus de la sheet mobile / du bandeau desktop / sous le header en audio seul)
       if(onePage) showPage(cur||1);
     }
@@ -892,6 +904,15 @@ ${LEGAL_CSS}
     // Re-fit du document à la largeur réelle (resize fenêtre, ouverture/fermeture du chat ancré, plein écran)
     // en conservant la page courante. Débouncé pour rester fluide.
     function scrollToPage(p){ var el=pagesEl.querySelector('.page[data-p="'+p+'"]'); if(el) el.scrollIntoView({block:'start'}); }
+    // ⚠️ PAS window.__refit ICI : il commence par « if(!pdfDoc) return », donc il ne ferait RIEN sur un
+    // document image — le meme garde qui laissait les images sans zoom avant le lot 1.
+    function tournerDe(quarts){
+      rot=Player.viewer.rotationEffective(rot,quarts*90);
+      var c=cur||1;
+      if(!pdfDoc && !IS_IMG) return;
+      build();
+      if(onePage) showPage(c); else setTimeout(function(){ scrollToPage(c); },30);
+    }
     window.__refit=function(){ if(!pdfDoc)return; var c=cur||1; build(); setTimeout(function(){ scrollToPage(c); },30); };
     var _rzT; window.addEventListener('resize',function(){ clearTimeout(_rzT); _rzT=setTimeout(function(){ window.__refit(); },160); });
     // ÉCRAN PARTAGÉ mobile : le fond au-dessus/en-dessous du document prolonge les couleurs de la page
@@ -917,7 +938,7 @@ ${LEGAL_CSS}
       if(taches[n]){ try{ taches[n].cancel(); }catch(e){} delete taches[n]; }
       var w=Math.round(targetWidth());
       el.innerHTML=''; el.className='page ph'; el.textContent='Page '+n;
-      el.style.width=w+'px'; el.style.height=Math.round(w*firstAspect)+'px';
+      el.style.width=w+'px'; el.style.height=Math.round(w*aspectEffectif())+'px';
       delete rendered[n]; delete enCours[n];
     }
     // ATTENTION : ON BORNE PAR UN BUDGET DE PIXELS, PAS SEULEMENT PAR UN NOMBRE DE PAGES.
@@ -956,8 +977,21 @@ ${LEGAL_CSS}
       if(IS_IMG){
         var w=Math.round(targetWidth());
         var im=document.createElement('img');
-        im.src=imgSrc; im.alt=''; im.style.width=w+'px'; im.style.display='block';
-        el.style.height=''; el.classList.remove('ph'); el.textContent=''; el.style.width=w+'px';
+        im.src=imgSrc; im.alt=''; im.style.display='block';
+        el.classList.remove('ph'); el.textContent=''; el.style.width=w+'px';
+        // ⚠️ UN DOCUMENT IMAGE N A PAS DE VIEWPORT : sa rotation ne peut etre qu une transformation CSS.
+        // Et un element transforme occupe TOUJOURS sa boite d origine — sans echanger les dimensions du
+        // cadre et sortir l image du flux, la mise en page se disloque : la page suivante viendrait se
+        // poser par-dessus.
+        if(rot===90||rot===270){
+          im.style.width=Math.round(w/(firstAspect||1))+'px';
+          im.style.position='absolute'; im.style.left='50%'; im.style.top='50%';
+          im.style.transform='translate(-50%,-50%) rotate('+rot+'deg)';
+          el.style.height=Math.round(w*aspectEffectif())+'px';
+        } else {
+          im.style.width=w+'px'; el.style.height='';
+          if(rot===180) im.style.transform='rotate(180deg)';
+        }
         el.appendChild(im);
         im.onload=function(){ if(gen!==renderGen)return; delete enCours[n]; rendered[n]=1; hideLoader(); };
         im.onerror=function(){ delete enCours[n]; };      // reessayable
@@ -972,8 +1006,14 @@ ${LEGAL_CSS}
       // ×2 est nul, le cout est quadratique. On plafonne le DPR, puis on plafonne le NOMBRE DE
       // PIXELS du canvas : deux bornes, parce que le zoom peut faire grandir la page independamment
       // de la densite de l ecran.
-      var scale=Math.min(5,targetWidth()/page.getViewport({scale:1}).width);
-      var v=page.getViewport({scale:scale});
+      // ⚠️ ON COMPOSE, ON N ECRASE PAS. La documentation de getViewport dit : « si omise, la rotation
+      // vaut celle de la page ». Passer une valeur ABSOLUE ecraserait donc le /Rotate du fichier — que
+      // portent tres couramment les documents numerises en paysage. Un « remettre a zero » qui passerait
+      // 0 ne redresserait pas un document de travers : il COUCHERAIT un document qui etait droit. La
+      // composition vit dans src/viewer.ts, ou elle est eprouvee.
+      var rotEff=Player.viewer.rotationEffective(page.rotate,rot);
+      var scale=Math.min(5,targetWidth()/page.getViewport({scale:1,rotation:rotEff}).width);
+      var v=page.getViewport({scale:scale,rotation:rotEff});
       // ATTENTION : LE PLANCHER A 1 CREVAIT LE BUDGET, ET LE BUDGET ETAIT ANNONCE.
       //
       // L ancienne formule reduisait le DPR sans jamais le laisser descendre SOUS 1. Or au zoom
