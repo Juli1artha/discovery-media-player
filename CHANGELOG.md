@@ -27,6 +27,14 @@ the notes there are this file's section for that version.
   ⚠️ **Et le défaut est qu'un axe exhaustif SE LIT comme une couverture**, d'autant plus que
   l'énumération est complète. Un banc dit donc désormais quelles dimensions il fait varier **et
   lesquelles il tient fixes** : ce sont les fixes qui produiront le prochain signalement.
+  ⚠️ **Et « on a regardé et conclu que non » n'est pas « ce banc ne l'exerce pas »** : les deux
+  tombent dans le même paragraphe « non mesuré », et seule la seconde survit à celui qui la lit dans
+  six mois. Une dimension écartée par raisonnement est donc inscrite en FIXE quand même, le
+  raisonnement à côté d'elle et jamais à sa place.
+  ⚠️ **Et la règle sur le code de sortie porte désormais le déplacement dont elle est un cas**,
+  généralisé par le même hôte : *« chaque fois qu'un instrument échoue, ce qu'il rend décrit
+  l'instrument »*. Ce dépôt en avait catalogué trois autres sans voir que c'était le même geste — le
+  sha256 du vide, un 403 lu comme une absence, un `grep` sur un fichier qu'il ne sait pas lire.
 
 - ⚠️ **Il y avait un QUATRIÈME profil de politique, et c'est la forme par défaut : `{public}`.**
   Trouvé par un hôte le 29/08 pendant que le banc à trois profils tournait déjà. Une politique écrite

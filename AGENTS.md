@@ -122,6 +122,14 @@ alone.
   mistake three times that week gave the sharpest version of the cost — *"j'ai annoncé « 0 échec »
   alors que zéro test avait tourné"*. Assert on the **output**; an exit code is at best a second
   signal, never the only one.
+  ⚠️ **And this is one case of a wider displacement, which the same host generalised past what we
+  had written:** *"chaque fois qu'un instrument échoue, ce qu'il rend décrit l'instrument"*. This
+  repository has catalogued three others without seeing they were the same move — the sha256 of an
+  empty file, a 403 read as an absence, a `grep` over a file it cannot read. In each, the probe
+  failed and its output was taken as a statement about the subject. **When a probe can fail, its
+  result answers "what happened to me", not "what is true of the thing" — so it must say which of
+  the two it is returning**, which is why this repository's guards separate INCONCLUSIVE from
+  VIOLATION rather than collapsing both into a non-zero exit.
 - **Enumerating the values of one variable is not a coverage argument — the next defect arrives on
   an axis the enumeration does not vary.** ⚠️ Measured across the same episode: a bench was built
   over the four values `pg_policies.roles` can take, and the two defects that actually bit came from
@@ -136,6 +144,12 @@ alone.
   enumeration, the more it does. So a bench states which dimensions it varies **and which it holds
   fixed** — the fixed ones are where the next report comes from. Naming them is not a disclaimer:
   it is the only thing that keeps a reader from mistaking a full row for a full table.
+  ⚠️ **And *"we looked and concluded not"* is not *"this bench does not exercise it"*.** Both land in
+  the same "not measured" paragraph, and only the second survives the person reading it in six
+  months: a reader can reopen "not exercised", and will not reopen "we concluded not", because
+  nothing tells them it is reopenable — the conclusion travels on, detached from the day and the
+  judgement that produced it. List a dimension as **held fixed** even when you have reasoned it
+  away; the reasoning goes next to it, never in place of it.
 
 ## When you edit a file with a script
 
