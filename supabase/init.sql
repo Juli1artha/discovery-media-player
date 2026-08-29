@@ -623,6 +623,14 @@ $$;
 -- La forme qui tient déplie CHAQUE rôle nommé, et mesure l'ÉTAT RÉSULTANT plutôt que de demander si
 -- le `revoke` a été posé — c'est la seule chose qui compte pour l'hôte :
 --
+-- ⚠️ LES DEUX MARQUES CI-DESSOUS NE SONT PAS DÉCORATIVES : LA CI EXTRAIT CE QUI EST ENTRE ELLES ET
+-- L'EXÉCUTE. Ce bloc n'est donc pas la transcription d'une requête éprouvée ailleurs — c'est
+-- l'artefact éprouvé lui-même. Le job `schema` monte trois profils de politique contre un vrai
+-- Postgres, en casse un dans chacun, et exige que CETTE requête nomme la table morte à chaque fois.
+-- Si vous l'éditez, c'est votre version qui est mesurée à la course suivante ; si vous la cassez, la
+-- CI le dit avant l'hôte. Aucune des trois écritures de cette requête n'a été trouvée fautive par
+-- son auteur — d'où le banc plutôt qu'une relecture de plus.
+-- [banc:requete-diagnostic]
 --     select p.schemaname, p.tablename, p.policyname, r.role
 --       from pg_policies p
 --       cross join lateral unnest(p.roles) as r(role)
@@ -630,6 +638,7 @@ $$;
 --       join pg_namespace n on n.oid = c.relnamespace and n.nspname = p.schemaname
 --      where r.role::text in ('anon', 'authenticated')
 --        and not has_table_privilege(r.role::text, c.oid, 'SELECT');
+-- [/banc:requete-diagnostic]
 --
 -- Rien en retour : aucune politique n'est privée du droit qu'elle suppose. Une ligne : cette
 -- politique est MORTE — la RLS dit oui, le droit dit non — et la ligne nomme la table et le rôle.

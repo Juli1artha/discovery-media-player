@@ -14,6 +14,29 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- ⚠️ **La requête de diagnostic donnée aux hôtes est désormais EXÉCUTÉE par la forge, contre trois
+  profils de politique construits pour l'occasion — elle était jusqu'ici affirmée.** Le job `schema`
+  monte un vrai Postgres, y pose trois politiques — l'une nommant `{authenticated}`, l'une
+  `{anon, authenticated}`, l'une `{anon}` —, retire le droit dans chacune à son tour, et exige que la
+  requête **nomme la table morte et le rôle mort** à chaque fois. Les deux écritures écartées sont
+  dans le banc en toutes lettres : le banc ne vaut pas parce que la bonne passe, il vaut parce qu'il
+  **distingue** — la première ne voit pas le profil `{authenticated}`, la seconde manque la politique
+  qui nomme les deux rôles.
+  ⚠️ **Et c'est la requête DOCUMENTÉE qui est exécutée, pas une copie** : elle est extraite du bloc
+  « Accès » d'`init.sql` entre deux marques (`tools/requete-diagnostic.mjs`). Une copie diverge, et
+  le jour où elle diverge le banc resterait vert sur un texte que personne n'applique pendant que les
+  hôtes appliqueraient celui du fichier — le défaut « un compte d'un instrument, un verdict d'un
+  autre », transposé à une requête. L'extraction refuse plutôt que de rendre un SQL vide : marque
+  absente, marques doublées ou croisées, bloc vide, sans `select` ou non terminé par `;` sont **non
+  concluants**, jamais conformes — un SQL vide ne rend jamais de ligne, donc ne signale jamais rien,
+  et virerait le banc au vert pour la raison exacte qu'il existe pour interdire.
+  ⚠️ **Ce qui a motivé un banc plutôt qu'une relecture de plus** : des trois écritures de cette
+  requête, **aucune n'a été trouvée fautive par son auteur**. Et l'hôte qui a rejoué la forme retenue
+  chez lui a nommé la raison pour laquelle sa propre base ne pouvait pas trancher — **26 politiques,
+  zéro nommant les deux rôles**, donc son écriture y aurait rendu le bon résultat *« pour une raison
+  qui n'a rien à voir avec sa justesse »*. Valider une sonde sur la base qu'on a sous la main, c'est
+  la valider sur un profil parmi trois. On construit les trois.
+
 - ⚠️ **La requête de diagnostic que ce dépôt donnait aux hôtes rendait un zéro rassurant sur une base
   au maximum exposée.** Elle filtrait `roles::text like '%anon%'` — alors que le geste qu'elle
   vérifie retire le droit à `anon` **et** à `authenticated`. Une base dont toutes les politiques

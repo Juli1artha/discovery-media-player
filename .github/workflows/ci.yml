@@ -1090,6 +1090,126 @@ jobs:
           echo "$(wc -l < /tmp/rls-declarees.txt) table(s) déclarent la RLS, la base les confirme, aucune politique ne les ouvre"
 
       # ─────────────────────────────────────────────────────────────────────────────────────────
+      # ⚠️ TROIS ÉCRITURES DE LA MÊME REQUÊTE, TROIS ANGLES MORTS, AUCUN TROUVÉ PAR SON AUTEUR
+      # (28/08). Ce dépôt donne aux hôtes une requête pour vérifier qu'un `revoke select … from
+      # anon, authenticated` ne tuera aucune politique. Elle a été écrite trois fois : la nôtre
+      # filtrait `like '%anon%'` — un rôle sur les deux du geste ; celle qu'un hôte a proposée pour
+      # la corriger n'inspectait qu'UN rôle par politique. Chacune a été trouvée fautive par
+      # l'autre, jamais par son auteur, et chacune rendait un ZÉRO RASSURANT sur une base exposée.
+      #
+      # ⚠️ ET LA RAISON POUR LAQUELLE C'EST UN BANC ET NON UNE RELECTURE DE PLUS. Le second hôte a
+      # rejoué la requête retenue chez lui : 26 politiques, et ZÉRO nommant les deux rôles. Sa
+      # propre écriture y aurait donc rendu le bon résultat — « pour une raison qui n'a rien à voir
+      # avec sa justesse ». Valider une sonde sur la base qu'on a sous la main, c'est la valider
+      # sur un profil parmi trois. On CONSTRUIT donc les trois, au lieu de prendre celui qui existe.
+      #
+      # ⚠️ ET C'EST LA REQUÊTE DOCUMENTÉE QUI EST EXÉCUTÉE, PAS UNE COPIE. Elle est extraite du bloc
+      # « Accès » d'`init.sql` entre deux marques. Une copie diverge — et le jour où elle diverge,
+      # le banc reste vert sur un texte que personne n'applique pendant que les hôtes appliquent
+      # celui du fichier. Même défaut que « un compte d'un instrument, un verdict d'un autre ».
+      # ─────────────────────────────────────────────────────────────────────────────────────────
+      - name: The diagnostic query init.sql hands to hosts names the dead policy, on all three profiles
+        run: |
+          node tools/requete-diagnostic.mjs > /tmp/requete-retenue.sql
+          echo "── la requête telle que l'hôte la lit dans init.sql, et telle qu'elle va être exécutée ──"
+          sed 's/^/    /' /tmp/requete-retenue.sql
+
+          # ⚠️ LES DEUX ÉCRITURES ÉCARTÉES SONT ICI EN TOUTES LETTRES, ET C'EST DÉLIBÉRÉ. Le banc ne vaut pas
+          # parce que la requête retenue passe : il vaut parce qu'il DISTINGUE. Sans elles, une régression vers
+          # l'une ou l'autre repasserait au vert sur le profil que ce dépôt a sous la main.
+          cat > /tmp/requete-v1-etroite.sql <<'SQL'
+          select tablename from pg_policies where schemaname = 'public' and roles::text like '%anon%' order by 1;
+          SQL
+          cat > /tmp/requete-v2-un-role.sql <<'SQL'
+          select p.tablename
+            from pg_policies p
+            join pg_class c on c.relname = p.tablename
+            join pg_namespace n on n.oid = c.relnamespace and n.nspname = p.schemaname
+           where p.schemaname = 'public'
+             and not has_table_privilege(
+                   case when p.roles::text like '%anon%' then 'anon' else 'authenticated' end, c.oid, 'SELECT')
+           order by 1;
+          SQL
+
+          # Les trois profils de politique. Le troisième — celui qui nomme LES DEUX rôles — est le seul que la
+          # base d'un hôte peut parfaitement ne jamais contenir : c'est pour ça qu'on le CONSTRUIT au lieu de
+          # le chercher. Un hôte a mesuré 26 politiques chez lui, dont zéro nommant les deux.
+          $PSQL <<'SQL'
+          create role anon nologin;
+          create role authenticated nologin;
+          create table public.banc_pol_authenticated (id int);
+          create table public.banc_pol_deux          (id int);
+          create table public.banc_pol_anon          (id int);
+          grant select on public.banc_pol_authenticated, public.banc_pol_deux, public.banc_pol_anon
+            to anon, authenticated;
+          alter table public.banc_pol_authenticated enable row level security;
+          alter table public.banc_pol_deux          enable row level security;
+          alter table public.banc_pol_anon          enable row level security;
+          create policy p on public.banc_pol_authenticated for select to authenticated       using (true);
+          create policy p on public.banc_pol_deux          for select to anon, authenticated using (true);
+          create policy p on public.banc_pol_anon          for select to anon                using (true);
+          SQL
+
+          echoue=0
+          constat() { echo "::error::$1"; echoue=1; }
+          sonde()   { $PSQL -f "$1" | tr -d ' ' | sed '/^$/d' | sort; }
+
+          # ⚠️ ON GARDE LA CLASSE, PAS LA MISE EN PAGE : « la requête nomme la table morte ET le rôle mort »,
+          # quel que soit l'ordre ou le nombre de ses colonnes. Épingler `public|table|p|role` ferait rougir un
+          # changement de colonnes légitime comme s'il s'agissait d'un défaut de logique — et apprendrait à
+          # lire ce rouge comme du bruit. La comparaison porte sur des CHAMPS ENTIERS : `authenticated` est un
+          # sous-mot de `banc_pol_authenticated`, et un `grep` naïf confondrait le rôle avec la table.
+          champ() { printf '%s\n' "$1" | tr '|' '\n' | grep -qxF "$2"; }
+          nomme() {
+            scenario="$1"; sortie="$2"; table="$3"; role="$4"
+            lignes=$(printf '%s\n' "$sortie" | sed '/^$/d' | wc -l)
+            [ "$lignes" = "1" ] || constat "$scenario : une seule politique est morte, la requête retenue rend $lignes ligne(s) — « $sortie »"
+            champ "$sortie" "$table" || constat "$scenario : la requête retenue ne nomme pas la table morte ($table) — « $sortie »"
+            champ "$sortie" "$role"  || constat "$scenario : la requête retenue ne nomme pas le rôle mort ($role) — sans lui l'hôte sait où regarder mais pas quoi rendre — « $sortie »"
+          }
+
+          # ⚠️ AUCUN FILTRE SUR NOS TABLES, ET C'EST UNE VÉRIFICATION DE PLUS. L'étape précédente vient
+          # d'exiger ZÉRO politique dans `public` : la sortie de la requête est donc exactement ce que ce banc
+          # a construit, ou bien quelque chose a changé ailleurs et le banc doit le dire. Elle est ainsi
+          # exécutée VERBATIM — pas enveloppée dans une sous-requête qui ne serait plus l'artefact documenté.
+          sain=$(sonde /tmp/requete-retenue.sql)
+          [ -z "$sain" ] || constat "état sain : la requête retenue signale « $sain » alors qu'aucune politique n'est privée de son droit — faux positif"
+          v1_sain=$(sonde /tmp/requete-v1-etroite.sql)
+
+          echo "── scénario A — politique {authenticated} seule, droit retiré à authenticated ──"
+          $PSQL -c "revoke select on public.banc_pol_authenticated from authenticated;"
+          a3=$(sonde /tmp/requete-retenue.sql); a2=$(sonde /tmp/requete-v2-un-role.sql); a1=$(sonde /tmp/requete-v1-etroite.sql)
+          echo "    retenue=[$(echo $a3)]  v2=[$(echo $a2)]  v1=[$(echo $a1)]"
+          nomme "scénario A" "$a3" "banc_pol_authenticated" "authenticated"
+          case "$a1" in *banc_pol_authenticated*) constat "scénario A : v1 ne devrait PAS voir la table cassée — le banc ne distingue plus rien" ;; esac
+          [ "$a1" = "$v1_sain" ] || constat "scénario A : v1 devrait rendre la MÊME chose qu'à l'état sain — c'est ce qui prouve qu'elle ne mesure pas l'état"
+          case "$a2" in *banc_pol_deux*) constat "scénario A : v2 signale une table saine" ;; esac
+          $PSQL -c "grant select on public.banc_pol_authenticated to authenticated;"
+
+          echo "── scénario B — politique {anon,authenticated}, droit retiré à authenticated seul ──"
+          $PSQL -c "revoke select on public.banc_pol_deux from authenticated;"
+          b3=$(sonde /tmp/requete-retenue.sql); b2=$(sonde /tmp/requete-v2-un-role.sql)
+          echo "    retenue=[$(echo $b3)]  v2=[$(echo $b2)]"
+          nomme "scénario B" "$b3" "banc_pol_deux" "authenticated"
+          case "$b2" in *banc_pol_deux*) constat "scénario B : v2 voit la table cassée — or elle n'inspecte qu'un rôle par politique et devrait la manquer ; le banc ne distingue plus les deux écritures" ;; esac
+          $PSQL -c "grant select on public.banc_pol_deux to authenticated;"
+
+          echo "── scénario C — politique {anon} seule, droit retiré à anon ──"
+          $PSQL -c "revoke select on public.banc_pol_anon from anon;"
+          c3=$(sonde /tmp/requete-retenue.sql)
+          echo "    retenue=[$(echo $c3)]"
+          nomme "scénario C" "$c3" "banc_pol_anon" "anon"
+          $PSQL -c "grant select on public.banc_pol_anon to anon;"
+
+          $PSQL <<'SQL'
+          drop table public.banc_pol_authenticated, public.banc_pol_deux, public.banc_pol_anon;
+          drop role anon, authenticated;
+          SQL
+
+          [ "$echoue" = "0" ] || exit 1
+          echo "la requête d'init.sql nomme la table morte dans les trois profils ; v1 en manque un, v2 un autre"
+
+      # ─────────────────────────────────────────────────────────────────────────────────────────
       # ⚠️ LE DOUBLE POSTGREST EN MÉMOIRE DIT LUI-MÊME CE QU'IL NE SAIT PAS FAIRE : « pas de
       # contraintes, pas de transactions… PAS un substitut pour vérifier ce qui relève du SGBD ».
       # Or l'idempotence des messages tient à une contrainte d'unicité, l'ordre des écritures de
