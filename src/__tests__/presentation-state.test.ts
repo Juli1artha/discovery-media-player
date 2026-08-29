@@ -81,3 +81,88 @@ describe("rechargement d'un document changé", () => {
     expect(a).toMatch(/&v=\d+$/);
   });
 });
+
+// ── LA ROTATION SUIT L'AUDIENCE ────────────────────────────────────────────────────────────────
+//
+// ⚠️ CETTE VALEUR ARRIVE PAR UNE VOIE NON FIABLE. Sur le canal `broadcast`, l'état vient du
+// NAVIGATEUR du présentateur : elle est donc normalisée ici, comme le contenu est ré-assaini. Un
+// viewport oblique casserait la couche de texte de TOUTE l'audience, pas seulement de celui qui
+// l'envoie.
+describe("presentationTransition — rotation", () => {
+  const vivante = { active: true, file_url: "/doc.pdf", current_page: 3 };
+
+  it("demande la rotation quand le présentateur a tourné", () => {
+    const a = presentationTransition({ ...vivante, view_rotation: 90 }, { docUrl: "/doc.pdf", rotation: 0 });
+    expect(a).toContainEqual({ kind: "rotate", rotation: 90 });
+  });
+
+  // ⚠️ SANS CETTE LIGNE, CHAQUE RECONNEXION RECONSTRUIRAIT LE DOCUMENT POUR RIEN. La relecture HTTP
+  // rejoue tout l'état à la (re)connexion : émettre « tourne de 0° » y ferait payer une
+  // reconstruction complète au moment exact où l'audience vient de rejoindre.
+  it("n'émet RIEN quand la rotation n'a pas changé", () => {
+    const a = presentationTransition({ ...vivante, view_rotation: 90 }, { docUrl: "/doc.pdf", rotation: 90 });
+    expect(a.some((x) => x.kind === "rotate")).toBe(false);
+  });
+
+  it("traite l'absence de rotation comme zéro, des deux côtés", () => {
+    const a = presentationTransition(vivante, { docUrl: "/doc.pdf" });
+    expect(a.some((x) => x.kind === "rotate")).toBe(false);
+  });
+
+  it("émet la rotation quand l'audience revient à zéro", () => {
+    const a = presentationTransition({ ...vivante, view_rotation: 0 }, { docUrl: "/doc.pdf", rotation: 270 });
+    expect(a).toContainEqual({ kind: "rotate", rotation: 0 });
+  });
+
+  // ⚠️ L'ORDRE EST UNE RÈGLE : tourner APRÈS avoir montré la page ferait reconstruire deux fois, et
+  // la première reconstruction viserait une page dont la position est sur le point de bouger.
+  it("tourne AVANT de montrer la page", () => {
+    const a = presentationTransition({ ...vivante, view_rotation: 90 }, { docUrl: "/doc.pdf", rotation: 0 });
+    const iRot = a.findIndex((x) => x.kind === "rotate");
+    const iPage = a.findIndex((x) => x.kind === "show-page");
+    expect(iRot).toBeGreaterThanOrEqual(0);
+    expect(iPage).toBeGreaterThan(iRot);
+  });
+
+  it("tourne AUSSI quand le document change — sinon le nouveau document arrive droit", () => {
+    const a = presentationTransition({ ...vivante, file_url: "/autre.pdf", view_rotation: 90 }, { docUrl: "/doc.pdf", rotation: 0 });
+    const iRot = a.findIndex((x) => x.kind === "rotate");
+    const iDoc = a.findIndex((x) => x.kind === "switch-doc");
+    expect(iRot).toBeGreaterThanOrEqual(0);
+    expect(iDoc).toBeGreaterThan(iRot);
+  });
+
+  it.each([
+    ["un tiers de tour", 37, 0],
+    ["une chaîne", "90", 0],
+    ["NaN", NaN, 0],
+    ["au-delà du tour", 450, 90],
+    ["négative", -90, 270],
+  ])("normalise une valeur venue du navigateur du présentateur : %s", (_nom, brute, attendue) => {
+    const a = presentationTransition({ ...vivante, view_rotation: brute as number }, { docUrl: "/doc.pdf", rotation: 180 });
+    expect(a).toContainEqual({ kind: "rotate", rotation: attendue });
+  });
+
+  // ⚠️ LES DEUX CÔTÉS SE NORMALISENT, PAS SEULEMENT CELUI QUI ARRIVE. La rotation que l'audience
+  // porte déjà vient de la BASE au chargement de la page, pas d'une action que nous aurions émise :
+  // si la base contient 450, comparer 90 à 450 émettrait une rotation « vers 90 » alors que
+  // l'audience y est déjà — une reconstruction complète du document au moment où elle rejoint.
+  it("ne compare pas une valeur normalisée à une valeur brute", () => {
+    const a = presentationTransition({ ...vivante, view_rotation: 450 }, { docUrl: "/doc.pdf", rotation: 450 });
+    expect(a.some((x) => x.kind === "rotate")).toBe(false);
+  });
+
+  it("une présentation terminée l'emporte : aucune rotation", () => {
+    const a = presentationTransition({ ...vivante, active: false, view_rotation: 90 }, { docUrl: "/doc.pdf", rotation: 0 });
+    expect(a).toEqual([{ kind: "ended" }]);
+  });
+
+  it("une carte suspend tout, rotation comprise", () => {
+    const a = presentationTransition(
+      { ...vivante, view_rotation: 90, content: { kind: "map", center: [46, 2], zoom: 6, mapType: "roadmap" } },
+      { docUrl: "/doc.pdf", rotation: 0 },
+    );
+    expect(a.some((x) => x.kind === "rotate")).toBe(false);
+  });
+});
+

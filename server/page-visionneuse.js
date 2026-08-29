@@ -455,12 +455,16 @@ ${LEGAL_CSS}
     // ⚠️ L'ANTI-REBOND DE 250 ms A DISPARU, ET C'EST VOULU. Il repoussait l'échéance à chaque appel —
     // un défilement continu pouvait donc ne JAMAIS écrire. La file regroupe par genre sans jamais
     // repousser : la dernière page demandée part au prochain tour, et elle part.
+    // ⚠️ LA ROTATION VOYAGE AVEC LA PAGE, PAR LE MEME APPEL. Elle aurait pu avoir son action a elle ;
+    // elle aurait alors eu son propre rang d ecriture, et deux ecritures concurrentes auraient pu
+    // s inverser — l audience recevant une rotation posterieure a la page qui la precede. Un seul
+    // message porte les deux, donc un seul ordre, et le controle de rang existant les couvre tous deux.
     function pushPage(){ if(!PRES)return;
       var f=fileEcritures(); var page=cur||1;
       if(!f) return envoyerPage(page);
       return f.poser('page',function(){ return envoyerPage(cur||page); }); }
     function envoyerPage(page){ if(!PRES)return Promise.resolve();
-      return Player.live.fetchBorne('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-page',slug:PRES.slug,control:PRES.control,page:page,seq:prochainRang()})})
+      return Player.live.fetchBorne('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-page',slug:PRES.slug,control:PRES.control,page:page,rotation:rot,seq:prochainRang()})})
         .then(function(r){ if(r&&r.ok)diffuserEtat(); })
         .catch(function(){}); }
     // ⚠️ TROIS GESTES, ET L'ORDRE ÉTAIT LE PIRE DES SIX. On signalait la fin, puis on COUPAIT LE
@@ -1078,6 +1082,8 @@ ${LEGAL_CSS}
 
     function tournerDe(quarts){
       rot=Player.viewer.rotationEffective(rot,quarts*90);
+      // En presentation, l audience suit : le meme message que la page, donc le meme ordre.
+      try{ if(PRES) pushPage(); }catch(e){}
       var c=cur||1;
       if(!pdfDoc && !IS_IMG) return;
       build();

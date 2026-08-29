@@ -14,6 +14,32 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- **La rotation du présentateur suit désormais son audience en direct.** Jusqu'ici elle restait
+  locale : le présentateur redressait un document couché et l'audience continuait de voir le document
+  couché pendant qu'il commentait un document droit. Migration **0024** — `doc_presentations` gagne
+  `view_rotation`.
+  ⚠️ **`view_rotation` et non `rotation`, pour deux raisons.** Le nom dit *rotation de la vue*, par
+  opposition au `/Rotate` que porte le fichier — deux choses que le player **compose** au lieu de les
+  confondre. Et le nom court serait entré en collision avec l'option `rotation` de pdf.js, présente
+  partout dans le code de la visionneuse : la garde qui vérifie qu'une colonne migrée n'est jamais
+  écrite sans condition aurait alors crié en permanence sur des lignes qui ne touchent pas la base.
+  Une alerte qui sonne quand tout va bien apprend à cliquer à côté.
+  ⚠️ **Sans la migration, rien ne casse — et c'est ce qui a demandé le plus de soin.** PostgREST
+  rejette le **PATCH entier** sur une colonne inconnue : nommer `view_rotation` chez un hôte non
+  migré ne ferait pas perdre la rotation, ça ferait perdre **aussi le changement de page**, donc le
+  pilotage en direct tout entier. Le champ n'est donc écrit que derrière la sonde de schéma, et un
+  banc le prouve avec une doublure qui **lève** sur une colonne inconnue, comme PostgREST.
+  ⚠️ **La rotation voyage avec la page, par le même message.** Lui donner son action propre lui aurait
+  donné son propre rang d'écriture, et deux écritures concurrentes auraient pu s'inverser — l'audience
+  recevant une rotation postérieure à la page qu'elle précède. Un message, un ordre.
+  ⚠️ **Elle est normalisée à la réception, des deux côtés.** Sur la voie `broadcast`, cette valeur
+  vient du **navigateur du présentateur** : un viewport oblique casserait la couche de texte de toute
+  l'audience, pas seulement de celui qui l'envoie. Le serveur applique une **liste blanche** ; le
+  module de décision ramène au quart de tour. ⚠️ **Et les deux portes ne disaient pas la même
+  chose** — `Number("90")` vaut 90, donc le serveur acceptait une chaîne que le navigateur rejetait.
+  Relevé par un banc, pas par une relecture : deux validateurs du même geste qui divergent, c'est
+  l'un des deux qui ment et on ne sait pas lequel.
+
 - **Panneau de vignettes, à gauche du document** — bouton dans la barre et entrée de menu, replié par
   défaut, tiroir plutôt que colonne sous 860 px. Cliquer une vignette navigue ; la vignette courante
   est marquée. Masqué sur un document image ou d'une seule page, où il n'aurait rien à montrer.

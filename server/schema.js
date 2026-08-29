@@ -39,6 +39,11 @@ const ATTENDUES = {
     migration: "supabase/migrations/0002-ordre-des-ecritures.sql",
     fonction: "refuser une écriture de pilotage doublée en vol",
   },
+  rotationDirecte: {
+    table: "doc_presentations", colonne: "view_rotation",
+    migration: "supabase/migrations/0024-rotation-en-direct.sql",
+    fonction: "faire suivre à l'audience l'orientation que le présentateur donne au document",
+  },
   envoiUnique: {
     table: "doc_presentation_messages", colonne: "client_key",
     migration: "supabase/migrations/0005-envoi-unique.sql",

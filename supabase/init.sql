@@ -174,6 +174,10 @@ create table if not exists public.doc_presentations (
   doc_title      text,
   presenter_name text,
   current_page   integer not null default 1,
+  -- Orientation imposée par le PRÉSENTATEUR (0/90/180/270), distincte du /Rotate que porte le
+  -- fichier : le player les COMPOSE. Voir 0024 — elle est normalisée à la RÉCEPTION, cette valeur
+  -- pouvant arriver du navigateur du présentateur par la voie broadcast.
+  view_rotation  integer not null default 0,
   active         boolean not null default true,
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now(),

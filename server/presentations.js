@@ -296,7 +296,7 @@ async function rangAccepte(row, seq) {
   return { controle: true, perime: false, rang };
 }
 
-async function setPage(slug, control, page, seq) {
+async function setPage(slug, control, page, seq, rotation) {
   const row = await getPresentation(slug);
   if (!row) return { ok: false, status: 404 };
   if (!tokenMatches(control, row.control_hash)) return { ok: false, status: 403 };
@@ -305,12 +305,26 @@ async function setPage(slug, control, page, seq) {
   // navigateur n'affiche rien — la page qu'il voulait écrire est déjà dépassée par une plus récente.
   if (rang.perime) return { ok: true, perime: true };
   const p = Math.max(1, Math.trunc(Number(page) || 1));
+  // ⚠️ UNE LISTE BLANCHE, PAS UNE NORMALISATION. Le navigateur du présentateur ramène déjà sa
+  // rotation au quart de tour ; tout ce qui arrive ici hors des quatre valeurs attendues est donc
+  // malformé ou hostile, et se ramène à zéro plutôt qu'à « la valeur la plus proche ». Deviner ce
+  // qu'un client cassé voulait dire lui donnerait raison.
+  //
+  // ⚠️ ET LE TYPE COMPTE, PAS SEULEMENT LA VALEUR. `Number("90")` vaut 90 : accepter la chaîne
+  // rendrait cette porte PLUS PERMISSIVE que celle du navigateur, où `rotationEffective` exige un
+  // nombre. Deux validateurs du même geste qui ne disent pas la même chose, c'est une des deux qui
+  // ment — et on ne saurait pas laquelle. Relevé par le banc, pas par la relecture.
+  const rot = typeof rotation === "number" && [0, 90, 180, 270].includes(rotation) ? rotation : 0;
+  // ⚠️ CONDITIONNEL, ET C'EST LA COLONNE QUI L'IMPOSE. PostgREST rejette le PATCH ENTIER si elle
+  // manque : la nommer chez un hôte non migré ne perdrait pas la rotation, elle perdrait AUSSI le
+  // changement de page. La rotation ne se propage simplement pas là-bas, et rien d'autre ne bouge.
+  const rotDispo = await require("./schema").attendue("rotationDirecte");
   // Le jeton DANS la condition : si la présentation a été terminée entre-temps, il a été annulé
   // et cette écriture ne trouve plus sa ligne. Le rang aussi, pour que deux écritures concurrentes
   // ne puissent pas s'inverser — la comparaison et l'écriture deviennent le même geste.
   const ecrit = await ecrireSiEncoreVrai(
     `doc_presentations?slug=eq.${enc(slug)}&control_hash=eq.${sha(control)}${filtreRang(rang)}`,
-    { current_page: p, active: true, last_seen: new Date().toISOString(), updated_at: new Date().toISOString(), ...(rang.controle ? { write_seq: rang.rang } : {}) },
+    { current_page: p, active: true, last_seen: new Date().toISOString(), updated_at: new Date().toISOString(), ...(rang.controle ? { write_seq: rang.rang } : {}), ...(rotDispo ? { view_rotation: rot } : {}) },
   );
   // Refus SILENCIEUX, comme un rang périmé : le navigateur n'a rien à afficher, la page qu'il
   // voulait écrire n'a simplement plus de présentation où aller.
