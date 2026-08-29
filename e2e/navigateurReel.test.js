@@ -776,6 +776,102 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     await p.close(); await ctx.close();
   });
 
+  // ── LOT 3 : LE PANNEAU DE VIGNETTES ────────────────────────────────────────────────────────────
+  //
+  // ⚠️ CHAQUE BANC PORTE UN PLANCHER, ET CE N'EST PAS UN ORNEMENT. En écrivant ce lot, deux sondes
+  // ont annoncé « borné ✓ » et « libéré ✓ » sur un navigateur où AUCUNE vignette ne se rendait :
+  // zéro canvas satisfait « au plus 48 » et « plus rien à libérer » tout aussi bien qu'un moteur qui
+  // marche. Un zéro qui vient de ce qui n'a jamais eu lieu n'est pas une borne — c'est une absence
+  // de mesure, et elle doit REFUSER.
+  const vignettes = (p) => p.evaluate(() => ({
+    boutons: document.querySelectorAll("#vignIn .vg").length,
+    rendues: document.querySelectorAll("#vignIn .vg canvas").length,
+    marquee: (document.querySelector("#vignIn .vg.on") || { dataset: {} }).dataset.p,
+    defilPanneau: document.getElementById("vignIn").scrollTop,
+    largeurPage: Math.round(document.querySelector("#pages .page").getBoundingClientRect().width),
+  }));
+
+  it("le panneau de vignettes s'ouvre, se peuple, et ne retélécharge pas le document", async () => {
+    const ctx = await navigateur.newContext({ viewport: { width: 1200, height: 900 } });
+    const p = await pageAvecLecteur(ctx);
+    let requetes = 0;
+    p.on("request", (r) => { if (/essai-long\.pdf/.test(r.url())) requetes++; });
+    const avant = await vignettes(p);
+    await p.click("#vignBtn");
+    await p.waitForFunction(() => document.querySelectorAll("#vignIn .vg canvas").length > 0, { timeout: 20_000 });
+    const apres = await vignettes(p);
+    expect(apres.boutons, "le panneau n'a pas été peuplé").toBe(40);
+    // ⚠️ LE PLANCHER. Sans lui, un moteur qui échoue en silence rendrait tous les bancs suivants verts.
+    expect(apres.rendues, "aucune vignette rendue : tout ce qui suit mesurerait le vide").toBeGreaterThan(0);
+    expect(requetes,
+      `${requetes} requête(s) vers le PDF après ouverture du panneau. Le panneau partage le document\n`
+      + "DÉJÀ OUVERT : reprendre le moteur du chat tel quel le retéléchargerait et ferait tourner un\n"
+      + "second worker sur le même fichier.")
+      .toBe(0);
+    expect(apres.largeurPage,
+      `la page fait toujours ${apres.largeurPage} px : le document ne s'est pas réajusté au cadre rétréci`)
+      .toBeLessThan(avant.largeurPage);
+    await p.close(); await ctx.close();
+  });
+
+  it("un parcours complet ne laisse pas les vignettes s'accumuler", async () => {
+    const ctx = await navigateur.newContext({ viewport: { width: 1200, height: 900 } });
+    const p = await pageAvecLecteur(ctx);
+    await p.click("#vignBtn");
+    await p.waitForFunction(() => document.querySelectorAll("#vignIn .vg canvas").length > 0, { timeout: 20_000 });
+    for (let n = 1; n <= 40; n += 2) {
+      await p.evaluate((k) => { const el = document.querySelector(`#pages .page[data-p="${k}"]`); if (el) el.scrollIntoView({ block: "start" }); }, n);
+      await new Promise((r) => setTimeout(r, 90));
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+    const v = await vignettes(p);
+    expect(v.rendues, "zéro vignette vivante après le parcours : un zéro ne prouve aucune borne").toBeGreaterThan(0);
+    expect(v.rendues,
+      `${v.rendues} vignettes portent un canvas. Le cache est borné à 48 : au-delà, un document de\n`
+      + "cinq cents pages garderait cinq cents canvas — le défaut que la fenêtre glissante ferme déjà\n"
+      + "pour les pages du document.")
+      .toBeLessThanOrEqual(48);
+    await p.close(); await ctx.close();
+  });
+
+  it("cliquer une vignette navigue, et la vignette courante se marque", async () => {
+    const ctx = await navigateur.newContext({ viewport: { width: 1200, height: 900 } });
+    const p = await pageAvecLecteur(ctx);
+    await p.click("#vignBtn");
+    await p.waitForFunction(() => document.querySelectorAll("#vignIn .vg canvas").length > 0, { timeout: 20_000 });
+    await p.evaluate(() => document.querySelector('#vignIn .vg[data-p="7"]').click());
+    await new Promise((r) => setTimeout(r, 900));
+    const v = await vignettes(p);
+    const cur = await p.evaluate(() => window.__viewerEssai.cur);
+    expect(cur, "le clic sur la vignette 7 n'a pas navigué").toBe(7);
+    expect(v.marquee, `page courante ${cur}, vignette marquée ${v.marquee}`).toBe("7");
+    await p.close(); await ctx.close();
+  });
+
+  // ⚠️ SANS CE DÉSARMEMENT, PARCOURIR LES VIGNETTES EST IMPOSSIBLE : chaque changement de page
+  // ramènerait le panneau sur la page en cours, et le lecteur se battrait contre son outil.
+  it("le suivi automatique du panneau se désarme dès que le lecteur y touche", async () => {
+    const ctx = await navigateur.newContext({ viewport: { width: 1200, height: 900 } });
+    const p = await pageAvecLecteur(ctx);
+    await p.click("#vignBtn");
+    await p.waitForFunction(() => document.querySelectorAll("#vignIn .vg canvas").length > 0, { timeout: 20_000 });
+    // Un geste du lecteur sur le panneau, puis on le remet en haut et on change de page loin.
+    await p.evaluate(() => {
+      document.getElementById("vignIn").dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 200 }));
+      document.getElementById("vignIn").scrollTop = 0;
+      const el = document.querySelector('#pages .page[data-p="30"]');
+      if (el) el.scrollIntoView({ block: "start" });
+    });
+    await new Promise((r) => setTimeout(r, 900));
+    const v = await vignettes(p);
+    expect(await p.evaluate(() => window.__viewerEssai.cur), "la page n'a pas changé : rien à suivre").toBeGreaterThan(20);
+    expect(v.defilPanneau,
+      `le panneau s'est déplacé de ${v.defilPanneau} px alors que le lecteur venait de le faire défiler\n`
+      + "lui-même : le suivi automatique ne s'est pas désarmé.")
+      .toBe(0);
+    await p.close(); await ctx.close();
+  });
+
   it("un canvas ne dépasse jamais son budget de pixels, quelle que soit la densité d'écran", async () => {
     const ctx = await navigateur.newContext({ deviceScaleFactor: 3, viewport: { width: 1400, height: 1000 } });
     const p3 = await ctx.newPage();

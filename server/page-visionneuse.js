@@ -216,7 +216,7 @@ ${LEGAL_CSS}
   .barmenu button{display:block;width:100%;text-align:left;border:0;background:transparent;font:inherit;font-size:13.5px;color:#1c1c1c;padding:9px 12px;border-radius:8px;cursor:pointer}
   .barmenu button:hover{background:#f2efe9}
   @media (max-width:860px){
-    .bar .zoom,#rotL,#rotR,#fs,#presentBtn,#shareBtn,#dlBtn{display:none}
+    .bar .zoom,#rotL,#rotR,#vignBtn,#fs,#presentBtn,#shareBtn,#dlBtn{display:none}
     .barMore{display:inline-flex}
   }
   @media (max-width:520px){ .bar>b{display:none} }
@@ -224,6 +224,22 @@ ${LEGAL_CSS}
      → .lrow/.lmain sans flex, la fenêtre scrollait à la place du conteneur et le rendu paresseux mourait. */
   .lrow{flex:1;display:flex;min-height:0;position:relative}
   .lmain{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+    /* PANNEAU DE VIGNETTES. Largeur POSÉE D'UN COUP, sans transition : la reconstruction du
+       document mesure scrollEl.clientWidth juste après la bascule, et une largeur en cours
+       d'animation lui ferait calculer des pages à une taille qui n'existe qu'un dixième de
+       seconde. Le confort d'un glissement coûterait une mesure fausse. */
+    .vign{flex:0 0 auto;width:0;overflow:hidden;background:#0000004d;border-right:1px solid #ffffff14}
+    body.vign-on .vign{width:168px}
+    .vign-in{width:168px;height:100%;overflow-y:auto;overflow-x:hidden;padding:12px 0 24px;display:flex;flex-direction:column;align-items:center;gap:10px;scrollbar-width:thin}
+    .vg{position:relative;width:132px;flex:0 0 auto;padding:0;border:2px solid transparent;border-radius:4px;background:#ffffff10;cursor:pointer;overflow:hidden}
+    .vg canvas{display:block;width:100%;height:100%}
+    .vg:hover{border-color:#ffffff4d}
+    .vg.on{border-color:#fff;box-shadow:0 0 0 1px #0008}
+    .vg-n{position:absolute;right:3px;bottom:3px;padding:0 5px;border-radius:3px;background:#000a;color:#fff;font-size:11px;line-height:16px;pointer-events:none}
+    .vg:focus-visible{outline:2px solid #fff;outline-offset:1px}
+    /* Sous le point de rupture de la barre : TIROIR qui recouvre, pas colonne qui pousse — une
+       colonne de 168 px sur un écran de 380 px ne laisserait pas de document à lire. */
+    @media(max-width:860px){ body.vign-on .vign{position:absolute;left:0;top:0;bottom:0;z-index:7;box-shadow:0 0 24px #000a} }
   ${preview ? LIVE_CSS : ""}
   ${preview ? MAP_CSS : ""}
   ${botOn ? BOT_CSS : ""}
@@ -234,6 +250,7 @@ ${LEGAL_CSS}
     <div class=zoom><button id=zout title="Dézoomer">−</button><span id=zlbl>100%</span><button id=zin title="Zoomer">+</button></div>
     <button class=ic id=rotL title="Pivoter à gauche" aria-label="Pivoter le document à gauche"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h11a5 5 0 0 1 5 5v1M3 8l4-4M3 8l4 4"/></svg></button>
     <button class=ic id=rotR title="Pivoter à droite" aria-label="Pivoter le document à droite"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8H10a5 5 0 0 0-5 5v1M21 8l-4-4M21 8l-4 4"/></svg></button>
+    <button class=ic id=vignBtn title="Vignettes" aria-label="Afficher les vignettes" aria-pressed=false><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="6" height="7" rx="1"/><rect x="3" y="13" width="6" height="7" rx="1"/><path d="M13 6h8M13 12h8M13 18h8"/></svg></button>
     <button class=ic id=fs title="Plein écran"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
     ${preview ? '<button class=dl id=presentBtn title="Présenter en direct (lien public, page synchronisée)">Présenter</button>' : ''}
     <button class="dl primary" id=shareBtn>Partager</button>
@@ -243,6 +260,7 @@ ${LEGAL_CSS}
     <button data-t=zout>Zoom arrière</button>
     <button data-t=rotL>Pivoter à gauche</button>
     <button data-t=rotR>Pivoter à droite</button>
+    <button data-t=vignBtn>Vignettes</button>
     <button data-t=fs>Plein écran</button>
     ${preview ? '<button data-t=presentBtn>Présenter en direct</button>' : ''}
     <button data-t=shareBtn>Partager</button>
@@ -274,6 +292,7 @@ ${LEGAL_CSS}
     </div>
   </div>
   <div class=lrow>
+    <div class=vign id=vign aria-hidden=true><div class=vign-in id=vignIn role=list aria-label="Vignettes des pages"></div></div>
     <div class=lmain>
       <div class=scroll id=scroll tabindex=0 role=region aria-label="Document">
         <div id=pages></div>
@@ -300,7 +319,7 @@ ${LEGAL_CSS}
     // renvoyé par le stockage). Une image = une page, sans pdf.js.
     var IS_IMG=Player.viewer.isImageDocument(CFG.fileName,CFG.fileUrl);
     var imgSrc='';
-    var scrollEl=document.getElementById('scroll'), pagesEl=document.getElementById('pages');
+    var scrollEl=document.getElementById('scroll'), pagesEl=document.getElementById('pages'), vignIn=document.getElementById('vignIn');
     // Suivi de lecture (temps réel à l'écran par page, page la plus loin atteinte, session) :
     // player/src/tracking.ts — typé et testé, y compris la séparation prospect / aperçu interne.
     var T=Player.tracking.createTracker({ slug:CFG.slug||'', internal:CFG.internal||null, scrollElement:scrollEl });
@@ -336,7 +355,7 @@ ${LEGAL_CSS}
     var DPR_MAX=2;            // au-dela, le gain visuel est nul et le cout quadratique
     var PIXELS_MAX=4e6;       // plafond par canvas : ~4 M pixels = ~16 Mo de tampon
     var onePage=false, soloOffered=false; // mode « une seule page » (présentation guidée) + offre de découverte solo
-    function setCur(p){ if(!p||p===cur)return; cur=p; try{ evincerLoin(p); }catch(e){} T.setPage(p); try{ if(window.__soloEnd)window.__soloEnd(p); }catch(e){} var pg=document.getElementById('pg'); if(pg&&numPages)pg.textContent='Page '+p+' / '+numPages; if(PRES) pushPage(); }
+    function setCur(p){ if(!p||p===cur)return; cur=p; try{ evincerLoin(p); }catch(e){} T.setPage(p); try{ vignMarquer(p); }catch(e){} try{ if(window.__soloEnd)window.__soloEnd(p); }catch(e){} var pg=document.getElementById('pg'); if(pg&&numPages)pg.textContent='Page '+p+' / '+numPages; if(PRES) pushPage(); }
     // Bouton « Partager » : re-partage tracé (forward) → crée un lien ENFANT et propose de l'envoyer par email.
     function wireShare(){
       var pop=document.getElementById('pop'), btn=document.getElementById('shareBtn'), err=document.getElementById('shErr');
@@ -624,6 +643,15 @@ ${LEGAL_CSS}
       document.getElementById('zout').addEventListener('click',function(){ setZoom(zoom-0.2); });
       document.getElementById('rotL').addEventListener('click',function(){ tournerDe(-1); });
       document.getElementById('rotR').addEventListener('click',function(){ tournerDe(1); });
+      document.getElementById('vignBtn').addEventListener('click',basculerVignettes);
+      if(vignIn){
+        var desarmer=function(){ vignSuivi=false; };
+        vignIn.addEventListener('wheel',desarmer,{passive:true});
+        vignIn.addEventListener('pointerdown',desarmer,{passive:true});
+        vignIn.addEventListener('keydown',function(e){ if(e.key==='ArrowDown'||e.key==='ArrowUp') vignSuivi=false; },{passive:true});
+      }
+      // Un document d une seule page, ou une image : le panneau n aurait rien a montrer.
+      if(IS_IMG){ var vb=document.getElementById('vignBtn'); if(vb) vb.style.display='none'; }
       brancherZoomAuGeste();
       render();
     }
@@ -865,6 +893,8 @@ ${LEGAL_CSS}
       task.onProgress=function(p){ if(p&&p.total){ var pct=Math.max(8,Math.min(99,Math.round(p.loaded/p.total*100))); var bar=document.getElementById('lbar'); if(bar)bar.classList.remove('idle'); var f=document.getElementById('lbarFill'); if(f)f.style.width=pct+'%'; var l=document.getElementById('lpct'); if(l)l.textContent=pct+' %'; } };
       task.promise.then(function(pdf){
         pdfDoc=pdf; numPages=pdf.numPages; window.__n=pdf.numPages; T.setPageCount(pdf.numPages);
+        // Un document d une seule page : le panneau de vignettes n aurait rien a montrer.
+        if(numPages<2){ var vb1=document.getElementById('vignBtn'); if(vb1) vb1.style.display='none'; }
         document.getElementById('pg').textContent='Page 1 / '+pdf.numPages;
         pdf.getPage(1).then(function(p){ var vp=p.getViewport({scale:1}); firstAspect=vp.height/vp.width; build(); try{if(window.PlayerBot)window.PlayerBot.init(VIEWER);}catch(e){} })
           .catch(function(){ build(); try{if(window.PlayerBot)window.PlayerBot.init(VIEWER);}catch(e){} });
@@ -906,11 +936,133 @@ ${LEGAL_CSS}
     function scrollToPage(p){ var el=pagesEl.querySelector('.page[data-p="'+p+'"]'); if(el) el.scrollIntoView({block:'start'}); }
     // ⚠️ PAS window.__refit ICI : il commence par « if(!pdfDoc) return », donc il ne ferait RIEN sur un
     // document image — le meme garde qui laissait les images sans zoom avant le lot 1.
+    // ── PANNEAU DE VIGNETTES ─────────────────────────────────────────────────────────────────────
+    //
+    // ⚠️ LE MOTEUR EXISTAIT DEJA, DANS LE CHAT — et une seule de ses parties ne se transpose pas.
+    // gabarit-live.js fabrique des vignettes de pieces jointes avec un cache borne, une file de
+    // concurrence, un chargement paresseux et des URL objet plutot que des data-URL. Tout cela sert
+    // ici. Ce qui NE se transpose pas est le getDocument suivi d un destroy : ce panneau montre les
+    // pages du document DEJA OUVERT. Le reprendre tel quel telechargerait le fichier une seconde fois
+    // et ferait tourner deux workers sur le meme PDF.
+    //
+    // ⚠️ ET LE CACHE EST BORNE PARCE QU UN DOCUMENT NE L EST PAS. Cinq cents pages font cinq cents
+    // boutons — c est peu — mais cinq cents canvas seraient le defaut que la fenetre glissante ferme
+    // deja pour les pages. On garde les derniers, on rend les autres a l etat de gabarit, et
+    // l observateur les refabrique s ils reviennent a l ecran.
+    var VIGN_LARGEUR=132, VIGN_MAX=48, VIGN_PARALLELE=2;
+    var vignOuvert=false, vignIO=null, vignFile=[], vignActifs=0, vignOrdre=[], vignFaites=Object.create(null), vignEchecs=Object.create(null);
+    // ⚠️ LE SUIVI AUTOMATIQUE SE DESARME DES QUE LE LECTEUR TOUCHE LE PANNEAU. Sans ca, parcourir les
+    // vignettes ramene sans cesse le panneau sur la page en cours et le lecteur se bat contre son
+    // outil. On ecoute les GESTES, pas l evenement scroll : un defilement que NOUS provoquons ne doit
+    // pas compter comme une intention du lecteur.
+    var vignSuivi=true;
+
+    function vignVider(bt){
+      bt.innerHTML='';
+      bt.style.height=Math.round(VIGN_LARGEUR*aspectEffectif())+'px';
+      var s=document.createElement('span'); s.className='vg-n'; s.textContent=bt.dataset.p; bt.appendChild(s);
+    }
+    function vignEvincer(){
+      while(vignOrdre.length>VIGN_MAX){
+        var vieux=vignOrdre.shift();
+        delete vignFaites[vieux];
+        var bt=vignIn.querySelector('.vg[data-p="'+vieux+'"]');
+        if(bt){ vignVider(bt); if(vignIO) vignIO.observe(bt); }
+      }
+    }
+    function vignSuivante(){
+      if(vignActifs>=VIGN_PARALLELE||!vignFile.length)return;
+      var t=vignFile.shift(); vignActifs++;
+      Promise.resolve().then(t).catch(function(){}).then(function(){ vignActifs--; vignSuivante(); });
+    }
+    function vignRendre(bt){
+      var n=+bt.dataset.p;
+      if(!pdfDoc||vignFaites[n])return;
+      vignFaites[n]=1; vignOrdre.push(n); vignEvincer();
+      // ⚠️ UN ECHEC DOIT POUVOIR ETRE RETENTE, ET C EST LE DEFAUT QUE LE CHEMIN PRINCIPAL DOCUMENTE
+      // DEJA : « on ne marque pas RENDUE avant de l avoir fait ». Ici la marque est posee AVANT, pour
+      // dedoublonner les demandes concurrentes ; il faut donc la RETIRER si le rendu echoue, sinon la
+      // vignette reste vide pour toujours et plus rien ne la redemande. Trouve en mesurant : le
+      // navigateur d essai rejetait chaque rendu, et la file avalait le rejet sans un mot.
+      //
+      // ⚠️ ET LA REPRISE EST BORNEE, PARCE QU OBSERVER UN ELEMENT DEJA VISIBLE RAPPELLE LE CALLBACK
+      // TOUT DE SUITE. Re-observer sans compter fabriquerait une BOUCLE INFINIE des que les rendus
+      // echouent en serie — un moteur trop ancien, une memoire pleine — et brulerait le processeur du
+      // lecteur en silence. Mesure sur un navigateur ou chaque rendu echoue : sans borne, la file ne
+      // se vidait jamais. Deux tentatives, puis on laisse la vignette vide plutot que de tourner.
+      var oublier=function(){
+        delete vignFaites[n];
+        var j=vignOrdre.indexOf(n); if(j>=0) vignOrdre.splice(j,1);
+        vignEchecs[n]=(vignEchecs[n]||0)+1;
+        if(vignEchecs[n]<2 && vignIO && bt.isConnected) vignIO.observe(bt);
+      };
+      vignFile.push(function(){
+        return pdfDoc.getPage(n).then(function(page){
+          if(!vignFaites[n])return;                      // evincee pendant l attente
+          var rotEff=Player.viewer.rotationEffective(page.rotate,rot);
+          var v0=page.getViewport({scale:1,rotation:rotEff});
+          var v=page.getViewport({scale:VIGN_LARGEUR/v0.width,rotation:rotEff});
+          var c=document.createElement('canvas');
+          c.width=Math.ceil(v.width); c.height=Math.ceil(v.height);
+          return page.render({canvasContext:c.getContext('2d'),viewport:v}).promise.then(function(){
+            if(!vignFaites[n])return;
+            bt.style.height=''; bt.innerHTML=''; bt.appendChild(c);
+            var s=document.createElement('span'); s.className='vg-n'; s.textContent=n; bt.appendChild(s);
+          }, oublier);
+        }, oublier);
+      });
+      vignSuivante();
+    }
+    function vignMarquer(p){
+      if(!vignOuvert||!vignIn)return;
+      var els=vignIn.querySelectorAll('.vg');
+      for(var i=0;i<els.length;i++) els[i].classList.toggle('on',(+els[i].dataset.p)===p);
+      if(!vignSuivi)return;
+      var el=vignIn.querySelector('.vg[data-p="'+p+'"]');
+      // On deplace le defilement DU PANNEAU, jamais scrollIntoView : celui-ci remonte la chaine des
+      // ancetres scrollables et emporterait le document avec lui.
+      if(el) vignIn.scrollTop=Math.max(0,el.offsetTop-(vignIn.clientHeight-el.offsetHeight)/2);
+    }
+    function vignConstruire(){
+      if(!vignIn)return;
+      if(vignIO){ vignIO.disconnect(); vignIO=null; }
+      vignIn.innerHTML=''; vignFaites=Object.create(null); vignEchecs=Object.create(null); vignOrdre=[]; vignFile=[];
+      if(!pdfDoc||numPages<2)return;
+      vignIO=new IntersectionObserver(function(es){
+        es.forEach(function(e){ if(e.isIntersecting){ vignIO.unobserve(e.target); vignRendre(e.target); } });
+      },{root:vignIn,rootMargin:'220px 0px'});
+      for(var i=1;i<=numPages;i++){
+        var bt=document.createElement('button');
+        bt.type='button'; bt.className='vg'; bt.dataset.p=i; bt.setAttribute('role','listitem');
+        bt.setAttribute('aria-label','Aller à la page '+i);
+        vignVider(bt);
+        bt.addEventListener('click',function(){
+          var n=+this.dataset.p; vignSuivi=true;
+          if(onePage) showPage(n); else scrollToPage(n);
+          vignMarquer(n);
+        });
+        vignIn.appendChild(bt); vignIO.observe(bt);
+      }
+      vignMarquer(cur||1);
+    }
+    function basculerVignettes(){
+      vignOuvert=!vignOuvert;
+      document.body.classList.toggle('vign-on',vignOuvert);
+      var b=document.getElementById('vignBtn'); if(b) b.setAttribute('aria-pressed',vignOuvert?'true':'false');
+      var v=document.getElementById('vign'); if(v) v.setAttribute('aria-hidden',vignOuvert?'false':'true');
+      if(vignOuvert){ vignSuivi=true; vignConstruire(); }
+      else if(vignIO){ vignIO.disconnect(); vignIO=null; vignIn.innerHTML=''; vignFaites=Object.create(null); vignEchecs=Object.create(null); vignOrdre=[]; vignFile=[]; }
+      // Le cadre a change de largeur : le document se recalcule, en gardant sa page.
+      var c=cur||1;
+      if(pdfDoc||IS_IMG){ build(); if(onePage) showPage(c); else setTimeout(function(){ scrollToPage(c); },30); }
+    }
+
     function tournerDe(quarts){
       rot=Player.viewer.rotationEffective(rot,quarts*90);
       var c=cur||1;
       if(!pdfDoc && !IS_IMG) return;
       build();
+      if(vignOuvert) vignConstruire();   // la proportion des vignettes a change
       if(onePage) showPage(c); else setTimeout(function(){ scrollToPage(c); },30);
     }
     window.__refit=function(){ if(!pdfDoc)return; var c=cur||1; build(); setTimeout(function(){ scrollToPage(c); },30); };

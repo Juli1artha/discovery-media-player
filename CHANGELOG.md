@@ -14,6 +14,28 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- **Panneau de vignettes, à gauche du document** — bouton dans la barre et entrée de menu, replié par
+  défaut, tiroir plutôt que colonne sous 860 px. Cliquer une vignette navigue ; la vignette courante
+  est marquée. Masqué sur un document image ou d'une seule page, où il n'aurait rien à montrer.
+  ⚠️ **Le moteur vient du chat, sauf la partie qui compte.** Le générateur de vignettes de
+  `gabarit-live.js` apporte le cache borné, la file de concurrence et le chargement paresseux. Ce qui
+  ne se transpose **pas** est son `getDocument` suivi d'un `destroy` : ce panneau montre les pages du
+  document **déjà ouvert**. Le reprendre tel quel téléchargerait le fichier une seconde fois et ferait
+  tourner deux workers sur le même PDF. Un banc compte les requêtes vers le fichier et exige zéro.
+  ⚠️ **Le suivi automatique se désarme dès que le lecteur touche le panneau** — sinon chaque
+  changement de page ramène le panneau sur la page en cours et le lecteur se bat contre son outil. On
+  écoute les gestes, pas l'événement de défilement : un défilement que nous provoquons n'est pas une
+  intention du lecteur.
+  ⚠️ **Deux défauts trouvés en mesurant, tous deux miens.** Un rendu de vignette en échec restait
+  marqué « faite » et n'était **jamais retenté** — précisément ce que le chemin principal des pages
+  documente et évite. Et le correctif naïf en introduisait un pire : ré-observer un élément déjà
+  visible rappelle l'observateur **immédiatement**, donc une **boucle infinie** sur un moteur où les
+  rendus échouent en série. La reprise est bornée à deux tentatives ; mesuré : la file s'arrête à 2
+  rejets au lieu de tourner sans fin.
+  ⚠️ **Et deux de mes sondes annonçaient « borné ✓ » et « libéré ✓ » sur zéro vignette rendue.** Un
+  zéro qui vient de ce qui n'a jamais eu lieu satisfait « au plus 48 » aussi bien qu'un moteur qui
+  marche. Les quatre bancs portent désormais un plancher qui **refuse** un panneau vide.
+
 - **Rotation du document à 90°, à gauche ou à droite** — dans la barre et dans le menu « ⋯ », comme
   le zoom, et repliée dans le menu sous 860 px par la même règle. Un quart de tour par clic ; quatre
   clics ramènent à l'identique. Rotation du **document**, pas de la page : une rotation par page est
