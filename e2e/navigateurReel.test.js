@@ -848,6 +848,27 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     await p.close(); await ctx.close();
   });
 
+  // ⚠️ LA COURSE QUE LA FORGE A TROUVÉE, ET QUE CE BANC REND DÉTERMINISTE. Ouvrir le panneau
+  // reconstruit le document et REPORTE de 30 ms la restauration de la page courante — la géométrie
+  // n'est pas stable avant. Ce report survivait à une navigation faite dans l'intervalle et la
+  // DÉFAISAIT : le lecteur qui ouvre le panneau puis clique aussitôt une vignette était ramené là où
+  // il était. Invisible dans un environnement où les vignettes tardent à se rendre, parce que le
+  // banc y attend bien au-delà des 30 ms ; ici on ouvre et on clique dans le MÊME instant.
+  it("ouvrir le panneau puis cliquer aussitôt une vignette ne ramène pas le lecteur en arrière", async () => {
+    const ctx = await navigateur.newContext({ viewport: { width: 1200, height: 900 } });
+    const p = await pageAvecLecteur(ctx);
+    await p.evaluate(() => {
+      document.getElementById("vignBtn").click();
+      document.querySelector('#vignIn .vg[data-p="7"]').click();
+    });
+    await new Promise((r) => setTimeout(r, 900));
+    expect(await p.evaluate(() => window.__viewerEssai.cur),
+      "le report de page armé par l'ouverture du panneau a défait la navigation du lecteur :\n"
+      + "toute navigation explicite doit PÉRIMER un report en attente.")
+      .toBe(7);
+    await p.close(); await ctx.close();
+  });
+
   // ⚠️ SANS CE DÉSARMEMENT, PARCOURIR LES VIGNETTES EST IMPOSSIBLE : chaque changement de page
   // ramènerait le panneau sur la page en cours, et le lecteur se battrait contre son outil.
   it("le suivi automatique du panneau se désarme dès que le lecteur y touche", async () => {

@@ -35,6 +35,13 @@ the notes there are this file's section for that version.
   ⚠️ **Et deux de mes sondes annonçaient « borné ✓ » et « libéré ✓ » sur zéro vignette rendue.** Un
   zéro qui vient de ce qui n'a jamais eu lieu satisfait « au plus 48 » aussi bien qu'un moteur qui
   marche. Les quatre bancs portent désormais un plancher qui **refuse** un panneau vide.
+  ⚠️ **Et une course, trouvée par la forge et impossible à voir ailleurs.** Ouvrir le panneau
+  reconstruit le document et **reporte de 30 ms** la restauration de la page courante — la géométrie
+  n'est pas stable avant. Ce report survivait à une navigation faite dans l'intervalle et la
+  **défaisait** : ouvrir le panneau puis cliquer aussitôt une vignette ramenait le lecteur à sa page
+  de départ. Invisible dans l'environnement de développement, où les vignettes ne se rendaient pas et
+  où le banc attendait donc bien au-delà des 30 ms. **Toute navigation explicite périme désormais un
+  report en attente**, et un banc ouvre le panneau et clique dans le même instant.
 
 - **Rotation du document à 90°, à gauche ou à droite** — dans la barre et dans le menu « ⋯ », comme
   le zoom, et repliée dans le menu sous 860 px par la même règle. Un quart de tour par clic ; quatre

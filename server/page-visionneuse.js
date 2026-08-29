@@ -930,10 +930,29 @@ ${LEGAL_CSS}
       var els=pagesEl.querySelectorAll('.page'); for(var i=0;i<els.length;i++){ els[i].classList.toggle('cur',(+els[i].dataset.p)===p); } var el=pagesEl.querySelector('.page[data-p="'+p+'"]'); if(el){ renderPage(p,el); var nx=pagesEl.querySelector('.page[data-p="'+(p+1)+'"]'); if(nx)renderPage(p+1,nx); } setCur(p); syncArrows();
       var pf=document.getElementById('pglineF'); if(pf&&numPages)pf.style.width=Player.viewer.progressPercent(p,numPages)+'%'; } // ligne de progression (mode présentation)
     function enterOnePage(){ if(onePage)return; onePage=true; document.body.classList.add('onepage'); document.body.classList.add('botlock'); if(pdfDoc){ var c=cur||1; build(); showPage(c); } syncArrows(); }
-    function exitOnePage(){ if(!onePage)return; onePage=false; soloOffered=false; document.body.classList.remove('onepage'); document.body.classList.remove('botlock'); var c=cur||1; if(pdfDoc){ build(); setTimeout(function(){ scrollToPage(c); },30); } syncArrows(); }
+    function exitOnePage(){ if(!onePage)return; onePage=false; soloOffered=false; document.body.classList.remove('onepage'); document.body.classList.remove('botlock'); var c=cur||1; if(pdfDoc){ build(); restaurerPage(c); } syncArrows(); }
     // Re-fit du document à la largeur réelle (resize fenêtre, ouverture/fermeture du chat ancré, plein écran)
     // en conservant la page courante. Débouncé pour rester fluide.
-    function scrollToPage(p){ var el=pagesEl.querySelector('.page[data-p="'+p+'"]'); if(el) el.scrollIntoView({block:'start'}); }
+    // ⚠️ UN REPORT DE PAGE N EST VALABLE QUE TANT QUE PERSONNE N A NAVIGUE ENTRE-TEMPS.
+    //
+    // Une reconstruction ne peut pas restaurer la page tout de suite : les gabarits viennent d etre
+    // poses et la geometrie n est pas encore stable. On differe donc de 30 ms. Mais ce report SURVIT a
+    // une navigation faite dans l intervalle, et il la DEFAIT — le lecteur qui ouvre le panneau de
+    // vignettes puis clique aussitot une vignette est ramene la ou il etait.
+    //
+    // Trouve par la forge, pas ici : en local les vignettes ne se rendaient pas, le banc attendait donc
+    // bien au-dela des 30 ms et la course ne se produisait jamais. Reproduit ensuite en ouvrant le
+    // panneau et en cliquant dans le meme instant.
+    var tRestaurer=null;
+    function restaurerPage(c){
+      clearTimeout(tRestaurer);
+      tRestaurer=setTimeout(function(){ tRestaurer=null; scrollToPage(c); },30);
+    }
+    function scrollToPage(p){
+      // Toute navigation explicite PERIME le report en attente : c est ce qui ferme la course.
+      clearTimeout(tRestaurer); tRestaurer=null;
+      var el=pagesEl.querySelector('.page[data-p="'+p+'"]'); if(el) el.scrollIntoView({block:'start'});
+    }
     // ⚠️ PAS window.__refit ICI : il commence par « if(!pdfDoc) return », donc il ne ferait RIEN sur un
     // document image — le meme garde qui laissait les images sans zoom avant le lot 1.
     // ── PANNEAU DE VIGNETTES ─────────────────────────────────────────────────────────────────────
@@ -1054,7 +1073,7 @@ ${LEGAL_CSS}
       else if(vignIO){ vignIO.disconnect(); vignIO=null; vignIn.innerHTML=''; vignFaites=Object.create(null); vignEchecs=Object.create(null); vignOrdre=[]; vignFile=[]; }
       // Le cadre a change de largeur : le document se recalcule, en gardant sa page.
       var c=cur||1;
-      if(pdfDoc||IS_IMG){ build(); if(onePage) showPage(c); else setTimeout(function(){ scrollToPage(c); },30); }
+      if(pdfDoc||IS_IMG){ build(); if(onePage) showPage(c); else restaurerPage(c); }
     }
 
     function tournerDe(quarts){
@@ -1063,9 +1082,9 @@ ${LEGAL_CSS}
       if(!pdfDoc && !IS_IMG) return;
       build();
       if(vignOuvert) vignConstruire();   // la proportion des vignettes a change
-      if(onePage) showPage(c); else setTimeout(function(){ scrollToPage(c); },30);
+      if(onePage) showPage(c); else restaurerPage(c);
     }
-    window.__refit=function(){ if(!pdfDoc)return; var c=cur||1; build(); setTimeout(function(){ scrollToPage(c); },30); };
+    window.__refit=function(){ if(!pdfDoc)return; var c=cur||1; build(); restaurerPage(c); };
     var _rzT; window.addEventListener('resize',function(){ clearTimeout(_rzT); _rzT=setTimeout(function(){ window.__refit(); },160); });
     // ÉCRAN PARTAGÉ mobile : le fond au-dessus/en-dessous du document prolonge les couleurs de la page
     // (échantillon des bords haut/bas du canvas) — du header jusqu'à la vidéo, dynamique à chaque page.
