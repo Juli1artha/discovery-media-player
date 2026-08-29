@@ -14,6 +14,64 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- ⚠️ **Il y avait un QUATRIÈME profil de politique, et c'est la forme par défaut : `{public}`.**
+  Trouvé par un hôte le 29/08 pendant que le banc à trois profils tournait déjà. Une politique écrite
+  **sans clause `TO`** s'applique à `PUBLIC`, donc à tous les rôles y compris `anon` — et
+  `pg_policies` l'affiche `{public}`, jamais `{anon}`. Le filtre `in ('anon','authenticated')` la
+  sautait intégralement. Ce n'est pas un cas rare : c'est ce que produit l'interface Supabase pour un
+  bucket public, et l'hôte en a relevé cinq chez lui dont les trois qui servent ses buckets publics.
+  Un hôte qui posait le `revoke` puis lançait la requête obtenait **zéro ligne pendant que ses
+  buckets étaient morts** — le tableau exact que la requête existe pour éviter, sur le profil que
+  personne n'avait construit.
+  ⚠️ **Et la piste proposée avec le signalement portait l'angle mort que son auteur annonçait** :
+  tester `anon` comme *représentant* de `public` se tait là où seul `authenticated` est privé, et
+  nomme `public` comme rôle — ce qui laisse l'hôte sans savoir quel droit rendre. La forme retenue
+  déplie `public` en ses rôles concrets, et nomme celui qui a perdu le droit.
+  ⚠️ **Et `to_regrole` n'est pas une coquetterie** : sur une installation sans `anon` ni
+  `authenticated` — tout ce qui n'est pas Supabase — `has_table_privilege('anon', …)` ne rend pas
+  faux, il **lève**, et la requête entière échoue. Filtrer sur `pg_roles` ne suffit pas, mesuré : le
+  planificateur évalue la fonction dans le même filtre de jointure. La forge contrôle désormais ce
+  cas **avant** de créer les rôles, seul moment où sa base est dans cet état.
+  Le banc passe à **quatre profils et cinq scénarios**, et garde les **trois** écritures écartées :
+  l'écriture d'origine ne voit pas `{authenticated}`, la deuxième manque `{anon,authenticated}`, la
+  troisième manque `{public}` quand seul `authenticated` est privé.
+
+- ⚠️ **Un brouillon écrit avant une découverte n'est pas un brouillon neutre — il est faux, et il
+  attend d'être envoyé.** Le 28/08, six messages aux hôtes étaient rédigés ; le défaut de la requête
+  de diagnostic qu'ils portaient a été trouvé entre la rédaction et l'envoi ; **trois sont partis en
+  l'affirmant quand même**, dont un vers l'hôte qui venait précisément de la démonter, lui reposant
+  sa propre question invalidée. Cet hôte a nommé ce que ça coûte du côté du destinataire — *« un
+  message qui croise n'est pas neutre : il se lit comme une réponse »* — et le second a reçu la
+  correction accompagnée de deux messages plus anciens qui la contredisaient, tous deux affirmant que
+  le dépôt avait adopté la requête étroite, ce qui était vrai à l'heure où ils avaient été écrits.
+  Deux contre un, le dépôt paraissant du mauvais côté : la correction pouvait raisonnablement passer
+  pour l'erreur. `AGENTS.md` porte désormais la règle et son remède — relire tout message non envoyé
+  à la lumière de ce qu'on a appris depuis, signaler explicitement un message qui en croise un autre,
+  et nommer dans un erratum les messages qu'il périme ainsi que les phrases qu'il retire.
+
+- ⚠️ **La requête de diagnostic donnée aux hôtes est désormais EXÉCUTÉE par la forge, contre trois
+  profils de politique construits pour l'occasion — elle était jusqu'ici affirmée.** Le job `schema`
+  monte un vrai Postgres, y pose trois politiques — l'une nommant `{authenticated}`, l'une
+  `{anon, authenticated}`, l'une `{anon}` —, retire le droit dans chacune à son tour, et exige que la
+  requête **nomme la table morte et le rôle mort** à chaque fois. Les deux écritures écartées sont
+  dans le banc en toutes lettres : le banc ne vaut pas parce que la bonne passe, il vaut parce qu'il
+  **distingue** — la première ne voit pas le profil `{authenticated}`, la seconde manque la politique
+  qui nomme les deux rôles.
+  ⚠️ **Et c'est la requête DOCUMENTÉE qui est exécutée, pas une copie** : elle est extraite du bloc
+  « Accès » d'`init.sql` entre deux marques (`tools/requete-diagnostic.mjs`). Une copie diverge, et
+  le jour où elle diverge le banc resterait vert sur un texte que personne n'applique pendant que les
+  hôtes appliqueraient celui du fichier — le défaut « un compte d'un instrument, un verdict d'un
+  autre », transposé à une requête. L'extraction refuse plutôt que de rendre un SQL vide : marque
+  absente, marques doublées ou croisées, bloc vide, sans `select` ou non terminé par `;` sont **non
+  concluants**, jamais conformes — un SQL vide ne rend jamais de ligne, donc ne signale jamais rien,
+  et virerait le banc au vert pour la raison exacte qu'il existe pour interdire.
+  ⚠️ **Ce qui a motivé un banc plutôt qu'une relecture de plus** : des trois écritures de cette
+  requête, **aucune n'a été trouvée fautive par son auteur**. Et l'hôte qui a rejoué la forme retenue
+  chez lui a nommé la raison pour laquelle sa propre base ne pouvait pas trancher — **26 politiques,
+  zéro nommant les deux rôles**, donc son écriture y aurait rendu le bon résultat *« pour une raison
+  qui n'a rien à voir avec sa justesse »*. Valider une sonde sur la base qu'on a sous la main, c'est
+  la valider sur un profil parmi trois. On construit les trois.
+
 - ⚠️ **La requête de diagnostic que ce dépôt donnait aux hôtes rendait un zéro rassurant sur une base
   au maximum exposée.** Elle filtrait `roles::text like '%anon%'` — alors que le geste qu'elle
   vérifie retire le droit à `anon` **et** à `authenticated`. Une base dont toutes les politiques

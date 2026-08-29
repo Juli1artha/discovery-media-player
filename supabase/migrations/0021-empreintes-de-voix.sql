@@ -57,11 +57,14 @@ create index if not exists doc_tts_objects_created_idx
 -- applicative, une politique permissive qui nomme `anon` OU `authenticated` ferait dire oui à la RLS
 -- et non au droit : la surface publique tombe sans qu'aucune configuration paraisse fautive.
 --
--- ⚠️ ET LA REQUÊTE DE VÉRIFICATION DOIT COUVRIR LES DEUX RÔLES ET CHAQUE RÔLE NOMMÉ, sans quoi elle
--- rend un zéro rassurant sur une base exposée — deux écritures s'y sont cassées, mesurées contre un
--- vrai Postgres. La forme qui tient est dans le bloc « Accès » d'`init.sql` : elle déplie chaque
--- rôle d'une politique et mesure l'ÉTAT RÉSULTANT (`has_table_privilege`), au lieu de demander si le
--- `revoke` a été posé.
+-- ⚠️ ET LA REQUÊTE DE VÉRIFICATION DOIT COUVRIR CHAQUE RÔLE NOMMÉ — Y COMPRIS CEUX QU'UNE POLITIQUE
+-- NE NOMME PAS. Sans quoi elle rend un zéro rassurant sur une base exposée : TROIS écritures s'y
+-- sont cassées, chacune trouvée par quelqu'un d'autre que son auteur, toutes mesurées contre un vrai
+-- Postgres. La dernière butait sur le cas le plus courant de tous — une politique écrite sans clause
+-- `TO` porte `{public}`, jamais `{anon}`, et c'est la forme que produit l'interface Supabase pour un
+-- bucket public. La forme qui tient est dans le bloc « Accès » d'`init.sql` ; elle déplie `public`
+-- en ses rôles concrets et mesure l'ÉTAT RÉSULTANT (`has_table_privilege`) au lieu de demander si le
+-- `revoke` a été posé. La forge l'EXÉCUTE à chaque course contre quatre profils de politique.
 --
 -- Ce que la forge vérifie désormais à chaque course, contre une vraie base : que la RLS déclarée
 -- ici est bien RETENUE par le moteur, et qu'AUCUNE politique n'ouvre cette table.

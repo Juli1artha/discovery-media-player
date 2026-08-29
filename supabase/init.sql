@@ -623,13 +623,46 @@ $$;
 -- La forme qui tient déplie CHAQUE rôle nommé, et mesure l'ÉTAT RÉSULTANT plutôt que de demander si
 -- le `revoke` a été posé — c'est la seule chose qui compte pour l'hôte :
 --
---     select p.schemaname, p.tablename, p.policyname, r.role
+-- ⚠️ LES DEUX MARQUES CI-DESSOUS NE SONT PAS DÉCORATIVES : LA CI EXTRAIT CE QUI EST ENTRE ELLES ET
+-- L'EXÉCUTE. Ce bloc n'est donc pas la transcription d'une requête éprouvée ailleurs — c'est
+-- l'artefact éprouvé lui-même. Le job `schema` monte trois profils de politique contre un vrai
+-- Postgres, en casse un dans chacun, et exige que CETTE requête nomme la table morte à chaque fois.
+-- Si vous l'éditez, c'est votre version qui est mesurée à la course suivante ; si vous la cassez, la
+-- CI le dit avant l'hôte. Aucune des trois écritures de cette requête n'a été trouvée fautive par
+-- son auteur — d'où le banc plutôt qu'une relecture de plus.
+-- ⚠️ ET IL Y AVAIT UN QUATRIÈME PROFIL, QUI EST LA FORME PAR DÉFAUT — TROUVÉ PAR UN HÔTE LE 29/08
+-- ALORS QUE LE BANC CI-DESSOUS TOURNAIT DÉJÀ SUR TROIS. Une politique écrite SANS clause `TO`
+-- s'applique à `PUBLIC`, donc à tous les rôles, `anon` compris — et `pg_policies` l'affiche
+-- `{public}`, jamais `{anon}`. Un filtre `in ('anon','authenticated')` la saute intégralement. Ce
+-- n'est pas un cas exotique : c'est ce que produit l'interface Supabase pour un bucket public, et
+-- l'hôte en a trouvé cinq chez lui, dont les trois qui servent ses buckets publics. Un hôte qui pose
+-- le `revoke` puis lance la requête obtient alors zéro ligne pendant que ses buckets sont morts.
+--
+-- ⚠️ ET LE `case` NE CHOISIT PAS UN RÔLE, IL EN DÉPLIE DEUX. Tester `anon` comme représentant de
+-- `public` raterait le cas où seul `authenticated` est privé — l'hôte l'a écrit lui-même en
+-- proposant sa piste, et c'est mesuré : sur une politique `{public}` dont seul `authenticated` a
+-- perdu le droit, la version « un représentant » se tait, celle qui déplie rend la ligne.
+--
+-- ⚠️ ET `to_regrole` N'EST PAS UNE COQUETTERIE. Sur une installation qui n'a NI `anon` NI
+-- `authenticated` — tout ce qui n'est pas Supabase — `has_table_privilege('anon', …)` ne rend pas
+-- faux : il LÈVE « role "anon" does not exist », et la requête entière échoue. Filtrer sur
+-- `pg_roles` ne suffit pas, mesuré : le planificateur évalue la fonction dans le même filtre de
+-- jointure et la sous-requête ne la court-circuite pas. `to_regrole` rend NULL sur un rôle absent,
+-- le prédicat devient NULL, la ligne sort du résultat — quel que soit l'ordre d'évaluation.
+--
+-- [banc:requete-diagnostic]
+--     select p.schemaname, p.tablename, p.policyname, e.role
 --       from pg_policies p
 --       cross join lateral unnest(p.roles) as r(role)
+--       cross join lateral unnest(
+--         case when r.role::text = 'public' then array['anon', 'authenticated']
+--              else array[r.role::text] end
+--       ) as e(role)
 --       join pg_class c on c.relname = p.tablename
 --       join pg_namespace n on n.oid = c.relnamespace and n.nspname = p.schemaname
---      where r.role::text in ('anon', 'authenticated')
---        and not has_table_privilege(r.role::text, c.oid, 'SELECT');
+--      where e.role in ('anon', 'authenticated')
+--        and not has_table_privilege(to_regrole(e.role), c.oid, 'SELECT');
+-- [/banc:requete-diagnostic]
 --
 -- Rien en retour : aucune politique n'est privée du droit qu'elle suppose. Une ligne : cette
 -- politique est MORTE — la RLS dit oui, le droit dit non — et la ligne nomme la table et le rôle.
