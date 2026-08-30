@@ -12,6 +12,16 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.144] — 2026-08-30
+
+⚠️ **Second train du même jour, et la raison est écrite plutôt que tue.** `0.1.143` est partie à
+15:10. La règle de cadence de `docs/RELEASING.md` dit « un train par jour au plus » avec trois
+exceptions — sécurité, paquet cassé sur le registre, réparation de la chaîne de publication — et
+celui-ci n'en est aucune. C'est une décision du mainteneur, dont le document dit qu'elle lui revient
+(« ce qui est dans ce train, et s'il en vaut un »). Elle est consignée ici parce que le contraire a
+déjà coûté : le 25/08, la règle annonçait deux exceptions, la pratique en utilisait une troisième, et
+un audit externe a demandé laquelle des deux mentait. Un écart énoncé vaut mieux qu'un écart tu.
+
 ### Changed
 
 - ⚠️ **La carte publie un NOM de migration, plus un chemin — parce qu'une garde de sécurité d'hôte
@@ -5132,7 +5142,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.143...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.144...HEAD
+[0.1.144]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.143...v0.1.144
 [0.1.143]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.142...v0.1.143
 [0.1.142]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.140...v0.1.142
 [0.1.140]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.139...v0.1.140
