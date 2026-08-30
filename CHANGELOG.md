@@ -362,6 +362,29 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- ⚠️ **Reprendre une présentation rendait la page, pas l'orientation — et le présentateur et son
+  audience voyaient alors deux documents différents sans que rien ne le dise.** Un rechargement remet
+  la vue du présentateur à son état d'origine (zoom 1, rotation 0) : c'est une décision, pas un
+  oubli, et c'est ce que font tous les lecteurs de documents. Mais l'audience, elle, continuait
+  d'afficher la `view_rotation` de la base. Le présentateur voyait donc son document **droit**
+  pendant que son audience le voyait **couché**, et il n'avait aucune raison de toucher le bouton de
+  rotation : de son côté tout allait bien.
+  ⚠️ **La règle valait déjà pour la page, il lui manquait l'orientation.** À la **reprise**, la
+  présentation l'emporte sur l'état local — la reprise sautait déjà à la page en cours de la base.
+  Au **démarrage** c'est l'inverse, et les deux sont cohérents : `startPresent` pousse la rotation
+  courante du présentateur, parce qu'il n'y a encore rien à reprendre.
+  ⚠️ **On adopte, on ne pousse pas.** La base porte déjà la valeur : la renvoyer serait une écriture
+  pour rien, et le message de pilotage emporte **aussi** la page — or la page courante vaut 1 tant
+  que le document se charge, donc pousser à la reprise ramènerait toute l'audience à la page 1. C'est
+  la raison pour laquelle la reprise ne pousse rien, et elle vaut encore.
+  ⚠️ **Aucun piège de migration ici, et le banc le prouve au lieu de le supposer** : on **lit**, et
+  la lecture se fait en `select=*`, donc chez un hôte non migré la colonne est simplement absente
+  (`undefined` → 0). Le rejet du PATCH entier sur colonne inconnue ne concerne que l'écriture.
+  ⚠️ **La liste blanche des quatre orientations n'est plus écrite qu'une fois.** Elle était en dur
+  dans l'écriture ; la lecture en aurait fait une seconde copie, et deux copies d'une liste blanche
+  sont une divergence en attente — c'est exactement ce qui venait d'arriver entre le serveur et le
+  navigateur sur le **type** accepté.
+
 - ⚠️ **Le scan ZAP annonçait « alerte non triée » quand il ne s'était pas terminé du tout, et
   envoyait son lecteur trier ce qui n'existait pas.** Le 27/08 (course 33102994676),
   `zap-baseline.py` s'est interrompu sur la surface `doc` après trente secondes : aucune ligne

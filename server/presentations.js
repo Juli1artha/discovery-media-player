@@ -7,6 +7,13 @@ const crypto = require("crypto");
 // Base de données via le contexte injecté (cf. _player-context.js) — aucune adhérence au studio.
 // ⚠️ Le contexte est REÇU, pas construit. Ce module ne doit pas savoir d'où il vient : c'est ce
 // qui lui permettra de partir dans le dépôt du player sans emporter le studio avec lui.
+// Les quatre orientations qu'une vue peut prendre. ÉNONCÉE UNE FOIS : cette porte est franchie à
+// l'écriture (ce que le navigateur du présentateur envoie) ET à la lecture (ce qu'une base peut
+// porter si un hôte l'a écrite à la main). Deux copies d'une liste blanche, c'est une divergence en
+// attente — et c'est exactement ce qui vient d'arriver entre le serveur et le navigateur sur le
+// TYPE accepté.
+const ROTATIONS = [0, 90, 180, 270];
+
 let PLAYER = null;
 function init(ctx) { PLAYER = ctx; _bumpSansDurcissementJusqua = 0; _avertRpcPresence = false; _etatDurcissement = "inconnu"; }
 
@@ -115,7 +122,34 @@ async function reclaimPresentation(slug, email) {
     { control_hash: sha(control), active: true, ...(rangDispo ? { write_seq: 0 } : {}), last_seen: new Date().toISOString(), updated_at: new Date().toISOString() },
   );
   if (!ecrit) return { ok: false, status: 409 };
-  return { ok: true, slug, control, page: row.current_page || 1, fileUrl: row.file_url, fileName: row.file_name, docTitle: row.doc_title, docId: row.doc_id };
+  // ⚠️ LA REPRISE RENDAIT LA PAGE ET PAS L'ORIENTATION, ET C'EST UNE DIVERGENCE MUETTE. Le
+  // présentateur qui recharge repart avec `rot = 0` — c'est voulu, un rechargement remet la vue à
+  // son état d'origine — pendant que l'audience continue d'afficher la `view_rotation` de la base.
+  // Il voyait donc son document droit et l'audience le voyait couché, sans que rien ne le dise à
+  // personne : il n'a aucune raison de toucher le bouton, de son côté tout va bien.
+  //
+  // La règle est celle qui valait déjà pour la page, étendue à ce qui manquait : À LA REPRISE, LA
+  // PRÉSENTATION L'EMPORTE SUR L'ÉTAT LOCAL. Au DÉMARRAGE c'est l'inverse, et c'est cohérent —
+  // `startPresent` pousse la rotation courante du présentateur, parce qu'il n'y a encore rien à
+  // reprendre.
+  //
+  // ⚠️ AUCUN PIÈGE DE MIGRATION ICI, et il vaut la peine de dire pourquoi plutôt que de le
+  // supposer : on LIT, `getPresentation` lit `select=*`, donc chez un hôte non migré la colonne est
+  // simplement absente — `undefined`, puis 0. Le rejet du PATCH entier sur colonne inconnue ne
+  // concerne que l'écriture, et il n'y en a pas.
+  //
+  // Normalisée comme à l'écriture, par la MÊME liste blanche : une base qu'un hôte a écrite à la
+  // main peut porter n'importe quoi, et un viewport oblique casse la couche de texte de toute
+  // l'audience.
+  // ⚠️ LA VALEUR EST EXTRAITE SUR SA PROPRE LIGNE, ET CE N'EST PAS DU STYLE. Écrit en ternaire —
+  // `… ? row.view_rotation : 0` — ce code est indiscernable d'une clé d'objet `view_rotation:` pour
+  // la garde `colonneMigreeConditionnelle`, qui refuse toute colonne migrée écrite sans condition.
+  // Elle avait raison les deux fois précédentes ; ici elle se trompe, parce qu'on LIT. Mais la
+  // rendre assez fine pour distinguer un ternaire d'une clé lui ferait rater de vrais PATCH, et une
+  // garde qui sur-approxime est le bon compromis quand le coût de s'y plier est une ligne.
+  const brute = row.view_rotation;
+  const rot = typeof brute === "number" && ROTATIONS.includes(brute) ? brute : 0;
+  return { ok: true, slug, control, page: row.current_page || 1, rotation: rot, fileUrl: row.file_url, fileName: row.file_name, docTitle: row.doc_title, docId: row.doc_id };
 }
 
 // Heartbeat présentateur (control requis) : rafraîchit last_seen → distingue une présentation vivante d'une orpheline.
@@ -314,7 +348,7 @@ async function setPage(slug, control, page, seq, rotation) {
   // rendrait cette porte PLUS PERMISSIVE que celle du navigateur, où `rotationEffective` exige un
   // nombre. Deux validateurs du même geste qui ne disent pas la même chose, c'est une des deux qui
   // ment — et on ne saurait pas laquelle. Relevé par le banc, pas par la relecture.
-  const rot = typeof rotation === "number" && [0, 90, 180, 270].includes(rotation) ? rotation : 0;
+  const rot = typeof rotation === "number" && ROTATIONS.includes(rotation) ? rotation : 0;
   // ⚠️ CONDITIONNEL, ET C'EST LA COLONNE QUI L'IMPOSE. PostgREST rejette le PATCH ENTIER si elle
   // manque : la nommer chez un hôte non migré ne perdrait pas la rotation, elle perdrait AUSSI le
   // changement de page. La rotation ne se propage simplement pas là-bas, et rien d'autre ne bouge.

@@ -571,6 +571,22 @@ ${LEGAL_CSS}
           if(!d||!d.ok||!d.control){ if(d&&d.status===403){ Player.bridge.sendToHost({type:'present-denied'}); } return; }
           PRES={slug:slug,control:d.control}; saveCtl(slug,d.control); _seq=0;
           showBar(slug); liveConnect(slug,d.control); startHb();
+          // ⚠️ A LA REPRISE, LA PRESENTATION L EMPORTE SUR L ETAT LOCAL — pour l orientation comme
+          // pour la page, alors qu on ne rendait que la page. Un rechargement remet la vue a son
+          // etat d origine (rot vaut 0), c est voulu ; mais l audience, elle, continuait d afficher
+          // la view_rotation de la base. Le presentateur voyait donc son document droit et son
+          // audience le voyait couche, sans que rien ne le dise a personne — et il n avait aucune
+          // raison de toucher le bouton, puisque de son cote tout allait bien.
+          //
+          // ⚠️ ON ADOPTE, ON NE POUSSE PAS. La base porte deja cette valeur : la renvoyer serait une
+          // ecriture pour rien, et pushPage() emporte AUSSI la page — or cur vaut 1 tant que le
+          // document se charge, donc pousser ici ramenerait toute l audience a la page 1. C est la
+          // raison pour laquelle la reprise ne pousse rien, et elle vaut encore.
+          //
+          // Au DEMARRAGE c est l inverse, et c est coherent : startPresent pousse la rotation
+          // courante du presentateur, parce qu il n y a encore rien a reprendre.
+          var rotPres=Player.viewer.rotationEffective(0,d.rotation);
+          if(rotPres!==rot){ rot=rotPres; if(pdfDoc||IS_IMG){ build(); if(vignOuvert) vignConstruire(); } }
           var target=Math.max(1,d.page||1);
           var tries=0; (function jump(){ var el=(document.getElementById('pages')||document).querySelector('.page[data-p="'+target+'"]'); if(el){ el.scrollIntoView({block:'start'}); } else if(tries++<40){ setTimeout(jump,150); } })();
         }).catch(function(){});
