@@ -190,6 +190,24 @@ function etatDuSchema() {
   const attendues = Object.keys(ATTENDUES).length;
   return {
     attendues,
+    // ⚠️ CE QUE CE CODE SAIT ATTENDRE — ET SANS CETTE LISTE, « complet » EST UN VERT QUI NE PEUT PAS
+    // ROUGIR. La session STUDIO l'a mesuré des deux côtés le 30/08 : elle applique la 0024, relit la
+    // carte, et lit `attendues: 9 · sondees: 9 · complet · manquant: []` — mot pour mot ce qu'elle
+    // lisait AVANT la migration. Elle ne pouvait pas voir la 0024 quitter une liste où elle n'était
+    // jamais entrée : leur player est en 0.1.142, et `view_rotation` n'entre dans ATTENDUES qu'avec
+    // la version qui apporte la fonction.
+    //
+    // `complet` a donc toujours voulu dire « complet POUR LE CODE QUE JE SUIS », jamais « complet
+    // pour le dépôt » — et rien, ni ici ni dans HOST-CONTRACT.md, ne disait la différence. Un hôte
+    // qui applique le schéma AVANT le code (l'ordre sûr, celui que nous recommandons) est
+    // exactement celui que ce vert ne renseigne pas.
+    //
+    // Aucune version de ce serveur ne peut connaître une migration postérieure à elle. Ce qu'elle
+    // peut faire, et que la carte ne faisait pas, c'est DIRE CE QU'ELLE CONNAÎT : « 0024 n'est pas
+    // dans cette liste » devient une lecture directe, au lieu d'une déduction qui demande de
+    // connaître l'historique du dépôt. C'est la seule forme de réponse qui reste vraie quand le
+    // lecteur est plus récent que nous.
+    connues: [...new Set(Object.values(ATTENDUES).map((a) => a.migration))].sort(),
     sondees: reponses.size,
     // ⚠️ UN MOT, PAS UN TABLEAU VIDE À INTERPRÉTER. `manquant: []` a quatre sens selon ce qu'on
     // sait par ailleurs — rien demandé, tout vérifié, vérifié en partie, base muette — et forcer

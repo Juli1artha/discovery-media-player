@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.143] — 2026-08-30
+
 ### Changed
 
 - **La rotation du présentateur suit désormais son audience en direct.** Jusqu'ici elle restait
@@ -361,6 +363,31 @@ the notes there are this file's section for that version.
   pas à sa place, ces rôles étant ceux de son installation et non de Postgres.
 
 ### Fixed
+
+- ⚠️ **La carte de schéma rendait un « complet » qui ne pouvait pas rougir — et l'hôte qui suit
+  l'ordre sûr est précisément celui qu'elle ne renseignait pas.** La session STUDIO l'a mesuré des
+  deux côtés le 30/08 : sur `0.1.142` elle applique la migration 0024, relit
+  `GET /api/doc?contract=1&schema=1`, et obtient `attendues: 9 · sondees: 9 · complet · manquant: []`
+  — mot pour mot ce qu'elle lisait **avant** de l'appliquer. Elle ne pouvait pas voir la 0024 quitter
+  une liste où elle n'était jamais entrée : la liste des attentes est celle du **code qui tourne**, et
+  `view_rotation` n'y entre qu'avec la version qui apporte la fonction.
+  ⚠️ **`complet` a donc toujours voulu dire « complet pour le code que je suis »**, jamais « complet
+  pour le dépôt » — et rien, ni dans la réponse ni dans `HOST-CONTRACT.md`, ne disait la différence.
+  Un hôte qui applique le schéma **avant** le code (l'ordre sûr, celui qu'on recommande) est
+  exactement celui que ce vert laisse sans réponse.
+  ⚠️ **Aucune version ne peut connaître une migration postérieure à elle** — ce défaut-là est
+  structurel et ne se corrige pas. Ce qui se corrige, c'est de **dire ce qu'on connaît** : la carte
+  publie `connues`, la liste des migrations que ce code sait attendre. « 0024 n'est pas dedans »
+  devient une lecture directe, au lieu d'une déduction qui exige de connaître notre historique de
+  publication. `manquant` nomme ses fichiers dans les mêmes chaînes, pour que l'appartenance soit une
+  comparaison et non une interprétation — un banc l'exige, parce que deux listes publiées pour être
+  comparées et qui divergeraient de vocabulaire resteraient « justes » séparément et inutilisables
+  ensemble.
+  ⚠️ **Et pour une migration que ce player ne connaît pas, `HOST-CONTRACT.md` renvoie désormais à la
+  base plutôt qu'à la carte** — une requête `information_schema` ne dépend pas de la version qui la
+  lance, ce qui est le seul cas où on a besoin d'une réponse. C'est la même faute qu'un paragraphe
+  voisin de ce document décrit déjà un cran plus bas (« les lecteurs qui ont besoin de
+  l'avertissement et ceux qui le rencontrent sont disjoints »), d'un niveau au-dessus.
 
 - ⚠️ **Reprendre une présentation rendait la page, pas l'orientation — et le présentateur et son
   audience voyaient alors deux documents différents sans que rien ne le dise.** Un rechargement remet
@@ -5077,7 +5104,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.142...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.143...HEAD
+[0.1.143]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.142...v0.1.143
 [0.1.142]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.140...v0.1.142
 [0.1.140]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.139...v0.1.140
 [0.1.139]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.138...v0.1.139

@@ -122,6 +122,44 @@ cannot observe the degradation the warning describes; read `?contract=1` alone a
 without having asked for a probe. Neither is a defect. But if you are checking that warning against
 what you see, and you poll with `&schema=1`, **your instance is not the one it is about**.
 
+⚠️ **`complet` means complete *for the code you are running*, never complete for the repository —
+and `connues` is there so you do not have to take that on trust.** The expectation list is compiled
+into the player. A migration published after your version does not appear in it, is never probed,
+and can therefore never turn `manquant` red. So a host who applies the schema **before** upgrading
+the code — the safe order, the one we recommend — is exactly the host this green does not inform.
+
+The STUDIO host measured it on both sides on 30/08: on `0.1.142` they applied migration 0024, re-read
+the card, and got `attendues: 9 · sondees: 9 · complet · manquant: []` — word for word what they had
+read *before* applying it. They could not watch 0024 leave a list it had never entered.
+
+No version of this server can know a migration that postdates it. What it can do, and now does, is
+say what it knows:
+
+```
+"schema": {
+  "couvre": "colonnes-conditionnelles",
+  "attendues": 10, "sondees": 10, "verdict": "complet", "manquant": [],
+  "connues": ["supabase/migrations/0001-destinataire-atteste.sql", "…", "supabase/migrations/0024-rotation-en-direct.sql"]
+}
+```
+
+Read it this way, in this order:
+
+1. **Is the migration you care about in `connues`?** If not, this card cannot speak about it, whatever
+   `verdict` says. Upgrade the player, or check the database directly (below).
+2. **Only then** does `verdict` answer for it. `manquant` names its files in the same strings as
+   `connues`, so membership is a plain comparison and not an inference about our release history.
+
+⚠️ **To check a migration this player does not know about, ask the database, not the card.** The
+query does not depend on which version you are running, which is the only case where you need an
+answer:
+
+```sql
+select column_name, data_type, is_nullable, column_default
+  from information_schema.columns
+ where table_name = 'doc_presentations' and column_name = 'view_rotation';
+```
+
 The three `presence*` fields report what the host has **observed**, not what it is configured to do:
 
 | field | meaning |
