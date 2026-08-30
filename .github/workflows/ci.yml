@@ -528,7 +528,18 @@ jobs:
         run: |
           hors=$(grep -arn 'aLaColonne(' server/*.js | grep -v '^server/schema.js:' || true)
           [ -z "$hors" ] || { echo "::error::sonde de schéma hors inventaire — utilisez attendue(nom) :"; echo "$hors"; exit 1; }
-          n=$(grep -ac 'migration: "supabase/migrations/' server/schema.js)
+          # ⚠️ LE MOTIF SUIT LA FORME PUBLIÉE, ET IL A DÉJÀ DÉRIVÉ UNE FOIS. Il cherchait
+          # « migration: "supabase/migrations/ » ; le jour où ce préfixe a été retiré des valeurs
+          # (une garde d'hôte tire sur « supabase »), ce grep a compté zéro — et sous « bash -e »
+          # un grep -c sans correspondance sort en 1, donc l'étape est morte SANS message, sur un
+          # « exit code 1 » que rien n'expliquait. Le refus était juste, sa raison invisible.
+          n=$(grep -ac 'migration: "' server/schema.js || true)
+          # ⚠️ PLANCHER LARGE, ET LA RAISON DIFFÈRE DE CELLE DES AUTRES PLANCHERS DE CE DÉPÔT. Le
+          # nombre d'attentes n'est PAS monotone : une colonne qui cesse d'être un point de
+          # dégradation quitte légitimement ATTENDUES pour NON_SONDEES. Un seuil exact rougirait
+          # donc sur un ménage valable. Ce qu'on veut attraper ici est autre chose : que le motif
+          # cesse de correspondre. (Relevé : 10 attentes le 2026-08-30.)
+          [ "$n" -ge 8 ] || { echo "::error::le balayage ne voit plus que $n attente(s) de schéma dans server/schema.js — le motif a probablement cessé de correspondre à la forme déclarée. Corrigez le motif ; ne baissez pas le plancher."; exit 1; }
           echo "attentes de schéma déclarées : $n"
 
       - name: Third-party scripts are pinned and fingerprinted
