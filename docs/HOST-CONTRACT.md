@@ -139,7 +139,7 @@ say what it knows:
 "schema": {
   "couvre": "colonnes-conditionnelles",
   "attendues": 10, "sondees": 10, "verdict": "complet", "manquant": [],
-  "connues": ["supabase/migrations/0001-destinataire-atteste.sql", "…", "supabase/migrations/0024-rotation-en-direct.sql"]
+  "connues": ["0001-destinataire-atteste.sql", "…", "0024-rotation-en-direct.sql"]
 }
 ```
 
@@ -312,9 +312,23 @@ Each `manquant` entry has **exactly this shape** — pin your parser to it, not 
 probe "should" return:
 
 ```json
-{ "migration": "supabase/migrations/0006-reactions-ordonnees.sql",
+{ "migration": "0006-reactions-ordonnees.sql",
   "fonction": "empêcher deux réactions simultanées de s'écraser" }
 ```
+
+⚠️ **`migration` is a FILE NAME, not a path — it lives in `supabase/migrations/` in this
+repository.** It used to carry that prefix. A host's own guard refuses any identity card containing
+`supabase|secret|key|token` — a deliberately coarse text sweep, protecting a public response against
+leaking a project URL, a key or a token — and the prefix made it fire on every migration named. The
+prefix is gone from what the card publishes; the directory is stated here, once, and the operator
+log still prints the full path because that message is for the person reading it, not for a sweep.
+
+⚠️ **You do not need an exception in such a guard, and you should not add one.** Nothing this card
+publishes matches that pattern, and a bench renders the real card and sweeps it — keys included —
+on every change. If you carry an exception for the old prefix, remove it: an exception whose subject
+can no longer appear is a pre-authorised widening nobody watches. A second bench sweeps the
+migration directory itself, so a future file named `0031-refresh-token-rotation.sql` is refused
+here, when it is written, rather than months later at your end.
 
 ⚠️ This shape went **undocumented** for two releases, and the second host typed it from memory as
 `{table, colonne, migration}` — their monitoring filter then discarded every real entry and would

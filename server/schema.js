@@ -28,40 +28,66 @@
  * colonne — il n'existe plus qu'un endroit où se tromper. Une étape de la forge vérifie en outre
  * que chaque fichier nommé ici existe, et qu'aucun appel ne contourne cette table.
  */
+// ⚠️ UN NOM DE FICHIER, PAS UN CHEMIN — ET C'EST UNE GARDE DE SÉCURITÉ D'HÔTE QUI L'IMPOSE.
+//
+// Ces valeurs sont PUBLIÉES dans la carte d'identité (`manquant`, `connues`). Une garde de l'hôte
+// refuse toute carte contenant `supabase|secret|key|token` : un préfixe `supabase/migrations/` la
+// faisait tirer sur chaque migration nommée. Faux positif — ce sont nos chemins, identiques chez
+// tous les hôtes, sans URL ni identifiant de projet — mais le commentaire de `presenceJetons` pose
+// déjà la doctrine, et elle vaut ici : LE BON GESTE EST DE CHANGER CE QU'ON ÉMET, JAMAIS DE
+// DESSERRER LA GARDE. Desserrer est ce qui vide une garde, et à ce compte-là chaque hôte devrait
+// tailler la sienne.
+//
+// ⚠️ Relevé par la session STUDIO le 30/08, et voici ce qui rend le cas instructif : `manquant`
+// portait ces chemins depuis toujours, mais restait `[]` chez eux — la garde était donc VERTE depuis
+// des mois dans une configuration où son sujet ne pouvait pas apparaître. Il a fallu `connues`, qui
+// les liste SANS CONDITION, pour la réveiller.
+//
+// Le répertoire ne se perd pas : il est écrit une fois dans `RACINE_MIGRATIONS` ci-dessous et dit
+// par `docs/HOST-CONTRACT.md`. Ce qui disparaît de la carte, c'est le mot qui déclenchait le refus.
+//
+// ⚠️ ET LE NOM DE FICHIER RESTE UNE VALEUR QUE NOUS CHOISISSONS. Retirer le préfixe règle la
+// collision d'aujourd'hui, pas la classe : `0031-refresh-token-rotation.sql` la rouvrirait des mois
+// plus tard, chez tous les hôtes à la fois. C'est `nomsDeMigrationPublicables.test.js` qui ferme ça
+// — il balaie le dossier et refuse un nom qui déclencherait la garde, au moment où on l'écrit.
+// (La forme de la règle vient du STUDIO : une règle tenue par habitude a un taux de couverture que
+// personne ne mesure.)
+const RACINE_MIGRATIONS = "supabase/migrations/";
+
 const ATTENDUES = {
   destinataireAtteste: {
     table: "commercial_doc_shares", colonne: "attested_recipient_email",
-    migration: "supabase/migrations/0001-destinataire-atteste.sql",
+    migration: "0001-destinataire-atteste.sql",
     fonction: "attribuer une lecture au destinataire attesté par l'hôte",
   },
   rangEcriture: {
     table: "doc_presentations", colonne: "write_seq",
-    migration: "supabase/migrations/0002-ordre-des-ecritures.sql",
+    migration: "0002-ordre-des-ecritures.sql",
     fonction: "refuser une écriture de pilotage doublée en vol",
   },
   rotationDirecte: {
     table: "doc_presentations", colonne: "view_rotation",
-    migration: "supabase/migrations/0024-rotation-en-direct.sql",
+    migration: "0024-rotation-en-direct.sql",
     fonction: "faire suivre à l'audience l'orientation que le présentateur donne au document",
   },
   envoiUnique: {
     table: "doc_presentation_messages", colonne: "client_key",
-    migration: "supabase/migrations/0005-envoi-unique.sql",
+    migration: "0005-envoi-unique.sql",
     fonction: "empêcher qu'un renvoi crée un second message",
   },
   liensUniques: {
     table: "commercial_doc_shares", colonne: "idem_key",
-    migration: "supabase/migrations/0011-liens-uniques.sql",
+    migration: "0011-liens-uniques.sql",
     fonction: "empêcher deux demandes simultanées de créer deux liens système pour le même usage",
   },
   revocationDatee: {
     table: "commercial_doc_shares", colonne: "revoked_at",
-    migration: "supabase/migrations/0013-revocation-datee.sql",
+    migration: "0013-revocation-datee.sql",
     fonction: "dater la révocation pour borner la rétention des liens révoqués",
   },
   reactionsOrdonnees: {
     table: "doc_presentation_messages", colonne: "reactions_seq",
-    migration: "supabase/migrations/0006-reactions-ordonnees.sql",
+    migration: "0006-reactions-ordonnees.sql",
     fonction: "empêcher deux réactions simultanées de s'écraser",
   },
   // ⚠️ ENTRÉE DE REPORT, PAS DE GATE D'ÉCRITURE. Les six ci-dessus sont sondées par les chemins
@@ -73,7 +99,7 @@ const ATTENDUES = {
   // cette entrée, la carte annonçait « complet » à un hôte sans la 0015, présence dégradée (relevé ADV).
   presenceAtomique: {
     table: "doc_presentation_attendees", colonne: "creator_ip_hash",
-    migration: "supabase/migrations/0015-presence-atomique.sql",
+    migration: "0015-presence-atomique.sql",
     fonction: "écrire la présence atomiquement et plafonner la création de faux participants anonymes",
   },
   // Chat différentiel : la colonne `mod_seq` (bumpée par trigger) est ce que le code sonde AVANT de
@@ -81,7 +107,7 @@ const ATTENDUES = {
   // colonne EST le vrai signal de dégradation (le code la sonde), pas seulement un témoin — cas franc.
   chatDifferentiel: {
     table: "doc_presentation_messages", colonne: "mod_seq",
-    migration: "supabase/migrations/0016-chat-differentiel.sql",
+    migration: "0016-chat-differentiel.sql",
     fonction: "relire le chat en différentiel (mod_seq > curseur) au lieu des 300 derniers à chaque signal",
   },
   // Jeton de présence (P1c étape 2). `last_token_at` est sondée AVANT d'écrire les colonnes de
@@ -90,7 +116,7 @@ const ATTENDUES = {
   // n'écrit pas les colonnes et le compteur n'apparaît pas ; la présence continue de fonctionner.
   jetonPresence: {
     table: "doc_presentation_attendees", colonne: "last_token_at",
-    migration: "supabase/migrations/0017-jeton-presence.sql",
+    migration: "0017-jeton-presence.sql",
     fonction: "mesurer la transition du jeton de présence (avecJeton / sansJeton) pour savoir quand fermer",
   },
 };
@@ -651,7 +677,12 @@ function noter(cle, present, migration) {
  * les deux se compte en heures.
  */
 function signaler(cle, migration) {
-  const quoi = migration ? `Appliquez ${migration}.` : "Une migration est en attente.";
+  // ⚠️ LE JOURNAL GARDE LE CHEMIN COMPLET, LA CARTE NON — et c'est la même décision vue des deux
+  // côtés. Ce message s'adresse à l'exploitant de CETTE instance, dans SA sortie : il doit être
+  // copiable tel quel. La garde d'hôte qui a imposé de retirer le préfixe balaie la CARTE, une
+  // réponse HTTP publique ; elle ne lit pas les journaux. Retirer le répertoire ici n'aurait rendu
+  // service à personne et aurait coûté une recherche à celui qui lit la ligne.
+  const quoi = migration ? `Appliquez ${RACINE_MIGRATIONS}${migration}.` : "Une migration est en attente.";
   try {
     console.warn(`[player] la colonne « ${cle} » manque : la fonction qui en dépend reste inactive. ${quoi}`);
   } catch { /* sans console */ }
