@@ -183,12 +183,22 @@ window in which someone was still watching.
 
 ## Once npm actually serves it: bump the examples
 
-⚠️ **A release leaves `main` red until you do this, and nothing said so until 30/08.** The
-`exemples-epingles` guard asks the **live registry** which versions it serves and requires every
-example to pin one of the **last two published**. Publishing therefore shifts that window under a
-pin that was legitimate an hour earlier: on 30/08, `0.1.143` went out and the three examples —
-still on `0.1.140`, accepted all morning because `0.1.141` was never published — fell out of it.
-The first PR opened afterwards went red on a check that had nothing to do with it.
+⚠️ **Skip this and a later release turns `main` red on a check that has nothing to do with it —
+and nothing said so until 30/08.** The `exemples-epingles` guard asks the **live registry** which
+versions it serves and requires every example to pin one of the **last two published**.
+
+⚠️ **The window gives exactly one train of margin, and that margin is what hides the missed step.**
+A pin on the version just published survives the next release — it merely becomes *the one before
+last*. It falls out on the release after that. So a single skipped bump costs nothing visible, and
+the *second* one is what goes red. That is precisely what happened on 30/08: the examples were last
+bumped at `0.1.140`, `0.1.141` never reached the registry, and it took `0.1.143` going out for them
+to fall outside — three publications after the last bump. The first PR opened afterwards paid for
+it.
+
+Measured the same evening, for the same reason a claim needs a measurement: after `0.1.144` was
+published, examples still pinned to `0.1.143` **passed** — `3 sur 0.1.144 ou 0.1.143`. The
+publication alone does not turn `main` red. Doing this step on every train is what keeps the margin
+from ever being spent.
 
 ```bash
 # after the Release is up and `npm view discovery-media-player version` shows it
