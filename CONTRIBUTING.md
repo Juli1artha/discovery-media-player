@@ -25,6 +25,14 @@ The **player** needs less: Node ≥ 22.13.0, which is what `engines` declares, a
 its one production dependency imposes. Both numbers are derived from the lockfile rather than
 chosen — `node tools/plancher-de-node.mjs` recomputes them and refuses if this page has drifted.
 
+That guard compares `engines` to what we *depend on*. A second one, `node
+tools/node-des-workflows.mjs`, compares it to what CI *installs*: it reads every `node-version:` in
+`.github/workflows` — matrix entries included — and refuses any that `engines` would not admit.
+Today none is refused, and that is the point: `node-version: "22"` resolves to the newest 22.x, so
+the forge lands above the floor **by construction**, whatever the floor says. The day the floor
+moves past 22, `check (22)` would keep passing on an engine our own package declares unsupported,
+and nothing else in the repository would say so.
+
 ### The browser bench
 
 ```bash
