@@ -174,6 +174,10 @@ create table if not exists public.doc_presentations (
   doc_title      text,
   presenter_name text,
   current_page   integer not null default 1,
+  -- Orientation imposée par le PRÉSENTATEUR (0/90/180/270), distincte du /Rotate que porte le
+  -- fichier : le player les COMPOSE. Voir 0024 — elle est normalisée à la RÉCEPTION, cette valeur
+  -- pouvant arriver du navigateur du présentateur par la voie broadcast.
+  view_rotation  integer not null default 0,
   active         boolean not null default true,
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now(),
@@ -771,6 +775,17 @@ alter table public.commercial_doc_shares
 alter table public.commercial_doc_shares
   add column if not exists revoked_at timestamptz;
 update public.commercial_doc_shares set revoked_at = now() where revoked = true and revoked_at is null;
+
+-- 0024, et le rattrapage a été appris ICI, par le job `schema` : la colonne était déclarée dans le
+-- corps de `doc_presentations` ci-dessus — ce qui suffit pour une base VIERGE — et le scénario
+-- « init v0.1.64 → rejeu de l'init actuel » a refusé la forme obtenue. `create table if not
+-- exists` ne fait RIEN sur une table déjà là, donc un hôte installé avant aujourd'hui n'aurait
+-- jamais vu `view_rotation` en rejouant ce fichier, et sa sonde de schéma aurait dégradé la
+-- rotation en silence : exactement le mode de panne que tout le paragraphe ci-dessus décrit.
+-- Le type, la nullabilité et le défaut sont ceux de la 0024, au caractère près — c'est ce que le
+-- job compare.
+alter table public.doc_presentations
+  add column if not exists view_rotation integer not null default 0;
 
 -- ⚠️ ET LE RATTRAPAGE VAUT AUSSI POUR LES CONTRAINTES, PAS SEULEMENT POUR LES COLONNES (0020).
 -- Elles sont déclarées dans le corps des tables ci-dessus, ce qui règle la base VIERGE — et ne

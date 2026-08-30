@@ -332,6 +332,7 @@ ${LEGAL_CSS}
       vsplitTint:vsplitTint,
       get cur(){return cur;},get numPages(){return numPages;},get pdfDoc(){return pdfDoc;},
       get onePage(){return onePage;},
+      get reportEnAttente(){return tRestaurer!==null;},
       get soloOffered(){return soloOffered;},set soloOffered(v){soloOffered=!!v;}};
     var pdfDoc=null, zoom=1, rot=0, firstAspect=1.35, rendered={}, io=null, ioCur=null;
     // ATTENTION : LE LECTEUR GARDAIT TOUTES LES PAGES RENDUES (P1 audit externe).
@@ -455,12 +456,16 @@ ${LEGAL_CSS}
     // ⚠️ L'ANTI-REBOND DE 250 ms A DISPARU, ET C'EST VOULU. Il repoussait l'échéance à chaque appel —
     // un défilement continu pouvait donc ne JAMAIS écrire. La file regroupe par genre sans jamais
     // repousser : la dernière page demandée part au prochain tour, et elle part.
+    // ⚠️ LA ROTATION VOYAGE AVEC LA PAGE, PAR LE MEME APPEL. Elle aurait pu avoir son action a elle ;
+    // elle aurait alors eu son propre rang d ecriture, et deux ecritures concurrentes auraient pu
+    // s inverser — l audience recevant une rotation posterieure a la page qui la precede. Un seul
+    // message porte les deux, donc un seul ordre, et le controle de rang existant les couvre tous deux.
     function pushPage(){ if(!PRES)return;
       var f=fileEcritures(); var page=cur||1;
       if(!f) return envoyerPage(page);
       return f.poser('page',function(){ return envoyerPage(cur||page); }); }
     function envoyerPage(page){ if(!PRES)return Promise.resolve();
-      return Player.live.fetchBorne('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-page',slug:PRES.slug,control:PRES.control,page:page,seq:prochainRang()})})
+      return Player.live.fetchBorne('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-page',slug:PRES.slug,control:PRES.control,page:page,rotation:rot,seq:prochainRang()})})
         .then(function(r){ if(r&&r.ok)diffuserEtat(); })
         .catch(function(){}); }
     // ⚠️ TROIS GESTES, ET L'ORDRE ÉTAIT LE PIRE DES SIX. On signalait la fin, puis on COUPAIT LE
@@ -953,6 +958,27 @@ ${LEGAL_CSS}
       clearTimeout(tRestaurer); tRestaurer=null;
       var el=pagesEl.querySelector('.page[data-p="'+p+'"]'); if(el) el.scrollIntoView({block:'start'});
     }
+    // ⚠️ ET « NAVIGUER » NE SE RESUME PAS A CLIQUER. Le report ne se perimait qu au passage par
+    // scrollToPage — donc au clic sur une vignette, une fleche, le sommaire. Le lecteur qui ouvre le
+    // panneau puis fait DEFILER LE DOCUMENT LUI-MEME dans les 30 ms ne passe par rien de tout cela :
+    // son geste etait defait et il revenait a sa page de depart. Meme course que ci-dessus, autre
+    // porte. La forge l a trouvee en rendant les vignettes plus vite qu ici — le banc du clic, lui,
+    // passait, parce qu un clic de vignette PASSE par scrollToPage.
+    //
+    // ⚠️ ON N ECOUTE PAS 'scroll'. La reconstruction en emet elle-meme : annuler le report sur sa
+    // propre consequence le rendrait inutile, et le lecteur perdrait sa page a chaque refit — la
+    // regression exacte que ce report existe pour empecher. On ecoute donc l ENTREE DU LECTEUR,
+    // qu aucune mise en page ne fabrique.
+    //
+    // L ordre joue en notre faveur : ces evenements arrivent AVANT le clic qui arme un report (le
+    // bouton du panneau et les vignettes sont HORS de scrollEl), jamais apres. Annuler ici ne peut
+    // donc pas desarmer un report qui n existe pas encore.
+    //
+    // Ce que ca NE couvre PAS, et c est assume : une touche pressee alors que le document n a pas le
+    // focus. Elle ne fait pas defiler le document non plus, donc il n y a rien a perimer.
+    ['wheel','touchmove','pointerdown','keydown'].forEach(function(nom){
+      scrollEl.addEventListener(nom,function(){ clearTimeout(tRestaurer); tRestaurer=null; },{passive:true});
+    });
     // ⚠️ PAS window.__refit ICI : il commence par « if(!pdfDoc) return », donc il ne ferait RIEN sur un
     // document image — le meme garde qui laissait les images sans zoom avant le lot 1.
     // ── PANNEAU DE VIGNETTES ─────────────────────────────────────────────────────────────────────
@@ -1078,6 +1104,8 @@ ${LEGAL_CSS}
 
     function tournerDe(quarts){
       rot=Player.viewer.rotationEffective(rot,quarts*90);
+      // En presentation, l audience suit : le meme message que la page, donc le meme ordre.
+      try{ if(PRES) pushPage(); }catch(e){}
       var c=cur||1;
       if(!pdfDoc && !IS_IMG) return;
       build();

@@ -20,7 +20,7 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
   const presenter = esc(pres.presenter_name || "");
   const logo = esc(logoUrl || "");
   const fileUrl = `/api/doc?present=${encodeURIComponent(pres.slug)}&file=1`;
-  const cfg = jsonPourScript({ fileUrl, docUrl: pres.file_url, pdfjs: PDFJS, pdfjsWorker: PDFJS_WORKER, slug: pres.slug, fileName: pres.file_name || "", page: pres.current_page || 1, active: pres.active !== false, content: pres.content || null, supaUrl, supaKey, title: pres.doc_title || pres.file_name || "Document" });
+  const cfg = jsonPourScript({ fileUrl, docUrl: pres.file_url, pdfjs: PDFJS, pdfjsWorker: PDFJS_WORKER, slug: pres.slug, fileName: pres.file_name || "", page: pres.current_page || 1, rotation: pres.view_rotation || 0, active: pres.active !== false, content: pres.content || null, supaUrl, supaKey, title: pres.doc_title || pres.file_name || "Document" });
   return `<!doctype html><html lang=fr><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=3">
 <meta name=robots content="noindex,nofollow">
@@ -95,7 +95,7 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
   <script nonce="${nonce}">
   (function(){
     var CFG=${cfg};
-    var PDF=null, total=0, cur=CFG.page||1, ready=false;
+    var PDF=null, total=0, cur=CFG.page||1, rot=CFG.rotation||0, ready=false;
     // ⚠️ DEUX GÉNÉRATIONS, PARCE QU'IL Y A DEUX COURSES DISTINCTES (P1 audit externe).
     //
     // docGen : le présentateur change de document pendant qu'un chargement est en cours. Le
@@ -137,9 +137,13 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
         // arrivait : ce résultat n'est plus celui qu'on attend. On ne le pose pas.
         if(monDoc!==docGen || monRendu!==renderGen) return;
         var availW=Math.max(120, stage.clientWidth-40), availH=Math.max(120, stage.clientHeight-40);
-        var v1=page.getViewport({scale:1});
+        // ⚠️ ON COMPOSE, ON N'ÉCRASE PAS — même piège que dans la visionneuse. getViewport prend par
+        // défaut la rotation du fichier ; passer une valeur absolue coucherait un document numérisé qui
+        // était droit. La composition vit dans src/viewer.ts, où elle est éprouvée.
+        var rotEff=Player.viewer.rotationEffective(page.rotate,rot);
+        var v1=page.getViewport({scale:1,rotation:rotEff});
         var scale=Math.min(availW/v1.width, availH/v1.height); // fit entier → une page à l'écran
-        var dpr=window.devicePixelRatio||1, vp=page.getViewport({scale:scale});
+        var dpr=window.devicePixelRatio||1, vp=page.getViewport({scale:scale,rotation:rotEff});
         var cv=document.createElement('canvas'); cv.width=Math.floor(vp.width*dpr); cv.height=Math.floor(vp.height*dpr);
         cv.setAttribute('role','img'); cv.setAttribute('aria-label','Page '+n+(total>1?' sur '+total:''));
         cv.style.width=vp.width+'px'; cv.style.height=vp.height+'px';
@@ -282,10 +286,10 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
       if(!row) return;
       // La table et la diffusion portent la même vérité : sans cette garde, chaque changement de
       // page serait rendu deux fois (scintillement), et chaque carte ré-ouverte inutilement.
-      var sig=''; try{ sig=JSON.stringify([row.active,row.current_page,row.file_url,row.content]); }catch(e){ sig=String(Math.random()); }
+      var sig=''; try{ sig=JSON.stringify([row.active,row.current_page,row.file_url,row.content,row.view_rotation]); }catch(e){ sig=String(Math.random()); }
       if(sig===_etatVu) return;
       _etatVu=sig;
-      var actions=Player.presentationState.presentationTransition(row,{docUrl:CFG.docUrl});
+      var actions=Player.presentationState.presentationTransition(row,{docUrl:CFG.docUrl,rotation:rot});
       for(var i=0;i<actions.length;i++){ var a=actions[i];
         if(a.kind==='ended'){ ended(); return; }
         if(a.kind==='show-map'){ if(window.Map3DD){ if(a.content.kind==='streetview') Map3DD.enterSV(a.content,false); else Map3DD.enter(a.content,false); } return; }
@@ -293,6 +297,9 @@ function presentHtml(pres, nonce, logoUrl, supaUrl, supaKey) {
         // switchDoc pose LUI-MÊME docUrl/fileName/titre : les poser ici, en partie, était
         // exactement ce qui laissait fileName en arrière.
         if(a.kind==='switch-doc'){ switchDoc(row); return; }
+        // ⚠️ AVANT la page, et c'est l'ordre que presentationTransition garantit : tourner après avoir
+        // rendu ferait rendre deux fois, la première fois pour rien.
+        if(a.kind==='rotate'){ rot=a.rotation; renderGen++; show(cur); }
         if(a.kind==='show-page'){ show(a.page); }
       }
     }

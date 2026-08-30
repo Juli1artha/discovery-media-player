@@ -39,7 +39,7 @@ async function traiter(req, res, body, _slug) {
             return jp(200, { ok: true, slug: out.slug, control: out.control });
           }
           const r = body.action === "present-page"
-            ? await setPage(String(body.slug || ""), String(body.control || ""), body.page, body.seq)
+            ? await setPage(String(body.slug || ""), String(body.control || ""), body.page, body.seq, body.rotation)
             : body.action === "present-touch"
             ? await touchPresentation(String(body.slug || ""), String(body.control || ""))
             : await endPresentation(String(body.slug || ""), String(body.control || ""));

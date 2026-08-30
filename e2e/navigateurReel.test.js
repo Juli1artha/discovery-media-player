@@ -876,6 +876,12 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     const p = await pageAvecLecteur(ctx);
     await p.click("#vignBtn");
     await p.waitForFunction(() => document.querySelectorAll("#vignIn .vg canvas").length > 0, { timeout: 20_000 });
+    // ⚠️ ON LAISSE D'ABORD EXPIRER LE REPORT DE PAGE ARMÉ PAR L'OUVERTURE DU PANNEAU. Sans cette
+    // attente, ce banc mesurait DEUX choses à la fois — le désarmement du suivi, et une course de
+    // 30 ms — et laquelle des deux il mesurait dépendait de la vitesse de rendu des vignettes. Il a
+    // rougi sur la forge en passant ici pour cette seule raison, et la course qu'il avait attrapée
+    // au passage est réelle : elle a désormais ses propres bancs, juste en dessous.
+    await p.waitForFunction(() => window.__viewerEssai.reportEnAttente === false, { timeout: 5_000 });
     // Un geste du lecteur sur le panneau, puis on le remet en haut et on change de page loin.
     await p.evaluate(() => {
       document.getElementById("vignIn").dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 200 }));
@@ -892,6 +898,41 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
       .toBe(0);
     await p.close(); await ctx.close();
   });
+
+  // ⚠️ LA MÊME COURSE, UNE AUTRE PORTE — et la forge l'a trouvée, pas nous. Le banc du dessus
+  // ferme le cas du CLIC sur une vignette, parce qu'un clic passe par scrollToPage, qui périme le
+  // report. Le lecteur qui ouvre le panneau puis fait défiler le document LUI-MÊME dans les 30 ms
+  // ne passe par rien de tel : son geste était défait et il revenait à sa page de départ.
+  //
+  // On garde la CLASSE, pas le cas : les trois entrées qui font défiler un document — molette,
+  // doigt, souris — chacune son banc. Et un CONTRÔLE POSITIF dans chacun : si aucun report n'était
+  // en attente au moment du geste, il n'y avait rien à périmer et le banc ne prouverait rien.
+  for (const geste of ["wheel", "touchmove", "pointerdown"]) {
+    it(`ouvrir le panneau puis faire défiler le document soi-même (${geste}) ne ramène pas le lecteur en arrière`, async () => {
+      const ctx = await navigateur.newContext({ viewport: { width: 1200, height: 900 } });
+      const p = await pageAvecLecteur(ctx);
+      const etat = await p.evaluate((nom) => {
+        document.getElementById("vignBtn").click();
+        const arme = window.__viewerEssai.reportEnAttente;
+        const sc = document.getElementById("scroll");
+        const C = nom === "wheel" ? WheelEvent : nom === "pointerdown" ? PointerEvent : null;
+        let ev; try { ev = C ? new C(nom, { bubbles: true }) : new TouchEvent(nom, { bubbles: true }); }
+        catch (e) { ev = new Event(nom, { bubbles: true }); }
+        sc.dispatchEvent(ev);
+        const el = document.querySelector('#pages .page[data-p="30"]');
+        if (el) el.scrollIntoView({ block: "start" });
+        return { arme, trouvee: !!el };
+      }, geste);
+      expect(etat.arme, "aucun report n'était en attente au moment du geste : ce banc ne prouve rien").toBe(true);
+      expect(etat.trouvee, "le document d'essai n'a pas de page 30 : rien à atteindre").toBe(true);
+      await new Promise((r) => setTimeout(r, 900));
+      expect(await p.evaluate(() => window.__viewerEssai.cur),
+        `le report armé par l'ouverture du panneau a défait le défilement du lecteur (${geste}) :\n`
+        + "toute entrée du lecteur doit PÉRIMER un report en attente, pas seulement un clic.")
+        .toBeGreaterThan(20);
+      await p.close(); await ctx.close();
+    });
+  }
 
   it("un canvas ne dépasse jamais son budget de pixels, quelle que soit la densité d'écran", async () => {
     const ctx = await navigateur.newContext({ deviceScaleFactor: 3, viewport: { width: 1400, height: 1000 } });

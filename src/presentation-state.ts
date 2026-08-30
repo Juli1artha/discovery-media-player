@@ -14,11 +14,14 @@
 //   1. une présentation terminée l'emporte sur tout ;
 //   2. une carte ou une vue Street View SUSPEND le suivi du document — le présentateur montre
 //      autre chose, l'audience ne doit pas revenir au PDF ni suivre ses pages ;
-//   3. un changement de document précède un changement de page (la page 3 de l'ancien document
+//   3. la ROTATION avant tout ce qui concerne le document : elle change la géométrie, et l'appliquer
+//      après un changement de page ferait payer DEUX reconstructions au lieu d'une ;
+//   4. un changement de document précède un changement de page (la page 3 de l'ancien document
 //      n'est pas la page 3 du nouveau) ;
-//   4. la page en dernier.
+//   5. la page en dernier.
 
 import { sanitizeContent, type PresentationContent } from "./presentation-content";
+import { rotationEffective } from "./viewer";
 
 /** L'état d'une présentation, tel qu'il arrive — de la table, d'une diffusion, ou d'une relecture. */
 export interface PresentationRow {
@@ -28,12 +31,24 @@ export interface PresentationRow {
   file_name?: string | null;
   doc_title?: string | null;
   current_page?: number | null;
+  /**
+   * Rotation posée par le présentateur, en degrés.
+   *
+   * ⚠️ ELLE ARRIVE PAR UNE VOIE NON FIABLE, et c'est pourquoi elle est normalisée ici plutôt que
+   * chez l'appelant. Sur le canal `broadcast`, cet état vient du NAVIGATEUR du présentateur : une
+   * valeur absurde — 37, `NaN`, une chaîne — poserait un viewport oblique qui casse la couche de
+   * texte de toute l'audience. `rotationEffective` la ramène au quart de tour, comme le contenu est
+   * ré-assaini deux lignes plus bas.
+   */
+  view_rotation?: number | null;
   updated_at?: string | null;
 }
 
 /** Ce que l'audience regarde en ce moment. */
 export interface AudienceView {
   docUrl?: string | null;
+  /** Rotation actuellement appliquée par l'audience — sert à ne rien faire quand rien n'a changé. */
+  rotation?: number | null;
 }
 
 export type PresentationAction =
@@ -41,6 +56,7 @@ export type PresentationAction =
   | { kind: "show-map"; content: PresentationContent }
   | { kind: "leave-map" }
   | { kind: "switch-doc"; url: string; name?: string; title?: string; updatedAt?: string }
+  | { kind: "rotate"; rotation: number }
   | { kind: "show-page"; page: number }
   | { kind: "nothing" };
 
@@ -65,6 +81,17 @@ export function presentationTransition(
   if (content) return [{ kind: "show-map", content }];
 
   const actions: PresentationAction[] = [{ kind: "leave-map" }];
+
+  // ⚠️ LA ROTATION AVANT LE DOCUMENT ET LA PAGE. Elle change la proportion des pages, donc la
+  // hauteur des gabarits, donc la géométrie entière : l'appliquer après un changement de page
+  // ferait reconstruire deux fois, et la première reconstruction viserait une page dont la position
+  // est sur le point de bouger.
+  //
+  // ⚠️ ET ON N'ÉMET RIEN QUAND RIEN N'A CHANGÉ. La relecture HTTP à la reconnexion rejoue tout
+  // l'état : sans cette comparaison, chaque reconnexion ferait tourner le document de zéro degré —
+  // c'est-à-dire le reconstruirait pour rien, au moment précis où l'audience vient de rejoindre.
+  const rotation = rotationEffective(0, row.view_rotation);
+  if (rotation !== rotationEffective(0, view.rotation)) actions.push({ kind: "rotate", rotation });
 
   // Changement de document AVANT changement de page : la page 3 de l'ancien document n'est pas
   // la page 3 du nouveau.
