@@ -181,6 +181,30 @@ An hourly guard ([`publication.yml`](../.github/workflows/publication.yml)) open
 itself when the registry catches up. It is a safety net, not the check: it fires **after** the
 window in which someone was still watching.
 
+## Once npm actually serves it: bump the examples
+
+⚠️ **A release leaves `main` red until you do this, and nothing said so until 30/08.** The
+`exemples-epingles` guard asks the **live registry** which versions it serves and requires every
+example to pin one of the **last two published**. Publishing therefore shifts that window under a
+pin that was legitimate an hour earlier: on 30/08, `0.1.143` went out and the three examples —
+still on `0.1.140`, accepted all morning because `0.1.141` was never published — fell out of it.
+The first PR opened afterwards went red on a check that had nothing to do with it.
+
+```bash
+# after the Release is up and `npm view discovery-media-player version` shows it
+examples/*/package.json   →  "discovery-media-player": "<the version just published>"
+node tools/exemples-epingles.mjs     # must print "servies par le registre, donc installables"
+```
+
+⚠️ **And it cannot be done before.** The preflight refuses an example pinned to the version you are
+about to publish, because npm does not serve it yet and the demo deployment installs from npm. The
+two rules are not in conflict — they simply describe two different moments, and the bump belongs to
+the second one. Doing it in the release commit would trip the first; doing it never trips the
+second, on every PR, until someone notices.
+
+This is why it is a step and not a preflight check: no tool can verify, before the tag, a state
+that only exists after it.
+
 ## When a tag points at the wrong commit
 
 It happened on 0.1.121. The Release and Image guards refused, which is what they are for.
