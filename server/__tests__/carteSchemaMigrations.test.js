@@ -95,3 +95,76 @@ describe("la carte de schéma suit les migrations qui ajoutent une colonne", () 
     }
   });
 });
+
+// ⚠️ « COMPLET » N'A JAMAIS VOULU DIRE CE QUE SES LECTEURS Y LISENT, ET RIEN NE LE DISAIT.
+//
+// La session STUDIO l'a mesuré des deux côtés le 30/08 : elle applique la 0024, relit
+// `?contract=1&schema=1`, et obtient `attendues: 9 · sondees: 9 · complet · manquant: []` — mot pour
+// mot ce qu'elle lisait AVANT la migration. Elle ne pouvait pas voir la 0024 quitter une liste où
+// elle n'était jamais entrée : leur player est en 0.1.142, et `view_rotation` n'entre dans ATTENDUES
+// qu'avec la version qui apporte la fonction.
+//
+// La garde du dessus ferme le trou « le CODE oublie une migration ». Celui-ci est l'autre : « l'HÔTE
+// exécute un code plus ancien que la migration » — et il est structurel, aucune version ne peut
+// connaître ce qui lui est postérieur. La seule réponse qui reste vraie quand le lecteur est plus
+// récent que nous, c'est de DIRE CE QU'ON CONNAÎT. D'où `connues`.
+//
+// ⚠️ ET UNE LISTE QU'ON PUBLIE POUR ÊTRE COMPARÉE DOIT ÊTRE COMPARABLE : c'est ce que les deux
+// derniers bancs vérifient, et c'est là que serait le prochain défaut.
+describe("la carte dit ce que ce code SAIT attendre, pas seulement ce qui lui manque", () => {
+  const schema = require("../schema.js");
+
+  /** Un hôte dont `manquante` est absente : la sonde `select=<col>&limit=0` LÈVE, comme PostgREST. */
+  function hote(manquante) {
+    schema.oublier();
+    schema.init({
+      errors: { capture() {} },
+      db: {
+        async request(chemin) {
+          const sonde = /select=([a-z_]+)&limit=0/.exec(chemin);
+          if (sonde && sonde[1] === manquante) throw new Error("400 column does not exist");
+          return [];
+        },
+      },
+    });
+  }
+
+  it("`connues` nomme TOUTES les migrations d'ATTENDUES, sans en taire une", () => {
+    hote(null);
+    const { connues } = schema.etatDuSchema();
+    const attendues = [...new Set(Object.values(schema.ATTENDUES).map((a) => a.migration))];
+    expect(connues.length, "`connues` est vide : elle ne renseignerait personne").toBeGreaterThan(0);
+    for (const m of attendues) {
+      expect(connues, `« ${m} » est attendue par ce code mais absente de \`connues\``).toContain(m);
+    }
+    expect(connues.length).toBe(attendues.length);
+  });
+
+  // ⚠️ ON DONNE UN CHEMIN, DONC IL DOIT EXISTER. Un fichier mal nommé dans ATTENDUES enverrait l'hôte
+  // appliquer quelque chose d'introuvable — et c'est le seul champ de la carte qui lui demande
+  // d'aller chercher un fichier chez nous.
+  it("chaque migration nommée existe vraiment dans le dépôt", () => {
+    hote(null);
+    for (const m of schema.etatDuSchema().connues) {
+      expect(fs.existsSync(path.join(RACINE, m)), `« ${m} » est nommée par la carte et n'existe pas`)
+        .toBe(true);
+    }
+  });
+
+  // ⚠️ LE BANC QUI COMPTE. Publier deux listes ne sert à rien si elles ne parlent pas la même langue :
+  // tout l'usage de `connues` est de répondre « ma liste contient-elle 0024 ? », et un hôte ne peut le
+  // faire que si `manquant` nomme ses fichiers À L'IDENTIQUE. Un jour où l'une porterait le chemin
+  // complet et l'autre le nom nu, les deux resteraient « justes » séparément et inutilisables ensemble.
+  it("`manquant` nomme ses migrations dans le MÊME vocabulaire que `connues`", async () => {
+    const cible = Object.values(schema.ATTENDUES)[0];
+    hote(cible.colonne);
+    const etat = await schema.sonderTout();
+    expect(etat.manquant.length,
+      "aucune migration manquante alors que la sonde LÈVE : ce banc ne prouverait rien").toBeGreaterThan(0);
+    for (const m of etat.manquant) {
+      expect(etat.connues, `« ${m.migration} » manque mais n'est pas dans \`connues\` : les deux listes divergent`)
+        .toContain(m.migration);
+    }
+    expect(etat.verdict, "une colonne absente doit trancher seule").toBe("incomplet");
+  });
+});
