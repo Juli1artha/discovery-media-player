@@ -113,3 +113,46 @@ describe("lectureSaturee — un compte, et la fenêtre qui le rend lisible", () 
     expect(CONTRAT, "derrière un répartiteur, ce compte est celui de l'instance qui a répondu").toContain("process-local");
   });
 });
+
+// ⚠️ LA CARTE ENTIÈRE PASSE LA GARDE DE L'HÔTE, OU ELLE NE SORT PAS — ET LE BALAYAGE EST LE SIEN.
+//
+// Une garde d'hôte refuse toute carte d'identité contenant `supabase|secret|key|token`. Elle
+// protège une réponse PUBLIQUE contre la fuite d'une URL de projet, d'une clé ou d'un jeton, et
+// c'est un balayage de TEXTE : elle ne distingue pas un nom de champ d'une valeur, ni un mot
+// innocent d'un secret. Notre doctrine face à elle est écrite depuis `presenceTokens` →
+// `presenceJetons` : ON CHANGE CE QU'ON ÉMET, ON NE DEMANDE PAS DE DESSERRER.
+//
+// Cette doctrine vivait en prose, et elle a été tenue deux fois par vigilance humaine — puis ratée
+// la troisième, quand `connues` a publié des chemins préfixés `supabase/migrations/`. Une règle
+// tenue par habitude a un taux de couverture que personne ne mesure : celui-ci le mesure, sur ce
+// que la carte rend RÉELLEMENT, clés comprises.
+//
+// ⚠️ ET IL BALAIE LE JSON SÉRIALISÉ, pas l'objet. C'est ce que fait la garde d'en face, et un
+// balayage de l'objet raterait exactement ce qu'un balayage de texte attrape.
+describe("la carte publiée ne contient aucun mot que la garde d'un hôte refuse", () => {
+  const MOTIF_HOTE = /supabase|secret|key|token/i;
+
+  it("rien dans la carte rendue ne déclenche le motif", async () => {
+    const texte = JSON.stringify(await carteReelle());
+    const trouve = texte.match(new RegExp(MOTIF_HOTE.source, "gi")) || [];
+    expect(trouve,
+      `la carte contient ${trouve.length} occurrence(s) de mots que la garde d'un hôte refuse : `
+      + `${[...new Set(trouve)].join(", ")}.\n`
+      + "Cette garde balaie la carte ENTIÈRE et la refuse en bloc — pas seulement le champ fautif,\n"
+      + "donc un mot de trop prive l'hôte de TOUTE la carte, y compris des champs qui disent l'état\n"
+      + "de ses migrations.\n\n"
+      + "Changez ce que nous émettons : renommez le champ, ou retirez le mot de la valeur. Ne\n"
+      + "demandez pas à l'hôte d'assouplir sa garde — desserrer est ce qui vide une garde, et à ce\n"
+      + "compte-là chaque hôte devrait tailler la sienne. (Vue tirer sur `presenceTokens`, puis sur\n"
+      + "les chemins de migration de `connues`.)")
+      .toEqual([]);
+  });
+
+  // ⚠️ CONTRÔLE POSITIF. Sans lui, ce banc passerait aussi bien sur une carte vide ou un motif mort.
+  it("et le balayage mord vraiment — sur une carte à laquelle on ajoute le mot", async () => {
+    const carte = await carteReelle();
+    const empoisonnee = JSON.stringify({ ...carte, exemple: "https://abcdefgh.supabase.co" });
+    expect(MOTIF_HOTE.test(empoisonnee),
+      "le motif ne mord pas sur une URL de projet : le banc du dessus ne prouverait rien").toBe(true);
+  });
+});

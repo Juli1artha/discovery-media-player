@@ -140,14 +140,20 @@ describe("la carte dit ce que ce code SAIT attendre, pas seulement ce qui lui ma
     expect(connues.length).toBe(attendues.length);
   });
 
-  // ⚠️ ON DONNE UN CHEMIN, DONC IL DOIT EXISTER. Un fichier mal nommé dans ATTENDUES enverrait l'hôte
-  // appliquer quelque chose d'introuvable — et c'est le seul champ de la carte qui lui demande
-  // d'aller chercher un fichier chez nous.
-  it("chaque migration nommée existe vraiment dans le dépôt", () => {
+  // ⚠️ ON DONNE UN NOM DE FICHIER, DONC IL DOIT EXISTER. Mal nommé, il enverrait l'hôte appliquer
+  // quelque chose d'introuvable — c'est le seul champ de la carte qui lui demande d'aller chercher
+  // un fichier chez nous.
+  //
+  // ⚠️ ET LE RÉPERTOIRE EST RECOLLÉ ICI, PAS PUBLIÉ LÀ-BAS. La carte ne porte plus le préfixe
+  // `supabase/…` — une garde d'hôte tire dessus — donc c'est ce banc qui tient la relation
+  // « valeur publiée + racine = fichier réel ». Sans lui, retirer le préfixe aurait pu retirer
+  // aussi le sens de la valeur sans que rien ne rougisse.
+  it("chaque migration nommée existe vraiment dans le dépôt, une fois recollée à sa racine", () => {
     hote(null);
     for (const m of schema.etatDuSchema().connues) {
-      expect(fs.existsSync(path.join(RACINE, m)), `« ${m} » est nommée par la carte et n'existe pas`)
-        .toBe(true);
+      expect(m.includes("/"), `« ${m} » porte un chemin : la carte ne doit publier qu'un NOM`).toBe(false);
+      expect(fs.existsSync(path.join(RACINE, "supabase", "migrations", m)),
+        `« ${m} » est nommée par la carte et n'existe pas`).toBe(true);
     }
   });
 

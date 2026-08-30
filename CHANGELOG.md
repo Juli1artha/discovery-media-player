@@ -12,6 +12,34 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Changed
+
+- ⚠️ **La carte publie un NOM de migration, plus un chemin — parce qu'une garde de sécurité d'hôte
+  tirait dessus, et que la doctrine de ce dépôt dit que c'est à l'émetteur de céder.** Une garde de
+  la session STUDIO refuse toute carte d'identité contenant `supabase|secret|key|token` : un
+  balayage de texte volontairement grossier, qui protège une réponse **publique** contre la fuite
+  d'une URL de projet, d'une clé ou d'un jeton. Nos valeurs étaient préfixées
+  `supabase/migrations/…` — faux positif sans ambiguïté, mais le refus était bien fondé.
+  ⚠️ **Le préfixe part, la garde reste.** `presenceJetons` porte ce nom (et non `presenceTokens`)
+  parce que cette même garde avait déjà tiré une fois, et le commentaire qui l'accompagne posait
+  déjà la règle : *le bon geste face à son refus est de changer ce qu'on émet, jamais de desserrer
+  la garde*. Nous avions donc la doctrine, et nous l'avons ratée à la première occasion où l'émetteur
+  c'était nous sur une **valeur** plutôt que sur un nom de champ. Le répertoire ne se perd pas : il
+  est dit une fois dans `HOST-CONTRACT.md`, et le journal de l'exploitant continue d'imprimer le
+  chemin complet — ce message s'adresse à quelqu'un qui le lit, pas à un balayage.
+  ⚠️ **Le cas est instructif par la façon dont il s'est réveillé** : `manquant` publiait ces chemins
+  depuis toujours, mais restait `[]` chez cet hôte — la garde était donc **verte depuis des mois dans
+  une configuration où son sujet ne pouvait pas apparaître**. Il a fallu `connues`, qui les liste
+  *sans condition*, pour la faire tirer. Même motif que la carte qui disait « complet » sans couvrir
+  une migration, sur une garde de sécurité cette fois.
+  ⚠️ **Et retirer le préfixe ne règle que la collision du jour, pas la classe** — remarque du même
+  hôte, et elle est juste : le nom de fichier reste une valeur que nous choisissons, donc
+  `0031-refresh-token-rotation.sql` rouvrirait le même refus des mois plus tard, chez tous les hôtes
+  à la fois. Deux bancs ferment ça, et convertissent une habitude de nommage en règle mesurée :
+  l'un balaie `supabase/migrations/` et refuse un nom fautif **au moment où on l'écrit** ; l'autre
+  rend la carte réelle et passe le **JSON sérialisé**, clés comprises, au motif de l'hôte. Chacun a
+  ses contrôles positifs : sans eux, ils passeraient aussi bien sur une carte vide ou un motif mort.
+
 ## [0.1.143] — 2026-08-30
 
 ### Changed

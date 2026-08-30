@@ -76,7 +76,7 @@ describe("l'état du schéma se lit ailleurs que dans un journal", () => {
     const fs = require("node:fs"), path = require("node:path");
     const racine = path.join(__dirname, "..", "..");
     for (const [nom, a] of Object.entries(schema.ATTENDUES)) {
-      expect(fs.existsSync(path.join(racine, a.migration)), `${nom} → ${a.migration}`).toBe(true);
+      expect(fs.existsSync(path.join(racine, "supabase", "migrations", a.migration)), `${nom} → ${a.migration}`).toBe(true);
       expect(a.table && a.colonne && a.fonction, nom).toBeTruthy();
     }
   });
