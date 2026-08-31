@@ -368,6 +368,19 @@ jobs:
         if: matrix.node == '22'
         run: node tools/plancher-de-node.mjs
 
+      # ⚠️ ET LA PHRASE CI-DESSUS DIAGNOSTIQUAIT DEUX PAIRES EN N'EN MESURANT QU'UNE. L'étape
+      # précédente confronte `engines` aux DÉPENDANCES. Rien ne confrontait `engines` à ce que les
+      # workflows demandent d'INSTALLER — vérifié le 30/08 : dans tout `tools/`, la chaîne
+      # `node-version` n'apparaissait qu'une fois, et c'était dans le commentaire ci-dessus.
+      #
+      # Le commentaire était VRAI à l'écriture ; il deviendra faux le jour où le plancher passera
+      # au-delà de 22, sans que personne le touche, et aucun `git blame` ne désignera de fautif.
+      # C'est ce jour-là que `check (22)` validerait sur un moteur que notre propre paquet déclare
+      # non supporté — en vert.
+      - name: Every Node version the forge installs is one that engines allows
+        if: matrix.node == '22'
+        run: node tools/node-des-workflows.mjs
+
       # ⚠️ `crypto` EST UN GLOBAL DEPUIS NODE 18, ET CE N'EST PAS LE MÊME. L'extraction du lot 3 a
       # déplacé `bot-tts` hors de `handler.js` sans emporter son `require` : `crypto.createHash(…)`
       # a désigné WebCrypto, qui n'a pas cette méthode. `no-undef` ne pouvait rien voir — la

@@ -12,6 +12,35 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- ⚠️ **La CI mesure enfin la version de node qu'elle installe — la garde voisine avait écrit ce
+  diagnostic le 25/08 sans se l'appliquer.** L'en-tête de `tools/plancher-de-node.mjs` dit :
+  « `node-version: "22"` résout au DERNIER 22.x : la CI atterrit toujours au-dessus du plancher,
+  quel qu'il soit. Une règle que l'environnement de vérification satisfait par construction n'est
+  pas vérifiée — elle est supposée. » Cette phrase nomme **deux** paires ; l'outil n'en mesurait
+  qu'une, `engines` contre les dépendances de production. L'autre — `engines` contre ce que les
+  workflows demandent d'installer — restait sur la prose qui venait de la diagnostiquer. Vérifié
+  plutôt que supposé : dans tout `tools/`, la chaîne `node-version` n'apparaissait qu'**une fois**,
+  et c'était dans ce commentaire.
+
+  `tools/node-des-workflows.mjs` énumère les workflows **depuis le disque** — une liste écrite
+  cesse de couvrir dès qu'on ajoute un fichier — lit chaque `node-version:`, résout
+  `${{ matrix.node }}` et les entrées d'`include`, et refuse toute version qu'`engines` n'admet
+  pas. Relevé du jour : 12 déclarations dans 5 fichiers, toutes admises. Le rouge qu'elle attend
+  n'existe pas encore : il arrivera le jour où le plancher passera au-delà de 22, et ce jour-là
+  `check (22)` validerait en vert sur un moteur que notre propre paquet déclare non supporté.
+
+  La comparaison est `intersects`, pas `subset`, et la différence est le cœur de la garde :
+  `subset("22", ">=22.13.0")` est **faux** — 22.0.0 est dans « 22 » sans être dans `engines` — donc
+  une garde bâtie dessus refuserait la CI d'aujourd'hui, qui est saine. `intersects` est exact ici
+  sous une condition que la garde **vérifie** au lieu de la supposer : un `engines` sans plafond.
+  Sous un `engines` borné en haut, elle refuse de conclure plutôt que de rendre un vert dont elle
+  ne sait plus ce qu'il vaut. Deux planchers anti-vacuité — sur le nombre de déclarations **et**
+  sur le nombre de fichiers, parce qu'un plancher unique laisse passer un balayage qui garde le
+  compte en perdant la moitié du dossier. Ce qu'elle ne sait pas lire (`node-version-file`,
+  `lts/*`, une expression non résolue) est **dit**, jamais sauté.
+
 ## [0.1.144] — 2026-08-30
 
 ⚠️ **Second train du même jour, et la raison est écrite plutôt que tue.** `0.1.143` est partie à
