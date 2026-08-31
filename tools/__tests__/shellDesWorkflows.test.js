@@ -8,7 +8,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import { blocsDe, blocsFautifs, sautes, lireDossier } from "../shell-des-workflows.mjs";
+import { analyserAvecBash, blocsDe, blocsFautifs, sautes, lireDossier, temoinNonVu } from "../shell-des-workflows.mjs";
 
 const wf = (steps, extra = "") => `name: T\non: push\njobs:\n  j:\n${extra}    steps:\n${steps}`;
 
@@ -67,5 +67,36 @@ describe("les workflows réels", () => {
     // L'apostrophe de « d'attestation » ferme la chaîne ; bash lit le JavaScript et bute sur « ( ».
     const fautif = wf("      - name: poser le nom\n        run: |\n          node -e '\n            console.error(\"le fichier d'attestation nest pas un bundle (mediaType: \" + mt + \")\");\n          '\n");
     expect(blocsFautifs(blocsDe("release.yml", fautif))).toHaveLength(1);
+  });
+});
+
+describe("⚠️ le témoin — INJECTÉ, parce que l'état sain de cette règle est ZÉRO bloc refusé", () => {
+  // ⚠️ CE QUI ÉTAIT MESURÉ LE 31/08. En remplaçant l'appel à `execFileSync` par `return null` —
+  // un bash qui n'est plus lancé — l'outil imprimait « 112 bloc(s) « run: » ANALYSÉS PAR BASH,
+  // aucun refusé » et sortait 0. La phrase était littéralement fausse, et c'est celle que la
+  // forge affiche à chaque course verte : une phrase qui AFFIRME un fait mesuré porte l'autorité
+  // de la mesure sans en porter la charge, et n'est relue par personne.
+  it("⚠️ un analyseur muet est vu, et nommé", () => {
+    expect(temoinNonVu(() => null)).toMatch(/n'a pas refusé un script qu'on sait cassé/);
+  });
+
+  it("un analyseur qui refuse ce qu'il doit refuser ne dit rien", () => {
+    expect(temoinNonVu(() => "syntax error")).toBe(null);
+  });
+
+  // ⚠️ ET IL ÉPROUVE LE VRAI BASH, PAS UN DOUBLE. Le témoin par défaut passe par l'analyseur que
+  // le juge appelle ; une doublure ici prouverait que la doublure marche.
+  it("⚠️ sur le bash de cette machine, sans doublure", () => {
+    expect(temoinNonVu()).toBe(null);
+    expect(analyserAvecBash("if [ -z ]; then\n", "bash"), "bash doit refuser un « then » sans « fi »").toBeTruthy();
+    expect(analyserAvecBash("echo ok\n", "bash"), "et accepter un script valide").toBe(null);
+  });
+
+  // ⚠️ UN TÉMOIN DÉRIVÉ ÉTAIT IMPOSSIBLE ICI, ET C'EST LA RAISON DE L'INJECTION. Il aurait compté
+  // « au moins un bloc que bash refuse », c'est-à-dire exigé du dépôt la chose même que la règle
+  // interdit : il refuserait un dépôt sain. La forme correcte n'est pas quelque chose que ce
+  // dépôt doit CONTENIR, donc il faut la fabriquer.
+  it("⚠️ le dépôt réel ne contient AUCUN bloc refusé — d'où l'injection", () => {
+    expect(blocsFautifs(lireDossier())).toEqual([]);
   });
 });

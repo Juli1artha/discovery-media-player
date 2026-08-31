@@ -11,9 +11,13 @@
 //     grep -rn  "…" server/ | wc -l   →  4
 //     grep -arn "…" server/ | wc -l   →  5
 
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, it, expect } from "vitest";
 
-import { angesMorts, appelsGrep, porteLeDrapeau, sansCitations, verifier, viseDuSource } from "../greps-sans-angle-mort.mjs";
+import { angesMorts, appelsGrep, porteLeDrapeau, sansCitations, temoinsDeForme, verifier, viseDuSource } from "../greps-sans-angle-mort.mjs";
+import { blocsDe } from "../shell-des-workflows.mjs";
 import { CONFORME, VIOLATION, INCONCLUSIF } from "../resultat-garde.mjs";
 
 const bloc = (run) => ({ fichier: "ci.yml", job: "check", nom: "étape", run });
@@ -132,5 +136,51 @@ describe("la garde sur le dépôt", () => {
   it("un YAML illisible rend NON CONCLUANT, jamais VIOLATION", () => {
     const r = verifier("peu-importe", () => "{ ceci: n'est pas: du yaml", () => ["t.yml"]);
     expect(r.code).toBe(INCONCLUSIF);
+  });
+});
+
+describe("⚠️ le témoin de la forme — « rien trouvé » n'est pas « rien regardé »", () => {
+  // ⚠️ CE QUI ÉTAIT MESURÉ LE 31/08. En forçant `findIndex` à rendre -1 — une sonde d'appel
+  // aveugle — l'outil imprimait « 112 bloc(s) « run: » relus, aucun « grep » ne lit du source
+  // sans « -a » » et sortait 0. Le plancher qui existait comptait les BLOCS OUVERTS ; il est
+  // placé un maillon trop tôt dans la chaîne. Le message vert AFFIRMAIT avoir regardé des `grep`.
+  it("⚠️ des blocs sans le moindre grep : elle refuse au lieu de conclure au vert", () => {
+    const sansGrep = "name: T\non: push\njobs:\n  j:\n    steps:\n      - run: npm test\n";
+    const r = verifier("peu-importe", () => sansGrep, () => ["t.yml"]);
+    expect(r.code).toBe(INCONCLUSIF);
+    expect(r.raisons[0]).toMatch(/aucun appel à « grep » reconnu/);
+  });
+
+  // ⚠️ DEUX SONDES SE SUCCÈDENT, DONC DEUX CÉCITÉS. `appelsGrep` reconnaît l'appel ;
+  // `viseDuSource` reconnaît qu'il lit du code d'ici. Aveugler la SECONDE blanchit tout sans
+  // toucher à la première — un seul compte laisserait cette cécité-là ouverte.
+  it("⚠️ des greps reconnus mais aucun ne visant du source : elle refuse aussi", () => {
+    const horsSource = "name: T\non: push\njobs:\n  j:\n    steps:\n      - run: grep -rn x docs/API.md\n";
+    const r = verifier("peu-importe", () => horsSource, () => ["t.yml"]);
+    expect(r.code).toBe(INCONCLUSIF);
+    expect(r.raisons[0]).toMatch(/ne vise une racine de source/);
+  });
+
+  it("le témoin passe par la traversée du juge, pas par une copie", () => {
+    const blocs = [bloc("grep -arn x server/*.js"), bloc("# grep -rn x server/y.js"), bloc("npm test")];
+    // La ligne commentée est SAUTÉE par le juge : le témoin doit la sauter aussi, sinon il
+    // compterait un sujet que personne ne juge.
+    expect(temoinsDeForme(blocs)).toEqual({ greps: 1, surSource: 1 });
+  });
+});
+
+// ⚠️ LA POPULATION DE CE DÉPÔT VIT ICI, PAS DANS LA GARDE. `verifier` prend une racine
+// arbitraire : un plancher calibré sur ce dépôt y accuserait toute fixture plus petite que lui —
+// mesuré en une course, le banc ci-dessus est parti rouge. Le fait « ce dépôt porte une vraie
+// population de greps » est un fait sur LE DÉPÔT, donc il s'affirme là où le dépôt est le sujet.
+// C'est le même partage que `licence-par-fichier`.
+describe("⚠️ sur les workflows réels, la sonde reconnaît une population, pas un cas isolé", () => {
+  it("au moins huit appels à grep, dont au moins un lisant du source", () => {
+    const dossier = ".github/workflows";
+    const blocs = readdirSync(dossier).filter((f) => /\.ya?ml$/.test(f))
+      .flatMap((f) => blocsDe(f, readFileSync(join(dossier, f), "utf8")));
+    const { greps, surSource } = temoinsDeForme(blocs);
+    expect(greps, "25 le 31/08 — si ce nombre s'effondre, la sonde a cessé de lire une forme").toBeGreaterThanOrEqual(8);
+    expect(surSource, "3 le 31/08 — sans un seul, la règle n'a plus de sujet ici").toBeGreaterThanOrEqual(1);
   });
 });

@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import { liensRelatifs, cibleResolue, liensMorts } from "../liens-des-documents.mjs";
+import { liensRelatifs, cibleResolue, liensMorts, liensLus, temoinsDeForme, PLANCHER_LIENS } from "../liens-des-documents.mjs";
 import { fichiersDuTarball } from "../inventaire-tarball.mjs";
 
 describe("relever les liens", () => {
@@ -61,5 +61,40 @@ describe("le paquet réel", () => {
   it("aucun lien relatif ne mène hors du paquet", () => {
     const soucis = liensMorts(fichiersDuTarball());
     expect(soucis, `lien(s) mort(s) :\n${soucis.join("\n")}`).toEqual([]);
+  });
+});
+
+describe("⚠️ le témoin de la forme — « rien trouvé » n'est pas « rien regardé »", () => {
+  // ⚠️ CE QUI ÉTAIT MESURÉ LE 31/08. En vidant la boucle de `matchAll` — une expression qui ne
+  // reconnaît plus la forme `[texte](cible)` — l'outil imprimait « 3 document(s) publié(s), aucun
+  // lien relatif ne mène hors du paquet » et sortait 0. Il affirmait une propriété de liens qu'il
+  // n'avait pas lus. Le plancher comptait les DOCUMENTS PUBLIÉS, pas la FORME RECONNUE.
+  it("⚠️ une sonde aveugle ne compte rien, et le témoin le voit", () => {
+    expect(temoinsDeForme(["README.md"], () => "de la prose sans le moindre lien")).toBe(0);
+  });
+
+  // ⚠️ LE TÉMOIN PASSE PAR LA TRAVERSÉE DU JUGE. `liensLus` est nommée une fois et sert aux deux :
+  // un témoin qui referait le parcours resterait vert sur sa copie pendant que l'original dérive.
+  it("⚠️ juge et témoin lisent la même traversée", () => {
+    const inventaire = ["README.md", "LICENSE"];
+    const lire = () => "voir [la licence](LICENSE) et [le vide](ailleurs.md)\n";
+    expect([...liensLus(inventaire, lire)].map((l) => l.cible)).toEqual(["LICENSE", "ailleurs.md"]);
+    expect(temoinsDeForme(inventaire, lire)).toBe(2);
+    expect(liensMorts(inventaire, lire)).toHaveLength(1);
+  });
+
+  // Un lien absolu n'est pas un sujet de cette règle : ni le juge ni le témoin ne doivent le voir.
+  it("les liens absolus ne gonflent pas le témoin", () => {
+    expect(temoinsDeForme(["a.md"], () => "[site](https://exemple.test/x)\n")).toBe(0);
+  });
+});
+
+// ⚠️ LA POPULATION DU PAQUET RÉEL, ET LE PLANCHER EST À UN POUR UNE RAISON MESURÉE : il n'y a que
+// DEUX liens relatifs dans les trois documents publiés, tous deux du README vers ses licences.
+// Un plancher plus haut serait collé au relevé du jour sur une population de deux.
+describe("⚠️ sur le paquet réel, la sonde reconnaît encore des liens", () => {
+  it(`au moins ${PLANCHER_LIENS} lien relatif dans les documents publiés`, () => {
+    const vus = temoinsDeForme(fichiersDuTarball());
+    expect(vus, "2 le 31/08 (README → LICENSE, README → LICENSE-MIT)").toBeGreaterThanOrEqual(PLANCHER_LIENS);
   });
 });

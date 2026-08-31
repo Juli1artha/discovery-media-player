@@ -13,8 +13,8 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 import {
-  referencesFautives, tagAcceptable, forgeExigeEncoreLeV, AU_PERIMETRE,
-  OU_LE_TAG_EST_DECIDE, MOTIF_DU_WORKFLOW,
+  referencesFautives, referencesLues, temoinsDeForme, tagAcceptable, forgeExigeEncoreLeV,
+  AU_PERIMETRE, OU_LE_TAG_EST_DECIDE, MOTIF_DU_WORKFLOW, PLANCHER_REFERENCES,
 } from "../image-documentee.mjs";
 
 const IMG = "ghcr.io/juli1artha/discovery-media-player";
@@ -101,5 +101,41 @@ describe("les documents réels du dépôt", () => {
   it("⚠️ aucune référence documentée ne rendrait 404", () => {
     const soucis = fichiers.flatMap((f) => referencesFautives(f, readFileSync(f, "utf8")));
     expect(soucis, soucis.join("\n")).toEqual([]);
+  });
+});
+
+describe("⚠️ le témoin de la forme — « rien trouvé » n'est pas « rien regardé »", () => {
+  // ⚠️ CE QUI ÉTAIT MESURÉ LE 31/08. En vidant la boucle de `matchAll` — une expression qui ne
+  // reconnaît plus la forme d'une référence — l'outil imprimait « 32 document(s) lus, chaque
+  // référence ghcr.io est sans tag, « latest », ou préfixée « v » » et sortait 0. Il affirmait
+  // une propriété de références qu'il n'avait pas vues. Le plancher comptait les DOCUMENTS
+  // OUVERTS, pas la FORME RECONNUE.
+  it("⚠️ une sonde aveugle ne compte rien, et le témoin le voit", () => {
+    expect(temoinsDeForme(["a.md"], () => "aucune image ici, juste de la prose")).toBe(0);
+  });
+
+  it("le témoin compte les références, l'URL de l'API exclue comme le juge l'exclut", () => {
+    const texte = `docker pull ${IMG}:v1.2.3\nvoir https://ghcr.io/v2/juli1artha/tags\n${IMG}:latest\n`;
+    expect(temoinsDeForme(["t.md"], () => texte), "deux images, pas trois").toBe(2);
+  });
+
+  // ⚠️ LE TÉMOIN PASSE PAR LA TRAVERSÉE DU JUGE. `referencesLues` est nommée une fois et sert aux
+  // deux : dévier l'expression dévie le compte AVEC le verdict, au lieu de laisser le témoin
+  // vert sur un exemplaire intact. C'est la faute qu'une session voisine a trouvée chez elle le
+  // 31/08, dans un fichier écrit la même semaine en croyant appliquer cette doctrine.
+  it("⚠️ juge et témoin lisent la même traversée", () => {
+    const texte = `${IMG}:0.1.128\n`;
+    expect([...referencesLues("t.md", texte)]).toEqual([{ fichier: "t.md", ligne: 1, chemin: "juli1artha/discovery-media-player", tag: "0.1.128" }]);
+    expect(referencesFautives("t.md", texte)).toHaveLength(1);
+    expect(temoinsDeForme(["t.md"], () => texte)).toBe(1);
+  });
+});
+
+describe("⚠️ sur les documents réels, la sonde reconnaît une population", () => {
+  it(`au moins ${PLANCHER_REFERENCES} références au registre`, () => {
+    const fichiers = execFileSync("git", ["ls-files"], { encoding: "utf8" }).split("\n").filter(AU_PERIMETRE);
+    const vues = temoinsDeForme(fichiers, (f) => readFileSync(f, "utf8"));
+    expect(vues, "5 le 31/08 — si ce nombre tombe à zéro, la sonde ne lit plus la forme")
+      .toBeGreaterThanOrEqual(PLANCHER_REFERENCES);
   });
 });

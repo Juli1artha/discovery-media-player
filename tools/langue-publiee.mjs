@@ -61,6 +61,19 @@ export function compte(txt) {
  * document écrit en français, pas un document anglais qui cite du français. Un document sans aucun
  * mot-outil (une table nue) ne conclut rien non plus — refuser là-dessus serait inventer un fait.
  */
+// ⚠️ UN PLANCHER, PAS LE RELEVÉ DU JOUR. Les trois documents du tarball sont de la prose anglaise
+// le 31/08 ; « au moins deux en portent » est vrai de tout état sain — un paquet dont README et
+// contrat d'hôte ne contiendraient plus un seul mot-outil n'est pas un paquet qu'on publie.
+export const PLANCHER_PARLANTS = 2;
+
+/**
+ * ⚠️ ET LE TÉMOIN DE CETTE RÈGLE EST DANS LE VERDICT, PAS ICI. `ecartLangue` rend `null` quand le
+ * compteur ne trouve AUCUN mot — ce qui est le bon choix face à une table nue, et exactement la
+ * porte par où la garde sort verte quand le compteur est aveugle. Mesuré le 31/08 en forçant
+ * `compte` à ne rendre aucun mot : l'outil imprimait « 3 document(s) DU TARBALL, aucun
+ * majoritairement français » et sortait 0. Le plancher qui existait comptait les DOCUMENTS DU
+ * TARBALL, pas la PROSE RECONNUE.
+ */
 export function ecartLangue(fichier, txt) {
   const { fr, en } = compte(txt);
   if (fr === 0 && en === 0) return null;
@@ -85,8 +98,15 @@ if (estExecuteDirectement(import.meta.url)) {
     if (!fichiers.length) {
       return inconclusif("aucun Markdown dans le tarball — la sonde vise à côté, ou le README a cessé d'être publié");
     }
-    const soucis = fichiers.map((f) => ecartLangue(f, readFileSync(f, "utf8"))).filter(Boolean);
+    // ⚠️ UNE SEULE LECTURE POUR LE TÉMOIN ET POUR LE JUGE. `ecartLangue` compte les mots-outils
+    // par `compte()` ; le témoin interroge LA MÊME fonction sur LES MÊMES textes, jamais une copie.
+    const lus = fichiers.map((f) => [f, readFileSync(f, "utf8")]);
+    const parlants = lus.filter(([, txt]) => { const { fr, en } = compte(txt); return fr + en > 0; }).length;
+    if (parlants < PLANCHER_PARLANTS) {
+      return inconclusif(`${parlants} document(s) sur ${fichiers.length} où le compteur reconnaît un mot-outil, moins que ${PLANCHER_PARLANTS} — ce n'est pas une absence de français, c'est un compteur qui ne lit plus de mots (${fichiers.join(", ")})`);
+    }
+    const soucis = lus.map(([f, txt]) => ecartLangue(f, txt)).filter(Boolean);
     if (soucis.length) return violation(soucis);
-    return conforme(`langue : ${fichiers.length} document(s) DU TARBALL, aucun majoritairement français — ${fichiers.join(", ")}`);
+    return conforme(`langue : ${fichiers.length} document(s) DU TARBALL, ${parlants} où le compteur reconnaît de la prose, aucun majoritairement français — ${fichiers.join(", ")}`);
   }));
 }

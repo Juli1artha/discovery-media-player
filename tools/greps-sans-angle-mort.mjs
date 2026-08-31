@@ -46,6 +46,18 @@ const DOSSIER = ".github/workflows";
 /** Les dossiers dont le contenu est du code de ce dépôt — ceux qu'une sonde doit lire en entier. */
 export const RACINES_SOURCE = ["server", "src", "context", "bin", "tools", "build", "charge"];
 
+// ⚠️ DES PLANCHERS STRUCTURELS, PAS UNE POPULATION. `verifier` prend une racine ARBITRAIRE : un
+// nombre calibré sur ce dépôt y accuserait toute fixture qui porte moins de `grep` que lui — le
+// banc de ce fichier l'a montré en une course. Ce qui est vrai de TOUTE racine qu'on soumet à
+// cette garde, c'est « au moins un appel reconnu, et au moins un qui lit du source » : sans cela,
+// un vert ne dit rien de la racine qu'on vient de lire.
+//
+// ⚠️ LA POPULATION DE CE DÉPÔT, ELLE, EST AFFIRMÉE PAR LE BANC — 25 appels reconnus le 31/08,
+// dont 3 visant du source. C'est le même partage que `licence-par-fichier` : la règle vit dans la
+// garde, le fait sur CE dépôt vit là où le dépôt est le sujet.
+export const PLANCHER_GREPS = 1;
+export const PLANCHER_SUR_SOURCE = 1;
+
 /**
  * Retire ce qui est CITÉ avant de chercher des chemins.
  *
@@ -93,23 +105,62 @@ export function appelsGrep(ligne) {
   return appels;
 }
 
-/** Les blocs `run:` où un `grep` lit du source sans `-a`. */
-export function angesMorts(blocs) {
-  const soucis = [];
+/**
+ * Tous les appels à `grep` des blocs, chacun avec le bloc qui le porte.
+ *
+ * ⚠️ UNE SEULE TRAVERSÉE POUR LE JUGE ET POUR LE TÉMOIN, et c'est la raison d'être de cette
+ * fonction. Un témoin qui referait ce parcours éprouverait une COPIE de la sonde : dévier
+ * l'originale le laisserait vert sur son exemplaire intact, et le compte qu'il imprime serait
+ * celui d'un chemin que personne ne juge.
+ */
+export function* appelsDesBlocs(blocs) {
   for (const b of blocs) {
     for (const ligne of b.run.split("\n")) {
       // Une ligne de commentaire shell n'est pas exécutée : l'accuser inventerait un coupable.
       if (/^\s*#/.test(ligne)) continue;
-      for (const appel of appelsGrep(ligne)) {
-        if (!appel.chemins.length || appel.arme) continue;
-        soucis.push(
-          `${b.fichier} › ${b.job} › ${b.nom} : « grep » lit ${appel.chemins.join(", ")} sans « -a » — ` +
-          "un fichier contenant un octet de contrôle en disparaîtrait SANS un mot",
-        );
-      }
+      for (const appel of appelsGrep(ligne)) yield { bloc: b, appel };
     }
   }
+}
+
+/** Les blocs `run:` où un `grep` lit du source sans `-a`. */
+export function angesMorts(blocs) {
+  const soucis = [];
+  for (const { bloc: b, appel } of appelsDesBlocs(blocs)) {
+    if (!appel.chemins.length || appel.arme) continue;
+    soucis.push(
+      `${b.fichier} › ${b.job} › ${b.nom} : « grep » lit ${appel.chemins.join(", ")} sans « -a » — ` +
+      "un fichier contenant un octet de contrôle en disparaîtrait SANS un mot",
+    );
+  }
   return soucis;
+}
+
+/**
+ * ⚠️ LE TÉMOIN DE LA RÈGLE — DEUX CÉCITÉS, DONC DEUX COMPTES.
+ *
+ * Cette garde affirme une ABSENCE. Sa panne la plus probable — une sonde qui ne reconnaît plus la
+ * forme d'un appel — produit elle aussi une absence : cent douze blocs verts sans rien avoir
+ * mesuré. Le plancher qui existait comptait les BLOCS LUS, pas la FORME RECONNUE ; il est placé un
+ * maillon trop tôt dans la chaîne.
+ *
+ * Mesuré le 31/08 en forçant `findIndex` à rendre -1 : l'outil imprimait « 112 bloc(s) « run: »
+ * relus, aucun « grep » ne lit du source sans « -a » » et sortait 0. Le message AFFIRMAIT avoir
+ * regardé des `grep` ; il n'en avait reconnu aucun. C'est la phrase la moins relue d'une course
+ * verte, parce qu'elle porte l'autorité d'une mesure sans en porter la charge.
+ *
+ * ⚠️ ET DEUX SONDES SE SUCCÈDENT ICI, PAS UNE. `appelsGrep` reconnaît l'appel ; `viseDuSource`
+ * reconnaît qu'il lit du code de ce dépôt. Aveugler la seconde suffit à tout blanchir sans
+ * toucher à la première — un seul compte laisserait cette cécité-là ouverte.
+ */
+export function temoinsDeForme(blocs) {
+  let greps = 0;
+  let surSource = 0;
+  for (const { appel } of appelsDesBlocs(blocs)) {
+    greps += 1;
+    if (appel.chemins.length) surSource += 1;
+  }
+  return { greps, surSource };
 }
 
 export function verifier(dossier = DOSSIER, lire = readFileSync, lister = readdirSync) {
@@ -121,9 +172,18 @@ export function verifier(dossier = DOSSIER, lire = readFileSync, lister = readdi
     if (!blocs.length) {
       return inconclusif(`aucun bloc « run: » relevé dans ${dossier} — la sonde vise à côté`);
     }
+    // ⚠️ LES DEUX PLANCHERS DE FORME, AVANT LE VERDICT. Ils comptent ce que la sonde RECONNAÎT ;
+    // celui du dessus ne compte que ce que le lecteur a OUVERT.
+    const { greps, surSource } = temoinsDeForme(blocs);
+    if (greps < PLANCHER_GREPS) {
+      return inconclusif(`aucun appel à « grep » reconnu dans ${blocs.length} bloc(s) « run: » — ce n'est pas une absence d'angle mort, c'est une sonde qui ne lit plus la forme d'un appel`);
+    }
+    if (surSource < PLANCHER_SUR_SOURCE) {
+      return inconclusif(`aucun des ${greps} « grep » reconnus ne vise une racine de source (${RACINES_SOURCE.join(", ")}) — la règle n'a plus de sujet ici, et un vert ne dirait rien`);
+    }
     const soucis = angesMorts(blocs);
     if (soucis.length) return violation(soucis);
-    return conforme(`${blocs.length} bloc(s) « run: » relus, aucun « grep » ne lit du source sans « -a »`);
+    return conforme(`${blocs.length} bloc(s) « run: » relus, ${greps} appel(s) à « grep » reconnu(s) dont ${surSource} lisant du source, aucun sans « -a »`);
   });
 }
 

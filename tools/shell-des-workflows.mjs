@@ -32,7 +32,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { parse } from "yaml";
-import { conclure, conforme, violation, tenter } from "./resultat-garde.mjs";
+import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 import { estExecuteDirectement } from "./execute-directement.mjs";
 
 const DOSSIER = ".github/workflows";
@@ -67,7 +67,32 @@ export function blocsFautifs(blocs, analyser = analyserAvecBash) {
 
 export const sautes = (blocs) => blocs.filter((b) => !/^(bash|sh)\b/.test(b.shell));
 
-function analyserAvecBash(script, shell) {
+/**
+ * ⚠️ LE TÉMOIN — INJECTÉ, PARCE QUE L'ÉTAT SAIN DE CETTE RÈGLE EST ZÉRO BLOC REFUSÉ.
+ *
+ * Cette garde affirme une absence, et sa panne la plus probable produit la même absence : un
+ * `bash -n` qui n'est plus lancé — binaire absent, exception avalée, chemin court-circuité — rend
+ * zéro erreur, donc zéro faute, donc VERT. Le plancher qui existait comptait les blocs LUS.
+ *
+ * Mesuré le 31/08 en remplaçant l'appel à `execFileSync` par `return null` : l'outil imprimait
+ * « 112 bloc(s) « run: » ANALYSÉS PAR BASH, aucun refusé » et sortait 0. La phrase était
+ * littéralement fausse — bash n'avait rien analysé — et c'est celle que la forge affiche à
+ * chaque course verte.
+ *
+ * ⚠️ ET LE TÉMOIN NE PEUT PAS ÊTRE DÉRIVÉ. Un témoin dérivé compterait « au moins un bloc que
+ * bash refuse », c'est-à-dire exigerait du dépôt la chose même que la règle interdit : il
+ * refuserait un dépôt sain. La forme correcte n'étant pas quelque chose que ce dépôt doit
+ * CONTENIR, il faut la fabriquer — on tend à bash un script qu'on sait cassé, et on exige le refus.
+ */
+export function temoinNonVu(analyser = analyserAvecBash) {
+  // `then` sans son `fi` : refusé par bash comme par sh, et par toute version des deux.
+  const casse = "if [ -z ]; then\n";
+  return analyser(casse, "bash")
+    ? null
+    : "bash n'a pas refusé un script qu'on sait cassé — il n'est pas lancé, ou son refus n'arrive plus jusqu'ici ; les blocs de ce dépôt n'ont donc été analysés par personne";
+}
+
+export function analyserAvecBash(script, shell) {
   const dir = mkdtempSync(join(tmpdir(), "shellwf-"));
   try {
     const f = join(dir, "bloc.sh");
@@ -93,10 +118,14 @@ if (estExecuteDirectement(import.meta.url)) {
   conclure(tenter(() => {
     const blocs = lireDossier();
     if (!blocs.length) throw new Error(`aucun bloc « run: » sous ${DOSSIER} — la sonde vise à côté`);
+    // ⚠️ LE TÉMOIN AVANT LE JUGEMENT. Un analyseur muet rendrait zéro faute sur cent douze blocs,
+    // et le message vert dirait « analysés par bash » sans que bash ait été appelé.
+    const aveugle = temoinNonVu();
+    if (aveugle) return inconclusif(aveugle);
     const soucis = blocsFautifs(blocs);
     if (soucis.length) return violation(soucis);
     const ignores = sautes(blocs);
     const mention = ignores.length ? ` — ${ignores.length} bloc(s) sauté(s), shell non bash : ${ignores.map((b) => b.shell).join(", ")}` : "";
-    return conforme(`shell : ${blocs.length - ignores.length} bloc(s) « run: » analysés par bash, aucun refusé${mention}`);
+    return conforme(`shell : ${blocs.length - ignores.length} bloc(s) « run: » analysés par bash, sonde confirmée par un témoin posé, aucun refusé${mention}`);
   }));
 }

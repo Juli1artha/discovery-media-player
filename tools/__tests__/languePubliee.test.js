@@ -9,7 +9,7 @@
 
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-import { compte, prose, ecartLangue, markdownsDuTarball } from "../langue-publiee.mjs";
+import { compte, prose, ecartLangue, markdownsDuTarball, PLANCHER_PARLANTS } from "../langue-publiee.mjs";
 
 
 describe("⚠️ LE PÉRIMÈTRE SE DEMANDE À npm, PAS À package.json#files", () => {
@@ -104,5 +104,37 @@ describe("les documents réellement publiés", () => {
     const avant = "# Rétention des données\n\nCe document est le périmètre déclaré de la rétention : chaque colonne du schéma dont la forme peut porter une donnée personnelle y a une politique. Une garde de forge énumère les colonnes du schéma vivant et refuse toute colonne qui n'est pas dans cette page.";
     expect(ecartLangue("docs/RETENTION.md", avant)).toMatch(/pas en anglais|français/);
     expect(compte(avant).en).toBe(0);
+  });
+});
+
+describe("⚠️ le témoin de la forme — « rien trouvé » n'est pas « rien regardé »", () => {
+  // ⚠️ CE QUI ÉTAIT MESURÉ LE 31/08. En forçant `compte` à ne trouver aucun mot — un compteur
+  // aveugle — l'outil imprimait « 3 document(s) DU TARBALL, aucun majoritairement français » et
+  // sortait 0. Le plancher comptait les DOCUMENTS DU TARBALL, pas la PROSE RECONNUE.
+  //
+  // ⚠️ ET LA PORTE EST DANS `ecartLangue` ELLE-MÊME, écrite pour une bonne raison : elle rend
+  // `null` quand fr et en sont nuls, parce qu'une table nue ne conclut rien. C'est exactement par
+  // là que la garde sort verte quand le compteur ne lit plus. Une règle prudente et une cécité
+  // sont ici la même ligne — seul un compte de la prose RECONNUE les sépare.
+  it("⚠️ un texte sans aucun mot-outil ne conclut rien — la porte par où sort le vert", () => {
+    expect(ecartLangue("t.md", "| 1 | 2 |\n| 3 | 4 |\n")).toBe(null);
+    expect(compte("| 1 | 2 |\n")).toEqual({ fr: 0, en: 0 });
+  });
+
+  it("le compteur reconnaît de la prose anglaise, et le témoin compte ce document", () => {
+    const { fr, en } = compte("The host owns the transport and the storage of the documents.");
+    expect(en).toBeGreaterThan(0);
+    expect(fr + en).toBeGreaterThan(0);
+  });
+});
+
+describe("⚠️ sur le tarball réel, le compteur lit encore de la prose", () => {
+  it(`au moins ${PLANCHER_PARLANTS} documents où un mot-outil est reconnu`, () => {
+    const fichiers = markdownsDuTarball();
+    const parlants = fichiers.filter((f) => {
+      const { fr, en } = compte(readFileSync(f, "utf8"));
+      return fr + en > 0;
+    }).length;
+    expect(parlants, `3 sur 3 le 31/08 — ${fichiers.join(", ")}`).toBeGreaterThanOrEqual(PLANCHER_PARLANTS);
   });
 });
