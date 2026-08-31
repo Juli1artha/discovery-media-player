@@ -438,25 +438,52 @@ describe("la relation, sur le dossier réel", () => {
 
   // ⚠️ LES DEUX SENS, SUR LA RÈGLE NEUVE AUSSI. La règle est verte aujourd'hui ; sans cette
   // mutation, ce vert ne prouverait que l'absence du défaut, jamais la présence de la garde.
-  it("⚠️ et une vraie étape dépouillée de sa version est refusée — texte réel, analyseur réel", () => {
-    const cible = reel.declarations.find((d) => d.via === null);
-    expect(cible, "aucune déclaration littérale à dépouiller : ce banc vise à côté").toBeTruthy();
+  //
+  // ⚠️ ET CE BANC PORTAIT DEUX PROPRIÉTÉS DANS UN SEUL TEST, CE QUI LES AFFAIBLISSAIT TOUTES LES
+  // DEUX. « Une étape dépouillée est refusée » vaut pour n'importe laquelle — donc il ne faut pas
+  // en choisir une. « La mutation discrimine PAR ÉTAPE de PAR FICHIER » n'a de sens que sur une
+  // cible dont le fichier garde d'AUTRES déclarations — donc il faut en choisir une, et
+  // délibérément. Fondues, la première héritait d'un choix dont elle n'avait pas besoin, et la
+  // seconde d'un choix qu'elle ne faisait pas : `find(…)` prenait ce que l'ORDRE DE TRI donnait.
+  // Mesuré le 31/08 : trois de nos dix déclarations littérales vivent seules dans leur fichier, et
+  // sur celles-là la discrimination ne tient pas. Le tri décidait donc si le banc prouvait la
+  // seconde propriété.
+  it("⚠️ CHAQUE vraie étape dépouillée de sa version est refusée — texte réel, analyseur réel", () => {
+    const litterales = reel.declarations.filter((d) => d.via === null);
+    expect(litterales.length, "aucune déclaration littérale à dépouiller : ce banc vise à côté").toBeGreaterThan(0);
+
+    for (const cible of litterales) {
+      const ou = `${cible.fichier}:${cible.ligne}`;
+      const lignes = readFileSync(cible.fichier, "utf8").split("\n");
+      lignes.splice(cible.ligne - 1, 1);
+      const lu = versionsDe(lignes.join("\n"), cible.fichier);
+
+      expect(lu.illisibles, `${ou} : la mutation a cassé le YAML, on n'éprouve plus la règle`).toEqual([]);
+      expect(lu.sansVersion.join("\n"), `retirer la version de ${ou} n'a rien déclenché`)
+        .toMatch(/installe node sans déclarer laquelle/);
+    }
+  });
+
+  // ⚠️ ET LA DISCRIMINATION, SUR UNE CIBLE CHOISIE POUR CE QU'ELLE EST. Une règle PAR FICHIER
+  // resterait verte ici, puisque le fichier déclare encore ; seule une règle PAR ÉTAPE refuse. Le
+  // banc fabriqué du bloc précédent tient la même propriété sans dépendre d'aucun fichier réel —
+  // celui-ci la tient sur le dépôt tel qu'il est, et les deux ensemble disent qu'elle ne vient ni
+  // d'un accident de nommage ni d'une éprouvette complaisante.
+  it("⚠️ et sur un fichier MULTI-ÉTAPES, elle discrimine « par étape » de « par fichier »", () => {
+    const litterales = reel.declarations.filter((d) => d.via === null);
+    const parFichier = new Map();
+    for (const d of litterales) parFichier.set(d.fichier, (parFichier.get(d.fichier) || 0) + 1);
+
+    const cible = litterales.find((d) => parFichier.get(d.fichier) > 1);
+    expect(cible, "aucun fichier ne porte deux déclarations littérales : cette propriété n'est plus éprouvable sur le dépôt réel, et seul le banc fabriqué la tient").toBeTruthy();
 
     const lignes = readFileSync(cible.fichier, "utf8").split("\n");
     lignes.splice(cible.ligne - 1, 1);
     const lu = versionsDe(lignes.join("\n"), cible.fichier);
 
-    expect(lu.illisibles, "la mutation a cassé le YAML : on n'éprouve plus la règle").toEqual([]);
-    expect(lu.sansVersion.join("\n"), `retirer la version de ${cible.fichier}:${cible.ligne} n'a rien déclenché`)
-      .toMatch(/installe node sans déclarer laquelle/);
-
-    // ⚠️ CE QUE CETTE MUTATION DISCRIMINE, DIT PLUTÔT QUE TU. Elle ne sépare « par étape » de « par
-    // fichier » que si le fichier visé porte ENCORE d'autres déclarations après le dépouillement —
-    // sinon une règle par fichier rougirait aussi et le banc serait vert pour les deux. C'est vrai
-    // aujourd'hui, ça tient à l'ordre de tri du dossier, et c'est donc affirmé plutôt que supposé.
-    expect(
-      lu.declarations.filter((d) => d.fichier === cible.fichier).length,
-      `${cible.fichier} ne porte plus qu'une déclaration : cette mutation ne discrimine plus « par étape » de « par fichier », et c'est le banc fabriqué qui tient seul la propriété`,
-    ).toBeGreaterThan(0);
+    expect(lu.declarations.filter((d) => d.fichier === cible.fichier).length,
+      `${cible.fichier} ne déclare plus rien après la mutation : une règle par fichier rougirait aussi, le banc ne discrimine plus`)
+      .toBeGreaterThan(0);
+    expect(lu.sansVersion.join("\n")).toMatch(/installe node sans déclarer laquelle/);
   });
 });
