@@ -33,6 +33,11 @@ the forge lands above the floor **by construction**, whatever the floor says. Th
 moves past 22, `check (22)` would keep passing on an engine our own package declares unsupported,
 and nothing else in the repository would say so.
 
+It also holds a **relation**, not just a count: every step that installs node must declare which
+version. A floor counts what it sees and cannot know what should have been there — drop the
+`node-version` input from a `setup-node` step and the tally falls from 12 to 11, still above any
+sensible floor, while the forge quietly installs the action's own default.
+
 ### The browser bench
 
 ```bash

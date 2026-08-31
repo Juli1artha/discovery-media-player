@@ -25,6 +25,7 @@ import {
   estUnPlancherSansPlafond,
   PLANCHER_DECLARATIONS,
   PLANCHER_FICHIERS,
+  PLANCHER_INSTALLATIONS,
 } from "../node-des-workflows.mjs";
 import { CONFORME, VIOLATION, INCONCLUSIF } from "../resultat-garde.mjs";
 import { outilsLances } from "../outils-servis.mjs";
@@ -37,6 +38,15 @@ const reel = versionsDuDepot();
 
 /** Un relevé fabriqué, pour éprouver le verdict sans écrire de fichier. */
 const decl = (portee, fichier = "a.yml") => ({ fichier, ligne: 1, job: "j", portee, via: null });
+
+/**
+ * ⚠️ LE VERDICT A PLUSIEURS SONDES, ET CHACUNE PORTE SON PLANCHER. Un relevé fabriqué qui ne parle
+ * que de déclarations serait refusé sur le plancher des INSTALLATIONS avant d'atteindre la règle
+ * qu'il veut éprouver — et le banc rougirait pour une raison qui n'est pas la sienne, ce que ce
+ * fichier a déjà payé une fois. Chaque éprouvette fournit donc un relevé COMPLET ; les bancs qui
+ * visent le plancher des installations, eux, le donnent explicitement.
+ */
+const VU = { installations: Array.from({ length: PLANCHER_INSTALLATIONS }, (_, i) => ({ fichier: `w${i}.yml`, ligne: 1, job: "j" })), sansVersion: [] };
 
 /** Assez de déclarations et de fichiers pour passer les deux planchers. */
 const assezDe = (portee) =>
@@ -116,19 +126,19 @@ describe("le verdict", () => {
     // ⚠️ LE FAUX POSITIF QU'IL FALLAIT NE PAS ÉCRIRE. `subset("22", ">=22.13.0")` est FAUX, et une
     // garde bâtie dessus refuserait la CI d'aujourd'hui, qui est saine. Une garde qui crie faux
     // finit desserrée par celui qu'elle a dérangé pour rien.
-    expect(verdict({ engines: ">=22.13.0", declarations: assezDe("22"), illisibles: [] }).code)
+    expect(verdict({ engines: ">=22.13.0", declarations: assezDe("22"), illisibles: [], ...VU }).code)
       .toBe(CONFORME);
   });
 
   // ⚠️ LE CAS POUR LEQUEL CETTE GARDE EXISTE, et le seul qui prouve qu'elle sert.
   it("⚠️ refuse `22` le jour où le plancher passe à `>=24` — le scénario annoncé le 25/08", () => {
-    const r = verdict({ engines: ">=24", declarations: assezDe("22"), illisibles: [] });
+    const r = verdict({ engines: ">=24", declarations: assezDe("22"), illisibles: [], ...VU });
     expect(r.code).toBe(VIOLATION);
     expect(r.constats[0]).toMatch(/la forge installera node 22, qu'engines\.node « >=24 » n'admet pas/);
   });
 
   it("refuse un majeur sous le plancher, d'où qu'il vienne", () => {
-    expect(verdict({ engines: ">=22.13.0", declarations: assezDe("18"), illisibles: [] }).code)
+    expect(verdict({ engines: ">=22.13.0", declarations: assezDe("18"), illisibles: [], ...VU }).code)
       .toBe(VIOLATION);
   });
 
@@ -137,7 +147,7 @@ describe("le verdict", () => {
   // engines » : la garde serait verte sur une violation réelle. Elle refuse donc de conclure — une
   // garde qui applique son raisonnement hors de ses conditions est l'objet de sa propre doctrine.
   it("⚠️ refuse de CONCLURE sous un `engines` borné en haut, au lieu de rendre un vert sans valeur", () => {
-    const r = verdict({ engines: ">=22.13.0 <23", declarations: assezDe("22"), illisibles: [] });
+    const r = verdict({ engines: ">=22.13.0 <23", declarations: assezDe("22"), illisibles: [], ...VU });
     expect(r.code).toBe(INCONCLUSIF);
     expect(r.raisons[0]).toMatch(/porte un PLAFOND/);
   });
@@ -151,19 +161,19 @@ describe("le verdict", () => {
   // ⚠️ `lts/*`, `latest`, `node` : setup-node les accepte, semver non. Les sauter rendrait la
   // garde verte pour n'avoir pas regardé — la vacuité qu'elle existe pour interdire.
   it("⚠️ refuse une portée que semver ne sait pas lire, au lieu de la sauter", () => {
-    const r = verdict({ engines: ">=22.13.0", declarations: [...assezDe("24"), decl("lts/*", "z.yml")], illisibles: [] });
+    const r = verdict({ engines: ">=22.13.0", declarations: [...assezDe("24"), decl("lts/*", "z.yml")], illisibles: [], ...VU });
     expect(r.code).toBe(INCONCLUSIF);
     expect(r.raisons[0]).toMatch(/n'est pas une portée que semver sait lire/);
   });
 
   it("un illisible remonté par la sonde rend la garde non concluante", () => {
-    expect(verdict({ engines: ">=22.13.0", declarations: assezDe("24"), illisibles: ["f.yml:1 : bidule"] }).code)
+    expect(verdict({ engines: ">=22.13.0", declarations: assezDe("24"), illisibles: ["f.yml:1 : bidule"], ...VU }).code)
       .toBe(INCONCLUSIF);
   });
 
   it("refuse un `engines` absent ou que semver ne lit pas", () => {
-    expect(verdict({ engines: undefined, declarations: assezDe("24"), illisibles: [] }).code).toBe(INCONCLUSIF);
-    expect(verdict({ engines: "récent", declarations: assezDe("24"), illisibles: [] }).code).toBe(INCONCLUSIF);
+    expect(verdict({ engines: undefined, declarations: assezDe("24"), illisibles: [], ...VU }).code).toBe(INCONCLUSIF);
+    expect(verdict({ engines: "récent", declarations: assezDe("24"), illisibles: [], ...VU }).code).toBe(INCONCLUSIF);
   });
 });
 
@@ -182,7 +192,7 @@ describe("les planchers anti-vacuité", () => {
     const maigre = Array.from({ length: PLANCHER_FICHIERS }, (_, i) => decl("24", `w${i}.yml`));
     expect(maigre.length, "l'éprouvette doit passer le plancher des fichiers pour isoler l'autre")
       .toBeLessThan(PLANCHER_DECLARATIONS);
-    const r = verdict({ engines: ">=22.13.0", declarations: maigre, illisibles: [] });
+    const r = verdict({ engines: ">=22.13.0", declarations: maigre, illisibles: [], ...VU });
     expect(r.code).toBe(INCONCLUSIF);
     expect(r.raisons[0]).toMatch(/déclaration\(s\) de « node-version » \(plancher/);
   });
@@ -191,7 +201,7 @@ describe("les planchers anti-vacuité", () => {
     // Le compte passe (un seul fichier, beaucoup de déclarations) : c'est exactement l'angle mort
     // qu'un plancher unique laisserait ouvert.
     const nombreux = Array.from({ length: PLANCHER_DECLARATIONS + 4 }, () => decl("24", "seul.yml"));
-    const r = verdict({ engines: ">=22.13.0", declarations: nombreux, illisibles: [] });
+    const r = verdict({ engines: ">=22.13.0", declarations: nombreux, illisibles: [], ...VU });
     expect(r.code).toBe(INCONCLUSIF);
     expect(r.raisons[0]).toMatch(/fichier\(s\) \(plancher/);
   });
@@ -268,7 +278,7 @@ describe("la mutation dans les deux sens, sur les fichiers réels", () => {
     const lu = versionsDe(abaisse(), cible.fichier);
     expect(lu.illisibles, "la mutation a cassé le YAML : on n'éprouve plus la règle").toEqual([]);
 
-    const r = verdict({ engines: ENGINES, declarations: [...reel.declarations.filter((d) => d.fichier !== cible.fichier), ...lu.declarations], illisibles: [] });
+    const r = verdict({ engines: ENGINES, declarations: [...reel.declarations.filter((d) => d.fichier !== cible.fichier), ...lu.declarations], illisibles: [], ...VU });
     expect(r.code).toBe(VIOLATION);
     expect(r.constats.join("\n")).toMatch(new RegExp(`${cible.fichier.replace(/[.*+?^$()|[\]\\]/g, "\\$&")}.*node 18`));
   });
@@ -282,7 +292,7 @@ describe("la mutation dans les deux sens, sur les fichiers réels", () => {
 
     expect(verdict({ engines: ENGINES, ...reel }).code, "l'état réel").toBe(CONFORME);
     expect(verdict({ engines: ">=24", ...reel }).code, "engines relevé au-dessus des pins").toBe(VIOLATION);
-    expect(verdict({ engines: ENGINES, declarations: avecCible(lu.declarations), illisibles: [] }).code, "un pin abaissé sous engines").toBe(VIOLATION);
+    expect(verdict({ engines: ENGINES, declarations: avecCible(lu.declarations), illisibles: [], ...VU }).code, "un pin abaissé sous engines").toBe(VIOLATION);
   });
 
   // ⚠️ ET LA SECONDE JAMBE, PARCE QU'UNE SUPPRESSION NE DOIT PAS ÊTRE SILENCIEUSE.
@@ -303,5 +313,101 @@ describe("la mutation dans les deux sens, sur les fichiers réels", () => {
       lances.map((l) => l.outil),
       "aucun workflow ne lance node-des-workflows : la garde ne tournerait plus que dans npm test",
     ).toContain("tools/node-des-workflows.mjs");
+  });
+});
+
+
+// ⚠️ LA RELATION : TOUTE ÉTAPE QUI INSTALLE NODE DÉCLARE LAQUELLE.
+//
+// Elle vient d'une correction que la session STUDIO a apportée à sa propre garde le 31/08 : ses
+// planchers valaient exactement le relevé du jour, et elle les a remplacés par un périmètre DÉRIVÉ
+// DU DISQUE. Passée sur notre dépôt, l'idée y a désigné un trou que nos planchers ne pouvaient pas
+// voir — 11 étapes `setup-node`, 11 déclarant une version, et RIEN qui garde ce rapport.
+//
+// Un plancher compte ce qu'il VOIT ; il ne sait pas ce qui aurait dû être là. Retirer l'entrée
+// `node-version` d'une étape faisait passer le relevé de 12 à 11 déclarations — au-dessus du
+// plancher de 8 — et la garde restait verte pendant que la forge installait le défaut de l'action.
+describe("toute étape qui installe node déclare laquelle", () => {
+  const etape = (corps) => versionsDe(`jobs:\n  a:\n    steps:\n      - uses: actions/setup-node@abc123\n${corps}`, "f.yml");
+
+  it("une `setup-node` SANS bloc `with:` est refusée — c'est la forme exacte qui passait", () => {
+    const r = etape("");
+    expect(r.installations).toHaveLength(1);
+    expect(r.sansVersion.join("")).toMatch(/installe node sans déclarer laquelle/);
+  });
+
+  it("une `setup-node` avec un `with:` qui ne porte pas de version est refusée aussi", () => {
+    const r = etape("        with:\n          cache: npm\n");
+    expect(r.sansVersion).toHaveLength(1);
+  });
+
+  it("une `setup-node` qui déclare sa version ne dit rien", () => {
+    const r = etape('        with:\n          node-version: "24"\n');
+    expect(r.installations).toHaveLength(1);
+    expect(r.sansVersion).toEqual([]);
+  });
+
+  // ⚠️ `node-version-file` DÉCLARE, même si cette garde ne suit pas le fichier. La compter comme
+  // manquante accuserait un dépôt sain — et une garde qui crie faux finit desserrée.
+  it("⚠️ `node-version-file` DÉCLARE : la relation est tenue, seul le suivi manque", () => {
+    const r = etape('        with:\n          node-version-file: ".nvmrc"\n');
+    expect(r.sansVersion, "elle déclare sa version, elle l'écrit juste ailleurs").toEqual([]);
+    expect(r.illisibles.join(""), "et la garde dit qu'elle ne la suit pas").toMatch(/node-version-file/);
+  });
+
+  it("une étape qui n'installe pas node n'entre pas dans le périmètre", () => {
+    const r = versionsDe('jobs:\n  a:\n    steps:\n      - uses: actions/checkout@abc\n', "f.yml");
+    expect(r.installations).toEqual([]);
+    expect(r.sansVersion).toEqual([]);
+  });
+
+  it("le verdict transforme une installation muette en VIOLATION", () => {
+    const r = verdict({ engines: ENGINES, declarations: assezDe("24"), illisibles: [], ...VU, sansVersion: ["f.yml:4 : muette"] });
+    expect(r.code).toBe(VIOLATION);
+    expect(r.constats).toEqual(["f.yml:4 : muette"]);
+  });
+
+  // ⚠️ LA RELATION PEUT ÊTRE SATISFAITE À VIDE, donc elle porte son propre plancher. Si la lecture
+  // des `uses:` cassait, zéro installation serait relevée, aucune ne manquerait de version, et la
+  // règle passerait sans avoir rien regardé — pendant que les planchers de déclarations, eux,
+  // tiendraient toujours. Ce banc a une dette : le plancher a attrapé cette panne-là chez son
+  // auteur, le jour même, sur un `garde()` qui oubliait de transmettre le relevé au verdict.
+  it("⚠️ refuse un relevé sans aucune installation — la relation serait vraie pour n'avoir rien lu", () => {
+    const r = verdict({ engines: ENGINES, declarations: assezDe("24"), illisibles: [], installations: [], sansVersion: [] });
+    expect(r.code).toBe(INCONCLUSIF);
+    expect(r.raisons[0]).toMatch(/satisfaite À VIDE/);
+  });
+
+  // ⚠️ L'ORDRE, QUI EST UNE DÉCISION ET NON UNE MISE EN PAGE. Si la lecture des `node-version`
+  // cassait, les onze installations paraîtraient toutes muettes et la garde rendrait onze
+  // VIOLATIONS — « corrige ta branche » pour une panne qui n'y est pas. Le plancher des
+  // déclarations doit tirer AVANT, en non concluant.
+  it("⚠️ une panne du lecteur de versions rend NON CONCLUANT, jamais onze accusations", () => {
+    const muettes = VU.installations.map((i) => `${i.fichier}:1 : muette`);
+    const r = verdict({ engines: ENGINES, declarations: [], illisibles: [], installations: VU.installations, sansVersion: muettes });
+    expect(r.code, "accuser l'auteur d'une panne de la garde est le défaut que la taxonomie sépare").toBe(INCONCLUSIF);
+  });
+});
+
+describe("la relation, sur le dossier réel", () => {
+  it("chaque étape qui installe node y déclare sa version", () => {
+    expect(reel.installations.length, "aucune installation relevée : la sonde vise à côté")
+      .toBeGreaterThanOrEqual(PLANCHER_INSTALLATIONS);
+    expect(reel.sansVersion, "une étape installe node sans dire laquelle").toEqual([]);
+  });
+
+  // ⚠️ LES DEUX SENS, SUR LA RÈGLE NEUVE AUSSI. La règle est verte aujourd'hui ; sans cette
+  // mutation, ce vert ne prouverait que l'absence du défaut, jamais la présence de la garde.
+  it("⚠️ et une vraie étape dépouillée de sa version est refusée — texte réel, analyseur réel", () => {
+    const cible = reel.declarations.find((d) => d.via === null);
+    expect(cible, "aucune déclaration littérale à dépouiller : ce banc vise à côté").toBeTruthy();
+
+    const lignes = readFileSync(cible.fichier, "utf8").split("\n");
+    lignes.splice(cible.ligne - 1, 1);
+    const lu = versionsDe(lignes.join("\n"), cible.fichier);
+
+    expect(lu.illisibles, "la mutation a cassé le YAML : on n'éprouve plus la règle").toEqual([]);
+    expect(lu.sansVersion.join("\n"), `retirer la version de ${cible.fichier}:${cible.ligne} n'a rien déclenché`)
+      .toMatch(/installe node sans déclarer laquelle/);
   });
 });
