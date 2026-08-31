@@ -16,7 +16,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import { estUnGuide, renvois, verifier, temoinNonVu } from "../renvois-par-position.mjs";
+import { estUnGuide, exceptionsSansSujet, markdowns, renvois, verifier, temoinNonVu, HORS_PORTEE } from "../renvois-par-position.mjs";
 import { CONFORME, VIOLATION, INCONCLUSIF } from "../resultat-garde.mjs";
 
 // ⚠️ LE TEXTE HISTORIQUE LUI-MÊME, PAS LE MOYEN D'ALLER LE CHERCHER. La première écriture de ce banc
@@ -67,6 +67,35 @@ describe("la portée, qui est ce qui empêche la garde d'accuser sa propre prose
     for (const f of ["AGENTS.md", "README.md", "docs/HOST-CONTRACT.md", "docs/RELEASING.md"]) {
       expect(estUnGuide(f), f).toBe(true);
     }
+  });
+
+  // ⚠️ LA PORTÉE ÉTAIT UNE LISTE DE CE QU'IL FAUT REGARDER, DANS UN PÉRIMÈTRE QUI A L'AIR DÉRIVÉ.
+  // `markdowns()` descend tout l'arbre ; le filtre, lui, énumérait quatre noms plus `docs/`. Mesuré
+  // le 31/08 en posant DEUX FOIS le même renvoi, mot pour mot, et en ne changeant que le chemin :
+  //
+  //     docs/zz-sonde.md  →  exit 1, vu
+  //     GOUVERNANCE.md    →  exit 0, INVISIBLE
+  //
+  // Cinq documents du dépôt étaient déjà dehors sans qu'aucune décision ne l'ait dit.
+  it("⚠️ un document de navigation NEUF, à un chemin que personne n'avait prévu, est couvert", () => {
+    for (const f of ["GOUVERNANCE.md", "MAINTAINERS.md", "SUPPORT.md", "ROADMAP.md", "CLA.md",
+                     "CODE_OF_CONDUCT.md", "gouvernance/registre.md"]) {
+      expect(estUnGuide(f), `${f} doit être dans la portée : la liste dit ce qui est PERMIS dehors, pas ce qu'il faut regarder`).toBe(true);
+    }
+  });
+
+  // ⚠️ UNE EXCEPTION QUI N'A PLUS DE SUJET EST UNE PORTE OUVERTE D'AVANCE — et ce contrôle vit ICI
+  // parce que `verifier(racine)` prend une racine QUELCONQUE : appliqué dans la garde, il accuserait
+  // chaque éprouvette de ne pas contenir de journal. Même partage que `licence-par-fichier`.
+  it("⚠️ chaque entrée de HORS_PORTEE a encore un sujet dans le dépôt réel", () => {
+    const tous = markdowns(".");
+    expect(tous.length, "le relevé doit avoir lu quelque chose avant qu'on juge ses exceptions").toBeGreaterThan(20);
+    expect(exceptionsSansSujet(tous), "une entrée morte exempterait un futur fichier SANS décision").toEqual([]);
+  });
+
+  it("une exception dont le fichier a disparu est nommée", () => {
+    expect(exceptionsSansSujet(["README.md"])[0]).toMatch(/CHANGELOG\.md.*RETIREZ l'entrée/);
+    expect(Object.keys(HORS_PORTEE)).toContain("CHANGELOG.md");
   });
 
   // ⚠️ LE CHANGELOG EST EXCLU COMME CLASSE, PAS COMME EXCEPTION. Ses sections sont datées et figées :
