@@ -123,4 +123,32 @@ describe("licence-par-fichier : la frontière est un fait par fichier", () => {
     expect(res.code).toBe(CONFORME);
     expect(FICHIERS_MIT.has("src/bridge.ts"), "l'exception déclarée doit rester le contrat hôte").toBe(true);
   });
+
+  // ⚠️ CE BANC-CI AFFIRMAIT QUE LE NOM EST DANS L'ENSEMBLE, JAMAIS QUE LE FICHIER EXISTE.
+  //
+  // La nuance est toute la garde. `FICHIERS_MIT` est une liste de ce qui est PERMIS — forme juste,
+  // et elle a le droit d'être écrite. Mais elle n'était tenue que dans un sens : le jour où
+  // `src/bridge.ts` est renommé, l'entrée SURVIT, et un futur fichier à ce chemin exact serait
+  // relicencié MIT sans que personne le décide. L'en-tête de la liste dit pourtant qu'ajouter un
+  // fichier ici « se discute dans une PR, pas dans un correctif de garde » : le relicenciement se
+  // ferait par omission, sur une frontière de licence, garde verte.
+  // ⚠️ ET CE CONTRÔLE VIT DANS LE BANC, PAS DANS L'OUTIL — LES ÉPROUVETTES L'ONT DIT.
+  //
+  // Première écriture : la vérification était dans `garde()`. Deux bancs ont rougi aussitôt, et ils
+  // avaient raison. `garde(racine)` s'applique à une RACINE QUELCONQUE — les éprouvettes lui
+  // passent des dépôts temporaires — tandis que `FICHIERS_MIT` est une constante du VRAI dépôt.
+  // Dans l'outil, la règle accusait chaque éprouvette de ne pas contenir `src/bridge.ts`.
+  //
+  // Un contrôle d'exception appartient là où le SUJET est connu. C'est déjà ce que fait la garde
+  // des planchers avec ses exemptions : la raison et sa vérification vivent dans le banc.
+  it("⚠️ chaque exception MIT a encore un sujet — sinon c'est une porte ouverte d'avance", () => {
+    const suivis = new Set(execFileSync("git", ["ls-files"], { encoding: "utf8" }).split("\n").filter(Boolean));
+    expect(suivis.size, "`git ls-files` n'a rien rendu : ce banc vise à côté").toBeGreaterThan(100);
+
+    const mortes = [...FICHIERS_MIT].filter((f) => !suivis.has(f));
+    expect(
+      mortes,
+      "une exception MIT déclarée pour un fichier que le dépôt ne suit plus : RETIREZ l'entrée, sinon un futur fichier à ce chemin sera relicencié MIT sans décision",
+    ).toEqual([]);
+  });
 });

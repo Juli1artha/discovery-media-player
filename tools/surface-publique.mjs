@@ -136,6 +136,26 @@ export const INTERNES_TOLERES = {
   ".": ["__relayerFichier", "__jsonPourScript", "__contexte"],
 };
 
+/**
+ * ⚠️ LA TOLÉRANCE DONT LE SUJET A DISPARU — L'AUTRE SENS DE LA MÊME LISTE.
+ *
+ * `INTERNES_TOLERES` dit « tout nouveau venu doit être décidé plutôt que découvert ». Elle ne le
+ * tenait que dans un sens : un symbole ABSENT de la liste rougit, un symbole qui cesse d'être
+ * exporté laisse son entrée derrière lui. Et une entrée morte est une porte ouverte d'avance —
+ * le jour où ce nom réapparaît, il est « toléré » au lieu d'être décidé, ce que cette liste existe
+ * précisément pour empêcher.
+ *
+ * ⚠️ QUESTION SÉPARÉE, FONCTION SÉPARÉE. « Quel interne n'est pas déclaré ? » et « quelle
+ * déclaration n'a plus de sujet ? » sont deux questions ; les fondre dans un seul relevé mêlerait
+ * un constat sur le CODE à un constat sur la GARDE, et rendrait chacun plus difficile à lire.
+ */
+export function tolerancesSansSujet(sousChemin, symboles) {
+  const presents = new Set(symboles || []);
+  return (INTERNES_TOLERES[sousChemin] || [])
+    .filter((s) => !presents.has(s))
+    .map((s) => `« ${sousChemin} » tolère l'interne « ${s} », que le module n'exporte plus — RETIREZ l'entrée d'INTERNES_TOLERES, sinon son retour sera toléré au lieu d'être décidé`);
+}
+
 export function ecartsInternes(sousChemin, symboles) {
   const toleres = INTERNES_TOLERES[sousChemin] || [];
   return (symboles || []).filter((s) => s.startsWith("__") && !toleres.includes(s))
@@ -175,6 +195,7 @@ if (estExecuteDirectement(import.meta.url)) {
         const { createRequire } = await import("node:module");
         const mod = createRequire(pathToFileURL("./package.json"))(fichier);
         soucis.push(...ecartsInternes(sousChemin, Object.keys(mod)));
+        soucis.push(...tolerancesSansSujet(sousChemin, Object.keys(mod)));
       } catch { /* un module qui ne se charge pas hors contexte n'est pas le sujet de cette garde */ }
     }
     const parStatut = Object.values(SURFACE).reduce((a, d) => ({ ...a, [d.statut]: (a[d.statut] || 0) + 1 }), {});
