@@ -10,7 +10,7 @@
 
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-import { SURFACE, publics, ecartsExports, ecartsDoc, ecartsTypes, ecartsInternes, formeImportee, INTERNES_TOLERES } from "../surface-publique.mjs";
+import { SURFACE, publics, ecartsExports, ecartsDoc, ecartsTypes, ecartsInternes, tolerancesSansSujet, formeImportee, INTERNES_TOLERES } from "../surface-publique.mjs";
 
 describe("le manifeste et package.json se confrontent", () => {
   const paquet = JSON.parse(readFileSync("package.json", "utf8"));
@@ -78,6 +78,22 @@ describe("les symboles internes exposés — le préfixe dit, il n'empêche pas"
     // dit ici, avant que la CI ne le dise sur la forge.
     const mod = require("../../server/handler.js");
     expect(ecartsInternes(".", Object.keys(mod))).toEqual([]);
+  });
+
+  // ⚠️ L'AUTRE SENS DE LA MÊME LISTE, ET IL MANQUAIT. « Tout nouveau venu doit être décidé plutôt
+  // que découvert » n'était tenu que contre les ARRIVANTS : un symbole qui cesse d'être exporté
+  // laissait son entrée derrière lui, et son retour aurait été « toléré » au lieu d'être décidé —
+  // ce que cette liste existe précisément pour empêcher.
+  it("⚠️ chaque tolérance a encore un sujet — une entrée morte est une porte ouverte d'avance", () => {
+    const mod = require("../../server/handler.js");
+    expect(tolerancesSansSujet(".", Object.keys(mod)), "une tolérance sans sujet : retirez l'entrée").toEqual([]);
+  });
+
+  it("⚠️ et elle le DIT quand le symbole a disparu", () => {
+    const restants = INTERNES_TOLERES["."].slice(1);
+    const r = tolerancesSansSujet(".", ["handler", "init", ...restants]);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatch(new RegExp(`${INTERNES_TOLERES["."][0]}.*RETIREZ`));
   });
 });
 

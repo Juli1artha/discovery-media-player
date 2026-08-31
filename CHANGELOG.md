@@ -14,6 +14,34 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- ⚠️ **Chaque exception écrite doit prouver qu'elle a encore un sujet — une entrée morte est une
+  porte ouverte d'avance.** La distinction vient de la session STUDIO : *une liste de ce qu'il faut
+  REGARDER cesse de couvrir dès qu'un fichier apparaît ; une liste de ce qui est PERMIS fait rougir
+  tout fichier qui n'y est pas.* Nos deux listes de ce qui est permis étaient donc de la bonne forme
+  — mais tenues dans un seul sens.
+
+  `FICHIERS_MIT` déclare `src/bridge.ts` hors de l'AGPL. Le banc affirmait que **le nom est dans
+  l'ensemble**, jamais que **le fichier existe**. Le jour où il est renommé, l'entrée survit — et un
+  futur fichier à ce chemin exact serait relicencié MIT **sans décision**, alors que l'en-tête de la
+  liste dit qu'ajouter un fichier ici « se discute dans une PR, pas dans un correctif de garde ». Le
+  relicenciement se ferait par omission, sur une frontière de licence, garde verte.
+
+  `INTERNES_TOLERES` dit « tout nouveau venu doit être décidé plutôt que découvert ». Cela n'était
+  tenu que contre les **arrivants** : un symbole qui cesse d'être exporté laissait son entrée
+  derrière lui, et son retour aurait été *toléré* au lieu d'être *décidé*.
+
+  ⚠️ **Le remède existait déjà chez nous, inutilisé.** La garde qui vérifie qu'aucune autre ne
+  déclare victoire sur zéro porte exactement ce patron depuis des semaines : chaque exemption a sa
+  raison **et** une fonction qui rougit quand le motif disparaît. Mécanisme inventé, commentaire
+  écrit, et non appliqué aux deux endroits où il manquait.
+
+  ⚠️ **Et les éprouvettes ont corrigé la conception.** Le contrôle des licences était d'abord dans
+  l'outil ; deux bancs ont rougi aussitôt, à juste titre — `garde(racine)` s'applique à une racine
+  QUELCONQUE et les éprouvettes lui passent des dépôts temporaires, tandis que `FICHIERS_MIT` est
+  une constante du VRAI dépôt. Il accusait chaque éprouvette de ne pas contenir `src/bridge.ts`. Un
+  contrôle d'exception appartient là où le SUJET est connu : dans le banc pour les licences, dans
+  l'outil pour la surface publique, dont le sujet est toujours le module réel.
+
 - ⚠️ **Le périmètre d'`images-epinglees` vient du disque — c'était une liste écrite, dans la garde où
   ça coûtait le plus cher.** `ci.yml` lui passait `Dockerfile .zap/Dockerfile` en dur. Cette garde
   **est** la règle qui empêche une image de changer sous nos pieds : le jour où quelqu'un ajoutait un
