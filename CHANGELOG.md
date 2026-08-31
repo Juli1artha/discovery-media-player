@@ -12,20 +12,15 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
-### Added
-
-- `tools/__tests__/environnementDepouille.test.js` runs every tool with a `PATH` containing nothing
-  but node — no `git`, no `npm` — against a *garnished* tree, and asserts the taxonomy holds: never
-  exit 1 (which would accuse a branch for an environment fault), and a stripped environment never
-  manufactures a green. Three tools reach their external call only in that configuration. The file
-  states in its own header that no mutant is known to be killed by it alone: the neighbouring
-  empty-tree bench already covers most of this ground, because a temp directory is not a git
-  repository either.
-- The tree builder both benches use now lives in one place (`__tests__/aide/arbre-outils.mjs`)
-  rather than in two copies that could drift apart.
-
 ### Fixed
 
+- The viewer page told the host's bot plugin that voice was available whenever
+  `ELEVENLABS_API_KEY` was set, while rendering no voice control unless the plugin also declared
+  `wiresVoice: true`. Two halves of the same page disagreed, and the half derived from
+  configuration carried the rule `docs/HOST-CONTRACT.md` has said was corrected since 26/08 — *the
+  key proves the server can synthesise, never that a click leads anywhere*. Both halves now ask one
+  exported predicate, and a bench asserts they agree in every configuration rather than pinning a
+  value.
 - `renvois-par-position` had a written list hiding inside a perimeter that looks derived: the tree
   walk covers everything, but the scope filter enumerated four root filenames plus `docs/`. The same
   reference, word for word, was caught in `docs/` and invisible at the repository root — five
@@ -54,6 +49,18 @@ the notes there are this file's section for that version.
   with that identical line. It now floors and prints what it actually walked: public subpaths,
   modules loaded, symbols read. Its verdict loop also re-implemented the subpath filter instead of
   calling `publics()`; it now walks the one list, and a bench asserts the two agree.
+
+### Added
+
+- `tools/__tests__/environnementDepouille.test.js` runs every tool with a `PATH` containing nothing
+  but node — no `git`, no `npm` — against a *garnished* tree, and asserts the taxonomy holds: never
+  exit 1 (which would accuse a branch for an environment fault), and a stripped environment never
+  manufactures a green. Three tools reach their external call only in that configuration. The file
+  states in its own header that no mutant is known to be killed by it alone: the neighbouring
+  empty-tree bench already covers most of this ground, because a temp directory is not a git
+  repository either.
+- The tree builder both benches use now lives in one place (`__tests__/aide/arbre-outils.mjs`)
+  rather than in two copies that could drift apart.
 
 ## [0.1.145] — 2026-08-31
 
