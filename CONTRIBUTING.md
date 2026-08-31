@@ -38,6 +38,12 @@ version. A floor counts what it sees and cannot know what should have been there
 `node-version` input from a `setup-node` step and the tally falls from 12 to 11, still above any
 sensible floor, while the forge quietly installs the action's own default.
 
+`node tools/node-de-l-image.mjs` is the other half of the same pair: it compares `engines` to what
+the **image** ships, which is what a self-hoster actually runs. Three guards already touch the
+Dockerfile — pinning to a digest, tag against digest, the built image asked for its version — and
+none of them asks this one. Two copies that agree with each other say nothing about a third fact
+they both ignore.
+
 ### The browser bench
 
 ```bash
