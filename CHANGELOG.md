@@ -14,6 +14,29 @@ the notes there are this file's section for that version.
 
 ### Added
 
+- ⚠️ **La garde de node est éprouvée dans les DEUX sens — et le second attrape ce qu'aucun des vingt-trois
+  autres bancs ne voyait.** L'idée vient de la session STUDIO, qui a retiré une exception de sa propre
+  garde le 31/08 et a nommé ce qui manque à une mutation unique : « sans cette seconde mutation,
+  j'aurais eu une suite verte parfaitement compatible avec *j'ai supprimé un test gênant* ».
+
+  Ce qui manquait ici était plus précis que « un sens sur deux ». Toutes nos violations étaient
+  éprouvées sur des déclarations **fabriquées**, passées directement au verdict : l'analyseur n'était
+  jamais dans le chemin du rouge, seulement dans celui du vert. Le sens neuf part donc du **texte
+  d'un vrai workflow** — une version littérale du dépôt abaissée à node 18, relue par le vrai
+  analyseur, refusée en nommant le vrai fichier.
+
+  Mesuré : un analyseur muté pour **ignorer le texte qu'on lui passe** et relire le disque fait
+  rougir ces deux bancs neufs et **eux seuls** — les vingt-trois autres restent verts. C'est la
+  preuve que le trou existait.
+
+  S'ajoutent la **partition énoncée d'un seul tenant** — vert au milieu, rouge des deux bords, donc
+  aucun vert atteignable par accident — et un banc qui vérifie qu'un workflow **lance vraiment** cette
+  garde. Ce dernier ne protège pas la règle : le banc lit `.github/workflows` pour de vrai, donc
+  retirer l'étape de `ci.yml` la ferait rougir quand même — vérifié, contre une première rédaction qui
+  affirmait le contraire. Il protège la **seconde jambe** : la règle est tenue à deux endroits, c'est
+  délibéré, et une redondance non énoncée est précisément ce qui a fait survivre un mutant dans ce
+  même fichier.
+
 - ⚠️ **La CI mesure enfin la version de node qu'elle installe — la garde voisine avait écrit ce
   diagnostic le 25/08 sans se l'appliquer.** L'en-tête de `tools/plancher-de-node.mjs` dit :
   « `node-version: "22"` résout au DERNIER 22.x : la CI atterrit toujours au-dessus du plancher,
