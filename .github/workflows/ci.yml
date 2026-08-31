@@ -381,6 +381,18 @@ jobs:
         if: matrix.node == '22'
         run: node tools/node-des-workflows.mjs
 
+      # ⚠️ ET L'AUTRE MOITIÉ DE LA PAIRE : CE QUE L'IMAGE EMBARQUE. L'étape ci-dessus confronte
+      # `engines` à ce que la FORGE installe ; celle-ci à ce qu'un AUTO-HÉBERGEUR exécute.
+      #
+      # Trois gardes touchent déjà le Dockerfile — épinglage au condensat, étiquette confrontée au
+      # condensat, image interrogée en CI — et aucune ne pose cette question. Le jour où `engines`
+      # passera au-delà de 24, les trois resteront vertes : l'image serait épinglée, son étiquette
+      # dirait vrai, et elle embarquerait un moteur que notre propre paquet déclare non supporté.
+      # Deux exemplaires cohérents entre eux ne disent rien du troisième fait qu'ils ignorent.
+      - name: The Node the image ships is one that engines allows
+        if: matrix.node == '22'
+        run: node tools/node-de-l-image.mjs
+
       # ⚠️ `crypto` EST UN GLOBAL DEPUIS NODE 18, ET CE N'EST PAS LE MÊME. L'extraction du lot 3 a
       # déplacé `bot-tts` hors de `handler.js` sans emporter son `require` : `crypto.createHash(…)`
       # a désigné WebCrypto, qui n'a pas cette méthode. `no-undef` ne pouvait rien voir — la

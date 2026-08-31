@@ -14,6 +14,32 @@ the notes there are this file's section for that version.
 
 ### Added
 
+- ⚠️ **La seconde moitié de la paire : ce que l'IMAGE embarque, confronté à `engines`.** La première
+  garde le confronte à ce que la **forge installe** ; rien ne le confrontait à ce qu'un
+  **auto-hébergeur exécute**. Des deux exemplaires non mesurés, celui-ci était le plus proche de la
+  production.
+
+  ⚠️ **Trois gardes touchent déjà ce fichier, et aucune ne pose cette question** — relevé plutôt que
+  supposé : `images-epinglees` demande « l'image vient-elle d'un condensat ? » ; `ecartMajeur`
+  demande « l'étiquette dit-elle vrai sur le condensat ? » ; le job `docker` construit l'image et
+  lui demande sa version. Le jour où `engines` passera au-delà de 24, **les trois resteront
+  vertes** : l'image serait épinglée, son étiquette dirait vrai, et elle embarquerait un moteur que
+  notre propre paquet déclare non supporté. Deux exemplaires cohérents entre eux ne disent rien du
+  troisième fait qu'ils ignorent.
+
+  `tools/node-de-l-image.mjs` prend son périmètre sur le disque (`git ls-files`, jamais une liste
+  écrite), **importe** le lecteur de Dockerfile existant plutôt que d'en écrire un quatrième — celui
+  de ce dépôt a déjà été aveugle une fois — et porte la même relation que sa jumelle : toute image
+  qui **fournit** node doit dire laquelle. `FROM node@sha256:…` sans étiquette est valide, épinglé,
+  et sa version est indéterminable ; un comptage y verrait une image de plus, la relation y voit une
+  dette. Deux absences restent distinctes : rien de déclaré est une **violation**, une étiquette que
+  semver ne lit pas est **non concluant**.
+
+  ⚠️ **Et ce que le resserrement écarte est RENDU.** `Dockerfile.prod` en est un, `Dockerfile.md` est
+  une page qui en parle, et aucune lecture du nom ne les sépare sans convention. La convention est
+  donc écrite — les extensions de document sont écartées — et les fichiers écartés sont **dits en
+  avertissement**, parce qu'un resserrement muet est ce qui a coûté trois lecteurs à ce dépôt.
+
 - ⚠️ **La relation est PAR ÉTAPE, et le banc cesse d'en avoir la preuve par accident.** La session
   STUDIO est tombée le 31/08 dans un trou que son dépôt lui cachait : sa garde comptait des
   **fichiers** là où il faut compter des **étapes**, et comme aucun de ses fichiers ne portait deux
