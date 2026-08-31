@@ -14,6 +14,28 @@ the notes there are this file's section for that version.
 
 ### Added
 
+- ⚠️ **La relation est PAR ÉTAPE, et le banc cesse d'en avoir la preuve par accident.** La session
+  STUDIO est tombée le 31/08 dans un trou que son dépôt lui cachait : sa garde comptait des
+  **fichiers** là où il faut compter des **étapes**, et comme aucun de ses fichiers ne portait deux
+  `setup-node`, les deux formulations y étaient **observationnellement identiques**. Aucune mutation
+  ne pouvait les distinguer — ses quatre mutants mouraient tous correctement, en éprouvant la règle
+  écrite plutôt que la règle voulue.
+
+  Vérifié chez nous plutôt que supposé : notre règle **est** par étape (deux étapes dont une muette
+  → 2 installations, 1 refus). Le trou n'est pas dans la règle. **Il est dans le banc.**
+
+  Notre mutation sur fichier réel vise `declarations.find(…)`, c'est-à-dire l'**ordre de tri du
+  dossier** : elle ne séparait « par étape » de « par fichier » que parce que cette cible tombe dans
+  `ci.yml`, qui porte quatre étapes. Si elle avait trié dans `cla.yml` — une seule étape — les deux
+  règles auraient rendu exactement le même vert. Une discrimination qui dépend du nom des fichiers
+  est un vert juste pour une mauvaise raison.
+
+  Le cas est donc **fabriqué** : deux étapes, une seule déclaration, et le banc affirme qu'une règle
+  par fichier serait verte là où la nôtre refuse. La mutation réelle, elle, **dit** désormais ce
+  qu'elle discrimine au lieu de le supposer. S'y ajoute le défaut inverse, que le STUDIO a écrit pour
+  nous faute d'avoir des matrices : une étape qui tient sa version de `${{ matrix.node }}` **déclare**
+  — la compter muette accuserait le dépôt sain, et une garde qui crie faux finit desserrée.
+
 - ⚠️ **La garde de node porte une RELATION, plus seulement des planchers — et c'est le correctif d'un
   autre dépôt qui a désigné le trou chez nous.** La session STUDIO a trouvé, dans sa propre garde, des
   planchers collés au relevé du jour, et les a remplacés par un périmètre **dérivé du disque**. Passée

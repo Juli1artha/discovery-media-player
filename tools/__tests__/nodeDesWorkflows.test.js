@@ -355,6 +355,46 @@ describe("toute étape qui installe node déclare laquelle", () => {
     expect(r.illisibles.join(""), "et la garde dit qu'elle ne la suit pas").toMatch(/node-version-file/);
   });
 
+  // ⚠️ LE CAS QUE LE DÉPÔT NE PRODUIT PAS TOUT SEUL, ET QUI SÉPARE DEUX RÈGLES INDISCERNABLES.
+  //
+  // « Par étape » et « par fichier » rendent EXACTEMENT le même verdict tant qu'aucun fichier ne
+  // porte deux étapes dont une seule déclare. La session STUDIO est tombée dans ce trou le 31/08 :
+  // son dépôt n'avait qu'une étape par fichier, donc les deux formulations y étaient
+  // observationnellement identiques et aucune mutation ne pouvait les distinguer — ses quatre
+  // mutants mouraient tous correctement, en éprouvant la règle écrite plutôt que la règle voulue.
+  //
+  // Notre règle EST par étape. Mais notre banc ne le prouvait que par accident : la mutation sur
+  // fichier réel vise `declarations.find(…)`, donc l'ORDRE DE TRI DU DOSSIER, et elle ne
+  // discriminait que parce que cette cible tombe dans `ci.yml`, qui porte quatre étapes. Si elle
+  // avait trié dans `cla.yml` — une seule étape — les deux règles auraient rendu le même vert.
+  //
+  // Une discrimination qui dépend du nom des fichiers est un vert juste pour une mauvaise raison.
+  // On fabrique donc le cas.
+  it("⚠️ deux étapes, une seule déclaration : PAR ÉTAPE et pas par fichier", () => {
+    const r = versionsDe(
+      "jobs:\n  a:\n    steps:\n"
+      + '      - uses: actions/setup-node@abc\n        with:\n          node-version: "24"\n'
+      + "      - uses: actions/setup-node@abc\n", "f.yml");
+
+    expect(r.installations, "les deux étapes doivent entrer dans le périmètre").toHaveLength(2);
+    expect(r.declarations, "le fichier déclare bien quelque chose — c'est tout le piège").toHaveLength(1);
+    expect(r.sansVersion, "une règle PAR FICHIER serait verte ici : le fichier déclare").toHaveLength(1);
+    expect(r.sansVersion[0]).toMatch(/f\.yml:7/);
+  });
+
+  // ⚠️ ET LE DÉFAUT INVERSE, PARCE QU'UN FAUX POSITIF DESSERRE UNE GARDE AUSSI SÛREMENT QU'UN TROU.
+  // Une étape qui tient sa version de la matrice DÉCLARE. La compter muette accuserait `ci.yml`,
+  // c'est-à-dire le dépôt sain, et une garde qui crie faux finit desserrée par celui qu'elle a
+  // dérangé pour rien — le même arbitrage que `subset` contre `intersects`.
+  it("⚠️ une étape qui tient sa version de la matrice DÉCLARE — jamais muette", () => {
+    const r = versionsDe(
+      "jobs:\n  a:\n    strategy:\n      matrix:\n        node: [\"22\", \"24\"]\n"
+      + "    steps:\n      - uses: actions/setup-node@abc\n        with:\n          node-version: ${{ matrix.node }}\n", "f.yml");
+    expect(r.installations).toHaveLength(1);
+    expect(r.sansVersion, "elle déclare, la valeur vient juste de la matrice").toEqual([]);
+    expect(r.declarations.map((d) => d.portee)).toEqual(["22", "24"]);
+  });
+
   it("une étape qui n'installe pas node n'entre pas dans le périmètre", () => {
     const r = versionsDe('jobs:\n  a:\n    steps:\n      - uses: actions/checkout@abc\n', "f.yml");
     expect(r.installations).toEqual([]);
@@ -409,5 +449,14 @@ describe("la relation, sur le dossier réel", () => {
     expect(lu.illisibles, "la mutation a cassé le YAML : on n'éprouve plus la règle").toEqual([]);
     expect(lu.sansVersion.join("\n"), `retirer la version de ${cible.fichier}:${cible.ligne} n'a rien déclenché`)
       .toMatch(/installe node sans déclarer laquelle/);
+
+    // ⚠️ CE QUE CETTE MUTATION DISCRIMINE, DIT PLUTÔT QUE TU. Elle ne sépare « par étape » de « par
+    // fichier » que si le fichier visé porte ENCORE d'autres déclarations après le dépouillement —
+    // sinon une règle par fichier rougirait aussi et le banc serait vert pour les deux. C'est vrai
+    // aujourd'hui, ça tient à l'ordre de tri du dossier, et c'est donc affirmé plutôt que supposé.
+    expect(
+      lu.declarations.filter((d) => d.fichier === cible.fichier).length,
+      `${cible.fichier} ne porte plus qu'une déclaration : cette mutation ne discrimine plus « par étape » de « par fichier », et c'est le banc fabriqué qui tient seul la propriété`,
+    ).toBeGreaterThan(0);
   });
 });
