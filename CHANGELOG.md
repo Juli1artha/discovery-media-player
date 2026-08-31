@@ -14,6 +14,33 @@ the notes there are this file's section for that version.
 
 ### Added
 
+- ⚠️ **La garde de node porte une RELATION, plus seulement des planchers — et c'est le correctif d'un
+  autre dépôt qui a désigné le trou chez nous.** La session STUDIO a trouvé, dans sa propre garde, des
+  planchers collés au relevé du jour, et les a remplacés par un périmètre **dérivé du disque**. Passée
+  sur nos fichiers, l'idée a mesuré ceci : 11 étapes `actions/setup-node`, 11 déclarant une version,
+  **et rien qui garde ce rapport**.
+
+  Un plancher compte ce qu'il **voit** ; il ne sait pas ce qui aurait dû être là. Retirer l'entrée
+  `node-version` d'une étape faisait passer le relevé de 12 à 11 déclarations — au-dessus du plancher
+  de 8 — et la garde restait **verte** pendant que la forge installait le défaut de l'action, que rien
+  n'épingle et que rien ne confronte à `engines`. La lecture sautait d'ailleurs toute étape sans bloc
+  `with:`, donc la forme la plus dépouillée était aussi la plus invisible.
+
+  La règle est donc : **toute étape qui installe node déclare laquelle**, périmètre pris sur le disque.
+  Elle ne remplace pas les planchers, elle les complète — un plancher garde la SONDE (« ai-je lu le
+  dossier ? »), la relation garde le SUJET (« chaque site d'installation est-il déclaré ? ») — et elle
+  porte le sien, parce qu'une relation peut être satisfaite **à vide** : zéro installation relevée,
+  aucune manquante, règle vraie pour n'avoir rien regardé.
+
+  ⚠️ **Ce plancher-là s'est justifié le jour même, chez son auteur** : `garde()` déstructurait encore
+  deux champs et ne transmettait pas le relevé neuf au verdict. Rien d'autre ne l'aurait dit.
+
+  ⚠️ **Et l'ordre des contrôles est une décision, pas une mise en page.** La relation est évaluée
+  APRÈS les planchers de déclarations : si la lecture des `node-version` cassait, les onze
+  installations paraîtraient toutes muettes et la garde rendrait **onze violations** — « corrige ta
+  branche » pour une panne qui n'y est pas. Un banc éprouve cet ordre, et le mutant qui l'inverse ne
+  fait rougir que lui.
+
 - ⚠️ **La garde de node est éprouvée dans les DEUX sens — et le second attrape ce qu'aucun des vingt-trois
   autres bancs ne voyait.** L'idée vient de la session STUDIO, qui a retiré une exception de sa propre
   garde le 31/08 et a nommé ce qui manque à une mutation unique : « sans cette seconde mutation,

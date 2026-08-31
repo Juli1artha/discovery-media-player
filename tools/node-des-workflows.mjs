@@ -88,6 +88,33 @@ import { workflows, ligneDe } from "./workflows-yaml.mjs";
 export const PLANCHER_DECLARATIONS = 8;
 export const PLANCHER_FICHIERS = 4;
 
+/**
+ * ⚠️ ET LA RELATION A LE SIEN, PARCE QU'ELLE PEUT ÊTRE SATISFAITE À VIDE. Si la lecture des `uses:`
+ * cassait, zéro étape d'installation serait relevée, aucune ne manquerait de version, et la règle
+ * passerait sans avoir rien regardé — pendant que les planchers de déclarations, eux, tiendraient
+ * toujours. Chaque sonde qui peut revenir vide porte son propre refus. Aujourd'hui : 11.
+ */
+export const PLANCHER_INSTALLATIONS = 8;
+
+/**
+ * L'action qui installe node. ⚠️ UN PLANCHER COMPTE CE QU'IL VOIT, IL NE SAIT PAS CE QUI AURAIT DÛ
+ * ÊTRE LÀ. Le jour où quelqu'un retire l'entrée `node-version` d'une étape `setup-node`, le relevé
+ * passe de 12 à 11 déclarations — au-dessus du plancher — et la garde reste VERTE pendant que la
+ * forge installe le défaut de l'action, que rien n'épingle. Une version qui DISPARAÎT est invisible
+ * à un comptage ; seule une RELATION la voit.
+ *
+ * La relation est donc : toute étape qui installe node doit déclarer laquelle. Son périmètre vient
+ * du disque, pas d'un nombre — c'est la correction que la session STUDIO a apportée à sa propre
+ * garde le 31/08, après y avoir trouvé des planchers collés au relevé du jour, et elle désignait
+ * chez nous un trou que nos planchers ne pouvaient pas voir.
+ *
+ * ⚠️ ELLE NE REMPLACE PAS LES PLANCHERS, elle les complète, et la distinction vaut d'être dite. Un
+ * plancher garde la SONDE (« ai-je lu le dossier ? ») ; la relation garde le SUJET (« chaque site
+ * d'installation est-il déclaré ? »). Un balayage qui ne lit plus rien satisfait la relation À VIDE
+ * — zéro installation, zéro manquante — donc supprimer les nombres laisserait la vacuité ouverte.
+ */
+export const MOTIF_INSTALLE_NODE = /^actions\/setup-node@/;
+
 /** L'entrée d'action qui demande une version, et sa sœur qui la lit dans un fichier. */
 const CLE = "node-version";
 const CLE_FICHIER = "node-version-file";
@@ -152,6 +179,8 @@ function matriceDe(job, fichier, texte) {
 export function versionsDe(texte, fichier = "") {
   const declarations = [];
   const illisibles = [];
+  const installations = [];
+  const sansVersion = [];
 
   for (const doc of parseAllDocuments(texte)) {
     if (doc.errors.length) {
@@ -174,6 +203,20 @@ export function versionsDe(texte, fichier = "") {
 
       for (const etape of etapes.items) {
         const avec = paireDe(etape, "with")?.value;
+
+        // ⚠️ C'EST ICI QUE LE TROU SE TROUVAIT. La lecture sautait toute étape sans bloc `with:`,
+        // donc une `setup-node` dépouillée de son entrée passait sans laisser de trace — et le
+        // comptage, lui, ne pouvait pas distinguer « onze déclarations » de « douze moins une ».
+        const paireUses = paireDe(etape, "uses");
+        const installe = MOTIF_INSTALLE_NODE.test((scalaire(paireUses?.value) || "").trim());
+        if (installe) {
+          const ligneUses = ligneDe(texte, paireUses.value?.range?.[0] ?? 0);
+          installations.push({ fichier, ligne: ligneUses, job: nomJob });
+          if (!isMap(avec) || (!paireDe(avec, CLE) && !paireDe(avec, CLE_FICHIER))) {
+            sansVersion.push(`${fichier}:${ligneUses} (job « ${nomJob} ») : cette étape installe node sans déclarer laquelle — la forge prendra le défaut de l'action, que rien n'épingle et que rien ne confronte à engines`);
+          }
+        }
+
         if (!isMap(avec)) continue;
 
         // ⚠️ SAUTER CETTE FORME LA RENDRAIT INVISIBLE À LA GARDE ET BIEN VIVANTE DANS LA FORGE.
@@ -217,19 +260,23 @@ export function versionsDe(texte, fichier = "") {
       }
     }
   }
-  return { declarations, illisibles };
+  return { declarations, illisibles, installations, sansVersion };
 }
 
 /** Tout ce que les workflows d'un dossier demandent d'installer. */
 export function versionsDuDepot(dossier = ".github/workflows") {
   const declarations = [];
   const illisibles = [];
+  const installations = [];
+  const sansVersion = [];
   for (const f of workflows(dossier)) {
     const r = versionsDe(readFileSync(f, "utf8"), f);
     declarations.push(...r.declarations);
     illisibles.push(...r.illisibles);
+    installations.push(...r.installations);
+    sansVersion.push(...r.sansVersion);
   }
-  return { declarations, illisibles };
+  return { declarations, illisibles, installations, sansVersion };
 }
 
 /**
@@ -245,7 +292,7 @@ export function estUnPlancherSansPlafond(engines) {
  * Le verdict, à partir de ce qui a été lu. Séparé de la lecture du disque pour que le banc
  * puisse l'éprouver sur des relevés fabriqués, sans écrire un seul fichier.
  */
-export function verdict({ engines, declarations, illisibles }) {
+export function verdict({ engines, declarations, illisibles, installations = [], sansVersion = [] }) {
   if (typeof engines !== "string" || !engines.trim()) {
     return inconclusif("package.json ne déclare pas engines.node — il n'y a rien à quoi confronter les workflows");
   }
@@ -261,6 +308,16 @@ export function verdict({ engines, declarations, illisibles }) {
   if (fichiers.size < PLANCHER_FICHIERS) {
     return inconclusif(`le relevé ne voit des déclarations que dans ${fichiers.size} fichier(s) (plancher ${PLANCHER_FICHIERS}) — le compte peut tenir alors que la moitié du dossier n'est plus lue`);
   }
+
+  // ⚠️ L'ORDRE EST UNE DÉCISION, PAS UNE MISE EN PAGE. La relation vient APRÈS les planchers de
+  // déclarations, et c'est ce qui empêche la garde d'accuser l'auteur d'un défaut qu'elle aurait
+  // elle-même produit : si la lecture des `node-version` cassait, les onze étapes d'installation
+  // paraîtraient toutes dépourvues de version et la garde rendrait onze VIOLATIONS — « corrige ta
+  // branche » pour une panne qui n'y est pas. Les planchers tirent d'abord, en NON CONCLUANT.
+  if (installations.length < PLANCHER_INSTALLATIONS) {
+    return inconclusif(`le relevé ne voit que ${installations.length} étape(s) installant node (plancher ${PLANCHER_INSTALLATIONS}) — la relation « toute installation déclare sa version » serait satisfaite À VIDE, donc elle ne prouverait rien`);
+  }
+  if (sansVersion.length) return violation(sansVersion);
 
   if (!estUnPlancherSansPlafond(engines)) {
     return inconclusif(`engines.node vaut « ${engines} », qui porte un PLAFOND — le raisonnement de cette garde (setup-node installe la plus haute version de la portée demandée) n'est exact que sous un plancher sans plafond, et appliqué ici il pourrait rendre vert une CI qui tourne hors contrat ; lisez la paire à la main, ou étendez cette garde au régime borné`);
@@ -282,7 +339,7 @@ export function verdict({ engines, declarations, illisibles }) {
   if (constats.length) return violation(constats);
 
   return conforme(
-    `node des workflows : ${declarations.length} déclaration(s) de « ${CLE} » dans ${fichiers.size} fichier(s) de .github/workflows, toutes admises par engines.node « ${engines} » (plancher ${bas}) — portées relevées : ${[...new Set(declarations.map((d) => d.portee))].sort().join(", ")}`,
+    `node des workflows : ${declarations.length} déclaration(s) de « ${CLE} » dans ${fichiers.size} fichier(s) de .github/workflows, et les ${installations.length} étape(s) qui installent node en déclarent toutes une ; toutes admises par engines.node « ${engines} » (plancher ${bas}) — portées relevées : ${[...new Set(declarations.map((d) => d.portee))].sort().join(", ")}`,
   );
 }
 
@@ -294,8 +351,7 @@ export function garde(dossier = ".github/workflows", racine = ".") {
     } catch (e) {
       return inconclusif(`package.json est illisible (${e.message}) — la sonde vise à côté`);
     }
-    const { declarations, illisibles } = versionsDuDepot(dossier);
-    return verdict({ engines: paquet?.engines?.node, declarations, illisibles });
+    return verdict({ engines: paquet?.engines?.node, ...versionsDuDepot(dossier) });
   });
 }
 
