@@ -208,14 +208,39 @@ export function inspecter(fichiers, lire = (f) => readFileSync(f, "utf8")) {
   return constats;
 }
 
+/**
+ * ⚠️ LE TÉMOIN DE LA RÈGLE — INJECTÉ, PAS DÉRIVÉ.
+ *
+ * Cette garde affirme une ABSENCE. Sa panne la plus probable — une sonde qui ne reconnaît plus la
+ * forme cherchée — produit elle aussi une ABSENCE : tout le périmètre vert sans rien avoir mesuré.
+ * Le plancher qui existait compte les FICHIERS LUS, jamais la FORME RECONNUE. Mesuré le 31/08 en
+ * aveuglant la sonde : l'outil imprimait son résumé complet et sortait 0.
+ *
+ * Le témoin est INJECTÉ parce que l'état sain de cette règle est justement ZÉRO occurrence de ce
+ * qu'elle cherche : il n'y a rien à dériver du dépôt. On pose donc un cas dont on sait qu'il est
+ * fautif, on vérifie que la sonde le VOIT, on le jette — le mécanisme de l'étape RLS de `ci.yml`,
+ * qui le pratique depuis des semaines sur les politiques Postgres.
+ */
+export function temoinNonVu(sonde = inspecter) {
+  // ⚠️ ASSEMBLÉ À L'EXÉCUTION, JAMAIS ÉCRIT. Cette garde balaie 104 fichiers de `tools/`, le sien
+  // compris : un faux identifiant écrit en clair ici serait signalé par la garde elle-même, on
+  // l'exempterait, et l'exemption deviendrait le trou que l'en-tête de ce fichier décrit. Le banc
+  // fabrique ses faux secrets par concaténation pour cette raison exacte ; le témoin fait pareil.
+  const echantillon = "cle = " + '"' + "AKIA" + "Z".repeat(16) + '"' + "\n";
+  return sonde(["__temoin"], () => echantillon).length ? null
+    : "la sonde n'a pas vu un identifiant qu'on venait de poser";
+}
+
 if (estExecuteDirectement(import.meta.url)) {
   conclure(tenter(() => {
     // ⚠️ `tenter` parce que `git ls-files` LÈVE hors d'un dépôt git — un refus prudent de la
     // garde, pas une faute de la branche (voir tools/resultat-garde.mjs).
     const fichiers = fichiersSuivis(process.argv.slice(2));
     if (!fichiers.length) return inconclusif("aucun fichier suivi relevé — la sonde vise à côté");
+    const aveugle = temoinNonVu();
+    if (aveugle) return inconclusif(`${aveugle} — ce n'est pas une absence de secret, c'est une sonde qui ne lit plus la forme`);
     const constats = inspecter(fichiers);
     if (constats.length) return violation(constats);
-    return conforme(`secrets : ${fichiers.length} fichier(s) suivi(s) inspecté(s), aucun identifiant d'authentification en clair`);
+    return conforme(`secrets : ${fichiers.length} fichier(s) suivi(s) inspecté(s), sonde confirmée par un témoin posé, aucun identifiant d'authentification en clair`);
   }));
 }

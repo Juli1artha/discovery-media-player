@@ -182,6 +182,38 @@ export function typesReserves(fichier, source) {
   return trouves;
 }
 
+/**
+ * ⚠️ LE TÉMOIN DE LA RÈGLE — ET IL EST INJECTÉ, PAS DÉRIVÉ.
+ *
+ * Cette garde affirme une ABSENCE. Sa panne la plus probable — une sonde qui ne reconnaît plus la
+ * forme qu'elle cherche — produit elle aussi une ABSENCE : tout le périmètre vert sans rien avoir
+ * mesuré. Le plancher qui existait compte les FICHIERS LUS, jamais la FORME RECONNUE. Mesuré le
+ * 31/08 en aveuglant la sonde : l'outil imprimait son résumé complet et sortait 0.
+ *
+ * ⚠️ POURQUOI INJECTÉ, ET C'EST LA MESURE QUI L'A DIT. Deux gardes voisines ont reçu le même jour
+ * un témoin DÉRIVÉ du dépôt : « au moins un bloc permissions », « au moins un appel au module
+ * crypto ». La même recette ici REFUSE sur un dépôt SAIN — mesuré, zéro corps reconnu pour onze
+ * `.end(` bruts — parce que l'état sain de cette règle-ci est justement ZÉRO occurrence de ce
+ * qu'elle cherche : tout passe par le module des portes. Un témoin dérivé aurait exigé la chose
+ * même que la garde décourage.
+ *
+ * Un témoin dérivé n'est donc possible que si la forme correcte est une chose que le dépôt est
+ * censé CONTENIR. Sinon il faut la FABRIQUER : poser un cas dont on sait qu'il est fautif, vérifier
+ * que la sonde le VOIT, le jeter. Ce mécanisme n'est pas neuf ici — l'étape RLS de `ci.yml` le
+ * pratique depuis des semaines sur les politiques Postgres : « on pose une politique dont on sait
+ * qu'elle existe, on vérifie que la sonde la VOIT, et on l'enlève. Sans ce détour, le zéro qui suit
+ * ne prouverait rien. » Il n'avait pas été porté jusqu'ici.
+ *
+ * Rend `null` quand la sonde voit, ou la raison du refus.
+ */
+export function temoinNonVu(voir = corpsEcrits, juger = manquements) {
+  const echantillon = 'function h(req, res) { res.end("bonjour"); }\n';
+  const vus = voir("__temoin.js", echantillon);
+  if (!vus.length) return "la sonde n'a pas vu un corps écrit sur place qu'on venait de poser";
+  if (!juger(vus).length) return "la sonde a vu le corps posé mais ne l'a pas jugé fautif, alors qu'il part sans type ni nosniff";
+  return null;
+}
+
 if (estExecuteDirectement(import.meta.url)) {
   conclure(tenter(() => {
     const fichiers = process.argv.slice(2).length ? process.argv.slice(2)
@@ -191,12 +223,15 @@ if (estExecuteDirectement(import.meta.url)) {
     if (!fichiers.length) {
       return inconclusif("aucun fichier de server/ ou bin/ relevé par git ls-files — la sonde vise à côté, ou le dépôt n'est pas là");
     }
+    const aveugle = temoinNonVu();
+    if (aveugle) return inconclusif(`${aveugle} — ce n'est pas une absence de corps fautif, c'est une sonde qui ne lit plus la forme`);
+
     const lus = fichiers.map((f) => [f, readFileSync(f, "utf8")]);
     const soucis = [
       ...manquements(lus.flatMap(([f, src]) => corpsEcrits(f, src))),
       ...lus.flatMap(([f, src]) => typesReserves(f, src)),
     ];
     if (soucis.length) return violation(soucis);
-    return conforme(`portes de réponse : ${fichiers.length} fichier(s) serveur — aucun corps en texte écrit sur place ne part sans type ni nosniff, et \`${TYPE_RESERVE}\` n'est déclaré que dans ${MODULE_DES_PORTES}`);
+    return conforme(`portes de réponse : ${fichiers.length} fichier(s) serveur, sonde confirmée par un témoin posé — aucun corps en texte écrit sur place ne part sans type ni nosniff, et \`${TYPE_RESERVE}\` n'est déclaré que dans ${MODULE_DES_PORTES}`);
   }));
 }

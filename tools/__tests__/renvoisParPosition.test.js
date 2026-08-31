@@ -16,7 +16,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import { estUnGuide, renvois, verifier } from "../renvois-par-position.mjs";
+import { estUnGuide, renvois, verifier, temoinNonVu } from "../renvois-par-position.mjs";
 import { CONFORME, VIOLATION, INCONCLUSIF } from "../resultat-garde.mjs";
 
 // ⚠️ LE TEXTE HISTORIQUE LUI-MÊME, PAS LE MOYEN D'ALLER LE CHERCHER. La première écriture de ce banc
@@ -127,5 +127,17 @@ describe("la garde sur le dépôt", () => {
   it("un dossier illisible rend NON CONCLUANT, jamais VIOLATION", () => {
     const r = verifier(".", () => "", () => { throw new Error("illisible"); }, () => ({ isDirectory: () => false }));
     expect(r.code).toBe(INCONCLUSIF);
+  });
+});
+
+
+// ⚠️ LE TÉMOIN DE LA RÈGLE — INJECTÉ, PARCE QUE L'ÉTAT SAIN EST ZÉRO OCCURRENCE.
+describe("le témoin posé : la sonde voit-elle encore un renvoi ?", () => {
+  it("ne dit rien quand la sonde voit", () => {
+    expect(temoinNonVu()).toBeNull();
+  });
+
+  it("⚠️ nomme le refus quand la sonde est aveugle", () => {
+    expect(temoinNonVu(() => [])).toMatch(/n'a pas vu un renvoi par position qu'on venait de poser/);
   });
 });

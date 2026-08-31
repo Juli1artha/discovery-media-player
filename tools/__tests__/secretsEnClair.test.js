@@ -19,7 +19,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { secretsDeTexte, secretsDeEnv, inspecter, estJetonServiceRole, ESPECES } from "../secrets-en-clair.mjs";
+import { secretsDeTexte, secretsDeEnv, inspecter, estJetonServiceRole, ESPECES, temoinNonVu, fichiersSuivis } from "../secrets-en-clair.mjs";
 
 const ICI = dirname(fileURLToPath(import.meta.url));
 
@@ -200,5 +200,33 @@ describe("⚠️ LA RÈGLE DE NOM, APRÈS RELECTURE", () => {
     for (const ligne of ["SUPABASE_PUBLISHABLE_KEY=sb_publishable_abc", "SUPABASE_ANON_KEY=ey.abc", "PLAYER_PUBLIC_TOKEN=abc"]) {
       expect(secretsDeEnv(ligne), ligne).toEqual([]);
     }
+  });
+});
+
+
+// ⚠️ LE TÉMOIN DE LA RÈGLE — INJECTÉ, PARCE QUE L'ÉTAT SAIN EST ZÉRO OCCURRENCE.
+//
+// Cette garde affirme une ABSENCE. Sa panne la plus probable produit elle aussi une absence : tout
+// le périmètre vert sans rien avoir mesuré. Mesuré le 31/08 en aveuglant la sonde — l'outil
+// imprimait « 429 fichier(s) inspecté(s), aucun identifiant » et sortait 0.
+describe("le témoin posé : la sonde voit-elle encore un identifiant ?", () => {
+  it("ne dit rien quand la sonde voit", () => {
+    expect(temoinNonVu()).toBeNull();
+  });
+
+  it("⚠️ nomme le refus quand la sonde est aveugle", () => {
+    expect(temoinNonVu(() => [])).toMatch(/n'a pas vu un identifiant qu'on venait de poser/);
+  });
+
+  // ⚠️ ET LE TÉMOIN N'EST PAS ÉCRIT DANS LE SOURCE. Cette garde balaie `tools/`, le sien compris :
+  // un faux identifiant en clair y serait signalé par elle-même, on l'exempterait, et l'exemption
+  // deviendrait le trou que son en-tête décrit. Il est donc assemblé à l'exécution.
+  it("⚠️ le faux identifiant du témoin n'apparaît nulle part en clair dans le dépôt suivi", () => {
+    const litteral = "AKIA" + "Z".repeat(16);
+    const suivis = fichiersSuivis([]);
+    const porteurs = suivis.filter((f) => {
+      try { return readFileSync(f, "utf8").includes(litteral); } catch { return false; }
+    });
+    expect(porteurs, "le témoin est écrit en clair quelque part : la garde finira par s'accuser").toEqual([]);
   });
 });
