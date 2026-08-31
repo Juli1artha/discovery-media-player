@@ -14,6 +14,38 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- ⚠️ **Deux gardes qui affirment une ABSENCE portent désormais le témoin de leur RÈGLE, pas seulement
+  celui de leur périmètre.** L'idée vient de la session STUDIO, qui a trouvé la même chose chez elle
+  sur 97 fichiers : notre témoin d'exception prouve qu'une **exception** a encore un sujet, celui-ci
+  prouve que la **règle** en a encore un. Deux moitiés de la même précaution.
+
+  `permissions-workflows` affirme « aucune écriture à la racine » sur neuf fichiers ;
+  `liaison-de-crypto` affirme « aucun appel sur le global » sur trente et un. **Leur panne la plus
+  probable — une sonde qui ne reconnaît plus la forme — produit elle aussi une absence.** Le plancher
+  qui existait compte les FICHIERS LUS, jamais la FORME RECONNUE, et ne peut donc pas les distinguer.
+
+  Mesuré en aveuglant chaque sonde :
+
+  ```
+  avant : permissions : 9 workflows, aucune écriture à la racine          code 0
+  après : GARDE NON CONCLUANTE — aucun bloc « permissions: » reconnu…     code 2
+  ```
+
+  ⚠️ **Et la nuance, qui change la sévérité et qu'il serait malhonnête de taire : leurs bancs, eux,
+  attrapaient déjà la sonde aveugle.** Ce n'était donc pas une garde morte — la RÈGLE était protégée.
+  C'est le **verdict imprimé** qui ne l'était pas, et c'est lui qui va dans le journal de la forge et
+  sous les yeux de quiconque lance l'outil à la main. La ligne comptait le périmètre et se lisait
+  comme une mesure.
+
+  Les deux résumés disent maintenant ce qu'ils ont **reconnu** : « 9 bloc(s) lu(s) dans 9
+  workflow(s) », « 5 fichier(s) appellent le module parmi 31 ». Plancher à **un** dans les deux cas —
+  le compte du jour serait collé au relevé du jour.
+
+  Pour `liaison-de-crypto`, ce témoin est **distinct de celui qui existait déjà** :
+  `methodesDuModuleSeul()` refuse quand plus aucune méthode ne sépare le module du global, donc il
+  prouve que **la question** a encore un sens sur ce Node ; le neuf prouve que **la sonde** sait
+  encore lire la réponse. Deux cécités différentes, deux refus différents.
+
 - ⚠️ **Deux bancs choisissaient leur cible par l'ORDRE DE TRI d'un dossier — la dette la plus vieille
   de la série, soldée par construction plutôt que par mesure.** Elle était signalée depuis trois
   messages sans jamais avoir été cherchée.

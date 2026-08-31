@@ -125,6 +125,26 @@ export function appelsDuModule(code, methodes) {
   return [...vus].sort();
 }
 
+/**
+ * ⚠️ LE TÉMOIN DE LA RÈGLE — combien de fichiers portent la forme que la sonde doit RECONNAÎTRE.
+ *
+ * Cette garde affirme une ABSENCE (« aucun n'appelle sur le global ») sur trente et un fichiers. Sa
+ * panne la plus probable — une expression qui ne reconnaît plus la forme d'un appel — produit elle
+ * aussi une absence : trente et un fichiers verts sans rien avoir mesuré. Le plancher existant
+ * compte les FICHIERS LUS, pas la FORME RECONNUE.
+ *
+ * Mesuré le 31/08 en aveuglant `manquements` : l'outil imprimait son résumé complet et sortait 0.
+ * Ses bancs rougissaient — la règle était protégée, le VERDICT IMPRIMÉ ne l'était pas.
+ *
+ * ⚠️ ET IL EST DISTINCT DU TÉMOIN QUI EXISTAIT DÉJÀ. `methodesDuModuleSeul()` refuse quand plus
+ * aucune méthode ne sépare le module du global : il prouve que LA QUESTION a encore un sens sur ce
+ * Node. Celui-ci prouve que LA SONDE sait encore lire la réponse. Deux cécités différentes, deux
+ * refus différents — les confondre laisserait la seconde ouverte.
+ */
+export function temoinsDeForme(fichiers, lire, methodes) {
+  return fichiers.filter((f) => appelsDuModule(sansChaines(sansCommentaires(lire(f))), methodes).length).length;
+}
+
 /** Les fichiers qui appellent une méthode du module sans jamais l'avoir lié. */
 export function manquements(fichiers, lire, methodes) {
   const soucis = [];
@@ -152,8 +172,15 @@ if (estExecuteDirectement(import.meta.url)) {
     if (!methodes.length) {
       return inconclusif("aucune méthode ne distingue le module du global sur ce Node — la question posée n'a plus de sens ici, et un vert ne prouverait rien");
     }
-    const soucis = manquements(suivis, (f) => readFileSync(f, "utf8"), methodes);
+    const lire = (f) => readFileSync(f, "utf8");
+    // ⚠️ Un plancher à UN : « au moins un fichier de ce dépôt appelle le module crypto » est vrai de
+    // tout état sain, alors que le compte du jour serait collé au relevé du jour.
+    const temoins = temoinsDeForme(suivis, lire, methodes);
+    if (!temoins) {
+      return inconclusif(`aucun appel « crypto.<méthode>( » reconnu dans ${suivis.length} fichier(s) — ce n'est pas une absence d'appel sur le global, c'est une sonde qui ne lit plus la forme`);
+    }
+    const soucis = manquements(suivis, lire, methodes);
     if (soucis.length) return violation(soucis);
-    return conforme(`liaison de crypto : ${suivis.length} fichier(s) sous Node, aucun n'appelle sur le global une des ${methodes.length} méthodes qui n'existent que sur le module`);
+    return conforme(`liaison de crypto : ${temoins} fichier(s) appellent le module parmi ${suivis.length} sous Node, aucun ne le fait sur le global (${methodes.length} méthodes distinguent les deux)`);
   }));
 }
