@@ -697,6 +697,30 @@ The lesson is not "be careful with harnesses". It is the one already written abo
 level up: **a tool that reports on other tools needs its own positive control.** Before believing a
 campaign of KILLED, make one mutant that must survive and check the runner says so.
 
+⚠️ **And that bench's own central property did not bite — corrected the same evening.** Its
+garnished tree was not a git repository, so `git ls-files` failed there **with git as without it**:
+"equipped" and "stripped" were the same environment for exactly the tools the bench existed to
+protect, and comparing the two compared nothing. The tree is now a real repository (`git init`,
+`git add`), and the difference is visible: blinding `licence-par-fichier` gives 102 files with git
+and 1 without.
+
+**Comparing verdicts was not enough either.** A guard that swallows the git failure and falls back
+to a plausible list exits 0 on both sides — same code, same absence of faults — having read a
+hundred and two files on one side and **one** on the other. The only place the difference shows is
+the summary line, the very thing this repository spent the day making load-bearing. The property is
+now: *a tool green in both environments must print the **same** summary, or say it concluded
+nothing.* The single legitimate divergence — `exemples-en-retard`, whose contract is to report an
+indeterminate result when the registry is unreachable — is recognised by **what it says**, never by
+its name.
+
+That mutant, reported on 31/08 as killed by all three benches and in fact surviving all three, is
+now killed by this one alone and still survives the other two. **The bench earns its place on
+evidence rather than on configuration** — which is what the earlier note in this section could not
+claim. Scope, stated: the property is demonstrated on `licence-par-fichier`, where the branch is
+reachable in a synthetic tree; on `liaison-de-crypto` the same mutant could not be exercised at all,
+because that guard's own witness refuses first on a fixture that thin. That is neither proof of a
+hole nor proof of protection.
+
 What remained genuinely untested was one **configuration**, not a property: a **garnished** tree
 with the environment absent. Measured with a decoy in place of `git` and `npm`, three tools —
 `licence-par-fichier`, `node-de-l-image`, `release-preflight` — reach their external call *only*
