@@ -12,6 +12,26 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.145] — 2026-08-31
+
+⚠️ **Rien à faire pour un hôte, et c'est le seul message de ce train.** Il ne porte que de
+l'outillage : dix gardes de CI et leurs bancs, pas une ligne du code servi. Aucune migration, aucun
+changement de contrat, aucun changement de comportement. Monter est sans effet visible ; ne pas
+monter l'est tout autant.
+
+Il est publié parce que `main` ne doit pas rester loin de ce que le registre sert, pas parce qu'il
+apporte quelque chose à qui l'installe.
+
+⚠️ **Ce que ces dix entrées ont en commun, et qui vaut mieux que leur liste.** Une seule ajoute une
+règle qui manquait. Les neuf autres corrigent la **façon de prouver** une règle déjà écrite — un
+analyseur absent du chemin du rouge, un plancher aveugle aux disparitions, une discrimination qui
+tenait au tri alphabétique, cinq gardes qui affirmaient une absence sans pouvoir distinguer « rien
+trouvé » de « rien regardé ». Aucune n'était visible depuis la précédente.
+
+Et cinq fois sur ces quatre jours, le remède existait déjà dans ce dépôt — écrit, commenté, et non
+appliqué à l'endroit d'à côté. Une garde bien écrite explique son mécanisme, et cette explication
+est ce qui rend le fichier crédible : on ne rouvre pas la phrase qui justifie l'outil.
+
 ### Changed
 
 - ⚠️ **Les trois dernières gardes d'absence portent un témoin — et la mesure a imposé un mécanisme
@@ -5405,7 +5425,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.144...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.145...HEAD
+[0.1.145]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.144...v0.1.145
 [0.1.144]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.143...v0.1.144
 [0.1.143]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.142...v0.1.143
 [0.1.142]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.140...v0.1.142
