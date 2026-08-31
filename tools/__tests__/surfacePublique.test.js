@@ -10,7 +10,9 @@
 
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-import { SURFACE, publics, ecartsExports, ecartsDoc, ecartsTypes, ecartsInternes, tolerancesSansSujet, formeImportee, INTERNES_TOLERES } from "../surface-publique.mjs";
+import { SURFACE, publics, ecartsExports, ecartsDoc, ecartsTypes, ecartsInternes, tolerancesSansSujet, formeImportee, INTERNES_TOLERES, PLANCHER_PUBLICS, PLANCHER_CHARGES, PLANCHER_SYMBOLES } from "../surface-publique.mjs";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 
 describe("le manifeste et package.json se confrontent", () => {
   const paquet = JSON.parse(readFileSync("package.json", "utf8"));
@@ -120,5 +122,60 @@ describe("un export stable doit annoncer ses types", () => {
   it("les fichiers de types voyagent dans le tarball", () => {
     // Un `.d.ts` absent de `files` est parfait chez nous et introuvable chez qui installe.
     expect(paquet.files).toContain("types");
+  });
+});
+
+describe("⚠️ le plancher portait sur une CONSTANTE, donc sur rien", () => {
+  // ⚠️ CE QUI ÉTAIT MESURÉ LE 31/08. Le résumé vert annonçait « 3 stable, 4 experimental,
+  // 2 document, 1 manifeste » — compté sur `SURFACE`, un objet écrit dans le fichier de la garde.
+  // TROIS cécités distinctes sortaient 0 avec CE MÊME message, mot pour mot :
+  //   `publics()` rendu vide, le chargement des modules muet, la boucle des internes vidée.
+  //
+  // C'est la forme la plus dure du défaut : un plancher placé un maillon trop tôt compte au moins
+  // quelque chose de réel et peut tomber ; un plancher posé sur un littéral du fichier ne peut
+  // PAS tomber. Il a l'apparence d'une mesure et la nature d'une signature.
+  it("⚠️ le compte par statut ne bouge pas quand la sonde s'éteint — il ne mesurait rien", () => {
+    const parStatut = Object.values(SURFACE).reduce((a, d) => ({ ...a, [d.statut]: (a[d.statut] || 0) + 1 }), {});
+    expect(parStatut.stable, "cette valeur vient d'un littéral, pas d'une lecture").toBeGreaterThan(0);
+    // Le point du test : ce nombre est une propriété du SOURCE, jamais du travail accompli.
+    // Ce que la garde imprime désormais, ce sont les trois comptes ci-dessous.
+  });
+
+  it("les planchers portent sur ce qui est vraiment parcouru", () => {
+    expect(PLANCHER_PUBLICS).toBeGreaterThan(0);
+    expect(PLANCHER_CHARGES).toBeGreaterThan(0);
+    expect(PLANCHER_SYMBOLES).toBeGreaterThan(0);
+  });
+});
+
+describe("⚠️ sur le paquet réel, les trois comptes tiennent", () => {
+  const paquetReel = JSON.parse(readFileSync("package.json", "utf8"));
+
+  it(`au moins ${PLANCHER_PUBLICS} sous-chemins publics, et le juge lit la MÊME liste`, () => {
+    const chemins = publics();
+    expect(chemins.length, "7 le 31/08").toBeGreaterThanOrEqual(PLANCHER_PUBLICS);
+    // ⚠️ La boucle du verdict parcourt `publics()`, elle ne refait pas le filtre pour son compte :
+    // une seconde écriture laisserait juge et témoin regarder deux listes qui peuvent diverger.
+    const refait = Object.entries(SURFACE)
+      .filter(([, d]) => ["stable", "experimental"].includes(d.statut)).map(([k]) => k);
+    expect(chemins).toEqual(refait);
+  });
+
+  it(`au moins ${PLANCHER_CHARGES} modules chargés et ${PLANCHER_SYMBOLES} symboles relevés`, () => {
+    let charges = 0;
+    let symboles = 0;
+    for (const sousChemin of publics()) {
+      const chemin = paquetReel.exports[sousChemin];
+      const fichier = typeof chemin === "string" ? chemin : chemin?.default;
+      if (!fichier || !fichier.endsWith(".js")) continue;
+      try {
+        const mod = createRequire(pathToFileURL("./package.json"))(fichier);
+        charges += 1;
+        symboles += Object.keys(mod).length;
+      } catch { /* l'unité est tolérée ici comme dans la garde ; c'est le total qui compte */ }
+    }
+    expect(charges, "7 le 31/08 — si ce compte s'effondre, « aucun interne ne fuit » ne dit rien")
+      .toBeGreaterThanOrEqual(PLANCHER_CHARGES);
+    expect(symboles, "75 le 31/08").toBeGreaterThanOrEqual(PLANCHER_SYMBOLES);
   });
 });

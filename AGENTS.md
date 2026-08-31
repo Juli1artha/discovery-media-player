@@ -555,6 +555,34 @@ greps" inside a `verifier()` that takes an arbitrary root made it accuse every f
 this repository — caught in one run by the guard's own bench. The rule lives in the guard; the fact
 about *this* repository lives in the bench, as it already does for `licence-par-fichier`.
 
+⚠️ **The other twenty were then blinded too, and one of them was worse.** Classifying a guard by
+reading its green message is not a measurement — a green message of correct appearance proves no
+more than a positive control of correct appearance. So each of the remaining twenty
+sweep-and-assert-absence guards had its principal probe blinded and its exit code read: **nineteen
+refused or accused** (sixteen exit 2, three exit 1 — blindness that produces accusations rather
+than silence is still inside the path to red). One went fully green: `surface-publique`, under
+**three separate blindings**, printing the identical line each time.
+
+**Its floor counted a constant.** `3 stable, 4 experimental, 2 document, 1 manifeste` was computed
+from `SURFACE`, an object literal written in the guard's own source. A floor placed one link too
+early still counts something real and can therefore fall; a floor read off a literal *cannot fall
+at all*, whatever breaks. It has the appearance of a measurement and the nature of a signature. If
+a printed count cannot go down, it is not evidence — check whether it derives from work done or
+from the file it is printed in.
+
+**And the same guard re-implemented its own subject list.** The verdict loop re-derived "status
+stable or experimental" inline instead of calling `publics()`, so blinding `publics()` left the
+loop intact and the two could drift apart unnoticed — the copy defect again, in the guard rather
+than in a witness. The loop now walks `publics()`, and the bench asserts the two lists are equal.
+
+**A bare `catch {}` around the check is a third way to verify nothing.** Tolerating one module that
+fails to load outside its context is right; tolerating *all* of them is a probe that no longer
+runs. Count what loaded, name what did not, and let a floor decide.
+
+⚠️ **What this sweep does not prove.** One principal probe per guard was blinded, chosen by
+reading the code — not every probe of every guard enumerated. It shows the method finds holes; it
+does not show there are none left.
+
 ## Ask who reads an output, and when — no probe answers this one
 
 **A third question, and it is the one no tool can hold.** *Was the threshold written in advance?*

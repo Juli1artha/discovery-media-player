@@ -27,6 +27,12 @@ the notes there are this file's section for that version.
 - Three guards gained a single shared traversal (`appelsDesBlocs`, `referencesLues`, `liensLus`)
   so that judge and witness read through one probe, named once, rather than two copies that can
   drift apart.
+- `surface-publique` reported `3 stable, 4 experimental, 2 document, 1 manifeste` — a count taken
+  from an object literal in its own source, which cannot fall whatever breaks. Three separate
+  blindings (an empty subpath list, a silent module load, an emptied loop) each left it fully green
+  with that identical line. It now floors and prints what it actually walked: public subpaths,
+  modules loaded, symbols read. Its verdict loop also re-implemented the subpath filter instead of
+  calling `publics()`; it now walks the one list, and a bench asserts the two agree.
 
 ## [0.1.145] — 2026-08-31
 

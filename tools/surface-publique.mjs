@@ -79,6 +79,20 @@ export const SURFACE = {
 export const publics = () =>
   Object.entries(SURFACE).filter(([, d]) => d.statut === "stable" || d.statut === "experimental").map(([k]) => k);
 
+// ⚠️ DES PLANCHERS SUR CE QUI EST VÉRIFIÉ, ET PAS SUR UN LITTÉRAL. Le résumé vert annonçait
+// « 3 stable, 4 experimental, 2 document, 1 manifeste », compté sur `SURFACE` — un objet écrit
+// dans CE fichier. Ce nombre ne peut PAS tomber : quoi qu'il arrive aux sondes, il dira toujours
+// la même chose. Un plancher sur une constante n'est pas un plancher.
+//
+// Mesuré le 31/08, trois cécités distinctes, chacune sortant 0 avec CE MÊME message :
+//   `publics()` rendu vide            → `ecartsTypes` et `ecartsDoc` n'ont plus de sujet
+//   le chargement des modules muet    → `ecartsInternes` ne tourne sur rien
+//   la boucle des internes court-circuitée
+// Relevé du jour : 7 sous-chemins publics, 7 modules chargés, 75 symboles vus.
+export const PLANCHER_PUBLICS = 3;
+export const PLANCHER_CHARGES = 3;
+export const PLANCHER_SYMBOLES = 10;
+
 /** Ce que le manifeste et package.json se disent l'un de l'autre. */
 export function ecartsExports(exportsPaquet) {
   const declares = Object.keys(SURFACE), reels = Object.keys(exportsPaquet || {});
@@ -181,27 +195,52 @@ if (estExecuteDirectement(import.meta.url)) {
     if (!paquet || !paquet.exports || !Object.keys(paquet.exports).length) {
       conclure(inconclusif("package.json ne déclare aucun « exports » — la sonde n'a rien à comparer"));
     }
+    // ⚠️ LE PLANCHER DE SUJET, AVANT TOUT LE RESTE. `ecartsTypes` et `ecartsDoc` parcourent
+    // `publics()` : si elle rend le vide, elles ne trouvent aucun écart et la garde se félicite
+    // sur une surface qu'elle n'a pas regardée.
+    const chemins = publics();
+    if (chemins.length < PLANCHER_PUBLICS) {
+      conclure(inconclusif(`${chemins.length} sous-chemin(s) public(s) relevé(s) dans le manifeste, moins que ${PLANCHER_PUBLICS} — ce n'est pas une surface d'accord, c'est une sonde sans sujet`));
+    }
     const soucis = [
       ...ecartsExports(paquet.exports),
       ...ecartsTypes(paquet.exports),
       ...ecartsDoc(readFileSync("docs/API.md", "utf8")),
     ];
-    for (const [sousChemin, cible] of Object.entries(SURFACE)) {
-      if (!["stable", "experimental"].includes(cible.statut)) continue;
+    // ⚠️ LA MÊME LISTE QUE `publics()`, PAS UNE SECONDE ÉCRITURE DU FILTRE. Cette boucle refaisait
+    // « statut stable ou experimental » pour son compte : dévier `publics()` la laissait intacte,
+    // donc le témoin et le juge n'auraient pas regardé la même chose.
+    let charges = 0;
+    let symboles = 0;
+    const refuses = [];
+    for (const sousChemin of chemins) {
       const chemin = paquet.exports[sousChemin];
       const fichier = typeof chemin === "string" ? chemin : chemin?.default;
       if (!fichier || !fichier.endsWith(".js")) continue;
       try {
         const { createRequire } = await import("node:module");
         const mod = createRequire(pathToFileURL("./package.json"))(fichier);
-        soucis.push(...ecartsInternes(sousChemin, Object.keys(mod)));
-        soucis.push(...tolerancesSansSujet(sousChemin, Object.keys(mod)));
-      } catch { /* un module qui ne se charge pas hors contexte n'est pas le sujet de cette garde */ }
+        const vus = Object.keys(mod);
+        charges += 1;
+        symboles += vus.length;
+        soucis.push(...ecartsInternes(sousChemin, vus));
+        soucis.push(...tolerancesSansSujet(sousChemin, vus));
+      } catch (e) {
+        // ⚠️ UN module qui ne se charge pas hors contexte n'est pas le sujet de cette garde — mais
+        // TOUS, c'est une sonde qui ne tourne plus, et l'avaler en silence était la troisième
+        // cécité mesurée le 31/08. On tolère l'unité, on compte, et le plancher tranche.
+        refuses.push(`${sousChemin} (${(e && e.message) || e})`);
+      }
     }
-    const parStatut = Object.values(SURFACE).reduce((a, d) => ({ ...a, [d.statut]: (a[d.statut] || 0) + 1 }), {});
+    if (charges < PLANCHER_CHARGES) {
+      conclure(inconclusif(`${charges} module(s) public(s) chargé(s) sur ${chemins.length}, moins que ${PLANCHER_CHARGES} — « aucun interne ne fuit » n'aurait été vérifié sur rien${refuses.length ? ` ; refusés : ${refuses.join(", ")}` : ""}`));
+    }
+    if (symboles < PLANCHER_SYMBOLES) {
+      conclure(inconclusif(`${symboles} symbole(s) exporté(s) relevé(s) dans ${charges} module(s), moins que ${PLANCHER_SYMBOLES} — les modules se chargent mais ne rendent plus rien à lire`));
+    }
     conclure(soucis.length
       ? violation(soucis)
-      : conforme("surface publique : " + Object.entries(parStatut).map(([s, n]) => `${n} ${s}`).join(", ") + " — manifeste, package.json et documentation d'accord"));
+      : conforme(`surface publique : ${chemins.length} sous-chemin(s) public(s), ${charges} module(s) chargé(s), ${symboles} symbole(s) relevé(s) — manifeste, package.json et documentation d'accord, et aucun interne ne fuit`));
   } catch (e) {
     conclure(inconclusif(`la surface publique n'a pas pu être lue — ${(e && e.message) || e}`));
   }
