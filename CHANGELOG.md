@@ -14,6 +14,30 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- ⚠️ **Deux bancs choisissaient leur cible par l'ORDRE DE TRI d'un dossier — la dette la plus vieille
+  de la série, soldée par construction plutôt que par mesure.** Elle était signalée depuis trois
+  messages sans jamais avoir été cherchée.
+
+  **Le balayage n'a trouvé aucune nouvelle instance du défaut**, et c'est la mesure qui le dit :
+  chaque candidat a été essayé, un par un. Dépouiller **n'importe laquelle** des deux images node
+  rougit ; abaisser **n'importe laquelle** des dix déclarations littérales rougit. Le vert n'était
+  pas un accident.
+
+  Mais « mesuré aujourd'hui » et « ne peut pas dépendre du tri » ne sont pas la même affirmation :
+  **la première a une date, la seconde n'en a pas.** Les deux bancs bouclent donc désormais sur tous
+  les candidats. Personne ne relit un banc quand il ajoute un fichier.
+
+  ⚠️ **Et le balayage a trouvé autre chose : un banc portait DEUX propriétés dans un seul test**, ce
+  qui les affaiblissait toutes les deux. « Une étape dépouillée est refusée » vaut pour n'importe
+  laquelle — il ne faut donc pas en choisir une. « La mutation discrimine PAR ÉTAPE de PAR FICHIER »
+  n'a de sens que sur une cible dont le fichier garde d'**autres** déclarations — il faut donc en
+  choisir une, et délibérément. Fondues, la première héritait d'un choix dont elle n'avait pas
+  besoin, et la seconde d'un choix qu'elle ne faisait pas.
+
+  Mesuré : **trois de nos dix déclarations littérales vivent seules dans leur fichier**, et sur
+  celles-là la discrimination ne tient pas. Le tri décidait donc si le banc prouvait sa seconde
+  propriété. Les deux sont maintenant séparées, et la seconde choisit sa cible pour ce qu'elle est.
+
 - ⚠️ **Chaque exception écrite doit prouver qu'elle a encore un sujet — une entrée morte est une
   porte ouverte d'avance.** La distinction vient de la session STUDIO : *une liste de ce qu'il faut
   REGARDER cesse de couvrir dès qu'un fichier apparaît ; une liste de ce qui est PERMIS fait rougir

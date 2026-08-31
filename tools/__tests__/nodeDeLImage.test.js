@@ -137,15 +137,28 @@ describe("les Dockerfiles du dépôt tels qu'ils sont", () => {
 
   // ⚠️ LE SECOND SENS, SUR LE TEXTE RÉEL. Il met le LECTEUR dans le chemin du rouge — sans lui,
   // tout ce qui rougit plus haut est parti d'objets que nous avons fabriqués nous-mêmes.
-  it("⚠️ une vraie ligne FROM dépouillée de son étiquette est refusée — texte réel, lecteur réel", () => {
-    const cible = reel[0];
-    const texte = readFileSync(cible.fichier, "utf8");
-    const nu = cible.reference.split(":")[0] + "@" + cible.reference.split("@")[1];
-    const mute = texte.replace(cible.reference, nu);
-    expect(mute, "la mutation n'a rien changé — elle ne prouverait rien").not.toBe(texte);
+  // ⚠️ TOUTES LES IMAGES, PAS LA PREMIÈRE — ET C'EST UNE CORRECTION DE MÉTHODE, PAS DE ZÈLE.
+  //
+  // Ce banc visait `reel[0]`, c'est-à-dire l'ORDRE DE TRI du dossier. Mesuré : la propriété tient
+  // pour les deux images, donc le vert n'était pas un accident. Mais « nous l'avons mesuré
+  // aujourd'hui » et « cela ne peut pas dépendre du tri » ne sont pas la même affirmation : la
+  // première a une date, la seconde n'en a pas. Un banc qui choisit sa cible dans une liste triée
+  // prouve ce qu'il prouve pour ce classement-là, et personne ne relit un banc quand il ajoute un
+  // fichier. C'est le défaut trouvé le 31/08 dans le banc voisin ; ici on le retire par
+  // construction plutôt que de le constater absent.
+  it("⚠️ CHAQUE vraie ligne FROM dépouillée de son étiquette est refusée — texte réel, lecteur réel", () => {
+    expect(reel.length, "aucune image à dépouiller : ce banc vise à côté").toBeGreaterThan(0);
 
-    const lu = imagesNodeDe(mute, cible.fichier);
-    expect(lu.some((i) => !i.etiquetee), "le lecteur n'a pas vu l'image dépouillée").toBe(true);
-    expect(verdict({ engines: ENGINES, images: lu }).code).toBe(VIOLATION);
+    for (const cible of reel) {
+      const ou = `${cible.fichier}:${cible.ligne}`;
+      const texte = readFileSync(cible.fichier, "utf8");
+      const nu = cible.reference.split(":")[0] + "@" + cible.reference.split("@")[1];
+      const mute = texte.replace(cible.reference, nu);
+      expect(mute, `${ou} : la mutation n'a rien changé — elle ne prouverait rien`).not.toBe(texte);
+
+      const lu = imagesNodeDe(mute, cible.fichier);
+      expect(lu.some((i) => !i.etiquetee), `${ou} : le lecteur n'a pas vu l'image dépouillée`).toBe(true);
+      expect(verdict({ engines: ENGINES, images: lu }).code, ou).toBe(VIOLATION);
+    }
   });
 });
