@@ -12,6 +12,22 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Fixed
+
+- Five CI guards asserted an absence over the repository and could not tell *found nothing* from
+  *looked at nothing*: `greps-sans-angle-mort`, `shell-des-workflows`, `image-documentee`,
+  `liens-des-documents` and `langue-publiee` each printed a full green while their probe was blind.
+  All five already carried an anti-vacuity floor — each floor counted **what had been opened**
+  (blocks read, documents read, files in the tarball) where the rule turns on **what the probe
+  still recognises**. Every floor now counts the recognised form, and says so in the green line.
+- `shell-des-workflows` announced `112 bloc(s) « run: » analysés par bash, aucun refusé` with
+  `bash -n` never invoked. Its control is injected — a script known to be broken, handed to the
+  same analyser the verdict uses — because a derived one would demand of the repository the very
+  thing the rule forbids.
+- Three guards gained a single shared traversal (`appelsDesBlocs`, `referencesLues`, `liensLus`)
+  so that judge and witness read through one probe, named once, rather than two copies that can
+  drift apart.
+
 ## [0.1.145] — 2026-08-31
 
 ⚠️ **Rien à faire pour un hôte, et c'est le seul message de ce train.** Il ne porte que de

@@ -23,7 +23,7 @@ import { readFileSync } from "node:fs";
 import { posix } from "node:path";
 
 import { fichiersDuTarball } from "./inventaire-tarball.mjs";
-import { conclure, conforme, violation, tenter } from "./resultat-garde.mjs";
+import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 import { estExecuteDirectement } from "./execute-directement.mjs";
 
 /** Un lien externe, une ancre ou un courriel ne se résout pas dans le paquet — ils ne nous regardent pas. */
@@ -62,15 +62,40 @@ export const cibleResolue = (documentSource, cible) =>
  * Les liens qui mentent, nommés `fichier:ligne`.
  * `lire` est injectable : les cas synthétiques du banc n'ont pas de fichiers sur le disque.
  */
+export function* liensLus(inventaire, lire = (f) => readFileSync(f, "utf8")) {
+  for (const document of inventaire.filter((f) => /\.md$/i.test(f))) {
+    for (const lien of liensRelatifs(lire(document))) yield { document, ...lien };
+  }
+}
+
+// ⚠️ UN PLANCHER À UN, ET LE RELEVÉ DIT POURQUOI. Deux liens relatifs reconnus le 31/08 dans les
+// trois documents du tarball, tous deux du README vers ses licences (LICENSE, LICENSE-MIT). « Au
+// moins un » est vrai de tout état sain d'un paquet qui doit embarquer ses licences et les
+// nommer ; un plancher plus haut serait collé au relevé du jour, sur une population de deux.
+export const PLANCHER_LIENS = 1;
+
+/**
+ * ⚠️ LE TÉMOIN DE LA RÈGLE — combien de liens relatifs la sonde RECONNAÎT.
+ *
+ * Cette garde affirme une absence. Sa panne la plus probable — une expression qui ne reconnaît
+ * plus la forme `[texte](cible)` — produit elle aussi une absence : les documents publiés verts
+ * sans qu'un seul lien ait été suivi. Le plancher qui existait comptait les DOCUMENTS PUBLIÉS,
+ * pas la FORME RECONNUE.
+ *
+ * Mesuré le 31/08 en vidant la boucle de `matchAll` : l'outil imprimait « 3 document(s)
+ * publié(s), aucun lien relatif ne mène hors du paquet » et sortait 0. Il affirmait une propriété
+ * de liens qu'il n'avait pas lus.
+ */
+export const temoinsDeForme = (inventaire, lire = (f) => readFileSync(f, "utf8")) =>
+  [...liensLus(inventaire, lire)].length;
+
 export function liensMorts(inventaire, lire = (f) => readFileSync(f, "utf8")) {
   const present = new Set(inventaire);
   const soucis = [];
-  for (const document of inventaire.filter((f) => /\.md$/i.test(f))) {
-    for (const { ligne, texte, cible } of liensRelatifs(lire(document))) {
-      const resolue = cibleResolue(document, cible);
-      if (!present.has(resolue)) {
-        soucis.push(`${document}:${ligne} — « ${texte} » mène à « ${cible} », qui ne voyage pas dans le paquet : le lecteur hors ligne clique dans le vide (mettre une URL absolue, ou publier le fichier)`);
-      }
+  for (const { document, ligne, texte, cible } of liensLus(inventaire, lire)) {
+    const resolue = cibleResolue(document, cible);
+    if (!present.has(resolue)) {
+      soucis.push(`${document}:${ligne} — « ${texte} » mène à « ${cible} », qui ne voyage pas dans le paquet : le lecteur hors ligne clique dans le vide (mettre une URL absolue, ou publier le fichier)`);
     }
   }
   return soucis;
@@ -81,9 +106,15 @@ if (estExecuteDirectement(import.meta.url)) {
   // qu'un lien ment — ils disent qu'on n'a pas pu regarder.
   conclure(tenter(() => {
     const inventaire = fichiersDuTarball();
+    // ⚠️ LE PLANCHER DE FORME, AVANT LE VERDICT. Il compte ce que la sonde RECONNAÎT ; le compte
+    // des documents ne dit que ce qui a été OUVERT.
+    const vus = temoinsDeForme(inventaire);
+    const docs = inventaire.filter((f) => /\.md$/i.test(f));
+    if (vus < PLANCHER_LIENS) {
+      return inconclusif(`${vus} lien(s) relatif(s) reconnu(s) dans ${docs.length} document(s) publié(s), moins que ${PLANCHER_LIENS} — ce n'est pas une absence de lien mort, c'est une sonde qui ne lit plus la forme d'un lien`);
+    }
     const soucis = liensMorts(inventaire);
     if (soucis.length) return violation(soucis);
-    const docs = inventaire.filter((f) => /\.md$/i.test(f));
-    return conforme(`liens : ${docs.length} document(s) publié(s), aucun lien relatif ne mène hors du paquet`);
+    return conforme(`liens : ${vus} lien(s) relatif(s) reconnu(s) dans ${docs.length} document(s) publié(s), aucun ne mène hors du paquet`);
   }));
 }

@@ -65,18 +65,52 @@ const REFERENCE = new RegExp(`(?<avant>://)?${REGISTRE.replace(".", "\\.")}/(?<c
 /** Un tag acceptable : absent, `latest`, ou préfixé `v` comme la forge le publie. */
 export const tagAcceptable = (tag) => tag === undefined || tag === "latest" || tag.startsWith("v");
 
+/**
+ * Toutes les références au registre lues dans un fichier, avec leur ligne.
+ *
+ * ⚠️ UNE SEULE TRAVERSÉE POUR LE JUGE ET POUR LE TÉMOIN. Un témoin qui rouvrirait le texte avec
+ * sa propre copie de `REFERENCE` éprouverait un exemplaire intact pendant que l'original dérive :
+ * il resterait vert en confirmant une sonde qui ne sert plus à personne.
+ */
+export function* referencesLues(fichier, texte) {
+  const lignes = texte.split("\n");
+  for (let i = 0; i < lignes.length; i += 1) {
+    for (const m of lignes[i].matchAll(REFERENCE)) {
+      const { avant, chemin, tag } = m.groups;
+      if (avant) continue; // URL de l'API du registre, pas une image
+      yield { fichier, ligne: i + 1, chemin, tag };
+    }
+  }
+}
+
 /** Les références fautives d'un fichier, avec leur ligne. */
 export function referencesFautives(fichier, texte) {
   const soucis = [];
-  texte.split("\n").forEach((ligne, i) => {
-    for (const m of ligne.matchAll(REFERENCE)) {
-      const { avant, chemin, tag } = m.groups;
-      if (avant) continue; // URL de l'API du registre, pas une image
-      if (tagAcceptable(tag)) continue;
-      soucis.push(`${fichier}:${i + 1} — « ${REGISTRE}/${chemin}:${tag} » : la forge publie le tag git tel quel, donc « :v${tag} ». Un lecteur qui suit cette ligne reçoit un 404 sur une sortie saine, et ne peut pas le distinguer d'une image réellement absente`);
-    }
-  });
+  for (const { ligne, chemin, tag } of referencesLues(fichier, texte)) {
+    if (tagAcceptable(tag)) continue;
+    soucis.push(`${fichier}:${ligne} — « ${REGISTRE}/${chemin}:${tag} » : la forge publie le tag git tel quel, donc « :v${tag} ». Un lecteur qui suit cette ligne reçoit un 404 sur une sortie saine, et ne peut pas le distinguer d'une image réellement absente`);
+  }
   return soucis;
+}
+
+// ⚠️ UN PLANCHER, PAS LE RELEVÉ DU JOUR. 5 références d'image reconnues le 31/08 dans 32
+// documents ; deux est vrai de tout état sain — ce dépôt PUBLIE une image et la documente.
+export const PLANCHER_REFERENCES = 2;
+
+/**
+ * ⚠️ LE TÉMOIN DE LA RÈGLE — combien de références au registre la sonde RECONNAÎT.
+ *
+ * Cette garde affirme une absence sur trente-deux documents. Sa panne la plus probable — une
+ * expression qui ne reconnaît plus la forme d'une référence — produit elle aussi une absence :
+ * trente-deux documents verts sans rien avoir mesuré. Le plancher qui existait comptait les
+ * DOCUMENTS OUVERTS, pas la FORME RECONNUE.
+ *
+ * Mesuré le 31/08 en vidant la boucle de `matchAll` : l'outil imprimait « 32 document(s) lus,
+ * chaque référence ghcr.io est sans tag, « latest », ou préfixée « v » » et sortait 0. Il
+ * affirmait une propriété de références qu'il n'avait pas vues.
+ */
+export function temoinsDeForme(fichiers, lire) {
+  return fichiers.reduce((n, f) => n + [...referencesLues(f, lire(f))].length, 0);
 }
 
 /** Ce que la forge exige encore — sinon la règle appliquée ici n'est plus la sienne. */
@@ -106,8 +140,15 @@ if (estExecuteDirectement(import.meta.url)) {
     if (!forgeExigeEncoreLeV(workflow)) {
       return inconclusif(`${OU_LE_TAG_EST_DECIDE} n'exige plus « ${MOTIF_DU_WORKFLOW} » — la forme du tag a changé ou le fichier a bougé, et cette garde appliquerait une règle qui n'est plus celle de la forge`);
     }
-    const soucis = fichiers.flatMap((f) => referencesFautives(f, readFileSync(f, "utf8")));
+    const lire = (f) => readFileSync(f, "utf8");
+    // ⚠️ LE PLANCHER DE FORME, AVANT LE VERDICT. Il compte ce que la sonde RECONNAÎT ; celui du
+    // dessus ne compte que ce que le lecteur a OUVERT.
+    const vues = temoinsDeForme(fichiers, lire);
+    if (vues < PLANCHER_REFERENCES) {
+      return inconclusif(`${vues} référence(s) « ${REGISTRE}/… » reconnue(s) dans ${fichiers.length} document(s), moins que ${PLANCHER_REFERENCES} — ce n'est pas une absence de référence fautive, c'est une sonde qui ne lit plus la forme d'une référence`);
+    }
+    const soucis = fichiers.flatMap((f) => referencesFautives(f, lire(f)));
     if (soucis.length) return violation(soucis);
-    return conforme(`image documentée : ${fichiers.length} document(s) lus, chaque référence ${REGISTRE} est sans tag, « latest », ou préfixée « v » comme ${OU_LE_TAG_EST_DECIDE} la publie`);
+    return conforme(`image documentée : ${vues} référence(s) ${REGISTRE} reconnue(s) dans ${fichiers.length} document(s), chacune sans tag, « latest », ou préfixée « v » comme ${OU_LE_TAG_EST_DECIDE} la publie`);
   }));
 }

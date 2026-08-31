@@ -521,6 +521,40 @@ comment and never confronted is an assertion, not a property. The `schema` job n
 the sources *declare* and confronts it with what the engine *retained*, policies included — with
 the positive control inside it, because "no policy" is itself an absence.
 
+⚠️ **And a positive control can be placed one link too early in the chain, which looks exactly
+like having one.** Five guards here already carried an anti-vacuity floor and still went fully
+green while blind, measured on 31/08 by blinding each probe in turn: `greps-sans-angle-mort`,
+`shell-des-workflows`, `image-documentee`, `liens-des-documents`, `langue-publiee`. Every one of
+their floors counted **what had been opened** — blocks read, documents read, files in the tarball —
+where the rule turns on **what the probe still recognises**: greps, references, links, prose. The
+sieve that sorts them is one sentence, and it sorted all twenty-five sweep-and-assert-absence
+guards in a single pass: *does the floor count the files read, or the form recognised?*
+
+⚠️ **The sentence that protected them was not a comment — it was the green line itself.**
+`shell : 112 bloc(s) « run: » analysés par bash, aucun refusé` is printed on every green run, and
+with `bash -n` never invoked it is literally false. A sentence that *justifies* is under-read; a
+sentence that *asserts a measured fact* is read even less, because it carries the authority of a
+measurement without carrying its weight — and this one is the last line anybody sees before
+concluding the day is fine. Whenever a guard prints a count, make it the count of the form it
+recognised. If the two numbers can differ, print the one that can fall.
+
+**Where a positive control cannot be derived, it must be injected — and the test is not taste.**
+The correct form has to be something the repository is *supposed to contain*: greps over source,
+image references, relative links, English prose. Four of the five had one. The fifth did not —
+`shell-des-workflows`' healthy state is zero refused blocks, so a derived control would demand of
+the repository the very thing the rule forbids and would refuse a healthy repository. There, the
+case is fabricated: hand `bash -n` a script known to be broken and require the refusal.
+
+**A witness must go through the judge's own traversal.** A control that re-walks the text with its
+own copy of the pattern tests an intact copy while the original drifts — green, and about nothing.
+`appelsDesBlocs`, `referencesLues` and `liensLus` exist for that reason alone: the probe is named
+once, and blinding it moves the count and the verdict together.
+
+**And a population floor belongs where the population is the subject.** Putting "at least eight
+greps" inside a `verifier()` that takes an arbitrary root made it accuse every fixture smaller than
+this repository — caught in one run by the guard's own bench. The rule lives in the guard; the fact
+about *this* repository lives in the bench, as it already does for `licence-par-fichier`.
+
 ## Ask who reads an output, and when — no probe answers this one
 
 **A third question, and it is the one no tool can hold.** *Was the threshold written in advance?*
