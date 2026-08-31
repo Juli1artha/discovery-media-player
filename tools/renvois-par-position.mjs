@@ -62,9 +62,50 @@ const IGNORES = new Set(["node_modules", ".git", "dist", "coverage", ".github"])
  */
 export const MOTIF = /\b(?:lines?|lignes?)\s+\d+/gi;
 
+/**
+ * ⚠️ CE QUI EST HORS PORTÉE, ET RIEN D'AUTRE — une liste de ce qui est PERMIS, jamais de ce qu'il
+ * faut regarder.
+ *
+ * La portée était écrite dans l'autre sens : `AGENTS.md|README.md|CONTRIBUTING.md|SECURITY.md` plus
+ * `docs/`. Un périmètre qui a l'air dérivé — `markdowns()` descend tout l'arbre — avec une
+ * ÉNUMÉRATION dans son filtre. Une liste de ce qu'il faut REGARDER cesse de couvrir dès qu'un
+ * fichier apparaît ; une liste de ce qui est PERMIS fait rougir tout fichier qui n'y est pas.
+ *
+ * Mesuré le 31/08, le même renvoi posé deux fois, mot pour mot :
+ *
+ *     docs/zz-sonde.md  « Voir la ligne 42 du fichier. »   → exit 1, vu
+ *     GOUVERNANCE.md    « … à la ligne 42 de ce document » → exit 0, INVISIBLE
+ *
+ * Seul le chemin changeait. Cinq documents de ce dépôt étaient déjà dehors sans décision :
+ * CLA, CODE_OF_CONDUCT, MAINTAINERS, ROADMAP, SUPPORT.
+ *
+ * ⚠️ ET L'EXCEPTION QUI RESTE EST UNE VRAIE. Un renvoi dans le journal décrit l'état d'un commit
+ * passé, pas l'état courant : il ne rouille pas, il enregistre. Le corriger réécrirait l'histoire.
+ * C'est le seul document du dépôt qui portait le motif hors de l'ancienne portée — mesuré, pas
+ * supposé : 2 renvois dans `CHANGELOG.md`, zéro partout ailleurs.
+ */
+export const HORS_PORTEE = {
+  "CHANGELOG.md": "journal : un renvoi y décrit l'état d'un commit passé, pas l'état courant — le corriger réécrirait l'histoire",
+};
+
 /** Les documents dont on se sert pour NAVIGUER — ceux où un renvoi prétend désigner l'état courant. */
-export const estUnGuide = (chemin) =>
-  /^(AGENTS\.md|README\.md|CONTRIBUTING\.md|SECURITY\.md)$/.test(chemin) || chemin.startsWith("docs/");
+export const estUnGuide = (chemin) => !Object.hasOwn(HORS_PORTEE, chemin);
+
+/**
+ * ⚠️ UNE EXCEPTION QUI N'A PLUS DE SUJET EST UNE PORTE OUVERTE D'AVANCE. Le jour où `CHANGELOG.md`
+ * est renommé, l'entrée survit et un futur fichier à ce chemin exact serait exempté SANS décision.
+ * Ce dépôt tient déjà cette règle pour `FICHIERS_MIT` et `INTERNES_TOLERES` ; elle vaut ici aussi.
+ *
+ * ⚠️ ET ELLE VIT DANS LE BANC, PAS DANS LA GARDE. `verifier(racine)` prend une racine QUELCONQUE et
+ * les éprouvettes lui passent des dépôts temporaires : appliquée ici, elle accuserait chaque
+ * éprouvette de ne pas contenir de journal. Un contrôle d'exception appartient là où le SUJET est
+ * connu — la même leçon que la garde des licences a payée le 31/08.
+ */
+export function exceptionsSansSujet(fichiers) {
+  const vus = new Set(fichiers);
+  return Object.keys(HORS_PORTEE).filter((f) => !vus.has(f))
+    .map((f) => `« ${f} » est déclaré hors portée et ne figure plus parmi les documents relevés — RETIREZ l'entrée de HORS_PORTEE, ou corrigez le chemin`);
+}
 
 /** Les renvois par position d'un texte, avec leur numéro de ligne à eux. */
 export function renvois(texte) {
@@ -113,7 +154,8 @@ export function temoinNonVu(voir = renvois) {
 
 export function verifier(racine = ".", lire = readFileSync, lister = readdirSync, decrire = statSync) {
   return tenter(() => {
-    const fichiers = markdowns(racine, lister, decrire).filter(estUnGuide);
+    const tous = markdowns(racine, lister, decrire);
+    const fichiers = tous.filter(estUnGuide);
     // ⚠️ LE PLANCHER. Zéro document relevé et la garde dirait « aucun renvoi fautif » — sur un dépôt
     // dont elle n'aurait rien lu. C'est la vacuité que ce dépôt refuse partout.
     if (!fichiers.length) return inconclusif(`aucun document de navigation relevé sous ${racine} — la sonde vise à côté`);

@@ -583,6 +583,51 @@ runs. Count what loaded, name what did not, and let a floor decide.
 reading the code — not every probe of every guard enumerated. It shows the method finds holes; it
 does not show there are none left.
 
+## A derived perimeter is proven by a file that appears, not by a count
+
+**Twenty-three guards take their perimeter from the disk** (`git ls-files`, `readdirSync`,
+`npm pack`) rather than from a written list — counted, not remembered; an earlier note in this file
+said "eight", which was a memory. Three of those are libraries or comparison tools rather than
+sweeping guards. Deriving a perimeter was never the claim worth checking. **Deriving it
+*correctly* is**, and there is exactly one probe for that: *put a new file of the kind the rule
+judges into the repository, and see whether the guard turns red on it.*
+
+Eighteen of the twenty were probed that way on 31/08 (a violating file dropped, `git add -N`,
+guard run, file removed). **Seventeen saw it. One was blind.**
+
+⚠️ **`renvois-par-position` had a written list hiding inside a derived perimeter.** `markdowns()`
+walks the whole tree; the scope filter then enumerated four root names plus `docs/`. Measured by
+placing the same reference twice, word for word, changing only the path:
+
+```
+docs/zz-sonde.md   a positional reference to a numbered line   → exit 1, seen
+GOUVERNANCE.md     the same sentence, same wording             → exit 0, INVISIBLE
+```
+
+⚠️ The two probe files carried the offending phrase verbatim; **this page does not**, and that is
+not squeamishness. `renvois-par-position` now sweeps every Markdown outside its permitted list,
+this file included: writing the literal here would make the guard red on the prose that documents
+it, one would exempt the file, and the exemption would be the hole. `secrets-en-clair` assembles
+its own sample at runtime for exactly this reason.
+
+Five documents of this repository were already outside it with no decision having said so —
+`CLA.md`, `CODE_OF_CONDUCT.md`, `MAINTAINERS.md`, `ROADMAP.md`, `SUPPORT.md`. **A list of what to
+LOOK AT stops covering the moment a file appears; a list of what is PERMITTED turns red on every
+file that is not in it.** The scope is now the second kind, with `CHANGELOG.md` as its one written
+exception (a reference in a log records a past state; correcting it would rewrite history) and a
+bench asserting that exception still has a subject.
+
+Two guards cannot be probed this way and it is worth saying why rather than counting them as
+passes: `codeowners-valide` (a new file cannot create a violation — its rule is that each pattern
+designates something) and `verdict-zap` (its subject is produced by a scan, not by the tree).
+
+⚠️ **Three times the probe was wrong and the guard was right**, which is the same discipline
+pointed the other way: a tool with no package dependencies launched without `npm ci` is not a
+violation of `outils-servis`; a malformed workflow makes `images-des-workflows` refuse rather than
+accuse; and `surface-base` recognises `db.request(`, not any database call. **A probe that does
+not actually violate proves as little as a green that measured nothing.** Check that the probe is
+a real violation before reading the guard's silence as blindness.
+
 ## Ask who reads an output, and when — no probe answers this one
 
 **A third question, and it is the one no tool can hold.** *Was the threshold written in advance?*

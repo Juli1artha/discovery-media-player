@@ -14,6 +14,15 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- `renvois-par-position` had a written list hiding inside a perimeter that looks derived: the tree
+  walk covers everything, but the scope filter enumerated four root filenames plus `docs/`. The same
+  reference, word for word, was caught in `docs/` and invisible at the repository root — five
+  existing documents (`CLA.md`, `CODE_OF_CONDUCT.md`, `MAINTAINERS.md`, `ROADMAP.md`, `SUPPORT.md`)
+  were outside the rule with no decision having said so. The scope is now a list of what is
+  *permitted* out, with `CHANGELOG.md` as its one written exception, and a bench asserts that
+  exception still has a subject. Eighteen of the twenty disk-derived guards were probed by dropping
+  a new violating file into the tree; this was the only one that did not see it.
+
 - Five CI guards asserted an absence over the repository and could not tell *found nothing* from
   *looked at nothing*: `greps-sans-angle-mort`, `shell-des-workflows`, `image-documentee`,
   `liens-des-documents` and `langue-publiee` each printed a full green while their probe was blind.
