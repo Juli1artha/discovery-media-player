@@ -27,6 +27,8 @@ import {
   PLANCHER_FICHIERS,
 } from "../node-des-workflows.mjs";
 import { CONFORME, VIOLATION, INCONCLUSIF } from "../resultat-garde.mjs";
+import { outilsLances } from "../outils-servis.mjs";
+import { workflows } from "../workflows-yaml.mjs";
 
 const ENGINES = JSON.parse(readFileSync("package.json", "utf8")).engines?.node;
 
@@ -218,5 +220,88 @@ describe("le dossier .github/workflows tel qu'il est", () => {
     const touches = new Set(r.constats.map((c) => c.split(":")[0]));
     expect(touches.size, "la mutation ne réveille qu'un fichier : le balayage ne couvre pas le dossier")
       .toBeGreaterThan(1);
+  });
+});
+
+
+// ⚠️ LES DEUX SENS DE LA MUTATION — ET LE SECOND VIENT D'UNE SESSION VOISINE.
+//
+// Le bloc ci-dessus mute `engines` et regarde le vrai dossier rougir. C'est UN sens, et il ne prouve
+// qu'une moitié : que la comparaison mord. La session STUDIO, en retirant une exception de sa propre
+// garde le 31/08, a nommé ce qui manque à cette moitié :
+//
+//     « Sans cette seconde mutation, j'aurais eu une suite verte parfaitement compatible avec
+//       "j'ai supprimé un test gênant". »
+//
+// Sa paire mutait le SUJET dans les deux directions, et faisait rougir DEUX bancs différents. C'est
+// ce qui interdit à un vert d'être atteint par accident : il n'existe aucun état où tout est vert
+// parce que deux mécanismes se sont annulés.
+//
+// ⚠️ CE QUI MANQUAIT ICI EST PLUS PRÉCIS QUE « UN SENS SUR DEUX ». Toutes les violations éprouvées
+// plus haut passent des déclarations FABRIQUÉES (`decl`, `assezDe`) directement au verdict :
+// l'analyseur n'est jamais dans le chemin du rouge. Il n'est exercé que du côté CONFORME. Si
+// `versionsDe` perdait une déclaration sur une forme YAML particulière, la mutation d'`engines` ne
+// le verrait pas — les onze restantes rougiraient et le banc serait content.
+//
+// Le sens qui manque part donc du TEXTE d'un vrai workflow, pas d'un objet à nous.
+describe("la mutation dans les deux sens, sur les fichiers réels", () => {
+  /** Une déclaration littérale du dépôt — pas une entrée de matrice, dont la ligne porte la liste. */
+  const cible = reel.declarations.find((d) => d.via === null);
+
+  /** Le texte d'un vrai workflow, avec cette seule version abaissée sous le plancher. */
+  const abaisse = () => {
+    const lignes = readFileSync(cible.fichier, "utf8").split("\n");
+    const avant = lignes[cible.ligne - 1];
+    lignes[cible.ligne - 1] = avant.replace(/(node-version:\s*)["']?[^"'\s]+["']?/, '$1"18"');
+    expect(lignes[cible.ligne - 1], `la mutation n'a rien changé à ${cible.fichier}:${cible.ligne} — elle ne prouverait rien`)
+      .not.toBe(avant);
+    return lignes.join("\n");
+  };
+
+  it("la sonde a bien une déclaration littérale à muter", () => {
+    // ⚠️ Le plancher de ce bloc-ci : sans cible, tout ce qui suit passerait en n'éprouvant rien.
+    expect(cible, "aucune déclaration littérale dans le dépôt : ce bloc vise à côté").toBeTruthy();
+  });
+
+  // ⚠️ LE SENS NEUF, ET LE SEUL QUI METTE L'ANALYSEUR DANS LE CHEMIN DU ROUGE.
+  it("⚠️ un vrai workflow abaissé à node 18 est refusé — texte réel, analyseur réel", () => {
+    const lu = versionsDe(abaisse(), cible.fichier);
+    expect(lu.illisibles, "la mutation a cassé le YAML : on n'éprouve plus la règle").toEqual([]);
+
+    const r = verdict({ engines: ENGINES, declarations: [...reel.declarations.filter((d) => d.fichier !== cible.fichier), ...lu.declarations], illisibles: [] });
+    expect(r.code).toBe(VIOLATION);
+    expect(r.constats.join("\n")).toMatch(new RegExp(`${cible.fichier.replace(/[.*+?^$()|[\]\\]/g, "\\$&")}.*node 18`));
+  });
+
+  // ⚠️ LA PARTITION, ÉNONCÉE D'UN SEUL TENANT. Chaque état pris isolément se lit comme un banc de
+  // plus ; les trois ensemble disent la propriété qui compte — le vert du milieu n'est pas
+  // atteignable depuis l'un ou l'autre bord, donc il est MÉRITÉ.
+  it("⚠️ vert au milieu, rouge des deux côtés : aucun vert par accident", () => {
+    const lu = versionsDe(abaisse(), cible.fichier);
+    const avecCible = (decls) => [...reel.declarations.filter((d) => d.fichier !== cible.fichier), ...decls];
+
+    expect(verdict({ engines: ENGINES, ...reel }).code, "l'état réel").toBe(CONFORME);
+    expect(verdict({ engines: ">=24", ...reel }).code, "engines relevé au-dessus des pins").toBe(VIOLATION);
+    expect(verdict({ engines: ENGINES, declarations: avecCible(lu.declarations), illisibles: [] }).code, "un pin abaissé sous engines").toBe(VIOLATION);
+  });
+
+  // ⚠️ ET LA SECONDE JAMBE, PARCE QU'UNE SUPPRESSION NE DOIT PAS ÊTRE SILENCIEUSE.
+  //
+  // Ce banc ne protège PAS la règle : le bloc ci-dessus lit `.github/workflows` pour de vrai, donc
+  // retirer l'étape de `ci.yml` laisserait `npm test` la faire rougir quand même. Vérifié plutôt que
+  // supposé — la première rédaction de ce commentaire affirmait le contraire, et elle avait tort.
+  //
+  // Il protège la SECONDE JAMBE. La règle est tenue à deux endroits — le banc et l'étape de CI — et
+  // c'est délibéré : chacun couvre la disparition de l'autre. Mais une redondance non énoncée est
+  // exactement ce qui a fait survivre un mutant dans ce même fichier : un banc vert grâce à son
+  // voisin, sans que personne puisse le savoir. Alors on l'énonce, et retirer l'étape devient un
+  // choix visible au lieu d'un silence.
+  it("⚠️ un workflow lance vraiment cette garde — la redondance est voulue, donc elle est dite", () => {
+    const lances = workflows().flatMap((f) => outilsLances(f, readFileSync(f, "utf8")));
+    expect(lances.length, "la sonde ne lit aucun lancement : elle vise à côté").toBeGreaterThan(20);
+    expect(
+      lances.map((l) => l.outil),
+      "aucun workflow ne lance node-des-workflows : la garde ne tournerait plus que dans npm test",
+    ).toContain("tools/node-des-workflows.mjs");
   });
 });
