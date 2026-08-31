@@ -41,7 +41,8 @@
 // sollicités depuis l'INTÉRIEUR de `tenter`.
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, rmSync, readFileSync, readdirSync, symlinkSync, existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, readFileSync, readdirSync, copyFileSync, symlinkSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -89,8 +90,18 @@ beforeAll(() => {
   // ferait refuser les outils pour l'AUTRE raison — rien à lire — et ce banc serait vert sans
   // avoir éprouvé sa question une seule fois.
   plein = arbre((d) => {
-    symlinkSync(join(RACINE, "package.json"), join(d, "package.json"));
-    symlinkSync(join(RACINE, "CHANGELOG.md"), join(d, "CHANGELOG.md"));
+    // ⚠️ DES COPIES, PAS DES LIENS : `git add` ne suit pas un lien symbolique vers l'extérieur, il
+    // enregistrerait le lien lui-même et `git ls-files` ne verrait pas un fichier source.
+    copyFileSync(join(RACINE, "package.json"), join(d, "package.json"));
+    copyFileSync(join(RACINE, "CHANGELOG.md"), join(d, "CHANGELOG.md"));
+    // ⚠️ ET C'EST UN VRAI DÉPÔT GIT — LE PREMIER JET N'EN FAISAIT PAS UN, ET SA PROPRIÉTÉ CENTRALE
+    // NE MORDAIT DONC PAS. Un répertoire temporaire n'est pas un dépôt : `git ls-files` y échoue
+    // AVEC git comme SANS lui. « Équipé » et « dépouillé » étaient le même environnement pour
+    // exactement les outils que ce banc devait protéger, et la comparaison entre les deux ne
+    // comparait rien. Mesuré le 31/08 en aveuglant `licence-par-fichier` : hors dépôt, 1 fichier
+    // des deux côtés ; dans un vrai dépôt, 102 avec git et 1 sans.
+    execFileSync("git", ["init", "-q"], { cwd: d, stdio: ["ignore", "pipe", "pipe"] });
+    execFileSync("git", ["add", "-A"], { cwd: d, stdio: ["ignore", "pipe", "pipe"] });
   });
   nu = pathNu();
   sansOutils = { ...process.env, PATH: nu };
@@ -113,6 +124,12 @@ afterAll(() => {
 });
 
 const outils = () => readdirSync(join(RACINE, "tools")).filter((f) => f.endsWith(".mjs"));
+
+/** La dernière ligne imprimée — ce que la garde AFFIRME avoir fait. */
+const resume = (sortie) => {
+  const lignes = String(sortie || "").trim().split("\n");
+  return lignes[lignes.length - 1] || "";
+};
 const source = (nom) => readFileSync(join(RACINE, "tools", nom), "utf8");
 
 describe("sans git ni npm, aucun outil n'accuse la branche", () => {
@@ -157,7 +174,23 @@ describe("sans git ni npm, aucun outil n'accuse la branche", () => {
       // rend pas un mauvais code, il rend un SUCCÈS sur un environnement où il n'a rien pu voir.
       // « Ne rend jamais 1 » ne dit rien de ce cas-là ; il faut comparer aux deux environnements.
       if (code === 0) {
-        expect(equipe.get(nom).code, `${nom} rend 0 SANS git ni npm, alors qu'avec eux il rend ${equipe.get(nom).code} : l'environnement absent lui a fabriqué un vert\n${sortie.slice(0, 400)}`).toBe(0);
+        const avec = equipe.get(nom);
+        expect(avec.code, `${nom} rend 0 SANS git ni npm, alors qu'avec eux il rend ${avec.code} : l'environnement absent lui a fabriqué un vert\n${sortie.slice(0, 400)}`).toBe(0);
+
+        // ⚠️ ET LE VERDICT NE SUFFIT PAS : IL FAUT COMPARER CE QUE LA GARDE PRÉTEND AVOIR EXAMINÉ.
+        // Une garde qui AVALE la panne de git et se replie sur une liste plausible sort 0 des deux
+        // côtés — même code, même absence de faute — en ayant lu cent deux fichiers d'un côté et
+        // UN de l'autre. Le seul endroit où la différence se voit est le résumé, celui-là même que
+        // ce dépôt a passé la journée à rendre porteur.
+        //
+        // ⚠️ LA SEULE DIVERGENCE LÉGITIME EST UNE INDÉTERMINATION DÉCLARÉE, et elle est reconnue
+        // par ce qu'elle DIT, jamais par un nom d'outil : `exemples-en-retard` est une sentinelle
+        // dont le contrat est de sortir 0 en annonçant « je ne conclus rien » quand le registre est
+        // injoignable. Une liste d'exemptions cesserait de couvrir dès qu'un outil s'ajoute.
+        const indetermine = /indetermine|indéterminé|on ne conclut rien|injoignable/i.test(sortie);
+        if (!indetermine) {
+          expect(resume(sortie), `${nom} est vert des deux côtés mais ne dit pas la même chose : retirer l'environnement a changé ce qu'il prétend avoir examiné, sans qu'il déclare n'avoir rien conclu\n  équipé    : ${resume(avec.sortie)}\n  dépouillé : ${resume(sortie)}`).toBe(resume(avec.sortie));
+        }
       }
     });
   }

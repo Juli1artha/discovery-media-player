@@ -14,6 +14,14 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- The stripped-environment bench built its tree outside any git repository, so `git ls-files`
+  failed there whether or not git was on the PATH: its central comparison held two identical
+  environments side by side. The tree is now a real repository, and the comparison extends from the
+  exit code to the **summary line** — a guard that swallows a git failure and falls back to a
+  plausible list exits 0 on both sides while having examined a hundred files on one and one on the
+  other. A mutant reported as killed by three benches, and in fact surviving all three, is now
+  killed by this one alone.
+
 - The viewer page told the host's bot plugin that voice was available whenever
   `ELEVENLABS_API_KEY` was set, while rendering no voice control unless the plugin also declared
   `wiresVoice: true`. Two halves of the same page disagreed, and the half derived from
