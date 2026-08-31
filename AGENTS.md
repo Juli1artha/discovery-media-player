@@ -628,6 +628,41 @@ accuse; and `surface-base` recognises `db.request(`, not any database call. **A 
 not actually violate proves as little as a green that measured nothing.** Check that the probe is
 a real violation before reading the guard's silence as blindness.
 
+## A state shown to someone, derived from configuration rather than observation
+
+**The fourth form, and this repository had already named it — in its own host contract, in bold.**
+`docs/HOST-CONTRACT.md` has said since 26/08: *"`ELEVENLABS_API_KEY` alone no longer shows them:
+the key proves the **server** can synthesise, never that a click leads anywhere, and a button that
+leads to silence is a broken promise made in your name."* The markup obeys that rule —
+`voixProposable()` requires the key **and** `wiresVoice === true`, a declaration only the host can
+make.
+
+The **config object** did not. `page-visionneuse.js` computed `cfg.botVoice` — the field handed to
+`window.PlayerBot.init(VIEWER)`, i.e. to the host's own bot runtime — from the key alone. Measured
+on 31/08 with the key set and a plugin that declares nothing:
+
+```
+cfg.botVoice  = true      ← what the page TELLS the host's plugin
+voice markup  = absent    ← what the page RENDERS to the visitor
+```
+
+**Two halves of one page contradicting each other, and the half that was wrong was the half derived
+from configuration.** The one predicate is now exported and called from both, so the question is
+written once.
+
+⚠️ **What is asserted is the agreement, not the value.** *"`botVoice` is false without
+`wiresVoice`"* pins one case; what must hold under every configuration is that both halves say the
+**same thing**. Only one of them can be wrong without anything noticing — which is precisely what
+happened, for as long as the field existed.
+
+⚠️ **And the probe that found it was wrong twice before it was right**, which is the same
+discipline pointed inward. It first matched `botcVoice` and `botw-s2` anywhere in the page — both
+live in the **stylesheet** too (`botcVoicePulse`, `.botw-card.botw-s2`), so it saw a divergence
+that did not exist. A probe that reads CSS invents a culprit exactly as one that reads comments
+does. And the first test context omitted `plugins.botBrowser`, without which no bot markup is
+rendered at all: the positive case would have been *"both halves say no"* — green for the wrong
+reason, in the bench written to catch a divergence.
+
 ## The taxonomy has a boundary above `tenter`, and nothing said where
 
 `tenter()` maps everything that happens *after* the import to exit `2` — *the guard could not
@@ -648,6 +683,19 @@ which **is not a git repository**, so `git ls-files` and `npm pack` fail there e
 with the binaries absent. Its assertion (*never exit 0*) is strictly stronger than *never exit 1*.
 Four mutants built to separate the two — a perimeter hoisted above `tenter`, a swallowed git
 failure falling back to a plausible list — were killed by both benches every time.
+
+⚠️ **And that verdict was itself produced by a broken harness — corrected here on 31/08.** The
+mutation runner passed `--reporter=basic`, which vitest 4 rejects: *every* invocation exited 1, so
+it reported **KILLED whatever happened**, including for surviving mutants. It was a detector
+maximally confusable with its own failure — the exact defect this page spends its length on — built
+and used all day by the person writing about it. Re-measured with a runner that reads the failing-
+test count and refuses a verdict when the bench is not green before mutation: eleven of the twelve
+claims stand, and one was wrong. **A swallowed git failure with a plausible fallback survives all
+three benches** — it was reported as killed by all three. That gap is open.
+
+The lesson is not "be careful with harnesses". It is the one already written above, applied one
+level up: **a tool that reports on other tools needs its own positive control.** Before believing a
+campaign of KILLED, make one mutant that must survive and check the runner says so.
 
 What remained genuinely untested was one **configuration**, not a property: a **garnished** tree
 with the environment absent. Measured with a decoy in place of `git` and `npm`, three tools —
