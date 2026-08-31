@@ -12,6 +12,29 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Changed
+
+- ⚠️ **Le périmètre d'`images-epinglees` vient du disque — c'était une liste écrite, dans la garde où
+  ça coûtait le plus cher.** `ci.yml` lui passait `Dockerfile .zap/Dockerfile` en dur. Cette garde
+  **est** la règle qui empêche une image de changer sous nos pieds : le jour où quelqu'un ajoutait un
+  troisième Dockerfile, elle aurait rendu « toutes épinglées » en n'ayant regardé que deux fichiers
+  sur trois. Son refus « zéro image » ne l'aurait pas dit — **il compte ce qu'il a LU, il ne sait pas
+  ce qu'il n'a pas OUVERT**.
+
+  Le périmètre est désormais `git ls-files`, partagé avec `node-de-l-image` plutôt que dupliqué :
+  deux exemplaires de « quels Dockerfiles existe-t-il ? » divergeraient. Un banc interdit à un
+  workflow de le remplacer par des arguments — dériver un périmètre ne sert à rien si un appel
+  l'écrase.
+
+  ⚠️ **Et ce lot a réintroduit, en le déplaçant, le défaut que `resultat-garde` existe pour
+  interdire.** Le calcul du périmètre vivait AU-DESSUS de `tenter`, ce qui était sans conséquence
+  tant qu'il valait `["Dockerfile"]`, une constante. Devenu une **lecture du disque**, son exception
+  a cessé d'être rattrapée : hors d'un dépôt git, l'outil mourait sur une trace de pile et sortait
+  **1** — « corrige ta branche » pour un environnement sans git, exactement le rouge que la taxonomie
+  sépare. Les quatre mutants de ce lot et ses cinquante-trois bancs étaient verts ; **seule
+  `planchers-des-gardes` l'a dit**, en lançant l'outil dans un dépôt vide. Le calcul est passé
+  dedans, et la frontière est maintenant commentée à l'endroit où on la franchit.
+
 ### Added
 
 - ⚠️ **La seconde moitié de la paire : ce que l'IMAGE embarque, confronté à `engines`.** La première

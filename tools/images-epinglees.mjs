@@ -22,13 +22,52 @@
 // l'image puis lui demande sa version de Node, et la compare à la majeure écrite ici. Le
 // commentaire ne suffirait pas.
 //
+// ⚠️ ET SON PÉRIMÈTRE VENAIT D'UNE LISTE ÉCRITE, JUSQU'AU 31/08. `ci.yml` lui passait
+// `Dockerfile .zap/Dockerfile` en dur. Une liste écrite cesse de couvrir dès qu'on ajoute un
+// fichier, et personne ne relit une liste en ajoutant un Dockerfile : cette garde-ci aurait rendu
+// « toutes épinglées » en n'ayant regardé que deux fichiers sur trois. Son refus « zéro image »
+// ne l'aurait pas dit — il compte ce qu'il A LU, il ne sait pas ce qu'il N'A PAS OUVERT.
+//
+// C'est le coût le plus élevé possible pour ce défaut : cette garde EST la règle qui empêche une
+// image de changer sous nos pieds. Le périmètre vient donc du disque, et un banc interdit à un
+// workflow de le remplacer par des arguments.
+//
 // Usage : node tools/images-epinglees.mjs [Dockerfile...]
 
 import { DockerfileParser } from "dockerfile-ast";
 import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 
 import { estExecuteDirectement } from "./execute-directement.mjs";
+
+/**
+ * ⚠️ UN NOM NE DIT PAS TOUJOURS CE QU'IL EST. `Dockerfile.prod` en est un ; `Dockerfile.md` est une
+ * PAGE QUI EN PARLE. Aucune lecture du nom ne les sépare sans convention, alors on en écrit une :
+ * les extensions de document sont écartées.
+ *
+ * ⚠️ MAIS RESSERRER UNE SONDE EN SILENCE EST CE QUI A COÛTÉ TROIS LECTEURS À CE DÉPÔT. Ce qui est
+ * écarté est donc RENDU, comme `usesHorsPosition` le fait pour les workflows, et la garde le dit en
+ * avertissement : à un humain de trancher si l'un d'eux était un vrai Dockerfile mal nommé. Voir
+ * moins qu'avant est acceptable ; voir moins sans le dire ne l'est pas.
+ */
+const EXTENSIONS_DE_DOCUMENT = /\.(md|markdown|txt|rst|adoc)$/i;
+
+const RESSEMBLE_A_UN_DOCKERFILE = /(^|\/)Dockerfile(\.[^/]+)?$/;
+
+/** Les Dockerfiles SUIVIS par git — le périmètre vient du disque, jamais d'une liste écrite. */
+export function dockerfilesSuivis(lister = () => execFileSync("git", ["ls-files"], { encoding: "utf8" })) {
+  const tous = String(lister()).split("\n").filter(Boolean);
+  if (!tous.length) throw new Error("`git ls-files` n'a rien rendu — la sonde vise à côté, ou le dépôt n'est pas là");
+  const candidats = tous.filter((f) => RESSEMBLE_A_UN_DOCKERFILE.test(f)).sort();
+  return candidats.filter((f) => !EXTENSIONS_DE_DOCUMENT.test(f));
+}
+
+/** Ce que le resserrement écarte — rendu, jamais tu. */
+export function ecartesDuPerimetre(lister = () => execFileSync("git", ["ls-files"], { encoding: "utf8" })) {
+  return String(lister()).split("\n").filter(Boolean)
+    .filter((f) => RESSEMBLE_A_UN_DOCKERFILE.test(f) && EXTENSIONS_DE_DOCUMENT.test(f)).sort();
+}
 
 /**
  * Les images EXTERNES d'un Dockerfile — celles qui viennent d'un registre.
@@ -184,10 +223,28 @@ export function ecartMajeur(txt, versionObservee) {
 }
 
 if (estExecuteDirectement(import.meta.url)) {
-  const fichiers = process.argv.slice(2).length ? process.argv.slice(2) : ["Dockerfile"];
+  // ⚠️ LE PÉRIMÈTRE VENAIT D'UNE LISTE ÉCRITE, ET C'EST LA GARDE OÙ ÇA COÛTAIT LE PLUS CHER.
+  // `ci.yml` passait `Dockerfile .zap/Dockerfile` en dur. Cette garde exige l'épinglage au
+  // condensat — elle existe pour qu'une image ne puisse pas changer sous nos pieds — et le jour où
+  // quelqu'un ajoutait un troisième Dockerfile, elle rendait « toutes épinglées » en n'ayant
+  // regardé que deux fichiers sur trois. Le refus « zéro image » ci-dessous ne l'aurait pas dit :
+  // il compte ce qu'il A LU, il ne sait pas ce qu'il N'A PAS OUVERT.
+  //
+  // Une liste écrite cesse de couvrir dès qu'on ajoute un fichier, et personne ne relit une liste
+  // en ajoutant un Dockerfile. Le périmètre vient donc du disque. Les arguments restent acceptés
+  // pour l'usage en ligne de commande ; aucun workflow n'en passe, et un banc le tient.
   // ⚠️ `tenter` : un Dockerfile absent ou illisible ne dit rien de l'épinglage. Il sortait 1, avec
   // une trace de pile ENOENT en guise de verdict.
+  //
+  // ⚠️ ET LE CALCUL DU PÉRIMÈTRE EST DEDANS, PAS AU-DESSUS — CE FUT UNE RÉGRESSION, LE 31/08.
+  // Cette ligne était `["Dockerfile"]`, une constante, donc sa place hors de `tenter` était sans
+  // conséquence. Le jour où elle est devenue une LECTURE DU DISQUE, son exception a cessé d'être
+  // rattrapée : hors d'un dépôt git, l'outil mourait sur une trace de pile et sortait 1 — « corrige
+  // ta branche » pour un environnement sans git. C'est mot pour mot le défaut que `resultat-garde`
+  // existe pour interdire, réintroduit en déplaçant une frontière sans la voir. Seule la garde des
+  // planchers l'a dit ; les quatre mutants de ce lot et ses cinquante-trois bancs étaient verts.
   conclure(tenter(() => {
+    const fichiers = process.argv.slice(2).length ? process.argv.slice(2) : dockerfilesSuivis();
     const textes = fichiers.map((f) => [f, readFileSync(f, "utf8")]);
     const externes = textes.flatMap(([, t]) => imagesDe(t)).filter((i) => !i.interne);
 
@@ -200,6 +257,10 @@ if (estExecuteDirectement(import.meta.url)) {
     }
     const soucis = textes.flatMap(([f, t]) => ecartsEpinglage(t, f));
     if (soucis.length) return violation(soucis);
-    return conforme(`images de base : ${externes.length} référence(s) externe(s), toutes épinglées sur un condensat`);
+    const ecartes = process.argv.slice(2).length ? [] : ecartesDuPerimetre();
+    return conforme(
+      `images de base : ${externes.length} référence(s) externe(s) dans ${fichiers.length} Dockerfile(s), toutes épinglées sur un condensat`,
+      ecartes.length ? [`écarté du périmètre comme document : ${ecartes.join(", ")} — si l'un d'eux est un vrai Dockerfile, renommez-le`] : [],
+    );
   }));
 }

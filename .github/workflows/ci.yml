@@ -661,7 +661,7 @@ jobs:
       # une autre — mouvante, elle changerait les règles du garde sans qu'aucun commit ne bouge.
       - name: Container base images are pinned to a digest
         if: matrix.node == '22'
-        run: node tools/images-epinglees.mjs Dockerfile .zap/Dockerfile
+        run: node tools/images-epinglees.mjs
 
       # ⚠️ ET ELLE NE S'APPLIQUAIT ENCORE QU'À MOITIÉ — au FICHIER, pas à la RÈGLE. L'étape
       # ci-dessus refuse une étiquette mobile dans un `Dockerfile` ; pendant ce temps la forge

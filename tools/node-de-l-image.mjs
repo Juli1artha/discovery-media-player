@@ -31,6 +31,11 @@
 // liste en ajoutant un fichier. C'est la correction que la session STUDIO a apportée à sa propre
 // garde le 31/08, et elle vaut ici mot pour mot.
 //
+// ⚠️ CE PÉRIMÈTRE VIT DANS `images-epinglees`, ET C'EST DÉLIBÉRÉ. Écrire cette garde a montré que
+// l'autre en avait besoin — la sienne était une liste écrite dans `ci.yml`, sur la garde de
+// sécurité qui exige l'épinglage. Deux exemplaires de « quels Dockerfiles existe-t-il ? »
+// divergeraient ; il n'y en a donc qu'un, et il est chez la plus ancienne des deux gardes.
+//
 // ⚠️ ET LA RÈGLE EST UNE RELATION, PAS UN COMPTAGE. Toute image qui FOURNIT node doit dire
 // laquelle. `FROM node@sha256:…` sans étiquette est parfaitement valide, parfaitement épinglé, et
 // sa version est indéterminable : un comptage la verrait comme une image de plus, la relation la
@@ -44,14 +49,13 @@
 //
 // Usage : node tools/node-de-l-image.mjs [Dockerfile...]
 
-import { execFileSync, } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 import semver from "semver";
 
 import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 import { estExecuteDirectement } from "./execute-directement.mjs";
-import { froms } from "./images-epinglees.mjs";
+import { froms, dockerfilesSuivis, ecartesDuPerimetre } from "./images-epinglees.mjs";
 import { estUnPlancherSansPlafond } from "./node-des-workflows.mjs";
 
 /**
@@ -74,34 +78,6 @@ const MOTIF_IMAGE_NODE = /^(?:docker\.io\/)?(?:library\/)?node(?::|@|$)/;
  * node, donc il en existe au moins une. En dessous, la sonde n'a pas lu.
  */
 export const PLANCHER_IMAGES = 1;
-
-/**
- * ⚠️ UN NOM NE DIT PAS TOUJOURS CE QU'IL EST. `Dockerfile.prod` en est un ; `Dockerfile.md` est une
- * PAGE QUI EN PARLE. Aucune lecture du nom ne les sépare sans convention, alors on en écrit une :
- * les extensions de document sont écartées.
- *
- * ⚠️ MAIS RESSERRER UNE SONDE EN SILENCE EST CE QUI A COÛTÉ TROIS LECTEURS À CE DÉPÔT. Ce qui est
- * écarté est donc RENDU, comme `usesHorsPosition` le fait pour les workflows, et la garde le dit en
- * avertissement : à un humain de trancher si l'un d'eux était un vrai Dockerfile mal nommé. Voir
- * moins qu'avant est acceptable ; voir moins sans le dire ne l'est pas.
- */
-const EXTENSIONS_DE_DOCUMENT = /\.(md|markdown|txt|rst|adoc)$/i;
-
-const RESSEMBLE_A_UN_DOCKERFILE = /(^|\/)Dockerfile(\.[^/]+)?$/;
-
-/** Les Dockerfiles SUIVIS par git — le périmètre vient du disque, jamais d'une liste écrite. */
-export function dockerfilesSuivis(lister = () => execFileSync("git", ["ls-files"], { encoding: "utf8" })) {
-  const tous = String(lister()).split("\n").filter(Boolean);
-  if (!tous.length) throw new Error("`git ls-files` n'a rien rendu — la sonde vise à côté, ou le dépôt n'est pas là");
-  const candidats = tous.filter((f) => RESSEMBLE_A_UN_DOCKERFILE.test(f)).sort();
-  return candidats.filter((f) => !EXTENSIONS_DE_DOCUMENT.test(f));
-}
-
-/** Ce que le resserrement écarte — rendu, jamais tu. */
-export function ecartesDuPerimetre(lister = () => execFileSync("git", ["ls-files"], { encoding: "utf8" })) {
-  return String(lister()).split("\n").filter(Boolean)
-    .filter((f) => RESSEMBLE_A_UN_DOCKERFILE.test(f) && EXTENSIONS_DE_DOCUMENT.test(f)).sort();
-}
 
 /**
  * La portée semver que porte l'étiquette d'une image node, ou `null` si elle n'en porte pas.
