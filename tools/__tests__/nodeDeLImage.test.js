@@ -18,8 +18,6 @@ import {
   porteeDeLEtiquette,
   imagesNodeDe,
   imagesNodeDuDepot,
-  dockerfilesSuivis,
-  ecartesDuPerimetre,
   verdict,
   PLANCHER_IMAGES,
 } from "../node-de-l-image.mjs";
@@ -70,27 +68,6 @@ describe("ce que la sonde relève dans un Dockerfile", () => {
   it("ne compte pas une étape interne comme une image du registre", () => {
     const r = imagesNodeDe("FROM node:24-alpine@sha256:abc AS node\nFROM node\n", "D");
     expect(r, "la seconde ligne réutilise l'étape locale, elle ne tire rien du registre").toHaveLength(1);
-  });
-});
-
-describe("le périmètre vient du disque", () => {
-  const LISTE = () => "Dockerfile\n.zap/Dockerfile\nDockerfile.test\nsrc/index.ts\ndocs/Dockerfile.md\n";
-
-  it("ne retient que les Dockerfiles, à toute profondeur", () => {
-    expect(dockerfilesSuivis(LISTE)).toEqual([".zap/Dockerfile", "Dockerfile", "Dockerfile.test"]);
-  });
-
-  // ⚠️ `Dockerfile.prod` EN EST UN, `Dockerfile.md` EST UNE PAGE QUI EN PARLE. Aucune lecture du nom
-  // ne les sépare sans convention — mais un resserrement muet est ce qui a coûté trois lecteurs à ce
-  // dépôt, alors ce qui est écarté est RENDU.
-  it("⚠️ écarte les documents, et les REND au lieu de les taire", () => {
-    expect(dockerfilesSuivis(LISTE)).not.toContain("docs/Dockerfile.md");
-    expect(ecartesDuPerimetre(LISTE), "un resserrement qui ne laisse pas de trace est un angle mort")
-      .toEqual(["docs/Dockerfile.md"]);
-  });
-
-  it("⚠️ refuse un `git ls-files` muet — la sonde viserait à côté", () => {
-    expect(() => dockerfilesSuivis(() => "")).toThrow(/n'a rien rendu/);
   });
 });
 

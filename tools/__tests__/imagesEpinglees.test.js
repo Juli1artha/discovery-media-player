@@ -9,7 +9,9 @@
 
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-import { froms, imagesDe, ecartsEpinglage, majeurAnnonce, majeurAttendu, ecartMajeur, sourceDuMontage } from "../images-epinglees.mjs";
+import { froms, imagesDe, ecartsEpinglage, majeurAnnonce, majeurAttendu, ecartMajeur, sourceDuMontage, dockerfilesSuivis, ecartesDuPerimetre } from "../images-epinglees.mjs";
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 
 const REEL = readFileSync("Dockerfile", "utf8");
 const CONDENSAT = "sha256:" + "a".repeat(64);
@@ -217,5 +219,59 @@ describe("⚠️ LE REFUS DIT OÙ, PAS SEULEMENT QUOI", () => {
     const lignes = ecartsEpinglage(TROIS_PORTES, "Dockerfile").map((s) => Number(/:(\d+) /.exec(s)[1]));
     expect(new Set(lignes).size).toBe(3);
     expect(lignes).toEqual([3, 4, 5]);
+  });
+});
+
+
+// ⚠️ LE PÉRIMÈTRE VENAIT D'UNE LISTE ÉCRITE, DANS LA GARDE OÙ ÇA COÛTAIT LE PLUS CHER.
+//
+// `ci.yml` passait `Dockerfile .zap/Dockerfile` en dur. Cette garde exige l'épinglage au condensat —
+// elle existe pour qu'une image ne puisse pas changer sous nos pieds. Le jour où quelqu'un ajoutait
+// un troisième Dockerfile, elle rendait « toutes épinglées » en n'ayant regardé que deux fichiers
+// sur trois, et son refus « zéro image » ne l'aurait pas dit : il compte ce qu'il A LU, il ne sait
+// pas ce qu'il N'A PAS OUVERT.
+describe("le périmètre vient du disque, jamais d'une liste écrite", () => {
+  const LISTE = () => "Dockerfile\n.zap/Dockerfile\nDockerfile.test\nsrc/index.ts\ndocs/Dockerfile.md\n";
+
+  it("retient les Dockerfiles, à toute profondeur", () => {
+    expect(dockerfilesSuivis(LISTE)).toEqual([".zap/Dockerfile", "Dockerfile", "Dockerfile.test"]);
+  });
+
+  // ⚠️ `Dockerfile.prod` EN EST UN, `Dockerfile.md` EST UNE PAGE QUI EN PARLE. Aucune lecture du nom
+  // ne les sépare sans convention — mais un resserrement muet est ce qui a coûté trois lecteurs à ce
+  // dépôt, alors ce qui est écarté est RENDU.
+  it("⚠️ écarte les documents, et les REND au lieu de les taire", () => {
+    expect(dockerfilesSuivis(LISTE)).not.toContain("docs/Dockerfile.md");
+    expect(ecartesDuPerimetre(LISTE), "un resserrement qui ne laisse pas de trace est un angle mort")
+      .toEqual(["docs/Dockerfile.md"]);
+  });
+
+  it("⚠️ refuse un `git ls-files` muet — la sonde viserait à côté", () => {
+    expect(() => dockerfilesSuivis(() => "")).toThrow(/n'a rien rendu/);
+  });
+
+  it("voit les Dockerfiles réels du dépôt", () => {
+    const reels = dockerfilesSuivis();
+    expect(reels).toContain("Dockerfile");
+    expect(reels, "le Dockerfile du scanner doit entrer dans le périmètre").toContain(".zap/Dockerfile");
+  });
+
+  // ⚠️ LA GARDE DE NON-RÉGRESSION, ET C'EST ELLE QUI TIENT LA PROPRIÉTÉ. Dériver le périmètre ne
+  // sert à rien si un workflow le REMPLACE par une liste : les arguments l'emportent. Ce banc
+  // interdit donc à un workflow d'en passer, et porte son plancher — sans lui, renommer l'outil le
+  // rendrait vert en n'inspectant aucun lancement.
+  it("⚠️ aucun workflow ne REMPLACE le périmètre par une liste écrite", () => {
+    const dossier = ".github/workflows";
+    const textes = readdirSync(dossier).filter((f) => /\.ya?ml$/.test(f))
+      .map((f) => [f, readFileSync(join(dossier, f), "utf8")]);
+
+    const lancements = textes.flatMap(([f, t]) =>
+      [...t.matchAll(/node tools\/images-epinglees\.mjs([^\n]*)/g)].map((m) => ({ fichier: f, args: m[1].trim() })));
+
+    expect(lancements.length, "aucun lancement relevé : ce banc vise à côté").toBeGreaterThan(0);
+    expect(
+      lancements.filter((l) => l.args !== ""),
+      "un workflow passe une liste de fichiers : le périmètre redevient écrit à la main, et cesse de couvrir dès qu'on ajoute un Dockerfile",
+    ).toEqual([]);
   });
 });
