@@ -12,6 +12,18 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- `tools/__tests__/environnementDepouille.test.js` runs every tool with a `PATH` containing nothing
+  but node — no `git`, no `npm` — against a *garnished* tree, and asserts the taxonomy holds: never
+  exit 1 (which would accuse a branch for an environment fault), and a stripped environment never
+  manufactures a green. Three tools reach their external call only in that configuration. The file
+  states in its own header that no mutant is known to be killed by it alone: the neighbouring
+  empty-tree bench already covers most of this ground, because a temp directory is not a git
+  repository either.
+- The tree builder both benches use now lives in one place (`__tests__/aide/arbre-outils.mjs`)
+  rather than in two copies that could drift apart.
+
 ### Fixed
 
 - `renvois-par-position` had a written list hiding inside a perimeter that looks derived: the tree

@@ -628,6 +628,34 @@ accuse; and `surface-base` recognises `db.request(`, not any database call. **A 
 not actually violate proves as little as a green that measured nothing.** Check that the probe is
 a real violation before reading the guard's silence as blindness.
 
+## The taxonomy has a boundary above `tenter`, and nothing said where
+
+`tenter()` maps everything that happens *after* the import to exit `2` — *the guard could not
+look, the fix is not in your branch*. **An absent package fails the import itself.** Measured on
+31/08 with `node_modules` removed: **19 of the 42 tools exit 1** on an `ERR_MODULE_NOT_FOUND`
+stack trace, and none of them can do otherwise — their code never ran. That is the taxonomy's own
+forbidden red (accusing a branch for an environment fault), produced at a place the taxonomy
+cannot reach.
+
+The corresponding property is held **elsewhere**: `outils-servis` refuses a workflow that launches
+a dependency-carrying tool in a job without `npm ci`. Nothing holds it for a person running a tool
+by hand in a fresh clone; the answer there is `npm ci`, and the boundary is now written down
+rather than rediscovered.
+
+⚠️ **And the "stripped environment" debt was largely already paid — the sweep that went looking
+found that out about itself.** `planchersDesGardes` builds its empty tree in a temp directory,
+which **is not a git repository**, so `git ls-files` and `npm pack` fail there exactly as they do
+with the binaries absent. Its assertion (*never exit 0*) is strictly stronger than *never exit 1*.
+Four mutants built to separate the two — a perimeter hoisted above `tenter`, a swallowed git
+failure falling back to a plausible list — were killed by both benches every time.
+
+What remained genuinely untested was one **configuration**, not a property: a **garnished** tree
+with the environment absent. Measured with a decoy in place of `git` and `npm`, three tools —
+`licence-par-fichier`, `node-de-l-image`, `release-preflight` — reach their external call *only*
+there; in an empty tree they refuse earlier. `environnementDepouille` holds that position and says
+in its own header that no mutant is known to be killed by it alone. **A coverage claimed wider
+than it is, is worth less than no coverage** — so it is claimed exactly as wide as it is.
+
 ## Ask who reads an output, and when — no probe answers this one
 
 **A third question, and it is the one no tool can hold.** *Was the threshold written in advance?*

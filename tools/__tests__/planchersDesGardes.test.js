@@ -21,13 +21,14 @@
 // rougir ce fichier — c'est ce qui distingue une garde d'une liste tenue à la main.
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, cpSync, rmSync, readFileSync, writeFileSync, readdirSync, symlinkSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
+import { rmSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 
-const RACINE = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+// ⚠️ L'ARBRE ET LE LANCEUR SONT PARTAGÉS AVEC `environnementDepouille`, qui pose l'autre moitié de
+// la question : celui-ci demande « que fait un outil sur un dépôt VIDE ? », l'autre « que fait-il
+// quand l'ENVIRONNEMENT manque ? ». Deux exemplaires de « à quoi ressemble un dépôt de ce projet »
+// divergeraient, et le banc resté en arrière éprouverait un arbre qui n'est plus celui du dépôt.
+import { RACINE, arbre, lancer } from "./aide/arbre-outils.mjs";
 
 // ⚠️ CHAQUE EXEMPTION PORTE SA RAISON *ET* SA VÉRIFICATION. Une exemption qu'on ne peut que croire
 // est une liste blanche : elle survit à la disparition de son motif. Ici, si `workflows-yaml` gagne
@@ -68,28 +69,6 @@ const EXEMPTES = {
 };
 
 let vide, muet;
-
-/** Monte un arbre qui a la FORME du dépôt, et le rend au chemin où il vit. */
-function arbre(garnir) {
-  const d = mkdtempSync(join(tmpdir(), "planchers-"));
-  for (const sous of ["tools", "server", "docs", "examples", "charge", "base", ".github/workflows", "src"]) {
-    mkdirSync(join(d, sous), { recursive: true });
-  }
-  cpSync(join(RACINE, "tools"), join(d, "tools"), { recursive: true });
-  try { symlinkSync(join(RACINE, "node_modules"), join(d, "node_modules")); } catch { /* déjà là */ }
-  if (garnir) garnir(d);
-  return d;
-}
-
-/** Lance un outil dans un arbre et rend son code de sortie. */
-function lancer(nom, ou) {
-  try {
-    execFileSync(process.execPath, [join("tools", nom)], { cwd: ou, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    return { code: 0, sortie: "" };
-  } catch (e) {
-    return { code: e.status ?? 1, sortie: String(e.stdout || "") + String(e.stderr || "") };
-  }
-}
 
 beforeAll(() => {
   // Un dépôt qui a la FORME du nôtre et n'a RIEN dedans : c'est exactement l'état où une sonde qui
