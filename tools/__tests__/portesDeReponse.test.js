@@ -11,7 +11,7 @@ import { describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-import { corpsEcrits, estTexteEcrit, entetesDe, manquements, typesReserves, MODULE_DES_PORTES } from "../portes-de-reponse.mjs";
+import { corpsEcrits, estTexteEcrit, entetesDe, manquements, typesReserves, MODULE_DES_PORTES, temoinNonVu } from "../portes-de-reponse.mjs";
 import ts from "typescript";
 
 const lu = (source) => corpsEcrits("t.js", source);
@@ -139,5 +139,29 @@ describe("les fichiers réels du dépôt", () => {
 
   it("le module des portes est bien dans le périmètre lu — sinon les deux règles ne visent rien", () => {
     expect(fichiers).toContain(MODULE_DES_PORTES);
+  });
+});
+
+
+// ⚠️ LE TÉMOIN DE LA RÈGLE — INJECTÉ, ET LA MESURE A DIT POURQUOI.
+//
+// Un témoin DÉRIVÉ du dépôt (« au moins un corps écrit sur place ») a été essayé le 31/08 : il
+// REFUSE sur un dépôt sain. Mesuré — zéro corps reconnu pour onze `.end(` bruts, parce que tout
+// passe par le module des portes. Un témoin dérivé aurait exigé la chose même que la garde
+// décourage. Il est donc fabriqué.
+describe("le témoin posé : la sonde voit-elle encore un corps sans type ?", () => {
+  it("ne dit rien quand la sonde voit ET juge", () => {
+    expect(temoinNonVu()).toBeNull();
+  });
+
+  it("⚠️ nomme le refus quand la sonde ne voit plus la forme", () => {
+    expect(temoinNonVu(() => [])).toMatch(/n'a pas vu un corps écrit sur place/);
+  });
+
+  // ⚠️ VOIR N'EST PAS JUGER. Une sonde qui reconnaît la forme mais ne la juge plus fautive laisse
+  // passer exactement ce que la garde existe pour attraper — et un témoin qui ne vérifierait que
+  // « vu » ne le dirait pas.
+  it("⚠️ et quand elle voit sans juger — deux cécités distinctes", () => {
+    expect(temoinNonVu(() => [{ faux: true }], () => [])).toMatch(/ne l'a pas jugé fautif/);
   });
 });

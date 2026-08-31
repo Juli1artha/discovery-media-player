@@ -90,12 +90,36 @@ export function markdowns(racine, lister = readdirSync, decrire = statSync) {
   return vus;
 }
 
+/**
+ * ⚠️ LE TÉMOIN DE LA RÈGLE — INJECTÉ, PAS DÉRIVÉ.
+ *
+ * Cette garde affirme une ABSENCE. Sa panne la plus probable — une sonde qui ne reconnaît plus la
+ * forme cherchée — produit elle aussi une ABSENCE : tout le périmètre vert sans rien avoir mesuré.
+ * Le plancher qui existait compte les FICHIERS LUS, jamais la FORME RECONNUE. Mesuré le 31/08 en
+ * aveuglant la sonde : l'outil imprimait son résumé complet et sortait 0.
+ *
+ * Le témoin est INJECTÉ parce que l'état sain de cette règle est justement ZÉRO occurrence de ce
+ * qu'elle cherche : il n'y a rien à dériver du dépôt. On pose donc un cas dont on sait qu'il est
+ * fautif, on vérifie que la sonde le VOIT, on le jette — le mécanisme de l'étape RLS de `ci.yml`,
+ * qui le pratique depuis des semaines sur les politiques Postgres.
+ */
+export function temoinNonVu(voir = renvois) {
+  // ⚠️ ÉCRIT EN CLAIR, ET C'EST SANS DANGER ICI : cette garde ne lit que les documents Markdown de
+  // navigation (`estUnGuide`), jamais son propre source. C'est la PORTÉE qui la protège, comme son
+  // en-tête le dit — pas une exemption, qu'il faudrait ensuite surveiller.
+  return voir("voir lignes 12 du fichier").length ? null
+    : "la sonde n'a pas vu un renvoi par position qu'on venait de poser";
+}
+
 export function verifier(racine = ".", lire = readFileSync, lister = readdirSync, decrire = statSync) {
   return tenter(() => {
     const fichiers = markdowns(racine, lister, decrire).filter(estUnGuide);
     // ⚠️ LE PLANCHER. Zéro document relevé et la garde dirait « aucun renvoi fautif » — sur un dépôt
     // dont elle n'aurait rien lu. C'est la vacuité que ce dépôt refuse partout.
     if (!fichiers.length) return inconclusif(`aucun document de navigation relevé sous ${racine} — la sonde vise à côté`);
+
+    const aveugle = temoinNonVu();
+    if (aveugle) return inconclusif(`${aveugle} — ce n'est pas une absence de renvoi fautif, c'est une sonde qui ne lit plus la forme`);
 
     const constats = [];
     for (const f of fichiers) {
@@ -109,7 +133,7 @@ export function verifier(racine = ".", lire = readFileSync, lister = readdirSync
       }
     }
     if (constats.length) return violation(constats);
-    return conforme(`${fichiers.length} document(s) de navigation relus, aucun renvoi par numéro de ligne`);
+    return conforme(`${fichiers.length} document(s) de navigation relus, sonde confirmée par un témoin posé, aucun renvoi par numéro de ligne`);
   });
 }
 

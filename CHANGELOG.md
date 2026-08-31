@@ -14,6 +14,35 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- ⚠️ **Les trois dernières gardes d'absence portent un témoin — et la mesure a imposé un mécanisme
+  différent de celui des deux précédentes.** `secrets-en-clair`, `renvois-par-position` et
+  `portes-de-reponse` affirment chacune une absence sur un large périmètre. Aveuglées, mesuré : les
+  trois imprimaient leur résumé complet et sortaient **0**.
+
+  ⚠️ **La recette des deux gardes précédentes ne marche pas ici, et c'est la garde qui l'a dit.** Un
+  témoin **dérivé** — « au moins un corps écrit sur place » — **refuse sur un dépôt sain** : zéro
+  corps reconnu pour onze `.end(` bruts, parce que tout passe par le module des portes. Il aurait
+  exigé la chose même que la garde décourage.
+
+  **Un témoin dérivé n'est possible que si la forme correcte est une chose que le dépôt est censé
+  CONTENIR.** Un bloc `permissions:` et un appel au module crypto le sont ; un secret, un renvoi par
+  numéro de ligne et un corps sans type ne le sont pas. Pour ceux-là il faut **fabriquer** le cas :
+  poser un exemplaire fautif, vérifier que la sonde le VOIT, le jeter.
+
+  ⚠️ **Ce mécanisme n'était pas neuf ici.** L'étape RLS de `ci.yml` le pratique depuis des semaines
+  sur les politiques Postgres — « on pose une politique dont on sait qu'elle existe, on vérifie que
+  la sonde la VOIT, et on l'enlève. Sans ce détour, le zéro qui suit ne prouverait rien. » Il
+  n'avait jamais été porté jusqu'aux outils. Cinquième fois que le remède existe ici, inutilisé.
+
+  ⚠️ **Et le témoin des secrets est assemblé à l'exécution, jamais écrit.** Cette garde balaie 104
+  fichiers de `tools/`, le sien compris : un faux identifiant en clair y serait signalé par elle-même,
+  on l'exempterait, et l'exemption deviendrait le trou que son propre en-tête décrit. Un banc vérifie
+  qu'aucun fichier suivi ne porte ce littéral.
+
+  Pour `portes-de-reponse`, le témoin distingue **voir** de **juger** : une sonde qui reconnaît la
+  forme mais ne la juge plus fautive laisse passer exactement ce que la garde attrape, et un témoin
+  qui ne vérifierait que « vu » ne le dirait pas.
+
 - ⚠️ **Deux gardes qui affirment une ABSENCE portent désormais le témoin de leur RÈGLE, pas seulement
   celui de leur périmètre.** L'idée vient de la session STUDIO, qui a trouvé la même chose chez elle
   sur 97 fichiers : notre témoin d'exception prouve qu'une **exception** a encore un sujet, celui-ci
