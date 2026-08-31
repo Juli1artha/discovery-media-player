@@ -13,7 +13,7 @@
 
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-import { ecrituresRacine, ecartsDuFichier, releve } from "../permissions-workflows.mjs";
+import { ecrituresRacine, ecartsDuFichier, releve, blocsLus } from "../permissions-workflows.mjs";
 
 const AVEC = (bloc) => `name: T\non:\n  push:\n${bloc}jobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: 'true'\n`;
 
@@ -91,5 +91,38 @@ describe("⚠️ SUR LES VRAIS WORKFLOWS", () => {
       const txt = readFileSync(`.github/workflows/${fichier}`, "utf8");
       for (const droit of droits) expect(txt, `${fichier} → ${droit}`).toContain(droit);
     }
+  });
+});
+
+
+// ⚠️ LE TÉMOIN DE LA RÈGLE — ET IL EST DISTINCT DE CELUI DU PÉRIMÈTRE.
+//
+// Cette garde affirme une ABSENCE sur neuf fichiers. Sa panne la plus probable — un lecteur qui ne
+// reconnaît plus la forme d'un bloc — produit elle aussi une absence : neuf workflows verts sans
+// rien avoir mesuré. Le plancher qui existait compte les FICHIERS LUS, jamais la FORME RECONNUE, et
+// ne peut donc pas les distinguer.
+//
+// Mesuré le 31/08 en aveuglant la sonde : l'outil imprimait « 9 workflows, aucune écriture à la
+// racine » et sortait 0. Ces bancs-ci rougissaient déjà — la RÈGLE était donc protégée. C'est le
+// VERDICT IMPRIMÉ qui ne l'était pas, et c'est lui qui va dans le journal de la forge.
+describe("le témoin de la règle : la sonde reconnaît-elle encore la forme ?", () => {
+  it("compte un bloc « permissions: » à la racine", () => {
+    expect(blocsLus("permissions:\n  contents: read\njobs:\n  a:\n    steps: []\n", "w.yml")).toBe(1);
+  });
+
+  it("n'en compte aucun quand il n'y en a pas — et ce n'est pas une faute", () => {
+    expect(blocsLus("jobs:\n  a:\n    steps: []\n", "w.yml")).toBe(0);
+  });
+
+  // ⚠️ UN BLOC SUR UN JOB N'EST PAS UN BLOC À LA RACINE. Le compter gonflerait le témoin sans que
+  // la sonde de la RÈGLE — qui ne juge que la racine — ait rien reconnu.
+  it("⚠️ ne compte pas un bloc porté par un job : ce n'est pas la forme que la règle juge", () => {
+    expect(blocsLus("jobs:\n  a:\n    permissions:\n      contents: read\n    steps: []\n", "w.yml")).toBe(0);
+  });
+
+  it("⚠️ le dépôt réel en porte, sinon le vert de cette garde ne prouverait rien", () => {
+    const { fichiers, blocs } = releve();
+    expect(fichiers.length, "aucun workflow lu : la sonde vise à côté").toBeGreaterThan(5);
+    expect(blocs, "zéro bloc reconnu : ce n'est pas une absence d'écriture, c'est une sonde aveugle").toBeGreaterThan(0);
   });
 });

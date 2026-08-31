@@ -11,8 +11,7 @@ import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 
 import {
-  methodesDuModuleSeul, sansCommentaires, sansChaines, lieCrypto, appelsDuModule, manquements,
-} from "../liaison-de-crypto.mjs";
+  methodesDuModuleSeul, sansCommentaires, sansChaines, lieCrypto, appelsDuModule, manquements, temoinsDeForme } from "../liaison-de-crypto.mjs";
 
 const METHODES = methodesDuModuleSeul();
 
@@ -101,5 +100,32 @@ describe("le dépôt tel qu'il est", () => {
     const fichiers = ["server/routes-agent.js", "server/handler.js", "server/presentations.js",
       "server/shares.js", "server/routes-direct.js", "context/standalone.js"];
     expect(manquements(fichiers, (f) => readFileSync(f, "utf8"), METHODES)).toEqual([]);
+  });
+});
+
+
+// ⚠️ LE TÉMOIN DE LA FORME, DISTINCT DE CELUI QUI EXISTAIT DÉJÀ.
+//
+// `methodesDuModuleSeul()` refuse quand plus aucune méthode ne sépare le module du global : il
+// prouve que LA QUESTION a encore un sens sur ce Node. Celui-ci prouve que LA SONDE sait encore
+// lire la réponse. Deux cécités différentes — les confondre laisserait la seconde ouverte.
+describe("le témoin de la forme : la sonde reconnaît-elle encore un appel ?", () => {
+  const lire = (f) => ({
+    "avec.js": 'const crypto = require("crypto");\ncrypto.createHash("sha256");\n',
+    "sans.js": "const x = 1;\n",
+  })[f];
+
+  it("compte les fichiers qui portent la forme", () => {
+    expect(temoinsDeForme(["avec.js", "sans.js"], lire, ["createHash"])).toBe(1);
+  });
+
+  it("n'en compte aucun quand la forme est absente", () => {
+    expect(temoinsDeForme(["sans.js"], lire, ["createHash"])).toBe(0);
+  });
+
+  // ⚠️ UNE MÉTHODE QUE LA SONDE NE CHERCHE PAS NE FAIT PAS TÉMOIN. Sinon le témoin serait vrai pour
+  // n'importe quelle liste de méthodes, y compris une liste vide de sens.
+  it("⚠️ ne témoigne que des méthodes effectivement cherchées", () => {
+    expect(temoinsDeForme(["avec.js"], lire, ["randomUUID"])).toBe(0);
   });
 });
