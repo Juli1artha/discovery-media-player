@@ -903,6 +903,45 @@ mistake it for coverage. **A probe that guards a shape the corpus does not yet h
 code; it is a claim whose subject has not arrived.** The two are told apart by measuring, and the
 measurement belongs in the bench.
 
+## A version number written by hand is a claim about the registry
+
+Four host-facing documents carried **eighteen statements, in the past tense, about two versions that
+had never been published** — the two numbers immediately after the published one — saying what each
+had *"stopped serving"* and *"stopped writing"*. The registry served `0.1.145`, which still serves and
+still writes both columns and ships migrations only up to `0024`. A host read `docs/RETENTION.md`, believed the change was live, and was then asked by
+its compliance function to apply migrations that were in no package. **The host found this by
+unpacking the version the registry actually serves. We did not find it at all.**
+
+⚠️ **The failure is a form, not an oversight.** A version number inside a sentence is an assertion
+about an external fact — the state of the registry — placed in a file that is connected to that fact
+by nothing. It is true when written, and an event outside the repository (or rather its *absence*:
+the release that never came) makes it false without the file changing. This page already names the
+remedy for the same shape elsewhere — `exemples-epingles` derives the number instead of writing it —
+and the remedy is the same here: **derive it, or do not name it.** A guard now refuses any document
+naming a version greater than `package.json`'s, which `docs/RELEASING.md` already holds equal to the
+tag and to the changelog's top section; the release window closes itself, since the bump lands in the
+same commit as the section describing it, with no exception to write and none to lift later.
+
+⚠️ **Writing docs for the version you are about to cut reads, to everyone else, as the present.** A
+document has no tense in the reader's hands: "stopped serving" is read as *has stopped*. Everything
+unreleased belongs to one future release whose number nobody knows yet, so it is named *"the next
+release"* or by something that exists — a migration number, an `[Unreleased]` section. Naming two
+different future numbers, as happened here, also produced an internal contradiction nobody caught:
+the same version was described as having stopped serving and as still writing.
+
+⚠️ **And the cost lands on whoever believed you.** The statement reached a compliance function as a
+plain fact, and an instruction to a host followed from it. When a claim about released state turns
+out to be about unreleased state, the correction is owed to everyone who acted on it, not only to the
+file. Fixing the document is the smaller half.
+
+⚠️ **A status line that reports an external state must carry its derivation or its date.** The same
+day, this session told its user four times that no release could be cut because *"0.1.145 shipped
+this morning"* and the repository ships one train per day. It had shipped **the previous day at
+12:04**. The rule was real, the fact was stale, and the conclusion drawn from it — *no release
+today* — was the one thing blocking every host from getting the fix. **A wrong fact about the past
+is survivable; a wrong fact that closes off the action is not.** When a sentence's job is to justify
+not doing something, check the fact under it first.
+
 ## Erasing a column is not dropping it, and the intuition points the wrong way
 
 An arbitration asked for a stored IP address to be purged, with a stated preference: **drop the

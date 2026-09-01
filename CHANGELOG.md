@@ -18,8 +18,8 @@ the notes there are this file's section for that version.
   source from which `device`, `os` and `browser` could be recomputed on rows already written — and
   the argument that settled it was ours turned around: those three are derived *at write time* and
   are what a reading record carries, so the raw string had no reader, and "we might re-parse it one
-  day" does not justify thirteen months of a fingerprint kept for nobody. `0.1.146` stopped serving
-  it, this stops writing it, and migration `0027` erases what was there — same shape and same
+  day" does not justify thirteen months of a fingerprint kept for nobody. This release stops serving
+  it, stops writing it, and ships migration `0027`, which erases what was there — same shape and same
   measurement as the IP purge, with the column removals deferred together to a later release.
   **On `commercial_doc_views` the case was starker than anyone had noticed**: unlike the sessions
   table it has no `device`, `os` or `browser`, so it derived *nothing* from the string, wrote it, and
@@ -31,7 +31,7 @@ the notes there are this file's section for that version.
   is uncomfortable: the automatic sweep is **opt-in**, so on a host that enabled neither it nor a
   manual run, the 13-month window describes an intention rather than an event.
 
-- **The reader's IP address is erased.** `0.1.146` stopped serving it; this stops **writing** it,
+- **The reader's IP address is erased.** This release stops serving it, stops **writing** it,
   and migration `0026` erases what thirteen months of journal still held in the clear — the half
   the code could not reach on its own. **The column is emptied, not dropped, and emptying is what
   actually erases** — which is the reverse of the intuition, so it was measured rather than
@@ -46,8 +46,8 @@ the notes there are this file's section for that version.
   kept, 200 addresses gone after a routine vacuum, the migration replayable with no further effect.
   **The erasure is complete today**; what is deferred is the shape of the schema. The column stays
   because a migration here must be safe to apply while the *previous* version of the player is
-  running — the rule that makes the deployment order harmless, and a test enforces it: `0.1.146`
-  still writes `ip`, PostgREST rejects a write carrying an unknown column, and dropping it today
+  running — the rule that makes the deployment order harmless, and a test enforces it: **every
+  published version** still writes `ip`, PostgREST rejects a write carrying an unknown column, and dropping it today
   would fail **every** session write of a host that migrates before deploying, with an error naming
   a column rather than a version. Removal is a later release, once no supported version writes it;
   until then the column is always `NULL` and carries a comment in the database saying so, which is
@@ -63,6 +63,26 @@ the notes there are this file's section for that version.
   have sat there indefinitely.
 
 ### Fixed
+
+- **Four host-facing documents announced two versions that had never been published**, in the past
+  tense — eighteen statements in all, naming the two version numbers immediately after the published
+  one and describing what they *"stopped serving"* and *"stopped writing"*. The registry serves
+  `0.1.145`, which still serves and still writes the reader IP and the raw User-Agent, and ships
+  migrations only up to `0024`. (The numbers are not repeated here: putting an unpublished version
+  into a host-facing document is the artefact being removed, and the new guard refused this entry
+  until they came out — correctly.) An integrating host read `docs/RETENTION.md`,
+  believed the change was live, and was then asked to apply migrations that were in no package; it
+  found the gap by unpacking the version the registry actually serves. Every such claim now names
+  something that exists — *the next release*, or a migration number — and `docs/RETENTION.md` opens
+  the purge section by saying plainly that none of it is published yet and what to check. **A new
+  guard refuses any document naming a version greater than `package.json`'s**, which
+  `docs/RELEASING.md` already holds equal to the tag and to the changelog's top section: between
+  releases it is the newest version that exists, and during a release the bump lands in the same
+  commit as the section describing it, so the window closes itself with no exception to write. The
+  guard caught a perimeter defect in its own first line — a double-star pathspec matches nothing in
+  `git ls-files`, so it read only the changelog while the sixteen documents holding the error went
+  unseen, with a non-zero count keeping its floor happy — and it now requires every declared root to
+  yield a subject.
 
 - Reading sessions no longer carry the reader's IP address **nor the raw User-Agent**. Both `docshare.sessions` and
   `docshare.sessionsByRecipient` returned the stored row as-is, which includes `ip` — the datum

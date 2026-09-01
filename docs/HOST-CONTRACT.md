@@ -467,7 +467,7 @@ than the player. That failure reads exactly like a permission problem, which is 
 expensive. **Compare this table against your own at each upgrade**, and prefer a refusal that names
 the unknown action over one that looks like a role issue.
 
-⚠️ **`list.all` now widens `sessions` as well, and until `0.1.146` nothing did.** `docshare.list`
+⚠️ **`list.all` widens `sessions` as well from the next release, and until then nothing does.** `docshare.list`
 has always asked you two questions — *may they list?* then *may they list everything?* — and
 narrowed to the caller's own links when the second answer was no. `docshare.sessions` asked only the
 first, and returned every session of the document: the reading sessions table carries the
@@ -483,9 +483,10 @@ changes for a role you already answer *yes* to. If your table predates `list.all
 above: an unheard-of action answered *no* narrows this view rather than breaking it.
 
 ⚠️ **The reader IP is erased, and a direct query of your own will start seeing nothing.** The
-sessions table carried `ip` in the clear. `0.1.146` stopped serving it — no player path reads it
-back, so nothing in this contract changes — `0.1.147` stops writing it, and migration **0026**
-erases what thirteen months of journal still held. **What changes for you:** nothing, unless you
+sessions table carries `ip` in the clear. The next release stops serving it — no player path reads
+it back, so nothing in this contract changes — stops writing it, and ships migration **0026**, which
+erases what thirteen months of journal still hold. ⚠️ **None of this is in a published version yet**:
+check `npm view discovery-media-player version` against the release notes before planning around it. **What changes for you:** nothing, unless you
 read that column yourself in a report or dashboard outside the player, in which case its values are
 empty from the day you apply 0026. The column itself stays for now: dropping it would fail every
 session write of a host that applies migrations before deploying, so its removal is a later release.
