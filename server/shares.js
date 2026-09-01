@@ -593,22 +593,25 @@ async function listSessionsForDoc(docId, owner = null) {
 const CHAMPS_SERVIS = [
   "session_id", "slug", "doc_id", "recipient_email",
   "num_pages", "max_page", "total_seconds", "pages_time",
-  "ua", "device", "os", "browser",
+  "device", "os", "browser",
   "started_at", "last_at",
 ];
 
 /**
  * Les colonnes qu'on NE sert PAS, avec la raison — pour qu'une absence soit une décision.
  *
- * ⚠️ `ua` RESTE, ET C'EST DISCUTABLE. Le User-Agent brut est un vecteur d'empreinte, et `device`,
- * `os` et `browser` — servis à côté — en portent déjà la substance lisible. Il est laissé parce
- * qu'on retire ce qui a été demandé, pas ce qu'on trouve en chemin ; c'est le candidat suivant, et
- * il est écrit ici pour être décidé plutôt qu'oublié.
+ * ⚠️ ET C'EST BIEN UNE LISTE DE RAISONS, PAS DE CASES COCHÉES. Une colonne retirée sans motif écrit
+ * revient au bout de six mois, parce que personne ne sait pourquoi elle n'était pas là.
  */
 const CHAMPS_RETENUS = {
   ip: "adresse IP en clair — « the most sensitive datum in the schema » selon docs/RETENTION.md, "
     + "que rien ne lit et dont une fiche de lecture n'a pas besoin ; les participants d'une "
     + "présentation n'ont, eux, qu'un HMAC salé de la leur",
+  ua: "User-Agent brut — un vecteur d'empreinte, et surtout REDONDANT : `parseUa` en tire "
+    + "`device`, `os` et `browser` à l'écriture, et ces trois-là sont servis. La chaîne complète "
+    + "ne porte rien de plus qu'un lecteur de fiche lise ; elle porte seulement de quoi "
+    + "reconnaître un appareil d'une session à l'autre. Elle reste STOCKÉE (docs/RETENTION.md la "
+    + "purge à treize mois) : ne plus la servir et ne plus la garder sont deux décisions",
 };
 
 /** La projection d'une ligne de session : ce qui sort, et rien d'autre. */

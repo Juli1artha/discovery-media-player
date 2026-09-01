@@ -14,7 +14,7 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
-- Reading sessions no longer carry the reader's IP address. Both `docshare.sessions` and
+- Reading sessions no longer carry the reader's IP address **nor the raw User-Agent**. Both `docshare.sessions` and
   `docshare.sessionsByRecipient` returned the stored row as-is, which includes `ip` — the datum
   `docs/RETENTION.md` calls *the most sensitive in the schema*, that nothing in the player reads
   back, and that a sales record does not need in order to say someone read four pages in six
@@ -24,7 +24,12 @@ the notes there are this file's section for that version.
   explicit allow-list rather than the whole row, in both the `select=` and the projection, so a
   column added later does not leave by default — in that direction an oversight is a leak, in the
   other it is an absence the first reader reports. A bench reads the table's columns from
-  `supabase/init.sql` and fails when one is neither served nor withheld with a written reason.
+  `supabase/init.sql` and fails when one is neither served nor withheld with a written reason. The
+  raw `ua` goes for a different reason than the IP: it is **redundant**. `device`, `os` and
+  `browser` are derived from it when the session is written and are served; the full string carries
+  nothing more that a reader of the record reads, only enough to recognise one device across
+  sessions. Both columns are still recorded — not serving a column and not keeping it are two
+  different decisions, and the second one touches thirteen months of journal.
 - `docshare.sessions` returned every reading session of a document to any member allowed to call
   it, and that table carries the recipient's address and IP — so a member read the prospects of
   their colleagues, which is exactly what the `list` / `list.all` split has prevented on
