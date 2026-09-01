@@ -19,7 +19,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { secretsDeTexte, secretsDeEnv, inspecter, estJetonServiceRole, ESPECES, temoinNonVu, fichiersSuivis } from "../secrets-en-clair.mjs";
+import { secretsDeTexte, secretsDeEnv, inspecter, estJetonServiceRole, ESPECES, ECHANTILLONS, especesSansEchantillon, temoinNonVu, fichiersSuivis } from "../secrets-en-clair.mjs";
 
 const ICI = dirname(fileURLToPath(import.meta.url));
 
@@ -215,7 +215,43 @@ describe("le témoin posé : la sonde voit-elle encore un identifiant ?", () => 
   });
 
   it("⚠️ nomme le refus quand la sonde est aveugle", () => {
-    expect(temoinNonVu(() => [])).toMatch(/n'a pas vu un identifiant qu'on venait de poser/);
+    expect(temoinNonVu(() => [])).toMatch(/n'a pas vu 9 forme\(s\) qu'on venait de poser/);
+  });
+
+  // ⚠️ LA PROPRIÉTÉ NEUVE, ET CELLE QUI MANQUAIT : UNE SEULE FORME AVEUGLE DOIT ÊTRE NOMMÉE.
+  // Le témoin d'avant plantait un unique échantillon `AKIA` — il prouvait qu'UNE espèce sur huit
+  // était encore vue. Mesuré le 01/09 par un balayage qui aveugle chaque expression du fichier :
+  // dix-neuf motifs sur vingt pouvaient cesser de reconnaître quoi que ce soit sans que la garde
+  // cesse d'être verte. Un test qui n'éprouve qu'une sonde TOTALEMENT muette ne voit pas ça.
+  it("⚠️ une sonde aveugle à UNE SEULE forme est nommée, pas seulement une sonde muette", () => {
+    for (const [nom, , faire] of ECHANTILLONS) {
+      // Une sonde BORGNE : elle voit tout, sauf l'échantillon de cette espèce-là. C'est la panne
+      // réelle — un motif qui cesse de reconnaître SA forme — et non une sonde muette.
+      const attendu = `${faire()}\n`;
+      const borgne = (fichiers, lire) => (lire(fichiers[0]) === attendu ? [] : inspecter(fichiers, lire));
+      const dit = temoinNonVu(borgne);
+      expect(dit, `${nom} peut devenir invisible sans que le témoin le dise`).toBeTypeOf("string");
+      expect(dit).toContain(nom);
+    }
+  });
+
+  // ⚠️ UNE ESPÈCE SANS ÉCHANTILLON RÉDUIRAIT LA COUVERTURE EN SILENCE. Ajouter un motif à
+  // `ESPECES` sans son échantillon rendrait la forme invisible au témoin le jour même où on la
+  // déclare chercher — et personne ne relit un témoin en ajoutant un motif.
+  // ⚠️ ET LE CONTRÔLE DE COUPLAGE EST ÉPROUVÉ DANS LES DEUX SENS. Son état sain est la liste
+  // VIDE : l'affirmer sur le dépôt tel quel ne distingue pas « rien ne manque » de « la fonction
+  // ne cherche plus rien ». Mesuré le 01/09 — la museler passait le banc. On lui donne donc des
+  // tables où une espèce N'A PAS d'échantillon, et on exige qu'elle la nomme.
+  it("⚠️ il NOMME une espèce sans échantillon — sinon son vide ne prouve rien", () => {
+    const especes = [["forme éprouvée", /a/], ["forme orpheline", /b/]];
+    const echantillons = [["forme éprouvée", "__t", () => "a"]];
+    expect(especesSansEchantillon(especes, echantillons)).toEqual(["forme orpheline"]);
+  });
+
+  it("⚠️ chaque espèce cherchée a son échantillon au témoin", () => {
+    expect(especesSansEchantillon(), "une forme est cherchée sans être éprouvée").toEqual([]);
+    expect(ECHANTILLONS.length, "sept espèces de forme, le JWT et la règle des .env")
+      .toBeGreaterThanOrEqual(ESPECES.length + 2);
   });
 
   // ⚠️ ET LE TÉMOIN N'EST PAS ÉCRIT DANS LE SOURCE. Cette garde balaie `tools/`, le sien compris :

@@ -12,16 +12,14 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
-### Changed
-
-- The three examples now pin `0.1.145`, the version the registry serves. This is the
-  post-publication step `docs/RELEASING.md` describes, done on the train that published it rather
-  than left to the margin: a pin on the version just published survives the *next* release and only
-  falls out on the one after, so a single skipped bump costs nothing visible and the second one
-  turns `main` red on a check that has nothing to do with whoever opened the PR.
-
 ### Fixed
 
+- `secrets-en-clair` recognises eight distinct credential shapes and a rule of its own on `.env`
+  names; its positive control planted a single AWS-key sample, proving **one shape out of nine**
+  was still seen. An exhaustive sweep — every regex literal of every tool blinded one at a time —
+  measured that 19 of its 20 patterns could stop matching while the guard stayed green. There is
+  now one sample per shape, assembled at runtime, and a check that every searched shape has one,
+  itself exercised on tables where a shape is deliberately orphaned.
 - The stripped-environment bench built its tree outside any git repository, so `git ls-files`
   failed there whether or not git was on the PATH: its central comparison held two identical
   environments side by side. The tree is now a real repository, and the comparison extends from the
@@ -65,6 +63,14 @@ the notes there are this file's section for that version.
   with that identical line. It now floors and prints what it actually walked: public subpaths,
   modules loaded, symbols read. Its verdict loop also re-implemented the subpath filter instead of
   calling `publics()`; it now walks the one list, and a bench asserts the two agree.
+
+### Changed
+
+- The three examples now pin `0.1.145`, the version the registry serves. This is the
+  post-publication step `docs/RELEASING.md` describes, done on the train that published it rather
+  than left to the margin: a pin on the version just published survives the *next* release and only
+  falls out on the one after, so a single skipped bump costs nothing visible and the second one
+  turns `main` red on a check that has nothing to do with whoever opened the PR.
 
 ### Added
 
