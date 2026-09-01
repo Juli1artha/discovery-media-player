@@ -946,6 +946,32 @@ verdict on the wrong-looking file: a purge is precisely the migration a host is 
 asked to *prove* to a regulator. It carries a `comment on column` for that, which `col_description()`
 answers. **The record of a deletion has to be something that exists.**
 
+⚠️ **A table nothing serves has no guardian, and that is where the oldest data hides.** The same
+arbitration went on to ask for the raw User-Agent, on the sessions table and on the *views* table.
+The sessions column had a defence — it is the source of `device`, `os` and `browser` — and it did not
+survive contact with its own premise: those three are derived **at write time** and are what a
+reading record carries, so the raw string has no reader, and *"we might re-parse it one day"* does
+not buy thirteen months of a fingerprint kept for nobody. But the views table was worse and nobody
+had looked: it has no derived columns at all, so it derived *nothing* from the string, wrote it, and
+none of the six queries touching these tables has ever read it back.
+
+The reason it hid is structural, not careless. **The coverage that existed asked what a session
+*hands out*** — a bench that reads the schema and refuses a column that is neither served nor
+withheld with a written reason. The views table is never handed out, so no such bench existed for it,
+and nothing ever asked what it merely *keeps*. Every audit of that area had been an audit of egress.
+**A column nothing serves is not a column without a question; it is a column whose question has no
+guardian.** Ask of each table both halves — what leaves it, and what it holds — because only the
+first has an obvious place to be asked.
+
+⚠️ **And answer "when is it purged" with the mechanism, not the number.** A retention window of
+thirteen months is easy to quote and, on its own, misleading here: this player's automatic sweep is
+**opt-in**, so on an installation that enabled neither it nor a manual run, no row has ever been
+deleted and the window describes an intention rather than an event. The honest answer has three
+parts — the rows (a policy someone must have switched on), the values inside surviving rows (erased
+by the migration, physically gone once routine autovacuum passes), and the copies nobody here
+controls (backups, WAL, exports, on the platform's own schedule). **When a compliance question asks
+for a date, the number that ends the sentence is usually the one you do not set.**
+
 ⚠️ **A list of decisions rots in two directions, and only one was checked.** The session columns are
 covered by a list of what is *served* and a list of what is *withheld with a written reason*, and a
 bench read the schema to refuse a column present in neither. Nothing refused the mirror image: an

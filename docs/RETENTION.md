@@ -35,11 +35,11 @@ Purpose: reading statistics for a document that was sent out. **Purge: 13 months
 |---|---|---|
 | `commercial_doc_views.recipient_email` | who the read is attributed to | purged with the row, 13 months after `at` |
 | `commercial_doc_views.session_id` | correlates the views of one session | same |
-| `commercial_doc_views.ua` | browser (raw User-Agent) | same |
+| `commercial_doc_views.ua` | **emptied, and never written again** | ⚠️ **Nothing is stored here any more** (migration **0027**). The clearest case of the three: unlike the sessions table, this one has no `device`, `os` or `browser` — it derived *nothing* from the string, wrote it, and no query in this player has ever read it back. A browser fingerprint kept for thirteen months with no reader at all, unnoticed because the question had never been asked table by table |
 | `commercial_doc_sessions.recipient_email` | session attribution | purged with the row, 13 months after `last_at` |
 | `commercial_doc_sessions.session_id` | session identifier | same |
 | `commercial_doc_sessions.ip` | **emptied, and never written again** | ⚠️ **Nothing is stored here any more.** It held the reader's IP address in the clear and was the most sensitive datum in this schema. `0.1.146` stopped **serving** it; `0.1.147` stops **writing** it and migration **0026** erases what thirteen months of journal still carried. The column itself survives for now — dropping it would break a host that applies migrations before deploying (see *Purging the reader IP* below); its removal is a later release. The asymmetry this table used to note ends here, upward: a presentation attendee's address is a salted HMAC, a reader's is now nothing at all |
-| `commercial_doc_sessions.ua` | raw User-Agent | same. ⚠️ Since 0.1.146 **stored but never served**: `device`, `os` and `browser` are derived from it at write time and are what the reading records carry. It is **kept** deliberately — it is the only source from which those three can be recomputed on rows already written, should the parsing improve. Dropping it too is a separate decision, not implied by 0026 |
+| `commercial_doc_sessions.ua` | **emptied, and never written again** | ⚠️ **Nothing is stored here any more.** `0.1.146` stopped serving it; `0.1.147` stops writing it and migration **0027** erases what was there. `device`, `os` and `browser` are derived from it *at write time* and are what a reading record carries — so the raw string had no reader left, and "we might re-parse it one day" does not justify thirteen months of a fingerprint kept for nobody. Same treatment and same reason as `ip`: emptied now, column removed in a later release |
 | `commercial_doc_sessions.num_pages` / `commercial_doc_sessions.pages_time` | page-by-page reading behaviour | same |
 
 ## Reading logs (internal team)
@@ -135,7 +135,7 @@ it queryable, which is strictly worse than not having it.
 an MP3 and a JSON in a public bucket. The grouping and ceilings added in 0.1.140 bound the cost per
 hour; only this window bounds the **duration**.
 
-## Purging the reader IP (migration 0026)
+## Purging the reader IP and User-Agent (migrations 0026 and 0027)
 
 ⚠️ **Read this before upgrading if you have ever queried `commercial_doc_sessions.ip` directly.**
 It is now always `NULL`. `0.1.146` had already stopped serving it — no player path reads it back —
@@ -179,9 +179,42 @@ column is itself a retention act, and earlier copies follow the host's backup po
 concrete instance. A host that must attest a **complete** purge expires or rewrites its earlier
 backups; no migration can do that on its behalf.
 
-**What is not covered by 0026.** `commercial_doc_sessions.ua` stays (see the table above).
-`player_rate_limits.key` may still hold an address in the clear and expires on its own.
-`doc_presentation_attendees.creator_ip_hash` is a salted HMAC, not an address.
+**The raw User-Agent goes the same way (0027), on both tables.** `0.1.146` stopped serving it,
+`0.1.147` stops writing it, and 0027 erases what was there — same shape, same measurement, same
+deferred column removal. `device`, `os` and `browser` are derived from the string *at write time* and
+are what a reading record carries, so the raw value had no reader; "we might re-parse it one day" is
+not a reason to keep a fingerprint for thirteen months. On `commercial_doc_views` the case is
+starker still: that table has no derived columns at all, so it derived nothing from the string and no
+query has ever read it back.
+
+**What is not covered.** `player_rate_limits.key` may still hold an address in the clear and expires
+on its own. `doc_presentation_attendees.creator_ip_hash` is a salted HMAC, not an address.
+
+## From what date is a purge complete end to end
+
+A question worth answering precisely, because the honest answer has three parts and only one of them
+is a number.
+
+**1. The rows.** Reading logs are deleted **13 months** after `at` / `last_at` by default. A host
+changes that through `config.retention` — whole months in `[1, 120]`.
+
+⚠️ **But the automatic sweep is strictly opt-in.** It runs only where a host has written
+`config.retention.balayage: true`; the `retention.run` action stays available without opt-in, because
+calling it *is* the decision. **On a host that has enabled neither, no row has ever been deleted, and
+the 13 months describe an intent rather than an event.** Anyone attesting a retention period should
+check which of the two is true of the installation in front of them, rather than quoting the default.
+
+**2. The values inside surviving rows.** Erased by 0026 and 0027 as soon as they are applied, and
+physically gone from the table once routine autovacuum has passed — no operator action, typically
+minutes to hours on an active table. This part does not wait for the 13 months.
+
+**3. Backups, write-ahead logs, exports and migration dumps.** **Outside this player's reach, and we
+neither set nor observe them.** They follow the hosting platform's own settings — on a managed
+provider, typically a point-in-time-recovery window plus a snapshot schedule, each with its own
+retention. A purge is complete end to end at *the later of*: the day 0026/0027 were applied plus the
+host's longest backup retention, and — for the rows themselves — whichever purge the host actually
+runs. **Ask the platform for two numbers: the PITR window and the oldest retained snapshot.** Until
+both have rolled past the migration date, earlier copies still hold the erased values.
 
 ## Limits stated rather than left unsaid
 

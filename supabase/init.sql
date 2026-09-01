@@ -108,6 +108,10 @@ create table if not exists public.commercial_doc_views (
   seconds         integer constraint ck_views_seconds_borne check (seconds is null or (seconds >= 0 and seconds <= 86400)),
   session_id      text,
   at              timestamptz not null default now(),
+  -- ⚠️ VIDE, ET PLUS JAMAIS ÉCRITE (0027, demande ADV du 01/09/2026). Cette table n'a ni `device`,
+  -- ni `os`, ni `browser` : elle ne dérivait RIEN de cette chaîne, l'écrivait, et aucune requête ne
+  -- l'a jamais relue. Elle demeure le temps qu'aucune version supportée ne l'écrive — voir la note
+  -- de `commercial_doc_sessions.ip` ci-dessous pour la raison, qui est la même.
   ua              text
 );
 create index if not exists cdv_slug_idx on public.commercial_doc_views (slug);
@@ -128,6 +132,9 @@ create table if not exists public.commercial_doc_sessions (
   max_page        integer constraint ck_sessions_max_page_borne check (max_page is null or (max_page >= 0 and max_page <= 10000)),
   total_seconds   integer default 0 constraint ck_sessions_total_seconds_borne check (total_seconds is null or (total_seconds >= 0 and total_seconds <= 86400)),
   pages_time      jsonb   default '{}'::jsonb,
+  -- ⚠️ VIDE, ET PLUS JAMAIS ÉCRITE (0027). `device`, `os` et `browser` ci-dessous en sont dérivés À
+  -- L'ÉCRITURE et sont, eux, servis : la chaîne brute n'a plus de lecteur. Même sort que `ip`, même
+  -- raison de survivre encore.
   ua              text,
   -- ⚠️ VIDE, ET PLUS JAMAIS ÉCRITE (0026, arbitrage ADV du 01/09/2026). Elle a porté l'adresse du
   -- lecteur en clair ; la 0.1.146 a cessé de la SERVIR, la 0026 efface ce qui restait et plus
@@ -805,6 +812,17 @@ alter table public.doc_presentations
 -- rejouer ce fichier ne les effacerait jamais. Le geste est celui de la 0026, à l'identique, et il
 -- ne coûte rien sur une base neuve — où la colonne est vide par construction.
 update public.commercial_doc_sessions set ip = null where ip is not null;
+-- 0027 — même geste pour le User-Agent brut, sur les DEUX tables.
+update public.commercial_doc_sessions set ua = null where ua is not null;
+update public.commercial_doc_views set ua = null where ua is not null;
+comment on column public.commercial_doc_sessions.ua is
+  'VIDE ET PLUS JAMAIS ECRITE depuis la 0027. A porte le User-Agent brut du lecteur. Les champs '
+  'device, os et browser en sont derives A L''ECRITURE et sont, eux, servis. Conservee le temps '
+  'qu''aucune version supportee du lecteur ne l''ecrive. Voir docs/RETENTION.md.';
+comment on column public.commercial_doc_views.ua is
+  'VIDE ET PLUS JAMAIS ECRITE depuis la 0027. A porte le User-Agent brut du lecteur. Cette table '
+  'n''en derivait rien et aucune requete ne l''a jamais relue. Conservee le temps qu''aucune '
+  'version supportee du lecteur ne l''ecrive. Voir docs/RETENTION.md.';
 comment on column public.commercial_doc_sessions.ip is
   'VIDE ET PLUS JAMAIS ECRITE depuis la 0026. A porte l''adresse IP du lecteur en clair. '
   'Conservee le temps qu''aucune version supportee du lecteur ne l''ecrive : la supprimer '

@@ -162,11 +162,20 @@ const mesureBornee = ({ page, maxPage, seconds }) => ({
 });
 
 // Journalise un événement de consultation (ouverture / page vue / battement). Best-effort.
-async function logView(share, { event, page, maxPage, seconds, sessionId, ua }) {
+//
+// ⚠️ `ua` N'EST PLUS ÉCRIT, ET LA SIGNATURE LE DIT — même geste que pour `ip` sur les sessions, sur
+// demande explicite de l'ADV le 01/09/2026. Le cas est ici PLUS NET qu'ailleurs : cette table n'a
+// ni `device`, ni `os`, ni `browser`, donc elle ne dérivait RIEN de cette chaîne. Elle l'écrivait,
+// et personne — aucune requête de ce dépôt — ne l'a jamais relue. Une empreinte de navigateur
+// conservée treize mois sans le moindre lecteur.
+//
+// L'appelant continue de la passer : il ne sait pas ce que chaque table conserve, et ce n'est pas à
+// lui de le savoir. La garder en paramètre nommé laisserait croire qu'elle sert.
+async function logView(share, { event, page, maxPage, seconds, sessionId, ua: _ua }) {
   const row = {
     slug: share.slug, doc_id: share.doc_id, recipient_email: share.recipient_email,
     event: String(event || "open").slice(0, 16), ...mesureBornee({ page, maxPage, seconds }),
-    session_id: String(sessionId || "").slice(0, 64) || null, ua: String(ua || "").slice(0, 300) || null,
+    session_id: String(sessionId || "").slice(0, 64) || null,
   };
   await PLAYER.db.request("commercial_doc_views", { method: "POST", headers: { Prefer: "return=minimal" }, body: [row] });
 }
@@ -488,13 +497,18 @@ function parseUa(ua) {
 async function upsertSession(share, p, { ip: _ip, ua }) {
   const sessionId = String(p.sessionId || "").slice(0, 64);
   if (!sessionId) return;
+  // ⚠️ `ua` SERT ENCORE ICI, ET N'EST PLUS STOCKÉ — la distinction est tout le raisonnement. La
+  // chaîne arrive dans l'en-tête de la requête, `parseUa` en tire trois champs lisibles, et ce sont
+  // EUX qu'on garde. La chaîne elle-même n'avait plus de lecteur depuis la 0.1.146 ; « pouvoir la
+  // ré-analyser un jour » ne justifie pas treize mois d'empreinte conservée pour personne (ADV,
+  // 01/09/2026). C'est donc le paramètre qui reste, pas la colonne.
   const { device, os, browser } = parseUa(ua);
   const row = {
     session_id: sessionId, slug: share.slug, doc_id: share.doc_id, recipient_email: share.recipient_email,
     // Bornées comme la session INTERNE : plafond d'entrées, clés/valeurs numériques, totaux capés.
     num_pages: bornerNombre(p.numPages, BORNES.pages), max_page: mesureBornee({ maxPage: p.maxPage }).max_page,
     total_seconds: bornerNombre(p.totalSeconds, BORNES.secondes) || 0, pages_time: bornerPagesTime(p.pagesTime),
-    ua: String(ua || "").slice(0, 300), device, os, browser, last_at: new Date().toISOString(),
+    device, os, browser, last_at: new Date().toISOString(),
   };
   // started_at non touché par l'upsert (default à l'insert ; merge ne l'écrase pas car absent du body).
   await PLAYER.db.request("commercial_doc_sessions?on_conflict=session_id", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: [row] });
@@ -617,11 +631,13 @@ const CHAMPS_RETENUS = {
     + "tourne, or celle-là l'écrit encore et PostgREST rejette une écriture portant une colonne "
     + "inconnue. Sa suppression est le geste d'une livraison ultérieure ; d'ici là elle est ici, "
     + "vide, et retenue",
-  ua: "User-Agent brut — un vecteur d'empreinte, et surtout REDONDANT : `parseUa` en tire "
-    + "`device`, `os` et `browser` à l'écriture, et ces trois-là sont servis. La chaîne complète "
-    + "ne porte rien de plus qu'un lecteur de fiche lise ; elle porte seulement de quoi "
-    + "reconnaître un appareil d'une session à l'autre. Elle reste STOCKÉE (docs/RETENTION.md la "
-    + "purge à treize mois) : ne plus la servir et ne plus la garder sont deux décisions",
+  ua: "User-Agent brut — VIDÉ par la 0027 et plus jamais écrit (demande ADV du 01/09/2026). Un "
+    + "vecteur d'empreinte, et surtout REDONDANT : `parseUa` en tire `device`, `os` et `browser` à "
+    + "l'écriture, et ces trois-là sont servis. Nous avions plaidé pour le garder — seule source "
+    + "d'où recalculer les trois sur des lignes déjà écrites — et c'est notre propre argument qui "
+    + "l'a emporté contre nous : une chaîne sans lecteur ne se garde pas treize mois pour un "
+    + "recalcul hypothétique. La colonne demeure le temps qu'aucune version supportée ne l'écrive, "
+    + "pour la même raison que `ip`",
 };
 
 /** La projection d'une ligne de session : ce qui sort, et rien d'autre. */

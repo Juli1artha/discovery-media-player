@@ -459,6 +459,31 @@ describe("⚠️ ce qu'une session laisse sortir", () => {
       .toMatch(/version PRÉCÉDENTE du code/);
   });
 
+  // ⚠️ ET LA TABLE DES CONSULTATIONS N'AVAIT AUCUN BANC DE CE GENRE — c'est ce qui a laissé son
+  // `ua` prospérer treize mois sans lecteur. La couverture existait pour les SESSIONS, dont on sert
+  // les lignes ; la table des consultations n'est jamais rendue telle quelle, donc personne ne
+  // s'était demandé ce qu'elle GARDE. Une colonne dont rien ne sort n'est pas une colonne sans
+  // question : c'est une colonne dont la question n'a pas de gardien.
+  it("⚠️ aucune requête ne lit `ua`, sur ni l'une ni l'autre des deux tables", () => {
+    const code = readFileSync("server/shares.js", "utf8");
+    const selects = [...code.matchAll(/(commercial_doc_(?:views|sessions)[^`"']*select=)([a-z_,*]+)/g)];
+    expect(selects.length, "aucun select= trouvé : la sonde vise à côté").toBeGreaterThan(1);
+    for (const [, ou, champs] of selects) {
+      expect(champs.split(","), `« ${ou} » ne doit pas demander l'agent brut`).not.toContain("ua");
+      expect(champs, `« ${ou} » : une étoile ramènerait la colonne sans le dire`).not.toBe("*");
+    }
+  });
+
+  it("⚠️ et l'init vide `ua` sur les DEUX tables, pas seulement sur celle qu'on sert", () => {
+    const sql = readFileSync("supabase/init.sql", "utf8");
+    for (const table of ["commercial_doc_sessions", "commercial_doc_views"]) {
+      expect(sql, `${table} : une base NEUVE doit effacer comme la 0027`)
+        .toMatch(new RegExp(`update public\\.${table} set ua = null`));
+      expect(sql, `${table} : et dire dans la base ce qu'est cette colonne`)
+        .toMatch(new RegExp(`comment on column public\\.${table}\\.ua is`));
+    }
+  });
+
   it("⚠️ et une colonne retenue porte une raison LISIBLE, pas une case cochée", () => {
     expect(Object.keys(CHAMPS_RETENUS)).toEqual(expect.arrayContaining(["ua"]));
     for (const [colonne, raison] of Object.entries(CHAMPS_RETENUS)) {
