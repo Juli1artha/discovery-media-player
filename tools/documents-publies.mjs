@@ -61,7 +61,7 @@
 // Usage : node tools/documents-publies.mjs
 
 import { fichiersDuTarball } from "./inventaire-tarball.mjs";
-import { conclure, conforme, violation, tenter } from "./resultat-garde.mjs";
+import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 import { estExecuteDirectement } from "./execute-directement.mjs";
 
 /**
@@ -83,6 +83,30 @@ export const PROMIS = {
 export const documentsDe = (inventaire) =>
   inventaire.filter((f) => /\.md$/i.test(f) || /(^|\/)LICEN[CS]E/i.test(f));
 
+/**
+ * ⚠️ LE TÉMOIN — DÉRIVÉ, PARCE QUE LA FORME CORRECTE EST CE QUE CE DÉPÔT DOIT CONTENIR.
+ *
+ * `documentsDe` reconnaît deux formes : un nom en `.md`, un nom de licence. Aveuglées une par une
+ * le 01/09, la garde restait VERTE et imprimait simplement une liste plus courte —
+ *
+ *     le motif « .md » aveuglé        « documents du tarball : 2, tous promis et tous présents »
+ *     le motif « LICEN[CS]E » aveuglé « documents du tarball : 3, tous promis et tous présents »
+ *
+ * — alors que la règle qui compte ici est `voyageursNonDecides` : un document qui part SANS avoir
+ * été décidé. Une sonde qui ne reconnaît plus les `.md` ne voit plus aucun `.md` voyager, et le
+ * miroir du défaut d'origine cesse de renvoyer une image.
+ *
+ * Pas besoin de fabriquer un cas : `PROMIS` déclare trois Markdown et deux licences, et le paquet
+ * les embarque. Chacun est donc un sujet vivant des deux formes. Exiger que tout fichier promis ET
+ * présent soit RECONNU comme document ne demande au dépôt rien qu'il ne contienne déjà.
+ */
+export const promisNonReconnus = (inventaire, promis = PROMIS, sonde = documentsDe) => {
+  const vus = new Set(sonde(inventaire));
+  return Object.keys(promis)
+    .filter((chemin) => inventaire.includes(chemin) && !vus.has(chemin))
+    .map((chemin) => `${chemin} part bien dans le tarball mais n'est plus RECONNU comme document — ce n'est pas le paquet qui a changé, c'est la sonde qui a cessé de voir cette forme, et rien ne surveille donc plus les documents qui voyagent sans être promis`);
+};
+
 /** Les promesses que l'inventaire ne tient pas, avec leur raison — pour qu'on lise ce qu'on perd. */
 export const promessesRompues = (inventaire) =>
   Object.entries(PROMIS)
@@ -100,7 +124,14 @@ if (estExecuteDirectement(import.meta.url)) {
   // Ni l'un ni l'autre ne dit qu'une promesse est rompue — ils disent qu'on n'a pas pu regarder.
   conclure(tenter(() => {
     const inventaire = fichiersDuTarball();
-    const soucis = [...promessesRompues(inventaire), ...voyageursNonDecides(inventaire)];
+    const rompues = promessesRompues(inventaire);
+    if (rompues.length) return violation(rompues);
+    // ⚠️ LE TÉMOIN APRÈS LES PROMESSES ROMPUES, AVANT LE MIROIR. Un fichier promis mais absent est
+    // une VIOLATION que `promessesRompues` nomme déjà ; un fichier promis, présent, et pourtant
+    // invisible à `documentsDe` n'est pas une faute de la branche — c'est la sonde qui a bougé.
+    const aveugle = promisNonReconnus(inventaire);
+    if (aveugle.length) return inconclusif(aveugle);
+    const soucis = voyageursNonDecides(inventaire);
     if (soucis.length) return violation(soucis);
     const docs = documentsDe(inventaire);
     return conforme(`documents du tarball : ${docs.length}, tous promis et tous présents — ${docs.join(", ")} (${inventaire.length} fichiers au total)`);

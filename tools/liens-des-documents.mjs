@@ -62,8 +62,19 @@ export const cibleResolue = (documentSource, cible) =>
  * Les liens qui mentent, nommés `fichier:ligne`.
  * `lire` est injectable : les cas synthétiques du banc n'ont pas de fichiers sur le disque.
  */
+/**
+ * Les documents d'un inventaire — la SEULE définition, lue par le juge comme par le compteur.
+ *
+ * ⚠️ ELLE S'ÉCRIVAIT DEUX FOIS : ici pour choisir ce qu'on ouvre, et dans le verdict pour dire
+ * dans combien de documents on a cherché. Mesuré le 01/09 en aveuglant la seconde : la garde
+ * imprimait « 2 lien(s) relatif(s) reconnu(s) dans 0 document(s) publié(s), aucun ne mène hors du
+ * paquet » et sortait 0. Reconnaître deux liens dans zéro document est une phrase qu'aucun
+ * relecteur ne peut vérifier — et deux exemplaires d'une règle ne tombent jamais ensemble.
+ */
+export const documentsDe = (inventaire) => inventaire.filter((f) => /\.md$/i.test(f));
+
 export function* liensLus(inventaire, lire = (f) => readFileSync(f, "utf8")) {
-  for (const document of inventaire.filter((f) => /\.md$/i.test(f))) {
+  for (const document of documentsDe(inventaire)) {
     for (const lien of liensRelatifs(lire(document))) yield { document, ...lien };
   }
 }
@@ -109,7 +120,7 @@ if (estExecuteDirectement(import.meta.url)) {
     // ⚠️ LE PLANCHER DE FORME, AVANT LE VERDICT. Il compte ce que la sonde RECONNAÎT ; le compte
     // des documents ne dit que ce qui a été OUVERT.
     const vus = temoinsDeForme(inventaire);
-    const docs = inventaire.filter((f) => /\.md$/i.test(f));
+    const docs = documentsDe(inventaire);
     if (vus < PLANCHER_LIENS) {
       return inconclusif(`${vus} lien(s) relatif(s) reconnu(s) dans ${docs.length} document(s) publié(s), moins que ${PLANCHER_LIENS} — ce n'est pas une absence de lien mort, c'est une sonde qui ne lit plus la forme d'un lien`);
     }

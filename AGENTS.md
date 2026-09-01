@@ -685,6 +685,70 @@ verified**. They are named here as unverified rather than counted as passed, and
 not regex-shaped (an external analyser, an AST visit, a string predicate) remain outside this sweep
 entirely.
 
+### Fifty survivors, triaged one by one — and what "untriaged" was hiding
+
+The paragraph above ended on *some fifty were not individually verified*. Written honestly, it was
+still an unpaid debt, and paying it is what this section records: **49 survivors on `main`, every
+one of them opened.** The result splits three ways, and the split is the finding.
+
+⚠️ **Six were live blind spots, in six different guards, and four of them printed a sentence that
+was false while doing it.**
+
+| guard | the green line it printed with the probe blinded | what was not happening |
+| --- | --- | --- |
+| `shell-des-workflows` | *112 blocks analysed by bash, none refused* | zero blocks analysed |
+| `shell-des-workflows` | *0 blocks analysed by bash, none refused* | a guard announcing it verified nothing, exit 0 |
+| `changelog` | *144 sections, no repeated title or subtitle* | neither duplicate rule ran |
+| `liens-des-documents` | *2 relative links recognised in 0 published documents* | two links in zero documents |
+| `documents-publies` | *documents in the tarball: 2, all promised* | `.md` files stopped being documents |
+| `images-epinglees` | (green) and then the `docker` job: *tag and digest name the same major* | nothing compared |
+| `requete-diagnostic` | *diagnostic query extracted: 24 line(s)* | every line still commented out |
+
+⚠️ **Three of the six are one defect wearing three faces: the same question asked twice, once by
+the judge and once by the accountant.** `shell-des-workflows` asked *is this shell analysable?* on
+two lines, two lines apart — blind the judge's copy and the count stays at 112 while nothing is
+checked; blind the accountant's and the count falls to 0 while the exit stays green.
+`liens-des-documents` asked *which files are documents?* once to choose what to open and once to
+say in how many it searched. `changelog` wrote its `## […]` boundary once for the duplicate-title
+rule and once for the duplicate-subtitle rule. **Two copies of a rule never fall together — that is
+the whole reason a repository forbids the second copy — and here the survivor was always the copy
+that feeds the number a reader trusts.**
+
+⚠️ **`requete-diagnostic` is the one to remember, because two anti-vacuity floors stood over it and
+neither looked.** The guard extracts a SQL query written inside SQL comments and hands it to `psql`
+in CI — it is how this repository checks that no role reads a table it should not. Blind the one
+line that strips the `--` prefix and every floor still passes: `\bselect\b` matches inside a
+comment, and the last line still ends in `;`. The tool then prints on stdout a query whose every
+line begins with `--`, the database executes nothing, returns nothing, and the access-control job
+goes green. **A floor written over the text of a thing measures the text, not the thing.** The fix
+compares before and after — every non-empty line of the block must have *changed* — because a
+second recogniser would be a second copy, which is the defect one paragraph up.
+
+⚠️ **Twenty-three survivors are killed by their own bench, and that is the right answer, not a
+consolation.** A probe whose property is a module property — `sectionDe`'s boundary, `plusHaut`'s
+semver, the issue body's `npm --prefix` — has no business making a guard's exit code move: the
+guard judges the repository, the bench judges the module. Counting these as failures would push
+toward guards that refuse on things they have no verdict about.
+
+⚠️ **Fifteen were seen by nobody — guard green, bench green — and each is named with its
+direction.** Three were then covered (the glob→regex escaping in `codeowners-valide` and
+`attributs-des-generes`: blind it and a pattern silently matches *more* than it says, so
+`nonCouverts` demands *less* — the wrong direction, even with no live subject today). The
+remaining twelve are recorded as measured, not as passed: `secrets-en-clair` ×3 and
+`migrations-detectables` ×2 are cleaners whose blinding leaves the reading identical (63 signs
+either way); `langue-publiee`, `liaison-de-crypto` and two in `shell-des-workflows` fail *closed*
+— blinding them makes the probe accuse more, never less; `permissions-workflows` and `env-lues`
+move a line number and an excerpt in a message; `shell-des-workflows`' `sh` branch and
+`codeowners-valide`'s glob branch have no subject in this tree at all.
+
+⚠️ **And the harness lied once, in the direction that flatters it.** It located each tool's bench
+by naming convention — `tools/foo-bar.mjs` → `tools/__tests__/fooBar.test.js` — and reported
+`plus-haut-tag` as covered by nothing. Its bench is real and kills the mutant; it lives under
+`server/__tests__/`. One tool in sixteen, found only because the result was surprising enough to
+check. **A measuring instrument that assumes a convention reports the convention's exceptions as
+findings**, and a survivor list is exactly where such a false finding is least likely to be
+questioned — it agrees with what the list is for.
+
 ## A derived perimeter is proven by a file that appears, not by a count
 
 **Twenty-three guards take their perimeter from the disk** (`git ls-files`, `readdirSync`,

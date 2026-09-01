@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, it, expect } from "vitest";
 
-import { PROMIS, promessesRompues, voyageursNonDecides, documentsDe } from "../documents-publies.mjs";
+import { PROMIS, promessesRompues, voyageursNonDecides, documentsDe, promisNonReconnus } from "../documents-publies.mjs";
 import { fichiersDuTarball } from "../inventaire-tarball.mjs";
 
 const pack = (chemins) => JSON.stringify([{ files: chemins.map((path) => ({ path })) }]);
@@ -95,5 +95,44 @@ describe("le paquet réel", () => {
 
   it("⚠️ le sommaire de docs/ ne voyage plus — il indexait dix-sept absents", () => {
     expect(inventaire).not.toContain("docs/README.md");
+  });
+});
+
+// ⚠️ LE TÉMOIN EST DÉRIVÉ, ET SON ÉTAT SAIN EST « RIEN À DIRE » — donc il s'éprouve là où il a
+// quelque chose à dire. Aveugler l'une des deux formes que `documentsDe` reconnaît laissait la
+// garde verte avec une liste plus courte : la règle qui compte (`voyageursNonDecides`) ne peut
+// rien voir voyager qu'elle ne reconnaisse pas d'abord.
+describe("⚠️ tout document promis ET présent doit rester RECONNU comme document", () => {
+  it("ne dit rien sur un inventaire où les deux formes sont vues", () => {
+    expect(promisNonReconnus(Object.keys(PROMIS))).toEqual([]);
+  });
+
+  it("⚠️ NOMME chaque Markdown promis quand la sonde ne reconnaît plus que les licences", () => {
+    const borgne = (inv) => inv.filter((f) => /(^|\/)LICEN[CS]E/i.test(f));
+    const dits = promisNonReconnus(Object.keys(PROMIS), PROMIS, borgne);
+    expect(dits.length, "trois Markdown promis le 01/09").toBe(3);
+    expect(dits.join(" ")).toMatch(/README\.md/);
+  });
+
+  it("⚠️ NOMME chaque licence promise quand la sonde ne reconnaît plus que les Markdown", () => {
+    const borgne = (inv) => inv.filter((f) => /\.md$/i.test(f));
+    const dits = promisNonReconnus(Object.keys(PROMIS), PROMIS, borgne);
+    expect(dits.length, "deux licences promises le 01/09").toBe(2);
+    expect(dits.join(" ")).toMatch(/LICENSE-MIT/);
+  });
+
+  it("⚠️ les deux formes ont chacune un sujet vivant dans PROMIS — sinon aveugler l'une ne prouverait rien", () => {
+    const md = Object.keys(PROMIS).filter((c) => /\.md$/i.test(c));
+    const lic = Object.keys(PROMIS).filter((c) => /(^|\/)LICEN[CS]E/i.test(c));
+    expect(md.length, "aucun Markdown promis : le motif « .md » n'aurait aucun sujet").toBeGreaterThan(0);
+    expect(lic.length, "aucune licence promise : le motif « LICEN[CS]E » n'aurait aucun sujet").toBeGreaterThan(0);
+    expect(documentsDe(Object.keys(PROMIS)).sort()).toEqual(Object.keys(PROMIS).sort());
+  });
+
+  it("⚠️ et un fichier promis, présent, mais invisible à la sonde est NOMMÉ", () => {
+    // On ne peut pas aveugler `documentsDe` depuis ici : on donne à la place un `promis` qui
+    // déclare un fichier qu'aucune des deux formes ne reconnaît — l'effet est le même.
+    expect(promisNonReconnus(["index.js"], { "index.js": "x" }))
+      .toEqual([expect.stringMatching(/index\.js part bien dans le tarball mais n'est plus RECONNU/)]);
   });
 });

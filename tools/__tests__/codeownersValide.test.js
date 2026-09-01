@@ -42,3 +42,28 @@ describe("⚠️ CONTRÔLES POSITIFS — elle sait reconnaître les deux façons
     expect(designeQuelqueChose("/zone-inventee/", SUIVIS)).toBe(false);
   });
 });
+
+// ⚠️ LA BRANCHE À GLOB N'A AUCUN SUJET DANS CE DÉPÔT — le seul motif étoilé du CODEOWNERS est `*`
+// nu, traité avant elle. Mesuré le 01/09 : aveugler l'échappement ou la conversion de l'étoile ne
+// faisait bouger ni la garde ni ce banc. Un code que rien n'exécute est un code que rien ne
+// corrige, et le jour où quelqu'un écrira `/server/*.js` il héritera de ce qu'on n'a pas éprouvé.
+describe("⚠️ la conversion d'un motif à glob, que le CODEOWNERS d'aujourd'hui n'exerce pas", () => {
+  const fichiers = ["server/a.js", "server/a/b.js", "docs/a.md", "a+b.js", "aab.js"];
+
+  it("l'étoile couvre un segment, jamais une barre oblique", () => {
+    expect(designeQuelqueChose("/server/*.js", fichiers)).toBe(true);
+    expect(designeQuelqueChose("/server/x*.js", fichiers)).toBe(false);
+  });
+
+  it("⚠️ les métacaractères sont échappés — sinon le motif désignerait plus que ce qu'il dit", () => {
+    expect(designeQuelqueChose("/a+b.js", fichiers), "un motif sans étoile se compare littéralement").toBe(true);
+    // Sans échappement, « a+ » serait « un ou plusieurs a » et ce motif désignerait « aab.js ».
+    expect(designeQuelqueChose("/a+*.js", ["aab.js"]), "« + » échappé : « aab.js » n'est pas désigné").toBe(false);
+    expect(designeQuelqueChose("/a+*.js", ["a+b.js"]), "et il désigne bien le fichier qui porte le « + »").toBe(true);
+  });
+
+  it("un motif étoilé se compare aussi au nom de base — c'est ce que fait git", () => {
+    expect(designeQuelqueChose("*.md", fichiers)).toBe(true);
+    expect(designeQuelqueChose("*.txt", fichiers)).toBe(false);
+  });
+});

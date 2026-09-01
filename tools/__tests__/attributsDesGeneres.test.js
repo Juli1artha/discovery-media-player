@@ -46,3 +46,31 @@ describe("la couverture est réclamée pour chaque sortie", () => {
     expect(couvre("*.generated.js", "server/handler.js")).toBe(false);
   });
 });
+
+// ⚠️ L'ÉCHAPPEMENT DU MOTIF N'ÉTAIT ÉPROUVÉ NULLE PART. `couvre` convertit un glob en expression
+// régulière : les métacaractères sont échappés, puis `*` devient `[^/]*`. Mesuré le 01/09 en
+// aveuglant l'échappement : ni la garde ni ce banc ne bougeaient — parce que le seul motif du
+// dépôt est `*.generated.js` et que ses sorties le vérifient dans les deux cas. La direction de
+// la panne est pourtant la mauvaise : sans échappement, le point est un joker, donc le motif
+// couvre PLUS que ce qu'il dit, donc `nonCouverts` réclame MOINS. Un fichier généré non déclaré
+// passerait pour couvert.
+describe("⚠️ un glob converti en expression régulière ne doit pas devenir plus permissif", () => {
+  it("le point d'un motif est un point, pas un joker", () => {
+    expect(couvre("*.generated.js", "browser.generated.js")).toBe(true);
+    expect(couvre("*.generated.js", "browserXgeneratedYjs"),
+      "sans échappement, « . » matcherait n'importe quel caractère et ce nom passerait pour couvert")
+      .toBe(false);
+  });
+
+  it("l'étoile ne franchit pas une barre oblique", () => {
+    expect(couvre("*.generated.js", "server/browser.generated.js"),
+      "un motif sans « / » se compare au nom de base").toBe(true);
+    expect(couvre("server/*.js", "server/a/b.js")).toBe(false);
+    expect(couvre("server/*.js", "server/a.js")).toBe(true);
+  });
+
+  it("un motif littéral ne couvre que lui-même", () => {
+    expect(couvre("a+b.js", "a+b.js")).toBe(true);
+    expect(couvre("a+b.js", "aab.js"), "« + » échappé ne répète pas le « a »").toBe(false);
+  });
+});

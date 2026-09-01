@@ -8,7 +8,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import { analyserAvecBash, blocsDe, blocsFautifs, sautes, lireDossier, temoinNonVu } from "../shell-des-workflows.mjs";
+import { analyserAvecBash, blocsDe, blocsFautifs, sautes, estBash, lireDossier, temoinNonVu, PLANCHER_BLOCS } from "../shell-des-workflows.mjs";
 
 const wf = (steps, extra = "") => `name: T\non: push\njobs:\n  j:\n${extra}    steps:\n${steps}`;
 
@@ -98,5 +98,46 @@ describe("⚠️ le témoin — INJECTÉ, parce que l'état sain de cette règle
   // dépôt doit CONTENIR, donc il faut la fabriquer.
   it("⚠️ le dépôt réel ne contient AUCUN bloc refusé — d'où l'injection", () => {
     expect(blocsFautifs(lireDossier())).toEqual([]);
+  });
+});
+
+// ⚠️ LA QUESTION « CE SHELL EST-IL ANALYSABLE ? » S'ÉCRIVAIT DEUX FOIS, à deux lignes de distance —
+// une fois pour décider ce qu'on analyse, une fois pour compter ce qu'on saute. Mesuré le 01/09 en
+// aveuglant chacune séparément : le motif du juge aveuglé imprimait « 112 bloc(s) analysés par
+// bash, aucun refusé » (la phrase que l'en-tête de `temoinNonVu` dit littéralement fausse, revenue
+// par une autre porte), et celui du comptable imprimait « 0 bloc(s) analysés par bash » — vert
+// dans les deux cas. Une seule sonde, et un plancher sur ce que le vert prononce.
+describe("⚠️ le juge et le comptable interrogent la MÊME sonde", () => {
+  const wf = (etapes) => `name: t\non: push\njobs:\n  j:\n    steps:\n${etapes}`;
+
+  it("un shell non analysable est sauté par le comptable ET ignoré par le juge", () => {
+    const b = blocsDe("t.yml", wf("      - run: |\n          print(1\n        shell: python\n"));
+    expect(sautes(b).map((x) => x.shell)).toEqual(["python"]);
+    expect(blocsFautifs(b, () => "refusé")).toEqual([]);
+  });
+
+  it("⚠️ et l'accord tient sur TOUT bloc : jamais jugé et sauté, jamais ni l'un ni l'autre", () => {
+    const blocs = blocsDe("t.yml", wf(
+      "      - run: echo a\n" +
+      "      - run: echo b\n        shell: sh\n" +
+      "      - run: echo c\n        shell: pwsh\n" +
+      "      - run: echo d\n        shell: python\n"));
+    const juges = blocsFautifs(blocs, () => "refusé").length;
+    expect(juges + sautes(blocs).length, "un bloc est jugé ou sauté — exactement une fois")
+      .toBe(blocs.length);
+  });
+
+  it("`estBash` reconnaît ce que `bash -n` sait lire, et rien d'autre", () => {
+    expect(["bash", "sh", "bash -e {0}", "sh -eu {0}"].map(estBash)).toEqual([true, true, true, true]);
+    expect(["python", "pwsh", "powershell", "", undefined].map(estBash)).toEqual([false, false, false, false, false]);
+  });
+});
+
+describe("⚠️ le plancher sur ce que la phrase verte PRONONCE", () => {
+  it(`au moins ${PLANCHER_BLOCS} blocs réellement analysés dans les workflows réels`, () => {
+    const blocs = lireDossier();
+    const analyses = blocs.length - sautes(blocs).length;
+    expect(analyses, "112 le 01/09 — un effondrement ici est une sonde aveugle, pas un dépôt allégé")
+      .toBeGreaterThanOrEqual(PLANCHER_BLOCS);
   });
 });

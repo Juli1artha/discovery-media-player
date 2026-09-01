@@ -9,7 +9,7 @@
 
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-import { froms, imagesDe, ecartsEpinglage, majeurAnnonce, majeurAttendu, ecartMajeur, sourceDuMontage, dockerfilesSuivis, ecartesDuPerimetre } from "../images-epinglees.mjs";
+import { froms, imagesDe, ecartsEpinglage, majeurAnnonce, majeurAttendu, ecartMajeur, sourceDuMontage, dockerfilesSuivis, ecartesDuPerimetre, referencesAvecMajeure, PLANCHER_MAJEURES } from "../images-epinglees.mjs";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -273,5 +273,33 @@ describe("le périmètre vient du disque, jamais d'une liste écrite", () => {
       lancements.filter((l) => l.args !== ""),
       "un workflow passe une liste de fichiers : le périmètre redevient écrit à la main, et cesse de couvrir dès qu'on ajoute un Dockerfile",
     ).toEqual([]);
+  });
+});
+
+// ⚠️ LA PHRASE QUE LE JOB `docker` IMPRIME EN DÉPEND. Il demande à l'image ce qu'elle embarque puis
+// appelle `ecartMajeur` : `majeurAnnonce` aveuglé, `majeurAttendu` rend null, `ecartMajeur` rend
+// null, et la course annonce « étiquette et condensat désignent la même majeure de Node » sans
+// avoir comparé quoi que ce soit. Mesuré le 01/09 : `images-epinglees` restait vert sur cette
+// mutation. Le témoin est DÉRIVÉ — le Dockerfile de ce dépôt part bien d'une étiquette qui nomme
+// sa majeure, deux fois.
+describe("⚠️ la lecture de l'étiquette a un témoin, et il est dérivé", () => {
+  const reels = () => dockerfilesSuivis().map((f) => [f, readFileSync(f, "utf8")]);
+
+  it(`au moins ${PLANCHER_MAJEURES} référence externe annonce une majeure lisible`, () => {
+    const lues = referencesAvecMajeure(reels());
+    expect(lues.length, "node:24-alpine deux fois le 01/09 — si ce compte tombe à zéro, la sonde est aveugle")
+      .toBeGreaterThanOrEqual(PLANCHER_MAJEURES);
+    expect(lues.every((x) => Number.isInteger(x.majeur))).toBe(true);
+  });
+
+  it("⚠️ et une étiquette sans majeure de Node ne compte pas — sinon le témoin serait vide de sens", () => {
+    // `.zap/Dockerfile` part de ghcr.io/zaproxy/zaproxy:2.17.0 : légitimement sans majeure Node.
+    expect(majeurAnnonce("ghcr.io/zaproxy/zaproxy:2.17.0@sha256:" + "0".repeat(64))).toBeNull();
+    expect(majeurAnnonce("node:24-alpine@sha256:" + "0".repeat(64))).toBe(24);
+  });
+
+  it("⚠️ une sonde qui ne lit plus l'étiquette laisse le témoin à ZÉRO — c'est ce qu'on veut voir", () => {
+    const borgne = [["t", "FROM ghcr.io/zaproxy/zaproxy:2.17.0@sha256:" + "0".repeat(64) + "\n"]];
+    expect(referencesAvecMajeure(borgne)).toEqual([]);
   });
 });

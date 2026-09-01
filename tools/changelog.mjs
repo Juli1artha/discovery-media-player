@@ -31,7 +31,9 @@ export const sections = (txt) => [...txt.matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)].
  * branches produisent quand chacune ouvre la sienne — git fusionne les deux sans conflit, parce
  * qu'elles ne touchent pas les mêmes lignes.
  */
-export const titres = (txt) => [...txt.matchAll(/^## \[([^\]]+)\]/gm)].map((m) => m[1]);
+export const bornesDesTitres = (txt) => [...txt.matchAll(/^## \[([^\]]+)\]/gm)];
+
+export const titres = (txt) => bornesDesTitres(txt).map((m) => m[1]);
 
 /**
  * Les titres écrits plus d'une fois.
@@ -64,7 +66,7 @@ export function titresRepetes(txt) {
  */
 export function sousSectionsRepetees(txt) {
   const soucis = [];
-  const bornes = [...txt.matchAll(/^## \[([^\]]+)\]/gm)];
+  const bornes = bornesDesTitres(txt);
   bornes.forEach((m, i) => {
     const corps = txt.slice(m.index, i + 1 < bornes.length ? bornes[i + 1].index : txt.length);
     const comptes = new Map();
@@ -74,6 +76,35 @@ export function sousSectionsRepetees(txt) {
     }
   });
   return soucis;
+}
+
+/**
+ * ⚠️ LE TÉMOIN — INJECTÉ, PARCE QUE L'ÉTAT SAIN DE CES DEUX RÈGLES EST « AUCUN DOUBLON ».
+ *
+ * Un témoin dérivé exigerait du dépôt un titre écrit deux fois, c'est-à-dire la chose même que la
+ * règle interdit : il refuserait un CHANGELOG sain. La forme correcte n'est pas quelque chose que
+ * ce fichier doit CONTENIR, donc on la fabrique.
+ *
+ * ⚠️ ET CE N'EST PAS UNE PRÉCAUTION THÉORIQUE : LE DÉFAUT EST ARRIVÉ DEUX FOIS. Un `## [Unreleased]`
+ * écrit deux fois, puis le lendemain deux `### Fixed` sous une même version — même cause exacte,
+ * deux branches ouvrent chacune la sienne et git fusionne sans conflit. Mesuré le 01/09 en
+ * aveuglant les motifs un par un :
+ *
+ *     la borne des titres aveuglée     « 144 sections, aucun titre ni sous-titre en double »   vert
+ *     le motif des sous-titres aveuglé « 144 sections, aucun titre ni sous-titre en double »   vert
+ *
+ * Le compte vient de `sections()`, qui ne lit QUE les numéros de version et n'a donc pas bougé ;
+ * le verdict vient d'ailleurs. Un nombre d'un instrument et une conclusion d'un autre : le nombre
+ * ne rassure que sur ce qu'il a compté, et il n'a pas compté ça.
+ */
+export function temoinNonVu(juger = titresRepetes, jugerSous = sousSectionsRepetees) {
+  const casse = [
+    "## [Unreleased]", "", "### Fixed", "", "- a", "", "### Fixed", "", "- b", "",
+    "## [Unreleased]", "", "- c", "",
+  ].join("\n");
+  if (!juger(casse).length) return "un titre écrit deux fois n'a pas été relevé sur un texte fabriqué pour cela — la sonde des titres ne lit plus la forme qu'elle cherche, et le CHANGELOG de ce dépôt n'a donc été relu par personne sur ce point";
+  if (!jugerSous(casse).length) return "une sous-section écrite deux fois sous une même version n'a pas été relevée sur un texte fabriqué pour cela — la sonde des sous-titres ne lit plus la forme qu'elle cherche";
+  return null;
 }
 
 /** Les références de bas de page, telles qu'écrites. */
@@ -156,8 +187,13 @@ if (estExecuteDirectement(import.meta.url)) {
     // texte se casse au premier reformulage.
     const vues = sections(txt);
     if (!vues.length) return inconclusif("aucune section de version dans CHANGELOG.md — la sonde vise à côté, ou le fichier a changé de forme");
+    // ⚠️ LE TÉMOIN AVANT LE JUGEMENT. Le compte affiché vient de `sections()` — les numéros de
+    // version — et la phrase « aucun titre ni sous-titre en double » vient de deux autres sondes.
+    // Aveugler l'une ou l'autre laissait le compte intact et la phrase inchangée.
+    const aveugle = temoinNonVu();
+    if (aveugle) return inconclusif(aveugle);
     const soucis = ecarts(txt);
     if (soucis.length) return violation(soucis.map((s) => "CHANGELOG désaccordé — " + s));
-    return conforme(`changelog : ${vues.length} sections, aucun titre ni sous-titre en double, chaque référence exacte, [Unreleased] à jour`);
+    return conforme(`changelog : ${vues.length} sections, aucun titre ni sous-titre en double (sonde confirmée par un témoin posé), chaque référence exacte, [Unreleased] à jour`);
   }));
 }

@@ -14,6 +14,28 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- Six guards had a probe blind on a subject the repository contains, found by opening every one of
+  the 49 survivors the mutation sweep had left untriaged. Four of them printed a sentence that was
+  false while blind: `shell-des-workflows` announced *112 blocks analysed by bash* having analysed
+  none (and, from the other copy of the same question, *0 blocks analysed* while exiting green);
+  `changelog` announced *no repeated title or subtitle* with neither duplicate rule running — the
+  defect that reached this file twice in two days; `liens-des-documents` announced *2 relative
+  links recognised in 0 published documents*; `documents-publies` stopped recognising `.md` files
+  as documents, so nothing watched what travels in the tarball unannounced; `images-epinglees`
+  stopped reading the major a tag announces, which is what makes the `docker` job say *tag and
+  digest name the same major* without comparing anything. Three of those six are one defect wearing
+  three faces — the same question written twice, once for the judge and once for the count that
+  gets printed.
+- `requete-diagnostic` returned a query whose every line was still commented out, and both of its
+  anti-vacuity floors passed: `select` matches inside a comment and the last line still ends in
+  `;`. CI pipes that output to `psql`, so the job that checks which roles can read which tables
+  executed nothing, returned nothing, and went green. The extraction now requires every non-empty
+  line of the block to have *changed* — compared before and after rather than recognised a second
+  time.
+- The glob-to-regex conversion in `codeowners-valide` and `attributs-des-generes` had its escaping
+  tested nowhere: blinded, a pattern silently matches more than it says, so the guard demands less.
+  Covered by benches; the remaining twelve survivors that neither a guard nor a bench sees are
+  recorded in `AGENTS.md` with their direction and their measurement, rather than counted as passed.
 - Four guards had a probe blind on a subject the repository actually contains, found by re-running
   the mutation sweep on an extractor rebuilt on the TypeScript AST — 143 real regex literals
   against 171 by pattern, 28 of which were slashes inside string constants. `images-des-workflows`

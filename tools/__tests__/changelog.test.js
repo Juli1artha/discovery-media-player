@@ -12,7 +12,7 @@
 
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-import { ecarts, sections, titres, titresRepetes, sousSectionsRepetees, references, urlAttendue, blocReferences, sectionDe, DEPOT } from "../changelog.mjs";
+import { ecarts, sections, titres, titresRepetes, sousSectionsRepetees, references, urlAttendue, blocReferences, sectionDe, DEPOT, temoinNonVu, bornesDesTitres } from "../changelog.mjs";
 
 const CHL = (corps) => corps.trim() + "\n";
 const accorde = CHL(`
@@ -205,5 +205,30 @@ describe("le CHANGELOG réel du dépôt", () => {
     const v = sections(reel);
     expect(v[v.indexOf("0.1.85") + 1]).toBe("0.1.83");
     expect(references(reel).get("0.1.85")).toBe(`${DEPOT}/compare/v0.1.83...v0.1.85`);
+  });
+});
+
+// ⚠️ LE TÉMOIN, ET LE TÉMOIN DU TÉMOIN. Aveugler la borne des titres ou le motif des sous-titres
+// laissait la garde imprimer « 144 sections, aucun titre ni sous-titre en double » : le compte
+// vient de `sections()` — les numéros de version — et la conclusion vient d'ailleurs. Un contrôle
+// dont l'état sain est « rien à dire » doit être éprouvé là où il a quelque chose à dire.
+describe("⚠️ le témoin — injecté, parce que l'état sain de ces règles est « aucun doublon »", () => {
+  it("ne dit rien quand les deux sondes voient encore la forme qu'elles cherchent", () => {
+    expect(temoinNonVu()).toBeNull();
+  });
+
+  it("⚠️ NOMME la sonde des titres quand elle ne relève plus rien", () => {
+    expect(temoinNonVu(() => [], sousSectionsRepetees)).toMatch(/titre écrit deux fois/);
+  });
+
+  it("⚠️ NOMME la sonde des sous-titres quand elle ne relève plus rien", () => {
+    expect(temoinNonVu(titresRepetes, () => [])).toMatch(/sous-section écrite deux fois/);
+  });
+
+  it("⚠️ une seule sonde borne les sections — le juge des sous-titres lit les mêmes bornes que le compteur de titres", () => {
+    const txt = "## [Unreleased]\n\n### Fixed\n\n## [0.1.1]\n\n### Fixed\n";
+    expect(bornesDesTitres(txt).map((m) => m[1])).toEqual(["Unreleased", "0.1.1"]);
+    expect(titres(txt)).toEqual(bornesDesTitres(txt).map((m) => m[1]));
+    expect(sousSectionsRepetees(txt), "un « ### Fixed » par version : pas un doublon").toEqual([]);
   });
 });

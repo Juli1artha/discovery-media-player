@@ -55,17 +55,42 @@ export function blocsDe(fichier, texte) {
  * Les blocs que bash refuse d'analyser, nommés `fichier › job › étape`.
  * `analyser` est injectable : le banc n'a pas besoin d'un vrai bash pour éprouver la règle.
  */
+/**
+ * Le shell d'un bloc est-il de ceux que `bash -n` sait juger ?
+ *
+ * ⚠️ UNE SEULE SONDE POUR LE JUGE ET POUR LE COMPTABLE. Cette question s'écrivait deux fois, à
+ * deux lignes de distance — une fois pour décider ce qu'on analyse, une fois pour compter ce qu'on
+ * saute — et deux exemplaires d'une règle ne tombent pas ensemble. Mesuré le 01/09 en aveuglant
+ * chacune séparément :
+ *
+ *     le motif du JUGE aveuglé      « 112 bloc(s) analysés par bash, aucun refusé »   vert
+ *     le motif du COMPTABLE aveuglé « 0 bloc(s) analysés par bash, aucun refusé »     vert
+ *
+ * La première phrase est celle que l'en-tête de `temoinNonVu` dit LITTÉRALEMENT FAUSSE — bash
+ * n'avait rien analysé — et elle revenait par une autre porte que celle qu'on avait fermée. La
+ * seconde annonce elle-même n'avoir rien vérifié, et sortait 0.
+ */
+export const estBash = (shell) => /^(bash|sh)\b/.test(String(shell || ""));
+
 export function blocsFautifs(blocs, analyser = analyserAvecBash) {
   const soucis = [];
   for (const b of blocs) {
-    if (!/^(bash|sh)\b/.test(b.shell)) continue;
+    if (!estBash(b.shell)) continue;
     const erreur = analyser(b.run, b.shell);
     if (erreur) soucis.push(`${b.fichier} › ${b.job} › ${b.nom} : ${erreur}`);
   }
   return soucis;
 }
 
-export const sautes = (blocs) => blocs.filter((b) => !/^(bash|sh)\b/.test(b.shell));
+export const sautes = (blocs) => blocs.filter((b) => !estBash(b.shell));
+
+/**
+ * ⚠️ ET LE NOMBRE ANALYSÉ EST PLANCHÉRISÉ, PARCE QUE LE VERT LE PRONONCE. 112 blocs le 01/09, tous
+ * en `bash`, aucun en `sh`. Quarante laisse la place à un dépôt qui allégerait ses workflows et
+ * refuse le seul état qui compte ici : celui où la sonde a cessé de reconnaître le shell qu'elle
+ * lit. Ce plancher ne prétend pas voir la perte d'un bloc ou deux — il voit l'effondrement.
+ */
+export const PLANCHER_BLOCS = 40;
 
 /**
  * ⚠️ LE TÉMOIN — INJECTÉ, PARCE QUE L'ÉTAT SAIN DE CETTE RÈGLE EST ZÉRO BLOC REFUSÉ.
@@ -125,7 +150,11 @@ if (estExecuteDirectement(import.meta.url)) {
     const soucis = blocsFautifs(blocs);
     if (soucis.length) return violation(soucis);
     const ignores = sautes(blocs);
+    const analyses = blocs.length - ignores.length;
+    if (analyses < PLANCHER_BLOCS) {
+      return inconclusif(`${analyses} bloc(s) « run: » analysés par bash sur ${blocs.length} lus, moins que ${PLANCHER_BLOCS} — ce n'est pas que le dépôt a perdu ses scripts, c'est la sonde qui ne reconnaît plus le shell qu'ils déclarent`);
+    }
     const mention = ignores.length ? ` — ${ignores.length} bloc(s) sauté(s), shell non bash : ${ignores.map((b) => b.shell).join(", ")}` : "";
-    return conforme(`shell : ${blocs.length - ignores.length} bloc(s) « run: » analysés par bash, sonde confirmée par un témoin posé, aucun refusé${mention}`);
+    return conforme(`shell : ${analyses} bloc(s) « run: » analysés par bash, sonde confirmée par un témoin posé, aucun refusé${mention}`);
   }));
 }
