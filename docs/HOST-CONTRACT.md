@@ -451,7 +451,7 @@ POST  →  { "email": "…", "role": "…", "action": "<one of the names below>"
 |---|---|
 | `create` | create a tracked link |
 | `list` | list one's own links |
-| `list.all` | list everyone's links |
+| `list.all` | list everyone's links **and everyone's reading sessions** |
 | `revoke` | revoke a link |
 | `setauth` | change a link's access wall |
 | `overview` | read a document's aggregate figures |
@@ -466,6 +466,20 @@ everyone, administrators included — not because the right is missing, but beca
 than the player. That failure reads exactly like a permission problem, which is what makes it
 expensive. **Compare this table against your own at each upgrade**, and prefer a refusal that names
 the unknown action over one that looks like a role issue.
+
+⚠️ **`list.all` now widens `sessions` as well, and until `0.1.146` nothing did.** `docshare.list`
+has always asked you two questions — *may they list?* then *may they list everything?* — and
+narrowed to the caller's own links when the second answer was no. `docshare.sessions` asked only the
+first, and returned every session of the document: the reading sessions table carries the
+recipient's **address and IP**, so any member allowed to call it read the prospects of their
+colleagues. A strict door with a wide door beside it protects nothing.
+
+`sessions` now asks the same second question, and answers with a `scope` field (`"mine"` or
+`"all"`) exactly as `list` does. **What changes for you:** a member to whom you answer *no* on
+`list.all` now sees only the sessions of links whose chain starts with a link they created —
+forwarded re-shares of their own links included, because they caused those readings. Nothing
+changes for a role you already answer *yes* to. If your table predates `list.all`, see the warning
+above: an unheard-of action answered *no* narrows this view rather than breaking it.
 
 ⚠️ **`presentations.list.all` and `presentations.stats` are deliberately separate.** Seeing *that* a
 presentation happened and seeing *who attended it* are different sensitivities: the first returns

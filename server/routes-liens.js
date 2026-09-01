@@ -194,7 +194,15 @@ async function traiter(req, res, body, slug) {
           return jd(200, { ok: true, byDoc: await docOverview() });
         }
         if (body.action === "docshare.sessions") {
-          return jd(200, { ok: true, sessions: await listSessionsForDoc(String(body.docId || "")) });
+          // ⚠️ LA MÊME PORTÉE QUE `docshare.list`, ET SON ABSENCE ICI ÉTAIT UNE FUITE. Les sessions
+          // portent `recipient_email` et `ip` : sans ce filtre, tout membre autorisé à appeler cette
+          // action obtenait, pour n'importe quel document, l'adresse et l'IP des prospects de ses
+          // collègues — ce que la distinction `list` / `list.all` empêche vingt lignes plus bas,
+          // depuis qu'un hôte l'a demandée. Une porte stricte à côté d'une porte large ne protège
+          // rien : il suffisait de passer par la seconde.
+          const toutVoir = await PLAYER.identity.canManageShares(u, "list.all");
+          const sessions = await listSessionsForDoc(String(body.docId || ""), toutVoir ? null : u.email);
+          return jd(200, { ok: true, sessions, scope: toutVoir ? "all" : "mine" });
         }
         if (body.action === "docshare.list") {
           const docId = String(body.docId || "");

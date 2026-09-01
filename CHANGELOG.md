@@ -14,6 +14,31 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- `docshare.sessions` returned every reading session of a document to any member allowed to call
+  it, and that table carries the recipient's address and IP — so a member read the prospects of
+  their colleagues, which is exactly what the `list` / `list.all` split has prevented on
+  `docshare.list` since a host asked for it. A strict door had a wide door beside it, and two calls
+  were enough to use the second. `sessions` now asks the same second question and answers with the
+  same `scope` field. The scope follows the **chain of origin**, not the last link: `createReshare`
+  sets `created_by` to the parent's recipient, so filtering on `created_by` alone would have hidden
+  from a salesperson the readings of their own forwarded links — the ones they caused. Each session
+  now also carries its filiation (`parent_slug` and the parent's recipient), without which the rule
+  is invisible to the caller. Hosts: see `docs/HOST-CONTRACT.md` — a member you answer *no* to on
+  `list.all` now sees only their own chain.
+- The probes that are not regular expressions had never been measured, and they hold up worse than
+  the ones that are: 152 of them, 90 leaving their guard green, against 55 of 143 for the regexes.
+  Five had a live subject. `surface-publique` loaded three modules instead of seven and read
+  eighteen symbols instead of seventy-five while exiting green — its two floors had been set to
+  refuse the empty, and a half-blind probe is not empty; a declared public subpath must now have a
+  readable target. `surface-base`'s floor on tables held in the empty case and nowhere else, through
+  a JavaScript coercion: blinded, it refused exactly zero tables and passed one, two or three.
+  `image-documentee` carried a perimeter written as a list of what to look at, now inverted into a
+  list of what is excused with a reason each. `liaison-de-crypto` computed its perimeter inside its
+  verdict, where nothing could test it. Ten AST type guards in the two tools that walk a tree were
+  seen by neither their guard nor their bench, and their failure direction is the wrong one: a node
+  that stops being recognised is a read that vanishes from the record. The twenty survivors that
+  nothing sees are named in `AGENTS.md` with their direction, along with what remains outside even
+  this sweep.
 - The three tools the mutation sweep had recorded as *measured on nothing* were measured against
   their benches instead of their exit codes, which is the only judge they have: 11 regex literals,
   8 already covered, 3 survivors, now none. The one that mattered is `verdict-zap`'s reader of the
