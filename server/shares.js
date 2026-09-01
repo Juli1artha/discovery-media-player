@@ -538,7 +538,7 @@ function racineDuLien(slug, parParent, profondeurMax = 64) {
 async function listSessionsForDoc(docId, owner = null) {
   const id = enc(String(docId || ""));
   const [sessions, shares] = await Promise.all([
-    PLAYER.db.request(`commercial_doc_sessions?doc_id=eq.${id}&select=*&order=last_at.desc&limit=500`),
+    PLAYER.db.request(`commercial_doc_sessions?doc_id=eq.${id}&select=${SELECT_SESSION}&order=last_at.desc&limit=500`),
     // ⚠️ TOUS LES LIENS, RÉPÉTITIONS COMPRISES. La chaîne se remonte par `parent_slug` : un maillon
     // absent de cette lecture casse la remontée et fait échouer fermé une session légitime. Le
     // filtre `is_test` d'avant ne servait qu'à nommer le destinataire ; il ne peut pas servir à
@@ -558,7 +558,7 @@ async function listSessionsForDoc(docId, owner = null) {
     if (proprietaire && createurRacine !== proprietaire) continue;
     const parent = lien && lien.parent_slug ? parSlug.get(lien.parent_slug) || null : null;
     sortie.push({
-      ...s,
+      ...sessionServie(s),
       recipient_name: (lien && lien.recipient_name) || null,
       // La filiation voyage avec la session : « une session, un lecteur, visible par sa chaîne
       // d'origine » ne se lit pas si la chaîne n'est pas dans la charge utile.
@@ -569,6 +569,53 @@ async function listSessionsForDoc(docId, owner = null) {
   }
   return sortie;
 }
+
+/**
+ * Ce qu'une session laisse sortir, et ce qu'elle ne laisse pas sortir.
+ *
+ * ⚠️ UNE LISTE DE CE QUI EST PERMIS, PAS DE CE QU'ON RETIRE. Les deux lectures de sessions
+ * demandaient `select=*` et rendaient la ligne entière : ce que la table contient partait par
+ * défaut, et une colonne ajoutée demain serait partie sans que personne y pense. Dans ce sens-là
+ * l'oubli est une FUITE. Dans l'autre — une colonne neuve qui n'est pas servie — l'oubli est une
+ * absence, que le premier lecteur signale. C'est la même inversion que le périmètre de
+ * `image-documentee`, appliquée à ce qui SORT.
+ *
+ * ⚠️ ET L'IP N'EN EST PLUS. `docs/RETENTION.md` l'appelle en toutes lettres « the most sensitive
+ * datum in the schema », et rien dans ce dépôt ne la LIT : elle était écrite par `upsertSession` et
+ * ne servait qu'à être rendue. Une fiche commerciale n'a pas à porter l'adresse d'un lecteur pour
+ * dire qu'il a lu quatre pages en six minutes.
+ *
+ * ⚠️ ET LE MÊME PRODUIT A DÉJÀ TRANCHÉ AILLEURS. Les participants d'une présentation n'ont pas leur
+ * IP mais un `creator_ip_hash` — un HMAC salé, lié au slug pour qu'on ne puisse pas corréler une
+ * adresse d'une présentation à l'autre (0.1.114). Deux décisions opposées sur la même donnée dans
+ * le même produit ; celle-ci était la permissive, et personne ne les avait confrontées.
+ */
+const CHAMPS_SERVIS = [
+  "session_id", "slug", "doc_id", "recipient_email",
+  "num_pages", "max_page", "total_seconds", "pages_time",
+  "ua", "device", "os", "browser",
+  "started_at", "last_at",
+];
+
+/**
+ * Les colonnes qu'on NE sert PAS, avec la raison — pour qu'une absence soit une décision.
+ *
+ * ⚠️ `ua` RESTE, ET C'EST DISCUTABLE. Le User-Agent brut est un vecteur d'empreinte, et `device`,
+ * `os` et `browser` — servis à côté — en portent déjà la substance lisible. Il est laissé parce
+ * qu'on retire ce qui a été demandé, pas ce qu'on trouve en chemin ; c'est le candidat suivant, et
+ * il est écrit ici pour être décidé plutôt qu'oublié.
+ */
+const CHAMPS_RETENUS = {
+  ip: "adresse IP en clair — « the most sensitive datum in the schema » selon docs/RETENTION.md, "
+    + "que rien ne lit et dont une fiche de lecture n'a pas besoin ; les participants d'une "
+    + "présentation n'ont, eux, qu'un HMAC salé de la leur",
+};
+
+/** La projection d'une ligne de session : ce qui sort, et rien d'autre. */
+const sessionServie = (s) => Object.fromEntries(CHAMPS_SERVIS.filter((c) => c in s).map((c) => [c, s[c]]));
+
+/** Le `select=` qui descend dans la requête — la MÊME liste, pas une seconde écriture. */
+const SELECT_SESSION = CHAMPS_SERVIS.join(",");
 
 /**
  * Les liens nommés, plus TOUS leurs ancêtres, en remontant `parent_slug` par vagues.
@@ -666,7 +713,7 @@ async function listSessionsForRecipient(email, { owner = null, depuis = null, ap
     : "";
   const candidats = await PLAYER.db.request(
     `commercial_doc_sessions?recipient_email=eq.${enc(destinataire)}&last_at=gte.${enc(borne)}${apresQuoi}`
-    + `&select=*&order=last_at.desc,session_id.desc&limit=${taille}`);
+    + `&select=${SELECT_SESSION}&order=last_at.desc,session_id.desc&limit=${taille}`);
   const lignes = Array.isArray(candidats) ? candidats : [];
   if (!lignes.length) return { sessions: [], curseur: null };
 
@@ -682,7 +729,7 @@ async function listSessionsForRecipient(email, { owner = null, depuis = null, ap
     if (proprietaire && createurRacine !== proprietaire) continue;
     const parent = lien && lien.parent_slug ? parSlug.get(lien.parent_slug) || null : null;
     sessions.push({
-      ...s,
+      ...sessionServie(s),
       doc_title: (lien && lien.doc_title) || null,
       recipient_name: (lien && lien.recipient_name) || null,
       parent_slug: (lien && lien.parent_slug) || null,
@@ -868,4 +915,4 @@ async function internalStatsForDoc(docId) {
 }
 
 module.exports = {
-  cleIdempotence, init, createShare, createReshare, sendReshareEmail, getShareBySlug, logView, upsertSession, listSharesForDoc, listSessionsForDoc, listSessionsForRecipient, racineDuLien, curseurDe, curseurLu, revokeShare, setShareAuth, overview, upsertInternalSession, internalStatsForDoc };
+  cleIdempotence, init, createShare, createReshare, sendReshareEmail, getShareBySlug, logView, upsertSession, listSharesForDoc, listSessionsForDoc, listSessionsForRecipient, racineDuLien, curseurDe, curseurLu, sessionServie, CHAMPS_SERVIS, CHAMPS_RETENUS, revokeShare, setShareAuth, overview, upsertInternalSession, internalStatsForDoc };

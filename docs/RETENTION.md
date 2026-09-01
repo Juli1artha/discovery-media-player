@@ -38,7 +38,7 @@ Purpose: reading statistics for a document that was sent out. **Purge: 13 months
 | `commercial_doc_views.ua` | browser (raw User-Agent) | same |
 | `commercial_doc_sessions.recipient_email` | session attribution | purged with the row, 13 months after `last_at` |
 | `commercial_doc_sessions.session_id` | session identifier | same |
-| `commercial_doc_sessions.ip` | **IP address in the clear** | same — the most sensitive datum in the schema |
+| `commercial_doc_sessions.ip` | **IP address in the clear** | same — the most sensitive datum in the schema. ⚠️ Since 0.1.146 it is **stored but never served**: neither `docshare.sessions` nor `docshare.sessionsByRecipient` carries it, and nothing in the player reads it back. What a session hands out is an explicit allow-list, so a column added later does not leave by default. Note the asymmetry it leaves: a presentation attendee's address is kept as a salted HMAC (`creator_ip_hash`), a reader's is kept in the clear — same datum, two decisions |
 | `commercial_doc_sessions.ua` | raw User-Agent | same |
 | `commercial_doc_sessions.num_pages` / `commercial_doc_sessions.pages_time` | page-by-page reading behaviour | same |
 
