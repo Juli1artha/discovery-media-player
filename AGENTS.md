@@ -628,6 +628,63 @@ cleaners whose blinding makes the guard more accusatory rather than less (fail-c
 degrades a reported line number. Probes that are not regex-shaped — an external analyser, an AST
 visit, a string predicate — are outside this sweep entirely.
 
+### The instrument that measured the sweep was itself an unmeasured probe
+
+The sentence above — *of the 58 survivors outside `secrets-en-clair`, an unknown share are that
+artifact, and none has been triaged* — names two debts in one breath, and the second cannot be paid
+before the first. A population you know to be inflated is a population nobody triages: every
+survivor is answerable with *probably a false literal*, and the count is large enough to make the
+work look unreasonable. **An imprecise measurement does not merely mislead; it supplies the excuse
+for not acting on itself.**
+
+The extractor was rebuilt on the TypeScript AST — `ts.SyntaxKind.RegularExpressionLiteral`, exact
+character offsets — instead of a pattern hunting `/…/`. **143 real literals, against 171 by
+pattern: 28 of them were slashes inside string constants** (`"/.github/"`, `startsWith("../")`).
+Re-swept at the exact offsets: **131 mutations over 31 tools, 55 leaving the guard green.**
+
+⚠️ **Three tools were measured on nothing, and that is a hole, not a pass.** `release-preflight`,
+`verdict-zap` and `zones-du-tarball` are red or usage-refusing before any mutation — they need a
+release context or command-line arguments this session cannot supply. The harness records their
+witness as failed and skips them, which is the correct behaviour and leaves their patterns
+entirely unproven. **A tool absent from a survivor list is not a tool that survived nothing.**
+
+Triage of the survivors then found **four probes blind on a live subject**, each fixed, each mutant
+now killed by the bench that names it:
+
+| guard | pattern that could go blind | what nobody was reading |
+| --- | --- | --- |
+| `images-des-workflows` | `$IMAGE_…` usages | an image used without being declared |
+| `outils-servis` | the `import` reader | which tools depend on an installed package |
+| `portes-de-reponse` | `/^text\//i` | a `text/…` body served without `nosniff` |
+| `migrations-detectables` | three of eight sign detectors | a migration's proof of having run |
+
+⚠️ **The last one is the sieve applied to a number: a floor counts the FORM RECOGNISED, not the
+things counted.** That guard prints `63 signes sondables relevés` and its own comment made the
+number the protection — *a probe that stopped seeing a form would make this number drop before your
+eyes*. Before whose eyes? Measured by blinding its eight detectors one at a time: five turn the
+guard red — a migration becomes mute or indistinguishable, and it is **named**. Three left it
+green, moving only the printed number: `drop function` 63 → 60, `nullability` 63 → 62, **`add
+column` 63 → 52**. Eleven signs out of sixty-three could vanish in silence.
+
+No numeric floor answers that. High, it refuses a healthy corpus; low, it sees neither 60 nor 52 —
+and a threshold glued to the day's reading has the appearance of a measurement and the nature of a
+signature. What holds is the **genre**: each of the ten kinds of sign attested by a real migration
+must still be seen. A blinded detector loses its genre *entire*, whatever the others keep
+producing. And the list is stable by construction rather than by luck — this repository's
+migrations are immutable, which is written at the top of that file and is why `0010` is declared
+rather than corrected; what the probe sees in them today it must see forever. **The only event that
+can remove a genre from that list is the probe going blind.**
+
+⚠️ **And the honest state of the remaining survivors, because a triage half-done reads exactly like
+a triage done.** Two were verified benign (`permissions-workflows:50`, cosmetic; `actions-epinglees:44`,
+no `docker://` subject in the tree). Four remain on `migrations-detectables`, all *cleaners* rather
+than detectors, and one of them is measured and left open: blinding the `--` comment stripper
+**invents** two signs out of commented-out SQL and **loses four real function signatures on 0022**,
+net 63 → 61, no genre lost, guard green. The rest — some fifty — were **not individually
+verified**. They are named here as unverified rather than counted as passed, and probes that are
+not regex-shaped (an external analyser, an AST visit, a string predicate) remain outside this sweep
+entirely.
+
 ## A derived perimeter is proven by a file that appears, not by a count
 
 **Twenty-three guards take their perimeter from the disk** (`git ls-files`, `readdirSync`,

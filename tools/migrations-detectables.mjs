@@ -37,7 +37,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { conclure, conforme, violation, tenter } from "./resultat-garde.mjs";
+import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 import { estExecuteDirectement } from "./execute-directement.mjs";
 
 const DOSSIER = "supabase/migrations";
@@ -182,6 +182,46 @@ export function ecarts(parFichier, declarees = INDISTINGUABLES_DECLAREES) {
   return [...soucis, ...perimees];
 }
 
+/**
+ * Le GENRE d'un signe — la forme que la sonde a reconnue pour le produire.
+ * ⚠️ `drop function x/3` est d'un autre genre que `function x/3` : ce sont deux détecteurs.
+ */
+export const genreDuSigne = (signe) =>
+  (/^(drop function|replica identity|nullability|constraint|comment|column|function|table|index|view|policy|type|trigger)\b/
+    .exec(String(signe)) || [])[1] || null;
+
+/**
+ * Les genres qu'AU MOINS UNE migration réelle atteste, mesurés le 01/09 sur les 24 fichiers :
+ * function 13, column 11, comment 11, index 9, constraint 9, trigger 3, drop function 3,
+ * table 2, nullability 1, replica identity 1.
+ *
+ * ⚠️ CE N'EST PAS UN RELEVÉ DU JOUR QU'ON RECOPIE, C'EST UNE PROPRIÉTÉ STABLE PAR CONSTRUCTION.
+ * Une migration appliquée ailleurs est immuable — c'est écrit en tête de ce fichier et c'est
+ * pourquoi 0010 est déclarée plutôt que corrigée. Les fichiers existants ne changeront donc
+ * jamais : ce que la sonde y voit aujourd'hui, elle doit l'y voir toujours. Le seul événement qui
+ * peut faire disparaître un genre de cette liste est que la sonde cesse de le reconnaître.
+ *
+ * `view`, `policy` et `type` sont reconnus par le même `matchAll` que `table` et `index` mais
+ * qu'aucune migration ne pose aujourd'hui : ils ne sont pas attestés, donc pas exigés — un
+ * plancher ne peut pas exiger ce qu'il n'a jamais mesuré.
+ */
+export const GENRES_ATTESTES = [
+  "column", "comment", "constraint", "drop function", "function",
+  "index", "nullability", "replica identity", "table", "trigger",
+];
+
+/** Les genres attestés que la sonde ne voit plus dans le corpus qu'on vient de lire. */
+export function genresManquants(parFichier, attestes = GENRES_ATTESTES) {
+  const vus = new Set();
+  for (const signes of Object.values(parFichier)) {
+    for (const signe of signes) {
+      const genre = genreDuSigne(signe);
+      if (genre) vus.add(genre);
+    }
+  }
+  return attestes.filter((genre) => !vus.has(genre));
+}
+
 export const lireDossier = (dossier = DOSSIER) =>
   Object.fromEntries(readdirSync(dossier).filter((f) => f.endsWith(".sql")).sort()
     .map((f) => [f, signesDe(readFileSync(join(dossier, f), "utf8"))]));
@@ -197,8 +237,30 @@ if (estExecuteDirectement(import.meta.url)) {
     // sur ses effets » pendant que SEPT migrations sur dix-neuf n'avaient aucun signe et étaient
     // sautées. Compter les signes relevés rend le mensonge impossible : une sonde qui cesserait de
     // voir une forme ferait chuter ce nombre à vue d'œil.
+    //
+    // ⚠️ À VUE D'ŒIL DE QUI ? Cette phrase se donnait pour une protection sans que rien ne la
+    // tienne. Mesuré le 01/09 en aveuglant les huit détecteurs un par un sur les migrations
+    // réelles : cinq rendent ROUGE — une migration devient muette ou indistinguable et la garde la
+    // NOMME. Trois laissaient la garde VERTE, en faisant seulement baisser le nombre imprimé :
+    //
+    //     drop function aveuglé   63 → 60 signes   vert
+    //     nullability aveuglé     63 → 62 signes   vert
+    //     add column aveuglé      63 → 52 signes   vert
+    //
+    // Onze signes sur soixante-trois pouvaient disparaître sans que rien ne le dise. Un nombre
+    // qu'aucun œil ne regarde ne protège rien.
+    //
+    // ⚠️ ET CE QU'IL FAUT PLANCHÉRISER EST LA FORME RECONNUE, PAS LE NOMBRE DE SIGNES. Un seuil sur
+    // les 63 aurait l'apparence d'une mesure et la nature d'une signature : haut, il refuse un
+    // corpus sain ; bas, il ne voit ni 60 ni 52. Exiger que CHAQUE genre attesté soit encore vu,
+    // lui, tient sans être collé au relevé du jour — un détecteur aveuglé fait disparaître son
+    // genre ENTIER, quel que soit le nombre de signes que les autres continuent de produire.
+    const manquants = genresManquants(parFichier);
+    if (manquants.length) {
+      return inconclusif(`plus aucune migration ne laisse de signe de genre ${manquants.map((g) => `« ${g} »`).join(", ")} — les fichiers étant immuables, ce n'est pas le corpus qui a changé, c'est la sonde qui a cessé de reconnaître cette forme`);
+    }
     const declarees = Object.keys(INDISTINGUABLES_DECLAREES).length;
     const signes = Object.values(parFichier).reduce((t, x) => t + x.length, 0);
-    return conforme(`migrations : ${n} lues, ${signes} signes sondables relevés, aucune muette — ${declarees} déclarée(s) improuvable(s)`);
+    return conforme(`migrations : ${n} lues, ${signes} signes sondables relevés de ${GENRES_ATTESTES.length} genres attestés, aucune muette — ${declarees} déclarée(s) improuvable(s)`);
   }));
 }

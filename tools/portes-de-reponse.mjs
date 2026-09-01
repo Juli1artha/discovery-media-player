@@ -211,6 +211,20 @@ export function temoinNonVu(voir = corpsEcrits, juger = manquements) {
   const vus = voir("__temoin.js", echantillon);
   if (!vus.length) return "la sonde n'a pas vu un corps écrit sur place qu'on venait de poser";
   if (!juger(vus).length) return "la sonde a vu le corps posé mais ne l'a pas jugé fautif, alors qu'il part sans type ni nosniff";
+
+  // ⚠️ ET LE CAS DU TYPE POSÉ, QUE LE PREMIER ÉCHANTILLON NE TOUCHAIT PAS. La règle vise DEUX
+  // situations : un corps sans aucun type, et un corps annoncé `text/…` sans `nosniff`. La seconde
+  // dépend d'une reconnaissance à part — celle du type lui-même — et rien ne l'éprouvait.
+  //
+  // Mesuré le 01/09 par un balayage qui aveugle chaque expression de chaque outil : en rendant
+  // muette la reconnaissance de `text/…`, la garde reste VERTE. Le contrôle se resserre alors aux
+  // seuls corps SANS type, alors que ce serveur pose quatre en-têtes `text/html` ou `text/plain`
+  // explicites : le sujet existe, et la règle cessait de s'y appliquer en silence.
+  const avecType = 'function h(req, res) { res.setHeader("Content-Type", "text/html"); res.end("<p>x</p>"); }\n';
+  const vusType = voir("__temoin-type.js", avecType);
+  if (!vusType.length || !juger(vusType).length) {
+    return "la sonde n'a pas jugé fautif un corps annoncé « text/… » sans nosniff qu'on venait de poser";
+  }
   return null;
 }
 

@@ -9,7 +9,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 
-import { signesDe, improuvables, cleDe, ecarts, lireDossier, INDISTINGUABLES_DECLAREES } from "../migrations-detectables.mjs";
+import { signesDe, improuvables, cleDe, ecarts, lireDossier, genreDuSigne, genresManquants, GENRES_ATTESTES, INDISTINGUABLES_DECLAREES } from "../migrations-detectables.mjs";
 
 describe("les signes qu'une migration laisse", () => {
   it("⚠️ retient la SIGNATURE d'une fonction, pas son nom — c'est l'arité qui a séparé 0017/0018/0019", () => {
@@ -152,5 +152,45 @@ describe("les migrations réelles", () => {
     const signes = signesDe(readFileSync("supabase/migrations/0015-presence-atomique.sql", "utf8"));
     expect(signes).toContain("index idx_attendees_slug_creator");
     expect(signes.filter((s) => s.startsWith("drop"))).toEqual([]);
+  });
+});
+
+// ⚠️ LE VERDICT SE DONNAIT DÉJÀ POUR PROTÉGÉ : « une sonde qui cesserait de voir une forme ferait
+// chuter ce nombre à vue d'œil ». Mesuré le 01/09 en aveuglant les huit détecteurs un par un :
+// cinq rendaient rouge, TROIS laissaient la garde verte — `drop function` (63 → 60 signes),
+// `nullability` (63 → 62) et `add column` (63 → 52). Onze signes sur soixante-trois pouvaient
+// disparaître en silence. Ce qui suit tient l'exigence sur le GENRE reconnu, pas sur le compte.
+describe("⚠️ chaque genre de signe attesté doit encore être vu", () => {
+  const reel = lireDossier();
+
+  it("les dix genres attestés sont tous présents dans les migrations réelles", () => {
+    expect(genresManquants(reel), "un genre absent = un détecteur aveugle, les fichiers étant immuables")
+      .toEqual([]);
+  });
+
+  it("⚠️ aucun genre vu n'échappe à la liste — sinon une forme neuve serait ajoutée sans protection", () => {
+    const vus = [...new Set(Object.values(reel).flat().map(genreDuSigne))].sort();
+    expect(vus.filter((g) => !GENRES_ATTESTES.includes(g)),
+      "ajoutez le genre à GENRES_ATTESTES en même temps que son détecteur")
+      .toEqual([]);
+  });
+
+  it("⚠️ et le contrôle NOMME le genre perdu — un corpus amputé d'un genre ne passe pas", () => {
+    // On retire de la lecture réelle tout ce que `drop function` avait produit : c'est exactement
+    // ce que fait un détecteur aveuglé, et c'est le cas qui restait vert avant le 01/09.
+    const ampute = Object.fromEntries(Object.entries(reel)
+      .map(([f, signes]) => [f, signes.filter((s) => genreDuSigne(s) !== "drop function")]));
+    expect(genresManquants(ampute)).toEqual(["drop function"]);
+  });
+
+  it("⚠️ et un corpus vide n'est pas un corpus conforme — l'absence échoue fermée", () => {
+    expect(genresManquants({})).toEqual(GENRES_ATTESTES);
+  });
+
+  it("`drop function x/3` et `function x/3` sont de deux genres — ce sont deux détecteurs", () => {
+    expect(genreDuSigne("drop function player_attendance_bump/10")).toBe("drop function");
+    expect(genreDuSigne("function player_attendance_bump/10")).toBe("function");
+    expect(genreDuSigne("replica identity views full")).toBe("replica identity");
+    expect(genreDuSigne("column views.page")).toBe("column");
   });
 });

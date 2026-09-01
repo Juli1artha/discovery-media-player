@@ -115,6 +115,24 @@ export function utilisesNonDeclares(fichier, texte, declarees) {
   return [...manquants].map((n) => `${fichier} — « $${n} » est utilisé par une commande mais aucun \`env:\` ne le déclare : l'image tirée serait alors invisible à toute relecture`);
 }
 
+/**
+ * ⚠️ LE TÉMOIN DE CETTE RÈGLE-LÀ, ET L'EN-TÊTE AU-DESSUS DÉCRIT DÉJÀ SA PANNE. Il dit : « on
+ * écrirait `$IMAGE_ZAP` sans jamais le définir, la sonde n'aurait rien à lire et rendrait vert ».
+ * C'est vrai du YAML — et c'était vrai, d'un cran plus bas, de la LECTURE DES USAGES elle-même.
+ *
+ * Mesuré le 01/09 par un balayage qui aveugle chaque expression de chaque outil : en rendant
+ * `matchAll` muet sur `$IMAGE_…`, la garde reste VERTE. Le dépôt emploie pourtant `$IMAGE_POSTGREST`
+ * dans une commande : le sujet existe, et la règle cessait de s'y appliquer en silence.
+ *
+ * ⚠️ INJECTÉ, PAS DÉRIVÉ. L'état sain est ZÉRO usage non déclaré : compter « au moins un usage
+ * fautif » exigerait du dépôt la faute même que la règle interdit. On fabrique donc le cas.
+ */
+export function temoinNonVu(juger = utilisesNonDeclares) {
+  const faux = `jobs:\n  j:\n    steps:\n      - run: docker pull $${"IMAGE_TEMOIN"}\n`;
+  return juger("__temoin.yml", faux, []).length ? null
+    : "la sonde n'a pas vu un « $IMAGE_… » utilisé sans déclaration qu'on venait de poser";
+}
+
 /** Chaque workflow du dossier, avec son texte et ce qu'il déclare — le banc lit la même chose. */
 export function lireDossier(dossier = DOSSIER) {
   return readdirSync(dossier)
@@ -139,6 +157,10 @@ if (estExecuteDirectement(import.meta.url)) {
     if (!toutes.length) {
       return inconclusif(`aucune image déclarée relevée dans ${parFichier.length} workflow(s) — le dépôt en déclare, donc la sonde ne lit plus ce qu'elle croit lire`);
     }
+    // ⚠️ LE TÉMOIN AVANT LE VERDICT. Le plancher au-dessus garde la lecture des DÉCLARATIONS ;
+    // celui-ci garde la lecture des USAGES, qui est l'autre moitié de la règle et n'avait rien.
+    const aveugle = temoinNonVu();
+    if (aveugle) return inconclusif(`${aveugle} — ce n'est pas une absence d'usage non déclaré, c'est une sonde qui ne lit plus la forme`);
     const soucis = [
       ...parFichier.flatMap(({ images }) => nonEpinglees(images)),
       ...parFichier.flatMap(({ fichier, texte, images }) => utilisesNonDeclares(fichier, texte, images)),

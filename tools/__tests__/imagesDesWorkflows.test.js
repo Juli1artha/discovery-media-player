@@ -14,7 +14,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import { imagesDeclarees, nonEpinglees, utilisesNonDeclares, lireDossier, differee } from "../images-des-workflows.mjs";
+import { imagesDeclarees, nonEpinglees, utilisesNonDeclares, lireDossier, differee, temoinNonVu } from "../images-des-workflows.mjs";
 
 const CONDENSAT = "@sha256:" + "a".repeat(64);
 const wf = (corps) => `name: T\non: push\njobs:\n${corps}`;
@@ -109,6 +109,28 @@ describe("les workflows réels", () => {
 
   it("⚠️ et tout `$IMAGE_…` employé est déclaré", () => {
     const soucis = parFichier.flatMap(({ fichier, texte, images }) => utilisesNonDeclares(fichier, texte, images));
+    expect(soucis, soucis.join("\n")).toEqual([]);
+  });
+});
+
+// ⚠️ LE TÉMOIN DE LA LECTURE DES USAGES — l'autre moitié de la règle, et elle n'avait rien.
+// L'en-tête de `utilisesNonDeclares` décrivait déjà cette panne, un cran plus haut : « on écrirait
+// `$IMAGE_ZAP` sans jamais le définir, la sonde n'aurait rien à lire et rendrait vert ». Mesuré le
+// 01/09 en aveuglant le `matchAll` : la garde reste VERTE, alors que ce dépôt emploie
+// `$IMAGE_POSTGREST` dans une commande.
+describe("⚠️ la lecture des « $IMAGE_… » utilisés est éprouvée, pas supposée", () => {
+  it("ne dit rien quand la sonde voit", () => {
+    expect(temoinNonVu()).toBeNull();
+  });
+
+  it("⚠️ nomme le refus quand la sonde ne reconnaît plus un usage", () => {
+    expect(temoinNonVu(() => [])).toMatch(/n'a pas vu un « \$IMAGE_… » utilisé sans déclaration/);
+  });
+
+  // ⚠️ INJECTÉ, PAS DÉRIVÉ : l'état sain est ZÉRO usage non déclaré. Un témoin dérivé exigerait du
+  // dépôt la faute même que la règle interdit.
+  it("⚠️ le dépôt réel ne porte AUCUN usage non déclaré — d'où l'injection", () => {
+    const soucis = lireDossier().flatMap(({ fichier, texte, images }) => utilisesNonDeclares(fichier, texte, images));
     expect(soucis, soucis.join("\n")).toEqual([]);
   });
 });
