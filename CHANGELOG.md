@@ -14,6 +14,17 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- `docshare.sessions` returned every reading session of a document to any member allowed to call
+  it, and that table carries the recipient's address and IP — so a member read the prospects of
+  their colleagues, which is exactly what the `list` / `list.all` split has prevented on
+  `docshare.list` since a host asked for it. A strict door had a wide door beside it, and two calls
+  were enough to use the second. `sessions` now asks the same second question and answers with the
+  same `scope` field. The scope follows the **chain of origin**, not the last link: `createReshare`
+  sets `created_by` to the parent's recipient, so filtering on `created_by` alone would have hidden
+  from a salesperson the readings of their own forwarded links — the ones they caused. Each session
+  now also carries its filiation (`parent_slug` and the parent's recipient), without which the rule
+  is invisible to the caller. Hosts: see `docs/HOST-CONTRACT.md` — a member you answer *no* to on
+  `list.all` now sees only their own chain.
 - The probes that are not regular expressions had never been measured, and they hold up worse than
   the ones that are: 152 of them, 90 leaving their guard green, against 55 of 143 for the regexes.
   Five had a live subject. `surface-publique` loaded three modules instead of seven and read

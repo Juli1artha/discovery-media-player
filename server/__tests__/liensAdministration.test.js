@@ -112,6 +112,47 @@ describe("docshare.list : la portée protège les prospects des collègues", () 
   });
 });
 
+// ⚠️ `docshare.sessions` N'AVAIT AUCUNE PORTÉE, et c'était une porte large à côté de la stricte.
+// Les sessions portent `recipient_email` ET `ip` : tout membre autorisé à appeler cette action
+// obtenait, pour n'importe quel document, l'adresse et l'IP des prospects de ses collègues — ce que
+// la distinction `list` / `list.all` juste au-dessus empêche depuis qu'un hôte l'a demandée. Deux
+// appels suffisaient à contourner le premier par le second.
+describe("docshare.sessions : la même portée que la liste, pour la même raison", () => {
+  it("sans le droit list.all, les sessions sont bornées à l'email du demandeur — scope « mine »", async () => {
+    contexte();
+    droits = async (_u, acte) => acte !== "list.all";
+    const res = await agir({ action: "docshare.sessions", docId: "d1" });
+    expect(res.corps.scope).toBe("mine");
+    expect(enregistrees.find((a) => a.nom === "listSessionsForDoc").args)
+      .toEqual(["d1", "commercial@hote.example"]);
+  });
+
+  it("avec list.all, les sessions sont complètes — scope « all », filtre levé", async () => {
+    contexte();
+    const res = await agir({ action: "docshare.sessions", docId: "d1" });
+    expect(res.corps.scope).toBe("all");
+    expect(enregistrees.find((a) => a.nom === "listSessionsForDoc").args).toEqual(["d1", null]);
+  });
+
+  it("⚠️ les deux actions demandent le MÊME élargissement — sinon l'une protégerait ce que l'autre livre", async () => {
+    contexte();
+    const actes = [];
+    droits = async (_u, acte) => { actes.push(acte); return acte !== "list.all"; };
+    await agir({ action: "docshare.list", docId: "d1" });
+    const apresList = [...actes];
+    actes.length = 0;
+    await agir({ action: "docshare.sessions", docId: "d1" });
+    // Chaque action demande d'ABORD son propre acte — l'hôte peut accorder `sessions` sans `list`,
+    // c'est la distinction « acte commercial / acte d'administration ». Ce qui doit être commun,
+    // c'est la SECONDE question : celle qui lève la borne.
+    expect(apresList[0]).toBe("list");
+    expect(actes[0]).toBe("sessions");
+    expect(actes.slice(1), "l'élargissement se demande de la même façon des deux côtés")
+      .toEqual(apresList.slice(1));
+    expect(actes).toContain("list.all");
+  });
+});
+
 describe("les actes relayés portent leurs arguments, pas des à-peu-près", () => {
   it("setauth booléanise, revoke transmet le slug, create rattache l'auteur au jeton vérifié", async () => {
     contexte();

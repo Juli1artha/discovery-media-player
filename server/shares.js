@@ -493,16 +493,81 @@ async function upsertSession(share, p, { ip, ua }) {
   await PLAYER.db.request("commercial_doc_sessions?on_conflict=session_id", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: [row] });
 }
 
-// Sessions de consultation d'un document (détail riche par session) + nom du destinataire (jointure share).
-async function listSessionsForDoc(docId) {
+/**
+ * Le lien RACINE d'une chaîne de re-partages, en remontant `parent_slug`.
+ *
+ * ⚠️ `created_by` CHANGE À CHAQUE SAUT, et c'est ce qui rend la remontée nécessaire. `createReshare`
+ * pose `created_by: parent.recipient_email` — le lien que Paul reçoit de Dana est donc « créé par »
+ * Dana, pas par le commercial qui a envoyé le document à Dana. Un filtre naïf sur
+ * `created_by = moi` cacherait au commercial les lectures de sa PROPRE descendance : celles qu'il a
+ * causées. La portée suit la chaîne d'origine, pas le dernier maillon.
+ *
+ * ⚠️ ET ELLE ÉCHOUE FERMÉE. Un maillon dont le lien n'existe pas (dérive de données), une chaîne
+ * qui boucle : on rend `null` plutôt que d'attribuer au hasard. Un appelant restreint ne verra pas
+ * cette session ; `list.all`, qui ne filtre pas, la verra comme avant.
+ */
+function racineDuLien(slug, parParent, profondeurMax = 64) {
+  if (!slug || !parParent.has(slug)) return null;   // lien inconnu — inattribuable
+  const vus = new Set();
+  let courant = slug;
+  for (let saut = 0; saut < profondeurMax; saut += 1) {
+    if (vus.has(courant)) return null;              // chaîne qui boucle — inattribuable
+    vus.add(courant);
+    const parent = parParent.get(courant);
+    if (!parent) return courant;                    // pas de parent : c'est la racine
+    if (!parParent.has(parent)) return null;        // maillon manquant — inattribuable
+    courant = parent;
+  }
+  return null;                                      // chaîne plus longue que tout re-partage réel
+}
+
+/**
+ * Sessions de consultation d'un document (détail riche par session) + nom du destinataire.
+ *
+ * ⚠️ `owner` BORNE CE QUE L'APPELANT VOIT, ET SON ABSENCE ÉTAIT UNE FUITE. Cette lecture rendait
+ * `select=*` sur `commercial_doc_sessions` sans aucun filtre — or cette table porte
+ * `recipient_email` ET `ip`. Tout membre autorisé à appeler `docshare.sessions` obtenait donc, pour
+ * n'importe quel document, l'adresse et l'adresse IP de chaque destinataire, y compris les
+ * prospects de ses collègues. C'est exactement ce que `docshare.list` empêche depuis qu'un hôte
+ * l'a demandé, avec le commentaire qui l'explique quarante lignes plus haut ; la porte stricte
+ * avait une porte large à côté d'elle, et deux appels suffisaient à passer par la seconde.
+ *
+ * `null` = toutes les sessions (le rôle qui a `list.all`), une adresse = celles dont la chaîne
+ * d'origine part d'un lien que cette personne a créé.
+ */
+async function listSessionsForDoc(docId, owner = null) {
   const id = enc(String(docId || ""));
   const [sessions, shares] = await Promise.all([
     PLAYER.db.request(`commercial_doc_sessions?doc_id=eq.${id}&select=*&order=last_at.desc&limit=500`),
-    PLAYER.db.request(`commercial_doc_shares?doc_id=eq.${id}&is_test=not.is.true&select=slug,recipient_email,recipient_name`),
+    // ⚠️ TOUS LES LIENS, RÉPÉTITIONS COMPRISES. La chaîne se remonte par `parent_slug` : un maillon
+    // absent de cette lecture casse la remontée et fait échouer fermé une session légitime. Le
+    // filtre `is_test` d'avant ne servait qu'à nommer le destinataire ; il ne peut pas servir à
+    // reconstruire une filiation.
+    PLAYER.db.request(`commercial_doc_shares?doc_id=eq.${id}&select=slug,parent_slug,created_by,recipient_email,recipient_name`),
   ]);
-  const nameBySlug = new Map();
-  for (const sh of (Array.isArray(shares) ? shares : [])) nameBySlug.set(sh.slug, sh.recipient_name || null);
-  return (Array.isArray(sessions) ? sessions : []).map((s) => ({ ...s, recipient_name: nameBySlug.get(s.slug) || null }));
+  const liste = Array.isArray(shares) ? shares : [];
+  const parSlug = new Map(liste.map((sh) => [sh.slug, sh]));
+  const parParent = new Map(liste.map((sh) => [sh.slug, sh.parent_slug || null]));
+  const proprietaire = low(owner || "");
+
+  const sortie = [];
+  for (const s of (Array.isArray(sessions) ? sessions : [])) {
+    const lien = parSlug.get(s.slug) || null;
+    const racine = racineDuLien(s.slug, parParent);
+    const createurRacine = racine ? low(parSlug.get(racine)?.created_by || "") : "";
+    if (proprietaire && createurRacine !== proprietaire) continue;
+    const parent = lien && lien.parent_slug ? parSlug.get(lien.parent_slug) || null : null;
+    sortie.push({
+      ...s,
+      recipient_name: (lien && lien.recipient_name) || null,
+      // La filiation voyage avec la session : « une session, un lecteur, visible par sa chaîne
+      // d'origine » ne se lit pas si la chaîne n'est pas dans la charge utile.
+      parent_slug: (lien && lien.parent_slug) || null,
+      parent_recipient_email: parent ? parent.recipient_email || null : null,
+      parent_recipient_name: parent ? parent.recipient_name || null : null,
+    });
+  }
+  return sortie;
 }
 
 // Envoi AUTO du re-partage via 3D Discovery (Resend). Contenu 100% templé (pas de texte libre → anti-spam),
@@ -671,4 +736,4 @@ async function internalStatsForDoc(docId) {
 }
 
 module.exports = {
-  cleIdempotence, init, createShare, createReshare, sendReshareEmail, getShareBySlug, logView, upsertSession, listSharesForDoc, listSessionsForDoc, revokeShare, setShareAuth, overview, upsertInternalSession, internalStatsForDoc };
+  cleIdempotence, init, createShare, createReshare, sendReshareEmail, getShareBySlug, logView, upsertSession, listSharesForDoc, listSessionsForDoc, racineDuLien, revokeShare, setShareAuth, overview, upsertInternalSession, internalStatsForDoc };
