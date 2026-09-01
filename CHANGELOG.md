@@ -14,6 +14,23 @@ the notes there are this file's section for that version.
 
 ### Removed
 
+- **The raw User-Agent is erased too, on both tables.** We had argued for keeping it — the only
+  source from which `device`, `os` and `browser` could be recomputed on rows already written — and
+  the argument that settled it was ours turned around: those three are derived *at write time* and
+  are what a reading record carries, so the raw string had no reader, and "we might re-parse it one
+  day" does not justify thirteen months of a fingerprint kept for nobody. `0.1.146` stopped serving
+  it, this stops writing it, and migration `0027` erases what was there — same shape and same
+  measurement as the IP purge, with the column removals deferred together to a later release.
+  **On `commercial_doc_views` the case was starker than anyone had noticed**: unlike the sessions
+  table it has no `device`, `os` or `browser`, so it derived *nothing* from the string, wrote it, and
+  none of the six queries that touch these two tables has ever read it back. It went unnoticed
+  because the coverage that existed asked what a *session* hands out — and this table is never handed
+  out, so nothing asked what it merely keeps. A column nothing serves is not a column without a
+  question; it is a column whose question has no guardian, and one now exists. `docs/RETENTION.md`
+  also answers, precisely, from what date a purge is complete end to end — including the part that
+  is uncomfortable: the automatic sweep is **opt-in**, so on a host that enabled neither it nor a
+  manual run, the 13-month window describes an intention rather than an event.
+
 - **The reader's IP address is erased.** `0.1.146` stopped serving it; this stops **writing** it,
   and migration `0026` erases what thirteen months of journal still held in the clear — the half
   the code could not reach on its own. **The column is emptied, not dropped, and emptying is what

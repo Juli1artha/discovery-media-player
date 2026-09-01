@@ -491,7 +491,10 @@ empty from the day you apply 0026. The column itself stays for now: dropping it 
 session write of a host that applies migrations before deploying, so its removal is a later release.
 [`docs/RETENTION.md`](RETENTION.md) sets out what the migration erases, why emptying — not
 dropping — is what actually removes the bytes, and what it cannot reach: your backups. The raw `ua`
-is **kept**: it is the source of `device`, `os` and `browser`.
+is erased too, on this table and on `commercial_doc_views`, by migration **0027** and for the same
+reason: `device`, `os` and `browser` are derived from it at write time and are what a reading record
+carries, so the raw string had no reader left. On the views table it had none at all — that table has
+no derived columns.
 
 ⚠️ **`presentations.list.all` and `presentations.stats` are deliberately separate.** Seeing *that* a
 presentation happened and seeing *who attended it* are different sensitivities: the first returns

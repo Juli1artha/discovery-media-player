@@ -178,15 +178,51 @@ describe("ce qu'une session interne conserve, et ce qu'elle ne conserve pas", ()
     expect(ligne.os, "les champs dérivés restent renseignés").toBeTruthy();
   });
 
-  // La population externe garde `ua` — la distinction est le produit, pas un détail. Elle ne garde
-  // PLUS l'adresse : la colonne a été purgée puis supprimée par la 0026 (arbitrage ADV du
-  // 01/09/2026), après que la 0.1.146 eut cessé de la servir.
-  it("la session EXTERNE conserve l'agent, source des champs dérivés", async () => {
+  // ⚠️ ET LA SESSION EXTERNE NE LES CONSERVE PLUS NON PLUS — ce cas affirmait l'inverse jusqu'au
+  // 01/09/2026 (« deux populations, deux promesses »). L'ADV a demandé le User-Agent brut sur les
+  // deux tables, et l'argument qui emporte est celui que NOUS faisions pour le garder, retourné :
+  // `device`, `os` et `browser` sont dérivés à l'écriture et servis, donc la chaîne n'a plus de
+  // lecteur, et « pouvoir la ré-analyser un jour » ne justifie pas treize mois d'empreinte.
+  //
+  // La distinction entre les deux populations demeure — elle porte sur ce qui est MESURÉ et rendu,
+  // pas sur ce qui traîne en colonne.
+  it("⚠️ la session EXTERNE ne stocke plus l'agent brut, mais en garde les champs dérivés", async () => {
     await shares.upsertSession(
       { slug: "s", doc_id: "d1" }, { sessionId: "s1" },
-      { ip: "203.0.113.9", ua: "Mozilla/5.0 Chrome/120" },
+      { ip: "203.0.113.9", ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/120 Safari/537" },
     );
-    expect(Object.keys(ligne), "deux populations, deux promesses").toContain("ua");
+    expect(Object.keys(ligne), "la 0027 a vidé la colonne : plus rien ne l'écrit").not.toContain("ua");
+    expect(JSON.stringify(ligne), "aucune chaîne d'agent, sous quelque clé que ce soit")
+      .not.toContain("AppleWebKit");
+    expect([ligne.device, ligne.os, ligne.browser], "ce qui se LIT d'une session reste écrit")
+      .toEqual(["Ordinateur", "macOS", "Chrome"]);
+  });
+
+  // ⚠️ ET LA TABLE DES CONSULTATIONS, OÙ LE CAS EST PLUS NET ENCORE. Elle n'a ni `device`, ni `os`,
+  // ni `browser` : elle ne dérivait RIEN de cette chaîne. Elle l'écrivait, et aucune des six
+  // requêtes de ce dépôt qui la touchent ne l'a jamais relue — une empreinte conservée treize mois
+  // sans le moindre lecteur. Personne ne l'avait remarqué parce que la question n'avait jamais été
+  // posée table par table.
+  it("⚠️ une CONSULTATION n'écrit plus l'agent — et cette table n'en dérivait rien", async () => {
+    await shares.logView({ slug: "s", doc_id: "d1" },
+      { event: "open", page: 1, sessionId: "s1", ua: "Mozilla/5.0 (X11) AppleWebKit/537 Chrome/120" });
+    expect(ligne, "la ligne doit être construite").toBeTruthy();
+    expect(Object.keys(ligne)).not.toContain("ua");
+    expect(JSON.stringify(ligne)).not.toContain("AppleWebKit");
+    expect(ligne.event, "et ce qui MESURE la consultation reste écrit").toBe("open");
+    expect(ligne.page).toBe(1);
+  });
+
+  // ⚠️ L'APPELANT CONTINUE DE LA PASSER, des deux côtés, exprès : il ne sait pas ce que chaque
+  // table conserve. Éprouvé pour que la prochaine personne ne « nettoie » pas les appelants — c'est
+  // par cette porte-là que la donnée reviendrait.
+  it("⚠️ passer l'agent reste sans effet et sans erreur, sur les deux chemins", async () => {
+    await expect(shares.logView({ slug: "s" }, { event: "open", ua: "peu importe" }))
+      .resolves.toBeUndefined();
+    expect(JSON.stringify(ligne)).not.toContain("peu importe");
+    await expect(shares.upsertSession({ slug: "s" }, { sessionId: "s9" }, { ua: "peu importe" }))
+      .resolves.toBeUndefined();
+    expect(ligne.session_id, "sans agent du tout, l'écriture se fait pareil").toBe("s9");
   });
 
   // ⚠️ ET L'ADRESSE N'EST PLUS ÉCRITE NON PLUS — LA MOITIÉ QUE LE CODE NE POUVAIT PAS RÉGLER SEUL.
