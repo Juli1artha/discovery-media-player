@@ -304,3 +304,25 @@ describe("⚠️ chaque forme de nœud que la sonde doit reconnaître, éprouvé
       "un nom calculé n'est jamais deviné").toBe(1);
   });
 });
+
+// ⚠️ CETTE SONDE N'ÉTAIT VUE PAR PERSONNE. `refuser` aplatit l'extrait sur UNE ligne : un refus
+// s'affiche dans un journal de CI, et un extrait multi-lignes y noie le message qui l'entoure.
+// Aveuglée le 01/09, ni la garde ni ce banc ne bougeait — aucun cas ne portait d'accès interdit
+// écrit sur plusieurs lignes.
+describe("⚠️ l'extrait d'un refus tient sur une ligne, parce qu'il s'affiche dans un journal", () => {
+  it("un accès calculé écrit sur plusieurs lignes est rendu APLATI", () => {
+    const src = "const v = process.env[\n  nomCalcule\n];\n";
+    const [refus] = accesInterdits(src, "server/x.js");
+    expect(refus, "un nom calculé est bien refusé").toBeTruthy();
+    expect(refus.extrait, "l'extrait ne doit pas porter de saut de ligne").not.toMatch(/\n/);
+    expect(refus.extrait.replace(/\s+/g, " "), "et les espaces sont normalisés, pas seulement les sauts")
+      .toBe(refus.extrait);
+    expect(refus.extrait).toContain("nomCalcule");
+  });
+
+  it("un extrait est borné — un fichier entier n'entre pas dans un message de refus", () => {
+    const long = `const v = process.env[${"a".repeat(300)}];\n`;
+    const [refus] = accesInterdits(long, "server/x.js");
+    expect(refus.extrait.length).toBeLessThanOrEqual(80);
+  });
+});

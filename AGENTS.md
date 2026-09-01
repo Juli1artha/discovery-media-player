@@ -855,6 +855,54 @@ this sweep: an **external analyser** (`bash -n`, `npm pack`, `git`), whose failu
 swallowed error rather than a blinded literal, and the **numeric and structural** decisions — an
 index, a comparison operator, a boundary — that neither operator touches.
 
+### The last twelve, and the two that no test can kill
+
+The regex sweep left **twelve probes that neither their own guard nor any bench in this tree could
+see** — the residue of 143 sites, named on this page rather than counted as passed. Closing them out
+was supposed to be bookkeeping. Ten died to a case that names them. The other two cannot die, and
+three of the ten took two attempts.
+
+⚠️ **Two probes are unobservable, and the honest move is to measure that rather than assert it.**
+`secrets-en-clair` normalises base64url before decoding — `.replace(/-/g, "+").replace(/_/g, "/")`.
+Blind either half and nothing changes anywhere, because `Buffer.from(s, "base64")` **already accepts
+`-` and `_`**: Node's decoder is base64url-tolerant, and the normalisation has been dead since it
+was written. Deleting it would be defensible; keeping it is also defensible, since the day the
+decoder is swapped for a strict one it becomes load-bearing again. What is not defensible is a
+comment claiming redundancy that no one has checked since. The bench now **computes both decodings
+and asserts they are equal** — if a future runtime ever separates them, the claim fails where it is
+made instead of rotting into folklore.
+
+⚠️ **Three first drafts passed for a reason other than the one they named, each time because a
+SECOND mechanism already covered the fixture.** Blinding is what said so; reading did not.
+
+- `liaison-de-crypto` strips the three string forms before hunting `crypto.` calls, and the
+  apostrophe form was unexercised. My fixture glued the call to the quote — `'crypto.createHash(…)'`
+  — and `appelsDuModule` **already refuses a `crypto` preceded by a quote character**. Green on both
+  sides of the blinding: the assertion measured the call-shape probe, not the stripper.
+- `langue-publiee` strips fenced code blocks, then inline backticks. A closed fence carries **six
+  backticks — an even number** — so the inline pass alone pairs them off and erases the whole block.
+  Every obvious fixture proves the second probe. The two part ways only on an **odd** count inside
+  the fence, where the pairing shifts by one and hands fragments of the block back to the prose.
+- `migrations-detectables` fingerprints a comment's text through `.replace(/\s+/g, " ").trim()`.
+  A fixture folded only at the head exercises `trim`, not the normalisation; the fold has to be
+  **internal**, which is how this repository actually writes long comments — concatenated literals
+  across three lines, as `0025` does.
+
+The shape is one rule: **a witness must differ from its subject on the axis under test, and on that
+axis alone.** A fixture that also differs elsewhere will be caught by whatever handles *elsewhere*,
+and the assertion passes without ever reaching what it names. This page already said a witness that
+resembles its subject does not test it; this is its neighbour — a witness that differs from its
+subject in *more than one way* does not test it either.
+
+⚠️ **And near-redundancy is worth measuring on the real corpus, not asserting from the code.** On
+the repository's 31 markdown files, blinding the fence stripper changes `compte()` on **zero** of
+them: today's documents contain no fenced block with an odd backtick count, so the probe earns
+nothing on the current corpus and everything on the day one does. The bench says both — the case
+that discriminates, and a case pinned precisely because it does *not*, so the next reader does not
+mistake it for coverage. **A probe that guards a shape the corpus does not yet have is not dead
+code; it is a claim whose subject has not arrived.** The two are told apart by measuring, and the
+measurement belongs in the bench.
+
 ## A derived perimeter is proven by a file that appears, not by a count
 
 **Twenty-three guards take their perimeter from the disk** (`git ls-files`, `readdirSync`,

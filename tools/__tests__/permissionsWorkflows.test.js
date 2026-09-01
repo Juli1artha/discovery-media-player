@@ -13,7 +13,7 @@
 
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-import { ecrituresRacine, ecartsDuFichier, releve, blocsLus } from "../permissions-workflows.mjs";
+import { ecrituresRacine, ecartsDuFichier, releve, blocsLus, ligneDesPermissions } from "../permissions-workflows.mjs";
 
 const AVEC = (bloc) => `name: T\non:\n  push:\n${bloc}jobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: 'true'\n`;
 
@@ -124,5 +124,26 @@ describe("le témoin de la règle : la sonde reconnaît-elle encore la forme ?",
     const { fichiers, blocs } = releve();
     expect(fichiers.length, "aucun workflow lu : la sonde vise à côté").toBeGreaterThan(5);
     expect(blocs, "zéro bloc reconnu : ce n'est pas une absence d'écriture, c'est une sonde aveugle").toBeGreaterThan(0);
+  });
+});
+
+// ⚠️ CETTE SONDE N'ÉTAIT VUE PAR PERSONNE — mesurée le 01/09 : aveuglée, ni la garde ni ce banc ne
+// bouge, parce que le refus rend alors « ligne 1 » et qu'aucun cas ne lit ce nombre. Elle sert à
+// dire OÙ corriger plutôt que quoi ; un refus qui pointe la ligne 1 d'un workflow de trois cents
+// lignes envoie le lecteur chercher, ce qui est exactement ce qu'elle existe pour éviter.
+describe("⚠️ la ligne du bloc `permissions:` racine, celle que le refus donne à corriger", () => {
+  it("rend la ligne du bloc racine, pas celle d'un bloc de job", () => {
+    const wf = ["name: t", "on: push", "jobs:", "  j:", "    permissions:", "      contents: write",
+      "    steps: []", "permissions:", "  contents: read", ""].join("\n");
+    expect(ligneDesPermissions(wf), "le bloc RACINE est en colonne 0, ligne 8").toBe(8);
+  });
+
+  it("⚠️ un `permissions:` indenté n'est pas le bloc racine", () => {
+    const wf = ["name: t", "jobs:", "  j:", "    permissions:", "      contents: write", ""].join("\n");
+    expect(ligneDesPermissions(wf), "aucun bloc racine : on ne devine pas, on rend 1").toBe(1);
+  });
+
+  it("un fichier sans bloc du tout rend 1 plutôt que rien", () => {
+    expect(ligneDesPermissions("name: t\non: push\n")).toBe(1);
   });
 });
