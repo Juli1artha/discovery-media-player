@@ -10,8 +10,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, it, expect } from "vitest";
 
-import {
-  methodesDuModuleSeul, sansCommentaires, sansChaines, lieCrypto, appelsDuModule, manquements, temoinsDeForme } from "../liaison-de-crypto.mjs";
+import { methodesDuModuleSeul, sansCommentaires, sansChaines, lieCrypto, appelsDuModule, manquements, temoinsDeForme, auPerimetre } from "../liaison-de-crypto.mjs";
 
 const METHODES = methodesDuModuleSeul();
 
@@ -127,5 +126,22 @@ describe("le témoin de la forme : la sonde reconnaît-elle encore un appel ?", 
   // n'importe quelle liste de méthodes, y compris une liste vide de sens.
   it("⚠️ ne témoigne que des méthodes effectivement cherchées", () => {
     expect(temoinsDeForme(["avec.js"], lire, ["randomUUID"])).toBe(0);
+  });
+});
+
+// ⚠️ LE PÉRIMÈTRE ÉCARTE LES BANCS, et personne ne l'éprouvait. Mesuré le 01/09 en aveuglant
+// l'exclusion : 31 fichiers deviennent 168, 5 appelants deviennent 21 — la garde reste verte, mais
+// elle relit alors du code de test dont les cas FABRIQUENT exprès des appels fautifs.
+describe("⚠️ le périmètre écarte les bancs, et il le dit", () => {
+  it("un chemin de banc n'est pas sous le périmètre, un chemin de runtime l'est", () => {
+    expect(["server/handler.js", "context/standalone.js", "bin/serve.js"].map(auPerimetre))
+      .toEqual([true, true, true]);
+    expect(auPerimetre("tools/x.mjs"), "les outils ne sont pas du runtime d'hôte").toBe(false);
+    expect(auPerimetre("docs/API.md")).toBe(false);
+  });
+
+  it("⚠️ et un banc est écarté — ses cas fabriquent exprès les appels que cette garde cherche", () => {
+    expect(auPerimetre("server/__tests__/x.test.js")).toBe(false);
+    expect(auPerimetre("context/__tests__/y.js")).toBe(false);
   });
 });

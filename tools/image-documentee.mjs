@@ -126,10 +126,70 @@ export const forgeExigeEncoreLeV = (source) => source.includes(MOTIF_DU_WORKFLOW
  */
 export const AU_PERIMETRE = (f) => /\.md$/.test(f) || f === "docker-compose.yml";
 
+/**
+ * Les fichiers qui CITENT le registre sans être au périmètre, et pourquoi c'est légitime.
+ *
+ * ⚠️ UN PÉRIMÈTRE EST UNE LISTE DE CE QU'IL FAUT REGARDER, ET CE DÉPÔT SAIT CE QUE ÇA COÛTE : une
+ * telle liste cesse de couvrir dès qu'un fichier apparaît, et personne ne la relit en ajoutant un
+ * fichier. Mesuré le 01/09 en aveuglant la moitié « docker-compose.yml » de `AU_PERIMETRE` :
+ *
+ *     sain   5 référence(s) ghcr.io reconnue(s) dans 32 document(s)
+ *     muté   4 référence(s) ghcr.io reconnue(s) dans 31 document(s)      VERT
+ *
+ * Un document sortait du périmètre, sa référence cessait d'être relue, et le plancher — deux
+ * références, posé contre le vide — ne voyait rien passer.
+ *
+ * Ce qui suit renverse la charge : tout fichier suivi qui NOMME le registre est au périmètre, ou
+ * bien il est inscrit ici avec sa raison. Un fichier qui apparaît force une décision au lieu de
+ * tomber dehors en silence.
+ */
+export const DISPENSES = {
+  ".zap/Dockerfile": "épingle une image TIERCE (zaproxy) au condensat — la forge n'en décide pas le tag, et `images-epinglees` la garde déjà",
+  "tools/images-epinglees.mjs": "la garde voisine, qui CITE la forme qu'elle cherche : la lire reviendrait à s'accuser de la connaître",
+  "tools/__tests__/imageDocumentee.test.js": "le banc de cette garde : ses cas FABRIQUENT des références fautives, c'est leur travail",
+  "tools/__tests__/imagesEpinglees.test.js": "le banc de la garde voisine, même raison",
+  "tools/__tests__/nodeDeLImage.test.js": "un banc qui cite l'image pour éprouver une autre règle",
+};
+
+/** Les fichiers suivis qui nomment le registre sans être ni au périmètre ni dispensés. */
+export function citationsSansDecision(suivis, lire, dispenses = DISPENSES) {
+  const soucis = [];
+  for (const f of suivis) {
+    if (AU_PERIMETRE(f) || Object.hasOwn(dispenses, f)) continue;
+    let texte;
+    try { texte = lire(f); } catch { continue; }
+    // ⚠️ LA MÊME SONDE QUE LE JUGE, PAS UNE SECONDE RECONNAISSANCE. La première écriture demandait
+    // `texte.includes(REGISTRE)` : un deuxième exemplaire de « qu'est-ce qu'une référence », qui
+    // aurait dérivé de `referencesLues` sans que rien ne les confronte — le défaut exact que ce
+    // dépôt retire partout. CodeQL l'a signalé sous un autre angle (une appartenance de chaîne ne
+    // décide pas d'un hôte : `ghcr.io.exemple.com` la satisfait) ; les deux raisons mènent ici.
+    const references = [...referencesLues(f, texte)];
+    if (references.length) {
+      soucis.push(`${f} porte ${references.length} référence(s) « ${REGISTRE}/… » sans être au périmètre de cette garde ni dispensé — soit un lecteur y recopie un tag et il doit être relu, soit ce n'en est pas un et il s'inscrit dans DISPENSES avec sa raison`);
+    }
+  }
+  // ⚠️ UNE DISPENSE QUI NE CORRESPOND PLUS À RIEN EST UN MENSONGE QUI DORT — et « ne correspond
+  // plus » ne veut pas seulement dire « le fichier a disparu ». Une dispense pour un fichier que la
+  // sonde ne signalerait pas donne à la liste l'air de faire un travail qu'elle ne fait pas. Six
+  // des dix premières entrées écrites ici étaient dans ce cas : les workflows nomment le registre
+  // dans des expressions `${{ }}` ou des URL d'API, que `referencesLues` écarte déjà.
+  const presents = new Set(suivis);
+  for (const f of Object.keys(dispenses)) {
+    if (!presents.has(f)) { soucis.push(`« ${f} » est dispensé et n'existe plus — retirez la dispense`); continue; }
+    let texte;
+    try { texte = lire(f); } catch { continue; }
+    if (![...referencesLues(f, texte)].length) {
+      soucis.push(`« ${f} » est dispensé et ne porte aucune référence « ${REGISTRE}/… » — la dispense ne couvre plus rien, retirez-la`);
+    }
+  }
+  return soucis;
+}
+
 if (estExecuteDirectement(import.meta.url)) {
   conclure(tenter(() => {
-    const fichiers = process.argv.slice(2).length ? process.argv.slice(2)
-      : execFileSync("git", ["ls-files"], { encoding: "utf8" }).split("\n").filter(AU_PERIMETRE);
+    const passes = process.argv.slice(2);
+    const suivis = passes.length ? [] : execFileSync("git", ["ls-files"], { encoding: "utf8" }).split("\n").filter(Boolean);
+    const fichiers = passes.length ? passes : suivis.filter(AU_PERIMETRE);
     if (!fichiers.length) {
       return inconclusif("aucun document à lire — la sonde vise à côté, et un vert ne prouverait rien");
     }
@@ -147,6 +207,10 @@ if (estExecuteDirectement(import.meta.url)) {
     if (vues < PLANCHER_REFERENCES) {
       return inconclusif(`${vues} référence(s) « ${REGISTRE}/… » reconnue(s) dans ${fichiers.length} document(s), moins que ${PLANCHER_REFERENCES} — ce n'est pas une absence de référence fautive, c'est une sonde qui ne lit plus la forme d'une référence`);
     }
+    // ⚠️ ET LE PÉRIMÈTRE LUI-MÊME EST CONFRONTÉ À CE QUE LE DÉPÔT CONTIENT. Une liste de ce qu'il
+    // faut regarder cesse de couvrir dès qu'un fichier apparaît ; celle-ci force une décision.
+    const sansDecision = suivis.length ? citationsSansDecision(suivis, lire) : [];
+    if (sansDecision.length) return violation(sansDecision);
     const soucis = fichiers.flatMap((f) => referencesFautives(f, lire(f)));
     if (soucis.length) return violation(soucis);
     return conforme(`image documentée : ${vues} référence(s) ${REGISTRE} reconnue(s) dans ${fichiers.length} document(s), chacune sans tag, « latest », ou préfixée « v » comme ${OU_LE_TAG_EST_DECIDE} la publie`);

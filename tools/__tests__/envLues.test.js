@@ -250,3 +250,57 @@ describe("⚠️ LE REFUS DIT OÙ LA VARIABLE EST LUE", () => {
     expect([...lues]).toEqual(["PLAYER_UN"]);
   });
 });
+
+// ⚠️ LES SONDES QUI NE SONT PAS DES EXPRESSIONS RÉGULIÈRES ÉTAIENT HORS DE TOUT BALAYAGE. Mesuré le
+// 01/09 : cinq gardes de type de ce fichier n'étaient vues ni par la garde ni par ce banc, et leur
+// direction de panne est la MAUVAISE. Cette garde vérifie que toute variable LUE est documentée :
+// un nœud qui cesse d'être reconnu est une lecture qui disparaît du relevé, donc une variable non
+// documentée qui passe. Chaque forme a désormais son cas.
+describe("⚠️ chaque forme de nœud que la sonde doit reconnaître, éprouvée par un cas", () => {
+  it("les enveloppes que `deballer` retire ne cachent pas une lecture", () => {
+    expect([...variablesLues("(process.env).PLAYER_UN;\n", "server/x.js")]).toEqual(["PLAYER_UN"]);
+    expect([...variablesLues("process.env.PLAYER_UN;\n", "server/x.js")]).toEqual(["PLAYER_UN"]);
+  });
+
+  // ⚠️ LE NOM DE L'ALIAS NE DOIT PAS ÊTRE « env ». L'ensemble des alias est ENSEMENCÉ avec « env »
+  // par convention du dépôt : un cas qui l'emploie ne traverse jamais le code de liaison et ne
+  // prouve rien de lui. Première écriture de ces deux cas, mesurée : les mutants survivaient.
+  it("⚠️ un alias lié par un PARAMÈTRE par défaut est suivi, sous un nom quelconque", () => {
+    const src = "function f(reglages = process.env) { return reglages.PLAYER_UN; }\n";
+    expect([...variablesLues(src, "server/x.js")],
+      "sans `isParameter`, cette lecture disparaîtrait du relevé").toEqual(["PLAYER_UN"]);
+  });
+
+  it("⚠️ un alias lié par une AFFECTATION est suivi, sous un nom quelconque", () => {
+    const src = "let reglages;\nreglages = process.env;\nconst v = reglages.PLAYER_UN;\n";
+    expect([...variablesLues(src, "server/x.js")],
+      "sans `isBinaryExpression`, cette lecture disparaîtrait du relevé").toEqual(["PLAYER_UN"]);
+  });
+
+  it("⚠️ une assertion non-nulle ne cache pas une lecture", () => {
+    expect([...variablesLues("process.env!.PLAYER_UN;\n", "server/x.js")],
+      "sans `isNonNullExpression`, cette lecture disparaîtrait du relevé").toEqual(["PLAYER_UN"]);
+  });
+
+  it("⚠️ et une assertion de type non plus — même si aucun fichier .js du dépôt n'en porte", () => {
+    // `x as T` n'est pas du JavaScript ; ce dépôt n'en contient pas. La sonde la déballe quand
+    // même, et ce cas dit que ce n'est pas un vœu : le parseur la lit, et la lecture est relevée.
+    expect([...variablesLues("(process.env as any).PLAYER_UN;\n", "server/x.js")]).toEqual(["PLAYER_UN"]);
+  });
+
+  it("⚠️ une déstructuration dont la clé est une CHAÎNE est relevée comme un identifiant", () => {
+    const src = 'const { "PLAYER_UN": a } = process.env;\n';
+    expect([...variablesLues(src, "server/x.js")],
+      "sans `isStringLiteralLike`, cette lecture disparaîtrait du relevé").toEqual(["PLAYER_UN"]);
+  });
+
+  it("une déstructuration ordinaire de process.env est relevée", () => {
+    expect([...variablesLues("const { PLAYER_UN } = process.env;\n", "server/x.js")]).toEqual(["PLAYER_UN"]);
+  });
+
+  it("⚠️ et un accès par crochets STATIQUE est relevé, un calculé refusé", () => {
+    expect([...variablesLues('process.env["PLAYER_UN"];\n', "server/x.js")]).toEqual(["PLAYER_UN"]);
+    expect(accesInterdits("process.env[nom];\n", "server/x.js").length,
+      "un nom calculé n'est jamais deviné").toBe(1);
+  });
+});

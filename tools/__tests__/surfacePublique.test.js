@@ -179,3 +179,30 @@ describe("⚠️ sur le paquet réel, les trois comptes tiennent", () => {
     expect(symboles, "75 le 31/08").toBeGreaterThanOrEqual(PLANCHER_SYMBOLES);
   });
 });
+
+// ⚠️ « UN EXPORT STABLE DÉCLARÉ EN CHAÎNE NUE N'ANNONCE AUCUN TYPE » n'était éprouvé nulle part :
+// tous les stables du manifeste s'écrivent aujourd'hui en objet de conditions. Mesuré le 01/09,
+// aveugler ce `typeof cible === "string"` ne faisait bouger ni la garde ni ce banc.
+describe("⚠️ la forme sous laquelle un export est déclaré compte autant que sa présence", () => {
+  // `ecartsTypes` parcourt TOUT le manifeste : un cas qui n'en passe qu'une entrée accuse les
+  // autres pour absence. On part donc d'un manifeste complet et bien formé, et on ne change QUE
+  // la déclaration du sous-chemin éprouvé.
+  const complet = Object.fromEntries(Object.keys(SURFACE)
+    .map((e) => [e, { types: "./types/x.d.ts", default: "./server/x.js" }]));
+  const stable = Object.entries(SURFACE).find(([, d]) => d.statut === "stable")[0];
+
+  it("aucun écart quand chaque stable annonce ses types", () => {
+    expect(ecartsTypes(complet)).toEqual([]);
+  });
+
+  it("⚠️ un stable déclaré en CHAÎNE NUE est accusé — une chaîne n'annonce pas de types", () => {
+    expect(ecartsTypes({ ...complet, [stable]: "./server/x.js" }))
+      .toEqual([expect.stringMatching(new RegExp(`« ${stable.replace(".", "\\.")} » est stable et n'annonce aucun type`))]);
+  });
+
+  it("un EXPÉRIMENTAL déclaré en chaîne nue ne l'est pas — sa forme n'est pas figée", () => {
+    const exp = Object.entries(SURFACE).find(([, d]) => d.statut !== "stable");
+    if (!exp) return;
+    expect(ecartsTypes({ ...complet, [exp[0]]: "./server/x.js" })).toEqual([]);
+  });
+});

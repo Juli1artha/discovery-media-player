@@ -10,7 +10,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { sourceUtile, mesurer, compterIn, annonces, ecarts, fichiersServeur } from "../surface-base.mjs";
+import { sourceUtile, mesurer, compterIn, annonces, ecarts, fichiersServeur, effondrement } from "../surface-base.mjs";
 
 const RACINE = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const f = (nom, texte) => ({ nom, texte });
@@ -127,5 +127,37 @@ describe("le dépôt réel", () => {
     const md = readFileSync(join(RACINE, "docs", "API.md"), "utf8");
     expect(ecarts(mesure, annonces(md)), "docs/API.md a dérivé — relancez node tools/surface-base.mjs")
       .toEqual([]);
+  });
+});
+
+// ⚠️ LE PLANCHER SUR LES TABLES NE TENAIT QUE DANS LE CAS PARFAITEMENT VIDE. Il s'écrivait avec une
+// branche sur le NOM de la clé — `cle === "tables" ? mesure.tables.length : mesure[cle]` — et
+// mesuré le 01/09 en aveuglant ce littéral : zéro table refusait encore, une, deux ou trois
+// passaient. La raison est une coercition JavaScript : `[] < 4` vaut `true` (tableau vide → 0),
+// mais `["a"] < 4` compare « a » à 4, donc `NaN < 4`, donc faux.
+//
+// Or la panne que ce plancher existe pour attraper est une sonde qui trouve ENCORE quelque chose —
+// une sur quatre — pas une sonde qui ne trouve plus rien. Il ne tenait donc pas dans le seul cas
+// qui compte.
+describe("⚠️ le plancher refuse une sonde à moitié aveugle, pas seulement une sonde muette", () => {
+  const abondant = { lectures: 99, ecritures: 99, rpc: 99 };
+
+  it("refuse UNE table trouvée sur quatre attendues — le cas d'une sonde qui trouve encore", () => {
+    expect(effondrement({ ...abondant, tables: ["a"] }))
+      .toEqual([expect.stringMatching(/^tables : 1 trouvé\(s\), plancher/)]);
+  });
+
+  it("refuse aussi zéro, deux et trois", () => {
+    for (const t of [[], ["a", "b"], ["a", "b", "c"]]) {
+      expect(effondrement({ ...abondant, tables: t }).length, `${t.length} table(s)`).toBe(1);
+    }
+  });
+
+  it("et laisse passer un relevé abondant", () => {
+    expect(effondrement({ ...abondant, tables: ["a", "b", "c", "d"] })).toEqual([]);
+  });
+
+  it("⚠️ le compte annoncé est un NOMBRE, pas un tableau imprimé de travers", () => {
+    expect(effondrement({ ...abondant, tables: ["a"] })[0]).toContain("1 trouvé(s)");
   });
 });

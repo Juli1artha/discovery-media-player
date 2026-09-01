@@ -42,6 +42,16 @@ import { estExecuteDirectement } from "./execute-directement.mjs";
 /** Les dossiers dont le code s'exécute sous Node, chez l'hôte. */
 const SOUS_NODE = /^(server|context|bin)\/.*\.(js|cjs|mjs)$/;
 
+/**
+ * Le périmètre : le code que des hôtes EXÉCUTENT sous Node, hors bancs.
+ *
+ * ⚠️ IL VIVAIT EN LIGNE DANS LE VERDICT, DONC NULLE PART OÙ ON PUISSE L'ÉPROUVER. Mesuré le 01/09
+ * en aveuglant l'exclusion des bancs : 31 fichiers deviennent 168 et 5 appelants deviennent 21 —
+ * la garde reste verte, mais elle relit alors du code de test dont les cas FABRIQUENT exprès les
+ * appels fautifs qu'elle cherche. La direction est prudente ; l'absence d'épreuve ne l'était pas.
+ */
+export const auPerimetre = (f) => SOUS_NODE.test(f) && !f.includes("__tests__");
+
 /** Tous les noms atteignables sur un objet, prototypes compris. */
 const nomsDe = (o) => {
   const noms = new Set();
@@ -164,7 +174,7 @@ if (estExecuteDirectement(import.meta.url)) {
   conclure(tenter(() => {
     const suivis = execFileSync("git", ["ls-files"], { encoding: "utf8" })
       .split("\n")
-      .filter((f) => SOUS_NODE.test(f) && !f.includes("__tests__"));
+      .filter(auPerimetre);
     if (!suivis.length) {
       return inconclusif("aucun fichier de server/, context/ ou bin/ relevé par git ls-files — la sonde vise à côté, ou le dépôt n'est pas là");
     }
