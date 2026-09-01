@@ -143,6 +143,15 @@ the notes there are this file's section for that version.
 
 ### Added
 
+- `docshare.sessionsByRecipient` reads one person's reading sessions across every document —
+  address, optional date bound, cursor pagination — under the same scope as `docshare.list` and
+  `docshare.sessions`. Migration `0025` adds the partial index `(recipient_email, last_at desc)`
+  the query needs; without it the call answers identically and more slowly, and the more slowly the
+  older the journal. Two things the payload states rather than implies: `cursor: null` marks the end
+  and the length of a page never does — the scope filter runs after the read, so a page can be short
+  or empty while more remains, and the cursor carries the last row **examined** so nothing is skipped
+  or served twice; and the order is `(last_at, session_id)` descending, because two sessions can
+  share a timestamp and a cursor on time alone would drop one of them.
 - `tools/__tests__/environnementDepouille.test.js` runs every tool with a `PATH` containing nothing
   but node — no `git`, no `npm` — against a *garnished* tree, and asserts the taxonomy holds: never
   exit 1 (which would accuse a branch for an environment fault), and a stripped environment never

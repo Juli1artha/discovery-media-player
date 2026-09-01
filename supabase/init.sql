@@ -139,6 +139,12 @@ create table if not exists public.commercial_doc_sessions (
 create index if not exists cds_sess_slug_idx on public.commercial_doc_sessions (slug);
 create index if not exists cds_sess_doc_idx  on public.commercial_doc_sessions (doc_id, last_at desc);
 create index if not exists idx_cds_last_at on public.commercial_doc_sessions (last_at);
+-- « Toutes les lectures de cette personne, la plus récente d'abord » — la question de la fiche
+-- par destinataire. Partiel : un lien anonyme laisse `recipient_email` nul et ne répond jamais à
+-- cette question ; le porter dans l'index le grossirait sans qu'aucune requête ne l'y cherche.
+create index if not exists idx_cds_recipient_last_at
+  on public.commercial_doc_sessions (recipient_email, last_at desc)
+  where recipient_email is not null;
 
 create table if not exists public.commercial_doc_internal_sessions (
   session_id    text primary key,

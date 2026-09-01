@@ -138,7 +138,7 @@ a broken tracked link is a commercial relationship landing on an error page.
 
 **Authenticated** (`Authorization: Bearer <jwt>`, verified through `identity.verifyToken`):
 `present-list|reclaim|handover|owner-end|stats|doc-list|switch|content` ·
-`docshare.create|list|revoke|setauth|overview|sessions|test`
+`docshare.create|list|revoke|setauth|overview|sessions|sessionsByRecipient|test`
 
 **Trusted host or admin** — `retention.run`: runs the retention purge (see
 [`docs/RETENTION.md`](RETENTION.md)). Authenticated by a trusted-host call
@@ -161,9 +161,32 @@ identity.canManageShares(user, action) // → boolean
   `sessions`, `test`) because hosts separate ordinary sending from administration. With a single
   boolean, either salespeople cannot send anything, or everyone can revoke everyone's links.
   A host without that distinction ignores the argument.
-- **`list.all`** is an extra question asked during a listing. Answering no restricts the response
-  to links created by the caller; the response carries `scope: "all" | "mine"`. Without it, a
-  salesperson would see who else the document was sent to — their colleagues' prospects.
+- **`list.all`** is an extra question asked during a listing **and during either reading of
+  sessions**. Answering no restricts the response to what the caller's own links caused; the
+  response carries `scope: "all" | "mine"`. Without it, a salesperson would see who else the
+  document was sent to — their colleagues' prospects, with their addresses and IPs.
+- **The scope follows the chain of origin, not the last link.** A forwarded re-share is recorded as
+  created by the person who forwarded it, so a salesperson's own re-shared links belong to their
+  scope: they caused those readings. A session whose chain cannot be resolved — an unknown link, a
+  missing ancestor — is shown to nobody but `list.all`.
+
+#### `docshare.sessionsByRecipient` — one person, every document
+
+```js
+{ action: "docshare.sessionsByRecipient",
+  email: "dana@example.org",   // required
+  since: "2024-01-01T00:00:00Z", // optional; defaults to the 24-month analytics window
+  cursor: "<from the previous page>", limit: 100 }   // limit is clamped to 1…500
+→ { ok: true, sessions: [ { doc_id, slug, parent_slug, … } ], cursor, scope }
+```
+
+⚠️ **`cursor: null` marks the end — never the length of the page.** The scope filter is applied
+after the read, so under `scope: "mine"` a page can be shorter than `limit`, or even empty, while
+more remains. The cursor carries the position of the last row **examined**, which is why nothing is
+skipped or served twice; a caller that stops on a short page loses the rest.
+
+Sessions are ordered by `(last_at, session_id)` descending. The second coordinate is not decorative:
+two sessions can share a timestamp, and a cursor on time alone would drop one of them.
 
 **Known limit: two scopes, not three.** The player knows *all* and *mine*. A host whose model has
 an intermediate scope (team, agency, territory) cannot express it. The shape of the fix is already
@@ -287,12 +310,13 @@ estimated:
 
 | | |
 |---|---|
-| Call sites | **68**†, in **7**† files |
+| Call sites | **70**†, in **7**† files |
 | Tables | **11**†, plus **6**† call sites that build their path at run time — their tables are named literally by the caller, and are counted above |
 | Verbs | `GET`, `POST`, `PATCH`, one `HEAD`, and `DELETE` only in `server/retention.js` — every one bounded by an age filter (`docs/RETENTION.md`) |
 | Embedded selects (`select=*,other(*)`) | **0** |
-| `or=()`, `and=()`, `offset=` | **0** |
-| `in.(…)` | **3**† — translates to `WHERE column IN (…)`, so it costs a port nothing |
+| `or=()` | **0**† — and it is a *rule*, not an observation: `ci.yml` refuses `or=(` and `and=(` in `server/*.js`, because nested joins and boolean trees are what turn a port from a translation into a rewrite. The cursor of `docshare.sessionsByRecipient` needs two coordinates and expresses them as two flat filters — `last_at=lte.T` plus `session_id=not.in.(…)` — which reads `WHERE last_at <= T AND session_id NOT IN (…)` |
+| `and=()`, `offset=` | **0** — hand-counted; the row above is measured because a rule nobody counts is a rule that erodes |
+| `in.(…)` | **5**† — translates to `WHERE column IN (…)`, so it costs a port nothing |
 | Used beyond plain filters | `order=`, `Prefer: return=…`, `Range` for pagination |
 
 † **Recomputed from the code on every CI run** by `tools/surface-base.mjs`, which fails the build

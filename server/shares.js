@@ -570,6 +570,138 @@ async function listSessionsForDoc(docId, owner = null) {
   return sortie;
 }
 
+/**
+ * Les liens nommés, plus TOUS leurs ancêtres, en remontant `parent_slug` par vagues.
+ *
+ * ⚠️ LA CHAÎNE NE TIENT PAS DANS UNE SEULE LECTURE. Pour un document, `listSessionsForDoc` lit tous
+ * ses liens d'un coup et la remontée est locale. Ici les sessions viennent de documents quelconques :
+ * on ne connaît au départ que les liens qui les portent, et leurs parents sont ailleurs. On remonte
+ * donc par vagues, en ne redemandant jamais un `slug` déjà lu.
+ *
+ * ⚠️ ET LE NOMBRE DE VAGUES EST BORNÉ. Une chaîne de re-partages réelle fait un ou deux sauts ; huit
+ * vagues couvrent très large. Au-delà, on rend ce qu'on a : la remontée qui s'appuie dessus échoue
+ * alors fermée, ce qui est le bon sens de l'erreur — on ne montre pas une session qu'on n'a pas su
+ * rattacher.
+ */
+async function liensEtAncetres(slugs, vaguesMax = 8) {
+  const parSlug = new Map();
+  let aLire = [...new Set(slugs.filter(Boolean))];
+  for (let vague = 0; vague < vaguesMax && aLire.length; vague += 1) {
+    const liste = aLire.map((x) => `"${String(x).replace(/[",()]/g, "")}"`).join(",");
+    const lus = await PLAYER.db.request(`commercial_doc_shares?slug=in.(${enc(liste)})&select=slug,parent_slug,created_by,recipient_email,recipient_name,doc_id,doc_title`);
+    const vus = Array.isArray(lus) ? lus : [];
+    if (!vus.length) break;
+    for (const sh of vus) parSlug.set(sh.slug, sh);
+    aLire = [...new Set(vus.map((sh) => sh.parent_slug).filter((x) => x && !parSlug.has(x)))];
+  }
+  return parSlug;
+}
+
+/**
+ * Le curseur d'une page : l'horodatage de la dernière ligne examinée, ET les sessions déjà rendues
+ * à CET horodatage.
+ *
+ * ⚠️ `last_at` NE SUFFIT PAS. Deux sessions peuvent porter le même horodatage — deux battements
+ * dans la même milliseconde — et un curseur qui ne retiendrait que le temps sauterait l'une des
+ * deux (`lt`) ou la rendrait deux fois (`lte`).
+ *
+ * ⚠️ ET LA FORME ÉVIDENTE EST INTERDITE ICI, POUR UNE RAISON ÉCRITE. La façon habituelle
+ * d'écrire ça est un `or=(last_at.lt.T,and(last_at.eq.T,session_id.lt.ID))` — et `ci.yml` refuse
+ * `or=(` et `and=(` dans `server/*.js` : « ce qui coûte, ce sont les jointures imbriquées et les
+ * arbres booléens — là, un portage cesse d'être une traduction et devient une réécriture ». Le
+ * zéro qu'annonçait `docs/API.md` n'était pas un nombre périmé, c'était une POLITIQUE, et je l'ai
+ * pris pour l'autre avant que la garde ne me reprenne.
+ *
+ * La forme portable dit la même chose sans arbre booléen : « au plus tard que T, et pas l'une de
+ * celles-ci » — `last_at=lte.T & session_id=not.in.(…)`, qui se traduit mot pour mot en
+ * `WHERE last_at <= T AND session_id NOT IN (…)`. La liste ne grandit que pour les ex æquo de
+ * l'horodatage de bord, et chaque page ajoute au moins une exclusion ou avance le temps : la
+ * progression est garantie, sans quoi une page d'ex æquo tournerait en rond.
+ */
+const curseurDe = (at, ids) => (at ? `${at}|${[...ids].join(",")}` : null);
+
+function curseurLu(brut) {
+  const texte = String(brut || "");
+  const coupe = texte.indexOf("|");
+  if (coupe <= 0) return null;
+  const at = texte.slice(0, coupe);
+  const ids = texte.slice(coupe + 1).split(",").filter(Boolean);
+  // Un curseur qu'on ne sait pas lire n'est pas « le début » : ce serait rendre la première page à
+  // qui demandait la troisième, en silence. On le REFUSE, et l'appelant le saura.
+  if (!ids.length || Number.isNaN(Date.parse(at))) return null;
+  return { at, ids };
+}
+
+/**
+ * Toutes les sessions d'un DESTINATAIRE, tous documents confondus.
+ *
+ * ⚠️ LA PORTÉE EST CELLE DE `listSessionsForDoc`, POUR LA MÊME RAISON — et elle ne peut pas être
+ * poussée dans la requête. « La chaîne d'origine part d'un lien que j'ai créé » est récursif :
+ * `created_by` change à chaque saut de re-partage. On lit donc une page de CANDIDATS, on résout
+ * leurs chaînes, et on ne rend que ce qui appartient à l'appelant.
+ *
+ * ⚠️ CONSÉQUENCE ASSUMÉE, ET ÉCRITE PLUTÔT QUE MASQUÉE : une page peut être PLUS COURTE que
+ * `limite` sans être la dernière. Le curseur rendu est la position de la dernière ligne EXAMINÉE,
+ * pas de la dernière rendue — donc rien n'est sauté ni rendu deux fois, et la fin se lit à
+ * `curseur: null`, jamais à la longueur de la page. Boucler jusqu'à remplir la page ferait payer à
+ * un appelant restreint un balayage dont il ne verrait rien, et le nombre de requêtes deviendrait
+ * une fonction de ce que ses collègues ont envoyé.
+ *
+ * `depuis` borne le temps (défaut : la fenêtre analytique). L'appelant peut remonter plus loin en
+ * la passant explicitement — la fiche promet « tout l'historique », vingt-quatre mois n'en sont que
+ * le défaut raisonnable.
+ */
+async function listSessionsForRecipient(email, { owner = null, depuis = null, apres = null, limite = 100 } = {}) {
+  const destinataire = low(email);
+  if (!destinataire) return { sessions: [], curseur: null };
+  const borne = depuis || depuisFenetre();
+  const taille = Math.min(Math.max(Number(limite) || 100, 1), 500);
+  const position = curseurLu(apres);
+
+  // ⚠️ « AU PLUS TARD QUE T, ET PAS L'UNE DE CELLES-CI » — deux filtres plats, pas un arbre booléen.
+  // `not.in.(…)` se traduit en `NOT IN (…)`, que toute base sait faire ; c'est ce qui distingue une
+  // traduction d'une réécriture, et c'est la règle que `ci.yml` fait respecter.
+  const apresQuoi = position
+    ? `&last_at=lte.${enc(position.at)}&session_id=not.in.(${enc(position.ids.map((x) => `"${String(x).replace(/[",()]/g, "")}"`).join(","))})`
+    : "";
+  const candidats = await PLAYER.db.request(
+    `commercial_doc_sessions?recipient_email=eq.${enc(destinataire)}&last_at=gte.${enc(borne)}${apresQuoi}`
+    + `&select=*&order=last_at.desc,session_id.desc&limit=${taille}`);
+  const lignes = Array.isArray(candidats) ? candidats : [];
+  if (!lignes.length) return { sessions: [], curseur: null };
+
+  const parSlug = await liensEtAncetres(lignes.map((s) => s.slug));
+  const parParent = new Map([...parSlug].map(([slug, sh]) => [slug, sh.parent_slug || null]));
+  const proprietaire = low(owner || "");
+
+  const sessions = [];
+  for (const s of lignes) {
+    const lien = parSlug.get(s.slug) || null;
+    const racine = racineDuLien(s.slug, parParent);
+    const createurRacine = racine ? low(parSlug.get(racine)?.created_by || "") : "";
+    if (proprietaire && createurRacine !== proprietaire) continue;
+    const parent = lien && lien.parent_slug ? parSlug.get(lien.parent_slug) || null : null;
+    sessions.push({
+      ...s,
+      doc_title: (lien && lien.doc_title) || null,
+      recipient_name: (lien && lien.recipient_name) || null,
+      parent_slug: (lien && lien.parent_slug) || null,
+      parent_recipient_email: parent ? parent.recipient_email || null : null,
+      parent_recipient_name: parent ? parent.recipient_name || null : null,
+    });
+  }
+  // La page est pleine ⇒ il reste peut-être quelque chose : on rend l'horodatage de la dernière
+  // ligne EXAMINÉE, et les sessions déjà servies à cet horodatage. Elle ne l'est pas ⇒ la source
+  // est épuisée, et `null` le dit sans ambiguïté.
+  if (lignes.length < taille) return { sessions, curseur: null };
+  const bord = lignes[lignes.length - 1].last_at;
+  const dejaVues = lignes.filter((s) => s.last_at === bord).map((s) => s.session_id);
+  // Le curseur entrant portait le MÊME horodatage de bord ⇒ ses exclusions valent encore, sinon
+  // les ex æquo déjà servis reviendraient. Il en portait un autre ⇒ elles sont sans objet.
+  const exclues = position && position.at === bord ? [...new Set([...position.ids, ...dejaVues])] : dejaVues;
+  return { sessions, curseur: curseurDe(bord, exclues) };
+}
+
 // Envoi AUTO du re-partage via 3D Discovery (Resend). Contenu 100% templé (pas de texte libre → anti-spam),
 // attribué au recommandeur (destinataire du lien parent), reply-to vers lui. Best-effort.
 async function sendReshareEmail({ parent, childSlug, origin, toEmail, toName }) {
@@ -736,4 +868,4 @@ async function internalStatsForDoc(docId) {
 }
 
 module.exports = {
-  cleIdempotence, init, createShare, createReshare, sendReshareEmail, getShareBySlug, logView, upsertSession, listSharesForDoc, listSessionsForDoc, racineDuLien, revokeShare, setShareAuth, overview, upsertInternalSession, internalStatsForDoc };
+  cleIdempotence, init, createShare, createReshare, sendReshareEmail, getShareBySlug, logView, upsertSession, listSharesForDoc, listSessionsForDoc, listSessionsForRecipient, racineDuLien, curseurDe, curseurLu, revokeShare, setShareAuth, overview, upsertInternalSession, internalStatsForDoc };
