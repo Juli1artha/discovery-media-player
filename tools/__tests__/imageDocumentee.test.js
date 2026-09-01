@@ -12,10 +12,7 @@ import { describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-import {
-  referencesFautives, referencesLues, temoinsDeForme, tagAcceptable, forgeExigeEncoreLeV,
-  AU_PERIMETRE, OU_LE_TAG_EST_DECIDE, MOTIF_DU_WORKFLOW, PLANCHER_REFERENCES,
-} from "../image-documentee.mjs";
+import { referencesFautives, referencesLues, temoinsDeForme, tagAcceptable, forgeExigeEncoreLeV, AU_PERIMETRE, OU_LE_TAG_EST_DECIDE, MOTIF_DU_WORKFLOW, PLANCHER_REFERENCES, citationsSansDecision, DISPENSES } from "../image-documentee.mjs";
 
 const IMG = "ghcr.io/juli1artha/discovery-media-player";
 const lu = (ligne) => referencesFautives("t.md", ligne);
@@ -137,5 +134,45 @@ describe("⚠️ sur les documents réels, la sonde reconnaît une population", 
     const vues = temoinsDeForme(fichiers, (f) => readFileSync(f, "utf8"));
     expect(vues, "5 le 31/08 — si ce nombre tombe à zéro, la sonde ne lit plus la forme")
       .toBeGreaterThanOrEqual(PLANCHER_REFERENCES);
+  });
+});
+
+// ⚠️ LE PÉRIMÈTRE ÉTAIT UNE LISTE DE CE QU'IL FAUT REGARDER, et ce dépôt sait ce que ça coûte : une
+// telle liste cesse de couvrir dès qu'un fichier apparaît. Mesuré le 01/09 en aveuglant sa moitié
+// « docker-compose.yml » : 5 références dans 32 documents deviennent 4 dans 31, et la garde reste
+// VERTE — le plancher, posé contre le vide, ne voit rien passer. La charge est renversée : tout
+// fichier suivi qui PORTE une référence est au périmètre, ou dispensé avec sa raison.
+describe("⚠️ le périmètre est confronté à ce que le dépôt contient", () => {
+  const lire = (f) => ({
+    "autre.txt": "voir ghcr.io/juli1artha/discovery-media-player:v1.2.3\n",
+    "muet.txt": "aucune image ici\n",
+    "dispense.txt": "ghcr.io/juli1artha/x:v1\n",
+    "dispense-vide.txt": "plus aucune référence\n",
+  })[f] ?? "";
+
+  it("un fichier qui porte une référence sans être au périmètre ni dispensé est NOMMÉ", () => {
+    expect(citationsSansDecision(["autre.txt", "muet.txt"], lire, {}))
+      .toEqual([expect.stringMatching(/^autre\.txt porte 1 référence\(s\)/)]);
+  });
+
+  it("et une dispense le couvre — c'est à quoi elle sert", () => {
+    expect(citationsSansDecision(["autre.txt"], lire, { "autre.txt": "raison" })).toEqual([]);
+  });
+
+  it("⚠️ une dispense pour un fichier absent est signalée", () => {
+    expect(citationsSansDecision(["muet.txt"], lire, { "parti.txt": "raison" }))
+      .toEqual([expect.stringMatching(/« parti\.txt » est dispensé et n'existe plus/)]);
+  });
+
+  it("⚠️ et une dispense qui ne couvre PLUS rien aussi — une liste qui n'a plus de sujet a l'air de travailler", () => {
+    expect(citationsSansDecision(["dispense-vide.txt"], lire, { "dispense-vide.txt": "raison" }))
+      .toEqual([expect.stringMatching(/est dispensé et ne porte aucune référence/)]);
+  });
+
+  it("⚠️ chaque dispense réelle a encore un sujet — sinon elle serait un mensonge qui dort", () => {
+    const suivis = execFileSync("git", ["ls-files"], { encoding: "utf8" }).split("\n").filter(Boolean);
+    const vraiLire = (f) => readFileSync(f, "utf8");
+    expect(citationsSansDecision(suivis, vraiLire)).toEqual([]);
+    expect(Object.keys(DISPENSES).length, "cinq le 01/09, chacune avec sa raison écrite").toBeGreaterThan(0);
   });
 });

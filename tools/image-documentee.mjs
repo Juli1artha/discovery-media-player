@@ -144,13 +144,8 @@ export const AU_PERIMETRE = (f) => /\.md$/.test(f) || f === "docker-compose.yml"
  * tomber dehors en silence.
  */
 export const DISPENSES = {
-  ".github/workflows/ci.yml": "un workflow PRODUIT le tag, il ne le documente pas — et il l'écrit dans des variables de shell que cette sonde ne saurait pas suivre sans redevenir un analyseur de commandes",
-  ".github/workflows/image.yml": "le workflow qui DÉCIDE de la forme du tag ; cette garde le confronte plutôt que de le juger",
-  ".github/workflows/image-reconcile.yml": "même raison que image.yml — il republie le tag qu'image.yml a décidé",
-  ".github/workflows/publication.yml": "la chaîne de sortie : elle appelle l'image, elle ne l'explique à personne",
   ".zap/Dockerfile": "épingle une image TIERCE (zaproxy) au condensat — la forge n'en décide pas le tag, et `images-epinglees` la garde déjà",
-  "tools/image-documentee.mjs": "cette garde elle-même : elle CITE la forme qu'elle cherche, la lire reviendrait à s'accuser de la connaître",
-  "tools/images-epinglees.mjs": "la garde voisine, qui cite les mêmes formes pour la même raison",
+  "tools/images-epinglees.mjs": "la garde voisine, qui CITE la forme qu'elle cherche : la lire reviendrait à s'accuser de la connaître",
   "tools/__tests__/imageDocumentee.test.js": "le banc de cette garde : ses cas FABRIQUENT des références fautives, c'est leur travail",
   "tools/__tests__/imagesEpinglees.test.js": "le banc de la garde voisine, même raison",
   "tools/__tests__/nodeDeLImage.test.js": "un banc qui cite l'image pour éprouver une autre règle",
@@ -163,14 +158,29 @@ export function citationsSansDecision(suivis, lire, dispenses = DISPENSES) {
     if (AU_PERIMETRE(f) || Object.hasOwn(dispenses, f)) continue;
     let texte;
     try { texte = lire(f); } catch { continue; }
-    if (texte.includes(REGISTRE)) {
-      soucis.push(`${f} nomme « ${REGISTRE} » sans être au périmètre de cette garde ni dispensé — soit un lecteur y recopie un tag et il doit être relu, soit ce n'en est pas un et il s'inscrit dans DISPENSES avec sa raison`);
+    // ⚠️ LA MÊME SONDE QUE LE JUGE, PAS UNE SECONDE RECONNAISSANCE. La première écriture demandait
+    // `texte.includes(REGISTRE)` : un deuxième exemplaire de « qu'est-ce qu'une référence », qui
+    // aurait dérivé de `referencesLues` sans que rien ne les confronte — le défaut exact que ce
+    // dépôt retire partout. CodeQL l'a signalé sous un autre angle (une appartenance de chaîne ne
+    // décide pas d'un hôte : `ghcr.io.exemple.com` la satisfait) ; les deux raisons mènent ici.
+    const references = [...referencesLues(f, texte)];
+    if (references.length) {
+      soucis.push(`${f} porte ${references.length} référence(s) « ${REGISTRE}/… » sans être au périmètre de cette garde ni dispensé — soit un lecteur y recopie un tag et il doit être relu, soit ce n'en est pas un et il s'inscrit dans DISPENSES avec sa raison`);
     }
   }
-  // ⚠️ UNE DISPENSE QUI NE CORRESPOND PLUS À RIEN EST UN MENSONGE QUI DORT.
+  // ⚠️ UNE DISPENSE QUI NE CORRESPOND PLUS À RIEN EST UN MENSONGE QUI DORT — et « ne correspond
+  // plus » ne veut pas seulement dire « le fichier a disparu ». Une dispense pour un fichier que la
+  // sonde ne signalerait pas donne à la liste l'air de faire un travail qu'elle ne fait pas. Six
+  // des dix premières entrées écrites ici étaient dans ce cas : les workflows nomment le registre
+  // dans des expressions `${{ }}` ou des URL d'API, que `referencesLues` écarte déjà.
   const presents = new Set(suivis);
   for (const f of Object.keys(dispenses)) {
-    if (!presents.has(f)) soucis.push(`« ${f} » est dispensé et n'existe plus — retirez la dispense`);
+    if (!presents.has(f)) { soucis.push(`« ${f} » est dispensé et n'existe plus — retirez la dispense`); continue; }
+    let texte;
+    try { texte = lire(f); } catch { continue; }
+    if (![...referencesLues(f, texte)].length) {
+      soucis.push(`« ${f} » est dispensé et ne porte aucune référence « ${REGISTRE}/… » — la dispense ne couvre plus rien, retirez-la`);
+    }
   }
   return soucis;
 }

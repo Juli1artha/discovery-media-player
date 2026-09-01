@@ -113,7 +113,14 @@ const PLANCHERS = { appels: 20, fichiers: 3, tables: 4 };
 export function effondrement(mesure) {
   const sous = [];
   for (const [cle, mini] of Object.entries(PLANCHERS)) {
-    const n = cle === "tables" ? mesure.tables.length : mesure[cle];
+    // ⚠️ PAS DE BRANCHE SUR LE NOM DE LA CLÉ. Elle s'écrivait `cle === "tables" ? … .length : …`,
+    // et mesuré le 01/09 en aveuglant ce littéral : le plancher ne refusait plus QU'EXACTEMENT zéro
+    // table — une, deux ou trois passaient. La raison est une coercition : `[] < 4` vaut `true`
+    // (tableau vide → 0) mais `["a"] < 4` compare « a » à 4, donc `NaN < 4`, donc faux. Un plancher
+    // qui ne tient que dans le cas parfaitement vide ne tient pas : la panne qu'il existe pour
+    // attraper est une sonde qui trouve ENCORE quelque chose, pas une sonde qui ne trouve plus rien.
+    const brut = mesure[cle];
+    const n = Array.isArray(brut) ? brut.length : brut;
     if (n < mini) sous.push(`${cle} : ${n} trouvé(s), plancher ${mini} — la sonde ne trouve presque plus rien, elle vise à côté`);
   }
   return sous;
