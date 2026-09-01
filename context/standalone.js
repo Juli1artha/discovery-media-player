@@ -712,8 +712,58 @@ function createStandaloneContext(env = process.env) {
       // avec une SÉPARATION DE DOMAINE (préfixe distinct) — il est déjà requis par la fonctionnalité
       // qui produit ce hachage, ce qui évite une variable obligatoire de plus.
       ipHashSecret: String(env.PLAYER_IP_HASH_SECRET || env.PLAYER_PRESENCE_SECRET || ""),
+      retention: retentionDepuisEnv(env),
     },
   };
 }
 
-module.exports = { createStandaloneContext, creerLimites };
+/**
+ * La rétention, telle qu'un hôte AUTONOME peut la décider — et il ne le pouvait pas.
+ *
+ * ⚠️ CE FICHIER N'EXPOSAIT AUCUNE CLÉ DE RÉTENTION, ce qui rendait le balayage inatteignable pour
+ * quiconque consomme ce contexte tel quel. `server/retention.js` exige `config.retention.balayage
+ * === true`, et cet opt-in strict est juste : les fenêtres sont des décisions MÉTIER — ce qu'un
+ * conseiller peut encore prouver à un client — et une suppression ne doit agir que là où un
+ * exploitant l'a ÉCRITE. Mais un hôte autonome n'avait nulle part où l'écrire. Seuls ceux qui
+ * rédigent leur contexte à la main pouvaient armer la purge ; les autres accumulaient sans
+ * recours, et sans même savoir que le recours existait. Un opt-in dont la moitié du parc ne peut
+ * pas se saisir n'est pas un opt-in, c'est une indisponibilité.
+ *
+ * ⚠️ ET LES FENÊTRES VIENNENT AVEC, PAS SEULEMENT L'INTERRUPTEUR. N'exposer que `balayage`
+ * armerait la purge SUR NOS DÉFAUTS — exactement ce que le commentaire de `retention.js` décrit
+ * comme le mode de panne du second hôte, cette fois par une variable au lieu d'un oubli. Qui arme
+ * doit pouvoir décider ce qu'il arme.
+ *
+ * ⚠️ UNE CLÉ ABSENTE EST ABSENTE, JAMAIS `undefined`. `fenetresValidees` fusionne cet objet
+ * PAR-DESSUS les défauts : y poser `journauxMois: undefined` ferait échouer la validation et
+ * refuserait toute suppression chez un hôte qui a simplement armé sans régler les mois. La valeur
+ * n'entre donc que si la variable porte quelque chose.
+ *
+ * ⚠️ ET UNE VALEUR ILLISIBLE N'EST PAS CORRIGÉE ICI. `Number("abc")` vaut `NaN`, `"12.5"` n'est pas
+ * entier : le cœur les REFUSE en nommant la clé, avant le premier DELETE. La rattraper ici la
+ * rendrait silencieuse, et une purge est le dernier endroit où deviner.
+ */
+// ⚠️ ET LES QUATRE LECTURES SONT ÉCRITES EN CLAIR, PAS BOUCLÉES SUR UNE TABLE DE NOMS. La première
+// version faisait `env[TABLE[cle]]` — plus court, et refusé par `tools/env-lues.mjs` : un nom
+// d'environnement construit à l'exécution n'est trouvable par personne. Ni un `grep`, ni la garde
+// qui vérifie que chaque variable lue est documentée. La concision se paierait sur une variable
+// oubliée dans `docs/CONFIGURATION.md`, que rien ne rattraperait.
+function poserMois(out, cle, brut) {
+  const t = String(brut || "").trim();
+  // ⚠️ Absente = ABSENTE. `fenetresValidees` fusionne cet objet PAR-DESSUS les défauts : y poser
+  // `undefined` ferait échouer la validation et refuserait toute purge chez un hôte qui a
+  // simplement armé sans régler les mois.
+  if (t) out[cle] = Number(t);
+}
+
+function retentionDepuisEnv(env) {
+  const out = {};
+  if (String(env.PLAYER_RETENTION_SWEEP || "") === "1") out.balayage = true;
+  poserMois(out, "journauxMois", env.PLAYER_RETENTION_LOGS_MONTHS);
+  poserMois(out, "presentationsMois", env.PLAYER_RETENTION_PRESENTATIONS_MONTHS);
+  poserMois(out, "liensRevoquesMois", env.PLAYER_RETENTION_REVOKED_LINKS_MONTHS);
+  poserMois(out, "voixMois", env.PLAYER_RETENTION_VOICE_MONTHS);
+  return out;
+}
+
+module.exports = { createStandaloneContext, creerLimites, retentionDepuisEnv };
