@@ -482,6 +482,27 @@ forwarded re-shares of their own links included, because they caused those readi
 changes for a role you already answer *yes* to. If your table predates `list.all`, see the warning
 above: an unheard-of action answered *no* narrows this view rather than breaking it.
 
+⚠️ **`?contract=1&schema=1` now tells you what is still stored, not only what you may purge.**
+`retentionSweep` says the instance *can* purge; it says nothing about what has piled up. The card
+gains a `purge` block counting the rows that still carry a reader IP or a raw User-Agent:
+
+    "purge": { "borne": 1000, "sessionsIp": 0, "sessionsUa": 0, "vuesUa": 0, "vide": true }
+
+`vide` is the reading that matters: `true` means nothing of that legacy is left **on this
+instance's live rows** — the condition under which those columns can eventually be dropped —
+`false` means rows remain, and **`null` means at least one probe did not answer**. A count is
+`null` for the same reason: a failed probe must never read as a zero, because zero is the answer
+that authorises a deletion.
+
+The counts are **bounded** at `borne` rows and read one small column, so `1000` reads as *at least
+a thousand*, never as exactly. They run only under `&schema=1`, the mode where you have asked for
+the database.
+
+⚠️ **Why this exists at all:** our tables live in *your* database, and your audit enumerates *your*
+tables — a dependency's schema occupies a zone nobody's inventory visits. Two integrating hosts
+found 2361 rows still carrying these columns, and they found them because a third party asked a
+question about its own database, not because anything told them.
+
 ⚠️ **The reader IP is erased, and a direct query of your own will start seeing nothing.** The
 sessions table carried `ip` in the clear. `0.1.147` stops serving it — no player path reads it back,
 so nothing in this contract changes — stops writing it, and ships migration **0026**, which erases

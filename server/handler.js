@@ -801,6 +801,18 @@ async function handlerMesure(req, res) {
           ...(String(q.schema || "") === "1"
             ? await require("./schema").sonderTout()
             : require("./schema").etatDuSchema()) },
+        // ⚠️ CE QUI S'ACCUMULE, PAS SEULEMENT CE QU'ON PEUT PURGER. `retentionSweep` ci-dessus dit
+        // « je PEUX purger » ; il ne dit rien de ce qui est là. Nos tables vivent dans la base de
+        // l'hôte, et l'audit d'un hôte énumère SES tables : le schéma d'une dépendance occupe une
+        // zone que les inventaires de personne ne visitent. Deux hôtes ont trouvé 2361 lignes
+        // portant encore une adresse ou un agent brut — parce qu'un TIERS avait posé une question
+        // sur SA base, pas parce que quoi que ce soit le leur avait dit.
+        //
+        // Sous `&schema=1` seulement : c'est une lecture de la base, et sans le paramètre cette
+        // carte garde sa propriété de répondre quand plus rien ne répond.
+        ...(String(q.schema || "") === "1"
+          ? { purge: await require("./retention").resteDeLaPurge() }
+          : {}),
         // « L'hôte peut-il créer un lien en son nom propre ? » — configuré, pas seulement
         // possible. Un hôte qui oublie le secret reçoit un 401 qui ressemble à un droit
         // manquant ; ce booléen le lui dit sans qu'il ait à essayer.

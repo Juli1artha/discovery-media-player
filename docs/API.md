@@ -325,8 +325,8 @@ estimated:
 
 | | |
 |---|---|
-| Call sites | **70**†, in **7**† files |
-| Tables | **11**†, plus **6**† call sites that build their path at run time — their tables are named literally by the caller, and are counted above |
+| Call sites | **71**†, in **7**† files |
+| Tables | **11**†, plus **7**† call sites that build their path at run time — their tables are named literally by the caller, and are counted above |
 | Verbs | `GET`, `POST`, `PATCH`, one `HEAD`, and `DELETE` only in `server/retention.js` — every one bounded by an age filter (`docs/RETENTION.md`) |
 | Embedded selects (`select=*,other(*)`) | **0** |
 | `or=()` | **0**† — and it is a *rule*, not an observation: `ci.yml` refuses `or=(` and `and=(` in `server/*.js`, because nested joins and boolean trees are what turn a port from a translation into a rewrite. The cursor of `docshare.sessionsByRecipient` needs two coordinates and expresses them as two flat filters — `last_at=lte.T` plus `session_id=not.in.(…)` — which reads `WHERE last_at <= T AND session_id NOT IN (…)` |

@@ -12,6 +12,24 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- **`?contract=1&schema=1` now says what is still stored, not only what may be purged.** A `purge`
+  block counts the rows that still carry a reader IP or a raw User-Agent, per table, with a
+  three-state `vide`: `true` (nothing of that legacy is left on this instance's live rows — the
+  condition under which those columns can eventually be dropped), `false` (rows remain), and
+  **`null` when a probe did not answer** — a failed probe must never read as a zero, because zero
+  is the answer that authorises a deletion. **Why it exists:** our tables live in the *host's*
+  database, and a host's audit enumerates *its own* tables — a dependency's schema occupies a zone
+  nobody's inventory visits. Two integrating hosts found 2361 rows still carrying these columns,
+  and found them because a third party asked a question about its own database, not because
+  anything told them. `retentionSweep` said "I *can* purge"; nothing said what had piled up. Counts
+  are bounded and read one small column, so the bound reads as *at least*, never as exactly; and
+  the cost runs opposite to intuition — cheap while much remains, a full scan once nothing does —
+  which is stated in the code rather than hidden, the expensive case being the terminal one where
+  the counter has finished its work.
+
+
 ## [0.1.147] — 2026-09-01
 
 > ⚠️ **`0.1.146` n'existera jamais, et voici pourquoi** — pour que personne n'ait à le deviner en
