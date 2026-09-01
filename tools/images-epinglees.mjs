@@ -195,6 +195,32 @@ export function majeurAnnonce(reference) {
   return m ? Number(m[1]) : null;
 }
 
+/**
+ * ⚠️ LE TÉMOIN DE `majeurAnnonce` — DÉRIVÉ, PARCE QUE CE DÉPÔT DOIT CONTENIR UNE ÉTIQUETTE QUI
+ * NOMME SA MAJEURE. Le `Dockerfile` part de `node:24-alpine@sha256:…`, deux fois.
+ *
+ * ⚠️ ET SANS LUI, LA CI PRONONCE UNE PHRASE FAUSSE. Le job `docker` demande à l'image ce qu'elle
+ * embarque, puis appelle `ecartMajeur` : si `majeurAnnonce` ne lit plus rien, `majeurAttendu` rend
+ * `null`, `ecartMajeur` rend `null`, et la course imprime « étiquette et condensat désignent la
+ * même majeure de Node » sans avoir comparé quoi que ce soit. C'est mot pour mot la forme du
+ * défaut que `shell-des-workflows` a payée — un vert qui affirme un travail non fait — et la
+ * raison même de cette vérification est qu'un condensat peut mentir à son étiquette.
+ *
+ * Mesuré le 01/09 : aveuglé, `/^node:(\d+)[.-]/` laissait `images-epinglees` VERT (« 3 référence(s)
+ * externe(s), toutes épinglées ») parce que cette garde ne lit pas les majeures. Elle les lit
+ * maintenant, et c'est elle qui tourne à chaque course, pas seulement le job `docker`.
+ *
+ * ⚠️ UN SEUL SUFFIT, ET C'EST VOULU. `.zap/Dockerfile` part de `ghcr.io/zaproxy/zaproxy:2.17.0`,
+ * dont l'étiquette ne nomme aucune majeure de Node — exiger que TOUTE référence en porte une
+ * accuserait un fichier parfaitement sain.
+ */
+export const referencesAvecMajeure = (textes) =>
+  textes.flatMap(([f, t]) => froms(t).filter((i) => !i.interne)
+    .map((i) => ({ fichier: f, reference: i.reference, majeur: majeurAnnonce(i.reference) })))
+    .filter((x) => x.majeur !== null);
+
+export const PLANCHER_MAJEURES = 1;
+
 /** La majeure attendue pour l'image finale — la DERNIÈRE étape est celle qui s'exécute. */
 export function majeurAttendu(txt) {
   const externes = froms(txt).filter((f) => !f.interne);
@@ -257,9 +283,16 @@ if (estExecuteDirectement(import.meta.url)) {
     }
     const soucis = textes.flatMap(([f, t]) => ecartsEpinglage(t, f));
     if (soucis.length) return violation(soucis);
+    // ⚠️ LE TÉMOIN DE LA LECTURE D'ÉTIQUETTE, ICI PLUTÔT QUE DANS LE JOB `docker` — celui-ci ne
+    // tourne qu'après une construction d'image, et sa phrase verte est justement celle qui ment
+    // quand la sonde est aveugle.
+    const lues = referencesAvecMajeure(textes);
+    if (lues.length < PLANCHER_MAJEURES) {
+      return inconclusif(`aucune référence externe ne laisse lire la majeure qu'elle annonce (${externes.map((i) => i.reference.split("@")[0]).join(", ")}) — le Dockerfile part pourtant d'une étiquette qui en nomme une ; c'est la sonde qui ne la lit plus, et le job « docker » dirait alors « étiquette et condensat désignent la même majeure » sans avoir rien comparé`);
+    }
     const ecartes = process.argv.slice(2).length ? [] : ecartesDuPerimetre();
     return conforme(
-      `images de base : ${externes.length} référence(s) externe(s) dans ${fichiers.length} Dockerfile(s), toutes épinglées sur un condensat`,
+      `images de base : ${externes.length} référence(s) externe(s) dans ${fichiers.length} Dockerfile(s), toutes épinglées sur un condensat — ${lues.length} annonce(nt) une majeure lisible (${lues.map((x) => `${x.reference.split("@")[0]} → ${x.majeur}`).join(", ")})`,
       ecartes.length ? [`écarté du périmètre comme document : ${ecartes.join(", ")} — si l'un d'eux est un vrai Dockerfile, renommez-le`] : [],
     );
   }));

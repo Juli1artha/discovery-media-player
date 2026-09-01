@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import { liensRelatifs, cibleResolue, liensMorts, liensLus, temoinsDeForme, PLANCHER_LIENS } from "../liens-des-documents.mjs";
+import { liensRelatifs, cibleResolue, liensMorts, liensLus, temoinsDeForme, PLANCHER_LIENS, documentsDe } from "../liens-des-documents.mjs";
 import { fichiersDuTarball } from "../inventaire-tarball.mjs";
 
 describe("relever les liens", () => {
@@ -96,5 +96,28 @@ describe("⚠️ sur le paquet réel, la sonde reconnaît encore des liens", () 
   it(`au moins ${PLANCHER_LIENS} lien relatif dans les documents publiés`, () => {
     const vus = temoinsDeForme(fichiersDuTarball());
     expect(vus, "2 le 31/08 (README → LICENSE, README → LICENSE-MIT)").toBeGreaterThanOrEqual(PLANCHER_LIENS);
+  });
+});
+
+// ⚠️ « QUELS FICHIERS SONT DES DOCUMENTS » S'ÉCRIVAIT DEUX FOIS : une fois pour choisir ce qu'on
+// ouvre, une fois pour dire dans combien on a cherché. Mesuré le 01/09 en aveuglant la seconde :
+// « 2 lien(s) relatif(s) reconnu(s) dans 0 document(s) publié(s) », vert. Reconnaître deux liens
+// dans zéro document est une phrase qu'aucun relecteur ne peut vérifier.
+describe("⚠️ le juge et le compteur choisissent les documents avec la MÊME sonde", () => {
+  it("tout document ouvert par `liensLus` vient de `documentsDe`", () => {
+    const inventaire = ["a.md", "b.MD", "c.js", "LICENSE", "d.markdown"];
+    const lire = () => "[x](y)\n";
+    const ouverts = [...new Set([...liensLus(inventaire, lire)].map((l) => l.document))];
+    expect(ouverts).toEqual(documentsDe(inventaire));
+  });
+
+  it("⚠️ et un compte de documents à zéro ne peut plus accompagner un compte de liens non nul", () => {
+    const inventaire = ["a.md"];
+    const lire = () => "[x](LICENSE)\n";
+    expect(documentsDe(inventaire).length).toBe(1);
+    expect([...liensLus(inventaire, lire)].length).toBe(1);
+    // Une sonde aveugle rend les deux à zéro ensemble — c'est le plancher qui refuse alors.
+    expect(documentsDe(["a.txt", "b.js"]).length).toBe(0);
+    expect([...liensLus(["a.txt", "b.js"], lire)].length).toBe(0);
   });
 });

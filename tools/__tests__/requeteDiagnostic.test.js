@@ -155,3 +155,40 @@ describe("le bloc réel de supabase/init.sql", () => {
     expect(reel.sql).toContain("to_regrole");
   });
 });
+
+// ⚠️ LES DEUX PLANCHERS EXISTANTS NE VOYAIENT PAS LE CAS LE PLUS SIMPLE. Mesuré le 01/09 en
+// aveuglant `sansPrefixe` : « \bselect\b » matche dans « -- select … », la dernière ligne finit
+// toujours par « ; », et l'outil rendait sur sa sortie standard une requête dont chaque ligne
+// commençait par « -- ». La CI donne cette sortie à psql : zéro instruction exécutée, zéro ligne
+// rendue, et le job qui vérifie les politiques d'accès au vert.
+describe("⚠️ le dépouillage doit avoir EU LIEU, pas seulement avoir été appelé", () => {
+  const bloc = (corps) => `-- ${OUVRANTE}\n${corps}-- ${FERMANTE}\n`;
+
+  it("refuse un bloc dont une ligne n'a pas perdu son préfixe de commentaire", () => {
+    // Une ligne SANS `--` est ce que rend une sonde aveugle : `sansPrefixe` la laisse identique.
+    // Les deux planchers d'avant sont satisfaits — il y a « select », et ça finit par « ; ».
+    const r = extraire(bloc("  select 1;\n"));
+    expect(r.sql, "une requête que le dépouillage n'a pas touchée ne doit jamais sortir d'ici").toBeUndefined();
+    expect(r.raison).toMatch(/n'ont pas perdu leur préfixe de commentaire/);
+    expect(r.raison, "et elle NOMME la première ligne fautive").toMatch(/select 1;/);
+  });
+
+  it("⚠️ et les deux planchers d'avant laissaient bien passer ce cas — sinon ce contrôle serait vide", () => {
+    const commente = "--   select 1;";
+    expect(/\bselect\b/i.test(commente), "le plancher « contient un select » est satisfait").toBe(true);
+    expect(commente.trim().endsWith(";"), "le plancher « finit par ; » est satisfait").toBe(true);
+  });
+
+  it("une ligne vide dans le bloc n'est pas une ligne intacte", () => {
+    const r = extraire(bloc("--   select 1\n--\n--   from t;\n"));
+    expect(r.raison).toBeUndefined();
+    expect(r.sql, "l'indentation interne est conservée, c'est ce qui rend la requête lisible")
+      .toBe("select 1\n\n  from t;");
+  });
+
+  it("le bloc réel de supabase/init.sql perd bien tous ses préfixes", () => {
+    const r = extraire(readFileSync(SOURCE, "utf8"));
+    expect(r.raison).toBeUndefined();
+    expect(r.sql.split("\n").filter((l) => l.trim().startsWith("--"))).toEqual([]);
+  });
+});

@@ -66,8 +66,34 @@ export function extraire(texte) {
   const [fin] = fermetures;
   if (fin <= debut) return { raison: `${SOURCE} : la marque fermante précède l'ouvrante — bloc croisé` };
 
-  const sql = lignes
-    .slice(debut + 1, fin)
+  const bloc = lignes.slice(debut + 1, fin);
+
+  // ⚠️ LE DÉPOUILLAGE DOIT AVOIR EU LIEU, ET ÇA SE VÉRIFIE SANS SECONDE EXPRESSION. Le bloc est
+  // écrit en COMMENTAIRES SQL : chaque ligne non vide y porte son préfixe, donc `sansPrefixe` doit
+  // changer chacune d'elles. Si elle n'en change aucune, la requête rendue est du commentaire de
+  // bout en bout.
+  //
+  // ⚠️ ET LES DEUX PLANCHERS QUI SUIVENT NE LE VOIENT PAS. Mesuré le 01/09 en aveuglant
+  // `sansPrefixe` : `\bselect\b` matche dans « -- select … », la dernière ligne finit toujours
+  // par « ; », et l'outil imprimait « requête de diagnostic extraite : 24 ligne(s) » puis rendait
+  // sur sa sortie standard une requête dont CHAQUE ligne commence par « -- ». La CI redirige cette
+  // sortie dans un fichier qu'elle donne à `psql` : la base exécute zéro instruction, ne rend zéro
+  // ligne, et le job qui vérifie les politiques d'accès passe au vert sans avoir rien demandé.
+  // C'est la forme exacte du défaut que ce dépôt traque — un vert qui affirme un travail non fait —
+  // sur la garde dont le sujet est le contrôle d'accès.
+  //
+  // On compare AVANT et APRÈS plutôt que de reconnaître un préfixe une seconde fois : une règle
+  // écrite deux fois ne tombe pas deux fois, et c'est précisément ce qu'on cherche à éviter ici.
+  const intactes = bloc.filter((l) => l.trim() && sansPrefixe(l) === l);
+  if (intactes.length) {
+    return {
+      raison: `${SOURCE} : ${intactes.length} ligne(s) du bloc n'ont pas perdu leur préfixe de commentaire — ` +
+        `la requête rendue serait du commentaire, que la base exécuterait sans rien faire et sans rien dire ` +
+        `(première : « ${intactes[0].trim().slice(0, 60)} »)`,
+    };
+  }
+
+  const sql = bloc
     .map(sansPrefixe)
     .join("\n")
     .trim();
