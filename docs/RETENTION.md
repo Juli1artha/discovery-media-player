@@ -35,11 +35,11 @@ Purpose: reading statistics for a document that was sent out. **Purge: 13 months
 |---|---|---|
 | `commercial_doc_views.recipient_email` | who the read is attributed to | purged with the row, 13 months after `at` |
 | `commercial_doc_views.session_id` | correlates the views of one session | same |
-| `commercial_doc_views.ua` | **emptied, and never written again** | ⚠️ **Nothing is stored here any more** (migration **0027**). The clearest case of the three: unlike the sessions table, this one has no `device`, `os` or `browser` — it derived *nothing* from the string, wrote it, and no query in this player has ever read it back. A browser fingerprint kept for thirteen months with no reader at all, unnoticed because the question had never been asked table by table |
+| `commercial_doc_views.ua` | **emptied from the next release** | ⚠️ Emptied by migration **0027**, not in any published version yet. The clearest case of the three: unlike the sessions table, this one has no `device`, `os` or `browser` — it derived *nothing* from the string, wrote it, and no query in this player has ever read it back. A browser fingerprint kept for thirteen months with no reader at all, unnoticed because the question had never been asked table by table |
 | `commercial_doc_sessions.recipient_email` | session attribution | purged with the row, 13 months after `last_at` |
 | `commercial_doc_sessions.session_id` | session identifier | same |
-| `commercial_doc_sessions.ip` | **emptied, and never written again** | ⚠️ **Nothing is stored here any more.** It held the reader's IP address in the clear and was the most sensitive datum in this schema. `0.1.146` stopped **serving** it; `0.1.147` stops **writing** it and migration **0026** erases what thirteen months of journal still carried. The column itself survives for now — dropping it would break a host that applies migrations before deploying (see *Purging the reader IP* below); its removal is a later release. The asymmetry this table used to note ends here, upward: a presentation attendee's address is a salted HMAC, a reader's is now nothing at all |
-| `commercial_doc_sessions.ua` | **emptied, and never written again** | ⚠️ **Nothing is stored here any more.** `0.1.146` stopped serving it; `0.1.147` stops writing it and migration **0027** erases what was there. `device`, `os` and `browser` are derived from it *at write time* and are what a reading record carries — so the raw string had no reader left, and "we might re-parse it one day" does not justify thirteen months of a fingerprint kept for nobody. Same treatment and same reason as `ip`: emptied now, column removed in a later release |
+| `commercial_doc_sessions.ip` | **emptied from the next release** | ⚠️ It holds the reader's IP address in the clear and is the most sensitive datum in this schema. **The next release** stops **serving** it, stops **writing** it, and ships migration **0026**, which erases what thirteen months of journal still carry. ⚠️ **Not in any published version yet** — on everything on the registry today it is still written and still served. The column itself survives for now — dropping it would break a host that applies migrations before deploying (see *Purging the reader IP* below); its removal is a later release. The asymmetry this table used to note ends here, upward: a presentation attendee's address is a salted HMAC, a reader's is now nothing at all |
+| `commercial_doc_sessions.ua` | **emptied from the next release** | ⚠️ **The next release** stops serving it, stops writing it, and ships migration **0027**, which erases what is there. ⚠️ **Not in any published version yet.** `device`, `os` and `browser` are derived from it *at write time* and are what a reading record carries — so the raw string had no reader left, and "we might re-parse it one day" does not justify thirteen months of a fingerprint kept for nobody. Same treatment and same reason as `ip`: emptied now, column removed in a later release |
 | `commercial_doc_sessions.num_pages` / `commercial_doc_sessions.pages_time` | page-by-page reading behaviour | same |
 
 ## Reading logs (internal team)
@@ -137,9 +137,20 @@ hour; only this window bounds the **duration**.
 
 ## Purging the reader IP and User-Agent (migrations 0026 and 0027)
 
+> ⚠️ **NONE OF THIS IS IN A PUBLISHED VERSION YET — check before you plan around it.** Both
+> migrations and the code that stops writing these columns are on `main` and unreleased. Every
+> version on the registry today **still writes and still serves** the IP and the raw User-Agent, and
+> ships migrations only up to `0024`. Run `npm view discovery-media-player version` and compare it
+> against the release notes; if you were asked to apply 0026 or 0027, the release has to come first,
+> and it brings both the migrations and the code that stops writing.
+>
+> This paragraph exists because the opposite was written here, in the past tense, naming two version
+> numbers that had never been published. An integrating host caught it by unpacking the version the
+> registry actually serves, after being asked to apply migrations that were in no package.
+
 ⚠️ **Read this before upgrading if you have ever queried `commercial_doc_sessions.ip` directly.**
-It is now always `NULL`. `0.1.146` had already stopped serving it — no player path reads it back —
-and `0.1.147` stops writing it, so nothing in the player changes; a report or dashboard of your own
+The next release stops serving it — no player path reads it back — stops writing it, and ships the
+migration that empties it, so nothing in the player changes; a report or dashboard of your own
 that reads values from it starts seeing empty ones. This notice exists so that it is announced
 *before*, not explained afterwards.
 
@@ -163,9 +174,15 @@ end on a populated database: 200 rows kept, 200 addresses gone after a routine v
 replayable with no further effect. **The erasure is therefore complete today.** What is deferred is
 the shape of the schema, not the data.
 
+**When the columns are removed, and how to know the moment has come.** Not until **every deployed
+host runs a version that no longer writes them** — the release carrying 0026 and 0027, or later.
+Until then a `DROP` of any of the three would fail every session and view write of a host that
+applies migrations before deploying. The check is not a date: it is whether the oldest player version
+still in service is at or past that release.
+
 **Why the column itself survives, for now.** A migration here must be safe to apply *while the
 previous version of the player is running* — that rule is what makes the deployment order harmless,
-and it is enforced by a test. `0.1.146` still writes `ip`, and PostgREST rejects a write carrying an
+and it is enforced by a test. **Every published version writes `ip`**, and PostgREST rejects a write carrying an
 unknown column: dropping it today would fail **every** session write of a host that applies
 migrations before deploying, with an error naming a column rather than a version. The column is
 removed in a later release, once no supported version writes it. Until then it exists, is always
@@ -179,8 +196,8 @@ column is itself a retention act, and earlier copies follow the host's backup po
 concrete instance. A host that must attest a **complete** purge expires or rewrites its earlier
 backups; no migration can do that on its behalf.
 
-**The raw User-Agent goes the same way (0027), on both tables.** `0.1.146` stopped serving it,
-`0.1.147` stops writing it, and 0027 erases what was there — same shape, same measurement, same
+**The raw User-Agent goes the same way (0027), on both tables.** The next release stops serving it,
+stops writing it, and 0027 erases what is there — same shape, same measurement, same
 deferred column removal. `device`, `os` and `browser` are derived from the string *at write time* and
 are what a reading record carries, so the raw value had no reader; "we might re-parse it one day" is
 not a reason to keep a fingerprint for thirteen months. On `commercial_doc_views` the case is

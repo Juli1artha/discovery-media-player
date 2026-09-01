@@ -354,6 +354,20 @@ jobs:
         if: matrix.node == '22'
         run: node tools/changelog.mjs
 
+      # ⚠️ UN NUMÉRO DE VERSION ÉCRIT À LA MAIN EST UNE AFFIRMATION SUR LE REGISTRE, dans un fichier
+      # que rien ne relie au registre. Le 01/09, quatre documents lus par les intégrateurs portaient
+      # DIX-HUIT affirmations au passé sur deux versions jamais publiées : un hôte a cru l'arrêt
+      # d'écriture livré et s'est vu demander d'appliquer des migrations qui n'étaient dans aucun
+      # paquet. C'est lui qui l'a mesuré, en dépaquetant la version servie — pas nous.
+      #
+      # La règle se dérive de `package.json`, que `docs/RELEASING.md` tient déjà égal au tag et à la
+      # section de tête du CHANGELOG : entre deux sorties il EST la dernière version publiée, et
+      # pendant la PR de sortie il monte dans le même commit que la section qui la décrit. La
+      # fenêtre se referme donc d'elle-même, sans exception à écrire.
+      - name: No document announces a version that does not exist
+        if: matrix.node == '22'
+        run: node tools/versions-annoncees.mjs
+
       # ⚠️ `engines` ANNONÇAIT `>=22` ET `pdfjs-dist` EXIGEAIT `>=22.13.0` (mesuré le 25/08). Entre
       # node 22.0 et 22.12, le paquet déclarait donc que tout allait bien et faisait tourner son
       # moteur de rendu — sa SEULE dépendance de production — sur une version que ce moteur déclare
