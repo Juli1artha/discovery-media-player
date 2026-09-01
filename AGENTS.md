@@ -786,6 +786,75 @@ Both times the instrument's assumption became a fact about the code, and both ti
 kind of fact the exercise was looking for. **When a measurement excludes something, ask whether the
 thing is unmeasurable or merely outside what you decided to measure.**
 
+### The probes that are not regex-shaped, and why they held up worse
+
+Three sections of this page have ended on the same admission: *probes that are not regex-shaped —
+an external analyser, an AST visit, a string predicate — are outside this sweep entirely.* Written
+as a limit it was honest, and it named a tool's assumption as a property of the code. **The operator
+was missing, not the method.** Three forms, lifted by the AST and blinded one at a time: a literal
+passed to `.includes` / `.startsWith` / `.endsWith` / `.indexOf`, replaced by a string no source
+contains; a literal compared with `===`, the same; a type guard `ts.isXxx(...)`, replaced by
+`false`.
+
+⚠️ **152 non-regex probes, and they hold up worse than the regexes: 90 left their guard green,
+against 55 of 143 for the regular expressions.** The area a repository declares uncovered is the
+area where its defects accumulate — not because they are harder to see, but because nothing has
+been looking.
+
+Only **five** had a live subject, and the discriminator was cheap: does blinding change the
+*sentence the guard prints*? If the summary is identical, nothing in this tree exercises that
+probe. That question separated five from twenty-nine in one pass, and it is the first thing to ask
+of any survivor list.
+
+⚠️ **The worst of the five came from floors this page told me to set.** `surface-publique` writes
+half its subpaths as bare strings and half as condition objects. Blind the `typeof chemin ===
+"string"`:
+
+    sain   7 sous-chemin(s) public(s), 7 module(s) chargé(s), 75 symbole(s) relevé(s)
+    muté   7 sous-chemin(s) public(s), 3 module(s) chargé(s), 18 symbole(s) relevé(s)   VERT
+
+Four public modules out of seven and fifty-seven symbols out of seventy-five stopped being read for
+*no internal leaks*, and the guard exited 0. **The two floors placed there for exactly this case —
+three modules, ten symbols — passed three and eighteen.** They had been set to refuse the *empty*,
+and a half-blind probe is not empty. The answer is not to raise the floor to seven, which is the
+day's reading and which the manifest is allowed to lower; it is to require that a **declared**
+subpath have a **readable** target. The `continue` that skipped the others was mute: not loaded, not
+counted, not named.
+
+⚠️ **And a floor can hold in the empty case and nowhere else.** `surface-base` compared its
+measurement to its floor through a branch on the key *name* — `cle === "tables" ? mesure.tables.length
+: mesure[cle]`. Blinded, the floor refused **exactly zero** tables; one, two and three passed. The
+reason is a coercion: `[] < 4` is `true` (empty array → 0) while `["a"] < 4` compares `"a"` to 4,
+so `NaN < 4`, so false. **The failure a floor exists to catch is a probe that still finds
+something** — one table out of four — not a probe that finds nothing. It held only where it did not
+matter.
+
+⚠️ **Three lessons about writing the tests, each found by measurement rather than by reading.**
+
+- A perimeter written as *the list of what to look at* had already been named a defect on this page,
+  and `image-documentee` still carried one: blind its `docker-compose.yml` half and a document
+  leaves the perimeter — 5 references in 32 documents become 4 in 31, green. Inverted to a list of
+  what is *excused*, with a reason each.
+- My first witness for that inversion asked `texte.includes(REGISTRE)` — **a second recogniser of
+  what `referencesLues` already recognises**, which is the defect being removed, reintroduced while
+  removing it. CodeQL flagged it from another angle (a substring does not decide a host:
+  `ghcr.io.exemple.com` satisfies it). Both roads lead to the same fix. And making it use the real
+  probe showed that **six of the ten exemptions I had just written covered nothing** — the workflows
+  name the registry in `${{ }}` expressions and API URLs the probe already skips.
+- My first two cases for the alias-binding guards named their variable `env` — and the alias set is
+  **seeded with `env`** by repository convention, so the case never reached the binding code it
+  claimed to exercise. Measured: the mutants survived the tests written for them. **A witness that
+  resembles its subject does not test it.**
+
+⚠️ **Twenty are still seen by nobody, and they are named rather than counted as passed.** Eight are
+perimeter exclusions (`__tests__`, `.generated.js`, `node_modules`) whose blinding *widens* the
+scan — the safe direction; four are the relative-reference forms of `actions-versions`, which no
+workflow here uses; three are `typeof x === "string"` checks on values this tree always supplies as
+strings; the rest are internal state strings and message text. Two things remain wholly outside even
+this sweep: an **external analyser** (`bash -n`, `npm pack`, `git`), whose failure mode is the
+swallowed error rather than a blinded literal, and the **numeric and structural** decisions — an
+index, a comparison operator, a boundary — that neither operator touches.
+
 ## A derived perimeter is proven by a file that appears, not by a count
 
 **Twenty-three guards take their perimeter from the disk** (`git ls-files`, `readdirSync`,
