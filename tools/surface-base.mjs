@@ -74,6 +74,24 @@ export function compterIn(fichiers) {
   return fichiers.reduce((n, f) => n + [...sourceUtile(f.texte).matchAll(/in\.\(/g)].length, 0);
 }
 
+/**
+ * Les `or=(…)` du CODE — le document annonçait ZÉRO, à la main.
+ *
+ * ⚠️ CE NOMBRE A ÉTÉ FAUX AVANT D'ÊTRE MESURÉ, ET C'EST CE QUI L'A FAIT ENTRER ICI. La ligne
+ * « `or=()`, `and=()`, `offset=` | **0** » ne portait pas le marqueur † : elle était vraie le jour
+ * où elle a été écrite, et rien ne la relisait. Le premier curseur de pagination l'a rendue fausse
+ * dans le même commit qui l'a laissée à zéro — un `or=(last_at.lt.…,and(last_at.eq.…,…))` est
+ * exactement ce qu'elle disait absent. Une garde voisine mesurait quatre lignes du tableau et pas
+ * celle-là ; le lecteur qui pèse un portage ne pouvait pas savoir laquelle était tenue.
+ *
+ * Un `or=` n'est pas une faute : c'est la seule façon d'écrire un curseur à deux coordonnées, et un
+ * curseur à une seule coordonnée perd les lignes qui partagent un horodatage. Ce qui est fautif est
+ * de l'annoncer absent.
+ */
+export function compterOr(fichiers) {
+  return fichiers.reduce((n, f) => n + [...sourceUtile(f.texte).matchAll(/[?&]or=\(/g)].length, 0);
+}
+
 /** Ce que `docs/API.md` ANNONCE, lu à la même place que le lecteur le lit. */
 export function annonces(markdown) {
   const nombre = (motif) => {
@@ -91,6 +109,7 @@ export function annonces(markdown) {
     tables: nombre(/\| Tables \| \*\*(\d+)\*\*†/),
     dynamiques: nombre(/\| Tables \|.*?plus \*\*(\d+)\*\*† call sites/),
     in: nombre(/\| `in\.\(…\)` \| \*\*(\d+)\*\*†/),
+    or: nombre(/\| `or=\(\)` \| \*\*(\d+)\*\*†/),
     legende: /† \*\*Recomputed from the code/.test(markdown),
   };
 }
@@ -126,6 +145,23 @@ export function effondrement(mesure) {
   return sous;
 }
 
+/**
+ * Les chiffres que le document et le code doivent se dire l'un à l'autre.
+ *
+ * ⚠️ UNE SEULE LISTE, PARCE QUE LE VERT LES COMPTE. La phrase verte annonçait « les cinq chiffres »
+ * en toutes lettres, à côté d'une comparaison qui en faisait cinq : ajouter la sixième aurait
+ * laissé la phrase mentir dans le commit même qui la dépasse. Le compte descend maintenant de la
+ * liste qui décide.
+ */
+export const COMPAREES = [
+  ["appels", (m) => m.appels, "les sites d'appel"],
+  ["fichiers", (m) => m.fichiers, "les fichiers qui en portent"],
+  ["tables", (m) => m.tables.length, "les tables atteintes"],
+  ["dynamiques", (m) => m.dynamiques.length, "les chemins construits à l'exécution"],
+  ["in", (m) => m.in, "les « in.(…) »"],
+  ["or", (m) => m.or, "les « or=(…) »"],
+];
+
 export function ecarts(mesure, dit) {
   const out = [];
   const cmp = (cle, reel, libelle) => {
@@ -135,11 +171,7 @@ export function ecarts(mesure, dit) {
       out.push(`docs/API.md annonce ${dit[cle]} pour ${libelle}, le code en compte ${reel}`);
     }
   };
-  cmp("appels", mesure.appels, "les sites d'appel");
-  cmp("fichiers", mesure.fichiers, "les fichiers qui en portent");
-  cmp("tables", mesure.tables.length, "les tables atteintes");
-  cmp("dynamiques", mesure.dynamiques.length, "les chemins construits à l'exécution");
-  cmp("in", mesure.in, "les « in.(…) »");
+  for (const [cle, lire, libelle] of COMPAREES) cmp(cle, lire(mesure), libelle);
   // ⚠️ UN MARQUEUR SANS LÉGENDE NE MARQUE RIEN. Le signe ne vaut que par la phrase qui dit ce
   // qu'il promet — et surtout par celle qui dit ce que son ABSENCE veut dire ailleurs.
   if (!dit.legende) out.push("docs/API.md ne porte plus la légende du marqueur † — le signe ne dit plus ce qu'il promet, ni ce que son absence veut dire dans les autres documents");
@@ -156,7 +188,7 @@ export function fichiersServeur(racine = RACINE) {
 if (estExecuteDirectement(import.meta.url)) {
   conclure(tenter(() => {
     const fichiers = fichiersServeur();
-    const mesure = { ...mesurer(fichiers), in: compterIn(fichiers) };
+    const mesure = { ...mesurer(fichiers), in: compterIn(fichiers), or: compterOr(fichiers) };
     // ⚠️ LE PLANCHER D'ABORD, ET IL REND « NON CONCLUANT » — PAS « VIOLATION ». Comparer un relevé
     // vide à un document ne prouve rien, et un accord fortuit sur zéro serait le seul cas où cette
     // garde se tairait en ayant tout raté. Mais l'auteur d'une branche n'y est pour rien : ce qui
@@ -166,9 +198,14 @@ if (estExecuteDirectement(import.meta.url)) {
     const dit = annonces(readFileSync(join(RACINE, "docs", "API.md"), "utf8"));
     const pb = ecarts(mesure, dit);
     if (pb.length) return violation(pb);
+    // ⚠️ LE NOMBRE DE CHIFFRES SE COMPTE, IL NE S'ÉCRIT PAS. La phrase disait « les cinq chiffres »
+    // en toutes lettres ; ajouter une sixième mesure l'aurait laissée mentir dans le commit même qui
+    // la dépasse — la forme exacte du défaut que cette garde existe pour empêcher, dans son propre
+    // vert. `COMPAREES` est la liste que `ecarts` parcourt : le compte en descend.
     return conforme(`surface base : ${mesure.appels} appels dans ${mesure.fichiers} fichiers, `
-      + `${mesure.tables.length} tables, ${mesure.dynamiques.length} chemins dynamiques, ${mesure.in} « in.(…) » `
-      + "— docs/API.md dit ce que le code fait, les cinq chiffres et pas deux sur cinq");
+      + `${mesure.tables.length} tables, ${mesure.dynamiques.length} chemins dynamiques, `
+      + `${mesure.in} « in.(…) », ${mesure.or} « or=(…) » `
+      + `— docs/API.md dit ce que le code fait, les ${COMPAREES.length} chiffres et pas quatre sur ${COMPAREES.length}`);
   }));
 }
 

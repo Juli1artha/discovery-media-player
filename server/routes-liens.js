@@ -6,7 +6,7 @@
 const { adresseAppelant } = require("./appelant");
 const { jsonPour, repondreJson, etiquetteRoute } = require("./reponses.js");
 const { estConflit } = require("./erreurs-base.js");
-const { createShare, createReshare, sendReshareEmail, revokeShare, setShareAuth, listSharesForDoc, listSessionsForDoc, internalStatsForDoc, cleIdempotence, getShareBySlug, logView, upsertSession, upsertInternalSession, overview: docOverview } = require("./shares");
+const { createShare, createReshare, sendReshareEmail, revokeShare, setShareAuth, listSharesForDoc, listSessionsForDoc, listSessionsForRecipient, internalStatsForDoc, cleIdempotence, getShareBySlug, logView, upsertSession, upsertInternalSession, overview: docOverview } = require("./shares");
 const { SESSION_QUOTA_PER_HOUR, VIEW_QUOTA_PER_HOUR } = require("./shared.generated.js");
 
 let PLAYER = null;
@@ -203,6 +203,28 @@ async function traiter(req, res, body, slug) {
           const toutVoir = await PLAYER.identity.canManageShares(u, "list.all");
           const sessions = await listSessionsForDoc(String(body.docId || ""), toutVoir ? null : u.email);
           return jd(200, { ok: true, sessions, scope: toutVoir ? "all" : "mine" });
+        }
+        if (body.action === "docshare.sessionsByRecipient") {
+          // ⚠️ MÊME PORTÉE QUE `list` ET `sessions`, ET C'EST ICI QU'ELLE COMPTE LE PLUS : cette
+          // action traverse TOUS les documents. Sans la borne, un membre lirait l'historique complet
+          // d'une personne à qui un collègue a envoyé quelque chose — la fuite qu'on vient de fermer,
+          // en plus large.
+          const email = String(body.email || "").trim();
+          if (!email) return jd(400, { ok: false, error: "email requis" });
+          const toutVoir = await PLAYER.identity.canManageShares(u, "list.all");
+          const { sessions, curseur } = await listSessionsForRecipient(email, {
+            owner: toutVoir ? null : u.email,
+            // `depuis` est facultatif : sans lui, la fenêtre analytique. La fiche qui promet tout
+            // l'historique le demande explicitement, et le dit donc à l'hôte.
+            depuis: body.since ? String(body.since) : null,
+            apres: body.cursor ? String(body.cursor) : null,
+            limite: body.limit,
+          });
+          // ⚠️ `cursor: null` EST LA FIN, PAS LA LONGUEUR DE LA PAGE. Sous portée restreinte, une
+          // page peut être plus courte que `limit` sans être la dernière : le filtre s'applique
+          // APRÈS la lecture, et le curseur porte la dernière ligne examinée. Un appelant qui
+          // s'arrêterait sur une page courte perdrait la suite.
+          return jd(200, { ok: true, sessions, cursor: curseur, scope: toutVoir ? "all" : "mine" });
         }
         if (body.action === "docshare.list") {
           const docId = String(body.docId || "");

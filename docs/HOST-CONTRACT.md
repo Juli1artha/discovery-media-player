@@ -455,7 +455,7 @@ POST  →  { "email": "…", "role": "…", "action": "<one of the names below>"
 | `revoke` | revoke a link |
 | `setauth` | change a link's access wall |
 | `overview` | read a document's aggregate figures |
-| `sessions` | read individual reading sessions |
+| `sessions` | read individual reading sessions — of one document, or of one recipient across all of them |
 | `test` | create a rehearsal link |
 | `presentations.list.all` | list presentations **one does not own** (slugs, presenter names, counts) |
 | `presentations.stats` | read the **attendees** of a presentation one does not own — names, addresses, dwell time, pages |
@@ -475,7 +475,8 @@ recipient's **address and IP**, so any member allowed to call it read the prospe
 colleagues. A strict door with a wide door beside it protects nothing.
 
 `sessions` now asks the same second question, and answers with a `scope` field (`"mine"` or
-`"all"`) exactly as `list` does. **What changes for you:** a member to whom you answer *no* on
+`"all"`) exactly as `list` does — and so does `docshare.sessionsByRecipient`, which reads one
+person's sessions across every document and is therefore the call where the scope matters most. **What changes for you:** a member to whom you answer *no* on
 `list.all` now sees only the sessions of links whose chain starts with a link they created —
 forwarded re-shares of their own links included, because they caused those readings. Nothing
 changes for a role you already answer *yes* to. If your table predates `list.all`, see the warning
