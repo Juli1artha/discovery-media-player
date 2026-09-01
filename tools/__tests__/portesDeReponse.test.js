@@ -165,3 +165,19 @@ describe("le témoin posé : la sonde voit-elle encore un corps sans type ?", ()
     expect(temoinNonVu(() => [{ faux: true }], () => [])).toMatch(/ne l'a pas jugé fautif/);
   });
 });
+
+// ⚠️ LA SECONDE MOITIÉ DE LA RÈGLE, QUE LE PREMIER ÉCHANTILLON NE TOUCHAIT PAS. Elle vise DEUX
+// situations : un corps sans aucun type, et un corps annoncé `text/…` sans `nosniff`. La seconde
+// dépend d'une reconnaissance à part — celle du type — et rien ne l'éprouvait. Mesuré le 01/09 en
+// aveuglant `/^text\//i` : la garde reste VERTE, alors que ce serveur pose quatre en-têtes
+// `text/html` ou `text/plain` explicites.
+describe("⚠️ le témoin couvre le type POSÉ, pas seulement le type absent", () => {
+  it("⚠️ un juge aveugle au type annoncé est nommé", () => {
+    const voir = (f, src) => corpsEcrits(f, src);
+    // Un juge qui ne trouve fautif QUE le corps sans type : c'est exactement ce que produit une
+    // reconnaissance de `text/…` devenue muette.
+    const borgne = (trouves) => manquements(trouves).filter((m) => !m.includes("text/html"));
+    const dit = temoinNonVu(voir, borgne);
+    expect(dit, "le resserrement aux seuls corps sans type doit être nommé").toBeTypeOf("string");
+  });
+});

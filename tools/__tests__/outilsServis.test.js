@@ -12,7 +12,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { outilsLances, nonServis, paquetsRequis, estPaquet, INSTALLATION } from "../outils-servis.mjs";
+import { outilsLances, nonServis, paquetsRequis, estPaquet, INSTALLATION, PLANCHER_DEPENDANTS } from "../outils-servis.mjs";
 
 const wf = (corps) => `name: T\non: push\njobs:\n${corps}`;
 const etape = (run) => `      - run: ${run}\n`;
@@ -123,5 +123,21 @@ describe("les workflows réels du dépôt", () => {
   it("le garde horaire installe bien, désormais", () => {
     const p = readFileSync(resolve(dossier, "publication.yml"), "utf8");
     expect(p, `sans \`${INSTALLATION}\`, sa dernière étape meurt en silence`).toContain(INSTALLATION);
+  });
+});
+
+// ⚠️ LE PLANCHER SUR CE QUE LA LECTURE DES `import` RECONNAÎT. Mesuré le 01/09 en aveuglant le
+// lecteur : `paquetsRequis` rend la liste vide pour TOUS les outils, `nonServis` n'a plus rien à
+// dire, et la garde sort VERTE en annonçant que chacun « n'a besoin d'aucune » installation. Le
+// résumé PORTAIT le signal — le compte des outils nus passait de 4 à 35 — mais rien ne l'affirmait.
+describe("⚠️ la lecture des « import » reconnaît une population, pas un cas isolé", () => {
+  it(`au moins ${PLANCHER_DEPENDANTS} outils lancés dépendent d'un paquet`, () => {
+    const dossier = ".github/workflows";
+    const lances = readdirSync(dossier).filter((f) => /\.ya?ml$/.test(f))
+      .flatMap((f) => outilsLances(f, readFileSync(join(dossier, f), "utf8")));
+    const lire = (f) => readFileSync(f, "utf8");
+    const dependants = new Set(lances.map((l) => l.outil).filter((o) => paquetsRequis(o, lire).length)).size;
+    expect(dependants, "17 le 01/09 — si ce compte s'effondre, la sonde ne lit plus les « import »")
+      .toBeGreaterThanOrEqual(PLANCHER_DEPENDANTS);
   });
 });

@@ -75,6 +75,17 @@ export function outilsLances(fichier, texte) {
   return lances;
 }
 
+// ⚠️ UN PLANCHER SUR CE QUE LA LECTURE DES `import` RECONNAÎT — pas sur ce qu'elle a ouvert.
+// Mesuré le 01/09 par un balayage qui aveugle chaque expression de chaque outil : en rendant le
+// lecteur d'`import` muet, `paquetsRequis` rend la liste vide pour TOUS les outils, `nonServis`
+// n'a plus rien à dire, et la garde sort VERTE en annonçant que chacun « n'a besoin d'aucune »
+// installation. Trente et un des trente-cinq lancements dépendent pourtant de paquets.
+//
+// Le résumé PORTE déjà le signal — le compte des outils nus passerait de 4 à 35 — mais rien ne
+// l'affirmait, et un nombre qui change dans une phrase que personne ne relit n'est pas une garde.
+// Cinq est vrai de tout état sain : ce dépôt lance des outils qui lisent du YAML et du semver.
+export const PLANCHER_DEPENDANTS = 5;
+
 /** Les outils lancés par un job qui ne les sert pas. */
 export function nonServis(lances, lire) {
   const soucis = [];
@@ -100,9 +111,16 @@ if (estExecuteDirectement(import.meta.url)) {
     if (!lances.length) {
       return inconclusif(`aucun \`node tools/…\` relevé dans ${fichiers.length} workflow(s) — le dépôt en lance, donc la sonde ne lit plus ce qu'elle croit lire`);
     }
+    // ⚠️ LE PLANCHER DE FORME, AVANT LE VERDICT. Celui du dessus garde la lecture des LANCEMENTS ;
+    // celui-ci garde la lecture des `import`, qui décide si un lancement est fautif ou non.
+    const lire = (f) => readFileSync(f, "utf8");
+    const dependants = new Set(lances.map((l) => l.outil).filter((o) => paquetsRequis(o, lire).length)).size;
+    if (dependants < PLANCHER_DEPENDANTS) {
+      return inconclusif(`${dependants} outil(s) lancé(s) reconnu(s) comme dépendant d'un paquet, moins que ${PLANCHER_DEPENDANTS} — ce n'est pas que rien n'a besoin d'installation, c'est une sonde qui ne lit plus les « import »`);
+    }
     const soucis = nonServis(lances);
     if (soucis.length) return violation(soucis);
     const nus = lances.filter((l) => !l.installe).length;
-    return conforme(`outils servis : ${lances.length} lancement(s) d'outil dans ${fichiers.length} workflow(s) — chacun a ce qu'il lui faut (${nus} tourne(nt) sans installation, et n'en ont besoin d'aucune)`);
+    return conforme(`outils servis : ${lances.length} lancement(s) d'outil dans ${fichiers.length} workflow(s), dont ${dependants} outil(s) distinct(s) dépendent d'un paquet — chacun a ce qu'il lui faut (${nus} tourne(nt) sans installation, et n'en ont besoin d'aucune)`);
   }));
 }

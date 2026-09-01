@@ -14,6 +14,18 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- Four guards had a probe blind on a subject the repository actually contains, found by re-running
+  the mutation sweep on an extractor rebuilt on the TypeScript AST — 143 real regex literals
+  against 171 by pattern, 28 of which were slashes inside string constants. `images-des-workflows`
+  no longer misses a `$IMAGE_…` used without being declared; `outils-servis` refuses when it can no
+  longer tell which tools depend on an installed package; `portes-de-reponse` no longer misses a
+  `text/…` body served without `nosniff`; and `migrations-detectables` now requires each of the ten
+  **kinds** of sign attested by a real migration to still be seen, instead of printing a count its
+  own comment treated as the protection — blinding its detectors one at a time left the guard green
+  in three cases, with eleven signs out of sixty-three vanishing in silence. Three tools
+  (`release-preflight`, `verdict-zap`, `zones-du-tarball`) refuse before any mutation for want of a
+  release context and were measured on nothing; that, and some fifty survivors not individually
+  verified, are recorded in `AGENTS.md` rather than counted as passed.
 - `secrets-en-clair` recognises eight distinct credential shapes and a rule of its own on `.env`
   names; its positive control planted a single AWS-key sample, proving **one shape out of nine**
   was still seen. An exhaustive sweep — every regex literal of every tool blinded one at a time —
