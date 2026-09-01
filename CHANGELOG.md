@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.146] — 2026-09-01
+
 ### Removed
 
 - **The raw User-Agent is erased too, on both tables.** We had argued for keeping it — the only
@@ -5677,7 +5679,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.145...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.146...HEAD
+[0.1.146]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.145...v0.1.146
 [0.1.145]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.144...v0.1.145
 [0.1.144]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.143...v0.1.144
 [0.1.143]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.142...v0.1.143
