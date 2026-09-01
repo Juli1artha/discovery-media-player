@@ -482,6 +482,17 @@ forwarded re-shares of their own links included, because they caused those readi
 changes for a role you already answer *yes* to. If your table predates `list.all`, see the warning
 above: an unheard-of action answered *no* narrows this view rather than breaking it.
 
+⚠️ **The reader IP is erased, and a direct query of your own will start seeing nothing.** The
+sessions table carried `ip` in the clear. `0.1.146` stopped serving it — no player path reads it
+back, so nothing in this contract changes — `0.1.147` stops writing it, and migration **0026**
+erases what thirteen months of journal still held. **What changes for you:** nothing, unless you
+read that column yourself in a report or dashboard outside the player, in which case its values are
+empty from the day you apply 0026. The column itself stays for now: dropping it would fail every
+session write of a host that applies migrations before deploying, so its removal is a later release.
+[`docs/RETENTION.md`](RETENTION.md) sets out what the migration erases, why emptying — not
+dropping — is what actually removes the bytes, and what it cannot reach: your backups. The raw `ua`
+is **kept**: it is the source of `device`, `os` and `browser`.
+
 ⚠️ **`presentations.list.all` and `presentations.stats` are deliberately separate.** Seeing *that* a
 presentation happened and seeing *who attended it* are different sensitivities: the first returns
 metadata, the second returns people — often prospects. Merging them would take from you the choice of

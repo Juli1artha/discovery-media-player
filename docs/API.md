@@ -193,7 +193,7 @@ skipped or served twice; a caller that stops on a short page loses the rest.
 
 | withheld | why |
 |---|---|
-| `ip` | the datum [`docs/RETENTION.md`](RETENTION.md) calls *the most sensitive in the schema*, which nothing in the player reads back. A presentation attendee's address is kept as a salted HMAC; a reader's was served in the clear |
+| `ip` | the datum [`docs/RETENTION.md`](RETENTION.md) calls *the most sensitive in the schema*, which nothing in the player reads back. A presentation attendee's address is kept as a salted HMAC; a reader's was served in the clear. ⚠️ Since `0.1.147` it is also **never written**, and migration 0026 erased what was there: the column is always `NULL` and is removed in a later release — see [*Purging the reader IP*](RETENTION.md) |
 | `ua` | the raw User-Agent — a fingerprinting vector, and **redundant**: `device`, `os` and `browser` are derived from it at write time and are served. The full string carries nothing more that a reader of the record reads, only enough to recognise one device across sessions |
 
 Both are still **recorded** (purged at thirteen months): not serving a column and not keeping it are

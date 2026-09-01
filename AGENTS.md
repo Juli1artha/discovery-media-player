@@ -903,6 +903,57 @@ mistake it for coverage. **A probe that guards a shape the corpus does not yet h
 code; it is a claim whose subject has not arrived.** The two are told apart by measuring, and the
 measurement belongs in the bench.
 
+## Erasing a column is not dropping it, and the intuition points the wrong way
+
+An arbitration asked for a stored IP address to be purged, with a stated preference: **drop the
+column rather than empty it**. The preference is the natural one — a column that is gone cannot leak
+— and it is wrong, in a way that only a measurement shows. On PostgreSQL 16.13, with `pageinspect`,
+on rows carrying an address:
+
+    after ALTER TABLE … DROP of the column        every address still in the heap
+    after routine VACUUM                          every address still there
+    after VACUUM FULL                             none — but it rewrites the table, under a lock
+
+    after UPDATE … SET ip = NULL                  old row versions, now dead
+    after routine VACUUM                          none
+
+⚠️ **`DROP` of a column marks the attribute dropped; it does not rewrite a single row.** The bytes
+stay in the heap until something rewrites the table — a `VACUUM FULL` or a `pg_repack`, neither of
+which a host runs spontaneously on a journal. Routine vacuum does not help: the rows are *live*, so
+there is nothing to reclaim. So the "clean" gesture leaves every address on disk **indefinitely**,
+invisible to every query — which is the worse of the two states, because the schema now swears the
+data is not there and nobody will ever look again. The `UPDATE` is what erases: it writes new row
+versions without the value and makes the old ones dead, and ordinary autovacuum collects them on its
+own, with no lock and no operator action.
+
+**The general shape: a deletion that is only a change of visibility is not a deletion.** Ask what
+physically rewrites the bytes, and whether anything in normal operation will ever do it. If the
+answer is "an operation an operator must choose to run", the erasure has not happened — it has been
+scheduled for nobody.
+
+⚠️ **And the same change ran into the rule that makes deployment order harmless.** Migrations here
+must be safe to apply *while the previous version of the code is running*; PostgREST rejects a write
+carrying an unknown column, so dropping one fails **every** write on that path for a host that
+migrates before deploying — with an error naming a column, not a version. That rule is a test, it
+caught the drop, and it was right to. The sequence is therefore: stop serving, stop writing, erase,
+and drop the column a release later once nothing supported writes it. The measurement is what makes
+the deferral free rather than a compromise — **the erasure is complete on day one; only the shape of
+the schema waits.**
+
+⚠️ **A migration that only erases leaves no trace in `information_schema`** — no column, no index,
+no constraint — so the repository's own detectability guard called it unprovable. That is the right
+verdict on the wrong-looking file: a purge is precisely the migration a host is most likely to be
+asked to *prove* to a regulator. It carries a `comment on column` for that, which `col_description()`
+answers. **The record of a deletion has to be something that exists.**
+
+⚠️ **A list of decisions rots in two directions, and only one was checked.** The session columns are
+covered by a list of what is *served* and a list of what is *withheld with a written reason*, and a
+bench read the schema to refuse a column present in neither. Nothing refused the mirror image: an
+entry motivating a column that no longer exists. Had the drop shipped, the reason for withholding
+`ip` would have stayed there indefinitely — prose about a thing that is not, which the next reader
+takes for the state of the world. **Any list that mirrors an external fact needs both directions
+checked, or it decays into a description of the past.**
+
 ## A derived perimeter is proven by a file that appears, not by a count
 
 **Twenty-three guards take their perimeter from the disk** (`git ls-files`, `readdirSync`,
