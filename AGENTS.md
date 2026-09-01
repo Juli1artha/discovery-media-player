@@ -583,6 +583,51 @@ runs. Count what loaded, name what did not, and let a floor decide.
 reading the code — not every probe of every guard enumerated. It shows the method finds holes; it
 does not show there are none left.
 
+### The exhaustive sweep, and what one guard turned out to be hiding
+
+That limit was then removed for the regex-shaped probes: on 01/09 **every regular-expression
+literal of every tool with an entry point was blinded, one at a time**, replaced by `/(?!)/` — a
+pattern that never matches anything — and the exit code read. 153 mutations over 32 tools, with a
+witness before each tool (green before mutation, or its verdicts are worthless — the lesson of the
+broken harness, applied from the start this time).
+
+⚠️ **One guard dominated the result: `secrets-en-clair`, 19 of its 20 patterns could go blind
+while it stayed green.** It recognises eight distinct secret shapes — PEM private key, AWS key id,
+GitHub, npm and Slack tokens, Google API key, Stripe live key, and a Supabase `service_role` JWT —
+plus a rule of its own on `.env` names. Its witness planted a single `AKIA` sample. **It proved
+one shape out of nine was still seen**, on the guard whose green asserts that no credential is
+pushed. Any of the other eight could have stopped matching in silence.
+
+The fix is dictated by the guard's own table: one sample per shape, assembled at runtime (the
+guard sweeps its own source, so a literal fake credential in it would be self-flagged), plus a
+check that **every** searched shape has a sample — adding a pattern without one would shrink the
+coverage on the very day the shape is declared. All eight detection patterns now refuse when
+blinded.
+
+⚠️ **Three corrections the measurement forced along the way, each the shape of a defect this page
+already names.**
+
+- A single wrapper (`cle = "…"`) around every sample looked economical and left the `.env` rule
+  untested: that rule needs an UPPERCASE name at the start of a line. **One envelope for rules
+  that do not read the same thing is a witness that only exercises what resembles it.**
+- The coupling check (*every shape has a sample*) has the empty list as its healthy state, and
+  asserting it only on the healthy repository does not distinguish *nothing is missing* from *the
+  function no longer looks*. Silencing it passed the bench — a floor asserted only where it has
+  nothing to say. It is now exercised on injected tables where a shape is deliberately orphaned.
+- A payload was chosen to make the base64url→base64 normalisation observable, and it did not:
+  measured, `Buffer.from(x, "base64")` accepts the base64url alphabet natively under Node, so
+  those two replacements **cannot** be made observable by any sample. Written as *what this
+  witness does not cover*, rather than left as a comment claiming a coverage it does not have.
+
+⚠️ **What the sweep still does not prove, and the reason is in the tool that ran it.** The
+extractor takes any `/…/` for a regex literal, and slashes inside string constants (`".github/"`,
+`"…startsWith("../"`) are picked up too. Of the 58 survivors outside `secrets-en-clair`, an
+unknown share are that artifact, and **none has been triaged**. The eight remaining survivors *in*
+`secrets-en-clair` were triaged and are all benign: two are dead code, five are exclusions and
+cleaners whose blinding makes the guard more accusatory rather than less (fail-closed), and one
+degrades a reported line number. Probes that are not regex-shaped — an external analyser, an AST
+visit, a string predicate — are outside this sweep entirely.
+
 ## A derived perimeter is proven by a file that appears, not by a count
 
 **Twenty-three guards take their perimeter from the disk** (`git ls-files`, `readdirSync`,

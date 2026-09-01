@@ -221,14 +221,79 @@ export function inspecter(fichiers, lire = (f) => readFileSync(f, "utf8")) {
  * fautif, on vérifie que la sonde le VOIT, on le jette — le mécanisme de l'étape RLS de `ci.yml`,
  * qui le pratique depuis des semaines sur les politiques Postgres.
  */
+/**
+ * ⚠️ UN ÉCHANTILLON PAR FORME CHERCHÉE — ET LE TÉMOIN N'EN COUVRAIT QU'UNE SUR NEUF.
+ *
+ * Mesuré le 01/09 par un balayage qui aveugle CHAQUE expression de CHAQUE outil, une par une :
+ * sur les vingt motifs de ce fichier, dix-neuf peuvent cesser de reconnaître quoi que ce soit
+ * sans que la garde cesse d'être VERTE. Le témoin plantait un échantillon `AKIA` : il prouvait
+ * qu'une espèce sur huit était encore vue, et rien du JWT ni de la règle des `.env`.
+ *
+ * Une clé privée, un jeton GitHub, npm, Slack, Google, Stripe, un jeton `service_role`, une valeur
+ * écrite sous un nom qui annonce un secret : chacune pouvait devenir invisible en silence, sur la
+ * garde dont le vert affirme qu'aucun secret n'est poussé.
+ *
+ * ⚠️ ASSEMBLÉS À L'EXÉCUTION, JAMAIS ÉCRITS. Cette garde balaie les fichiers suivis de `tools/`,
+ * le sien compris : un faux identifiant écrit en clair ici serait signalé par la garde elle-même,
+ * on l'exempterait, et l'exemption deviendrait le trou que l'en-tête de ce fichier décrit. Chaque
+ * échantillon est donc une CONCATÉNATION dont aucun morceau ne suffit à déclencher un motif.
+ *
+ * ⚠️ ET CHAQUE ÉCHANTILLON PRODUIT SA LIGNE ENTIÈRE, PAS UNE VALEUR À HABILLER. Le premier jet
+ * enveloppait tout dans `cle = "…"` : les sept formes passaient, et la règle des `.env` — qui
+ * exige un NOM EN MAJUSCULES en début de ligne — ne voyait rien. Une enveloppe unique pour des
+ * règles qui ne lisent pas la même chose est un témoin qui n'éprouve que ce qui lui ressemble.
+ */
+export const ECHANTILLONS = [
+  ["clé privée PEM", "__temoin", () => `cle = "${"-".repeat(5)}BEGIN RSA PRIVATE KEY${"-".repeat(5)}"`],
+  ["identifiant de clé AWS", "__temoin", () => `cle = "AKIA${"Z".repeat(16)}"`],
+  ["jeton GitHub", "__temoin", () => `cle = "gh${"p"}_${"Z".repeat(36)}"`],
+  ["jeton npm", "__temoin", () => `cle = "npm_${"Z".repeat(36)}"`],
+  ["jeton Slack", "__temoin", () => `cle = "xox${"b"}-${"0".repeat(12)}"`],
+  ["clé d'API Google", "__temoin", () => `cle = "AIza${"Z".repeat(35)}"`],
+  ["clé secrète Stripe (live)", "__temoin", () => `cle = "sk_${"live"}_${"Z".repeat(24)}"`],
+  // ⚠️ LE JWT EXIGE UNE CHARGE UTILE VRAIE : le motif reconnaît la forme, mais c'est
+  // `estJetonServiceRole` qui décide, en DÉCODANT. Un échantillon dont la charge ne porterait pas
+  // le rôle éprouverait la forme et laisserait le décodage sans témoin.
+  //
+  // ⚠️ ET CE QUE CE TÉMOIN N'ÉPROUVE PAS, DIT PLUTÔT QU'OMIS. `estJetonServiceRole` ramène le
+  // base64url au base64 par deux remplacements — `-` vers `+`, `_` vers `/`. Les retirer laisse la
+  // garde verte, y compris sur une charge qui porte les deux caractères (`~` produit un `-`, `ÿ`
+  // produit un `_`) : mesuré le 01/09, `Buffer.from(x, "base64")` accepte l'alphabet base64url tel
+  // quel sous Node. Ces deux remplacements sont donc SANS EFFET ici, pas un angle mort du témoin —
+  // aucun échantillon ne peut les rendre observables, et un témoin qui prétendrait le contraire
+  // affirmerait une couverture qu'il n'a pas.
+  ["jeton Supabase service_role", "__temoin", () => {
+    const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+    return `cle = "${b64({ alg: "HS256", typ: "JWT" })}.${b64({ role: "service_role", iss: "temoin" })}.${"Z".repeat(20)}"`;
+  }],
+  // ⚠️ ET LA RÈGLE DES `.env` N'EST ATTEINTE QUE PAR LE NOM DU FICHIER : `inspecter` ne l'applique
+  // qu'à ce qui commence par `.env`. Un témoin posé sous un autre nom éprouverait les formes et
+  // sauterait la règle qui attrape le cas réel — celui d'un secret sans forme reconnaissable.
+  ["valeur écrite sous un nom qui annonce un secret", ".env.__temoin",
+    () => "MON" + "_SECRET" + "=une-phrase-de-passe-bien-reelle"],
+];
+
+/**
+ * ⚠️ UNE ESPÈCE SANS ÉCHANTILLON RÉDUIRAIT LA COUVERTURE EN SILENCE. Ajouter un motif à `ESPECES`
+ * sans ajouter son échantillon rendrait la nouvelle forme invisible au témoin le jour même où on
+ * la déclare chercher — et personne ne relit un témoin en ajoutant un motif.
+ */
+export function especesSansEchantillon(especes = ESPECES, echantillons = ECHANTILLONS) {
+  const couverts = new Set(echantillons.map(([nom]) => nom));
+  return especes.map(([nom]) => nom).filter((nom) => !couverts.has(nom));
+}
+
 export function temoinNonVu(sonde = inspecter) {
-  // ⚠️ ASSEMBLÉ À L'EXÉCUTION, JAMAIS ÉCRIT. Cette garde balaie 104 fichiers de `tools/`, le sien
-  // compris : un faux identifiant écrit en clair ici serait signalé par la garde elle-même, on
-  // l'exempterait, et l'exemption deviendrait le trou que l'en-tête de ce fichier décrit. Le banc
-  // fabrique ses faux secrets par concaténation pour cette raison exacte ; le témoin fait pareil.
-  const echantillon = "cle = " + '"' + "AKIA" + "Z".repeat(16) + '"' + "\n";
-  return sonde(["__temoin"], () => echantillon).length ? null
-    : "la sonde n'a pas vu un identifiant qu'on venait de poser";
+  const orphelines = especesSansEchantillon();
+  if (orphelines.length) {
+    return `${orphelines.length} espèce(s) cherchée(s) sans échantillon au témoin : ${orphelines.join(", ")} — la sonde ne serait pas éprouvée sur elles`;
+  }
+  const manquantes = ECHANTILLONS
+    .filter(([, fichier, faire]) => !sonde([fichier], () => `${faire()}\n`).length)
+    .map(([nom]) => nom);
+  return manquantes.length
+    ? `la sonde n'a pas vu ${manquantes.length} forme(s) qu'on venait de poser : ${manquantes.join(", ")}`
+    : null;
 }
 
 if (estExecuteDirectement(import.meta.url)) {
