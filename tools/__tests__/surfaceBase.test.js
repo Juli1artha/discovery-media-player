@@ -77,7 +77,7 @@ describe("l'écart avec ce que le document annonce", () => {
     "| Call sites | **65**†, in **7**† files |",
     "| Tables | **10**†, plus **6**† call sites that build their path at run time |",
     "| `in.(…)` | **3**† — translates to … |",
-    "| `or=()` | **2**† — le curseur à deux coordonnées |",
+    "| `or=()` | **2**† — deux, pour éprouver la comparaison ; le dépôt réel en a zéro |",
     "† **Recomputed from the code on every CI run** by `tools/surface-base.mjs`.",
   ].join("\n");
 

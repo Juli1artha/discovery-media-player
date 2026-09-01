@@ -598,25 +598,38 @@ async function liensEtAncetres(slugs, vaguesMax = 8) {
 }
 
 /**
- * Le curseur d'une page : la position EXACTE de la dernière ligne examinée.
+ * Le curseur d'une page : l'horodatage de la dernière ligne examinée, ET les sessions déjà rendues
+ * à CET horodatage.
  *
- * ⚠️ `last_at` NE SUFFIT PAS À ORDONNER. Deux sessions peuvent porter le même horodatage — un
- * battement simultané sur deux liens — et un curseur qui ne retiendrait que le temps sauterait
- * l'une des deux ou la rendrait deux fois. On ordonne donc par `(last_at, session_id)`, et le
- * curseur porte les deux.
+ * ⚠️ `last_at` NE SUFFIT PAS. Deux sessions peuvent porter le même horodatage — deux battements
+ * dans la même milliseconde — et un curseur qui ne retiendrait que le temps sauterait l'une des
+ * deux (`lt`) ou la rendrait deux fois (`lte`).
+ *
+ * ⚠️ ET LA FORME ÉVIDENTE EST INTERDITE ICI, POUR UNE RAISON ÉCRITE. La façon habituelle
+ * d'écrire ça est un `or=(last_at.lt.T,and(last_at.eq.T,session_id.lt.ID))` — et `ci.yml` refuse
+ * `or=(` et `and=(` dans `server/*.js` : « ce qui coûte, ce sont les jointures imbriquées et les
+ * arbres booléens — là, un portage cesse d'être une traduction et devient une réécriture ». Le
+ * zéro qu'annonçait `docs/API.md` n'était pas un nombre périmé, c'était une POLITIQUE, et je l'ai
+ * pris pour l'autre avant que la garde ne me reprenne.
+ *
+ * La forme portable dit la même chose sans arbre booléen : « au plus tard que T, et pas l'une de
+ * celles-ci » — `last_at=lte.T & session_id=not.in.(…)`, qui se traduit mot pour mot en
+ * `WHERE last_at <= T AND session_id NOT IN (…)`. La liste ne grandit que pour les ex æquo de
+ * l'horodatage de bord, et chaque page ajoute au moins une exclusion ou avance le temps : la
+ * progression est garantie, sans quoi une page d'ex æquo tournerait en rond.
  */
-const curseurDe = (s) => (s ? `${s.last_at}|${s.session_id}` : null);
+const curseurDe = (at, ids) => (at ? `${at}|${[...ids].join(",")}` : null);
 
 function curseurLu(brut) {
   const texte = String(brut || "");
   const coupe = texte.indexOf("|");
   if (coupe <= 0) return null;
   const at = texte.slice(0, coupe);
-  const id = texte.slice(coupe + 1);
+  const ids = texte.slice(coupe + 1).split(",").filter(Boolean);
   // Un curseur qu'on ne sait pas lire n'est pas « le début » : ce serait rendre la première page à
   // qui demandait la troisième, en silence. On le REFUSE, et l'appelant le saura.
-  if (!id || Number.isNaN(Date.parse(at))) return null;
-  return { at, id };
+  if (!ids.length || Number.isNaN(Date.parse(at))) return null;
+  return { at, ids };
 }
 
 /**
@@ -645,10 +658,11 @@ async function listSessionsForRecipient(email, { owner = null, depuis = null, ap
   const taille = Math.min(Math.max(Number(limite) || 100, 1), 500);
   const position = curseurLu(apres);
 
-  // ⚠️ LE CURSEUR EST UN « OU » EN DEUX TEMPS, pas un simple `lt` sur le temps : à horodatage égal,
-  // c'est `session_id` qui départage. Sans le second terme, deux sessions simultanées se perdent.
+  // ⚠️ « AU PLUS TARD QUE T, ET PAS L'UNE DE CELLES-CI » — deux filtres plats, pas un arbre booléen.
+  // `not.in.(…)` se traduit en `NOT IN (…)`, que toute base sait faire ; c'est ce qui distingue une
+  // traduction d'une réécriture, et c'est la règle que `ci.yml` fait respecter.
   const apresQuoi = position
-    ? `&or=(last_at.lt.${enc(position.at)},and(last_at.eq.${enc(position.at)},session_id.lt.${enc(position.id)}))`
+    ? `&last_at=lte.${enc(position.at)}&session_id=not.in.(${enc(position.ids.map((x) => `"${String(x).replace(/[",()]/g, "")}"`).join(","))})`
     : "";
   const candidats = await PLAYER.db.request(
     `commercial_doc_sessions?recipient_email=eq.${enc(destinataire)}&last_at=gte.${enc(borne)}${apresQuoi}`
@@ -676,9 +690,16 @@ async function listSessionsForRecipient(email, { owner = null, depuis = null, ap
       parent_recipient_name: parent ? parent.recipient_name || null : null,
     });
   }
-  // La page est pleine ⇒ il reste peut-être quelque chose : on rend la position de la dernière
-  // ligne EXAMINÉE. Elle ne l'est pas ⇒ la source est épuisée, et `null` le dit sans ambiguïté.
-  return { sessions, curseur: lignes.length === taille ? curseurDe(lignes[lignes.length - 1]) : null };
+  // La page est pleine ⇒ il reste peut-être quelque chose : on rend l'horodatage de la dernière
+  // ligne EXAMINÉE, et les sessions déjà servies à cet horodatage. Elle ne l'est pas ⇒ la source
+  // est épuisée, et `null` le dit sans ambiguïté.
+  if (lignes.length < taille) return { sessions, curseur: null };
+  const bord = lignes[lignes.length - 1].last_at;
+  const dejaVues = lignes.filter((s) => s.last_at === bord).map((s) => s.session_id);
+  // Le curseur entrant portait le MÊME horodatage de bord ⇒ ses exclusions valent encore, sinon
+  // les ex æquo déjà servis reviendraient. Il en portait un autre ⇒ elles sont sans objet.
+  const exclues = position && position.at === bord ? [...new Set([...position.ids, ...dejaVues])] : dejaVues;
+  return { sessions, curseur: curseurDe(bord, exclues) };
 }
 
 // Envoi AUTO du re-partage via 3D Discovery (Resend). Contenu 100% templé (pas de texte libre → anti-spam),

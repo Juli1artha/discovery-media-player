@@ -46,16 +46,18 @@ init({
       if (!chemin.startsWith("commercial_doc_sessions")) return [];
       const dest = /recipient_email=eq\.([^&]*)/.exec(chemin);
       const depuis = /last_at=gte\.([^&]*)/.exec(chemin);
-      const curseur = /or=\(last_at\.lt\.([^,]*),and\(last_at\.eq\.[^,]*,session_id\.lt\.([^)]*)\)\)/.exec(chemin);
+      const jusqua = /last_at=lte\.([^&]*)/.exec(chemin);
+      const sauf = /session_id=not\.in\.\(([^&]*)\)/.exec(chemin);
       const limite = /limit=(\d+)/.exec(chemin);
       let vues = sessions.slice();
       if (dest) vues = vues.filter((s) => s.recipient_email === decodeURIComponent(dest[1]));
       if (depuis) vues = vues.filter((s) => s.last_at >= decodeURIComponent(depuis[1]));
-      vues.sort((a, b) => (b.last_at.localeCompare(a.last_at) || b.session_id.localeCompare(a.session_id)));
-      if (curseur) {
-        const at = decodeURIComponent(curseur[1]), id = decodeURIComponent(curseur[2]);
-        vues = vues.filter((s) => s.last_at < at || (s.last_at === at && s.session_id < id));
+      if (jusqua) vues = vues.filter((s) => s.last_at <= decodeURIComponent(jusqua[1]));
+      if (sauf) {
+        const exclues = new Set(decodeURIComponent(sauf[1]).split(",").map((x) => x.replace(/"/g, "")));
+        vues = vues.filter((s) => !exclues.has(s.session_id));
       }
+      vues.sort((a, b) => (b.last_at.localeCompare(a.last_at) || b.session_id.localeCompare(a.session_id)));
       return limite ? vues.slice(0, Number(limite[1])) : vues;
     },
   },
@@ -289,13 +291,45 @@ describe("⚠️ la pagination par curseur : rien de sauté, rien rendu deux foi
     expect(p2.sessions.map((s) => s.session_id), "la seconde n'est ni sautée ni répétée").toEqual(["aa"]);
   });
 
-  it("le curseur porte les DEUX coordonnées, et un curseur illisible est refusé", () => {
-    expect(curseurDe({ last_at: "2026-09-01T10:00:00.000Z", session_id: "x" })).toBe("2026-09-01T10:00:00.000Z|x");
-    expect(curseurDe(null)).toBeNull();
-    expect(curseurLu("2026-09-01T10:00:00.000Z|x")).toEqual({ at: "2026-09-01T10:00:00.000Z", id: "x" });
+  it("⚠️ PLUS d'ex æquo que la page ne peut en tenir : les exclusions s'ACCUMULENT", async () => {
+    // Cinq sessions dans la même milliseconde, des pages de deux. Si le curseur ne portait que les
+    // ex æquo de LA page courante, la troisième page re-servirait ceux de la première — et la
+    // pagination tournerait en rond sur un horodatage encombré.
+    const memeInstant = "2026-09-09T10:00:00.000Z";
+    sessions = ["e1", "e2", "e3", "e4", "e5"].map((id) => session(id, "A", { at: memeInstant, email: "dana@client.fr" }));
+    const vus = [];
+    let curseur = null;
+    for (let page = 0; page < 8; page += 1) {
+      const r = await listSessionsForRecipient("dana@client.fr", { owner: null, limite: 2, apres: curseur });
+      vus.push(...r.sessions.map((x) => x.session_id));
+      curseur = r.curseur;
+      if (!curseur) break;
+    }
+    expect(vus.slice().sort(), "les cinq, une seule fois chacune").toEqual(["e1", "e2", "e3", "e4", "e5"]);
+    expect(new Set(vus).size, "aucun doublon").toBe(5);
+  });
+
+  it("le curseur porte l'horodatage ET les ex æquo déjà servis, et un curseur illisible est refusé", () => {
+    expect(curseurDe("2026-09-01T10:00:00.000Z", ["x"])).toBe("2026-09-01T10:00:00.000Z|x");
+    expect(curseurDe("2026-09-01T10:00:00.000Z", ["x", "y"])).toBe("2026-09-01T10:00:00.000Z|x,y");
+    expect(curseurDe(null, [])).toBeNull();
+    expect(curseurLu("2026-09-01T10:00:00.000Z|x,y")).toEqual({ at: "2026-09-01T10:00:00.000Z", ids: ["x", "y"] });
     for (const faux of ["", "sans-barre", "|x", "pas-une-date|x", "2026-09-01T10:00:00.000Z|"]) {
       expect(curseurLu(faux), `« ${faux} » n'est pas une position`).toBeNull();
     }
+  });
+
+  it("⚠️ la requête n'emploie AUCUN arbre booléen — `ci.yml` les refuse, un portage n'est pas une réécriture", async () => {
+    demandes.length = 0;
+    const p1 = await listSessionsForRecipient("dana@client.fr", { owner: null, limite: 2 });
+    await listSessionsForRecipient("dana@client.fr", { owner: null, limite: 2, apres: p1.curseur });
+    for (const chemin of demandes) {
+      expect(chemin, `« ${chemin} » porte un or=(`).not.toMatch(/[?&]or=\(/);
+      expect(chemin, `« ${chemin} » porte un and=(`).not.toMatch(/[?&]and=\(/);
+      expect(chemin, `« ${chemin} » porte un offset=`).not.toMatch(/offset=/);
+    }
+    expect(demandes.some((c) => /session_id=not\.in\./.test(c)),
+      "la seconde page exclut les ex æquo déjà servis, en filtre plat").toBe(true);
   });
 
   it("la limite est bornée des deux côtés", async () => {

@@ -75,18 +75,21 @@ export function compterIn(fichiers) {
 }
 
 /**
- * Les `or=(…)` du CODE — le document annonçait ZÉRO, à la main.
+ * Les `or=(…)` du CODE — le document annonçait ZÉRO sans que personne ne le relise.
  *
- * ⚠️ CE NOMBRE A ÉTÉ FAUX AVANT D'ÊTRE MESURÉ, ET C'EST CE QUI L'A FAIT ENTRER ICI. La ligne
- * « `or=()`, `and=()`, `offset=` | **0** » ne portait pas le marqueur † : elle était vraie le jour
- * où elle a été écrite, et rien ne la relisait. Le premier curseur de pagination l'a rendue fausse
- * dans le même commit qui l'a laissée à zéro — un `or=(last_at.lt.…,and(last_at.eq.…,…))` est
- * exactement ce qu'elle disait absent. Une garde voisine mesurait quatre lignes du tableau et pas
- * celle-là ; le lecteur qui pèse un portage ne pouvait pas savoir laquelle était tenue.
+ * ⚠️ ET CE ZÉRO N'ÉTAIT PAS UN RELEVÉ PÉRIMÉ, C'ÉTAIT UNE POLITIQUE. `ci.yml` refuse `or=(` et
+ * `and=(` dans `server/*.js` depuis longtemps : « ce qui coûte, ce sont les jointures imbriquées et
+ * les arbres booléens — là, un portage cesse d'être une traduction et devient une réécriture ». La
+ * ligne du tableau, elle, ne portait pas le marqueur † : elle énonçait la règle sans que rien ne
+ * confronte le chiffre au code, et le lecteur qui pèse un portage ne pouvait pas savoir laquelle
+ * des lignes était tenue par une garde et laquelle par une bonne intention.
  *
- * Un `or=` n'est pas une faute : c'est la seule façon d'écrire un curseur à deux coordonnées, et un
- * curseur à une seule coordonnée perd les lignes qui partagent un horodatage. Ce qui est fautif est
- * de l'annoncer absent.
+ * ⚠️ ET J'AI PRIS L'UNE POUR L'AUTRE. En écrivant le curseur de `sessionsByRecipient` j'ai posé un
+ * `or=(…)`, corrigé le document pour qu'il dise « 1 », et expliqué dans la même phrase qu'un `or=`
+ * n'était pas une faute. La garde de portabilité m'a repris. Le curseur dit maintenant la même
+ * chose en deux filtres plats — `last_at=lte.T` et `session_id=not.in.(…)` — et ce compte est ici
+ * pour que la règle soit VÉRIFIÉE là où elle est ANNONCÉE : une règle que personne ne compte est
+ * une règle qui s'érode.
  */
 export function compterOr(fichiers) {
   return fichiers.reduce((n, f) => n + [...sourceUtile(f.texte).matchAll(/[?&]or=\(/g)].length, 0);

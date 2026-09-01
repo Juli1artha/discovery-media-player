@@ -314,9 +314,9 @@ estimated:
 | Tables | **11**†, plus **6**† call sites that build their path at run time — their tables are named literally by the caller, and are counted above |
 | Verbs | `GET`, `POST`, `PATCH`, one `HEAD`, and `DELETE` only in `server/retention.js` — every one bounded by an age filter (`docs/RETENTION.md`) |
 | Embedded selects (`select=*,other(*)`) | **0** |
-| `or=()` | **1**† — the two-coordinate cursor of `docshare.sessionsByRecipient`: `(last_at < t) OR (last_at = t AND session_id < id)`. A cursor on time alone drops sessions that share a timestamp |
-| `and=()`, `offset=` | **0** — hand-counted, and the row above is why that matters |
-| `in.(…)` | **4**† — translates to `WHERE column IN (…)`, so it costs a port nothing |
+| `or=()` | **0**† — and it is a *rule*, not an observation: `ci.yml` refuses `or=(` and `and=(` in `server/*.js`, because nested joins and boolean trees are what turn a port from a translation into a rewrite. The cursor of `docshare.sessionsByRecipient` needs two coordinates and expresses them as two flat filters — `last_at=lte.T` plus `session_id=not.in.(…)` — which reads `WHERE last_at <= T AND session_id NOT IN (…)` |
+| `and=()`, `offset=` | **0** — hand-counted; the row above is measured because a rule nobody counts is a rule that erodes |
+| `in.(…)` | **5**† — translates to `WHERE column IN (…)`, so it costs a port nothing |
 | Used beyond plain filters | `order=`, `Prefer: return=…`, `Range` for pagination |
 
 † **Recomputed from the code on every CI run** by `tools/surface-base.mjs`, which fails the build
