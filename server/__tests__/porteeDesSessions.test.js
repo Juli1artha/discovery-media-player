@@ -24,7 +24,9 @@ let sessions = [];
 let liens = [];
 
 delete require.cache[ID];
-const { init, listSessionsForDoc, listSessionsForRecipient, racineDuLien, curseurDe, curseurLu } = require("../shares.js");
+const { init, listSessionsForDoc, listSessionsForRecipient, racineDuLien, curseurDe, curseurLu,
+  sessionServie, CHAMPS_SERVIS, CHAMPS_RETENUS } = require("../shares.js");
+const { readFileSync } = require("node:fs");
 
 // Le contexte est INJECTÉ par `init`, comme en production : les deux lectures de
 // `listSessionsForDoc` sont servies ici, sans base ni réseau.
@@ -338,5 +340,81 @@ describe("⚠️ la pagination par curseur : rien de sauté, rien rendu deux foi
     demandes.length = 0;
     await listSessionsForRecipient("dana@client.fr", { owner: null, limite: 0 });
     expect(demandes[0], "zéro n'est pas une page").toMatch(/limit=100\b/);
+  });
+});
+
+// ⚠️ CE QUI SORT EST UNE LISTE DE CE QUI EST PERMIS, PAS DE CE QU'ON RETIRE. Les deux lectures
+// demandaient `select=*` : ce que la table contient partait par défaut, et une colonne ajoutée
+// demain serait partie sans que personne y pense. Dans ce sens-là l'oubli est une FUITE ; dans
+// l'autre, c'est une absence que le premier lecteur signale.
+describe("⚠️ ce qu'une session laisse sortir", () => {
+  beforeEach(() => {
+    liens = [lien("A", { cree: "alice@hote.example", email: "dana@client.fr", nom: "Dana" })];
+    sessions = [{
+      session_id: "s1", slug: "A", doc_id: "d1", recipient_email: "dana@client.fr",
+      num_pages: 12, max_page: 4, total_seconds: 360, pages_time: { 1: 30 },
+      ua: "Mozilla/5.0", ip: "203.0.113.7", device: "desktop", os: "macOS", browser: "Safari",
+      started_at: "2026-09-01T09:00:00.000Z", last_at: "2026-09-01T09:06:00.000Z",
+    }];
+  });
+
+  it("⚠️ l'IP EN CLAIR ne sort plus — ni par document, ni par destinataire", async () => {
+    const parDoc = await listSessionsForDoc("d1", null);
+    const parPersonne = await listSessionsForRecipient("dana@client.fr", { owner: null });
+    for (const [quoi, vues] of [["par document", parDoc], ["par destinataire", parPersonne.sessions]]) {
+      expect(vues, quoi).toHaveLength(1);
+      expect(vues[0], quoi).not.toHaveProperty("ip");
+      expect(JSON.stringify(vues), `${quoi} : l'adresse ne doit apparaître nulle part`)
+        .not.toContain("203.0.113.7");
+    }
+  });
+
+  it("⚠️ et la base ne nous la donne même pas — le `select=` ne la demande pas", async () => {
+    demandes.length = 0;
+    await listSessionsForDoc("d1", null);
+    const lecture = demandes.find((c) => c.startsWith("commercial_doc_sessions"));
+    expect(lecture, "plus de select=*").not.toMatch(/select=\*/);
+    expect(lecture, "la colonne n'est pas demandée").not.toMatch(/\bip\b/);
+    expect(lecture).toMatch(/select=[^&]*session_id/);
+  });
+
+  it("ce qui sert à la fiche continue de sortir", async () => {
+    const [vue] = await listSessionsForDoc("d1", null);
+    expect(vue.max_page).toBe(4);
+    expect(vue.total_seconds).toBe(360);
+    expect(vue.pages_time).toEqual({ 1: 30 });
+    expect([vue.device, vue.os, vue.browser]).toEqual(["desktop", "macOS", "Safari"]);
+    expect(vue.recipient_name, "la jointure du nom tient toujours").toBe("Dana");
+  });
+
+  it("⚠️ une colonne ajoutée demain ne sort PAS par défaut — l'oubli est une absence, pas une fuite", () => {
+    const avecNouveaute = { session_id: "x", slug: "A", secret_ajoute_demain: "à ne pas servir" };
+    expect(sessionServie(avecNouveaute)).toEqual({ session_id: "x", slug: "A" });
+  });
+
+  it("⚠️ CHAQUE colonne de la table est servie ou retenue avec sa raison — sinon la liste dérive", () => {
+    // Le sujet est le schéma réel, lu là où il est écrit : une colonne ajoutée à `init.sql` sans
+    // décision fait rougir ce cas, et c'est exactement ce qu'on veut d'elle.
+    const sql = readFileSync("supabase/init.sql", "utf8");
+    const bloc = /create table if not exists public\.commercial_doc_sessions \(([\s\S]*?)\n\);/.exec(sql);
+    expect(bloc, "la table doit être lisible dans init.sql — sinon ce contrôle ne prouve rien").toBeTruthy();
+    const colonnes = bloc[1].split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith("--"))
+      .map((l) => l.split(/\s+/)[0])
+      .filter((c) => /^[a-z_]+$/.test(c));
+    expect(colonnes.length, "aucune colonne lue : la sonde vise à côté").toBeGreaterThan(5);
+    const decidees = new Set([...CHAMPS_SERVIS, ...Object.keys(CHAMPS_RETENUS)]);
+    expect(colonnes.filter((c) => !decidees.has(c)),
+      "une colonne ni servie ni retenue : inscrivez-la dans CHAMPS_SERVIS, ou dans CHAMPS_RETENUS avec sa raison")
+      .toEqual([]);
+  });
+
+  it("⚠️ et une colonne retenue porte une raison LISIBLE, pas une case cochée", () => {
+    expect(Object.keys(CHAMPS_RETENUS)).toContain("ip");
+    for (const [colonne, raison] of Object.entries(CHAMPS_RETENUS)) {
+      expect(raison.length, `« ${colonne} » : une raison d'un mot n'explique rien`).toBeGreaterThan(40);
+    }
+    expect(CHAMPS_SERVIS, "l'IP ne peut pas être dans les deux listes").not.toContain("ip");
   });
 });
