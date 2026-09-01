@@ -12,6 +12,39 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Removed
+
+- **The reader's IP address is erased.** `0.1.146` stopped serving it; this stops **writing** it,
+  and migration `0026` erases what thirteen months of journal still held in the clear — the half
+  the code could not reach on its own. **The column is emptied, not dropped, and emptying is what
+  actually erases** — which is the reverse of the intuition, so it was measured rather than
+  assumed. An `ALTER TABLE … DROP` of a column marks the attribute dropped without rewriting the
+  rows: on PostgreSQL 16.13 with `pageinspect`, every address is still physically present after the
+  drop, still present after a routine `VACUUM` — the rows are *live*, so there is nothing to
+  reclaim — and only a `VACUUM FULL`, which rewrites the table under an exclusive lock, removes
+  them. Dropping the column alone would therefore have left every address on disk indefinitely,
+  invisible to any query and so never checked by anyone again, while the schema swore it was not
+  there. With the `UPDATE … SET ip = NULL`, ordinary autovacuum reclaims the old row versions by
+  itself, with no lock and no operator action. Verified end to end on a populated database: 200 rows
+  kept, 200 addresses gone after a routine vacuum, the migration replayable with no further effect.
+  **The erasure is complete today**; what is deferred is the shape of the schema. The column stays
+  because a migration here must be safe to apply while the *previous* version of the player is
+  running — the rule that makes the deployment order harmless, and a test enforces it: `0.1.146`
+  still writes `ip`, PostgREST rejects a write carrying an unknown column, and dropping it today
+  would fail **every** session write of a host that migrates before deploying, with an error naming
+  a column rather than a version. Removal is a later release, once no supported version writes it;
+  until then the column is always `NULL` and carries a comment in the database saying so, which is
+  also how a host attests that 0026 ran — a migration that only erases data leaves no trace in
+  `information_schema`, and a purge is precisely the migration a host is most likely to be asked to
+  prove. What the migration cannot reach — write-ahead logs, backups, exports — follows the host's
+  own retention policy and is stated in `docs/RETENTION.md` rather than simulated, alongside a
+  notice written *before* the change for any host that queried the column directly. The raw `ua` is
+  kept: it is the only source from which `device`, `os` and `browser` can be recomputed on rows
+  already written, and dropping it is a separate decision rather than one implied by this one. One
+  guard was missing and now exists: the list of session columns *served or withheld with a reason*
+  was checked in one direction only, so an entry motivating a column that no longer exists could
+  have sat there indefinitely.
+
 ### Fixed
 
 - Reading sessions no longer carry the reader's IP address **nor the raw User-Agent**. Both `docshare.sessions` and

@@ -478,7 +478,14 @@ function parseUa(ua) {
 
 // Upsert d'une session de consultation (résumé envoyé périodiquement par la visionneuse). Stocke le temps
 // PAR page (cumulatif côté client → on remplace), totaux, appareil. Conserve started_at (insert) via merge.
-async function upsertSession(share, p, { ip, ua }) {
+// ⚠️ `ip` N'EST PLUS ÉCRITE, ET LA SIGNATURE LE DIT — comme pour la session INTERNE plus bas, et
+// pour la même raison. La 0.1.146 avait cessé de la SERVIR ; la colonne a été purgée puis
+// supprimée par la 0026 (arbitrage ADV du 01/09/2026). L'appelant continue de la passer : il ne
+// sait pas ce que chaque table conserve, et ce n'est pas à lui de le savoir. La garder en
+// paramètre nommé laisserait croire qu'elle sert — c'est comme ça qu'une donnée revient dans une
+// ligne où elle n'a plus de colonne, et l'écriture partirait alors en erreur PostgREST à chaque
+// battement de chaque lecteur.
+async function upsertSession(share, p, { ip: _ip, ua }) {
   const sessionId = String(p.sessionId || "").slice(0, 64);
   if (!sessionId) return;
   const { device, os, browser } = parseUa(ua);
@@ -487,7 +494,7 @@ async function upsertSession(share, p, { ip, ua }) {
     // Bornées comme la session INTERNE : plafond d'entrées, clés/valeurs numériques, totaux capés.
     num_pages: bornerNombre(p.numPages, BORNES.pages), max_page: mesureBornee({ maxPage: p.maxPage }).max_page,
     total_seconds: bornerNombre(p.totalSeconds, BORNES.secondes) || 0, pages_time: bornerPagesTime(p.pagesTime),
-    ua: String(ua || "").slice(0, 300), ip: String(ip || "").slice(0, 60), device, os, browser, last_at: new Date().toISOString(),
+    ua: String(ua || "").slice(0, 300), device, os, browser, last_at: new Date().toISOString(),
   };
   // started_at non touché par l'upsert (default à l'insert ; merge ne l'écrase pas car absent du body).
   await PLAYER.db.request("commercial_doc_sessions?on_conflict=session_id", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: [row] });
@@ -604,9 +611,12 @@ const CHAMPS_SERVIS = [
  * revient au bout de six mois, parce que personne ne sait pourquoi elle n'était pas là.
  */
 const CHAMPS_RETENUS = {
-  ip: "adresse IP en clair — « the most sensitive datum in the schema » selon docs/RETENTION.md, "
-    + "que rien ne lit et dont une fiche de lecture n'a pas besoin ; les participants d'une "
-    + "présentation n'ont, eux, qu'un HMAC salé de la leur",
+  ip: "adresse IP en clair — VIDÉE par la 0026 et plus jamais écrite (arbitrage ADV du "
+    + "01/09/2026). La colonne demeure le temps qu'aucune version supportée ne l'écrive : "
+    + "`docs/MIGRATIONS.md` exige qu'une migration soit sûre pendant que la version PRÉCÉDENTE "
+    + "tourne, or celle-là l'écrit encore et PostgREST rejette une écriture portant une colonne "
+    + "inconnue. Sa suppression est le geste d'une livraison ultérieure ; d'ici là elle est ici, "
+    + "vide, et retenue",
   ua: "User-Agent brut — un vecteur d'empreinte, et surtout REDONDANT : `parseUa` en tire "
     + "`device`, `os` et `browser` à l'écriture, et ces trois-là sont servis. La chaîne complète "
     + "ne porte rien de plus qu'un lecteur de fiche lise ; elle porte seulement de quoi "

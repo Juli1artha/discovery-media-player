@@ -129,6 +129,13 @@ create table if not exists public.commercial_doc_sessions (
   total_seconds   integer default 0 constraint ck_sessions_total_seconds_borne check (total_seconds is null or (total_seconds >= 0 and total_seconds <= 86400)),
   pages_time      jsonb   default '{}'::jsonb,
   ua              text,
+  -- ⚠️ VIDE, ET PLUS JAMAIS ÉCRITE (0026, arbitrage ADV du 01/09/2026). Elle a porté l'adresse du
+  -- lecteur en clair ; la 0.1.146 a cessé de la SERVIR, la 0026 efface ce qui restait et plus
+  -- aucune écriture ne la remplit. Elle demeure ici parce qu'une migration doit rester sûre
+  -- pendant que la version PRÉCÉDENTE du code tourne — celle-là l'écrit encore, et PostgREST
+  -- rejette une écriture portant une colonne inconnue : la supprimer aujourd'hui ferait échouer
+  -- TOUTES les écritures de session d'un hôte pas encore déployé. Sa suppression est le geste
+  -- d'une livraison ULTÉRIEURE, quand plus aucune version supportée ne l'écrit.
   ip              text,
   device          text,
   os              text,
@@ -792,6 +799,16 @@ update public.commercial_doc_shares set revoked_at = now() where revoked = true 
 -- job compare.
 alter table public.doc_presentations
   add column if not exists view_rotation integer not null default 0;
+
+-- ⚠️ ET LE RATTRAPAGE VAUT AUSSI POUR CE QU'ON EFFACE (0026). Une base installée avant aujourd'hui
+-- porte treize mois d'adresses ; `create table if not exists` ne touche pas une table déjà là, donc
+-- rejouer ce fichier ne les effacerait jamais. Le geste est celui de la 0026, à l'identique, et il
+-- ne coûte rien sur une base neuve — où la colonne est vide par construction.
+update public.commercial_doc_sessions set ip = null where ip is not null;
+comment on column public.commercial_doc_sessions.ip is
+  'VIDE ET PLUS JAMAIS ECRITE depuis la 0026. A porte l''adresse IP du lecteur en clair. '
+  'Conservee le temps qu''aucune version supportee du lecteur ne l''ecrive : la supprimer '
+  'aujourd''hui casserait les ecritures d''un hote pas encore deploye. Voir docs/RETENTION.md.';
 
 -- ⚠️ ET LE RATTRAPAGE VAUT AUSSI POUR LES CONTRAINTES, PAS SEULEMENT POUR LES COLONNES (0020).
 -- Elles sont déclarées dans le corps des tables ci-dessus, ce qui règle la base VIERGE — et ne

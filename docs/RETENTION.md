@@ -38,8 +38,8 @@ Purpose: reading statistics for a document that was sent out. **Purge: 13 months
 | `commercial_doc_views.ua` | browser (raw User-Agent) | same |
 | `commercial_doc_sessions.recipient_email` | session attribution | purged with the row, 13 months after `last_at` |
 | `commercial_doc_sessions.session_id` | session identifier | same |
-| `commercial_doc_sessions.ip` | **IP address in the clear** | same — the most sensitive datum in the schema. ⚠️ Since 0.1.146 it is **stored but never served**: neither `docshare.sessions` nor `docshare.sessionsByRecipient` carries it — nor the raw `ua` — and nothing in the player reads it back. What a session hands out is an explicit allow-list, so a column added later does not leave by default. Note the asymmetry it leaves: a presentation attendee's address is kept as a salted HMAC (`creator_ip_hash`), a reader's is kept in the clear — same datum, two decisions |
-| `commercial_doc_sessions.ua` | raw User-Agent | same. ⚠️ Since 0.1.146 **stored but never served** either: `device`, `os` and `browser` are derived from it at write time and are what the reading records carry |
+| `commercial_doc_sessions.ip` | **emptied, and never written again** | ⚠️ **Nothing is stored here any more.** It held the reader's IP address in the clear and was the most sensitive datum in this schema. `0.1.146` stopped **serving** it; `0.1.147` stops **writing** it and migration **0026** erases what thirteen months of journal still carried. The column itself survives for now — dropping it would break a host that applies migrations before deploying (see *Purging the reader IP* below); its removal is a later release. The asymmetry this table used to note ends here, upward: a presentation attendee's address is a salted HMAC, a reader's is now nothing at all |
+| `commercial_doc_sessions.ua` | raw User-Agent | same. ⚠️ Since 0.1.146 **stored but never served**: `device`, `os` and `browser` are derived from it at write time and are what the reading records carry. It is **kept** deliberately — it is the only source from which those three can be recomputed on rows already written, should the parsing improve. Dropping it too is a separate decision, not implied by 0026 |
 | `commercial_doc_sessions.num_pages` / `commercial_doc_sessions.pages_time` | page-by-page reading behaviour | same |
 
 ## Reading logs (internal team)
@@ -134,6 +134,54 @@ it queryable, which is strictly worse than not having it.
 ⚠️ **A visitor chooses what goes in.** `bot-tts` accepts the caller's text, so a unique text leaves
 an MP3 and a JSON in a public bucket. The grouping and ceilings added in 0.1.140 bound the cost per
 hour; only this window bounds the **duration**.
+
+## Purging the reader IP (migration 0026)
+
+⚠️ **Read this before upgrading if you have ever queried `commercial_doc_sessions.ip` directly.**
+It is now always `NULL`. `0.1.146` had already stopped serving it — no player path reads it back —
+and `0.1.147` stops writing it, so nothing in the player changes; a report or dashboard of your own
+that reads values from it starts seeing empty ones. This notice exists so that it is announced
+*before*, not explained afterwards.
+
+**The column is emptied, not dropped — and emptying is what actually erases.** This is the reverse
+of the intuition, so it is worth the measurement. `ALTER TABLE … DROP` of a column marks the
+attribute dropped; it does **not** rewrite the rows. Measured on PostgreSQL 16.13 with
+`pageinspect`, on rows carrying an address:
+
+| after | addresses still present in the heap |
+|---|---|
+| dropping the column | **all of them** |
+| … then routine `VACUUM` | **all of them** — the rows are *live*, so there is nothing to reclaim |
+| … then `VACUUM FULL` | none — but that rewrites the table under an exclusive lock |
+| `UPDATE … SET ip = NULL`, then routine `VACUUM` | **none** |
+
+Dropping the column on its own would have left every address on disk indefinitely — invisible to
+any query, and therefore never checked by anyone again, while the schema swore it was not there. The
+`UPDATE` writes new row versions without the address and makes the old ones dead; **ordinary
+autovacuum reclaims them by itself**, with no exclusive lock and no operator action. Verified end to
+end on a populated database: 200 rows kept, 200 addresses gone after a routine vacuum, the migration
+replayable with no further effect. **The erasure is therefore complete today.** What is deferred is
+the shape of the schema, not the data.
+
+**Why the column itself survives, for now.** A migration here must be safe to apply *while the
+previous version of the player is running* — that rule is what makes the deployment order harmless,
+and it is enforced by a test. `0.1.146` still writes `ip`, and PostgREST rejects a write carrying an
+unknown column: dropping it today would fail **every** session write of a host that applies
+migrations before deploying, with an error naming a column rather than a version. The column is
+removed in a later release, once no supported version writes it. Until then it exists, is always
+`NULL`, and carries a comment in the database saying so — `col_description()` on it is how you
+attest that 0026 ran.
+
+**What the migration cannot reach, and you can.** Write-ahead logs already written, backups, exports
+and migration dumps still carry the addresses; they follow *your* retention policy, not this file.
+This is the general rule stated at the end of *Limits stated rather than left unsaid* — a dropped
+column is itself a retention act, and earlier copies follow the host's backup policy — in its first
+concrete instance. A host that must attest a **complete** purge expires or rewrites its earlier
+backups; no migration can do that on its behalf.
+
+**What is not covered by 0026.** `commercial_doc_sessions.ua` stays (see the table above).
+`player_rate_limits.key` may still hold an address in the clear and expires on its own.
+`doc_presentation_attendees.creator_ip_hash` is a salted HMAC, not an address.
 
 ## Limits stated rather than left unsaid
 

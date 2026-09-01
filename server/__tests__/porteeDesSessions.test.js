@@ -424,8 +424,43 @@ describe("⚠️ ce qu'une session laisse sortir", () => {
       .toEqual([]);
   });
 
+  // ⚠️ LA MOITIÉ QUI MANQUAIT, ET C'EST LA PURGE DE LA 0026 QUI L'A MONTRÉE. Le cas ci-dessus
+  // attrape « une colonne existe et n'est pas décidée » ; rien n'attrapait « une colonne est
+  // décidée et n'existe plus ». `ip` supprimée du schéma, l'entrée de CHAMPS_RETENUS qui la
+  // motivait serait restée là indéfiniment — un motif écrit pour une chose absente, que le lecteur
+  // suivant prend pour l'état du monde. La liste dérive dans les DEUX sens ; elle est tenue dans
+  // les deux.
+  it("⚠️ et une colonne DÉCIDÉE qui n'existe plus est une entrée qui pourrit", () => {
+    const sql = readFileSync("supabase/init.sql", "utf8");
+    const bloc = /create table if not exists public\.commercial_doc_sessions \(([\s\S]*?)\n\);/.exec(sql);
+    const colonnes = new Set(bloc[1].split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith("--"))
+      .map((l) => l.split(/\s+/)[0])
+      .filter((c) => /^[a-z_]+$/.test(c)));
+    expect([...CHAMPS_SERVIS, ...Object.keys(CHAMPS_RETENUS)].filter((c) => !colonnes.has(c)),
+      "cette colonne est nommée dans une des deux listes mais n'est plus dans la table")
+      .toEqual([]);
+  });
+
+  // ⚠️ LA COLONNE `ip` EXISTE ENCORE, ET C'EST UNE DÉCISION QUI DOIT SE LIRE — pas un oubli.
+  // La 0026 la VIDE ; elle ne la supprime pas, parce qu'une migration doit rester sûre pendant que
+  // la version précédente du code tourne et que celle-là l'écrit encore. Ce qui est éprouvé ici,
+  // c'est que l'`init.sql` d'une base NEUVE efface aussi — sinon la purge ne vaudrait que pour les
+  // bases migrées, et une installation faite demain repartirait avec une colonne sans consigne.
+  it("⚠️ la colonne `ip` demeure, mais l'init la vide et dit pourquoi elle demeure", () => {
+    const sql = readFileSync("supabase/init.sql", "utf8");
+    expect(sql, "l'init doit effacer comme la 0026, sinon la purge ne vaut que pour les bases migrées")
+      .toMatch(/update public\.commercial_doc_sessions set ip = null/);
+    expect(sql, "et dire, DANS la base, ce qu'est cette colonne — un hôte sonde col_description()")
+      .toMatch(/comment on column public\.commercial_doc_sessions\.ip is/);
+    const bloc = /create table if not exists public\.commercial_doc_sessions \(([\s\S]*?)\n\);/.exec(sql);
+    expect(bloc[1], "la raison de sa survie doit être écrite là où on la lit")
+      .toMatch(/version PRÉCÉDENTE du code/);
+  });
+
   it("⚠️ et une colonne retenue porte une raison LISIBLE, pas une case cochée", () => {
-    expect(Object.keys(CHAMPS_RETENUS)).toEqual(expect.arrayContaining(["ip", "ua"]));
+    expect(Object.keys(CHAMPS_RETENUS)).toEqual(expect.arrayContaining(["ua"]));
     for (const [colonne, raison] of Object.entries(CHAMPS_RETENUS)) {
       expect(raison.length, `« ${colonne} » : une raison d'un mot n'explique rien`).toBeGreaterThan(40);
     }

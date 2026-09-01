@@ -178,12 +178,41 @@ describe("ce qu'une session interne conserve, et ce qu'elle ne conserve pas", ()
     expect(ligne.os, "les champs dérivés restent renseignés").toBeTruthy();
   });
 
-  // La population externe, elle, les garde — la distinction est le produit, pas un détail.
-  it("la session EXTERNE les conserve, elle", async () => {
+  // La population externe garde `ua` — la distinction est le produit, pas un détail. Elle ne garde
+  // PLUS l'adresse : la colonne a été purgée puis supprimée par la 0026 (arbitrage ADV du
+  // 01/09/2026), après que la 0.1.146 eut cessé de la servir.
+  it("la session EXTERNE conserve l'agent, source des champs dérivés", async () => {
     await shares.upsertSession(
       { slug: "s", doc_id: "d1" }, { sessionId: "s1" },
       { ip: "203.0.113.9", ua: "Mozilla/5.0 Chrome/120" },
     );
     expect(Object.keys(ligne), "deux populations, deux promesses").toContain("ua");
+  });
+
+  // ⚠️ ET L'ADRESSE N'EST PLUS ÉCRITE NON PLUS — LA MOITIÉ QUE LE CODE NE POUVAIT PAS RÉGLER SEUL.
+  // Ne plus la SERVIR (0.1.146) laissait treize mois de journal la porter en clair. La colonne
+  // n'existe plus : si cette écriture la posait encore, chaque battement de chaque lecteur partirait
+  // en erreur PostgREST — ce cas est donc autant une garde de rétention qu'une garde de service.
+  it("⚠️ mais elle n'écrit plus l'adresse — la colonne n'existe plus", async () => {
+    await shares.upsertSession(
+      { slug: "s", doc_id: "d1" }, { sessionId: "s1" },
+      { ip: "203.0.113.9", ua: "Mozilla/5.0 Chrome/120" },
+    );
+    expect(Object.keys(ligne), "la 0026 a supprimé la colonne : l'écrire ferait échouer l'upsert")
+      .not.toContain("ip");
+    expect(JSON.stringify(ligne), "aucune adresse, sous quelque clé que ce soit")
+      .not.toContain("203.0.113.9");
+  });
+
+  // ⚠️ ET L'APPELANT CONTINUE DE LA PASSER, exprès : il ne sait pas ce que chaque table conserve.
+  // Ce qui vaut d'être éprouvé, c'est que la lui passer ne casse RIEN — sinon la prochaine personne
+  // « nettoierait » les appelants et l'adresse ressortirait par la porte du refactoring.
+  it("⚠️ passer l'adresse reste sans effet et sans erreur, des deux côtés", async () => {
+    await expect(shares.upsertSession({ slug: "s", doc_id: "d1" }, { sessionId: "s1" },
+      { ip: "198.51.100.4", ua: "x" })).resolves.toBeUndefined();
+    expect(JSON.stringify(ligne)).not.toContain("198.51.100.4");
+    await expect(shares.upsertSession({ slug: "s", doc_id: "d1" }, { sessionId: "s2" }, { ua: "x" }))
+      .resolves.toBeUndefined();
+    expect(ligne.session_id, "sans adresse du tout, l'écriture se fait pareil").toBe("s2");
   });
 });
