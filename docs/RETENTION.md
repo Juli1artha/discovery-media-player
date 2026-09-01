@@ -177,11 +177,35 @@ end on a populated database: 200 rows kept, 200 addresses gone after a routine v
 replayable with no further effect. **The erasure is therefore complete today.** What is deferred is
 the shape of the schema, not the data.
 
-**When the columns are removed, and how to know the moment has come.** Not until **every deployed
-host runs a version that no longer writes them** — the release carrying 0026 and 0027, or later.
-Until then a `DROP` of any of the three would fail every session and view write of a host that
-applies migrations before deploying. The check is not a date: it is whether the oldest player version
-still in service is at or past that release.
+**Dropping the three columns is YOUR decision, not a migration we will ship.** This section used to
+say the removal would come "in a later release", which was misleading: **we cannot know which player
+version runs against your database, and you can.** A `DROP` is only safe once every instance writing
+to that database is on `0.1.147` or later; on `0.1.145` and earlier PostgREST would reject every
+session and view write, with an error naming a column rather than a version. Shipping that `DROP` in
+`supabase/migrations/`, which every host replays, would hand the same irreversible gesture to hosts
+whose deployment we have never seen. So it stays where the answer is known — with you.
+
+**How to know the moment has come.** `?contract=1&schema=1` reports `purge.vide`. When it is `true`
+on every instance pointing at that database, and every one of them is on `0.1.147` or later, nothing
+writes those columns any more. Then, if you want the schema tidied:
+
+```sql
+alter table public.commercial_doc_sessions drop column if exists ip;
+alter table public.commercial_doc_sessions drop column if exists ua;
+alter table public.commercial_doc_views    drop column if exists ua;
+```
+
+⚠️ **This buys tidiness, not erasure — the erasure already happened.** `0026` and `0027` are what
+removed the values, and routine autovacuum is what removed them from the pages (measured on a real
+host: four seconds after the second migration, no lock, nothing triggered by hand). A `DROP` on
+already-empty columns rewrites nothing and frees nothing. Run it because a schema should say what it
+holds, not because anything is still there.
+
+⚠️ **And you lose the attestation with the column.** The comment carried by each column — readable
+through `col_description()` — is what proves the purge was applied; a count of zero does not, since
+it cannot tell "purged" from "never written". Capture that proof before dropping if you may need to
+show it. After the drop, `purge.vide` still reads `true`: an absent column is a known state, not an
+unknown one.
 
 **Why the column itself survives, for now.** A migration here must be safe to apply *while the
 previous version of the player is running* — that rule is what makes the deployment order harmless,

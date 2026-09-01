@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.148] — 2026-09-01
+
 ### Added
 
 - **`?contract=1&schema=1` now says what is still stored, not only what may be purged.** A `purge`
@@ -27,7 +29,25 @@ the notes there are this file's section for that version.
   are bounded and read one small column, so the bound reads as *at least*, never as exactly; and
   the cost runs opposite to intuition — cheap while much remains, a full scan once nothing does —
   which is stated in the code rather than hidden, the expensive case being the terminal one where
-  the counter has finished its work.
+  the counter has finished its work. **A column an operator has since dropped counts zero, not
+  `null`**: that is a known state, not a failure, and reading it as unknown would blind the counter
+  at the exact moment its subject is settled. Only PostgreSQL's `42703` is read that way; any other
+  error stays `null`, and so does a host whose `db` capability does not return a parsed body.
+
+### Changed
+
+- **`docs/RETENTION.md` no longer promises to drop the three purged columns in a later release** —
+  a statement that was misleading in a way worth naming: **we cannot know which player version runs
+  against a host's database, and the host can.** Shipping that `DROP` in `supabase/migrations/`,
+  which every host replays, would hand an irreversible gesture to installations we have never seen;
+  on `0.1.145` and earlier it would reject every session and view write, with an error naming a
+  column rather than a version. The section now states the condition, hands over the three
+  statements, and says plainly what they buy: **tidiness, not erasure.** The erasure already
+  happened — `0026` and `0027` removed the values, and routine autovacuum removed them from the
+  pages, measured on a real host at **four seconds** after the second migration, with no lock and
+  nothing triggered by hand. It also warns what is lost with the column: the `col_description()`
+  comment is what *proves* the purge was applied, and a count of zero does not, since it cannot
+  tell "purged" from "never written".
 
 
 ## [0.1.147] — 2026-09-01
@@ -5726,7 +5746,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.147...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.148...HEAD
+[0.1.148]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.147...v0.1.148
 [0.1.147]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.145...v0.1.147
 [0.1.145]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.144...v0.1.145
 [0.1.144]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.143...v0.1.144

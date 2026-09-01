@@ -95,6 +95,42 @@ describe("le compteur de ce qui porte encore ip ou ua", () => {
     expect(r.vide, "« on ne sait pas » ne doit pas se lire « c'est bon »").toBeNull();
   });
 
+  // ⚠️ LE JOUR OÙ UN EXPLOITANT SUPPRIME LA COLONNE — le geste que ce compteur sert à autoriser —
+  // la requête échoue avec le 42703 de PostgreSQL. Rendre `null` ferait lire « on ne sait pas » au
+  // moment exact où l'on sait le mieux : rien ne peut porter une colonne qui n'existe plus. Le
+  // compteur deviendrait aveugle quand son sujet est réglé.
+  it("⚠️ une colonne SUPPRIMÉE compte zéro — c'est un état connu, pas une panne", async () => {
+    brancher((c) => {
+      if (!c.includes("ip=")) return [];
+      const e = new Error("Supabase GET … → 400");
+      e.statusCode = 400;
+      e.details = { code: "42703", message: 'column "ip" does not exist' };
+      return e;
+    });
+    const r = await retention.resteDeLaPurge();
+    expect(r.sessionsIp, "la colonne n'existe plus : rien ne peut la porter").toBe(0);
+    expect(r.vide, "et la purge est bien complète ici").toBe(true);
+  });
+
+  it("⚠️ mais une AUTRE erreur 400 reste indéterminée — seul 42703 est concluant", async () => {
+    brancher((c) => {
+      if (!c.includes("ip=")) return [];
+      const e = new Error("Supabase GET … → 400");
+      e.statusCode = 400;
+      e.details = { code: "22P02", message: "invalid input syntax" };
+      return e;
+    });
+    const r = await retention.resteDeLaPurge();
+    expect(r.sessionsIp).toBeNull();
+    expect(r.vide).toBeNull();
+  });
+
+  it("⚠️ et un hôte dont la capacité `db` ne rend pas le corps analysé retombe sur l'indéterminé", async () => {
+    brancher((c) => (c.includes("ip=") ? new Error("400") : []));
+    expect((await retention.resteDeLaPurge()).sessionsIp,
+      "sans détail, ne pas savoir est le côté sûr").toBeNull();
+  });
+
   it("⚠️ et une réponse qui n'est pas une liste est un indéterminé, pas un zéro", async () => {
     brancher(() => ({ message: "quelque chose d'autre" }));
     const r = await retention.resteDeLaPurge();
