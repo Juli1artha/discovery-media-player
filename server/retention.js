@@ -431,6 +431,18 @@ const SONDES_RESTE = [
   ["vuesUa", "commercial_doc_views", "id", "ua"],
 ];
 
+/**
+ * ⚠️ ET LA COLONNE DISPARUE EST UN ÉTAT CONNU, PAS UNE PANNE. Le jour où un exploitant supprime ces
+ * colonnes — le geste que ce compteur sert à autoriser — la requête échoue avec le
+ * `42703` de PostgreSQL, « colonne inexistante ». Rendre `null` ferait alors lire « on ne sait
+ * pas » au moment EXACT où l'on sait le mieux : plus rien ne peut porter une colonne qui n'existe
+ * plus. Le compteur deviendrait aveugle précisément quand son sujet est réglé.
+ *
+ * Toute autre erreur reste `null`. Et un hôte dont la capacité `db` ne rend pas le corps analysé
+ * retombe sur `null` : ne pas savoir est le côté sûr, puisque zéro est ce qui autorise à supprimer.
+ */
+const COLONNE_ABSENTE = "42703";
+
 async function compterReste(table, cle, colonne) {
   try {
     const lignes = await PLAYER.db.request(
@@ -438,7 +450,8 @@ async function compterReste(table, cle, colonne) {
       { timeoutMs: 8000 },
     );
     return Array.isArray(lignes) ? lignes.length : null;
-  } catch {
+  } catch (e) {
+    if (e && e.details && e.details.code === COLONNE_ABSENTE) return 0;
     return null;   // indéterminé — surtout pas zéro
   }
 }
