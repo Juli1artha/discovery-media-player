@@ -749,6 +749,43 @@ check. **A measuring instrument that assumes a convention reports the convention
 findings**, and a survivor list is exactly where such a false finding is least likely to be
 questioned — it agrees with what the list is for.
 
+### The three tools "measured on nothing" were measured on the wrong thing
+
+Twice now this page has recorded three tools as a hole: `release-preflight`, `verdict-zap` and
+`zones-du-tarball` are red or usage-refusing before any mutation, so the sweep skipped them and
+their patterns stayed unproven. Written as a hole it was honest, and it was still wrong about
+*what* the hole was. **All three have a bench.** The sweep's exclusion came from its own rule — run
+the tool bare, read the exit code — and that rule has no meaning for a tool that takes arguments, a
+tool that judges a scan someone else ran, or a tool that compares two tarballs. Re-swept against
+their benches instead: **11 literals, 8 already killed, 3 survivors.**
+
+⚠️ **One of the three was a witness that had quietly stopped witnessing.** `verdict-zap`'s
+`analyser` takes the list of report files actually on disk and flags any whose surface nobody
+announced — its own comment calls this *the one witness independent of the caller*, the only input
+that does not come from the process being judged. The bench exercised that rule by **injecting** the
+list; the function that **reads** it was tested nowhere. Blind its pattern and the list is empty in
+every circumstance, no orphan is ever seen again, and nothing moves — not the guard, not the bench.
+**A witness whose own eyes are untested is a witness that reports what you handed it.**
+
+The other two are smaller and were made testable rather than changed. `release-preflight` parsed
+`git ls-remote --tags` inside its main function — a function that needs a repository, a network and
+a version to ship, which is exactly why the sweep could not reach it. Lifted out, it has a bench:
+an annotated tag comes out of `ls-remote` **twice**, once as the tag object and once as
+`v0.1.1^{}`, the commit it dereferences, and half this repository's lines carry that suffix.
+`zones-du-tarball`'s quote-stripping had no subject at all — no migration here quotes an
+identifier — and writing its bench turned up something the code did not say: the pattern requires
+the name to *start* with a letter, so `create table "presence"` is not seen at all, and the strip
+only ever serves qualified names like `public."presence"`. That is the trade-off the function
+declares in its own header (*missing an object costs a round-trip, inventing one would be worse*),
+so it stays — **stated in a test instead of rediscovered by whoever assumed otherwise.**
+
+⚠️ **The lesson is about the instrument again, and it is the same one twice in a row.** The sweep
+found the bench by naming convention and reported the convention's exception as a finding; then it
+defined coverage as *the tool exits non-zero* and reported the definition's exceptions as holes.
+Both times the instrument's assumption became a fact about the code, and both times it read as the
+kind of fact the exercise was looking for. **When a measurement excludes something, ask whether the
+thing is unmeasurable or merely outside what you decided to measure.**
+
 ## A derived perimeter is proven by a file that appears, not by a count
 
 **Twenty-three guards take their perimeter from the disk** (`git ls-files`, `readdirSync`,
