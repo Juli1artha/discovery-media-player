@@ -14,7 +14,7 @@
 // les règles de décision — et elles se lisent sans dépôt.
 
 import { describe, it, expect } from "vitest";
-import { ecartVersionChangelog, ecartNotes, ecartTagExistant, rapport } from "../release-preflight.mjs";
+import { ecartVersionChangelog, ecartNotes, ecartTagExistant, rapport, tagsDuDistant } from "../release-preflight.mjs";
 
 const CHL = `## [0.1.9] — 2026-01-09
 
@@ -107,5 +107,38 @@ describe("le rapport — un « non vérifié » ne se confond jamais avec un ver
     expect(texte).not.toContain("git tag -a");
     expect(texte).toMatch(/n'ont PAS été vérifiés/);
     expect(texte).toContain("gh run list");
+  });
+});
+
+// ⚠️ CETTE LECTURE VIVAIT DANS LA FONCTION PRINCIPALE, DONC NULLE PART OÙ ON PUISSE L'ÉPROUVER : le
+// préflight ne tourne pas sans dépôt, sans réseau et sans version à sortir, et le balayage de
+// mutation la déclarait « mesurée sur rien ». Un tag annoté sort DEUX fois de `ls-remote` — l'objet
+// et le commit déréférencé — et la moitié des lignes de ce dépôt porte le suffixe.
+describe("⚠️ les tags que le distant annonce, tels qu'on doit les comparer", () => {
+  const sortie = [
+    "6092605458805b143ead7e139685e1fab056991b\trefs/tags/v0.1.0",
+    "a2e5ccbd06301df8ed2eaf40a9fc38ac6ebb3aa4\trefs/tags/v0.1.1",
+    "31610111b48ff717bd83afd8b43318b0c737f5bd\trefs/tags/v0.1.1^{}",
+  ].join("\n");
+
+  it("déréférence le suffixe d'un tag annoté plutôt que d'en faire un tag de plus", () => {
+    expect(tagsDuDistant(sortie)).toEqual(["v0.1.0", "v0.1.1", "v0.1.1"]);
+  });
+
+  it("⚠️ et sans ce retrait, la liste porterait un nom qu'aucun tag posé ne peut égaler", () => {
+    const brut = sortie.split("\n").map((l) => l.split("refs/tags/")[1]).filter(Boolean);
+    expect(brut).toContain("v0.1.1^{}");
+    expect(tagsDuDistant(sortie)).not.toContain("v0.1.1^{}");
+  });
+
+  it("ignore ce qui n'est pas une référence de tag, et ne rend rien sur une sortie vide", () => {
+    expect(tagsDuDistant("abc\trefs/heads/main\n\n")).toEqual([]);
+    expect(tagsDuDistant("")).toEqual([]);
+    expect(tagsDuDistant(null)).toEqual([]);
+  });
+
+  it("bout en bout : un tag annoté déjà posé est reconnu comme pris", () => {
+    expect(ecartTagExistant("v0.1.1", tagsDuDistant(sortie))).toMatch(/existe déjà/);
+    expect(ecartTagExistant("v0.1.2", tagsDuDistant(sortie))).toBeNull();
   });
 });

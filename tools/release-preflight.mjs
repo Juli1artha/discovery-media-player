@@ -73,6 +73,27 @@ export function ecartTagExistant(tag, tagsConnus) {
   return tagsConnus.includes(tag) ? `le tag ${tag} existe déjà — une sortie ne se rejoue pas en la retaguant` : null;
 }
 
+/**
+ * Les noms de tags que `git ls-remote --tags origin` annonce, tels qu'on doit les comparer.
+ *
+ * ⚠️ UN TAG ANNOTÉ SORT DEUX FOIS : `refs/tags/v0.1.1` pour l'objet-tag, et `refs/tags/v0.1.1^{}`
+ * pour le commit qu'il désigne. Les deux existent bel et bien sur ce dépôt — mesuré le 01/09, la
+ * moitié des lignes de `ls-remote` porte le suffixe. Le second n'est pas un tag de plus : c'est le
+ * même, déréférencé.
+ *
+ * ⚠️ ET CETTE LECTURE VIVAIT DANS LA FONCTION PRINCIPALE, DONC NULLE PART OÙ ON PUISSE L'ÉPROUVER.
+ * Le préflight ne s'exécute pas sans un dépôt, un réseau et une version à sortir ; le balayage de
+ * mutation le déclarait « mesuré sur rien » et passait. Sortie ici, elle a un banc. Le suffixe
+ * retiré, `ecartTagExistant` compare des noms comparables ; laissé, il ajoute une entrée qui ne
+ * ressemble à aucun tag qu'on poserait — inoffensif aujourd'hui parce que la ligne NUE est là
+ * aussi, et c'est exactement le genre de « inoffensif aujourd'hui » qu'on préfère écrire.
+ */
+export const tagsDuDistant = (sortie) =>
+  String(sortie || "").split("\n")
+    .map((l) => l.split("refs/tags/")[1])
+    .filter(Boolean)
+    .map((t) => t.replace(/\^\{\}$/, ""));
+
 // ── Le relevé, sur le dépôt réel ──────────────────────────────────────────────────────────────
 
 export function preflight({ racine = ".", reseau = true } = {}) {
@@ -134,8 +155,7 @@ export function preflight({ racine = ".", reseau = true } = {}) {
   const locaux = essaye(() => git("tag", "-l").split("\n").filter(Boolean), []);
   ajoute("le tag est libre en local", ecartTagExistant(tag, locaux), `${tag} disponible`);
   if (reseau) {
-    const distants = essaye(() => git("ls-remote", "--tags", "origin")
-      .split("\n").map((l) => l.split("refs/tags/")[1]).filter(Boolean).map((t) => t.replace(/\^\{\}$/, "")), null);
+    const distants = essaye(() => tagsDuDistant(git("ls-remote", "--tags", "origin")), null);
     if (distants === null) inconnu("le tag est libre sur origin", "le distant n'a pas répondu", "git ls-remote --tags origin");
     else ajoute("le tag est libre sur origin", ecartTagExistant(tag, distants), `${tag} disponible`);
   }

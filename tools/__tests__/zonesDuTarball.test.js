@@ -278,3 +278,34 @@ describe("la version précédente", () => {
     expect(versionPrecedente(["0.9.9", "1.0.0", "1.0.1"], "1.0.1")).toBe("1.0.0");
   });
 });
+
+// ⚠️ AUCUNE MIGRATION DE CE DÉPÔT N'ÉCRIT UN IDENTIFIANT ENTRE GUILLEMETS — mesuré le 01/09 — donc
+// aveugler le retrait des guillemets ne changeait rien, nulle part : ni la garde, ni ce banc. Ce
+// qui suit dit ce que la sonde FAIT de ces guillemets, plutôt que de le supposer.
+//
+// ⚠️ ET CE QU'ELLE FAIT N'EST PAS CE QU'ON CROIRAIT. Le nom doit COMMENCER par une lettre ou un
+// souligné : `create table "presence"` n'est donc pas relevé du tout, et le retrait ne sert qu'aux
+// noms qualifiés — `public."presence"`. C'est la direction que ce fichier assume en toutes lettres
+// (« un objet qu'elle manque coûte un aller-retour, un objet qu'elle invente serait pire ») ; on
+// l'écrit ici pour qu'elle soit constatée, et non redécouverte par quelqu'un qui la croyait autre.
+describe("⚠️ l'objet annoncé porte le nom nu, et la sonde ne voit pas tous les noms cités", () => {
+  it("retire les guillemets d'un nom QUALIFIÉ — c'est le seul cas où le retrait sert", () => {
+    expect(objetsSQL('create table public."presence" (id int);')).toEqual(["table public.presence — create"]);
+    expect(objetsSQL('create index idx on public."t" (a);')).toEqual(["index idx — create"]);
+  });
+
+  it("⚠️ un nom entièrement cité n'est PAS relevé — le motif exige une lettre en tête", () => {
+    expect(objetsSQL('create table "presence" (id int);'),
+      "manquer coûte un aller-retour ; inventer serait pire — c'est le compromis écrit en tête de la fonction")
+      .toEqual([]);
+  });
+
+  it("⚠️ et un même objet cité puis nu ne compte qu'une fois, avec ses deux verbes", () => {
+    expect(objetsSQL('drop function public."bump"(int);\ncreate or replace function public.bump(int) returns void as $$ $$;'))
+      .toEqual(["function public.bump — drop, create"]);
+  });
+
+  it("un nom qualifié garde son schéma", () => {
+    expect(objetsSQL("create table public.t (a int);")).toEqual(["table public.t — create"]);
+  });
+});

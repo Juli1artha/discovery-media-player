@@ -12,7 +12,10 @@
 // écrit son rapport ? ». Deux d'entre eux n'existaient pas avant ce fichier : le vert sans preuve,
 // et le rouge sans verdict — celui de la course.
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   analyser,
@@ -20,6 +23,7 @@ import {
   nomDuRapport,
   principal,
   verdictDeLaSurface,
+  rapportsPresents,
 } from "../verdict-zap.mjs";
 import { CONFORME, VIOLATION, INCONCLUSIF } from "../resultat-garde.mjs";
 
@@ -159,5 +163,47 @@ describe("le point d'entrée refuse plutôt que de deviner", () => {
   it("un dossier de rapports absent rend toutes les surfaces aveugles", () => {
     const r = principal(["/tmp/dossier-qui-n-existe-pas-verdict-zap", "doc=http://x=0"]);
     expect(r.code, "aucun rapport lisible : rien n'est prouvé").toBe(INCONCLUSIF);
+  });
+});
+
+// ⚠️ LE TÉMOIN INDÉPENDANT DE L'APPELANT AVAIT LUI-MÊME UNE SONDE QUE PERSONNE N'ÉPROUVAIT.
+// `analyser` reçoit la liste des rapports présents sur le disque et signale ceux dont la surface
+// n'a pas été annoncée — la seule chose ici qui ne vienne PAS de l'appelant. Le banc éprouvait la
+// règle en INJECTANT cette liste ; la fonction qui la LIT n'était éprouvée nulle part. Mesuré le
+// 01/09 en aveuglant son motif : la liste devient vide en toute circonstance, plus aucun orphelin
+// n'est jamais vu, et rien ne bouge — ni la garde, ni ce banc. Le témoin cessait de témoigner.
+describe("⚠️ la lecture des rapports réellement présents", () => {
+  let dossier;
+
+  beforeEach(() => {
+    dossier = mkdtempSync(join(tmpdir(), "zap-banc-"));
+  });
+
+  afterEach(() => {
+    rmSync(dossier, { recursive: true, force: true });
+  });
+
+  it("reconnaît un rapport, et le nom qu'elle reconnaît est celui que `nomDuRapport` écrit", () => {
+    writeFileSync(join(dossier, nomDuRapport("doc")), "<html></html>");
+    expect(rapportsPresents(dossier)).toEqual([nomDuRapport("doc")]);
+  });
+
+  it("⚠️ et ne prend pas pour un rapport ce qui n'en est pas", () => {
+    for (const f of ["rapport-.html", "rapport-doc.htm", "doc.html", "rapport-doc.html.bak", "notes.txt"]) {
+      writeFileSync(join(dossier, f), "x");
+    }
+    expect(rapportsPresents(dossier)).toEqual([]);
+  });
+
+  it("un dossier absent n'est pas une erreur — c'est une absence de rapport", () => {
+    expect(rapportsPresents(join(dossier, "nulle-part"))).toEqual([]);
+  });
+
+  it("⚠️ bout en bout : un rapport orphelin sur le DISQUE remonte en avertissement", () => {
+    writeFileSync(join(dossier, nomDuRapport("fantome")), "<html></html>");
+    const r = analyser([DOC], () => true, rapportsPresents(dossier));
+    expect(r.avertissements).toEqual([
+      expect.stringMatching(/rapport-fantome\.html existe sur le disque mais sa surface n'a pas été annoncée/),
+    ]);
   });
 });

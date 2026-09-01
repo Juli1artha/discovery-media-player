@@ -14,6 +14,16 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- The three tools the mutation sweep had recorded as *measured on nothing* were measured against
+  their benches instead of their exit codes, which is the only judge they have: 11 regex literals,
+  8 already covered, 3 survivors, now none. The one that mattered is `verdict-zap`'s reader of the
+  report files present on disk — the input its own comment calls the one witness independent of the
+  caller. The bench exercised that rule by injecting the list; the function that reads it was tested
+  nowhere, so blinding it emptied the list in every circumstance and no orphan report would ever be
+  seen again. `release-preflight`'s parsing of `git ls-remote --tags` was lifted out of a function
+  that cannot run without a repository, a network and a version to ship, and now has a bench
+  covering the `^{}` suffix an annotated tag carries; `zones-du-tarball`'s handling of quoted SQL
+  identifiers is stated in tests, including the fact that a fully quoted name is not matched at all.
 - Six guards had a probe blind on a subject the repository contains, found by opening every one of
   the 49 survivors the mutation sweep had left untriaged. Four of them printed a sentence that was
   false while blind: `shell-des-workflows` announced *112 blocks analysed by bash* having analysed
