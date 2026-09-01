@@ -185,14 +185,20 @@ after the read, so under `scope: "mine"` a page can be shorter than `limit`, or 
 more remains. The cursor carries the position of the last row **examined**, which is why nothing is
 skipped or served twice; a caller that stops on a short page loses the rest.
 
-⚠️ **A session's payload is an allow-list, and the reader's IP is not on it.** Until `0.1.146`
-both session readings returned the row as stored, which includes `ip` — the datum
-[`docs/RETENTION.md`](RETENTION.md) calls *the most sensitive in the schema*, and which nothing in
-the player reads back. It is still recorded, never served. What ships is: identifiers (`session_id`,
-`slug`, `doc_id`, `recipient_email` and the filiation), reading behaviour (`num_pages`, `max_page`,
-`total_seconds`, `pages_time`), and the client (`ua`, `device`, `os`, `browser`). **A column added to
-the table later does not leave by default** — it has to be put on the list, which makes shipping it
-a decision rather than an oversight.
+⚠️ **A session's payload is an allow-list, and two columns are deliberately off it.** Until
+`0.1.146` both session readings returned the row as stored. What ships now is: identifiers
+(`session_id`, `slug`, `doc_id`, `recipient_email` and the filiation), reading behaviour
+(`num_pages`, `max_page`, `total_seconds`, `pages_time`), the client as read by a human (`device`,
+`os`, `browser`), and the timestamps.
+
+| withheld | why |
+|---|---|
+| `ip` | the datum [`docs/RETENTION.md`](RETENTION.md) calls *the most sensitive in the schema*, which nothing in the player reads back. A presentation attendee's address is kept as a salted HMAC; a reader's was served in the clear |
+| `ua` | the raw User-Agent — a fingerprinting vector, and **redundant**: `device`, `os` and `browser` are derived from it at write time and are served. The full string carries nothing more that a reader of the record reads, only enough to recognise one device across sessions |
+
+Both are still **recorded** (purged at thirteen months): not serving a column and not keeping it are
+two different decisions. **A column added to the table later does not leave by default** — it has to
+be put on the list, which makes shipping it a decision rather than an oversight.
 
 Sessions are ordered by `(last_at, session_id)` descending. The second coordinate is not decorative:
 two sessions can share a timestamp, and a cursor on time alone would drop one of them.

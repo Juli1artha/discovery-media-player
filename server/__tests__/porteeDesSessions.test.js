@@ -369,12 +369,25 @@ describe("⚠️ ce qu'une session laisse sortir", () => {
     }
   });
 
+  it("⚠️ ni le User-Agent BRUT — il est redondant avec device/os/browser, et il empreinte", async () => {
+    const parDoc = await listSessionsForDoc("d1", null);
+    const parPersonne = await listSessionsForRecipient("dana@client.fr", { owner: null });
+    for (const [quoi, vues] of [["par document", parDoc], ["par destinataire", parPersonne.sessions]]) {
+      expect(vues[0], quoi).not.toHaveProperty("ua");
+      expect(JSON.stringify(vues), `${quoi} : la chaîne brute ne doit apparaître nulle part`)
+        .not.toContain("Mozilla/5.0");
+      // Ce qu'un lecteur de fiche lit vraiment reste là : `parseUa` l'a extrait à l'écriture.
+      expect([vues[0].device, vues[0].os, vues[0].browser], quoi).toEqual(["desktop", "macOS", "Safari"]);
+    }
+  });
+
   it("⚠️ et la base ne nous la donne même pas — le `select=` ne la demande pas", async () => {
     demandes.length = 0;
     await listSessionsForDoc("d1", null);
     const lecture = demandes.find((c) => c.startsWith("commercial_doc_sessions"));
     expect(lecture, "plus de select=*").not.toMatch(/select=\*/);
-    expect(lecture, "la colonne n'est pas demandée").not.toMatch(/\bip\b/);
+    expect(lecture, "la colonne ip n'est pas demandée").not.toMatch(/\bip\b/);
+    expect(lecture, "la colonne ua non plus").not.toMatch(/\bua\b/);
     expect(lecture).toMatch(/select=[^&]*session_id/);
   });
 
@@ -383,7 +396,8 @@ describe("⚠️ ce qu'une session laisse sortir", () => {
     expect(vue.max_page).toBe(4);
     expect(vue.total_seconds).toBe(360);
     expect(vue.pages_time).toEqual({ 1: 30 });
-    expect([vue.device, vue.os, vue.browser]).toEqual(["desktop", "macOS", "Safari"]);
+    expect([vue.device, vue.os, vue.browser], "l'appareil lisible, tiré du UA à l'écriture")
+      .toEqual(["desktop", "macOS", "Safari"]);
     expect(vue.recipient_name, "la jointure du nom tient toujours").toBe("Dana");
   });
 
@@ -411,10 +425,12 @@ describe("⚠️ ce qu'une session laisse sortir", () => {
   });
 
   it("⚠️ et une colonne retenue porte une raison LISIBLE, pas une case cochée", () => {
-    expect(Object.keys(CHAMPS_RETENUS)).toContain("ip");
+    expect(Object.keys(CHAMPS_RETENUS)).toEqual(expect.arrayContaining(["ip", "ua"]));
     for (const [colonne, raison] of Object.entries(CHAMPS_RETENUS)) {
       expect(raison.length, `« ${colonne} » : une raison d'un mot n'explique rien`).toBeGreaterThan(40);
     }
-    expect(CHAMPS_SERVIS, "l'IP ne peut pas être dans les deux listes").not.toContain("ip");
+    for (const retenu of Object.keys(CHAMPS_RETENUS)) {
+      expect(CHAMPS_SERVIS, `« ${retenu} » ne peut pas être dans les deux listes`).not.toContain(retenu);
+    }
   });
 });
