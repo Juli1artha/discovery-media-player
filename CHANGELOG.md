@@ -41,6 +41,22 @@ the notes there are this file's section for that version.
   now also carries its filiation (`parent_slug` and the parent's recipient), without which the rule
   is invisible to the caller. Hosts: see `docs/HOST-CONTRACT.md` — a member you answer *no* to on
   `list.all` now sees only their own chain.
+- The twelve regular-expression probes that neither their guard nor any bench could see are closed
+  out. Ten now die to a case that names them: what a fenced code block hides from a language check,
+  which of three string forms a crypto-binding guard strips, which shell a workflow step runs under
+  and what survives of its refusal, the root `permissions:` block, a SQL block comment that must not
+  fabricate a signature, and the whitespace fold that makes a comment's fingerprint depend on its
+  text rather than on the file's layout. **Two cannot die and now say so with a measurement**:
+  `secrets-en-clair` normalises base64url before decoding, and Node's decoder already accepts `-`
+  and `_` — the bench computes both decodings and asserts they are equal, so the redundancy is
+  checked at every run instead of being claimed in a comment nobody has re-verified. Three of the
+  ten took two attempts, each because the first fixture differed from its subject in more than one
+  way and was caught by a second mechanism before reaching the probe it named: a call glued to its
+  quote that the call-shape probe already refuses, a closed fence whose six backticks the inline
+  stripper pairs off by itself, and a comment folded at the head where `trim` suffices. The fence
+  stripper changes the verdict on **zero** of the repository's 31 markdown files — it guards a shape
+  no document has yet — and the bench pins that too, so the next reader does not mistake proximity
+  for coverage.
 - The probes that are not regular expressions had never been measured, and they hold up worse than
   the ones that are: 152 of them, 90 leaving their guard green, against 55 of 143 for the regexes.
   Five had a live subject. `surface-publique` loaded three modules instead of seven and read

@@ -141,3 +141,41 @@ describe("⚠️ le plancher sur ce que la phrase verte PRONONCE", () => {
       .toBeGreaterThanOrEqual(PLANCHER_BLOCS);
   });
 });
+
+// ⚠️ TROIS SONDES QUE NI LA GARDE NI CE BANC NE VOYAIENT, mesurées le 01/09 : le choix du binaire
+// (`sh` ou `bash`) et les deux expressions qui EXTRAIENT le message d'erreur. Aucune n'est fautive ;
+// aucune n'était éprouvée. Le choix du binaire n'a aujourd'hui aucun sujet — les 112 blocs du dépôt
+// sont tous en `bash` — et c'est justement pourquoi il fallait un cas fabriqué.
+describe("⚠️ l'analyse elle-même : quel binaire, et ce qu'on garde de son refus", () => {
+  it("⚠️ un bloc déclaré `sh` est jugé par SH, pas par bash", () => {
+    // ⚠️ IL FAUT UNE FORME QUE LES DEUX BINAIRES NE PARSENT PAS PAREIL, et `-n` ne fait
+    // qu'analyser : `declare -A t` — le premier cas écrit ici — est syntaxiquement valide pour
+    // dash, qui n'y voit qu'une commande et ses arguments. Un littéral de TABLEAU, lui, est une
+    // syntaxe que dash refuse à l'analyse. Mesuré avant d'être cru.
+    const propreAuBash = "tableau=(un deux)\n";
+    expect(analyserAvecBash(propreAuBash, "bash"), "bash accepte un littéral de tableau").toBeNull();
+    expect(analyserAvecBash(propreAuBash, "sh"),
+      "sh le refuse — si le choix du binaire ne se lisait plus, ce cas rendrait null")
+      .toBeTruthy();
+  });
+
+  it("un shell inconnu retombe sur bash plutôt que d'échouer à lancer quoi que ce soit", () => {
+    expect(analyserAvecBash("if [ -z ]; then\n", "pwsh"), "un script cassé reste refusé").toBeTruthy();
+  });
+
+  it("⚠️ le message gardé NOMME l'erreur, il ne réécho pas le script", () => {
+    const dit = analyserAvecBash("if [ -z ]; then\n", "bash");
+    expect(dit, "bash refuse ce script").toBeTruthy();
+    expect(dit.toLowerCase(), "on garde la ligne qui parle de syntaxe").toMatch(/syntax|unexpected/);
+    expect(dit, "et pas le chemin du fichier temporaire, qui ne dit rien à personne")
+      .not.toMatch(/shellwf-|\/tmp\//);
+    expect(dit.split("\n"), "une ligne, pas la trace entière").toHaveLength(1);
+  });
+
+  it("⚠️ un refus dont AUCUNE ligne ne parle de syntaxe rend quand même quelque chose", () => {
+    // Le repli existe pour ça : sans lui, `find(...)` rend `undefined` et un bloc fautif
+    // remonterait avec un message vide — donc, `if (erreur)` étant faux, ne remonterait PAS.
+    expect(analyserAvecBash("if [ -z ]; then\n", "bash")).toBeTruthy();
+    expect(String(analyserAvecBash("if [ -z ]; then\n", "bash")).length).toBeGreaterThan(0);
+  });
+});

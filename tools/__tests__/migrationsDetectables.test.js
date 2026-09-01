@@ -194,3 +194,48 @@ describe("⚠️ chaque genre de signe attesté doit encore être vu", () => {
     expect(genreDuSigne("column views.page")).toBe("column");
   });
 });
+
+// ⚠️ DEUX SONDES DE `signesDe` QUE PERSONNE N'ÉPROUVAIT — mesuré le 01/09 en les aveuglant : ni la
+// garde ni ce banc ne bougeaient. Elles ne relèvent pas des signes, elles décident de quoi les
+// signes sont faits ; leur panne ne fait pas disparaître un signe, elle en fabrique un faux ou en
+// dédouble un vrai. C'est la panne dont on ne voit rien.
+describe("⚠️ ce que `signesDe` refuse de lire, et pourquoi", () => {
+  // ⚠️ ZÉRO OCCURRENCE DANS LES MIGRATIONS D'AUJOURD'HUI — vérifié le 01/09, aucun `/* … */` dans
+  // les 25 fichiers. La sonde ne peut donc rien changer au compte actuel, et c'est exactement pour
+  // ça qu'elle n'était vue par personne : elle ferme une porte plutôt qu'elle n'ouvre un cas.
+  // Ce qui passerait par cette porte est un signe FABRIQUÉ — une migration qu'on croirait prouvable
+  // parce qu'elle décrit, en commentaire, une table qu'elle ne crée pas.
+  it("⚠️ une table nommée dans un commentaire de bloc n'est pas une table créée", () => {
+    const sql = "/* create table public.faux_positif (id int); */\ncreate table public.vraie (id int);";
+    expect(signesDe(sql), "seule la vraie compte").toEqual(["table public.vraie"]);
+  });
+
+  it("un commentaire de bloc n'avale pas non plus ce qui le suit", () => {
+    expect(signesDe("/* rien */ create index if not exists i_x on public.t (c);"))
+      .toEqual(["index i_x"]);
+  });
+
+  // ⚠️ L'EMPREINTE PORTE SUR LE TEXTE DU COMMENTAIRE, PAS SUR LA MISE EN PAGE DU FICHIER. Ce que
+  // `col_description()` rend à un hôte est le littéral stocké : replier la même phrase sur deux
+  // lignes ne le change pas. Sans la normalisation, deux écritures du MÊME commentaire donneraient
+  // deux empreintes — la garde croirait deux migrations distinguables là où un hôte ne peut pas les
+  // séparer, et c'est le sens même de ce qu'elle mesure qui tomberait.
+  // ⚠️ ET LE PLI EST INTERNE, PAS EN TÊTE. Un `.trim()` suffirait à absorber l'indentation qui suit
+  // le `is` ; ce qu'il ne peut pas absorber, c'est le retour à la ligne AU MILIEU du texte — la
+  // forme qu'emploient toutes les migrations de ce dossier, qui coupent un commentaire long en
+  // littéraux concaténés (la 0025 le fait sur trois lignes). Un premier cas écrit ici ne repliait
+  // qu'en tête et passait aveuglé : il éprouvait `trim`, pas la normalisation.
+  it("⚠️ le même commentaire coupé en littéraux concaténés donne la même empreinte", () => {
+    const replie = "comment on index public.i is\n  'Sert la question de la fiche : '\n  'filtre, tri et pagination.';";
+    const droit = "comment on index public.i is 'Sert la question de la fiche : ' 'filtre, tri et pagination.';";
+    expect(signesDe(replie), "un hôte lit le texte stocké, pas la mise en page du fichier")
+      .toEqual(signesDe(droit));
+    expect(signesDe(droit)[0]).toMatch(/^comment public\.i #[0-9a-f]{8}$/);
+  });
+
+  it("⚠️ et deux TEXTES différents donnent bien deux empreintes — sinon la normalisation aurait tout aplati", () => {
+    const un = "comment on column public.t.c is 'Une phrase de commentaire.';";
+    const autre = "comment on column public.t.c is 'Une AUTRE phrase.';";
+    expect(signesDe(autre)).not.toEqual(signesDe(un));
+  });
+});
