@@ -222,6 +222,11 @@ we had told them to write a file they did not need. Code you don't write cannot 
 | `PLAYER_IP_HASH_SECRET` | salts the attendance IP fingerprint — falls back to `PLAYER_PRESENCE_SECRET` |
 | `PLAYER_PRESENCE_SECRET` | signs **presence tokens** — set it to start issuing them (see below) |
 | `PLAYER_PRESENCE_STRICT` | `1` ⇒ a presence heartbeat is recorded **only** with a proven token |
+| `PLAYER_RETENTION_SWEEP` | `1` ⇒ arms the automatic retention purge. Without it nothing is ever deleted automatically |
+| `PLAYER_RETENTION_LOGS_MONTHS` | reading-log window, whole months in `[1, 120]` (default 13) |
+| `PLAYER_RETENTION_PRESENTATIONS_MONTHS` | presentation-archive window (default 12) |
+| `PLAYER_RETENTION_REVOKED_LINKS_MONTHS` | revoked-link window (default 13) |
+| `PLAYER_RETENTION_VOICE_MONTHS` | voice-cache window (default 13) |
 | `PLAYER_TRUSTED_PROXY_HOPS` | how many **trusted** proxies sit in front of this instance |
 
 ### Presence tokens, and how to close the door safely

@@ -12,6 +12,21 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.147] — 2026-09-01
+
+> ⚠️ **`0.1.146` n'existera jamais, et voici pourquoi** — pour que personne n'ait à le deviner en
+> voyant un trou dans la suite. Le tag `v0.1.146` a été posé sur le commit qui PRÉCÈDE la coupe,
+> lequel déclarait encore `0.1.145` et ne portait aucune section `[0.1.146]`. `verifier` refuse un
+> tag qui ne s'accorde pas avec `package.json` : rien n'a été publié — ni npm, ni Release, ni
+> attestation — et le registre est resté sur `0.1.145`. Le préflight avait refusé lui aussi, une
+> ligne plus haut, en imprimant **« Préflight de publication — v0.1.145 »** et
+> **« REFUSÉ : 2 contrôle(s) en échec »**. C'est très exactement le mode de panne que
+> `docs/RELEASING.md` décrit depuis la `0.1.141`, et son remède est écrit : un tag ne se reprend
+> pas — la protection interdit sa suppression —, donc on **coupe le numéro suivant**. Avec
+> `v0.1.147` posé, le tag mort cesse d'être le plus haut et `image-reconcile` redevient sain sans
+> qu'aucune garde soit désarmée. Le numéro sauté est le prix.
+
+
 ### Removed
 
 - **The raw User-Agent is erased too, on both tables.** We had argued for keeping it — the only
@@ -244,6 +259,22 @@ the notes there are this file's section for that version.
   turns `main` red on a check that has nothing to do with whoever opened the PR.
 
 ### Added
+
+- **A standalone host can finally arm the retention purge.** `server/retention.js` requires
+  `config.retention.balayage === true`, and that strict opt-in is right — the windows are business
+  decisions, and a deletion should act only where an operator has written it down. But
+  `context/standalone.js` exposed **no retention key at all**: a host consuming that context as-is
+  had nowhere to write it, so only those hand-writing their own context could ever arm the sweep.
+  The others accumulated with no recourse, and without knowing a recourse existed. **An opt-in that
+  part of the fleet cannot reach is not an opt-in, it is an unavailability** — and it surfaced only
+  because two hosts counted what had piled up in their own databases. `PLAYER_RETENTION_SWEEP=1`
+  arms it, and the four windows come with it rather than after: exposing the switch alone would arm
+  the purge **on our defaults**, which is precisely the failure mode `retention.js` already
+  describes, reached by an environment variable instead of an oversight. Whoever arms it must be
+  able to decide what they are arming. A missing variable sets no key at all — writing `undefined`
+  over a default would make validation fail and refuse every purge for the most ordinary case,
+  a host that arms without setting months — and an unreadable value is refused by the core, naming
+  the key, with **zero deletions**, rather than corrected here where it would go silent.
 
 - `docshare.sessionsByRecipient` reads one person's reading sessions across every document —
   address, optional date bound, cursor pagination — under the same scope as `docshare.list` and
@@ -5677,7 +5708,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.145...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.147...HEAD
+[0.1.147]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.145...v0.1.147
 [0.1.145]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.144...v0.1.145
 [0.1.144]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.143...v0.1.144
 [0.1.143]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.142...v0.1.143

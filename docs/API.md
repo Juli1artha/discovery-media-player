@@ -186,15 +186,15 @@ more remains. The cursor carries the position of the last row **examined**, whic
 skipped or served twice; a caller that stops on a short page loses the rest.
 
 ⚠️ **A session's payload is an allow-list, and two columns are deliberately off it.** Until
-the next release both session readings returned the row as stored. What ships now is: identifiers
+`0.1.147` both session readings returned the row as stored. What ships now is: identifiers
 (`session_id`, `slug`, `doc_id`, `recipient_email` and the filiation), reading behaviour
 (`num_pages`, `max_page`, `total_seconds`, `pages_time`), the client as read by a human (`device`,
 `os`, `browser`), and the timestamps.
 
 | withheld | why |
 |---|---|
-| `ip` | the datum [`docs/RETENTION.md`](RETENTION.md) calls *the most sensitive in the schema*, which nothing in the player reads back. A presentation attendee's address is kept as a salted HMAC; a reader's was served in the clear. ⚠️ **In the next release** it is also never written, and migration 0026 erases what was there — after which the column is always `NULL`, and is removed in a release after that — see [*Purging the reader IP*](RETENTION.md) |
-| `ua` | the raw User-Agent — a fingerprinting vector, and **redundant**: `device`, `os` and `browser` are derived from it at write time and are served. The full string carries nothing more that a reader of the record reads, only enough to recognise one device across sessions. ⚠️ **In the next release** it is also never written, and migration 0027 erases what was there, on this table and on `commercial_doc_views` — see [*Purging the reader IP and User-Agent*](RETENTION.md) |
+| `ip` | the datum [`docs/RETENTION.md`](RETENTION.md) calls *the most sensitive in the schema*, which nothing in the player reads back. A presentation attendee's address is kept as a salted HMAC; a reader's was served in the clear. ⚠️ Since `0.1.147` it is also **never written**, and migration 0026 erases what was there: the column is then always `NULL`, and is removed in a later release — see [*Purging the reader IP*](RETENTION.md) |
+| `ua` | the raw User-Agent — a fingerprinting vector, and **redundant**: `device`, `os` and `browser` are derived from it at write time and are served. The full string carries nothing more that a reader of the record reads, only enough to recognise one device across sessions. ⚠️ Since `0.1.147` it is also **never written**, and migration 0027 erases what was there, on this table and on `commercial_doc_views` — see [*Purging the reader IP and User-Agent*](RETENTION.md) |
 
 Both are still **recorded** (purged at thirteen months): not serving a column and not keeping it are
 two different decisions. **A column added to the table later does not leave by default** — it has to
