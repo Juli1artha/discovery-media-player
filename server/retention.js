@@ -411,8 +411,18 @@ function tick() {
  * ⚠️ ON COMPTE DES LIGNES, PAS UN `count=exact`. La capacité `db` de l'hôte rend le corps de la
  * réponse, pas ses en-têtes : le compte de PostgREST voyage dans `Content-Range`, donc il serait
  * illisible sans élargir le contrat d'hôte — ce qu'un compteur de diagnostic ne justifie pas.
- * D'où un comptage BORNÉ : au plus `BORNE_RESTE` identifiants, une seule petite colonne. Atteindre
- * la borne se lit « au moins autant », jamais « exactement ».
+ * D'où un comptage BORNÉ : au plus `BORNE_RESTE` identifiants, une seule petite colonne.
+ *
+ * ⚠️ ET LA SATURATION SE DIT, ELLE NE SE DEVINE PAS — deux hôtes ont trouvé ce défaut dans la
+ * première version, le même jour, indépendamment. Elle demandait `limit=BORNE` et publiait
+ * `lignes.length` : sur une base portant cinq mille adresses, elle rendait `1000`, que rien ne
+ * distinguait d'un compte exact de mille. Un nombre faux qui se lit comme juste — pire qu'un
+ * nombre absent, parce que l'absence fait chercher et que le nombre fait conclure.
+ *
+ * Le remède vivait à trois cents lignes d'ici : `purgerRetention` rend `tronque` depuis toujours,
+ * pour exactement cette raison. On demande donc `BORNE + 1` : en recevoir autant prouve qu'il en
+ * reste, sans coûter une ligne de plus. `n` reste plafonné à la borne, et `tronque` dit qu'il faut
+ * le lire « au moins ».
  *
  * ⚠️ ET LE COÛT EST INVERSE DE L'INTUITION, donc il est dit plutôt que caché : quand il reste
  * beaucoup de lignes, la base s'arrête à la borne et c'est rapide ; quand il n'en reste AUCUNE,
@@ -423,13 +433,23 @@ function tick() {
  * ⚠️ UN ÉCHEC REND `null`, JAMAIS ZÉRO. Zéro est la réponse qui autorise à supprimer une colonne :
  * la fabriquer à partir d'une sonde en panne serait le pire mensonge que cette carte puisse faire.
  */
-const BORNE_RESTE = 1000;
+// ⚠️ CINQ MILLE, ET LE NOMBRE VIENT D'UNE MESURE. Il valait mille, et le banc écrit avec les
+// volumes RÉELS d'un hôte l'a fait rougir : sa table de vues en portait 1651. La borne saturait
+// donc dès le premier jour chez lui, et un compteur qui plafonne sous les volumes qu'il est censé
+// décrire ne décrit rien. Cinq mille couvre les deux hôtes connus avec de la marge, reste une
+// seule petite colonne à transférer, et `tronque` dit le reste. La borne est un plafond de COÛT,
+// pas une opinion sur ce qu'un hôte peut avoir.
+const BORNE_RESTE = 5000;
 
 const SONDES_RESTE = [
   ["sessionsIp", "commercial_doc_sessions", "session_id", "ip"],
   ["sessionsUa", "commercial_doc_sessions", "session_id", "ua"],
   ["vuesUa", "commercial_doc_views", "id", "ua"],
 ];
+
+/** Les tables regardées, pour le dénominateur — une par table, pas une par sonde. */
+const TABLES_RESTE = [["sessions", "commercial_doc_sessions", "session_id"],
+  ["vues", "commercial_doc_views", "id"]];
 
 /**
  * ⚠️ ET LA COLONNE DISPARUE EST UN ÉTAT CONNU, PAS UNE PANNE. Le jour où un exploitant supprime ces
@@ -443,27 +463,67 @@ const SONDES_RESTE = [
  */
 const COLONNE_ABSENTE = "42703";
 
-async function compterReste(table, cle, colonne) {
+/** `{ n, tronque }` — `n` nul veut dire indéterminé, jamais zéro. */
+const compte = (n, tronque) => ({ n, tronque });
+
+async function compterBorne(chemin) {
   try {
-    const lignes = await PLAYER.db.request(
-      `${table}?select=${cle}&${colonne}=not.is.null&limit=${BORNE_RESTE}`,
-      { timeoutMs: 8000 },
-    );
-    return Array.isArray(lignes) ? lignes.length : null;
+    // ⚠️ BORNE + 1 : la ligne excédentaire ne sert qu'à PROUVER qu'il en reste. On ne la publie pas.
+    const lignes = await PLAYER.db.request(`${chemin}&limit=${BORNE_RESTE + 1}`, { timeoutMs: 8000 });
+    if (!Array.isArray(lignes)) return compte(null, false);
+    return compte(Math.min(lignes.length, BORNE_RESTE), lignes.length > BORNE_RESTE);
   } catch (e) {
-    if (e && e.details && e.details.code === COLONNE_ABSENTE) return 0;
-    return null;   // indéterminé — surtout pas zéro
+    if (e && e.details && e.details.code === COLONNE_ABSENTE) return compte(0, false);
+    return compte(null, false);   // indéterminé — surtout pas zéro
   }
 }
 
+const compterReste = (table, cle, colonne) =>
+  compterBorne(`${table}?select=${cle}&${colonne}=not.is.null`);
+
+/**
+ * ⚠️ ET LE COMPTEUR PORTE CE QU'IL A REGARDÉ — un hôte nous l'a demandé, et il avait raison.
+ *
+ * `sessionsIp: 0` ne distingue pas trois choses : « purgé », « jamais écrit », et « la sonde vise à
+ * côté ». Les deux premières se valent pour qui veut supprimer une colonne ; la troisième est un
+ * mensonge. Le dénominateur les sépare : « 0 sur 1908 lignes examinées » dit qu'il y avait quelque
+ * chose à regarder, « 0 sur 0 » dit que la table est vide ou hors d'atteinte et que le zéro ne
+ * prouve rien.
+ *
+ * C'est notre propre règle anti-vacuité — un plancher compte la FORME RECONNUE, pas les choses
+ * comptées — appliquée partout dans `tools/` et absente d'ici jusqu'à ce qu'un lecteur la réclame.
+ *
+ * ⚠️ ET IL NE COÛTE PRESQUE RIEN, à l'inverse du compte filtré : sans filtre, la base s'arrête à la
+ * borne dès les premières lignes. Une par TABLE, pas une par sonde — deux des trois colonnes vivent
+ * dans la même.
+ */
+const compterLignes = (table, cle) => compterBorne(`${table}?select=${cle}`);
+
 async function resteDeLaPurge() {
-  const comptes = await Promise.all(SONDES_RESTE.map(([, t, c, col]) => compterReste(t, c, col)));
-  const out = { borne: BORNE_RESTE };
-  SONDES_RESTE.forEach(([nom], i) => { out[nom] = comptes[i]; });
+  const [comptes, totaux] = await Promise.all([
+    Promise.all(SONDES_RESTE.map(([, t, c, col]) => compterReste(t, c, col))),
+    Promise.all(TABLES_RESTE.map(([, t, c]) => compterLignes(t, c))),
+  ]);
+  // ⚠️ ACCUMULATEURS NUS, comme celui de `fenetresValidees` plus haut et pour la même raison : la
+  // garde de forme reconnaît `Object.create(null)`, et une écriture indexée par autre chose qu'un
+  // littéral n'a alors aucun prototype à polluer. Les clés viennent ici de constantes du fichier,
+  // mais un objet nu ne coûte rien et la propriété se lit sans avoir à remonter leur provenance.
+  const parTable = Object.create(null);
+  TABLES_RESTE.forEach(([nom], i) => { parTable[nom] = totaux[i].n; });
+  const out = Object.create(null);
+  out.borne = BORNE_RESTE;
+  // ⚠️ UN SEUL DRAPEAU POUR TOUT LE BLOC, parce qu'il ne sert qu'à une chose : dire au lecteur que
+  // les nombres qu'il voit sont des minorants. Un drapeau par compte suggérerait qu'on peut faire
+  // confiance aux autres, alors que la borne est commune et que la question ne l'est pas.
+  out.tronque = [...comptes, ...totaux].some((c) => c.tronque);
+  out.lignes = parTable;
+  SONDES_RESTE.forEach(([nom], i) => { out[nom] = comptes[i].n; });
   // ⚠️ TROIS ÉTATS, PAS DEUX. `true` : plus rien, le retrait des colonnes est permis ICI. `false` :
   // il reste des lignes. `null` : au moins une sonde n'a pas répondu — on ne sait pas, et « on ne
   // sait pas » ne doit jamais se lire comme « c'est bon ».
-  out.vide = comptes.some((n) => n === null) ? null : comptes.every((n) => n === 0);
+  // ⚠️ `vide` RESTE JUSTE MÊME SATURÉ, et c'est ce qui compte : c'est le champ qui autorise le
+  // retrait d'une colonne, et la saturation ne peut le rendre que FAUX — jamais vrai à tort.
+  out.vide = comptes.some((c) => c.n === null) ? null : comptes.every((c) => c.n === 0);
   return out;
 }
 

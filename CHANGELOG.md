@@ -12,6 +12,54 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The purge counter could saturate in silence, and the fix already existed three hundred lines
+  away.** It asked for `limit=BORNE` and published the row count, so a database carrying five
+  thousand addresses reported `1000` — indistinguishable from an exact thousand. **A wrong number
+  that reads as right, which is worse than an absent one: an absence makes you look, a number makes
+  you conclude.** `purgerRetention` has returned a `tronque` flag for exactly this reason since it
+  was written; the neighbouring function did not. Two integrating hosts found it the same day,
+  independently, within hours of the release. The counter now asks for `BORNE + 1` — the extra row
+  only ever proves that more remain — caps what it publishes, and states `tronque`. `vide` was
+  correct throughout, and stays so: saturation can only make it `false`, never wrongly `true`.
+- **And the bound was below the volumes it was meant to describe.** Set at 1000, it saturated on a
+  real host's views table (1651 rows) **on day one** — a counter that caps under its subject
+  describes nothing. Raised to 5000, which covers both known hosts with headroom; it is a ceiling on
+  *cost*, not an opinion about what a host may hold.
+- **`docs/RETENTION.md` asked for two backup numbers that no tooling can produce.** Two hosts
+  verified independently, on two different toolsets, that neither the provider's API nor its MCP
+  tools expose the PITR window or the oldest snapshot's age: a human must read them from the
+  dashboard. The instruction was *executable in appearance* — an agent following it finds no tool
+  and must either stop or, the real risk, report the purge complete having skipped the one step it
+  could not measure. Also corrected: it is not always "the later of two", since an option that is
+  not subscribed retains nothing and therefore defers nothing.
+- **The retention state was written as a binary and there are three.** Off · **armed but never
+  exercised** · armed and has deleted — and only the third lets anyone call a retention period an
+  *event*. A host measured the middle one at home: sweep armed, oldest row 63 days old, zero rows
+  past thirteen months out of 1908. It is indistinguishable in its effects from being off, which
+  makes it the most misleading of the three, and its first real execution lands roughly eighteen
+  months after it was armed, on data nobody will have watched. The document now names the three and
+  says to exercise the sweep deliberately before that day rather than discovering its behaviour when
+  it matters.
+
+### Added
+
+- **The purge counter now carries what it looked at** — `lignes`, per table. A bare `0` cannot tell
+  "purged" from "never written" from "the probe is aimed wrong"; the denominator separates them.
+  This is the repository's own anti-vacuity rule, applied everywhere in `tools/` and missing here
+  until a host asked for it.
+- **The purge attestation becomes a host-contract commitment.** The `comment on column` that each
+  purge migration posts was designed for a person proving a purge; a host reported that its
+  inventory now reads it **mechanically**, crossing it with the residual counts to raise an alarm.
+  That is the moment an artefact becomes an interface, and the reason to commit is the failure mode:
+  quietly ceasing to post it would make that alarm **silent without saying so** — a failure caused
+  here and invisible there. `docs/HOST-CONTRACT.md` now states the exact, stable marker and promises
+  it on every column a future migration empties. ⚠️ **And the promise is guarded rather than
+  written**: a new check refuses any migration that empties a column without the marker. The
+  question a host put to us — *what turns red if someone undoes it?* — has an answer for this one.
+
+
 ## [0.1.148] — 2026-09-01
 
 ### Added

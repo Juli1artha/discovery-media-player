@@ -486,7 +486,8 @@ above: an unheard-of action answered *no* narrows this view rather than breaking
 `retentionSweep` says the instance *can* purge; it says nothing about what has piled up. The card
 gains a `purge` block counting the rows that still carry a reader IP or a raw User-Agent:
 
-    "purge": { "borne": 1000, "sessionsIp": 0, "sessionsUa": 0, "vuesUa": 0, "vide": true }
+    "purge": { "borne": 5000, "tronque": false, "lignes": { "sessions": 1908, "vues": 3200 },
+               "sessionsIp": 0, "sessionsUa": 0, "vuesUa": 0, "vide": true }
 
 `vide` is the reading that matters: `true` means nothing of that legacy is left **on this
 instance's live rows** — the condition under which those columns can eventually be dropped —
@@ -494,9 +495,37 @@ instance's live rows** — the condition under which those columns can eventuall
 `null` for the same reason: a failed probe must never read as a zero, because zero is the answer
 that authorises a deletion.
 
-The counts are **bounded** at `borne` rows and read one small column, so `1000` reads as *at least
-a thousand*, never as exactly. They run only under `&schema=1`, the mode where you have asked for
-the database.
+`lignes` is what the counter **looked at**, per table. A bare `0` cannot tell "purged" from "never
+written" from "the probe is aimed wrong"; the denominator separates them — *0 of 1908* means there
+was something to look at, *0 of 0* means the table is empty or out of reach and the zero proves
+nothing. It is `null` on the same terms as the counts.
+
+The counts are **bounded** at `borne` rows and read one small column. ⚠️ **`tronque` says whether
+that bound was reached**: when it is `true`, every number in the block is a *lower bound*, not a
+count. Without it a saturated `5000` would be indistinguishable from an exact five thousand — a
+wrong number that reads as right, which is worse than an absent one, because an absence makes you
+look and a number makes you conclude. `vide` stays correct either way: saturation can only make it
+`false`, never wrongly `true`.
+
+They run only under `&schema=1`, the mode where you have asked for the database.
+
+⚠️ **The purge attestation is a commitment, not a convenience.** Every column this player empties
+carries a `comment on column` whose text **begins with the exact marker**:
+
+    VIDE ET PLUS JAMAIS ECRITE depuis la <migration number>.
+
+Read it through `col_description()`. It is what *proves* a purge was applied — a count of zero does
+not, since it cannot tell "purged" from "never written". **We commit to two things**: to post it on
+every column a future migration empties, and not to reword that prefix. It is deliberately plain
+ASCII, without accent or apostrophe, so it survives encodings and needs no escaping.
+
+This used to be a convenience, designed for a person proving a purge. A host told us its inventory
+now reads it **mechanically**, crossing it with the residual counts to raise an alarm when values
+reappear beside an attestation. That is the moment an artefact becomes an interface — and the reason
+to commit is the failure mode: if we quietly stopped posting it, that alarm would go **silent
+without saying so**, a failure caused here and invisible there. A guard in this repository refuses
+any migration that empties a column without the marker, so undoing the commitment turns something
+red rather than turning something quiet.
 
 ⚠️ **Why this exists at all:** our tables live in *your* database, and your audit enumerates *your*
 tables — a dependency's schema occupies a zone nobody's inventory visits. Two integrating hosts
