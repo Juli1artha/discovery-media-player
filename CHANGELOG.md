@@ -12,6 +12,14 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Changed
+
+- The three examples now pin `0.1.145`, the version the registry serves. This is the
+  post-publication step `docs/RELEASING.md` describes, done on the train that published it rather
+  than left to the margin: a pin on the version just published survives the *next* release and only
+  falls out on the one after, so a single skipped bump costs nothing visible and the second one
+  turns `main` red on a check that has nothing to do with whoever opened the PR.
+
 ### Fixed
 
 - The stripped-environment bench built its tree outside any git repository, so `git ls-files`

@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Wiring for a Discovery Media Player instance.",
   "dependencies": {
-    "discovery-media-player": "0.1.144"
+    "discovery-media-player": "0.1.145"
   },
   "engines": { "node": ">=22.13.0" }
 }
