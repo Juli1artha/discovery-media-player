@@ -93,6 +93,36 @@ export const PLANCHER_PUBLICS = 3;
 export const PLANCHER_CHARGES = 3;
 export const PLANCHER_SYMBOLES = 10;
 
+/**
+ * Le fichier qu'un sous-chemin de `exports` désigne — ou la raison pour laquelle on ne l'a pas lu.
+ *
+ * ⚠️ CE CALCUL VIVAIT EN LIGNE, AVEC UN `continue` MUET DERRIÈRE. Un sous-chemin dont la cible ne
+ * se résolvait pas était simplement sauté : pas chargé, pas compté, pas nommé. Mesuré le 01/09 en
+ * aveuglant le `typeof chemin === "string"` — la moitié du manifeste s'écrit en chaîne nue —
+ *
+ *     sain   7 sous-chemin(s) public(s), 7 module(s) chargé(s), 75 symbole(s) relevé(s)
+ *     muté   7 sous-chemin(s) public(s), 3 module(s) chargé(s), 18 symbole(s) relevé(s)   VERT
+ *
+ * Quatre modules sur sept et cinquante-sept symboles sur soixante-quinze cessaient d'être relus
+ * pour « aucun interne ne fuit », et la garde sortait 0. Les deux planchers posés pour ce cas —
+ * trois modules, dix symboles — laissaient passer trois et dix-huit : ils avaient été réglés pour
+ * refuser le VIDE, et une sonde à moitié aveugle n'est pas vide.
+ *
+ * ⚠️ ET LA RÉPONSE N'EST PAS DE MONTER LE PLANCHER À SEPT. Sept est le relevé du jour ; le
+ * manifeste a le droit de rétrécir. Ce qui est vrai de tout état sain, c'est qu'un sous-chemin
+ * DÉCLARÉ a une cible LISIBLE — sinon ce n'est pas le paquet qui a changé, c'est la sonde qui ne
+ * lit plus la forme sous laquelle il est écrit.
+ */
+export function cibleDuSousChemin(chemin) {
+  if (typeof chemin === "string") return { fichier: chemin };
+  if (chemin && typeof chemin === "object") {
+    const f = chemin.default ?? chemin.require ?? chemin.import;
+    return typeof f === "string" ? { fichier: f }
+      : { raison: "aucune cible lisible sous « default », « require » ou « import »" };
+  }
+  return { raison: `cible de type ${typeof chemin}, ni chaîne ni objet de conditions` };
+}
+
 /** Ce que le manifeste et package.json se disent l'un de l'autre. */
 export function ecartsExports(exportsPaquet) {
   const declares = Object.keys(SURFACE), reels = Object.keys(exportsPaquet || {});
@@ -213,10 +243,15 @@ if (estExecuteDirectement(import.meta.url)) {
     let charges = 0;
     let symboles = 0;
     const refuses = [];
+    const illisibles = [];
+    const horsJs = [];
     for (const sousChemin of chemins) {
-      const chemin = paquet.exports[sousChemin];
-      const fichier = typeof chemin === "string" ? chemin : chemin?.default;
-      if (!fichier || !fichier.endsWith(".js")) continue;
+      const { fichier, raison } = cibleDuSousChemin(paquet.exports[sousChemin]);
+      // ⚠️ TROIS SORTS DIFFÉRENTS, ET AUCUN N'EST LE SILENCE. Une cible qu'on ne sait pas lire est
+      // une sonde en panne ; une cible qui n'est pas un `.js` est un document ou un type, et c'est
+      // légitime ; le reste se charge. La version d'avant les confondait dans un `continue`.
+      if (raison) { illisibles.push(`${sousChemin} : ${raison}`); continue; }
+      if (!fichier.endsWith(".js")) { horsJs.push(`${sousChemin} → ${fichier}`); continue; }
       try {
         const { createRequire } = await import("node:module");
         const mod = createRequire(pathToFileURL("./package.json"))(fichier);
@@ -232,6 +267,11 @@ if (estExecuteDirectement(import.meta.url)) {
         refuses.push(`${sousChemin} (${(e && e.message) || e})`);
       }
     }
+    // ⚠️ AVANT LES PLANCHERS : un sous-chemin déclaré dont on ne sait pas lire la cible n'est pas
+    // une surface plus petite, c'est une sonde qui a cessé de reconnaître la forme du manifeste.
+    if (illisibles.length) {
+      conclure(inconclusif(`${illisibles.length} sous-chemin(s) public(s) dont la cible n'a pas pu être lue — ${illisibles.join(" ; ")} — ce n'est pas le paquet qui a rétréci, c'est la sonde qui ne lit plus la forme sous laquelle il est écrit`));
+    }
     if (charges < PLANCHER_CHARGES) {
       conclure(inconclusif(`${charges} module(s) public(s) chargé(s) sur ${chemins.length}, moins que ${PLANCHER_CHARGES} — « aucun interne ne fuit » n'aurait été vérifié sur rien${refuses.length ? ` ; refusés : ${refuses.join(", ")}` : ""}`));
     }
@@ -240,7 +280,7 @@ if (estExecuteDirectement(import.meta.url)) {
     }
     conclure(soucis.length
       ? violation(soucis)
-      : conforme(`surface publique : ${chemins.length} sous-chemin(s) public(s), ${charges} module(s) chargé(s), ${symboles} symbole(s) relevé(s) — manifeste, package.json et documentation d'accord, et aucun interne ne fuit`));
+      : conforme(`surface publique : ${chemins.length} sous-chemin(s) public(s), ${charges} module(s) chargé(s), ${symboles} symbole(s) relevé(s)${horsJs.length ? `, ${horsJs.length} hors JS (${horsJs.join(", ")})` : ""} — manifeste, package.json et documentation d'accord, et aucun interne ne fuit`));
   } catch (e) {
     conclure(inconclusif(`la surface publique n'a pas pu être lue — ${(e && e.message) || e}`));
   }

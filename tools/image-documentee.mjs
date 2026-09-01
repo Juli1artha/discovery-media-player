@@ -126,10 +126,60 @@ export const forgeExigeEncoreLeV = (source) => source.includes(MOTIF_DU_WORKFLOW
  */
 export const AU_PERIMETRE = (f) => /\.md$/.test(f) || f === "docker-compose.yml";
 
+/**
+ * Les fichiers qui CITENT le registre sans être au périmètre, et pourquoi c'est légitime.
+ *
+ * ⚠️ UN PÉRIMÈTRE EST UNE LISTE DE CE QU'IL FAUT REGARDER, ET CE DÉPÔT SAIT CE QUE ÇA COÛTE : une
+ * telle liste cesse de couvrir dès qu'un fichier apparaît, et personne ne la relit en ajoutant un
+ * fichier. Mesuré le 01/09 en aveuglant la moitié « docker-compose.yml » de `AU_PERIMETRE` :
+ *
+ *     sain   5 référence(s) ghcr.io reconnue(s) dans 32 document(s)
+ *     muté   4 référence(s) ghcr.io reconnue(s) dans 31 document(s)      VERT
+ *
+ * Un document sortait du périmètre, sa référence cessait d'être relue, et le plancher — deux
+ * références, posé contre le vide — ne voyait rien passer.
+ *
+ * Ce qui suit renverse la charge : tout fichier suivi qui NOMME le registre est au périmètre, ou
+ * bien il est inscrit ici avec sa raison. Un fichier qui apparaît force une décision au lieu de
+ * tomber dehors en silence.
+ */
+export const DISPENSES = {
+  ".github/workflows/ci.yml": "un workflow PRODUIT le tag, il ne le documente pas — et il l'écrit dans des variables de shell que cette sonde ne saurait pas suivre sans redevenir un analyseur de commandes",
+  ".github/workflows/image.yml": "le workflow qui DÉCIDE de la forme du tag ; cette garde le confronte plutôt que de le juger",
+  ".github/workflows/image-reconcile.yml": "même raison que image.yml — il republie le tag qu'image.yml a décidé",
+  ".github/workflows/publication.yml": "la chaîne de sortie : elle appelle l'image, elle ne l'explique à personne",
+  ".zap/Dockerfile": "épingle une image TIERCE (zaproxy) au condensat — la forge n'en décide pas le tag, et `images-epinglees` la garde déjà",
+  "tools/image-documentee.mjs": "cette garde elle-même : elle CITE la forme qu'elle cherche, la lire reviendrait à s'accuser de la connaître",
+  "tools/images-epinglees.mjs": "la garde voisine, qui cite les mêmes formes pour la même raison",
+  "tools/__tests__/imageDocumentee.test.js": "le banc de cette garde : ses cas FABRIQUENT des références fautives, c'est leur travail",
+  "tools/__tests__/imagesEpinglees.test.js": "le banc de la garde voisine, même raison",
+  "tools/__tests__/nodeDeLImage.test.js": "un banc qui cite l'image pour éprouver une autre règle",
+};
+
+/** Les fichiers suivis qui nomment le registre sans être ni au périmètre ni dispensés. */
+export function citationsSansDecision(suivis, lire, dispenses = DISPENSES) {
+  const soucis = [];
+  for (const f of suivis) {
+    if (AU_PERIMETRE(f) || Object.hasOwn(dispenses, f)) continue;
+    let texte;
+    try { texte = lire(f); } catch { continue; }
+    if (texte.includes(REGISTRE)) {
+      soucis.push(`${f} nomme « ${REGISTRE} » sans être au périmètre de cette garde ni dispensé — soit un lecteur y recopie un tag et il doit être relu, soit ce n'en est pas un et il s'inscrit dans DISPENSES avec sa raison`);
+    }
+  }
+  // ⚠️ UNE DISPENSE QUI NE CORRESPOND PLUS À RIEN EST UN MENSONGE QUI DORT.
+  const presents = new Set(suivis);
+  for (const f of Object.keys(dispenses)) {
+    if (!presents.has(f)) soucis.push(`« ${f} » est dispensé et n'existe plus — retirez la dispense`);
+  }
+  return soucis;
+}
+
 if (estExecuteDirectement(import.meta.url)) {
   conclure(tenter(() => {
-    const fichiers = process.argv.slice(2).length ? process.argv.slice(2)
-      : execFileSync("git", ["ls-files"], { encoding: "utf8" }).split("\n").filter(AU_PERIMETRE);
+    const passes = process.argv.slice(2);
+    const suivis = passes.length ? [] : execFileSync("git", ["ls-files"], { encoding: "utf8" }).split("\n").filter(Boolean);
+    const fichiers = passes.length ? passes : suivis.filter(AU_PERIMETRE);
     if (!fichiers.length) {
       return inconclusif("aucun document à lire — la sonde vise à côté, et un vert ne prouverait rien");
     }
@@ -147,6 +197,10 @@ if (estExecuteDirectement(import.meta.url)) {
     if (vues < PLANCHER_REFERENCES) {
       return inconclusif(`${vues} référence(s) « ${REGISTRE}/… » reconnue(s) dans ${fichiers.length} document(s), moins que ${PLANCHER_REFERENCES} — ce n'est pas une absence de référence fautive, c'est une sonde qui ne lit plus la forme d'une référence`);
     }
+    // ⚠️ ET LE PÉRIMÈTRE LUI-MÊME EST CONFRONTÉ À CE QUE LE DÉPÔT CONTIENT. Une liste de ce qu'il
+    // faut regarder cesse de couvrir dès qu'un fichier apparaît ; celle-ci force une décision.
+    const sansDecision = suivis.length ? citationsSansDecision(suivis, lire) : [];
+    if (sansDecision.length) return violation(sansDecision);
     const soucis = fichiers.flatMap((f) => referencesFautives(f, lire(f)));
     if (soucis.length) return violation(soucis);
     return conforme(`image documentée : ${vues} référence(s) ${REGISTRE} reconnue(s) dans ${fichiers.length} document(s), chacune sans tag, « latest », ou préfixée « v » comme ${OU_LE_TAG_EST_DECIDE} la publie`);

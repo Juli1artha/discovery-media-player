@@ -181,3 +181,48 @@ describe("⚠️ le témoin couvre le type POSÉ, pas seulement le type absent",
     expect(dit, "le resserrement aux seuls corps sans type doit être nommé").toBeTypeOf("string");
   });
 });
+
+// ⚠️ LES SONDES QUI NE SONT PAS DES EXPRESSIONS RÉGULIÈRES ÉTAIENT HORS DE TOUT BALAYAGE, et
+// mesurées le 01/09 elles se tiennent moins bien : sur 151 reconnaissances non régulières du
+// dépôt, 93 laissaient leur garde verte. Cinq gardes de type de ce fichier n'étaient vues ni par
+// la garde ni par ce banc. Leur direction de panne est la MAUVAISE : un nœud qui cesse d'être
+// reconnu est un corps qu'on ne relit plus, donc une accusation qui n'a plus lieu.
+describe("⚠️ chaque forme de nœud que la sonde doit reconnaître, éprouvée par un cas", () => {
+  const arbreDe = (src) => ts.createSourceFile("t.js", src, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const expression = (txt) => arbreDe(`const _ = ${txt};`).statements[0].declarationList.declarations[0].initializer;
+
+  it("un gabarit sans substitution est un texte écrit, comme un littéral", () => {
+    expect(estTexteEcrit(expression("`<p>x</p>`"))).toBe(true);
+    expect(estTexteEcrit(expression('"<p>x</p>"'))).toBe(true);
+    expect(estTexteEcrit(expression("`<p>${x}</p>`")), "un gabarit AVEC substitution aussi").toBe(true);
+    expect(estTexteEcrit(expression("variable")), "une variable n'est pas un texte écrit ici").toBe(false);
+  });
+
+  it("⚠️ une parenthèse ne cache pas un texte écrit — c'est ce que `isParenthesizedExpression` tient", () => {
+    expect(estTexteEcrit(expression('("<p>x</p>")'))).toBe(true);
+    expect(estTexteEcrit(expression('("a" + b)'))).toBe(true);
+  });
+
+  it("⚠️ un en-tête posé par un gabarit sans substitution est lu comme un littéral", () => {
+    const poses = entetesDe(arbreDe('function h(req, res) { res.setHeader("Content-Type", `text/html`); }'));
+    expect(poses.get("content-type")).toBe("text/html");
+  });
+
+  it("⚠️ une clé d'en-tête écrite en identifiant nu vaut une clé entre guillemets", () => {
+    const nu = entetesDe(arbreDe("function h(req, res) { res.writeHead(200, { ContentLength: \"3\" }); }"));
+    expect([...nu.keys()], "un identifiant nu est bien relevé comme clé").toContain("contentlength");
+  });
+
+  it("⚠️ la portée d'un corps est la FONCTION qui l'entoure, pas le fichier", () => {
+    // Deux fonctions : l'une pose la règle, l'autre non. Si `isFunctionLike` cessait de reconnaître
+    // la portée, les deux se confondraient dans le fichier entier et la fautive serait couverte
+    // par la saine.
+    const src = 'function bonne(req, res) { res.setHeader("Content-Type", "text/html; charset=utf-8"); res.setHeader("X-Content-Type-Options", "nosniff"); res.end("<p>a</p>"); }\n'
+      + 'function fautive(req, res) { res.setHeader("Content-Type", "text/html"); res.end("<p>b</p>"); }\n';
+    // `isFunctionLike` aveuglé, la portée devient le FICHIER : le `nosniff` de la première
+    // fonction couvrirait la seconde, et la seule faute du fichier disparaîtrait.
+    const vus = corpsEcrits("t.js", src);
+    expect(vus.length, "une seule faute — et elle ne doit pas être couverte par la fonction saine d'à côté").toBe(1);
+    expect(manquements(vus)[0]).toMatch(/text\/html sans nosniff/);
+  });
+});
