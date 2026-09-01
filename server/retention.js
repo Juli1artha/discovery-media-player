@@ -391,4 +391,67 @@ function tick() {
     .catch((e) => { try { PLAYER.errors.capture(e, { route: "retention", benin: true }); } catch { /* jamais bloquant */ } });
 }
 
-module.exports = { init, purgerRetention, tick, borne };
+/**
+ * CE QUI RESTE DE L'HÉRITAGE, CHEZ CET HÔTE — les lignes qui portent encore une adresse IP ou un
+ * User-Agent brut.
+ *
+ * ⚠️ POURQUOI CE COMPTEUR EXISTE, ET C'EST UN HÔTE QUI L'A DIT. Nos tables vivent dans la base de
+ * nos hôtes, et l'audit d'un hôte énumère SES tables : le schéma d'une dépendance occupe une zone
+ * que les inventaires de personne ne visitent. Deux hôtes ont découvert 2361 lignes portant ces
+ * colonnes — non pas en surveillant, mais parce qu'un TIERS avait posé une question sur SA base.
+ * `retentionSweep` dit « je PEUX purger » ; il ne dit pas CE QUI S'ACCUMULE. Ce compteur le dit,
+ * chez chacun, sans que personne ait à y penser.
+ *
+ * ⚠️ ET IL RÉPOND À LA QUESTION QUI DÉCIDE DU RETRAIT DES COLONNES. `0026` et `0027` VIDENT sans
+ * supprimer, parce qu'une migration doit rester sûre pendant que la version précédente du code
+ * tourne. Le retrait attend que plus aucune version supportée ne les écrive — une condition qu'on
+ * ne peut aujourd'hui que SUPPOSER, en croyant savoir quelle version tourne chez qui. `vide` la
+ * rend LISIBLE.
+ *
+ * ⚠️ ON COMPTE DES LIGNES, PAS UN `count=exact`. La capacité `db` de l'hôte rend le corps de la
+ * réponse, pas ses en-têtes : le compte de PostgREST voyage dans `Content-Range`, donc il serait
+ * illisible sans élargir le contrat d'hôte — ce qu'un compteur de diagnostic ne justifie pas.
+ * D'où un comptage BORNÉ : au plus `BORNE_RESTE` identifiants, une seule petite colonne. Atteindre
+ * la borne se lit « au moins autant », jamais « exactement ».
+ *
+ * ⚠️ ET LE COÛT EST INVERSE DE L'INTUITION, donc il est dit plutôt que caché : quand il reste
+ * beaucoup de lignes, la base s'arrête à la borne et c'est rapide ; quand il n'en reste AUCUNE,
+ * elle parcourt la table pour ne rien trouver. Le cas cher est le cas terminal — celui où ce
+ * compteur a fini son office et disparaîtra avec les colonnes qu'il surveille. Il ne s'exécute
+ * d'ailleurs que sur `?contract=1&schema=1`, le seul mode où l'appelant demande la base.
+ *
+ * ⚠️ UN ÉCHEC REND `null`, JAMAIS ZÉRO. Zéro est la réponse qui autorise à supprimer une colonne :
+ * la fabriquer à partir d'une sonde en panne serait le pire mensonge que cette carte puisse faire.
+ */
+const BORNE_RESTE = 1000;
+
+const SONDES_RESTE = [
+  ["sessionsIp", "commercial_doc_sessions", "session_id", "ip"],
+  ["sessionsUa", "commercial_doc_sessions", "session_id", "ua"],
+  ["vuesUa", "commercial_doc_views", "id", "ua"],
+];
+
+async function compterReste(table, cle, colonne) {
+  try {
+    const lignes = await PLAYER.db.request(
+      `${table}?select=${cle}&${colonne}=not.is.null&limit=${BORNE_RESTE}`,
+      { timeoutMs: 8000 },
+    );
+    return Array.isArray(lignes) ? lignes.length : null;
+  } catch {
+    return null;   // indéterminé — surtout pas zéro
+  }
+}
+
+async function resteDeLaPurge() {
+  const comptes = await Promise.all(SONDES_RESTE.map(([, t, c, col]) => compterReste(t, c, col)));
+  const out = { borne: BORNE_RESTE };
+  SONDES_RESTE.forEach(([nom], i) => { out[nom] = comptes[i]; });
+  // ⚠️ TROIS ÉTATS, PAS DEUX. `true` : plus rien, le retrait des colonnes est permis ICI. `false` :
+  // il reste des lignes. `null` : au moins une sonde n'a pas répondu — on ne sait pas, et « on ne
+  // sait pas » ne doit jamais se lire comme « c'est bon ».
+  out.vide = comptes.some((n) => n === null) ? null : comptes.every((n) => n === 0);
+  return out;
+}
+
+module.exports = { init, purgerRetention, tick, borne, resteDeLaPurge, BORNE_RESTE };
