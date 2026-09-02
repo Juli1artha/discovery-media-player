@@ -50,6 +50,15 @@ the notes there are this file's section for that version.
 
 ### Added
 
+- ⚠️ **An entire directory of bench code was never linted, and that is why a dead variable reached
+  the forge.** CodeQL flagged an unused helper I had written in `base/vraiPostgrest.test.js` — a
+  real defect, and a trivial one. What matters is *why ESLint had not*: `base/` is **configured** by
+  `eslint.config.mjs` but was never passed to the CLI, so eight bench files ran unchecked. Added to
+  the lint targets, with the eight dead `eslint-disable no-console` directives removed — they name
+  a rule this configuration does not define, which is why ESLint itself calls them unused.
+  Verified by reintroducing a dead variable: it is now caught **locally**, where before only a
+  scanner on the forge could see it. Fixing the case without the class would have left the next one
+  to the same detour.
 - ⚠️ **`db.count` is now exercised against a **real** PostgREST, and the two response shapes that
   server cannot produce are exercised on the real code rather than a copy.** The header path —
   `Prefer: count=exact`, `Range: 0-0`, the `start-end/total` shape, and the `*` that means *"I did

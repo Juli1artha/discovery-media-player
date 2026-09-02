@@ -205,8 +205,6 @@ decrire("l'archive est scellée par la base, pas par le code", () => {
 // convergence des deux appelants autrement que par lecture. » Nous, nous avons un vrai PostgREST
 // dans la forge — ne pas s'en servir aurait été garder le manque en ayant les moyens de le combler.
 decrire("le compte exact vient du serveur, pas de notre lecture de la documentation", () => {
-  const table = () => `banc_compte_${crypto.randomBytes(5).toString("hex")}`;
-
   it("⚠️ il rend le compte EXACT, et il suit ce qu'on écrit", async () => {
     const doc = "compte-" + crypto.randomBytes(5).toString("hex");
     const chemin = `commercial_doc_shares?select=slug&doc_id=eq.${doc}`;
