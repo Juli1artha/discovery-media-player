@@ -28,6 +28,18 @@ the notes there are this file's section for that version.
   to know it. `vide` was correct throughout and stays so: the three probes read zero, far below any
   ceiling, so no ceiling can have fabricated them. It was the *denominator* that lied — the field
   added precisely to make the zeros interpretable.
+- ⚠️ **And the fix for it was first written with `offset=`, which this repository forbids — a rule
+  that lived only in a workflow `grep`.** Thirty-three guards ran green locally; the forge refused
+  the push. The remedy was written **three hundred and eighty lines up in the same file**: *"keyset
+  cursor pagination (`col=gt.<last>`), not offset — the forge's portability guard forbids `offset=`,
+  and a cursor is stable under concurrent writes anyway."* That is the second time in one file that
+  an existing remedy went unseen, after `purgerParLots`'s own `tronque` flag. The probe now uses the
+  cursor, which is also the better answer: it needs no response header and no ceiling to guess.
+- **`and=()` and `offset=` are now *counted*, not announced in prose.** They sat on the same
+  `docs/API.md` row as `or=()` — which carried its `†` and its counter — while they carried neither.
+  A table whose rows are half-guarded reads as a guarded table, which this repository had already
+  written down about this very file. A rule a contributor cannot run before pushing is a rule
+  learned by breaking it.
 - **The test double did not model the server, so this defect was unreachable rather than missed.**
   It returned a constant array: it ignored `limit`, ignored `offset`, and had no ceiling of its own.
   No fixture over it could produce the phenomenon, including the one written with a real host's own

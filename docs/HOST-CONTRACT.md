@@ -514,7 +514,8 @@ length against `borne` then compares against the wrong number, and a table of 16
 published as `1000` **with `tronque: false`** — asserting an exactness it did not have.
 
 So the question asked is not *did I hit my bound* but **is there anything after what I received**:
-one row is requested at the next offset. A row returned proves more remain; none proves the lot was
+one row is requested past the last one received, by keyset cursor (`col=gt.<last>`, never by
+offset — a cursor is stable under concurrent writes, and it is this repository's pagination rule). A row returned proves more remain; none proves the lot was
 the whole — whichever ceiling produced it, without having to know it. **What this does not cover,
 stated rather than glossed:** a server ceiling of *zero* stays indistinguishable from an empty table
 by the response body alone. Reading the count from `Content-Range` under `Prefer: count=exact` has

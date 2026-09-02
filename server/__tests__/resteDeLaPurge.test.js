@@ -45,15 +45,16 @@ const lignes = (n) => Array.from({ length: n }, (_, i) => ({ id: `x${i}` }));
  * propre plafond — dans cet ordre, celui du serveur.
  */
 const base = (n, plafond = Infinity) => (chemin) => {
-  const lire = (cle) => {
-    const m = chemin.match(new RegExp(`[?&]${cle}=(\\d+)`));
-    return m ? Number(m[1]) : null;
-  };
-  const debut = lire("offset") || 0;
-  const demande = lire("limit");
+  const cle = (chemin.match(/select=(\w+)/) || ["", "id"])[1];
+  // Clés triables telles quelles : un `x10` lexicographique se placerait entre `x1` et `x2`, et le
+  // curseur `gt.` du code testé porterait alors sur un ordre que la vraie base n'a pas.
+  const id = (i) => `x${String(i).padStart(7, "0")}`;
+  const apres = chemin.match(new RegExp(`${cle}=gt\\.([^&]+)`));
+  const debut = apres ? Number(decodeURIComponent(apres[1]).slice(1)) + 1 : 0;
+  const demande = (chemin.match(/[?&]limit=(\d+)/) || [])[1];
   let dispo = Math.max(0, n - debut);
-  if (demande !== null) dispo = Math.min(dispo, demande);
-  return lignes(Math.min(dispo, plafond));
+  if (demande !== undefined) dispo = Math.min(dispo, Number(demande));
+  return Array.from({ length: Math.min(dispo, plafond) }, (_, k) => ({ [cle]: id(debut + k) }));
 };
 
 describe("le compteur de ce qui porte encore ip ou ua", () => {
@@ -189,9 +190,15 @@ describe("le compteur de ce qui porte encore ip ou ua", () => {
   it("⚠️ et il le dit sans connaître le plafond — la question porte sur l'APRÈS, pas sur un nombre", async () => {
     const vus = brancher(commeEnProduction);
     await retention.resteDeLaPurge();
-    const sonde = vus.filter((c) => c.includes(`offset=${PLAFOND_SERVEUR}`));
-    expect(sonde.length, "une ligne demandée au rang suivant, et une seule").toBe(1);
+    // Les deux dénominateurs se prolongent — 257 tient sous le plafond et sa sonde trouvera le
+    // vide, 1651 non. C'est celle de la table tronquée qui doit porter le bon curseur.
+    expect(vus.filter((c) => c.includes("=gt.")), "un prolongement par dénominateur non vide").toHaveLength(2);
+    const sonde = vus.filter((c) => c.includes("=gt.") && c.includes("views"));
+    expect(sonde.length, "une ligne demandée au-delà de la dernière reçue, et une seule").toBe(1);
     expect(sonde[0], "une ligne suffit à prouver qu'il en reste").toContain("limit=1");
+    expect(sonde[0], "⚠️ par curseur, jamais par offset — la forge le refuse et le dépôt aussi")
+      .not.toContain("offset=");
+    expect(sonde[0], "le curseur porte la dernière clé reçue").toContain(`id=gt.x${String(PLAFOND_SERVEUR - 1).padStart(7, "0")}`);
   });
 
   it("⚠️ un plafond serveur ÉGAL au compte réel ne fabrique pas de troncature", async () => {
@@ -204,11 +211,11 @@ describe("le compteur de ce qui porte encore ip ou ua", () => {
   it("⚠️ zéro ligne ne coûte pas de seconde requête — la sonde n'apprendrait rien", async () => {
     const vus = brancher(base(0));
     await retention.resteDeLaPurge();
-    expect(vus.some((c) => c.includes("offset=")), "rien à prolonger sous un lot vide").toBe(false);
+    expect(vus.some((c) => c.includes("=gt.")), "rien à prolonger sous un lot vide").toBe(false);
   });
 
   it("⚠️ une sonde de prolongement en panne rend « au moins », jamais « exactement »", async () => {
-    brancher((c) => (c.includes("offset=") ? new Error("réseau") : base(42)(c)));
+    brancher((c) => (c.includes("=gt.") ? new Error("réseau") : base(42)(c)));
     const r = await retention.resteDeLaPurge();
     expect(r.tronque, "ne pas savoir s'il en reste se lit comme un minorant").toBe(true);
   });

@@ -330,7 +330,8 @@ estimated:
 | Verbs | `GET`, `POST`, `PATCH`, one `HEAD`, and `DELETE` only in `server/retention.js` — every one bounded by an age filter (`docs/RETENTION.md`) |
 | Embedded selects (`select=*,other(*)`) | **0** |
 | `or=()` | **0**† — and it is a *rule*, not an observation: `ci.yml` refuses `or=(` and `and=(` in `server/*.js`, because nested joins and boolean trees are what turn a port from a translation into a rewrite. The cursor of `docshare.sessionsByRecipient` needs two coordinates and expresses them as two flat filters — `last_at=lte.T` plus `session_id=not.in.(…)` — which reads `WHERE last_at <= T AND session_id NOT IN (…)` |
-| `and=()` | **0** — hand-counted; the row above is measured because a rule nobody counts is a rule that erodes |
+| `and=()` | **0**† |
+| `offset=` | **0**† — pagination is by **keyset cursor** (`col=gt.<last>`), never by offset: a cursor is stable under concurrent writes, and `ci.yml` refuses `offset=` outright. ⚠️ Both this row and the one above were *hand-counted prose sitting in a measured table* until a probe written here reached for `offset=` and only the forge caught it — the rule lived in a workflow `grep` and nowhere a contributor could run. A table whose rows are half-guarded reads as a guarded table |
 | `offset=` | **1** — hand-counted. `server/retention.js` asks for one row past the lot it received, to learn whether anything follows it. ⚠️ It was **0** until a host measured why it could not stay so: comparing a received length against *our own* bound assumes ours is the only ceiling, and PostgREST's `db-max-rows` (1000 on Supabase) truncates upstream of it. A single row at the next offset answers *is there more* without needing to know whose ceiling stopped the first read |
 | `in.(…)` | **5**† — translates to `WHERE column IN (…)`, so it costs a port nothing |
 | Used beyond plain filters | `order=`, `Prefer: return=…`, `Range` for pagination |

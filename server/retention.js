@@ -492,9 +492,17 @@ const compte = (n, tronque) => ({ n, tronque });
  *
  * Le contrôle honnête ne porte donc pas sur une borne connue, mais sur la seule question dont la
  * réponse ne dépend d'aucun plafond : « y a-t-il quelque chose APRÈS ce que j'ai reçu ? » On la
- * pose en demandant UNE ligne au rang suivant. Une ligne rendue prouve qu'il en reste ; aucune
- * prouve que le lot reçu était le tout — quel que soit le plafond qui l'a produit, et sans avoir
- * à le connaître.
+ * pose en demandant UNE ligne au-delà de la dernière reçue. Une ligne rendue prouve qu'il en
+ * reste ; aucune prouve que le lot reçu était le tout — quel que soit le plafond qui l'a produit,
+ * et sans avoir à le connaître.
+ *
+ * ⚠️ PAR CURSEUR KEYSET (`cle=gt.<dernier>`), PAS PAR `offset` — et cette phrase est déjà écrite
+ * trois cent quatre-vingts lignes plus haut, au-dessus de `purgerParLots`, où elle dit la même
+ * chose depuis toujours : la garde de portabilité de la forge interdit `offset=`, et un curseur
+ * est de toute façon stable sous écriture concurrente. Première rédaction de cette sonde : par
+ * `offset`. La forge l'a refusée. C'est la SECONDE fois dans ce fichier qu'un remède déjà présent
+ * n'a pas été vu — après le drapeau `tronque` de `purgerParLots`. Un fichier dont on vient
+ * d'écrire la partie difficile se relit mal, et c'est un fait à traiter, pas une excuse.
  *
  * ⚠️ ET CE QU'ELLE NE COUVRE PAS EST DIT, PARCE QU'UNE GARDE MUETTE VAUT MOINS QUE PAS DE GARDE :
  * un plafond serveur à ZÉRO reste indiscernable d'une table vide par le corps seul — les deux
@@ -503,26 +511,32 @@ const compte = (n, tronque) => ({ n, tronque });
  * il ne dépend d'aucun plafond. Il demanderait d'élargir la capacité `db` du contrat d'hôte, qui ne
  * rend aujourd'hui que le corps analysé.
  */
-async function resteApres(chemin, rang) {
+async function resteApres(chemin, cle, dernier) {
+  // Sans curseur lisible, la fin ne se prouve pas : « au moins » est le seul côté sûr.
+  if (dernier == null) return true;
   try {
-    const suite = await PLAYER.db.request(`${chemin}&offset=${rang}&limit=1`, { timeoutMs: 8000 });
+    const suite = await PLAYER.db.request(
+      `${chemin}&${cle}=gt.${enc(String(dernier))}&order=${cle}.asc&limit=1`, { timeoutMs: 8000 });
     // Pas de réponse analysable ⇒ on ne sait pas ⇒ « au moins ». Se tromper vers le minorant ne
     // fait que sous-estimer ; se tromper vers l'exactitude fait conclure.
     return !Array.isArray(suite) || suite.length > 0;
   } catch { return true; }
 }
 
-async function compterBorne(chemin) {
+async function compterBorne(chemin, cle) {
   try {
     // ⚠️ BORNE + 1 : la ligne excédentaire ne sert qu'à PROUVER qu'il en reste. On ne la publie pas.
-    const lignes = await PLAYER.db.request(`${chemin}&limit=${BORNE_RESTE + 1}`, { timeoutMs: 8000 });
+    // ⚠️ ET L'ORDRE N'EST PAS DÉCORATIF : sans lui, « la dernière ligne reçue » ne désigne aucune
+    // frontière, et le curseur de la sonde ne voudrait rien dire.
+    const lignes = await PLAYER.db.request(
+      `${chemin}&order=${cle}.asc&limit=${BORNE_RESTE + 1}`, { timeoutMs: 8000 });
     if (!Array.isArray(lignes)) return compte(null, false);
     // Notre propre borne atteinte : la preuve est dans la ligne excédentaire, rien à demander.
     if (lignes.length > BORNE_RESTE) return compte(BORNE_RESTE, true);
-    // Zéro ligne : la sonde au rang suivant rendrait zéro elle aussi et n'apprendrait rien — y
-    // compris sous un plafond à zéro, que ni l'une ni l'autre ne distingue d'une table vide.
+    // Zéro ligne : la sonde au-delà rendrait zéro elle aussi et n'apprendrait rien — y compris sous
+    // un plafond à zéro, que ni l'une ni l'autre ne distingue d'une table vide.
     if (!lignes.length) return compte(0, false);
-    return compte(lignes.length, await resteApres(chemin, lignes.length));
+    return compte(lignes.length, await resteApres(chemin, cle, lignes[lignes.length - 1][cle]));
   } catch (e) {
     if (e && e.details && e.details.code === COLONNE_ABSENTE) return compte(0, false);
     return compte(null, false);   // indéterminé — surtout pas zéro
@@ -530,7 +544,7 @@ async function compterBorne(chemin) {
 }
 
 const compterReste = (table, cle, colonne) =>
-  compterBorne(`${table}?select=${cle}&${colonne}=not.is.null`);
+  compterBorne(`${table}?select=${cle}&${colonne}=not.is.null`, cle);
 
 /**
  * ⚠️ ET LE COMPTEUR PORTE CE QU'IL A REGARDÉ — un hôte nous l'a demandé, et il avait raison.
@@ -548,7 +562,7 @@ const compterReste = (table, cle, colonne) =>
  * borne dès les premières lignes. Une par TABLE, pas une par sonde — deux des trois colonnes vivent
  * dans la même.
  */
-const compterLignes = (table, cle) => compterBorne(`${table}?select=${cle}`);
+const compterLignes = (table, cle) => compterBorne(`${table}?select=${cle}`, cle);
 
 async function resteDeLaPurge() {
   const [comptes, totaux] = await Promise.all([
