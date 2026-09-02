@@ -48,83 +48,6 @@ the notes there are this file's section for that version.
   the write enters and it turns red. A bench whose margin sits under its machine's jitter does not
   measure what it thinks: it measures the runner, and it teaches its own red to read as noise.
 
-## [0.1.150] — 2026-09-02
-
-### Fixed
-
-- ⚠️ **The truncation flag assumed our bound was the only ceiling, and a host measured what that
-  cost — four hours after 0.1.149 shipped.** PostgREST has a ceiling of its own, `db-max-rows`, set
-  to **1000** by default on Supabase: the server returns 1000 rows however many you ask for. The
-  counter asked for `borne + 1` and compared the received length to `borne`, so it compared against
-  the wrong number — a table of **1651** rows was published as `1000` **with `tronque: false`**.
-  That is the defect 0.1.149 had just fixed, moved one rung out and **made worse**: the previous
-  version claimed nothing, this one *asserted* the number was exact. A reader of "0 of 1000"
-  concludes the zero is proven over the whole table, when 651 rows were never looked at.
-  The question asked is now the only one whose answer depends on no ceiling — **is there anything
-  after what I received** — by requesting a single row at the next offset. A row returned proves
-  more remain; none proves the lot was the whole, whichever ceiling produced it and without having
-  to know it. `vide` was correct throughout and stays so: the three probes read zero, far below any
-  ceiling, so no ceiling can have fabricated them. It was the *denominator* that lied — the field
-  added precisely to make the zeros interpretable.
-- ⚠️ **And the fix for it was first written with `offset=`, which this repository forbids — a rule
-  that lived only in a workflow `grep`.** Thirty-three guards ran green locally; the forge refused
-  the push. The remedy was written **three hundred and eighty lines up in the same file**: *"keyset
-  cursor pagination (`col=gt.<last>`), not offset — the forge's portability guard forbids `offset=`,
-  and a cursor is stable under concurrent writes anyway."* That is the second time in one file that
-  an existing remedy went unseen, after `purgerParLots`'s own `tronque` flag. The probe now uses the
-  cursor, which is also the better answer: it needs no response header and no ceiling to guess.
-- ⚠️ **And the forge's own portability guard read the prose that explains it.** It strips `//`
-  lines — a correction made once, for exactly this reason — but not *block* comments, so the
-  sentence documenting the rule tripped the rule. The only way out would have been to degrade the
-  explanation to satisfy the guard, which is what that correction exists to prevent, left half
-  done. It now strips what `sourceUtile` has always stripped. ⚠️ **The rule lives here in two
-  copies, and the weak one was the guard**: the tested module strips all three comment forms, the
-  inline `grep` stripped one. Three of its four patterns are now counted by that module instead.
-- **`and=()` and `offset=` are now *counted*, not announced in prose.** They sat on the same
-  `docs/API.md` row as `or=()` — which carried its `†` and its counter — while they carried neither.
-  A table whose rows are half-guarded reads as a guarded table, which this repository had already
-  written down about this very file. A rule a contributor cannot run before pushing is a rule
-  learned by breaking it.
-- **The test double did not model the server, so this defect was unreachable rather than missed.**
-  It returned a constant array: it ignored `limit`, ignored `offset`, and had no ceiling of its own.
-  No fixture over it could produce the phenomenon, including the one written with a real host's own
-  volumes — 257 and 1651 both sit under our bound, so neither can saturate it. A missing case is
-  recoverable by writing it; a missing *layer* is not. The double now answers as PostgREST does:
-  offset, then limit, then its own ceiling.
-
-## [0.1.149] — 2026-09-02
-
-### Fixed
-
-- **The purge counter could saturate in silence, and the fix already existed three hundred lines
-  away.** It asked for `limit=BORNE` and published the row count, so a database carrying five
-  thousand addresses reported `1000` — indistinguishable from an exact thousand. **A wrong number
-  that reads as right, which is worse than an absent one: an absence makes you look, a number makes
-  you conclude.** `purgerRetention` has returned a `tronque` flag for exactly this reason since it
-  was written; the neighbouring function did not. Two integrating hosts found it the same day,
-  independently, within hours of the release. The counter now asks for `BORNE + 1` — the extra row
-  only ever proves that more remain — caps what it publishes, and states `tronque`. `vide` was
-  correct throughout, and stays so: saturation can only make it `false`, never wrongly `true`.
-- **And the bound was below the volumes it was meant to describe.** Set at 1000, it saturated on a
-  real host's views table (1651 rows) **on day one** — a counter that caps under its subject
-  describes nothing. Raised to 5000, which covers both known hosts with headroom; it is a ceiling on
-  *cost*, not an opinion about what a host may hold.
-- **`docs/RETENTION.md` asked for two backup numbers that no tooling can produce.** Two hosts
-  verified independently, on two different toolsets, that neither the provider's API nor its MCP
-  tools expose the PITR window or the oldest snapshot's age: a human must read them from the
-  dashboard. The instruction was *executable in appearance* — an agent following it finds no tool
-  and must either stop or, the real risk, report the purge complete having skipped the one step it
-  could not measure. Also corrected: it is not always "the later of two", since an option that is
-  not subscribed retains nothing and therefore defers nothing.
-- **The retention state was written as a binary and there are three.** Off · **armed but never
-  exercised** · armed and has deleted — and only the third lets anyone call a retention period an
-  *event*. A host measured the middle one at home: sweep armed, oldest row 63 days old, zero rows
-  past thirteen months out of 1908. It is indistinguishable in its effects from being off, which
-  makes it the most misleading of the three, and its first real execution lands roughly eighteen
-  months after it was armed, on data nobody will have watched. The document now names the three and
-  says to exercise the sweep deliberately before that day rather than discovering its behaviour when
-  it matters.
-
 ### Added
 
 - **`db.count(path)` — an optional seam that makes the purge counter exact, and whose absence is the
@@ -170,6 +93,51 @@ the notes there are this file's section for that version.
   not simulate a **layer** cannot be fixed by any dataset, because a database double that never
   caps behaves like a perfect one — indistinguishable, from the inside, from a correct one.
 
+
+## [0.1.150] — 2026-09-02
+
+### Fixed
+
+- ⚠️ **The truncation flag assumed our bound was the only ceiling, and a host measured what that
+  cost — four hours after 0.1.149 shipped.** PostgREST has a ceiling of its own, `db-max-rows`, set
+  to **1000** by default on Supabase: the server returns 1000 rows however many you ask for. The
+  counter asked for `borne + 1` and compared the received length to `borne`, so it compared against
+  the wrong number — a table of **1651** rows was published as `1000` **with `tronque: false`**.
+  That is the defect 0.1.149 had just fixed, moved one rung out and **made worse**: the previous
+  version claimed nothing, this one *asserted* the number was exact. A reader of "0 of 1000"
+  concludes the zero is proven over the whole table, when 651 rows were never looked at.
+  The question asked is now the only one whose answer depends on no ceiling — **is there anything
+  after what I received** — by requesting a single row at the next offset. A row returned proves
+  more remain; none proves the lot was the whole, whichever ceiling produced it and without having
+  to know it. `vide` was correct throughout and stays so: the three probes read zero, far below any
+  ceiling, so no ceiling can have fabricated them. It was the *denominator* that lied — the field
+  added precisely to make the zeros interpretable.
+- ⚠️ **And the fix for it was first written with `offset=`, which this repository forbids — a rule
+  that lived only in a workflow `grep`.** Thirty-three guards ran green locally; the forge refused
+  the push. The remedy was written **three hundred and eighty lines up in the same file**: *"keyset
+  cursor pagination (`col=gt.<last>`), not offset — the forge's portability guard forbids `offset=`,
+  and a cursor is stable under concurrent writes anyway."* That is the second time in one file that
+  an existing remedy went unseen, after `purgerParLots`'s own `tronque` flag. The probe now uses the
+  cursor, which is also the better answer: it needs no response header and no ceiling to guess.
+- ⚠️ **And the forge's own portability guard read the prose that explains it.** It strips `//`
+  lines — a correction made once, for exactly this reason — but not *block* comments, so the
+  sentence documenting the rule tripped the rule. The only way out would have been to degrade the
+  explanation to satisfy the guard, which is what that correction exists to prevent, left half
+  done. It now strips what `sourceUtile` has always stripped. ⚠️ **The rule lives here in two
+  copies, and the weak one was the guard**: the tested module strips all three comment forms, the
+  inline `grep` stripped one. Three of its four patterns are now counted by that module instead.
+- **`and=()` and `offset=` are now *counted*, not announced in prose.** They sat on the same
+  `docs/API.md` row as `or=()` — which carried its `†` and its counter — while they carried neither.
+  A table whose rows are half-guarded reads as a guarded table, which this repository had already
+  written down about this very file. A rule a contributor cannot run before pushing is a rule
+  learned by breaking it.
+- **The test double did not model the server, so this defect was unreachable rather than missed.**
+  It returned a constant array: it ignored `limit`, ignored `offset`, and had no ceiling of its own.
+  No fixture over it could produce the phenomenon, including the one written with a real host's own
+  volumes — 257 and 1651 both sit under our bound, so neither can saturate it. A missing case is
+  recoverable by writing it; a missing *layer* is not. The double now answers as PostgREST does:
+  offset, then limit, then its own ceiling.
+
 ### Added
 
 - **`docs/HOST-CONTRACT.md` now warns hosts that the ceiling applies to *their* reads too.**
@@ -181,6 +149,41 @@ the notes there are this file's section for that version.
   opened" date read months stale for a link opened the day before. The document also states which
   sort direction is the forgiving one — saturating under `desc` loses the oldest rows, under `asc`
   it loses the ones anyone is looking at.
+
+## [0.1.149] — 2026-09-02
+
+### Fixed
+
+- **The purge counter could saturate in silence, and the fix already existed three hundred lines
+  away.** It asked for `limit=BORNE` and published the row count, so a database carrying five
+  thousand addresses reported `1000` — indistinguishable from an exact thousand. **A wrong number
+  that reads as right, which is worse than an absent one: an absence makes you look, a number makes
+  you conclude.** `purgerRetention` has returned a `tronque` flag for exactly this reason since it
+  was written; the neighbouring function did not. Two integrating hosts found it the same day,
+  independently, within hours of the release. The counter now asks for `BORNE + 1` — the extra row
+  only ever proves that more remain — caps what it publishes, and states `tronque`. `vide` was
+  correct throughout, and stays so: saturation can only make it `false`, never wrongly `true`.
+- **And the bound was below the volumes it was meant to describe.** Set at 1000, it saturated on a
+  real host's views table (1651 rows) **on day one** — a counter that caps under its subject
+  describes nothing. Raised to 5000, which covers both known hosts with headroom; it is a ceiling on
+  *cost*, not an opinion about what a host may hold.
+- **`docs/RETENTION.md` asked for two backup numbers that no tooling can produce.** Two hosts
+  verified independently, on two different toolsets, that neither the provider's API nor its MCP
+  tools expose the PITR window or the oldest snapshot's age: a human must read them from the
+  dashboard. The instruction was *executable in appearance* — an agent following it finds no tool
+  and must either stop or, the real risk, report the purge complete having skipped the one step it
+  could not measure. Also corrected: it is not always "the later of two", since an option that is
+  not subscribed retains nothing and therefore defers nothing.
+- **The retention state was written as a binary and there are three.** Off · **armed but never
+  exercised** · armed and has deleted — and only the third lets anyone call a retention period an
+  *event*. A host measured the middle one at home: sweep armed, oldest row 63 days old, zero rows
+  past thirteen months out of 1908. It is indistinguishable in its effects from being off, which
+  makes it the most misleading of the three, and its first real execution lands roughly eighteen
+  months after it was armed, on data nobody will have watched. The document now names the three and
+  says to exercise the sweep deliberately before that day rather than discovering its behaviour when
+  it matters.
+
+### Added
 
 - **The purge counter now carries what it looked at** — `lignes`, per table. A bare `0` cannot tell
   "purged" from "never written" from "the probe is aimed wrong"; the denominator separates them.
