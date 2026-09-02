@@ -50,7 +50,7 @@ need.
   "presenceDurcissement": "inconnu",
   "presenceFusion": "inconnu",
   "lectureSaturee": { "total": 0, "fenetreS": 0, "derniereIlYaS": null },
-  "mesures": { "fenetreS": 0, "seauxMs": [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000], "routes": {}, "base": { "n": 0 }, "statuts": { "ok": 0, "refus4xx": 0, "debit429": 0, "occupe503": 0, "erreur5xx": 0 }, "memoireMio": { "rss": 0, "heap": 0, "tampons": 0 }, "boucleMs": { "n": 0, "moyen": null, "p99": null, "resolutionMs": 20 } },
+  "mesures": { "fenetreS": 0, "seauxMs": [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000], "familles": ["document", "presentation", "action", "fichier", "carte", "autre"], "routes": {}, "base": { "n": 0 }, "statuts": { "ok": 0, "refus4xx": 0, "debit429": 0, "occupe503": 0, "erreur5xx": 0 }, "memoireMio": { "rss": 0, "heap": 0, "tampons": 0 }, "boucleMs": { "n": 0, "moyen": null, "p99": null, "resolutionMs": 20 } },
   "retentionSweep": false,
   "hostShare": true,
   "hostMail": true,
@@ -180,6 +180,7 @@ these numbers from their side.
 |---|---|
 | `fenetreS` | seconds this process has been running — **the window every total below was counted over** |
 | `seauxMs` | the bucket ladder the percentiles are read off, published **with** the numbers |
+| `familles` | **the denominator of `routes`** — every family this build measures, whether or not it was exercised. It does not move with traffic; that is what makes it a denominator |
 | `routes` | one entry per family of work — `document`, `presentation`, `action`, `fichier`, `carte`, `autre`. Families absent from the object were never exercised in this process |
 | `base` | the same shape, for calls through the `db` capability **you** supply — measured at the seam, so it covers every call, including ones nobody has written yet |
 | `statuts` | responses by class: `ok` (<400), `refus4xx`, `debit429`, `occupe503`, `erreur5xx` |
@@ -193,6 +194,17 @@ reading is. `null` means *past the top of the ladder* (over 10 s), which is itse
 
 ⚠️ **`n: 0` is not `0 ms`.** A family that was never exercised reports `{ "n": 0 }` and nothing
 else, and `boucleMs` with no samples reports `moyen: null` — not a zero that would read as *healthy*.
+
+⚠️ **`routes: {}` used to be indistinguishable from broken instrumentation, and `familles` is why
+it no longer is.** Omitting an unexercised family is correct — a `0 ms` would read as *instantaneous*
+— but the omission left a reader unable to tell *no traffic in this window* from *measurement is not
+running*. A loaded host never meets the question: its entries are always there, so their presence
+witnesses itself.
+
+The rule came from a host measuring their own smallness: **a field whose value is its own witness at
+scale needs an explicit witness at small scale.** At 99 sessions nothing witnesses anything, and a
+busier host is better instrumented without having instrumented anything. `statuts` and `boucleMs`
+already carried their denominators; `routes` had not.
 
 ⚠️ **`boucleMs` is the delay, not the interval.** The sampler observes how long its own timer
 actually took, which at rest equals its resolution; the resolution is subtracted, so an idle

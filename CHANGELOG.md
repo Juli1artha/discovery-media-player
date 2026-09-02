@@ -12,6 +12,49 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- ⚠️ **`mesures.familles` — le dénominateur de `routes`, qui manquait depuis le début, et qu'une
+  règle d'hôte a permis de trouver au lieu de l'attendre.** Une famille sans échantillon est omise
+  de `routes`, à raison : un `0 ms` se lirait « instantané ». Mais l'omission laissait `routes: {}`
+  signifier indifféremment « aucun trafic sur la fenêtre » ou « la mesure ne tourne pas ». Un hôte
+  chargé ne rencontre jamais la question — ses entrées sont toujours là, donc leur présence témoigne
+  d'elle-même ; un hôte à 99 sessions n'a aucun témoin.
+  ⚠️ **Et les deux champs voisins du même objet avaient déjà raison**, ce qui rend l'omission
+  mesurable plutôt qu'opinable : `statuts` publie ses cinq clés à zéro, `boucleMs` publie `n: 0`
+  avec des `null` explicites « plutôt qu'un zéro qui se lirait la boucle est saine ». Trois champs
+  frères, deux qui portaient leur dénominateur et un qui l'avait oublié. L'incohérence était
+  interne, pas théorique — un banc l'éprouve désormais comme telle.
+  ⚠️ **La garde de confidentialité du relevé a refusé l'ajout, et elle a été élargie sans être
+  désarmée.** Elle exige que toute feuille soit un nombre ou `null` ; `familles` y introduit des
+  chaînes. L'exception est nommée par son **chemin autant que par son vocabulaire** : seules des
+  valeurs de `FAMILLES`, seulement sous `familles[i]`. Écrire « les chaînes sont tolérées » aurait
+  rendu la garde muette au premier slug. Prouvé par deux contrôles positifs : un slug qui fuit
+  ailleurs est refusé, et un slug déguisé en famille au bon chemin est refusé **deux fois**.
+
+### Changed
+
+- **`AGENTS.md` gagne trois règles, toutes formulées par les hôtes sur leurs propres défauts.**
+  ⚠️ **Une petite installation n'est pas seulement privée d'occasions — elle perd du pouvoir
+  discriminant.** À 1655 lignes, un compte exact *est sa propre preuve* : il dépasse le plafond que
+  la voie bornée ne peut structurellement pas franchir. À 99 sessions, aucune valeur ne peut jamais
+  séparer les deux voies. Même code, même carte, et l'une des deux installations est aveugle à une
+  panne que l'autre détecte gratuitement. D'où : **un champ dont la valeur est son propre témoin à
+  grande échelle a besoin d'un témoin explicite à petite échelle.** C'est cette règle qui a trouvé
+  `familles` dans l'heure.
+  ⚠️ **« Y a-t-il un état du monde où cette valeur est fausse ? »** — la question qui sépare une
+  limite d'observation d'un mode de défaillance silencieux. Un hôte avait écrit « ce n'est pas un
+  défaut, c'est une chose qu'un hôte ne peut pas vérifier », puis s'est repris lui-même : une chose
+  invérifiable **devient** un défaut dès qu'elle peut être fausse sans bruit. Classer un échec
+  silencieux en limite d'observation est confortable dans le mauvais sens — ça convertit une chose à
+  corriger en une chose à accepter.
+  ⚠️ **Un binaire est une hypothèse sur le fait qu'aucune transition n'existe.** Le troisième état
+  de `voie` n'est pas une politesse envers les cas limites : pendant une purge, colonne déjà
+  supprimée, `count` lève sur les chemins filtrés et répond sur les totaux de la même table. Avant
+  de choisir un booléen, nommer la transition qu'il suppose inexistante ; si on peut la nommer, ce
+  n'est pas un booléen. Même raisonnement que celui qui a donné trois états à `vide`.
+
+
 ## [0.1.152] — 2026-09-02
 
 ### Added
