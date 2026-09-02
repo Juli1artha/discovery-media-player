@@ -325,12 +325,13 @@ estimated:
 
 | | |
 |---|---|
-| Call sites | **71**†, in **7**† files |
-| Tables | **11**†, plus **7**† call sites that build their path at run time — their tables are named literally by the caller, and are counted above |
+| Call sites | **72**†, in **7**† files |
+| Tables | **11**†, plus **8**† call sites that build their path at run time — their tables are named literally by the caller, and are counted above |
 | Verbs | `GET`, `POST`, `PATCH`, one `HEAD`, and `DELETE` only in `server/retention.js` — every one bounded by an age filter (`docs/RETENTION.md`) |
 | Embedded selects (`select=*,other(*)`) | **0** |
 | `or=()` | **0**† — and it is a *rule*, not an observation: `ci.yml` refuses `or=(` and `and=(` in `server/*.js`, because nested joins and boolean trees are what turn a port from a translation into a rewrite. The cursor of `docshare.sessionsByRecipient` needs two coordinates and expresses them as two flat filters — `last_at=lte.T` plus `session_id=not.in.(…)` — which reads `WHERE last_at <= T AND session_id NOT IN (…)` |
-| `and=()`, `offset=` | **0** — hand-counted; the row above is measured because a rule nobody counts is a rule that erodes |
+| `and=()` | **0** — hand-counted; the row above is measured because a rule nobody counts is a rule that erodes |
+| `offset=` | **1** — hand-counted. `server/retention.js` asks for one row past the lot it received, to learn whether anything follows it. ⚠️ It was **0** until a host measured why it could not stay so: comparing a received length against *our own* bound assumes ours is the only ceiling, and PostgREST's `db-max-rows` (1000 on Supabase) truncates upstream of it. A single row at the next offset answers *is there more* without needing to know whose ceiling stopped the first read |
 | `in.(…)` | **5**† — translates to `WHERE column IN (…)`, so it costs a port nothing |
 | Used beyond plain filters | `order=`, `Prefer: return=…`, `Range` for pagination |
 

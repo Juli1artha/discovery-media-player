@@ -12,6 +12,29 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Fixed
+
+- ⚠️ **The truncation flag assumed our bound was the only ceiling, and a host measured what that
+  cost — four hours after 0.1.149 shipped.** PostgREST has a ceiling of its own, `db-max-rows`, set
+  to **1000** by default on Supabase: the server returns 1000 rows however many you ask for. The
+  counter asked for `borne + 1` and compared the received length to `borne`, so it compared against
+  the wrong number — a table of **1651** rows was published as `1000` **with `tronque: false`**.
+  That is the defect 0.1.149 had just fixed, moved one rung out and **made worse**: the previous
+  version claimed nothing, this one *asserted* the number was exact. A reader of "0 of 1000"
+  concludes the zero is proven over the whole table, when 651 rows were never looked at.
+  The question asked is now the only one whose answer depends on no ceiling — **is there anything
+  after what I received** — by requesting a single row at the next offset. A row returned proves
+  more remain; none proves the lot was the whole, whichever ceiling produced it and without having
+  to know it. `vide` was correct throughout and stays so: the three probes read zero, far below any
+  ceiling, so no ceiling can have fabricated them. It was the *denominator* that lied — the field
+  added precisely to make the zeros interpretable.
+- **The test double did not model the server, so this defect was unreachable rather than missed.**
+  It returned a constant array: it ignored `limit`, ignored `offset`, and had no ceiling of its own.
+  No fixture over it could produce the phenomenon, including the one written with a real host's own
+  volumes — 257 and 1651 both sit under our bound, so neither can saturate it. A missing case is
+  recoverable by writing it; a missing *layer* is not. The double now answers as PostgREST does:
+  offset, then limit, then its own ceiling.
+
 ## [0.1.149] — 2026-09-02
 
 ### Fixed
