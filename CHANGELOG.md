@@ -50,6 +50,23 @@ the notes there are this file's section for that version.
 
 ### Added
 
+- ⚠️ **`db.count` is now exercised against a **real** PostgREST, and the two response shapes that
+  server cannot produce are exercised on the real code rather than a copy.** The header path —
+  `Prefer: count=exact`, `Range: 0-0`, the `start-end/total` shape, and the `*` that means *"I did
+  not count"* — was **deduced from documentation, not observed**, which is precisely what this
+  repository's real-database bench exists to stop. The forge has a real PostgREST; not using it
+  would have been keeping a gap while holding the means to close it. An integrating host named the
+  same limitation on their own helper the same day.
+  A first draft "covered" the unreachable cases by **re-typing the regular expression in the
+  bench** — testing the copy, not the code, the exact vacuity this repository refuses everywhere.
+  They are covered instead by posing a `fetch` and driving the production path: four mutants of the
+  real implementation die (a missing count rendering zero, dropping `count=exact`, dropping the
+  body bound, and taking the first number in the header).
+- **`docs/HOST-CONTRACT.md` now says which hosts get it for free.** A host asked whether `db.count`
+  was a capability of the standalone context or one more expectation in the contract — *"the two
+  look alike in your code and not at all alike at your hosts"* — and the page did not answer.
+  It does now: the standalone context shipped in this package implements it, so a host building on
+  it has nothing to decide or write.
 - **`db.count(path)` — an optional seam that makes the purge counter exact, and whose absence is the
   previous behaviour.** When a host exposes it, the player asks it first and publishes an exact
   count: no bound, no `tronque`, and **no rows transported at all**. When it is absent — every

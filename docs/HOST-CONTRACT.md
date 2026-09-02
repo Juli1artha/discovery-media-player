@@ -522,7 +522,12 @@ by the response body alone. Reading the count from `Content-Range` under `Prefer
 no ceiling to guess and transports nothing; it is strictly better, and it needs the `db` capability
 to expose response headers, which today it does not.
 
-⚠️ **`db.count(path)` is the seam that closes this, and it is optional.** If your `db` capability
+⚠️ **`db.count(path)` is the seam that closes this, and it is optional.** ⚠️ **The standalone
+context shipped in this package already implements it** — if you build your context from
+`discovery-media-player/context/standalone`, you get it on your next upgrade and there is nothing
+to decide or write. This section is for a host that implements the `db` capability itself. A host
+asked which of the two it was, and the answer was missing from this page: *"the two look alike in
+your code and not at all alike at your hosts."* If your `db` capability
 exposes it, the player asks it first and publishes an **exact** count — no bound, no `tronque`, and
 no rows transported at all. If it is absent, everything above still applies unchanged: the bounded
 read with its cursor probe. **That fallback is the whole design.** Third-party hosts implement this
