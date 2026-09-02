@@ -12,6 +12,44 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- ⚠️ **La carte de purge dit maintenant par quelle voie ses nombres ont été obtenus (`voie`), parce
+  que les nombres ne le disent pas.** Deux hôtes intégrateurs l'ont relevé le même jour, sans se
+  connaître et par deux chemins opposés : l'un constatant qu'à ses volumes il ne pouvait pas
+  vérifier sa propre couture, l'autre en écrivant un contrôle qui n'a fonctionné que par chance de
+  volume — sa table portait 1655 lignes, et la voie bornée est structurellement incapable de
+  dépasser le plafond de mille, donc le nombre lui-même faisait preuve.
+  Le défaut est un **échec silencieux**, pas une gêne de lecture : un compte exact et un compte
+  borné non tronqué rendent un bloc **rigoureusement identique** — mêmes nombres, même `tronque`,
+  même `vide`. Un `db.count` qui rend une chaîne ou un flottant retombe donc sans bruit sur la voie
+  bornée, et l'hôte croit sa couture branchée alors qu'elle ne sert pas. Sous mille lignes, personne
+  ne pouvait le voir. Le banc décisif le rend exécutable : à volumes identiques, une couture qui
+  marche et une couture cassée produisent deux cartes égales **une fois `voie` retirée**, ce qui
+  fait mourir ce banc si le champ disparaît.
+  ⚠️ **Trois états, et le troisième n'est pas une commodité** : `"mixte"` arrive vraiment — un hôte
+  en cours de purge dont la colonne est déjà supprimée fait lever `count` sur les chemins filtrés et
+  répondre sur les totaux de la même table, donc les deux voies servent dans la même lecture. Un
+  drapeau binaire aurait dû arrondir ce cas, c'est-à-dire mentir sur l'une des deux moitiés.
+  Ajout additif au sens de ce dépôt : un lecteur qui ignore le champ voit exactement ce qu'il voyait.
+  Les cinq mutations meurent (champ retiré, voie forcée à l'une puis à l'autre, `mixte` arrondi,
+  voies échangées) ; un banc de forme exacte, déjà là, a d'ailleurs refusé le nouveau champ avant
+  qu'on ne l'y déclare.
+
+- **`AGENTS.md` : un contrôle qui sépare deux mécanismes doit s'appuyer sur ce que l'un peut faire
+  et l'autre non.** La règle vient d'un hôte, sur son propre défaut : il a écrit un contrôle de
+  *valeur* pour une question de *mécanisme*. `= 1651` est vrai des deux voies et périme à la
+  première écriture ; `> 1000` est impossible à l'une des deux, quelle que soit la croissance de la
+  table. Son autre moitié — `1651` mesuré la veille et écrit en dur — est notre section « un nombre
+  au présent pourrit », cette fois **dans l'outil chargé de vérifier autre chose**, la position qui
+  coûte le plus cher puisqu'un contrôle pourri n'échoue pas, il accuse.
+  Appliquée à nous-mêmes dans l'heure, elle a trouvé quelque chose : nos bancs des deux voies sont
+  justes — ils portent sur les **appels enregistrés**, pas sur une valeur — mais ils ne le sont que
+  parce qu'un banc voit à l'intérieur. L'hôte ne voit pas nos appels. La règle tenait de notre côté
+  de la frontière et tombait du sien : une garde correcte qui ne s'exécute pas sur le périmètre
+  qu'on croit, la forme de défaut que ce dépôt traque le plus.
+
+
 ## [0.1.151] — 2026-09-02
 
 ### Fixed

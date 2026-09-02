@@ -477,8 +477,21 @@ const TABLES_RESTE = [["sessions", "commercial_doc_sessions", "session_id"],
  */
 const COLONNE_ABSENTE = "42703";
 
-/** `{ n, tronque }` — `n` nul veut dire indéterminé, jamais zéro. */
-const compte = (n, tronque) => ({ n, tronque });
+/**
+ * `{ n, tronque, voie }` — `n` nul veut dire indéterminé, jamais zéro.
+ *
+ * ⚠️ ET `voie` NOMME LE MÉCANISME QUI A PRODUIT LE NOMBRE, parce que le nombre seul ne le dit pas.
+ * Un compte exact et un compte borné NON tronqué rendent le même JSON : deux hôtes l'ont relevé le
+ * même jour, l'un en constatant qu'il ne pouvait pas vérifier sa propre couture, l'autre en
+ * écrivant un contrôle qui n'a marché que par chance de volume — sa table dépassait mille, donc la
+ * voie par lignes était structurellement incapable de rendre son chiffre. Sous mille, personne ne
+ * peut trancher, et un `db.count` qui rend une chaîne retombe SILENCIEUSEMENT sur la voie bornée :
+ * l'hôte croit sa couture branchée alors qu'elle ne sert pas.
+ */
+const compte = (n, tronque, voie) => ({ n, tronque, voie });
+
+const VOIE_EXACTE = "exact";
+const VOIE_BORNEE = "bornee";
 
 /**
  * ⚠️ « MOINS QUE DEMANDÉ » NE PROUVE PAS LA FIN — ET C'EST UN HÔTE RÉEL QUI L'A MONTRÉ.
@@ -577,23 +590,24 @@ async function compterBorne(chemin, cle) {
   // méthode par lignes, pas celle-ci. `tronque: false` garde donc le sens qu'il a partout —
   // « lisez ce nombre comme exact » — au lieu d'en prendre un second selon la voie employée.
   const exact = await compteExact(chemin);
-  if (exact !== null) return compte(exact, false);
+  if (exact !== null) return compte(exact, false, VOIE_EXACTE);
   try {
     // ⚠️ BORNE + 1 : la ligne excédentaire ne sert qu'à PROUVER qu'il en reste. On ne la publie pas.
     // ⚠️ ET L'ORDRE N'EST PAS DÉCORATIF : sans lui, « la dernière ligne reçue » ne désigne aucune
     // frontière, et le curseur de la sonde ne voudrait rien dire.
     const lignes = await PLAYER.db.request(
       `${chemin}&order=${cle}.asc&limit=${BORNE_RESTE + 1}`, { timeoutMs: 8000 });
-    if (!Array.isArray(lignes)) return compte(null, false);
+    if (!Array.isArray(lignes)) return compte(null, false, VOIE_BORNEE);
     // Notre propre borne atteinte : la preuve est dans la ligne excédentaire, rien à demander.
-    if (lignes.length > BORNE_RESTE) return compte(BORNE_RESTE, true);
+    if (lignes.length > BORNE_RESTE) return compte(BORNE_RESTE, true, VOIE_BORNEE);
     // Zéro ligne : la sonde au-delà rendrait zéro elle aussi et n'apprendrait rien — y compris sous
     // un plafond à zéro, que ni l'une ni l'autre ne distingue d'une table vide.
-    if (!lignes.length) return compte(0, false);
-    return compte(lignes.length, await resteApres(chemin, cle, lignes[lignes.length - 1][cle]));
+    if (!lignes.length) return compte(0, false, VOIE_BORNEE);
+    return compte(lignes.length, await resteApres(chemin, cle, lignes[lignes.length - 1][cle]),
+      VOIE_BORNEE);
   } catch (e) {
-    if (e && e.details && e.details.code === COLONNE_ABSENTE) return compte(0, false);
-    return compte(null, false);   // indéterminé — surtout pas zéro
+    if (e && e.details && e.details.code === COLONNE_ABSENTE) return compte(0, false, VOIE_BORNEE);
+    return compte(null, false, VOIE_BORNEE);   // indéterminé — surtout pas zéro
   }
 }
 
@@ -636,6 +650,18 @@ async function resteDeLaPurge() {
   // confiance aux autres, alors que la borne est commune et que la question ne l'est pas.
   out.tronque = [...comptes, ...totaux].some((c) => c.tronque);
   out.lignes = parTable;
+  // ⚠️ UNE SEULE RÉPONSE POUR LES CINQ COMPTES, ET TROIS ÉTATS PLUTÔT QUE DEUX. La question qu'un
+  // hôte se pose est « ma couture sert-elle ? », pas « laquelle des cinq ». `"mixte"` n'est pas une
+  // commodité : il arrive vraiment — un `count` qui lève sur le chemin d'une colonne supprimée et
+  // répond sur le total de la même table — et c'est précisément le cas qu'un drapeau binaire
+  // aurait dû arrondir dans un sens ou dans l'autre, donc mentir.
+  //
+  // ⚠️ CE CHAMP NE DIT RIEN SUR LA JUSTESSE DES NOMBRES, seulement sur leur provenance. Il ne
+  // double aucun autre : `tronque` vaut `false` sur les DEUX voies, c'est même toute la raison
+  // d'être de cette ligne.
+  const voies = [...comptes, ...totaux].map((c) => c.voie);
+  out.voie = voies.every((v) => v === VOIE_EXACTE) ? VOIE_EXACTE
+    : voies.every((v) => v === VOIE_BORNEE) ? VOIE_BORNEE : "mixte";
   SONDES_RESTE.forEach(([nom], i) => { out[nom] = comptes[i].n; });
   // ⚠️ TROIS ÉTATS, PAS DEUX. `true` : plus rien, le retrait des colonnes est permis ICI. `false` :
   // il reste des lignes. `null` : au moins une sonde n'a pas répondu — on ne sait pas, et « on ne

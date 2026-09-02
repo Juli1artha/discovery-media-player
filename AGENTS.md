@@ -1509,6 +1509,45 @@ not cap."* It behaves like a perfect database — which is indistinguishable, fr
 correct one. So when a defect lives in a layer, ask what the double *is silently perfect at*, not
 what data you fed it.
 
+## A control that separates two mechanisms must rest on what only one of them can do
+
+An integrating host wired an optional seam of ours, then wrote a script to check it was actually
+being used. The script compared the published number against a value:
+
+```
+→ vues : 1655 | réel en base : 1651
+⇒ repli sur la voie par lignes — db.count n'a pas répondu
+```
+
+It was wrong, and the seam was working. Two faults stacked, and the second is the one worth
+keeping.
+
+The first is the section above this one: `1651` was a number they had measured *the day before* and
+written into the control by hand. Four rows arrived in between. A number in the present tense rots,
+and this time it rotted **inside the tool whose job was to check something else** — which is the
+placement that costs the most, because a rotted control does not fail loudly, it accuses the
+subject.
+
+The second is new. **They wrote a value control for a mechanism question.** The question was *which
+of two routes produced this number*; the assertion was *is this number 1651*. But both routes can
+return 1651. The property that actually separates them is that one of them **cannot exceed a
+ceiling** — the bounded route is structurally incapable of returning more than the server's
+`db-max-rows`, so `> 1000` is true of one mechanism and impossible for the other, whatever the table
+grows to. `= 1651` was true of both and expired at the next write.
+
+⚠️ So: **to distinguish two mechanisms, assert on something one can do and the other cannot** — a
+capability, a ceiling crossed, a call made or not made — never on a value both could produce. A
+value control over a mechanism question is green for the wrong reason, and it holds that green
+until the value drifts.
+
+Applied to ourselves the same hour, and it found something. Our own benches for those two routes
+are sound: they assert on the *calls recorded* — `vus.every(c => c.startsWith("count:"))` — which is
+a mechanism, not a value. But they are sound **only because a bench can see inside**. The host
+cannot see our calls, and the two routes published an identical card. The rule held on our side of
+the line and failed on theirs, which is the shape this repository already knows: a guard that is
+correct, and does not run on the perimeter you think. The card now carries `voie`, so the
+distinction they had to infer from luck of volume is one they can read.
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives

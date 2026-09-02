@@ -487,7 +487,7 @@ above: an unheard-of action answered *no* narrows this view rather than breaking
 gains a `purge` block counting the rows that still carry a reader IP or a raw User-Agent:
 
     "purge": { "borne": 5000, "tronque": false, "lignes": { "sessions": 1908, "vues": 3200 },
-               "sessionsIp": 0, "sessionsUa": 0, "vuesUa": 0, "vide": true }
+               "sessionsIp": 0, "sessionsUa": 0, "vuesUa": 0, "vide": true, "voie": "bornee" }
 
 `vide` is the reading that matters: `true` means nothing of that legacy is left **on this
 instance's live rows** — the condition under which those columns can eventually be dropped —
@@ -544,6 +544,24 @@ portability rule refuses.
 ⚠️ **Answer `null` when you cannot say — never `0`.** Zero is the answer that authorises dropping a
 column. Anything that is not a non-negative integer (a string, a float, `undefined`, `NaN`) is read
 as "no answer" and the player falls back rather than believing it.
+
+⚠️ **And `voie` tells you which route produced the numbers, because the numbers cannot.** `"exact"`,
+`"bornee"`, or `"mixte"` when both served the same read — which happens for real: a host mid-purge
+whose column is already dropped makes `count` throw on the filtered paths and answer on the same
+table's totals.
+
+This field exists because two hosts, independently and on the same day, found they could not verify
+their own seam. An exact count and an untruncated bounded count render an **identical** block —
+same numbers, same `tronque`, same `vide`. So a `db.count` that returns a string, or a float, falls
+back **silently** and the card looks exactly like a working one: you believe your seam is wired
+when it is not. One host caught it only by luck of volume — their table held 1655 rows, and the
+bounded route is structurally incapable of exceeding the 1000-row ceiling, so the number itself
+happened to be proof. Under a thousand rows there is no such luck, and the other host, whose
+volumes are small, could not tell at all.
+
+**Check `voie`, not a value.** A control that distinguishes two *mechanisms* must rest on something
+one can do and the other cannot; a value both could return proves nothing, and a value written down
+from yesterday's measurement rots without anyone touching anything.
 
 ⚠️ **The two alternatives were measured at a host, not assumed here** — recorded so nobody proposes
 them again in six months believing they were never tried. **`?select=count()` is dead**:
