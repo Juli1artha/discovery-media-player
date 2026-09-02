@@ -501,11 +501,44 @@ was something to look at, *0 of 0* means the table is empty or out of reach and 
 nothing. It is `null` on the same terms as the counts.
 
 The counts are **bounded** at `borne` rows and read one small column. ⚠️ **`tronque` says whether
-that bound was reached**: when it is `true`, every number in the block is a *lower bound*, not a
+anything was cut off**: when it is `true`, every number in the block is a *lower bound*, not a
 count. Without it a saturated `5000` would be indistinguishable from an exact five thousand — a
 wrong number that reads as right, which is worse than an absent one, because an absence makes you
 look and a number makes you conclude. `vide` stays correct either way: saturation can only make it
 `false`, never wrongly `true`.
+
+⚠️ **And `tronque` does not assume our bound is the only ceiling** — it did, for one release, and a
+host measured what that cost. PostgREST has a ceiling of its own, `db-max-rows`, set to **1000** by
+default on Supabase: the server returns 1000 rows however many you ask for. Comparing the received
+length against `borne` then compares against the wrong number, and a table of 1651 rows was
+published as `1000` **with `tronque: false`** — asserting an exactness it did not have.
+
+So the question asked is not *did I hit my bound* but **is there anything after what I received**:
+one row is requested past the last one received, by keyset cursor (`col=gt.<last>`, never by
+offset — a cursor is stable under concurrent writes, and it is this repository's pagination rule). A row returned proves more remain; none proves the lot was
+the whole — whichever ceiling produced it, without having to know it. **What this does not cover,
+stated rather than glossed:** a server ceiling of *zero* stays indistinguishable from an empty table
+by the response body alone. Reading the count from `Content-Range` under `Prefer: count=exact` has
+no ceiling to guess and transports nothing; it is strictly better, and it needs the `db` capability
+to expose response headers, which today it does not.
+
+⚠️ **And the same ceiling applies to every read you make through your own client, not just to
+ours.** `limit=20000` does not return twenty thousand rows: PostgREST caps the response at
+`db-max-rows` — **1000** on a default Supabase project — and says so nowhere in the body. A read
+that asks for more than that ceiling is not a large read, it is a **false belief**, and it stays
+invisible while your tables are small. So the question is worth asking of your own code as well as
+of ours: *does my client paginate, or do I believe that `limit=20000` returns 20 000 rows?*
+
+One host asked it of itself the day it found this in our counter, and the answer was not
+hypothetical: a statistics read ordered `created_at.asc` with no `limit` was seeing the **1000
+oldest** rows of 6424, so a "last opened" date read months stale for a link opened the day before,
+and every breakdown described the beginning of the history. They also count **32** reads asking for
+more than the ceiling — all latent on their volumes today, all live on an older installation.
+
+⚠️ **The sort direction decides how bad it gets.** A read that saturates while ordered `desc` loses
+the oldest rows; ordered `asc` it loses the newest — that is, the ones anyone is looking at. Same
+ceiling, same silence, opposite severity. Counting is indifferent to it, but anything that reads
+*content* under a ceiling should prefer `desc`.
 
 They run only under `&schema=1`, the mode where you have asked for the database.
 

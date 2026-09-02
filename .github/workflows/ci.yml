@@ -537,7 +537,20 @@ jobs:
           #
           # Une sonde qui lit du commentaire invente des coupables. Même correction que celle faite
           # le même jour sur la sonde des colonnes de schéma, pour la même raison.
-          sans_commentaires=$(grep -avE '^[[:space:]]*//' server/*.js --with-filename --line-number || true)
+          #
+          # ⚠️ ET LA CORRECTION N'AVAIT ÉTÉ FAITE QUE POUR `//`. Les commentaires de BLOC passaient au
+          # travers : une ligne « * … la garde interdit `offset=` … » — c'est-à-dire l'explication de
+          # la règle elle-même — faisait rougir la garde. Elle a donc accusé la phrase qui la
+          # documente, et la seule issue aurait été de dégrader l'explication pour la satisfaire :
+          # exactement ce que le paragraphe ci-dessus dit vouloir empêcher, resté à moitié fait.
+          #
+          # ⚠️ ET CETTE RÈGLE EXISTE ICI EN DOUBLE, LA COPIE FAIBLE ÉTANT CELLE-CI. `sourceUtile` de
+          # tools/surface-base.mjs retire `//`, `*` ET `/*` depuis longtemps, et il est éprouvé ;
+          # ce `grep` inline ne l'était pas. Les motifs sont maintenant COMPTÉS par cet outil
+          # (`or=(`, `and=(`, `offset=`) et comparés à docs/API.md, ce qui rend ce bloc redondant
+          # pour trois de ses quatre motifs — le quatrième, `select=…(`, ne l'est pas encore.
+          # Tant qu'il vit, il doit lire la même chose que l'outil.
+          sans_commentaires=$(grep -avE '^[[:space:]]*(//|\*|/\*)' server/*.js --with-filename --line-number || true)
           exotique=$(printf '%s\n' "$sans_commentaires" | grep -E 'select=[^&`"]*\(|[?&]or=\(|[?&]and=\(|offset=' || true)
           [ -z "$exotique" ] || { echo "::error::PostgREST-specific syntax raises the porting cost:"; echo "$exotique"; exit 1; }
           # ⚠️ ON COMPARE, ON N'AFFICHE PAS. Cette étape se contentait d'imprimer le compte en

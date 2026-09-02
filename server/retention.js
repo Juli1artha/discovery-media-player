@@ -410,8 +410,14 @@ function tick() {
  *
  * ⚠️ ON COMPTE DES LIGNES, PAS UN `count=exact`. La capacité `db` de l'hôte rend le corps de la
  * réponse, pas ses en-têtes : le compte de PostgREST voyage dans `Content-Range`, donc il serait
- * illisible sans élargir le contrat d'hôte — ce qu'un compteur de diagnostic ne justifie pas.
+ * illisible sans élargir le contrat d'hôte — que des hôtes tiers implémentent eux-mêmes.
  * D'où un comptage BORNÉ : au plus `BORNE_RESTE` identifiants, une seule petite colonne.
+ *
+ * ⚠️ CE CHOIX A UN COÛT, ET IL EST NOMMÉ ICI PLUTÔT QUE SUBI : lire des LIGNES, c'est dépendre des
+ * plafonds de qui les rend, et un hôte a mesuré que ce plafond peut être SOUS notre borne. Le
+ * compte d'en-tête n'a pas de plafond à deviner et ne transporte rien ; il est strictement
+ * supérieur, et le seul obstacle est le contrat. Tant que le contrat ne le rend pas, `resteApres`
+ * rattrape la seule chose qui rendait le nombre MENSONGER — l'affirmation d'exactitude.
  *
  * ⚠️ ET LA SATURATION SE DIT, ELLE NE SE DEVINE PAS — deux hôtes ont trouvé ce défaut dans la
  * première version, le même jour, indépendamment. Elle demandait `limit=BORNE` et publiait
@@ -423,6 +429,14 @@ function tick() {
  * pour exactement cette raison. On demande donc `BORNE + 1` : en recevoir autant prouve qu'il en
  * reste, sans coûter une ligne de plus. `n` reste plafonné à la borne, et `tronque` dit qu'il faut
  * le lire « au moins ».
+ *
+ * ⚠️ ET CE CORRECTIF ÉTAIT LUI-MÊME FAUX, D'UN CRAN PLUS LOIN — trouvé par un hôte réel QUATRE
+ * HEURES après sa publication. Il comparait le nombre de lignes reçues à NOTRE borne, donc il
+ * supposait que le seul plafond fût le nôtre. PostgREST en a un autre, `db-max-rows`, réglé à 1000
+ * par défaut chez Supabase : le serveur tronque EN AMONT, et la comparaison porte alors sur le
+ * mauvais nombre. Une table de 1651 lignes se lisait `1000` avec `tronque: false` — pire que la
+ * version d'avant, qui ne prétendait rien là où celle-ci AFFIRMAIT l'exactitude. `resteApres`
+ * ci-dessous pose désormais la seule question dont la réponse ne dépend d'aucun plafond.
  *
  * ⚠️ ET LE COÛT EST INVERSE DE L'INTUITION, donc il est dit plutôt que caché : quand il reste
  * beaucoup de lignes, la base s'arrête à la borne et c'est rapide ; quand il n'en reste AUCUNE,
@@ -466,12 +480,63 @@ const COLONNE_ABSENTE = "42703";
 /** `{ n, tronque }` — `n` nul veut dire indéterminé, jamais zéro. */
 const compte = (n, tronque) => ({ n, tronque });
 
-async function compterBorne(chemin) {
+/**
+ * ⚠️ « MOINS QUE DEMANDÉ » NE PROUVE PAS LA FIN — ET C'EST UN HÔTE RÉEL QUI L'A MONTRÉ.
+ *
+ * La version précédente comparait le nombre de lignes reçues à NOTRE borne, et concluait « pas
+ * tronqué » dès qu'il était plus petit. Elle supposait que le seul plafond fût le nôtre. PostgREST
+ * en a un autre, `db-max-rows`, que Supabase règle à 1000 : le serveur rend 1000 lignes quoi qu'on
+ * demande. Sur une table de 1651 lignes, la carte a donc publié `1000` AVEC `tronque: false` —
+ * c'est-à-dire le défaut qu'on venait de corriger, déplacé d'un cran et AGGRAVÉ : la version d'avant
+ * ne prétendait rien, celle-là AFFIRMAIT que le nombre était exact.
+ *
+ * Le contrôle honnête ne porte donc pas sur une borne connue, mais sur la seule question dont la
+ * réponse ne dépend d'aucun plafond : « y a-t-il quelque chose APRÈS ce que j'ai reçu ? » On la
+ * pose en demandant UNE ligne au-delà de la dernière reçue. Une ligne rendue prouve qu'il en
+ * reste ; aucune prouve que le lot reçu était le tout — quel que soit le plafond qui l'a produit,
+ * et sans avoir à le connaître.
+ *
+ * ⚠️ PAR CURSEUR KEYSET (`cle=gt.<dernier>`), PAS PAR `offset` — et cette phrase est déjà écrite
+ * trois cent quatre-vingts lignes plus haut, au-dessus de `purgerParLots`, où elle dit la même
+ * chose depuis toujours : la garde de portabilité de la forge interdit `offset=`, et un curseur
+ * est de toute façon stable sous écriture concurrente. Première rédaction de cette sonde : par
+ * `offset`. La forge l'a refusée. C'est la SECONDE fois dans ce fichier qu'un remède déjà présent
+ * n'a pas été vu — après le drapeau `tronque` de `purgerParLots`. Un fichier dont on vient
+ * d'écrire la partie difficile se relit mal, et c'est un fait à traiter, pas une excuse.
+ *
+ * ⚠️ ET CE QU'ELLE NE COUVRE PAS EST DIT, PARCE QU'UNE GARDE MUETTE VAUT MOINS QUE PAS DE GARDE :
+ * un plafond serveur à ZÉRO reste indiscernable d'une table vide par le corps seul — les deux
+ * requêtes rendent zéro ligne. C'est la limite de la lecture par lignes, et la raison pour laquelle
+ * le compte d'en-tête (`Content-Range` sous `Prefer: count=exact`) lui est strictement supérieur :
+ * il ne dépend d'aucun plafond. Il demanderait d'élargir la capacité `db` du contrat d'hôte, qui ne
+ * rend aujourd'hui que le corps analysé.
+ */
+async function resteApres(chemin, cle, dernier) {
+  // Sans curseur lisible, la fin ne se prouve pas : « au moins » est le seul côté sûr.
+  if (dernier == null) return true;
+  try {
+    const suite = await PLAYER.db.request(
+      `${chemin}&${cle}=gt.${enc(String(dernier))}&order=${cle}.asc&limit=1`, { timeoutMs: 8000 });
+    // Pas de réponse analysable ⇒ on ne sait pas ⇒ « au moins ». Se tromper vers le minorant ne
+    // fait que sous-estimer ; se tromper vers l'exactitude fait conclure.
+    return !Array.isArray(suite) || suite.length > 0;
+  } catch { return true; }
+}
+
+async function compterBorne(chemin, cle) {
   try {
     // ⚠️ BORNE + 1 : la ligne excédentaire ne sert qu'à PROUVER qu'il en reste. On ne la publie pas.
-    const lignes = await PLAYER.db.request(`${chemin}&limit=${BORNE_RESTE + 1}`, { timeoutMs: 8000 });
+    // ⚠️ ET L'ORDRE N'EST PAS DÉCORATIF : sans lui, « la dernière ligne reçue » ne désigne aucune
+    // frontière, et le curseur de la sonde ne voudrait rien dire.
+    const lignes = await PLAYER.db.request(
+      `${chemin}&order=${cle}.asc&limit=${BORNE_RESTE + 1}`, { timeoutMs: 8000 });
     if (!Array.isArray(lignes)) return compte(null, false);
-    return compte(Math.min(lignes.length, BORNE_RESTE), lignes.length > BORNE_RESTE);
+    // Notre propre borne atteinte : la preuve est dans la ligne excédentaire, rien à demander.
+    if (lignes.length > BORNE_RESTE) return compte(BORNE_RESTE, true);
+    // Zéro ligne : la sonde au-delà rendrait zéro elle aussi et n'apprendrait rien — y compris sous
+    // un plafond à zéro, que ni l'une ni l'autre ne distingue d'une table vide.
+    if (!lignes.length) return compte(0, false);
+    return compte(lignes.length, await resteApres(chemin, cle, lignes[lignes.length - 1][cle]));
   } catch (e) {
     if (e && e.details && e.details.code === COLONNE_ABSENTE) return compte(0, false);
     return compte(null, false);   // indéterminé — surtout pas zéro
@@ -479,7 +544,7 @@ async function compterBorne(chemin) {
 }
 
 const compterReste = (table, cle, colonne) =>
-  compterBorne(`${table}?select=${cle}&${colonne}=not.is.null`);
+  compterBorne(`${table}?select=${cle}&${colonne}=not.is.null`, cle);
 
 /**
  * ⚠️ ET LE COMPTEUR PORTE CE QU'IL A REGARDÉ — un hôte nous l'a demandé, et il avait raison.
@@ -497,7 +562,7 @@ const compterReste = (table, cle, colonne) =>
  * borne dès les premières lignes. Une par TABLE, pas une par sonde — deux des trois colonnes vivent
  * dans la même.
  */
-const compterLignes = (table, cle) => compterBorne(`${table}?select=${cle}`);
+const compterLignes = (table, cle) => compterBorne(`${table}?select=${cle}`, cle);
 
 async function resteDeLaPurge() {
   const [comptes, totaux] = await Promise.all([

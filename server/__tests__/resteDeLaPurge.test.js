@@ -32,6 +32,31 @@ const brancher = (parChemin) => {
 
 const lignes = (n) => Array.from({ length: n }, (_, i) => ({ id: `x${i}` }));
 
+/**
+ * ⚠️ UN DOUBLE QUI NE MODÉLISE PAS LE SERVEUR REND CERTAINS DÉFAUTS INATTEIGNABLES, PAS SEULEMENT
+ * MANQUÉS. Celui d'ici rendait un tableau CONSTANT : il ignorait `limit`, ignorait `offset`, et
+ * n'avait aucun plafond à lui. Aucun jeu d'essai ne pouvait donc produire le défaut qu'un hôte réel
+ * a trouvé quatre heures après la publication — le plafond `db-max-rows` de PostgREST, réglé à 1000
+ * chez Supabase, qui tronque EN AMONT de notre borne et rendait `tronque: false` sur 1651 lignes.
+ * Ce n'est pas un cas oublié : c'est une COUCHE non simulée, et un cas non écrit se rattrape quand
+ * une couche absente, non.
+ *
+ * `base(n, plafond)` répond donc comme PostgREST : elle applique `offset`, puis `limit`, puis son
+ * propre plafond — dans cet ordre, celui du serveur.
+ */
+const base = (n, plafond = Infinity) => (chemin) => {
+  const cle = (chemin.match(/select=(\w+)/) || ["", "id"])[1];
+  // Clés triables telles quelles : un `x10` lexicographique se placerait entre `x1` et `x2`, et le
+  // curseur `gt.` du code testé porterait alors sur un ordre que la vraie base n'a pas.
+  const id = (i) => `x${String(i).padStart(7, "0")}`;
+  const apres = chemin.match(new RegExp(`${cle}=gt\\.([^&]+)`));
+  const debut = apres ? Number(decodeURIComponent(apres[1]).slice(1)) + 1 : 0;
+  const demande = (chemin.match(/[?&]limit=(\d+)/) || [])[1];
+  let dispo = Math.max(0, n - debut);
+  if (demande !== undefined) dispo = Math.min(dispo, Number(demande));
+  return Array.from({ length: Math.min(dispo, plafond) }, (_, k) => ({ [cle]: id(debut + k) }));
+};
+
 describe("le compteur de ce qui porte encore ip ou ua", () => {
   it("interroge les TROIS colonnes, sur les deux tables", async () => {
     const vus = brancher(() => []);
@@ -77,7 +102,7 @@ describe("le compteur de ce qui porte encore ip ou ua", () => {
   // Les volumes sont ceux d'un hôte réel le 01/09 — et c'est ce cas qui a montré qu'une borne à
   // mille saturait dès le premier jour chez lui.
   it("⚠️ le compteur porte ce qu'il a REGARDÉ, par table", async () => {
-    brancher((c) => (c.includes("not.is.null") ? [] : lignes(c.includes("views") ? 1651 : 257)));
+    brancher((c) => (c.includes("not.is.null") ? [] : base(c.includes("views") ? 1651 : 257)(c)));
     const r = await retention.resteDeLaPurge();
     expect(r.lignes, "deux tables, deux dénominateurs").toEqual({ sessions: 257, vues: 1651 });
     expect(r.tronque, "les volumes réels des hôtes connus doivent tenir sous la borne").toBe(false);
@@ -121,17 +146,78 @@ describe("le compteur de ce qui porte encore ip ou ua", () => {
   // comme juste — pire qu'un nombre absent, parce que l'absence fait chercher et que le nombre fait
   // conclure. Le remède existait à trois cents lignes de là : `purgerRetention` rend `tronque`.
   it("⚠️ exactement la borne n'est PAS une troncature", async () => {
-    brancher(() => lignes(retention.BORNE_RESTE));
+    brancher(base(retention.BORNE_RESTE));
     const r = await retention.resteDeLaPurge();
     expect(r.sessionsIp).toBe(retention.BORNE_RESTE);
-    expect(r.tronque, "mille pile, et rien au-delà : le compte est exact").toBe(false);
+    expect(r.tronque, "la borne pile, et rien au-delà : le compte est exact").toBe(false);
   });
 
   it("⚠️ au-delà de la borne, le compte est plafonné ET le dit", async () => {
-    brancher(() => lignes(retention.BORNE_RESTE + 1));
+    brancher(base(retention.BORNE_RESTE + 1));
     const r = await retention.resteDeLaPurge();
     expect(r.sessionsIp, "on ne publie pas la ligne excédentaire").toBe(retention.BORNE_RESTE);
-    expect(r.tronque, "sans ce drapeau, 1000 se lirait comme exact").toBe(true);
+    expect(r.tronque, "sans ce drapeau, la borne se lirait comme un compte exact").toBe(true);
+  });
+
+  // ⚠️ LE DÉFAUT QU'UN HÔTE RÉEL A TROUVÉ QUATRE HEURES APRÈS LA PUBLICATION, ET QUE CE BANC NE
+  // POUVAIT PAS PRODUIRE. `db-max-rows` de PostgREST vaut 1000 par défaut chez Supabase : le
+  // serveur rend 1000 lignes quoi qu'on demande. Comparer la longueur reçue à NOTRE borne suppose
+  // que le seul plafond soit le nôtre — dès qu'un plafond serveur passe DESSOUS, il tronque en
+  // amont et la comparaison porte sur le mauvais nombre.
+  //
+  // Une table de 1651 lignes se lisait donc `1000` AVEC `tronque: false`. C'est le défaut de la
+  // version précédente déplacé d'un cran et AGGRAVÉ : celle-là ne prétendait rien, celle-ci
+  // AFFIRMAIT l'exactitude. « 0 sur 1000 » fait conclure que le zéro est prouvé sur tout, alors
+  // que 651 lignes n'ont pas été regardées.
+  const PLAFOND_SERVEUR = 1000;   // `db-max-rows`, valeur par défaut de Supabase
+  const VUES_REELLES = 1651;      // mesurées chez un hôte, en SQL, le jour du relevé
+  const SESSIONS_REELLES = 257;
+
+  // La base exacte de l'hôte qui a trouvé le défaut : purge appliquée (les trois sondes à zéro),
+  // 257 sessions sous le plafond, 1651 vues au-dessus. Seule la seconde le révèle.
+  const commeEnProduction = (c) => (c.includes("not.is.null")
+    ? []
+    : base(c.includes("views") ? VUES_REELLES : SESSIONS_REELLES, PLAFOND_SERVEUR)(c));
+
+  it("⚠️ un plafond SERVEUR sous notre borne tronque, et le drapeau doit le dire quand même", async () => {
+    brancher(commeEnProduction);
+    const r = await retention.resteDeLaPurge();
+    expect(r.lignes.vues, "on ne peut rendre que ce que le serveur a bien voulu donner").toBe(PLAFOND_SERVEUR);
+    expect(r.lignes.sessions, "257 tient sous le plafond : ce dénominateur-là est exact").toBe(257);
+    expect(r.tronque, "⚠️ SANS CE DRAPEAU : 1000 pour 1651, annoncé exact").toBe(true);
+  });
+
+  it("⚠️ et il le dit sans connaître le plafond — la question porte sur l'APRÈS, pas sur un nombre", async () => {
+    const vus = brancher(commeEnProduction);
+    await retention.resteDeLaPurge();
+    // Les deux dénominateurs se prolongent — 257 tient sous le plafond et sa sonde trouvera le
+    // vide, 1651 non. C'est celle de la table tronquée qui doit porter le bon curseur.
+    expect(vus.filter((c) => c.includes("=gt.")), "un prolongement par dénominateur non vide").toHaveLength(2);
+    const sonde = vus.filter((c) => c.includes("=gt.") && c.includes("views"));
+    expect(sonde.length, "une ligne demandée au-delà de la dernière reçue, et une seule").toBe(1);
+    expect(sonde[0], "une ligne suffit à prouver qu'il en reste").toContain("limit=1");
+    expect(sonde[0], "⚠️ par curseur, jamais par offset — la forge le refuse et le dépôt aussi")
+      .not.toContain("offset=");
+    expect(sonde[0], "le curseur porte la dernière clé reçue").toContain(`id=gt.x${String(PLAFOND_SERVEUR - 1).padStart(7, "0")}`);
+  });
+
+  it("⚠️ un plafond serveur ÉGAL au compte réel ne fabrique pas de troncature", async () => {
+    brancher((c) => (c.includes("not.is.null") ? [] : base(PLAFOND_SERVEUR, PLAFOND_SERVEUR)(c)));
+    const r = await retention.resteDeLaPurge();
+    expect(r.lignes.vues).toBe(PLAFOND_SERVEUR);
+    expect(r.tronque, "le rang suivant est vide : le lot reçu ÉTAIT le tout").toBe(false);
+  });
+
+  it("⚠️ zéro ligne ne coûte pas de seconde requête — la sonde n'apprendrait rien", async () => {
+    const vus = brancher(base(0));
+    await retention.resteDeLaPurge();
+    expect(vus.some((c) => c.includes("=gt.")), "rien à prolonger sous un lot vide").toBe(false);
+  });
+
+  it("⚠️ une sonde de prolongement en panne rend « au moins », jamais « exactement »", async () => {
+    brancher((c) => (c.includes("=gt.") ? new Error("réseau") : base(42)(c)));
+    const r = await retention.resteDeLaPurge();
+    expect(r.tronque, "ne pas savoir s'il en reste se lit comme un minorant").toBe(true);
   });
 
   it("⚠️ et la ligne excédentaire est demandée, pas devinée", async () => {

@@ -10,7 +10,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { sourceUtile, mesurer, compterIn, annonces, ecarts, fichiersServeur, effondrement, compterOr, COMPAREES } from "../surface-base.mjs";
+import { sourceUtile, mesurer, compterIn, annonces, ecarts, fichiersServeur, effondrement, compterOr, compterAnd, compterOffset, COMPAREES } from "../surface-base.mjs";
 
 const RACINE = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const f = (nom, texte) => ({ nom, texte });
@@ -78,11 +78,13 @@ describe("l'écart avec ce que le document annonce", () => {
     "| Tables | **10**†, plus **6**† call sites that build their path at run time |",
     "| `in.(…)` | **3**† — translates to … |",
     "| `or=()` | **2**† — deux, pour éprouver la comparaison ; le dépôt réel en a zéro |",
+    "| `and=()` | **1**† |",
+    "| `offset=` | **4**† — des valeurs distinctes : un chiffre commun passerait par coïncidence |",
     "† **Recomputed from the code on every CI run** by `tools/surface-base.mjs`.",
   ].join("\n");
 
   it("lit chaque chiffre là où le lecteur le lit", () => {
-    expect(dit(TABLE)).toEqual({ appels: 65, fichiers: 7, tables: 10, dynamiques: 6, in: 3, or: 2, legende: true });
+    expect(dit(TABLE)).toEqual({ appels: 65, fichiers: 7, tables: 10, dynamiques: 6, in: 3, or: 2, and: 1, offset: 4, legende: true });
   });
 
   // ⚠️ LE MARQUEUR EST EXIGÉ, SINON IL PEUT MENTIR. Le retirer en laissant le chiffre ferait croire
@@ -90,7 +92,7 @@ describe("l'écart avec ce que le document annonce", () => {
   // document que le sien est dérivé, puisque tout se ressemblerait de nouveau.
   it("un chiffre dont on retire le † fait REFUSER, il ne passe pas pour écrit à la main", () => {
     const sansMarqueur = TABLE.replace("| Tables | **10**†", "| Tables | **10**");
-    expect(ecarts({ appels: 65, fichiers: 7, tables: new Array(10), dynamiques: new Array(6), in: 3, or: 2 }, dit(sansMarqueur))
+    expect(ecarts({ appels: 65, fichiers: 7, tables: new Array(10), dynamiques: new Array(6), in: 3, or: 2, and: 1, offset: 4 }, dit(sansMarqueur))
       .join(" ")).toMatch(/ne peut plus comparer/);
   });
 
@@ -98,23 +100,23 @@ describe("l'écart avec ce que le document annonce", () => {
   // qu'il promet, et surtout par celle qui dit ce que son ABSENCE veut dire ailleurs.
   it("la légende retirée fait REFUSER, même si les cinq chiffres sont justes", () => {
     const sansLegende = TABLE.split("\n").filter((l) => !l.startsWith("†")).join("\n");
-    expect(ecarts({ appels: 65, fichiers: 7, tables: new Array(10), dynamiques: new Array(6), in: 3, or: 2 }, dit(sansLegende))
+    expect(ecarts({ appels: 65, fichiers: 7, tables: new Array(10), dynamiques: new Array(6), in: 3, or: 2, and: 1, offset: 4 }, dit(sansLegende))
       .join(" ")).toMatch(/légende du marqueur/);
   });
 
   it("aucun écart quand tout concorde", () => {
-    expect(ecarts({ appels: 65, fichiers: 7, tables: new Array(10), dynamiques: new Array(6), in: 3, or: 2 }, dit(TABLE))).toEqual([]);
+    expect(ecarts({ appels: 65, fichiers: 7, tables: new Array(10), dynamiques: new Array(6), in: 3, or: 2, and: 1, offset: 4 }, dit(TABLE))).toEqual([]);
   });
 
   it("un chiffre faux est nommé, avec les deux valeurs", () => {
-    const e = ecarts({ appels: 65, fichiers: 7, tables: new Array(11), dynamiques: new Array(6), in: 3, or: 2 }, dit(TABLE));
+    const e = ecarts({ appels: 65, fichiers: 7, tables: new Array(11), dynamiques: new Array(6), in: 3, or: 2, and: 1, offset: 4 }, dit(TABLE));
     expect(e).toHaveLength(1);
     expect(e[0]).toMatch(/annonce 10 pour les tables atteintes, le code en compte 11/);
   });
 
   // ⚠️ LA FORME QUI DISPARAÎT EST LE PIRE CAS : la garde deviendrait muette EN RESTANT VERTE.
   it("un chiffre qui cesse d'être annoncé sous une forme comparable fait REFUSER", () => {
-    const e = ecarts({ appels: 65, fichiers: 7, tables: new Array(10), dynamiques: new Array(6), in: 3, or: 2 },
+    const e = ecarts({ appels: 65, fichiers: 7, tables: new Array(10), dynamiques: new Array(6), in: 3, or: 2, and: 1, offset: 4 },
       dit("| Tables | ten of them |\n| Call sites | **65**, in **7** files |\n| `in.(…)` | **3** — … |"));
     expect(e.join(" ")).toMatch(/ne peut plus comparer/);
   });
@@ -124,7 +126,8 @@ describe("le dépôt réel", () => {
   it("le document dit exactement ce que le code fait", () => {
     const fichiers = fichiersServeur(RACINE);
     expect(fichiers.length, "aucun fichier lu : la sonde vise à côté").toBeGreaterThan(3);
-    const mesure = { ...mesurer(fichiers), in: compterIn(fichiers), or: compterOr(fichiers) };
+    const mesure = { ...mesurer(fichiers), in: compterIn(fichiers), or: compterOr(fichiers),
+      and: compterAnd(fichiers), offset: compterOffset(fichiers) };
     const md = readFileSync(join(RACINE, "docs", "API.md"), "utf8");
     expect(ecarts(mesure, annonces(md)), "docs/API.md a dérivé — relancez node tools/surface-base.mjs")
       .toEqual([]);
@@ -199,5 +202,25 @@ describe("⚠️ les « or=(…) » sont comptés comme les autres, parce qu'un 
     const dit = annonces(readFileSync("docs/API.md", "utf8"));
     expect(dit.or, "sans le † le motif ne matche pas, et la garde refuse").not.toBeNull();
     expect(dit.or).toBe(compterOr(fichiersServeur()));
+  });
+
+  // ⚠️ DEUX RÈGLES QUE `ci.yml` REFUSAIT ET QUE PERSONNE NE COMPTAIT — sur la MÊME ligne du tableau
+  // que `or=()`, qui, lui, portait son marqueur. Une table dont deux lignes sont vérifiées se lit
+  // comme une table vérifiée. La règle ne vivait que dans un `grep` du workflow : invérifiable par
+  // qui lance les outils du dépôt, et apprise en la cassant.
+  it("⚠️ le and= et le offset= sont COMPTÉS, pas seulement annoncés en prose", () => {
+    const dit = annonces(readFileSync("docs/API.md", "utf8"));
+    expect(dit.and, "sans le † le motif ne matche pas, et la garde refuse").not.toBeNull();
+    expect(dit.offset, "sans le † le motif ne matche pas, et la garde refuse").not.toBeNull();
+    expect(dit.and).toBe(compterAnd(fichiersServeur()));
+    expect(dit.offset).toBe(compterOffset(fichiersServeur()));
+  });
+
+  it("⚠️ et la sonde voit un offset RÉELLEMENT introduit — sinon elle garderait un zéro par hasard", () => {
+    const g = (src) => [{ nom: "x.js", texte: src }];
+    expect(compterOffset(g('PLAYER.db.request(`t?select=id&offset=10&limit=1`)')), "le cas qui a échappé").toBe(1);
+    expect(compterOffset(g("// pagination par offset : interdit")), "un commentaire n'est pas du code").toBe(0);
+    expect(compterAnd(g('PLAYER.db.request(`t?and=(a.eq.1,b.eq.2)`)'))).toBe(1);
+    expect(compterAnd(g("// and=(ceci est un commentaire)")), "un commentaire n'est pas du code").toBe(0);
   });
 });

@@ -95,6 +95,30 @@ export function compterOr(fichiers) {
   return fichiers.reduce((n, f) => n + [...sourceUtile(f.texte).matchAll(/[?&]or=\(/g)].length, 0);
 }
 
+/**
+ * Les `and=(…)` et les `offset=` du CODE — deux règles que `ci.yml` refuse et que PERSONNE NE
+ * COMPTAIT.
+ *
+ * ⚠️ ET LE DÉFAUT QUE CE FICHIER DÉNONCE PLUS HAUT S'EST PRODUIT ICI MÊME. « Une table dont deux
+ * lignes sont vérifiées se lit comme une table vérifiée » : `or=(…)` portait son † et son
+ * compteur, `and=()` et `offset=` étaient sur la MÊME ligne du tableau, en prose, sans marqueur.
+ * La règle vivait dans un `grep` du workflow et nulle part ailleurs — donc invérifiable par
+ * quiconque lance les outils du dépôt sur sa machine.
+ *
+ * ⚠️ CE N'EST PAS UNE HYPOTHÈSE : j'ai écrit un `offset=` dans `server/retention.js`, lancé les
+ * trente-trois gardes en vert, et la forge l'a refusé. Le remède était pourtant écrit dans le même
+ * fichier trois cent quatre-vingts lignes plus haut — « pagination par CURSEUR KEYSET, pas par
+ * offset, la garde de portabilité de la forge interdit `offset=` ». Une règle qu'on ne peut pas
+ * exécuter avant de pousser s'apprend en la cassant.
+ */
+export function compterAnd(fichiers) {
+  return fichiers.reduce((n, f) => n + [...sourceUtile(f.texte).matchAll(/[?&]and=\(/g)].length, 0);
+}
+
+export function compterOffset(fichiers) {
+  return fichiers.reduce((n, f) => n + [...sourceUtile(f.texte).matchAll(/offset=/g)].length, 0);
+}
+
 /** Ce que `docs/API.md` ANNONCE, lu à la même place que le lecteur le lit. */
 export function annonces(markdown) {
   const nombre = (motif) => {
@@ -113,6 +137,8 @@ export function annonces(markdown) {
     dynamiques: nombre(/\| Tables \|.*?plus \*\*(\d+)\*\*† call sites/),
     in: nombre(/\| `in\.\(…\)` \| \*\*(\d+)\*\*†/),
     or: nombre(/\| `or=\(\)` \| \*\*(\d+)\*\*†/),
+    and: nombre(/\| `and=\(\)` \| \*\*(\d+)\*\*†/),
+    offset: nombre(/\| `offset=` \| \*\*(\d+)\*\*†/),
     legende: /† \*\*Recomputed from the code/.test(markdown),
   };
 }
@@ -163,6 +189,8 @@ export const COMPAREES = [
   ["dynamiques", (m) => m.dynamiques.length, "les chemins construits à l'exécution"],
   ["in", (m) => m.in, "les « in.(…) »"],
   ["or", (m) => m.or, "les « or=(…) »"],
+  ["and", (m) => m.and, "les « and=(…) »"],
+  ["offset", (m) => m.offset, "les « offset= »"],
 ];
 
 export function ecarts(mesure, dit) {
@@ -191,7 +219,8 @@ export function fichiersServeur(racine = RACINE) {
 if (estExecuteDirectement(import.meta.url)) {
   conclure(tenter(() => {
     const fichiers = fichiersServeur();
-    const mesure = { ...mesurer(fichiers), in: compterIn(fichiers), or: compterOr(fichiers) };
+    const mesure = { ...mesurer(fichiers), in: compterIn(fichiers), or: compterOr(fichiers),
+      and: compterAnd(fichiers), offset: compterOffset(fichiers) };
     // ⚠️ LE PLANCHER D'ABORD, ET IL REND « NON CONCLUANT » — PAS « VIOLATION ». Comparer un relevé
     // vide à un document ne prouve rien, et un accord fortuit sur zéro serait le seul cas où cette
     // garde se tairait en ayant tout raté. Mais l'auteur d'une branche n'y est pour rien : ce qui
@@ -207,7 +236,8 @@ if (estExecuteDirectement(import.meta.url)) {
     // vert. `COMPAREES` est la liste que `ecarts` parcourt : le compte en descend.
     return conforme(`surface base : ${mesure.appels} appels dans ${mesure.fichiers} fichiers, `
       + `${mesure.tables.length} tables, ${mesure.dynamiques.length} chemins dynamiques, `
-      + `${mesure.in} « in.(…) », ${mesure.or} « or=(…) » `
+      + `${mesure.in} « in.(…) », ${mesure.or} « or=(…) », ${mesure.and} « and=(…) », `
+      + `${mesure.offset} « offset= » `
       + `— docs/API.md dit ce que le code fait, les ${COMPAREES.length} chiffres et pas quatre sur ${COMPAREES.length}`);
   }));
 }
