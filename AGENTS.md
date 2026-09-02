@@ -1548,6 +1548,67 @@ the line and failed on theirs, which is the shape this repository already knows:
 correct, and does not run on the perimeter you think. The card now carries `voie`, so the
 distinction they had to infer from luck of volume is one they can read.
 
+## A small installation does not merely lack occasions — it loses discriminating power
+
+An integrating host stated this about themselves, and it is the sharpest thing anyone said this
+week:
+
+> Nos faibles volumes nous protègent des défauts. Ici ils nous privent d'un signal que le volume
+> produisait gratuitement chez l'autre. **Un hôte plus chargé est mieux instrumenté sans avoir rien
+> instrumenté.**
+
+The case. Our purge card publishes a count. Two routes can produce it, and for a while the card did
+not say which. At the other host — 1655 rows — an exact count *is its own proof*: it exceeds the
+server's 1000-row ceiling, which the bounded route structurally cannot. At this host — 99 sessions,
+354 views — **no value can ever separate the two**. Same code, same card, and one of them is blind
+to a failure mode the other detects for free.
+
+⚠️ **So: a field whose value is its own witness at scale needs an explicit witness at small scale.**
+Not because small installations matter less, but because the free evidence large ones enjoy is an
+accident of their size and it silently disappears below a threshold nobody wrote down.
+
+Applied to our own card within the hour, and it found one. `mesures.relever()` omits any route
+family with no samples — correctly, since a `0 ms` would read as *instantaneous*. But the omission
+left `routes: {}` meaning either *no traffic* or *measurement is not running*, and a loaded host
+never meets the question because its entries are always there. The two sibling fields in the very
+same object already knew better — `statuts` publishes its five keys at zero, `boucleMs` publishes
+`n: 0` with explicit `null`s "rather than a zero that would read as: the loop is healthy". Three
+siblings, two carrying their denominator and one that had forgotten. That is what makes the rule
+measurable rather than arguable: the inconsistency was already inside the file.
+
+## Is there a state of the world where this value is false?
+
+The same host wrote *"this is not a defect; it is something a host cannot verify"*, and then
+retracted it themselves with the reason:
+
+> Ces deux propositions m'avaient l'air équivalentes. Elles ne le sont pas : **une chose
+> invérifiable devient un défaut dès qu'elle peut être fausse sans bruit.**
+
+⚠️ The question that separates a *limit of observation* from a *silent failure mode* is one line:
+**is there a state of the world in which this value is false?** If yes, the unverifiability is the
+defect, not its mitigation — because the reader will act on a value that nothing contradicts.
+
+Classifying a silent failure as an observation limit is comfortable in exactly the wrong direction:
+it converts something to fix into something to accept.
+
+## A binary is an assumption that no transition exists
+
+Stated by the other host, on a field of ours they had not thought to question:
+
+> Le cas où deux réponses coexistent n'est pas un cas limite, c'est un état normal du système
+> pendant une transition. **Un binaire est une hypothèse sur le fait qu'aucune transition
+> n'existe.**
+
+The card's `voie` says which route produced its numbers, and it has three states, not two. The third
+is not politeness about edge cases: a host **mid-purge**, with the column already dropped, makes
+`count` throw on the filtered paths and answer on the same table's totals — both routes serve the
+same read. A boolean would have had to round that, that is, lie about one of its halves, at the
+precise moment someone is reading those numbers to decide whether anything is left to erase.
+
+It is the same reasoning that gave `vide` three states, and the generalisation is worth keeping:
+before choosing a boolean, name the transition it assumes away. If you can name one, it is not a
+boolean.
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives

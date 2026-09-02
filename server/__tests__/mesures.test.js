@@ -62,6 +62,35 @@ describe("« pas mesuré » n'est pas « zéro »", () => {
     expect(routes.presentation, "aucune présentation servie : rien à en dire").toBeUndefined();
   });
 
+  // ⚠️ ET L'OMISSION EST JUSTE — CE QUI MANQUAIT, C'EST DE QUOI LA LIRE. Le banc ci-dessus prouve
+  // qu'une famille sans échantillon est absente, à raison. Mais depuis la carte, un lecteur ne
+  // voyait alors pas la différence entre « aucun trafic » et « la mesure ne tourne pas » : les
+  // deux rendent `routes: {}`. Un hôte chargé ne rencontre jamais la question, ses entrées étant
+  // toujours là ; un hôte à 99 sessions n'a aucun témoin. Le dénominateur les sépare.
+  it("⚠️ `familles` dit ce qui EST mesuré, sans quoi `routes: {}` est indiscernable d'une panne", () => {
+    const vierge = mesures.relever();
+    expect(vierge.routes, "instance neuve : aucune famille exercée").toEqual({});
+    expect(vierge.familles, "mais on sait lesquelles auraient pu l'être")
+      .toEqual(["document", "presentation", "action", "fichier", "carte", "autre"]);
+
+    mesures.chrono("document")(200);
+    const apres = mesures.relever();
+    expect(Object.keys(apres.routes)).toEqual(["document"]);
+    expect(apres.familles, "le dénominateur ne bouge pas avec le trafic — c'est ce qui en fait un")
+      .toEqual(vierge.familles);
+  });
+
+  // ⚠️ LES DEUX CHAMPS VOISINS PORTAIENT DÉJÀ LEUR DÉNOMINATEUR, et c'est ce qui rend l'omission
+  // de `routes` mesurable plutôt qu'opinable : sur une instance neuve, `statuts` publie ses cinq
+  // clés à zéro et `boucleMs` publie `n: 0` avec des `null` explicites. Trois champs frères, deux
+  // qui savaient et un qui avait oublié.
+  it("⚠️ ses deux voisins le portaient déjà — l'incohérence était interne, pas théorique", () => {
+    const r = mesures.relever();
+    expect(Object.keys(r.statuts).length, "statuts : les cinq clés, à zéro").toBe(5);
+    expect(r.boucleMs.n, "boucleMs : un compte explicite").toBe(0);
+    expect(r.boucleMs.moyen, "et `null` plutôt qu'un zéro qui se lirait « saine »").toBeNull();
+  });
+
   it("la base non sollicitée rend `{ n: 0 }` et rien d'autre", () => {
     const base = mesures.relever().base;
     expect(base.n).toBe(0);
@@ -211,9 +240,19 @@ describe("ce que le relevé ne contient pas", () => {
     parcourir(r, "mesures");
 
     const nonNumeriques = feuilles.filter(([, v]) => v !== null && typeof v !== "number");
-    expect(nonNumeriques,
+    // ⚠️ UNE SEULE EXCEPTION, ET ELLE EST NOMMÉE PAR SON CHEMIN AUTANT QUE PAR SA VALEUR. Le
+    // dénominateur `familles` est la seule chaîne publiée, et un vocabulaire CLOS : une valeur
+    // hors `FAMILLES`, ou une chaîne apparaissant ailleurs qu'à cet endroit, reste refusée. Écrire
+    // « les chaînes sont tolérées » aurait rendu la garde muette au premier slug ; ici le slug
+    // échoue deux fois, sur son chemin et sur son vocabulaire.
+    const tolerees = nonNumeriques.filter(([chemin, v]) =>
+      /^mesures\.familles\[\d+\]$/.test(chemin) && mesures.FAMILLES.includes(v));
+    const interdites = nonNumeriques.filter((f) => !tolerees.includes(f));
+    expect(interdites,
       "c'est ce qui permet de publier ce relevé sur une carte qu'un hôte lit sans cérémonie :\n"
-      + JSON.stringify(nonNumeriques)).toEqual([]);
+      + JSON.stringify(interdites)).toEqual([]);
+    expect(tolerees.length, "le dénominateur est publié en entier, sinon il n'en est pas un")
+      .toBe(mesures.FAMILLES.length);
     // Et les CLÉS de `routes` ne peuvent être que des familles déclarées, jamais un slug.
     for (const cle of Object.keys(r.routes)) expect(mesures.FAMILLES).toContain(cle);
   });

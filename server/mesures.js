@@ -180,6 +180,22 @@ function relever() {
     // ⚠️ L'ÉCHELLE EST PUBLIÉE AVEC LES CHIFFRES. Sans elle, `p95sousMs: 250` ne dit pas si la
     // mesure suivante aurait pu être 251 ou 999 — un lecteur ne peut pas juger de sa précision.
     seauxMs: SEAUX_MS,
+    // ⚠️ LE DÉNOMINATEUR DE `routes`, ET IL MANQUAIT DEPUIS LE DÉBUT. Une famille sans échantillon
+    // est OMISE de `routes` — donc `routes: {}` ne distingue pas « aucun trafic sur la fenêtre »
+    // de « la mesure ne tourne pas ». Chez un hôte chargé la question ne se pose jamais : il y a
+    // toujours des entrées, et leur présence témoigne d'elle-même. Chez un hôte à 99 sessions,
+    // rien ne témoigne de rien.
+    //
+    // La règle vient d'un hôte, sur ses propres volumes : « les champs dont la valeur est son
+    // propre témoin à grande échelle ont besoin d'un témoin explicite à petite échelle ». Une
+    // petite installation n'est pas seulement privée d'occasions — elle perd du POUVOIR
+    // DISCRIMINANT, et un hôte plus chargé se trouve mieux instrumenté sans avoir rien instrumenté.
+    //
+    // ⚠️ ET LES DEUX CHAMPS VOISINS AVAIENT DÉJÀ RAISON, ce qui rend l'omission mesurable plutôt
+    // qu'opinable : `statuts` publie ses cinq clés à zéro, `boucleMs` publie `n: 0` avec des
+    // `null` explicites « plutôt que de publier un zéro qui se lirait la boucle est saine ». Trois
+    // champs frères du même objet, deux qui portent leur dénominateur et un qui l'oubliait.
+    familles: [...FAMILLES],
     routes,
     base: centiles(histoBase),
     statuts: { ...statuts },
