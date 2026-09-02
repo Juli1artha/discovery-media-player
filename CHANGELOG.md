@@ -14,6 +14,12 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- **The three examples pinned `0.1.148`, which the publication of `0.1.150` pushed out of the
+  window.** The guard refused, correctly and for the right reason — *"a copier would receive a
+  stale player"* — and it refused on `main`, not on a branch: the release I cut is what moved the
+  window under them. Bumped to `0.1.150`. The lesson is small and worth the line: **publishing a
+  version invalidates a fact stated elsewhere in the repository**, and the only reason that fact
+  did not rot silently is that something counts it.
 - ⚠️ **Two more scans read comments as code — the same class, found the same day, in the same file.**
   The portability guard was corrected this morning after it flagged the very sentence documenting
   its own rule. Two others in `ci.yml` had the identical blind spot, and both were measured rather
