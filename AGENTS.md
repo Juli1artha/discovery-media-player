@@ -1021,10 +1021,11 @@ checked, or it decays into a description of the past.**
 
 ## A derived perimeter is proven by a file that appears, not by a count
 
-**Twenty-three guards take their perimeter from the disk** (`git ls-files`, `readdirSync`,
-`npm pack`) rather than from a written list — counted, not remembered; an earlier note in this file
-said "eight", which was a memory. Three of those are libraries or comparison tools rather than
-sweeping guards. Deriving a perimeter was never the claim worth checking. **Deriving it
+**Most guards here take their perimeter from the disk** (`git ls-files`, `readdirSync`,
+`npm pack`) rather than from a written list. ⚠️ **This sentence used to open with a count, and the
+count rotted** — "eight" from memory, corrected to "twenty-three" by measurement, true when written
+and twenty-five a week later. Both were wrong to be here at all: the section argues that a count is
+not the proof, and then led with one. Deriving a perimeter was never the claim worth checking. **Deriving it
 *correctly* is**, and there is exactly one probe for that: *put a new file of the kind the rule
 judges into the repository, and see whether the guard turns red on it.*
 
@@ -1338,6 +1339,27 @@ without anyone touching it — so it needs a date, an address, or removal.
 | `AGENTS.md`: *Measured here on 26/08* | the counting was done on the **27th**; the date came from the subject, not the measurement |
 | `docs/HOST-CONTRACT.md`: *nothing in `server/` calls it today — that is measured* | present tense, undated, in the **published** page — written an hour before the date above was fixed, and left alone because the fix had been applied to the file that was pointed at rather than to the class |
 
+⚠️ **And the rule rotted inside its own rulebook — three times, found by looking rather than by an
+incident.** A host's rule sent us looking for present-tense numbers in prose; the sweep came back
+with three, all in files that carry this very section:
+
+| where | said | was |
+|---|---|---|
+| `AGENTS.md`, the derived-perimeter section | twenty-three guards | 25 |
+| `AGENTS.md`, twice in one section | thirty-three guards | 42 |
+| `docs/HOST-CONTRACT.md`, written that hour | thirty-nine guards | 42 — and *thirty-nine* was not even a guard count, it was how many **concluded conforming on one run** |
+
+⚠️ The sharpest of the three is the first: **it opens the section that argues a count is not the
+proof.** A rule stated correctly, in a paragraph disproving the practice, illustrated by the
+practice. Note also that the last one conflates a population with a measurement of it — "guards" and
+"guards green today" are different subjects, and only one of them is stable.
+
+None had a mechanical counter-measure available. Counting guards and grepping prose for a spelled
+number is the vocabulary problem again, and the fallback is the one named above: **the subject, not
+the wording**. So the numbers were removed rather than corrected. A magnitude that carries an
+argument survives as *most*, *every*, or a dated measurement; a magnitude that carries only
+impressiveness is rot with no upside.
+
 ⚠️ **A *position* is one of these numbers too — and neither this repository nor the host who caught
 it had read that into the rule.** Every catch above is a count or a date, so the rule reads as being
 about counts, and a cross-reference by line number slips underneath it. Two did, **in this very
@@ -1470,7 +1492,7 @@ does not measure what it thinks it measures — it measures the runner's load. W
 own red to read as noise*, which is the worst state a guard can reach: the day it is right, nobody
 believes it.
 
-## Thirty-three guards measure this repository, and the defect lived at the host
+## Every guard here measures this repository, and the defect lived at the host
 
 Three defects shipped in one day, each found by an integrating host within hours, none seen by any
 guard here: a counter saturating at our own bound; then, in its fix, a *server* ceiling passing
@@ -1488,7 +1510,7 @@ not that the other party looks harder, but that they are not looking at the same
 
 The symmetry holds in the other direction, and the host said so first: their own defect of the same
 day — a statistics read truncated to the 1000 *oldest* rows of 6424 — lived entirely in their
-repository, in a file their own thirty-three guards did not watch either. It took our counter for
+repository, in a file their own guards did not watch either. It took our counter for
 them to go and look.
 
 ## A double that does not simulate a layer cannot be fixed by any dataset
