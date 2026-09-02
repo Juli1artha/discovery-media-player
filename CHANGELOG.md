@@ -48,6 +48,52 @@ the notes there are this file's section for that version.
   the write enters and it turns red. A bench whose margin sits under its machine's jitter does not
   measure what it thinks: it measures the runner, and it teaches its own red to read as noise.
 
+### Added
+
+- **`db.count(path)` — an optional seam that makes the purge counter exact, and whose absence is the
+  previous behaviour.** When a host exposes it, the player asks it first and publishes an exact
+  count: no bound, no `tronque`, and **no rows transported at all**. When it is absent — every
+  third-party host today — the bounded read with its cursor probe runs exactly as before. That
+  fallback is the whole design: requiring a new method would break every host that implements the
+  `db` capability itself, and the only kind of contract addition this repository allows is the kind
+  nobody has to adopt.
+  ⚠️ **It asks the question, not the mechanism.** *How many rows does this path select?* — not
+  *read this header*. A PostgREST host answers with `Prefer: count=exact`; a host on another
+  database answers with a `count(*)`. Naming the header in the contract would have made it
+  PostgREST-only, which the portability rule refuses.
+  ⚠️ **Anything that is not a non-negative integer is read as "no answer"** — a string, a float,
+  `undefined`, `NaN` — and the player falls back rather than believing it. Zero is the answer that
+  authorises dropping a column; it is never inferred from a reply that did not count.
+  The measured shape is in `server/mesures.js` too: `Object.create` would have let a new capability
+  method through **live and unmeasured**, quietly falsifying that file's own promise to cover
+  "even what nobody has written yet".
+
+### Changed
+
+- ⚠️ **Two lines were deleted because no mutation could kill them**, which is this repository's own
+  bar applied to code written the same hour. A `42703` branch on the exact route rendered zero "like
+  the other one" — muted, not one bench went red, and for a reason of substance rather than a
+  missing case: **a dropped column fails both routes identically**, so the fallback already renders
+  that zero. It added nothing observable and created a second place to keep one rule. The bench that
+  covered it went with it: a bench no mutation kills describes a coincidence, not a behaviour.
+  The `typeof … !== "function"` early-out survived its mutation too and was **kept with its comment
+  corrected**: it is not a guard — the `catch` already handles a missing method — it buys a *cost*,
+  five constructed exceptions per card read on every host without `count`.
+- **`docs/HOST-CONTRACT.md` and `server/retention.js` now record what was *measured* about the two
+  exact-count routes**, so neither is proposed again in six months as if untried. `?select=count()`
+  is **dead** — `db-aggregates-enabled` is `false` by default, verified on two distinct Supabase
+  projects, and the measurement is solid because `PGRST123` arrives *before* the permission check
+  (the same table without an aggregate answers `42501`): it is a property of the configuration, not
+  of authorization. `Prefer: count=exact` with `Range: 0-0` **works** — the exact count travels in
+  the header, the body carries nothing. It is the only one of the two that exists, and its only
+  obstacle is the host contract.
+- **`AGENTS.md` gains three sections**, each from a defect this repository actually paid for: a
+  timing guard buys its margin on the **subject**, never on the threshold; thirty-three guards
+  measure this repository and none can measure what only exists at the host; and a double that does
+  not simulate a **layer** cannot be fixed by any dataset, because a database double that never
+  caps behaves like a perfect one — indistinguishable, from the inside, from a correct one.
+
+
 ## [0.1.150] — 2026-09-02
 
 ### Fixed
@@ -92,6 +138,18 @@ the notes there are this file's section for that version.
   recoverable by writing it; a missing *layer* is not. The double now answers as PostgREST does:
   offset, then limit, then its own ceiling.
 
+### Added
+
+- **`docs/HOST-CONTRACT.md` now warns hosts that the ceiling applies to *their* reads too.**
+  `limit=20000` does not return twenty thousand rows — PostgREST caps at `db-max-rows` (1000 on a
+  default Supabase project) and says so nowhere in the body. A read asking for more is not a large
+  read, it is a **false belief**, invisible while the tables are small. An integrating host asked
+  the question of its own code the day it found this in our counter and it was not hypothetical: a
+  statistics read ordered `asc` with no limit was seeing the 1000 *oldest* rows of 6424, so a "last
+  opened" date read months stale for a link opened the day before. The document also states which
+  sort direction is the forgiving one — saturating under `desc` loses the oldest rows, under `asc`
+  it loses the ones anyone is looking at.
+
 ## [0.1.149] — 2026-09-02
 
 ### Fixed
@@ -125,33 +183,7 @@ the notes there are this file's section for that version.
   says to exercise the sweep deliberately before that day rather than discovering its behaviour when
   it matters.
 
-### Changed
-
-- **`docs/HOST-CONTRACT.md` and `server/retention.js` now record what was *measured* about the two
-  exact-count routes**, so neither is proposed again in six months as if untried. `?select=count()`
-  is **dead** — `db-aggregates-enabled` is `false` by default, verified on two distinct Supabase
-  projects, and the measurement is solid because `PGRST123` arrives *before* the permission check
-  (the same table without an aggregate answers `42501`): it is a property of the configuration, not
-  of authorization. `Prefer: count=exact` with `Range: 0-0` **works** — the exact count travels in
-  the header, the body carries nothing. It is the only one of the two that exists, and its only
-  obstacle is the host contract.
-- **`AGENTS.md` gains three sections**, each from a defect this repository actually paid for: a
-  timing guard buys its margin on the **subject**, never on the threshold; thirty-three guards
-  measure this repository and none can measure what only exists at the host; and a double that does
-  not simulate a **layer** cannot be fixed by any dataset, because a database double that never
-  caps behaves like a perfect one — indistinguishable, from the inside, from a correct one.
-
 ### Added
-
-- **`docs/HOST-CONTRACT.md` now warns hosts that the ceiling applies to *their* reads too.**
-  `limit=20000` does not return twenty thousand rows — PostgREST caps at `db-max-rows` (1000 on a
-  default Supabase project) and says so nowhere in the body. A read asking for more is not a large
-  read, it is a **false belief**, invisible while the tables are small. An integrating host asked
-  the question of its own code the day it found this in our counter and it was not hypothetical: a
-  statistics read ordered `asc` with no limit was seeing the 1000 *oldest* rows of 6424, so a "last
-  opened" date read months stale for a link opened the day before. The document also states which
-  sort direction is the forgiving one — saturating under `desc` loses the oldest rows, under `asc`
-  it loses the ones anyone is looking at.
 
 - **The purge counter now carries what it looked at** — `lignes`, per table. A bare `0` cannot tell
   "purged" from "never written" from "the probe is aimed wrong"; the denominator separates them.

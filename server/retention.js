@@ -537,7 +537,47 @@ async function resteApres(chemin, cle, dernier) {
   } catch { return true; }
 }
 
+/**
+ * ⚠️ LA VOIE EXACTE, QUAND L'HÔTE LA FOURNIT — ET LE CONTRAT DEMANDE LA QUESTION, PAS LE MÉCANISME.
+ * `db.count(chemin)` rend « combien de lignes ce chemin sélectionne-t-il ». Un hôte PostgREST y
+ * répond par `Prefer: count=exact` ; un hôte sur une autre base par un `count(*)`. Nommer l'en-tête
+ * dans le contrat l'aurait rendu PostgREST-seulement, ce que la règle de portabilité refuse.
+ *
+ * ⚠️ ELLE EST OPTIONNELLE, ET SON ABSENCE N'EST PAS UNE PANNE. Des hôtes tiers implémentent la
+ * capacité `db` eux-mêmes ; exiger une méthode nouvelle les casserait tous. Absente, on retombe sur
+ * le comptage borné ci-dessous, qui reste juste — seulement moins précis. C'est la seule forme
+ * d'ajout au contrat que ce dépôt s'autorise : celle dont le repli est le comportement d'avant.
+ *
+ * ⚠️ ET TOUT CE QUI N'EST PAS UN ENTIER POSITIF RETOMBE, plutôt que d'être cru. Un hôte qui rend
+ * `undefined`, une chaîne, ou un négatif n'a pas répondu à la question — le lire comme un compte
+ * fabriquerait le chiffre que ce fichier existe pour ne pas fabriquer.
+ */
+async function compteExact(chemin) {
+  // ⚠️ SORTIE ANTICIPÉE, PAS GARDE — ET LA DISTINCTION EST MESURÉE. Le `catch` ci-dessous suffirait
+  // à la correction : appeler une méthode absente lève, on retombe, le résultat est le même. Muté
+  // en `if (!PLAYER.db)`, AUCUN banc ne rougit — c'est dit ici plutôt que laissé croire à une
+  // protection. Ce que cette ligne achète est un COÛT : sans elle, tout hôte qui n'implémente pas
+  // `count` construirait cinq exceptions à chaque lecture de carte, pour rien.
+  if (!PLAYER.db || typeof PLAYER.db.count !== "function") return null;
+  try {
+    const n = await PLAYER.db.count(chemin);
+    return Number.isInteger(n) && n >= 0 ? n : null;
+  } catch {
+    // ⚠️ ON NE RECOPIE PAS ICI LA RÈGLE DE LA COLONNE ABSENTE. Une première rédaction traitait le
+    // `42703` sur cette voie aussi, pour rendre zéro « comme l'autre ». Muté, ce branchement n'a
+    // fait rougir aucun banc — et pour une raison de fond, pas par manque de cas : une colonne
+    // supprimée fait échouer LES DEUX voies de la même façon, donc le repli rend déjà ce zéro. Le
+    // branchement n'ajoutait rien d'observable et créait un SECOND endroit où tenir la même règle.
+    return null;   // on ne sait pas ⇒ on essaie l'autre voie, qui elle sait lire le 42703
+  }
+}
+
 async function compterBorne(chemin, cle) {
+  // ⚠️ UN COMPTE EXACT N'EST NI BORNÉ NI TRONQUÉ, quelle que soit sa taille : `borne` décrit la
+  // méthode par lignes, pas celle-ci. `tronque: false` garde donc le sens qu'il a partout —
+  // « lisez ce nombre comme exact » — au lieu d'en prendre un second selon la voie employée.
+  const exact = await compteExact(chemin);
+  if (exact !== null) return compte(exact, false);
   try {
     // ⚠️ BORNE + 1 : la ligne excédentaire ne sert qu'à PROUVER qu'il en reste. On ne la publie pas.
     // ⚠️ ET L'ORDRE N'EST PAS DÉCORATIF : sans lui, « la dernière ligne reçue » ne désigne aucune
