@@ -14,6 +14,25 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- **The three examples pinned `0.1.148`, which the publication of `0.1.150` pushed out of the
+  window.** The guard refused, correctly and for the right reason — *"a copier would receive a
+  stale player"* — and it refused on `main`, not on a branch: the release I cut is what moved the
+  window under them. Bumped to `0.1.150`. The lesson is small and worth the line: **publishing a
+  version invalidates a fact stated elsewhere in the repository**, and the only reason that fact
+  did not rot silently is that something counts it.
+- ⚠️ **Two more scans read comments as code — the same class, found the same day, in the same file.**
+  The portability guard was corrected this morning after it flagged the very sentence documenting
+  its own rule. Two others in `ci.yml` had the identical blind spot, and both were measured rather
+  than suspected: a bare `// … aLaColonne( …` dropped into `server/handler.js` turned the
+  schema-inventory step red — accusing prose — and a `// migration: "…"` line pushed the schema
+  floor from **10 to 11**, which is the *worse* direction for a floor: a comment could hold the
+  threshold up while the real form drifts, masking exactly the failure the step exists to catch.
+  Both now classify code and comment before counting, using `sourceUtile`'s spelling rather than a
+  second one. Verified three ways: prose no longer accuses, a **real** out-of-inventory call still
+  refuses, and the floor no longer inflates.
+  An integrating host stated the general rule after reproducing our own fault while checking us —
+  their scan counted "1 file containing `offset=`" and both occurrences were comments: **any sweep
+  looking for a *form* in code must classify code and comment before it counts.**
 - ⚠️ **A concurrency bench had less margin than its machine had jitter, and it went red on a product
   that worked.** The archive-seal step measures that a write *waits* for a concurrent close. The
   concurrent transaction holds the lock `pg_sleep(2)` seconds from **its own** start; the write
@@ -105,6 +124,22 @@ the notes there are this file's section for that version.
   months after it was armed, on data nobody will have watched. The document now names the three and
   says to exercise the sweep deliberately before that day rather than discovering its behaviour when
   it matters.
+
+### Changed
+
+- **`docs/HOST-CONTRACT.md` and `server/retention.js` now record what was *measured* about the two
+  exact-count routes**, so neither is proposed again in six months as if untried. `?select=count()`
+  is **dead** — `db-aggregates-enabled` is `false` by default, verified on two distinct Supabase
+  projects, and the measurement is solid because `PGRST123` arrives *before* the permission check
+  (the same table without an aggregate answers `42501`): it is a property of the configuration, not
+  of authorization. `Prefer: count=exact` with `Range: 0-0` **works** — the exact count travels in
+  the header, the body carries nothing. It is the only one of the two that exists, and its only
+  obstacle is the host contract.
+- **`AGENTS.md` gains three sections**, each from a defect this repository actually paid for: a
+  timing guard buys its margin on the **subject**, never on the threshold; thirty-three guards
+  measure this repository and none can measure what only exists at the host; and a double that does
+  not simulate a **layer** cannot be fixed by any dataset, because a database double that never
+  caps behaves like a perfect one — indistinguishable, from the inside, from a correct one.
 
 ### Added
 

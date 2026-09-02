@@ -1442,6 +1442,73 @@ Both cases have the same shape as the corollary two sections up, applied to a se
 an output: **being present is not the same as being read.** A warning too far from its subject, and
 an assumption dressed as a precaution, are two ways of being present and doing nothing.
 
+## A timing guard buys its margin on the subject, never on the threshold
+
+The archive-seal step went red on `main` on a product that worked. The write **was** refused,
+refused **by the seal**, and it **did** block — 1137 ms, unblocking at the exact instant the
+concurrent transaction committed. Only the threshold refused.
+
+The arithmetic: the concurrent transaction holds the lock `pg_sleep(2)` seconds **from its own
+start**, and the write begins `sleep 0.6` later. The expected wait is 1.4 s against a 1200 ms
+floor — **200 ms of slack** — and any scheduling delay between the two *shortens* it, since the
+countdown has already begun. The runner's jitter that day was **315 ms**.
+
+**The fix is not to lower the floor.** Lowering it makes the bench green by making it less capable;
+lengthening the concurrent transaction makes it green while staying exactly as severe. The
+integrating host that read the fix put the rule better than the case: *the threshold is what you
+measure — moving it changes the question in order to get the answer.* Margin is bought on the
+**subject**, never on the **threshold**.
+
+Verified both ways before pushing, against a real PostgreSQL rather than reasoned about: at
+`pg_sleep(2)` with the observed jitter → 1123 ms, red (the forge's failure, reproduced); at
+`pg_sleep(4)` → green even under 2.5 s of jitter. And a positive control, because a bench made
+robust must be shown still to bite: with the seal trigger dropped, the write enters and it turns
+red.
+
+⚠️ **Why this matters past this one step.** A bench whose margin sits under its machine's jitter
+does not measure what it thinks it measures — it measures the runner's load. Worse, it *teaches its
+own red to read as noise*, which is the worst state a guard can reach: the day it is right, nobody
+believes it.
+
+## Thirty-three guards measure this repository, and the defect lived at the host
+
+Three defects shipped in one day, each found by an integrating host within hours, none seen by any
+guard here: a counter saturating at our own bound; then, in its fix, a *server* ceiling passing
+under that bound (`db-max-rows`, 1000 by default on Supabase) so that a 1651-row table published
+`1000` **with `tronque: false`** — asserting an exactness it did not have.
+
+The reflex is to read that as a failure of the guards. A host read it better: **all three lived at
+the frontier between this code and an installation we cannot see.** PostgREST's ceiling is a fact
+of *their* database. The saturation only manifests at *their* volumes. And our test double, by
+construction, could not host that frontier at all.
+
+Guards that run here measure this repository. **None of them can measure what only exists at the
+host** — that is structural, not an oversight, and it is why these exchanges are worth their cost:
+not that the other party looks harder, but that they are not looking at the same object.
+
+The symmetry holds in the other direction, and the host said so first: their own defect of the same
+day — a statistics read truncated to the 1000 *oldest* rows of 6424 — lived entirely in their
+repository, in a file their own thirty-three guards did not watch either. It took our counter for
+them to go and look.
+
+## A double that does not simulate a layer cannot be fixed by any dataset
+
+We already had the rule that a fixture must be able to **produce** the phenomenon. This is the rung
+below it, and it was missing.
+
+The counter's test double returned a *constant array*: it ignored `limit`, ignored the cursor, and
+had no ceiling of its own. So the ceiling defect was not *missed* in the bench — it was
+**unreachable** there. The fixture written with a real host's own volumes (257 and 1651) could
+change nothing, and not because those numbers are too small: because **the ceiling did not exist in
+the double's world**.
+
+A missing case is recovered by writing it. A missing **layer** is not.
+
+⚠️ And the reason it stays invisible: a database double that does not cap never announces *"I do
+not cap."* It behaves like a perfect database — which is indistinguishable, from the inside, from a
+correct one. So when a defect lives in a layer, ask what the double *is silently perfect at*, not
+what data you fed it.
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives
