@@ -125,8 +125,37 @@ the notes there are this file's section for that version.
   says to exercise the sweep deliberately before that day rather than discovering its behaviour when
   it matters.
 
+### Added
+
+- **`db.count(path)` — an optional seam that makes the purge counter exact, and whose absence is the
+  previous behaviour.** When a host exposes it, the player asks it first and publishes an exact
+  count: no bound, no `tronque`, and **no rows transported at all**. When it is absent — every
+  third-party host today — the bounded read with its cursor probe runs exactly as before. That
+  fallback is the whole design: requiring a new method would break every host that implements the
+  `db` capability itself, and the only kind of contract addition this repository allows is the kind
+  nobody has to adopt.
+  ⚠️ **It asks the question, not the mechanism.** *How many rows does this path select?* — not
+  *read this header*. A PostgREST host answers with `Prefer: count=exact`; a host on another
+  database answers with a `count(*)`. Naming the header in the contract would have made it
+  PostgREST-only, which the portability rule refuses.
+  ⚠️ **Anything that is not a non-negative integer is read as "no answer"** — a string, a float,
+  `undefined`, `NaN` — and the player falls back rather than believing it. Zero is the answer that
+  authorises dropping a column; it is never inferred from a reply that did not count.
+  The measured shape is in `server/mesures.js` too: `Object.create` would have let a new capability
+  method through **live and unmeasured**, quietly falsifying that file's own promise to cover
+  "even what nobody has written yet".
+
 ### Changed
 
+- ⚠️ **Two lines were deleted because no mutation could kill them**, which is this repository's own
+  bar applied to code written the same hour. A `42703` branch on the exact route rendered zero "like
+  the other one" — muted, not one bench went red, and for a reason of substance rather than a
+  missing case: **a dropped column fails both routes identically**, so the fallback already renders
+  that zero. It added nothing observable and created a second place to keep one rule. The bench that
+  covered it went with it: a bench no mutation kills describes a coincidence, not a behaviour.
+  The `typeof … !== "function"` early-out survived its mutation too and was **kept with its comment
+  corrected**: it is not a guard — the `catch` already handles a missing method — it buys a *cost*,
+  five constructed exceptions per card read on every host without `count`.
 - **`docs/HOST-CONTRACT.md` and `server/retention.js` now record what was *measured* about the two
   exact-count routes**, so neither is proposed again in six months as if untried. `?select=count()`
   is **dead** — `db-aggregates-enabled` is `false` by default, verified on two distinct Supabase

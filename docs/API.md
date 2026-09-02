@@ -262,6 +262,7 @@ player.init(context)
 | `storage.isAllowedUrl(url)` · `fetchFile(url, {range})` · `put(...)` | where files may be read from — see [ARCHITECTURE](ARCHITECTURE.md#where-files-may-come-from) |
 | `storage.signUpload(bucket, path)` → `{token, publicUrl}` | signs a chat-attachment upload. **Optional**: absent ⇒ attachments are refused, and the player says so. The core must not hold the key that signs. |
 | `db.request(path, opts)` · `selectAll(path)` | PostgREST-shaped — see [what is portable](#what-is-portable-and-what-is-not) |
+| `db.count(path)` → `number` \| `null` | **Optional**: *how many rows does this path select?* Absent ⇒ the player counts rows instead, bounded, and says so. Answer `null` when you cannot say — never `0` |
 | `identity.verifyToken(header)` · `roleOf` · `isAdmin` · `canManageShares(user, action)` | your permission model |
 | `identity.isTrustedHostCall(headers)` → `boolean` | **Optional**: lets *your server* create links in its own name. Absent ⇒ that path does not exist. The core never sees the secret; it asks, you answer. |
 | `branding.name` · `poweredBy` · `loaderName` · `logo()` · `forKey(key)` · `title(base, qualifier)` | three identities, see below |

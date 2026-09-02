@@ -130,6 +130,12 @@ function observerBase(db) {
   vu.__mesuree = true;
   vu.request = mesurer("request");
   if (typeof db.selectAll === "function") vu.selectAll = mesurer("selectAll");
+  // ⚠️ CHAQUE MÉTHODE AJOUTÉE À LA CAPACITÉ DOIT ÊTRE AJOUTÉE ICI, et l'héritage rend cet oubli
+  // SILENCIEUX : `Object.create` laisse passer une méthode nouvelle, vivante et non mesurée — donc
+  // le paragraphe ci-dessus, qui promet de couvrir « y compris ce que personne n'a encore écrit »,
+  // deviendrait faux sans que rien ne rougisse. `count` est optionnelle chez l'hôte ; quand elle
+  // existe, elle interroge la base et son temps compte comme le reste.
+  if (typeof db.count === "function") vu.count = mesurer("count");
   return vu;
 }
 

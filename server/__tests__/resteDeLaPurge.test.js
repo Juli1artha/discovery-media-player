@@ -12,7 +12,7 @@
 
 const retention = require("../retention.js");
 
-const brancher = (parChemin) => {
+const brancher = (parChemin, compter) => {
   const vus = [];
   retention.init({
     config: {},
@@ -23,6 +23,14 @@ const brancher = (parChemin) => {
         if (r instanceof Error) throw r;
         return r;
       },
+      // ⚠️ ABSENTE PAR DÉFAUT, comme chez un hôte tiers qui n'a jamais entendu parler d'elle. Les
+      // bancs qui ne la posent pas éprouvent donc le REPLI, ce qui est le cas majoritaire réel.
+      ...(compter ? { async count(chemin) {
+        vus.push(`count:${chemin}`);
+        const r = compter(chemin);
+        if (r instanceof Error) throw r;
+        return r;
+      } } : {}),
     },
     limits: { async allow() { return true; } },
     errors: { capture() {} },
@@ -232,6 +240,64 @@ describe("le compteur de ce qui porte encore ip ou ua", () => {
     const r = await retention.resteDeLaPurge();
     expect(r.tronque, "un dénominateur tronqué ment autant qu'un compte tronqué").toBe(true);
     expect(r.vide, "et le verdict reste juste : saturé ou non, rien ne porte les colonnes").toBe(true);
+  });
+
+  // ⚠️ LA VOIE EXACTE, QUAND L'HÔTE LA FOURNIT. Le comptage par lignes dépend des plafonds de qui
+  // les rend ; `db.count` demande la QUESTION (« combien de lignes ce chemin sélectionne-t-il »)
+  // sans nommer le mécanisme, et n'a donc aucun plafond à deviner. Mesuré chez un hôte le 02/09 :
+  // `Prefer: count=exact` répond, `?select=count()` est mort (`db-aggregates-enabled` à false).
+  describe("la voie exacte, optionnelle chez l'hôte", () => {
+    it("⚠️ un compte exact AU-DESSUS de la borne n'est ni borné ni tronqué", async () => {
+      brancher(base(0), (c) => (c.includes("not.is.null") ? 0 : 12345));
+      const r = await retention.resteDeLaPurge();
+      expect(r.lignes.sessions, "un compte exact ne se plafonne pas à la borne").toBe(12345);
+      expect(r.tronque, "rien n'a été coupé : le nombre EST le compte").toBe(false);
+      expect(r.vide).toBe(true);
+    });
+
+    it("⚠️ et elle remplace le comptage par lignes — aucune ligne n'est transportée", async () => {
+      const vus = brancher(base(9999), () => 7);
+      await retention.resteDeLaPurge();
+      expect(vus.every((c) => c.startsWith("count:")), "aucune lecture de lignes quand le compte existe").toBe(true);
+      expect(vus.some((c) => c.includes("limit=")), "ni borne, ni curseur").toBe(false);
+    });
+
+    // ⚠️ LE REPLI EST LE CŒUR DE CET AJOUT : des hôtes tiers implémentent `db` eux-mêmes, et une
+    // méthode nouvelle exigée les casserait tous. Son absence doit rendre EXACTEMENT le
+    // comportement d'avant, pas une dégradation.
+    it("⚠️ absente, on retombe sur le comptage borné — pas sur une panne", async () => {
+      brancher((c) => (c.includes("not.is.null") ? [] : base(1651, 1000)(c)));
+      const r = await retention.resteDeLaPurge();
+      expect(r.lignes.vues).toBe(1000);
+      expect(r.tronque, "le repli garde son minorant déclaré").toBe(true);
+      expect(r.vide).toBe(true);
+    });
+
+    it("⚠️ en panne, on retombe AUSSI — une voie cassée ne doit pas rendre le compteur muet", async () => {
+      brancher((c) => (c.includes("not.is.null") ? [] : base(42)(c)), () => new Error("réseau"));
+      const r = await retention.resteDeLaPurge();
+      expect(r.lignes.sessions, "la voie bornée a bien pris le relais").toBe(42);
+      expect(r.vide).toBe(true);
+    });
+
+    // ⚠️ TOUT CE QUI N'EST PAS UN ENTIER POSITIF N'EST PAS UNE RÉPONSE. Le croire fabriquerait le
+    // chiffre que ce fichier existe pour ne pas fabriquer — et `0` est celui qui autorise à
+    // supprimer une colonne.
+    it.each([
+      ["undefined", undefined], ["une chaîne", "1651"], ["un négatif", -1],
+      ["un flottant", 12.5], ["null", null], ["NaN", NaN],
+    ])("⚠️ une réponse qui n'est pas un entier positif (%s) fait retomber, elle n'est pas crue", async (_, valeur) => {
+      brancher((c) => (c.includes("not.is.null") ? [] : base(77)(c)), () => valeur);
+      const r = await retention.resteDeLaPurge();
+      expect(r.lignes.sessions, "on a bien repris la voie bornée").toBe(77);
+    });
+
+    // ⚠️ CE BANC A ÉTÉ RETIRÉ PLUTÔT QUE GARDÉ, et la raison vaut d'être écrite. Il éprouvait « une
+    // colonne supprimée vaut zéro sur cette voie aussi » ; muté (le branchement 42703 supprimé de
+    // `compteExact`), il restait VERT — parce qu'une colonne supprimée fait échouer les deux voies,
+    // donc le repli rend le même zéro. Un banc qu'aucune mutation ne tue n'éprouve rien : il
+    // décrit une coïncidence. Le branchement a donc été retiré du code, et le cas reste couvert là
+    // où il est réellement décidé — sur la voie bornée, plus bas.
   });
 
   // ⚠️ LE CAS QUI COMPTE LE PLUS. Zéro est la réponse qui AUTORISE à supprimer une colonne. La

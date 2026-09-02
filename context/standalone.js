@@ -45,7 +45,13 @@ function creerDb(env) {
   const url = sansBarreFinale(env.SUPABASE_URL);
   const cle = String(env.SUPABASE_SERVICE_ROLE_KEY || "");
 
-  async function request(chemin, options = {}) {
+  // ⚠️ UN SEUL ENDROIT QUI APPELLE ET QUI REJETTE. `count` a besoin d'un EN-TÊTE de la réponse,
+  // pas de son corps ; le tenter avec son propre `fetch` aurait recopié la construction des
+  // en-têtes, l'abandon, et surtout la forme de l'erreur (`statusCode`/`details`) dont six sites
+  // appelants dépendent. Une seconde orthographe de « appeler PostgREST et rejeter correctement »
+  // est exactement la recopie que ce dépôt a déjà payée trois fois. `request` et `count` se
+  // partagent donc l'appel ; ils ne se partagent que ce qu'ils lisent de la réponse.
+  async function appel(chemin, options = {}) {
     if (!url || !cle) {
       // Message explicite plutôt que `undefined` plus loin : sans base, ce sont les liens tracés
       // et les présentations qui sont indisponibles — pas l'affichage d'un document.
@@ -92,8 +98,45 @@ function creerDb(env) {
       try { erreur.details = JSON.parse(detail); } catch { /* corps non JSON : le message suffit */ }
       throw erreur;
     }
+    return r;
+  }
+
+  async function request(chemin, options = {}) {
+    const r = await appel(chemin, options);
     const texte = await r.text();
     return texte ? JSON.parse(texte) : null;
+  }
+
+  /**
+   * ⚠️ LE COMPTE EXACT, ET C'EST UNE QUESTION — PAS UN MÉCANISME. Le contrat demande « combien de
+   * lignes ce chemin sélectionne-t-il ? » ; il ne demande pas de lire un en-tête. Un hôte sur une
+   * autre base répond par un `count(*)`, celui-ci par PostgREST. Nommer le mécanisme dans le
+   * contrat l'aurait rendu PostgREST-seulement, ce que la règle de portabilité refuse.
+   *
+   * ⚠️ POURQUOI IL EXISTE : le comptage par LIGNES dépend des plafonds de qui les rend. PostgREST a
+   * `db-max-rows`, réglé à 1000 par défaut chez Supabase, et un hôte a mesuré une table de 1651
+   * lignes rendue « 1000 ». Le compte d'en-tête, lui, n'a AUCUN plafond à deviner et ne transporte
+   * rien. Mesuré chez un hôte le 02/09 : `Prefer: count=exact` + `Range: 0-0` rend bien le compte
+   * exact ; l'autre voie envisagée, `?select=count()`, est morte — `db-aggregates-enabled` vaut
+   * `false` par défaut, vérifié sur deux projets distincts.
+   *
+   * ⚠️ ET UN GET PLUTÔT QU'UN HEAD, DÉLIBÉRÉMENT. Un HEAD ne rend aucun corps, donc aucune erreur
+   * ANALYSÉE : l'appelant ne pourrait plus distinguer « colonne supprimée » (42703, un état connu
+   * qui vaut zéro) d'une panne. `Range: 0-0` ne coûte qu'une ligne et garde l'erreur lisible.
+   *
+   * ⚠️ RENDRE `null` PLUTÔT QUE ZÉRO QUAND LE COMPTE MANQUE. PostgREST écrit `…/*` quand il ne
+   * compte pas. Zéro est la réponse qui autorise à supprimer une colonne : la fabriquer depuis une
+   * réponse qui ne compte pas serait le pire mensonge que cette capacité puisse faire.
+   */
+  async function count(chemin, options = {}) {
+    const r = await appel(chemin, {
+      ...options,
+      method: "GET",
+      headers: { ...(options.headers || {}), Prefer: "count=exact", Range: "0-0" },
+    });
+    // `Content-Range: 0-0/1651` — le total suit la barre. `…/*` veut dire « je n'ai pas compté ».
+    const trouve = /\/(\d+)\s*$/.exec(String(r.headers.get("content-range") || ""));
+    return trouve ? Number(trouve[1]) : null;
   }
 
   /** Lecture paginée complète : un document très partagé dépasse la pagination par défaut. */
@@ -107,7 +150,7 @@ function creerDb(env) {
     }
   }
 
-  return { request, selectAll, configuree: !!(url && cle) };
+  return { request, selectAll, count, configuree: !!(url && cle) };
 }
 
 /**
@@ -356,7 +399,7 @@ function createStandaloneContext(env = process.env) {
       },
     },
 
-    db: { request: db.request, selectAll: db.selectAll },
+    db: { request: db.request, selectAll: db.selectAll, count: db.count },
 
     // Sans expéditeur configuré, le re-partage et le code du mur d'accès sont indisponibles — et
     // le disent. Ils ne prétendent pas avoir envoyé.

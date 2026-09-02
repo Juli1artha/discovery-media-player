@@ -522,6 +522,24 @@ by the response body alone. Reading the count from `Content-Range` under `Prefer
 no ceiling to guess and transports nothing; it is strictly better, and it needs the `db` capability
 to expose response headers, which today it does not.
 
+⚠️ **`db.count(path)` is the seam that closes this, and it is optional.** If your `db` capability
+exposes it, the player asks it first and publishes an **exact** count — no bound, no `tronque`, and
+no rows transported at all. If it is absent, everything above still applies unchanged: the bounded
+read with its cursor probe. **That fallback is the whole design.** Third-party hosts implement this
+capability themselves, and requiring a new method would break every one of them; the only kind of
+contract addition this repository allows is the kind whose absence is the previous behaviour.
+
+    db.count(path) → number | null
+
+**It asks the question, not the mechanism.** *How many rows does this path select?* — not *read this
+header*. A PostgREST host answers with `Prefer: count=exact`; a host on another database answers
+with a `count(*)`. Naming the header in the contract would have made it PostgREST-only, which the
+portability rule refuses.
+
+⚠️ **Answer `null` when you cannot say — never `0`.** Zero is the answer that authorises dropping a
+column. Anything that is not a non-negative integer (a string, a float, `undefined`, `NaN`) is read
+as "no answer" and the player falls back rather than believing it.
+
 ⚠️ **The two alternatives were measured at a host, not assumed here** — recorded so nobody proposes
 them again in six months believing they were never tried. **`?select=count()` is dead**:
 `db-aggregates-enabled` is `false` by default, verified on two distinct Supabase projects, and the
