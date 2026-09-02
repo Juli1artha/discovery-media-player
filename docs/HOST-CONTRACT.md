@@ -522,6 +522,24 @@ by the response body alone. Reading the count from `Content-Range` under `Prefer
 no ceiling to guess and transports nothing; it is strictly better, and it needs the `db` capability
 to expose response headers, which today it does not.
 
+⚠️ **And the same ceiling applies to every read you make through your own client, not just to
+ours.** `limit=20000` does not return twenty thousand rows: PostgREST caps the response at
+`db-max-rows` — **1000** on a default Supabase project — and says so nowhere in the body. A read
+that asks for more than that ceiling is not a large read, it is a **false belief**, and it stays
+invisible while your tables are small. So the question is worth asking of your own code as well as
+of ours: *does my client paginate, or do I believe that `limit=20000` returns 20 000 rows?*
+
+One host asked it of itself the day it found this in our counter, and the answer was not
+hypothetical: a statistics read ordered `created_at.asc` with no `limit` was seeing the **1000
+oldest** rows of 6424, so a "last opened" date read months stale for a link opened the day before,
+and every breakdown described the beginning of the history. They also count **32** reads asking for
+more than the ceiling — all latent on their volumes today, all live on an older installation.
+
+⚠️ **The sort direction decides how bad it gets.** A read that saturates while ordered `desc` loses
+the oldest rows; ordered `asc` it loses the newest — that is, the ones anyone is looking at. Same
+ceiling, same silence, opposite severity. Counting is indifferent to it, but anything that reads
+*content* under a ceiling should prefer `desc`.
+
 They run only under `&schema=1`, the mode where you have asked for the database.
 
 ⚠️ **The purge attestation is a commitment, not a convenience.** Every column this player empties
