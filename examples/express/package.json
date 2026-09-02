@@ -4,8 +4,10 @@
   "version": "1.0.0",
   "type": "commonjs",
   "dependencies": {
-    "discovery-media-player": "0.1.150",
+    "discovery-media-player": "0.1.151",
     "express": "^4.19.2"
   },
-  "engines": { "node": ">=22.13.0" }
+  "engines": {
+    "node": ">=22.13.0"
+  }
 }
