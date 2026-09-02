@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.150] — 2026-09-02
+
 ### Fixed
 
 - ⚠️ **The truncation flag assumed our bound was the only ceiling, and a host measured what that
@@ -5848,7 +5850,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.149...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.150...HEAD
+[0.1.150]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.149...v0.1.150
 [0.1.149]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.148...v0.1.149
 [0.1.148]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.147...v0.1.148
 [0.1.147]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.145...v0.1.147
