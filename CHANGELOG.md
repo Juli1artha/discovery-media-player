@@ -27,25 +27,6 @@ the notes there are this file's section for that version.
   phrases différentes — et dit quoi ne pas envoyer : des formes et des comptes, jamais des contenus,
   ni IP ni agent bruts, qui sont les colonnes que la moitié de ce contrat existe pour supprimer.
 
-### Fixed
-
-- ⚠️ **La règle « un nombre au présent pourrit » avait pourri dans son propre livre de règles, trois
-  fois.** Trouvé en cherchant, pas au prochain incident : `AGENTS.md` annonçait « twenty-three
-  guards » (25) et deux fois « thirty-three guards » (42), et la section écrite dans l'heure dans
-  `docs/HOST-CONTRACT.md` en ajoutait une troisième, « thirty-nine » — laquelle n'était même pas un
-  compte de gardes mais le nombre ayant **conclu conforme sur une exécution**, deux sujets
-  différents dont un seul est stable.
-  ⚠️ La plus nette des trois ouvrait **la section qui soutient qu'un compte n'est pas la preuve** :
-  une règle correctement énoncée, dans un paragraphe qui réfute la pratique, illustrée par la
-  pratique. Aucune n'avait de contre-mesure mécanique disponible — compter les gardes et chercher un
-  nombre en toutes lettres dans la prose est le problème de vocabulaire que ce fichier décrit déjà
-  comme sans parade. Les nombres sont donc **retirés plutôt que corrigés** : une grandeur qui porte
-  un argument survit en « most », « every » ou une mesure datée ; une grandeur qui ne porte que de
-  l'impressionnant est du pourrissement sans contrepartie. Le constat est inscrit dans la section
-  concernée, au passé et avec ses trois adresses.
-
-
-### Added
 
 - ⚠️ **`mesures.familles` — le dénominateur de `routes`, qui manquait depuis le début, et qu'une
   règle d'hôte a permis de trouver au lieu de l'attendre.** Une famille sans échantillon est omise
@@ -64,6 +45,23 @@ the notes there are this file's section for that version.
   valeurs de `FAMILLES`, seulement sous `familles[i]`. Écrire « les chaînes sont tolérées » aurait
   rendu la garde muette au premier slug. Prouvé par deux contrôles positifs : un slug qui fuit
   ailleurs est refusé, et un slug déguisé en famille au bon chemin est refusé **deux fois**.
+
+### Fixed
+
+- ⚠️ **La règle « un nombre au présent pourrit » avait pourri dans son propre livre de règles, trois
+  fois.** Trouvé en cherchant, pas au prochain incident : `AGENTS.md` annonçait « twenty-three
+  guards » (25) et deux fois « thirty-three guards » (42), et la section écrite dans l'heure dans
+  `docs/HOST-CONTRACT.md` en ajoutait une troisième, « thirty-nine » — laquelle n'était même pas un
+  compte de gardes mais le nombre ayant **conclu conforme sur une exécution**, deux sujets
+  différents dont un seul est stable.
+  ⚠️ La plus nette des trois ouvrait **la section qui soutient qu'un compte n'est pas la preuve** :
+  une règle correctement énoncée, dans un paragraphe qui réfute la pratique, illustrée par la
+  pratique. Aucune n'avait de contre-mesure mécanique disponible — compter les gardes et chercher un
+  nombre en toutes lettres dans la prose est le problème de vocabulaire que ce fichier décrit déjà
+  comme sans parade. Les nombres sont donc **retirés plutôt que corrigés** : une grandeur qui porte
+  un argument survit en « most », « every » ou une mesure datée ; une grandeur qui ne porte que de
+  l'impressionnant est du pourrissement sans contrepartie. Le constat est inscrit dans la section
+  concernée, au passé et avec ses trois adresses.
 
 ### Changed
 
@@ -86,7 +84,6 @@ the notes there are this file's section for that version.
   supprimée, `count` lève sur les chemins filtrés et répond sur les totaux de la même table. Avant
   de choisir un booléen, nommer la transition qu'il suppose inexistante ; si on peut la nommer, ce
   n'est pas un booléen. Même raisonnement que celui qui a donné trois états à `vide`.
-
 
 ## [0.1.152] — 2026-09-02
 
