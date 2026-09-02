@@ -99,7 +99,7 @@ describe("le compteur de ce qui porte encore ip ou ua", () => {
     brancher(() => []);
     expect(await retention.resteDeLaPurge()).toEqual({
       borne: retention.BORNE_RESTE, tronque: false, lignes: { sessions: 0, vues: 0 },
-      sessionsIp: 0, sessionsUa: 0, vuesUa: 0, vide: true,
+      sessionsIp: 0, sessionsUa: 0, vuesUa: 0, vide: true, voie: "bornee",
     });
   });
 
@@ -253,6 +253,7 @@ describe("le compteur de ce qui porte encore ip ou ua", () => {
       expect(r.lignes.sessions, "un compte exact ne se plafonne pas à la borne").toBe(12345);
       expect(r.tronque, "rien n'a été coupé : le nombre EST le compte").toBe(false);
       expect(r.vide).toBe(true);
+      expect(r.voie, "et la carte dit par quelle voie, ce que le nombre seul ne dit pas").toBe("exact");
     });
 
     it("⚠️ et elle remplace le comptage par lignes — aucune ligne n'est transportée", async () => {
@@ -271,6 +272,7 @@ describe("le compteur de ce qui porte encore ip ou ua", () => {
       expect(r.lignes.vues).toBe(1000);
       expect(r.tronque, "le repli garde son minorant déclaré").toBe(true);
       expect(r.vide).toBe(true);
+      expect(r.voie, "absente chez l'hôte, la carte le dit au lieu de le taire").toBe("bornee");
     });
 
     it("⚠️ en panne, on retombe AUSSI — une voie cassée ne doit pas rendre le compteur muet", async () => {
@@ -290,6 +292,40 @@ describe("le compteur de ce qui porte encore ip ou ua", () => {
       brancher((c) => (c.includes("not.is.null") ? [] : base(77)(c)), () => valeur);
       const r = await retention.resteDeLaPurge();
       expect(r.lignes.sessions, "on a bien repris la voie bornée").toBe(77);
+    });
+
+    // ⚠️ LE BANC DÉCISIF DE CE CHAMP, ET IL DIT POURQUOI IL EXISTE PLUTÔT QUE CE QU'IL VAUT.
+    //
+    // Deux hôtes ont relevé le même jour qu'ils ne pouvaient pas vérifier leur propre couture. Ce
+    // banc en fait un fait exécutable : à volumes identiques, un `db.count` QUI MARCHE et un
+    // `db.count` QUI REND UNE CHAÎNE produisent une carte rigoureusement identique — mêmes
+    // nombres, même `tronque`, même `vide`. Le second retombe silencieusement sur la voie bornée
+    // et l'hôte croit sa couture branchée. `voie` est la SEULE différence observable, et si on la
+    // retire de la carte les deux objets deviennent égaux : c'est ce que la première assertion
+    // vérifie, donc ce banc meurt si le champ disparaît.
+    it("⚠️ une couture qui marche et une couture cassée rendent la MÊME carte — sauf `voie`", async () => {
+      brancher(base(0), () => 0);
+      const bonne = await retention.resteDeLaPurge();
+      brancher(base(0), () => "0");   // un entier attendu, une chaîne rendue : repli silencieux
+      const cassee = await retention.resteDeLaPurge();
+
+      const sansVoie = ({ voie, ...reste }) => reste;
+      expect(sansVoie(cassee), "sans ce champ, l'hôte n'a RIEN pour les distinguer")
+        .toEqual(sansVoie(bonne));
+      expect(bonne.voie).toBe("exact");
+      expect(cassee.voie, "le repli silencieux se lit, au lieu de se deviner").toBe("bornee");
+    });
+
+    // ⚠️ TROIS ÉTATS, ET LE TROISIÈME N'EST PAS UNE COMMODITÉ. Un hôte en cours de purge dont la
+    // colonne est déjà supprimée fait lever `count` sur les chemins filtrés et répondre sur les
+    // totaux de la même table : les deux voies servent dans la MÊME lecture. Un drapeau binaire
+    // aurait dû arrondir ce cas, donc mentir sur l'une des deux moitiés.
+    it("⚠️ les deux voies dans la même lecture se disent `mixte`, pas l'une des deux", async () => {
+      brancher(base(5), (c) => (c.includes("not.is.null") ? new Error("colonne absente") : 5));
+      const r = await retention.resteDeLaPurge();
+      expect(r.voie).toBe("mixte");
+      expect(r.sessionsIp, "les sondes filtrées ont bien pris la voie bornée").toBe(5);
+      expect(r.lignes.sessions, "et les totaux la voie exacte").toBe(5);
     });
 
     // ⚠️ CE BANC A ÉTÉ RETIRÉ PLUTÔT QUE GARDÉ, et la raison vaut d'être écrite. Il éprouvait « une
