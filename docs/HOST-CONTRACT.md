@@ -893,6 +893,64 @@ cannot. Setting the number spares you that reasoning entirely.
 but *did you measure exactly what fails*. Two true statements about the same instance can describe
 different responses.
 
+## What you can see and we cannot
+
+**Read this only if you run this player somewhere.** If you are evaluating it, skip to Versioning —
+this section asks for nothing from you.
+
+⚠️ **Everything below exists because three defects in one week were found by hosts, not by us**, and
+none of the three was findable from here. Every guard here measures this repository. They
+cannot measure an installation they have never seen, and that is not a gap we can close by adding
+one more. So this is not a request for feedback in general — it is four specific questions we cannot
+answer ourselves, each printed with what it cost us not to have asked it earlier.
+
+You owe us none of this. But you are the only one who can answer any of it.
+
+**1. A ceiling in your installation that we assume away.** PostgREST's `db-max-rows` is set to 1000
+by default on Supabase: the server returns 1000 rows however many you ask for. We compared what we
+received against *our* bound, concluded "not truncated", and published `1000` rows of a 1651-row
+table **asserting the number was exact** — which is worse than the defect it replaced, because the
+previous version claimed nothing. Four hours after the release, a host measured it. If your
+deployment caps, times out, paginates, or rewrites anything between us and your database, that
+limit is invisible from here and our arithmetic is probably wrong about it.
+
+**2. Something this card asserts that you can check against your own database.** Not "does it look
+right" — *does this number match what a query returns right now*. The purge card is the obvious one:
+`vide: true` is what authorises dropping a column, so a wrong `true` is expensive and a wrong `0`
+authorises a deletion. A host who compared the card against their own tables is the reason the
+counter stopped being able to lie.
+
+**3. What your volumes hide from you — and what they reveal for free.** This one is the least
+obvious and cost us a field. At 1655 rows an exact count **is its own proof**: it exceeds a ceiling
+the bounded route structurally cannot cross, so the number itself witnesses which mechanism ran. At
+99 sessions no value can ever separate the two, and a broken seam is indistinguishable from a
+working one. Same code, same card — one installation detects a failure for free that the other
+cannot see at all. So: **tell us your orders of magnitude**, and tell us when a field of ours only
+makes sense at your scale. A small host is not merely short of occasions; it has lost discriminating
+power, and that is our problem to fix with an explicit witness, not theirs to live with.
+
+**4. A rule you drew from your own defect.** The most useful things we received this week were not
+bug reports. They were sentences: *a control that separates two mechanisms must rest on what one can
+do and the other cannot, never on a value both could return* — and *is there a state of the world
+where this value is false?*, which is the question separating a limit of observation from a silent
+failure mode. Both were written by hosts about their own mistakes. Both, applied to this repository
+within the hour, found something. A defect tells us about one line; a rule tells us where to look.
+
+⚠️ **And tell us what you did not do.** A host closed a report with thirty-two reads still
+unaudited, said so plainly, and that sentence is the only reason we know those reads exist. We
+cannot measure your code. We can only know what someone wrote down. *"Not measured"* and *"nothing
+found"* are different sentences, and only one of them is honest when you have not looked.
+
+**What not to send.** Shapes and counts, never contents. No row data, no reader IPs or User-Agents —
+those are the columns half this contract exists to get rid of — no keys, tokens, connection strings,
+or private hostnames. *"A table of ~1600 rows returned 1000"* is the whole of what we needed to fix
+the ceiling defect; the rows themselves would have added nothing and created a problem.
+
+**What we do with it.** Every item above became code, a bench that dies if the fix is removed, and a
+dated entry naming the case. That last part is deliberate and a host asked for it: an abstract
+justification rots, a dated incident does not. In six months someone will read a field and ask why
+it exists, and the answer will name you.
+
 ## Versioning
 
 Semantic versioning on the package, independent of the `contract` number. Pin an **exact** version:

@@ -14,6 +14,39 @@ the notes there are this file's section for that version.
 
 ### Added
 
+- **`docs/HOST-CONTRACT.md` : « What you can see and we cannot ».** Trois défauts en une semaine ont
+  été trouvés par des hôtes, et aucun des trois n'était trouvable d'ici — nos gardes mesurent ce
+  dépôt, pas une installation qu'elles n'ont jamais vue, et ce n'est pas une lacune qu'on comble en
+  ajoutant une garde de plus. Ce canal fonctionnait par chance : deux intégrateurs attentifs. La
+  section pose quatre questions précises plutôt que d'appeler au « retour d'expérience » — un
+  plafond de leur installation que nous supposons absent, une affirmation de la carte qu'ils peuvent
+  confronter à leur base, ce que leurs volumes leur cachent **et ce qu'ils leur révèlent
+  gratuitement**, et une règle tirée de leur propre défaut. Chacune est imprimée avec ce que son
+  absence nous a coûté.
+  Elle demande aussi ce qu'ils **n'ont pas fait** — « non mesuré » et « rien trouvé » sont deux
+  phrases différentes — et dit quoi ne pas envoyer : des formes et des comptes, jamais des contenus,
+  ni IP ni agent bruts, qui sont les colonnes que la moitié de ce contrat existe pour supprimer.
+
+### Fixed
+
+- ⚠️ **La règle « un nombre au présent pourrit » avait pourri dans son propre livre de règles, trois
+  fois.** Trouvé en cherchant, pas au prochain incident : `AGENTS.md` annonçait « twenty-three
+  guards » (25) et deux fois « thirty-three guards » (42), et la section écrite dans l'heure dans
+  `docs/HOST-CONTRACT.md` en ajoutait une troisième, « thirty-nine » — laquelle n'était même pas un
+  compte de gardes mais le nombre ayant **conclu conforme sur une exécution**, deux sujets
+  différents dont un seul est stable.
+  ⚠️ La plus nette des trois ouvrait **la section qui soutient qu'un compte n'est pas la preuve** :
+  une règle correctement énoncée, dans un paragraphe qui réfute la pratique, illustrée par la
+  pratique. Aucune n'avait de contre-mesure mécanique disponible — compter les gardes et chercher un
+  nombre en toutes lettres dans la prose est le problème de vocabulaire que ce fichier décrit déjà
+  comme sans parade. Les nombres sont donc **retirés plutôt que corrigés** : une grandeur qui porte
+  un argument survit en « most », « every » ou une mesure datée ; une grandeur qui ne porte que de
+  l'impressionnant est du pourrissement sans contrepartie. Le constat est inscrit dans la section
+  concernée, au passé et avec ses trois adresses.
+
+
+### Added
+
 - ⚠️ **`mesures.familles` — le dénominateur de `routes`, qui manquait depuis le début, et qu'une
   règle d'hôte a permis de trouver au lieu de l'attendre.** Une famille sans échantillon est omise
   de `routes`, à raison : un `0 ms` se lirait « instantané ». Mais l'omission laissait `routes: {}`
