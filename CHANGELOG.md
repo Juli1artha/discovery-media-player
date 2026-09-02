@@ -12,6 +12,23 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Fixed
+
+- ⚠️ **A concurrency bench had less margin than its machine had jitter, and it went red on a product
+  that worked.** The archive-seal step measures that a write *waits* for a concurrent close. The
+  concurrent transaction holds the lock `pg_sleep(2)` seconds from **its own** start; the write
+  begins `sleep 0.6` later — so the expected wait is 1.4 s against a 1200 ms floor, **200 ms of
+  slack**, and any scheduling delay between the two *shortens* it, the countdown having already
+  begun. Measured on `main`: `code=1 durée=1137ms` — refused, refused **by the seal**, unblocked at
+  the exact instant the other transaction committed. Every substantive assertion passed; only the
+  threshold refused, on 315 ms of runner jitter.
+  **The floor is not lowered** — that would weaken what the bench proves. The concurrent transaction
+  is lengthened instead: the bar stays at 1200 ms and the slack goes from 200 ms to over two
+  seconds. Reproduced locally against a real PostgreSQL (1123 ms at the observed jitter, red; green
+  at 4 s of sleep even under 2.5 s of jitter), and the bench still bites — with the seal dropped,
+  the write enters and it turns red. A bench whose margin sits under its machine's jitter does not
+  measure what it thinks: it measures the runner, and it teaches its own red to read as noise.
+
 ## [0.1.150] — 2026-09-02
 
 ### Fixed
