@@ -1003,14 +1003,31 @@ jobs:
       # deux transactions réelles — PostgREST ne sait pas faire ça, psql si. Les deux sens :
       # une clôture non committée doit faire ATTENDRE puis REFUSER l'écriture ; une écriture en
       # cours doit faire attendre la clôture.
+      # ⚠️ LA MARGE DE CE BANC ÉTAIT PLUS PETITE QUE LA GIGUE DE LA MACHINE, ET IL A FINI PAR ROUGIR
+      # SUR UN PRODUIT QUI MARCHAIT. Mesuré le 02/09 sur main : « code=1 durée=1137ms », refus par le
+      # scellé, déblocage à l'instant EXACT où la transaction concurrente a validé — le comportement
+      # testé était donc juste de bout en bout. Seul le seuil a refusé.
+      #
+      # L'arithmétique : la transaction concurrente tient le verrou `pg_sleep(SOMMEIL)` secondes à
+      # partir de SON démarrage ; l'écriture testée commence `sleep 0.6` après. L'attente vaut donc
+      # SOMMEIL − 0,6 s — et TOUT retard d'ordonnancement entre les deux la RÉDUIT, puisque le
+      # compte à rebours, lui, a déjà commencé. À SOMMEIL=2 la marge sur le seuil de 1200 ms valait
+      # 200 ms ; la gigue observée ce jour-là valait 315 ms.
+      #
+      # ⚠️ ON N'ABAISSE PAS LE SEUIL — ce serait affaiblir ce que le banc PROUVE. On allonge la
+      # transaction concurrente : la barre reste à 1200 ms, et la marge passe de 200 ms à plus de
+      # deux secondes. Un banc dont la marge est sous la gigue de sa machine ne mesure pas ce qu'il
+      # croit mesurer : il mesure la charge du runner, et il apprend à lire son rouge comme du bruit.
       - name: The archive seal blocks a concurrent close, both ways
+        env:
+          SOMMEIL: 4
         run: |
           $PSQL -c "insert into public.doc_presentations (slug, control_hash, file_url, active) values ('__course', 'h', 'https://exemple.test/x.pdf', true)"
 
-          ( psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d player -qtA <<'SQL'
+          ( psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d player -qtA -v sommeil="$SOMMEIL" <<'SQL'
           begin;
           update public.doc_presentations set active=false, control_hash=null where slug='__course';
-          select pg_sleep(2);
+          select pg_sleep(:sommeil);
           commit;
           SQL
           ) &
@@ -1029,10 +1046,10 @@ jobs:
           [ $duree -ge 1200 ] || { echo "::error::l'écriture n'a pas ATTENDU la clôture (${duree}ms) : les verrous ne se voient pas"; exit 1; }
 
           $PSQL -c "update public.doc_presentations set active=true, control_hash='h' where slug='__course'"
-          ( psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d player -qtA <<'SQL'
+          ( psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d player -qtA -v sommeil="$SOMMEIL" <<'SQL'
           begin;
           insert into public.doc_presentation_messages (slug, body) values ('__course', 'avant la clôture');
-          select pg_sleep(2);
+          select pg_sleep(:sommeil);
           commit;
           SQL
           ) &
