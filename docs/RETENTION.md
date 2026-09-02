@@ -242,23 +242,47 @@ is a number.
 **1. The rows.** Reading logs are deleted **13 months** after `at` / `last_at` by default. A host
 changes that through `config.retention` — whole months in `[1, 120]`.
 
-⚠️ **But the automatic sweep is strictly opt-in.** It runs only where a host has written
-`config.retention.balayage: true`; the `retention.run` action stays available without opt-in, because
-calling it *is* the decision. **On a host that has enabled neither, no row has ever been deleted, and
-the 13 months describe an intent rather than an event.** Anyone attesting a retention period should
-check which of the two is true of the installation in front of them, rather than quoting the default.
+⚠️ **But the automatic sweep is strictly opt-in**, and there are **three** states, not two — an
+integrating host measured the one we had left out:
+
+| state | how to tell | what you may claim |
+|---|---|---|
+| **off** | `retentionSweep` false, and no `retention.run` in your logs | nothing has ever been deleted; the window is a policy you have not applied |
+| **armed, never exercised** | armed, but no row has yet reached the window — check the age of your oldest row against it | nothing has ever been deleted **either**, and not for want of configuration |
+| **armed, and has deleted** | armed, and a run reported non-zero counts | the window is an *event*, and only here |
+
+⚠️ **The middle state is the misleading one**, because it has every appearance of the good one: armed,
+correct, and indistinguishable in its effects from being off — no deletion, no log, no evidence it
+works. A host reported exactly this: sweep armed, oldest row 63 days old, **zero rows past 13 months
+out of 1908**. Its first real execution will be roughly **eighteen months after it was armed**, on
+data nobody will have looked at, never having run in anger. Treat it as what it is — a guard that has
+never been exercised, with a deadline — and exercise it deliberately before then, on a copy or with
+`retention.run` and a short window, rather than discovering its behaviour the day it matters.
+
+Anyone attesting a retention period should establish which of the **three** is true of the
+installation in front of them, rather than quoting the default.
 
 **2. The values inside surviving rows.** Erased by 0026 and 0027 as soon as they are applied, and
 physically gone from the table once routine autovacuum has passed — no operator action, typically
 minutes to hours on an active table. This part does not wait for the 13 months.
 
 **3. Backups, write-ahead logs, exports and migration dumps.** **Outside this player's reach, and we
-neither set nor observe them.** They follow the hosting platform's own settings — on a managed
-provider, typically a point-in-time-recovery window plus a snapshot schedule, each with its own
-retention. A purge is complete end to end at *the later of*: the day 0026/0027 were applied plus the
-host's longest backup retention, and — for the rows themselves — whichever purge the host actually
-runs. **Ask the platform for two numbers: the PITR window and the oldest retained snapshot.** Until
-both have rolled past the migration date, earlier copies still hold the erased values.
+neither set nor observe them.** They follow the hosting platform's own settings — typically a
+point-in-time-recovery window plus a snapshot schedule, each with its own retention. Ask the platform
+for **the PITR window and the age of the oldest retained snapshot**; until they have rolled past the
+day 0026/0027 were applied, earlier copies still hold the erased values.
+
+⚠️ **Neither number is exposed by any API, and that matters more than it looks.** Two integrating
+hosts checked independently, on two different toolsets: the provider's API and its MCP tools return
+region, status and engine version — nothing about backups. **A human has to read them from the
+dashboard.** This is written here because the instruction above is *executable in appearance*: an
+agent following it will look for a tool, find none, and then either stop — or, the real risk, report
+the purge complete having skipped the one step it could not measure. If you cannot produce these two
+numbers, say so; do not round the sentence.
+
+⚠️ **And it is not always "the later of two".** An option that is not subscribed retains nothing, so
+it defers nothing. A host with no PITR and eight daily snapshots has **one** deadline, not two: the
+age of its oldest snapshot. Take the later of the deadlines that *exist*.
 
 ## Limits stated rather than left unsaid
 

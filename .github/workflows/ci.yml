@@ -368,6 +368,16 @@ jobs:
         if: matrix.node == '22'
         run: node tools/versions-annoncees.mjs
 
+      # ⚠️ UN ARTEFACT CONÇU POUR UNE PERSONNE EST LU PAR UNE MACHINE. Le commentaire posé sur une
+      # colonne purgée (0026, 0027) devait servir à un humain prouvant une purge ; un hôte nous a
+      # signalé que son inventaire le croise avec ses comptes résiduels pour lever une alarme.
+      # Cesser de le poser ne casserait rien ici — ça rendrait cette alarme MUETTE, sans rien lui
+      # dire. C'est le moment où l'on décide entre commodité et engagement, et l'engagement qui ne
+      # vit que dans une phrase est un fait figé de plus. Ceci est ce qui rougit si on le défait.
+      - name: Every emptied column carries its attestation
+        if: matrix.node == '22'
+        run: node tools/attestation-de-purge.mjs
+
       # ⚠️ `engines` ANNONÇAIT `>=22` ET `pdfjs-dist` EXIGEAIT `>=22.13.0` (mesuré le 25/08). Entre
       # node 22.0 et 22.12, le paquet déclarait donc que tout allait bien et faisait tourner son
       # moteur de rendu — sa SEULE dépendance de production — sur une version que ce moteur déclare
