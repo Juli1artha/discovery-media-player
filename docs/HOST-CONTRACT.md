@@ -522,6 +522,17 @@ by the response body alone. Reading the count from `Content-Range` under `Prefer
 no ceiling to guess and transports nothing; it is strictly better, and it needs the `db` capability
 to expose response headers, which today it does not.
 
+⚠️ **The two alternatives were measured at a host, not assumed here** — recorded so nobody proposes
+them again in six months believing they were never tried. **`?select=count()` is dead**:
+`db-aggregates-enabled` is `false` by default, verified on two distinct Supabase projects, and the
+measurement is solid for a reason worth stating — the `PGRST123` error arrives *before* the
+permission check, where the same table queried without an aggregate answers `42501 permission
+denied`. The answer therefore depends on neither grants nor any `revoke`: it is a property of the
+**configuration**, not of authorization. That was the route we would have preferred, since it bound
+no one to a contract. **`Prefer: count=exact` with `Range: 0-0` works**: the exact count travels in
+the header and the body carries nothing. It is the only one of the two that exists, and its only
+obstacle is this contract.
+
 ⚠️ **And the same ceiling applies to every read you make through your own client, not just to
 ours.** `limit=20000` does not return twenty thousand rows: PostgREST caps the response at
 `db-max-rows` — **1000** on a default Supabase project — and says so nowhere in the body. A read

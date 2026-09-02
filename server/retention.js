@@ -510,6 +510,20 @@ const compte = (n, tronque) => ({ n, tronque });
  * le compte d'en-tête (`Content-Range` sous `Prefer: count=exact`) lui est strictement supérieur :
  * il ne dépend d'aucun plafond. Il demanderait d'élargir la capacité `db` du contrat d'hôte, qui ne
  * rend aujourd'hui que le corps analysé.
+ *
+ * ⚠️ LES DEUX AUTRES VOIES ONT ÉTÉ MESURÉES CHEZ UN HÔTE, PAS SUPPOSÉES ICI. On les note pour que
+ * personne ne les repropose dans six mois en croyant qu'elles n'ont jamais été essayées :
+ *
+ *   `?select=count()` — MORT. `db-aggregates-enabled` vaut `false` par défaut, vérifié sur DEUX
+ *   projets Supabase distincts. Et la mesure est solide pour une raison qui vaut d'être dite :
+ *   l'erreur `PGRST123` arrive AVANT le contrôle de droits — la même table, interrogée sans
+ *   agrégat, rend `42501 permission denied`. La réponse ne dépend donc ni des droits ni d'un
+ *   `revoke` : c'est une propriété de la CONFIGURATION, pas de l'autorisation. C'était la voie
+ *   qu'on aurait préférée, puisqu'elle n'engageait aucun contrat.
+ *
+ *   `Prefer: count=exact` + `Range: 0-0` — MARCHE. Le compte exact voyage dans l'en-tête, le corps
+ *   ne transporte rien. C'est donc la SEULE des deux qui existe, et son seul obstacle est le
+ *   contrat d'hôte.
  */
 async function resteApres(chemin, cle, dernier) {
   // Sans curseur lisible, la fin ne se prouve pas : « au moins » est le seul côté sûr.

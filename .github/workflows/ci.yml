@@ -588,14 +588,28 @@ jobs:
       - name: Schema expectations go through the declared inventory
         if: matrix.node == '22'
         run: |
-          hors=$(grep -arn 'aLaColonne(' server/*.js | grep -v '^server/schema.js:' || true)
+          # ⚠️ ON CLASSE COMMENTAIRE ET CODE AVANT DE COMPTER — troisième fois que ce dépôt paie
+          # cette leçon, et la première où elle est appliquée à TOUTES ses sondes le même jour.
+          # Mesuré : un simple « // … aLaColonne( … » posé dans server/handler.js faisait rougir
+          # cette étape, qui accusait donc la PROSE expliquant sa propre règle. La seule issue
+          # aurait été de dégrader l'explication pour la satisfaire.
+          # La formule est celle de `sourceUtile` (tools/surface-base.mjs), à l'identique : une
+          # seconde orthographe de « ce fichier sans ses commentaires » est la recopie que ce dépôt
+          # a déjà payée. Un hôte l'a formulée en général le 02/09 : tout balayage qui cherche une
+          # FORME dans du code doit classer code et commentaire AVANT de compter.
+          code=$(grep -avE '^[[:space:]]*(//|\*|/\*)' server/*.js --with-filename --line-number || true)
+          hors=$(printf '%s\n' "$code" | grep -E ':[0-9]+:.*aLaColonne\(' | grep -v '^server/schema.js:' || true)
           [ -z "$hors" ] || { echo "::error::sonde de schéma hors inventaire — utilisez attendue(nom) :"; echo "$hors"; exit 1; }
           # ⚠️ LE MOTIF SUIT LA FORME PUBLIÉE, ET IL A DÉJÀ DÉRIVÉ UNE FOIS. Il cherchait
           # « migration: "supabase/migrations/ » ; le jour où ce préfixe a été retiré des valeurs
           # (une garde d'hôte tire sur « supabase »), ce grep a compté zéro — et sous « bash -e »
           # un grep -c sans correspondance sort en 1, donc l'étape est morte SANS message, sur un
           # « exit code 1 » que rien n'expliquait. Le refus était juste, sa raison invisible.
-          n=$(grep -ac 'migration: "' server/schema.js || true)
+          # ⚠️ ET CE PLANCHER SE GONFLE SUR UN COMMENTAIRE, ce qui est le pire sens pour un
+          # plancher : mesuré, « // migration: "…" » ajouté à ce fichier le fait passer de 10 à 11.
+          # Un commentaire pourrait donc MAINTENIR ce seuil pendant que la forme réelle dérive —
+          # c'est-à-dire masquer exactement la panne que cette étape existe pour attraper.
+          n=$(grep -avE '^[[:space:]]*(//|\*|/\*)' server/schema.js | grep -c 'migration: "' || true)
           # ⚠️ PLANCHER LARGE, ET LA RAISON DIFFÈRE DE CELLE DES AUTRES PLANCHERS DE CE DÉPÔT. Le
           # nombre d'attentes n'est PAS monotone : une colonne qui cesse d'être un point de
           # dégradation quitte légitimement ATTENDUES pour NON_SONDEES. Un seuil exact rougirait
