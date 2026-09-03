@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.155] — 2026-09-03
+
 ### Added
 
 - **Le délai de lecture de la purge devient réglable — `config.retention.delaiLectureMs`.** Un hôte a
@@ -6172,7 +6174,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.154...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.155...HEAD
+[0.1.155]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.154...v0.1.155
 [0.1.154]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.153...v0.1.154
 [0.1.153]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.152...v0.1.153
 [0.1.152]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.151...v0.1.152
