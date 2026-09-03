@@ -242,6 +242,48 @@ describe("le compteur de ce qui porte encore ip ou ua", () => {
     expect(r.vide, "et le verdict reste juste : saturé ou non, rien ne porte les colonnes").toBe(true);
   });
 
+  // ⚠️ LE DÉLAI DE LECTURE EST RÉGLABLE, ET CE N'EST PAS UN CONFORT. Un hôte a montré que
+  // `statement_timeout` vaut 8 s par DÉFAUT sur `authenticator` chez Supabase — donc chez tout le
+  // monde — et que le `SET ROLE` ne le réinitialise pas. Notre valeur valait 8000 : à égalité, la
+  // minuterie qui gagne la course dépend de la gigue, et quand c'est la nôtre le `57014` du serveur
+  // ne nous parvient jamais. Le défaut passe à 12000, mais le point de fond est qu'une CONSTANTE
+  // choisie contre un cas connu porte la date de ce cas : un hôte à 15 s ne se règle pas en
+  // rééditant notre nombre.
+  describe("le délai de lecture, réglable parce qu'un plafond d'hôte n'est pas le nôtre", () => {
+    const delaiVu = (retour) => {
+      const delais = [];
+      retention.init({
+        config: retour === undefined ? {} : { retention: { delaiLectureMs: retour } },
+        db: {
+          async request(_chemin, options) { delais.push(options && options.timeoutMs); return []; },
+        },
+        limits: { async allow() { return true; } },
+        errors: { capture() {} },
+      });
+      return retention.resteDeLaPurge().then(() => delais);
+    };
+
+    it("⚠️ sans réglage, douze secondes — et l'absence rend le comportement d'avant", async () => {
+      const vus = await delaiVu(undefined);
+      expect(vus.length, "aucune lecture : le banc ne mesure rien").toBeGreaterThan(0);
+      expect([...new Set(vus)]).toEqual([12000]);
+    });
+
+    it("⚠️ un hôte qui CONNAÎT son plafond le dit, et nous l'employons", async () => {
+      expect([...new Set(await delaiVu(20000))]).toEqual([20000]);
+    });
+
+    it.each([
+      ["zéro", 0], ["un négatif", -1], ["une chaîne", "abc"], ["au-dessus du maximum", 999999],
+      ["sous le minimum", 10], ["null", null], ["NaN", NaN],
+    ])("⚠️ un réglage invalide (%s) RETOMBE sur le défaut — il ne fait pas échouer la carte", async (_, v) => {
+      // ⚠️ ET LA DIFFÉRENCE AVEC LES FENÊTRES EST DE CONSÉQUENCE : une fenêtre fausse SUPPRIME des
+      // lignes et doit lever ; un délai faux fait au pire attendre. Punir le lecteur d'une carte
+      // pour un réglage sans danger serait une sévérité mal placée.
+      expect([...new Set(await delaiVu(v))]).toEqual([12000]);
+    });
+  });
+
   // ⚠️ LA VOIE EXACTE, QUAND L'HÔTE LA FOURNIT. Le comptage par lignes dépend des plafonds de qui
   // les rend ; `db.count` demande la QUESTION (« combien de lignes ce chemin sélectionne-t-il »)
   // sans nommer le mécanisme, et n'a donc aucun plafond à deviner. Mesuré chez un hôte le 02/09 :

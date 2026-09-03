@@ -455,15 +455,34 @@ function tick() {
 // pas une opinion sur ce qu'un hôte peut avoir.
 const BORNE_RESTE = 5000;
 
-// ⚠️ DOUZE SECONDES, ET LE NOMBRE VIENT D'ÉVITER UNE ÉGALITÉ, PAS D'UN GOÛT. Il valait 8000 — très
-// exactement le `statement_timeout` qu'un hôte a mesuré sur son rôle `authenticator`. Deux minuteries
-// réglées sur la même valeur ne rendent pas un résultat faux ici (les deux voies retombent sur
-// `null`, un banc l'éprouve), mais elles rendent la CAUSE indécidable : quand notre abandon gagne la
-// course, le `57014` du serveur ne nous parvient jamais, et « la requête était trop lente » devient
-// indistinguable de « le réseau est tombé ». Un plafond client strictement AU-DESSUS des plafonds
-// serveur courants laisse le serveur expliquer son refus. C'est la règle de la marge sur le SUJET,
-// appliquée à du code de production plutôt qu'à un banc.
+// ⚠️ DOUZE SECONDES PAR DÉFAUT, ET LE NOMBRE VIENT D'ÉVITER UNE ÉGALITÉ, PAS D'UN GOÛT. Il valait
+// 8000 — très exactement le `statement_timeout` que DEUX hôtes ont mesuré sur leur rôle
+// `authenticator`, où il est le réglage par défaut de la plateforme et non une particularité. Deux
+// minuteries réglées sur la même valeur ne rendent pas un résultat faux ici (les deux voies
+// retombent sur `null`, un banc l'éprouve), mais elles rendent la CAUSE indécidable : quand notre
+// abandon gagne la course, le `57014` du serveur ne nous parvient jamais, et « la requête était trop
+// lente » devient indistinguable de « le réseau est tombé ».
+//
+// ⚠️ ET C'EST RÉGLABLE PARCE QU'UNE CONSTANTE CHOISIE CONTRE UN CAS CONNU PORTE LA DATE DE CE CAS.
+// Un hôte l'a formulé mieux que nous ne l'avions vu : « le jour où un hôte annonce 15 s, ce n'est pas
+// votre minuterie qu'il faudra ajuster — c'est le fait qu'elle soit une constante ». Corriger le
+// nombre aurait reproduit le défaut avec une mèche plus longue, exactement comme corriger un nombre
+// nu dans de la prose en produit un autre. `config.retention.delaiLectureMs` laisse l'hôte qui
+// CONNAÎT son plafond le dire ; son absence rend le comportement d'aujourd'hui, à l'octet près.
 const DELAI_LECTURE = 12000;
+const DELAI_MIN = 1000, DELAI_MAX = 120000;
+
+/**
+ * ⚠️ UNE VALEUR INVALIDE RETOMBE SUR LE DÉFAUT — elle ne lève PAS, à la différence des fenêtres de
+ * rétention juste au-dessus, et la différence est de conséquence : une fenêtre fausse SUPPRIME des
+ * lignes, un délai faux fait au pire attendre. Refuser de rendre la carte parce qu'un délai est mal
+ * tapé punirait le lecteur pour un réglage sans danger.
+ */
+function delaiLecture() {
+  const r = PLAYER.config && PLAYER.config.retention;
+  const v = r && Number(r.delaiLectureMs);
+  return Number.isFinite(v) && v >= DELAI_MIN && v <= DELAI_MAX ? Math.trunc(v) : DELAI_LECTURE;
+}
 
 const SONDES_RESTE = [
   ["sessionsIp", "commercial_doc_sessions", "session_id", "ip"],
@@ -553,7 +572,7 @@ async function resteApres(chemin, cle, dernier) {
   if (dernier == null) return true;
   try {
     const suite = await PLAYER.db.request(
-      `${chemin}&${cle}=gt.${enc(String(dernier))}&order=${cle}.asc&limit=1`, { timeoutMs: DELAI_LECTURE });
+      `${chemin}&${cle}=gt.${enc(String(dernier))}&order=${cle}.asc&limit=1`, { timeoutMs: delaiLecture() });
     // Pas de réponse analysable ⇒ on ne sait pas ⇒ « au moins ». Se tromper vers le minorant ne
     // fait que sous-estimer ; se tromper vers l'exactitude fait conclure.
     return !Array.isArray(suite) || suite.length > 0;
@@ -606,7 +625,7 @@ async function compterBorne(chemin, cle) {
     // ⚠️ ET L'ORDRE N'EST PAS DÉCORATIF : sans lui, « la dernière ligne reçue » ne désigne aucune
     // frontière, et le curseur de la sonde ne voudrait rien dire.
     const lignes = await PLAYER.db.request(
-      `${chemin}&order=${cle}.asc&limit=${BORNE_RESTE + 1}`, { timeoutMs: DELAI_LECTURE });
+      `${chemin}&order=${cle}.asc&limit=${BORNE_RESTE + 1}`, { timeoutMs: delaiLecture() });
     if (!Array.isArray(lignes)) return compte(null, false, VOIE_BORNEE);
     // Notre propre borne atteinte : la preuve est dans la ligne excédentaire, rien à demander.
     if (lignes.length > BORNE_RESTE) return compte(BORNE_RESTE, true, VOIE_BORNEE);
