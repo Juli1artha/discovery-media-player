@@ -1653,6 +1653,65 @@ It is the same reasoning that gave `vide` three states, and the generalisation i
 before choosing a boolean, name the transition it assumes away. If you can name one, it is not a
 boolean.
 
+## The visibility of a defect is distributed inversely to its cost
+
+An integrating host has `safeupdate` preloaded, so an unrestricted `DELETE` or `UPDATE` is refused
+outright — even under `service_role`. They reported it as an obstacle they had paid for. It is the
+opposite: it is the **net**, and nothing in our host contract requires it.
+
+⚠️ Run that backwards and the shape appears. At a host that has the protection, the bad line fails
+loudly and someone learns the problem exists. At a host that does not, **the same line succeeds and
+empties the table** — silently, and nobody learns anything. So the host who is protected is the one
+who finds out, and the host who is exposed is the one who never does. They stated the general form,
+and it is worth more than the case:
+
+> the protection that makes a defect noisy is not guaranteed by the contract, so the protected host
+> learns the problem exists and the exposed host never does — **the visibility of a defect is
+> distributed inversely to its cost.**
+
+The practical consequence is a rule about where to put the fix. When a defect is only noisy where
+something optional catches it, **close it on the side you control** rather than requiring the
+catcher. We did not add "you must enable `safeupdate`" to the contract; we added a guard that
+refuses an unfiltered write in our own repository. Requiring the net asks every host to rescue us
+from a line we could simply not write.
+
+⚠️ And the corollary for reading reports: a host telling you about a defect is evidence they had the
+protection, not evidence they are the affected one. The affected ones are silent by construction.
+
+## A guard that only serves when another has failed is the least exercised and the most needed
+
+The same week, a host pointed out that the timeout we had just corrected sits on a path their
+installation does not use: they take the exact-count route, so those timers only ever apply if
+`db.count` stops answering. Which is to say — the correction matters precisely when something else
+has already broken, and never before.
+
+> A guard that only serves in case of another's failure is the one you exercise least and need most.
+
+It is worth naming because the usual instinct runs the other way: a path that never executes in
+normal operation looks like a candidate for less care, not more. It deserves more, for the same
+reason a fallback deserves a bench — the first time it runs, everything else is already wrong, and
+nobody is in a position to notice that it ran badly.
+
+## Distance decides whether a warning protects a claim — and it is not linear
+
+Recorded above: a warning in one place does not protect a claim in another. A host sharpened it after
+comparing their case with ours, and the sharpening is the useful part.
+
+| | distance | what happened |
+|---|---|---|
+| theirs | 650 lines, same file | a present-tense claim about a deleted file; the correction sat far above and nobody joined them |
+| ours | one paragraph | a count opening the section arguing that a count is not the proof |
+
+⚠️ **Ours was the worse of the two, and its closeness is why.** Their formulation:
+
+> very far, one does not make the link; very close, one believes it has already been made.
+
+So proximity is not a defence and can be the opposite of one. A contradiction a paragraph apart
+reads as deliberate — as if the author had already reconciled the two — while the same contradiction
+across a file at least looks like an oversight someone might check. When a correction and the thing
+it corrects sit close together, neither distance nor good faith does the work: only stating the
+contradiction outright does.
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives

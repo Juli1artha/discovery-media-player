@@ -894,15 +894,22 @@ but *did you measure exactly what fails*. Two true statements about the same ins
 different responses.
 
 **⚠️ The ceiling on your requests is set by the role that OPENS the connection, not the one they run
-as.** A host measured this and it is invisible from our side. Their `authenticator` role carries a
-`statement_timeout`; PostgREST's `SET ROLE` does **not** reset it, so code running as `service_role`
-inherits it — while `service_role` itself shows no setting at all, so nothing our code can read
-suggests a limit exists. At that host every request we issue is capped at 8 seconds, and a lock
-waited on for longer than that fails. Your paginated `selectAll`, a batched retention sweep, a
+as.** Two hosts measured this independently, and it is invisible from our side. Their `authenticator`
+role carries a `statement_timeout`; PostgREST's `SET ROLE` does **not** reset it, so code running as
+`service_role` inherits it — while `service_role` itself shows no setting at all, so nothing our code
+can read suggests a limit exists. Both measured **8 seconds** on `authenticator` and on
+`authenticated`, and **3 seconds** on `anon`: this is the platform default on Supabase, not a
+peculiarity of one installation, so assume you have it until you have looked. Every request we issue
+is capped at that value, and a lock waited on for longer than it fails. Your paginated `selectAll`, a batched retention sweep, a
 `count` on a large table: each is one statement, so each gets the whole budget and no more,
 whatever the batch size.
 
-Our own client abort no longer sits at that same value, deliberately. Two timers set to the same
+Our own client abort no longer sits at that same value, deliberately, and it is no longer a
+constant: `config.retention.delaiLectureMs` (1 000–120 000 ms, default 12 000) lets a host who knows
+their ceiling say so. A host put the reason better than we had seen it — *a constant chosen against
+a known case carries the date of that case; the day a host announces 15 s, it is not the timer that
+needs adjusting, it is the fact that it is a constant.* An invalid value falls back to the default
+rather than refusing: a wrong retention window deletes rows, a wrong timeout at worst waits. Two timers set to the same
 number do not produce a wrong answer here — both routes fall back to `null`, and a bench proves it —
 but they make the *cause* undecidable: when our abort wins the race, the server's `57014` never
 reaches us and "too slow" becomes indistinguishable from "the network died".
@@ -966,6 +973,23 @@ within the hour, found something. A defect tells us about one line; a rule tells
 unaudited, said so plainly, and that sentence is the only reason we know those reads exist. We
 cannot measure your code. We can only know what someone wrote down. *"Not measured"* and *"nothing
 found"* are different sentences, and only one of them is honest when you have not looked.
+
+⚠️ **Say which of the two kinds it is: *not measured yet*, or *not measurable here*.** A host asked
+for this distinction in as many words, and they were right that a contract which conflates them
+waits forever for an answer that will never come. *Not measured yet* is a debt: someone will pay it.
+*Not measurable here* is a structural property of that installation — no measurement available to
+them can produce the phenomenon at all.
+
+Their own case is the clean one. `db-max-rows` caps a response at 1000 rows; their largest table
+holds 356, and the largest one readable by `anon` on their application database holds 836. Those are
+usage volumes, not configuration — they cannot make them bigger to see the ceiling, and the only way
+to reach it would be to widen production grants for a diagnosis, which they will not do and should
+not. So that ceiling will never be observed there. **The other host's 1651 rows published as 1000 is
+the only proof of it anyone will produce, and that is final** — which is also why we record where a
+measurement came from rather than only what it said.
+
+The two kinds want opposite things from us: a debt should be chased, a structural limit should be
+written down and stopped being asked about.
 
 **What not to send.** Shapes and counts, never contents. No row data, no reader IPs or User-Agents —
 those are the columns half this contract exists to get rid of — no keys, tokens, connection strings,

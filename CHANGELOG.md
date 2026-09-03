@@ -12,6 +12,53 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- **Le délai de lecture de la purge devient réglable — `config.retention.delaiLectureMs`.** Un hôte a
+  formulé la critique mieux que nous ne l'avions vue : **une constante choisie contre un cas connu
+  porte la date de ce cas.** « Le jour où un hôte annonce 15 s, ce n'est pas votre minuterie qu'il
+  faudra ajuster — c'est le fait qu'elle soit une constante. » Corriger 8000 en 12000 reproduisait le
+  défaut avec une mèche plus longue, exactement comme corriger un nombre nu dans de la prose en
+  produit un autre.
+  Bornes 1 000–120 000 ms, défaut 12 000 : l'absence rend le comportement d'aujourd'hui à l'octet
+  près. ⚠️ **Un réglage invalide RETOMBE sur le défaut au lieu de lever**, à la différence des
+  fenêtres de rétention — et la différence est de conséquence : une fenêtre fausse SUPPRIME des
+  lignes, un délai faux fait au pire attendre. Quatre mutations meurent (réglage ignoré, validation
+  sautée, défaut ramené à 8000, bornes retirées).
+
+### Changed
+
+- ⚠️ **Le `statement_timeout` à 8 s n'est pas la particularité d'un hôte : c'est le réglage par
+  défaut de la plateforme.** Le second hôte l'a mesuré chez lui après lecture de la nouvelle section
+  — `authenticator` 8 s, `authenticated` 8 s, **`anon` 3 s** — et la valeur en collision était bien
+  la sienne. Le contrat le dit maintenant au bon niveau de généralité : *supposez que vous l'avez
+  tant que vous n'avez pas regardé*. Un fait mesuré chez un hôte est une anecdote ; le même mesuré
+  chez deux, indépendamment, est une propriété de la plateforme.
+- ⚠️ **`docs/HOST-CONTRACT.md` distingue « non mesuré » de « non mesurable ici », à la demande
+  explicite d'un hôte.** Ils avaient raison qu'un contrat qui les confond **attend indéfiniment une
+  réponse qui ne viendra pas**. « Non mesuré » est une dette : quelqu'un la paiera. « Non mesurable
+  ici » est une propriété structurelle de l'installation — leur plus grosse table fait 356 lignes,
+  la plus grosse lisible par `anon` en fait 836, et ce sont des volumes d'usage, pas de
+  configuration. Le plafond `db-max-rows` ne sera donc **jamais** observé chez eux, et la mesure de
+  l'autre hôte — 1651 lignes publiées 1000 — restera la seule preuve qu'on en produira.
+  Les deux catégories veulent des choses opposées : une dette se relance, une limite structurelle
+  s'écrit et cesse d'être réclamée.
+- **`AGENTS.md` gagne trois règles, toutes formulées par les hôtes sur leurs propres constats.**
+  ⚠️ *La visibilité d'un défaut est distribuée à l'inverse de son coût* : `safeupdate` rend
+  l'écriture sans filtre bruyante là où il est présent, et le contrat ne l'exige pas — donc l'hôte
+  protégé apprend que le problème existe et l'hôte exposé, chez qui la même ligne vide la table, ne
+  l'apprend jamais. D'où la conséquence pratique : **fermer du côté qu'on contrôle** plutôt
+  qu'exiger le filet. Et le corollaire pour lire les rapports : un hôte qui signale un défaut prouve
+  qu'il avait la protection, pas qu'il est l'affecté — les affectés se taisent par construction.
+  *Une garde qui ne sert qu'en cas de panne d'une autre est la moins éprouvée et la plus
+  nécessaire* : un hôte a relevé que le délai corrigé ne s'exerce chez lui que si `db.count` cesse de
+  répondre. L'instinct traite un chemin mort en régime normal comme méritant moins de soin ; il en
+  mérite plus, puisque la première fois qu'il s'exécute, tout le reste est déjà cassé.
+  *La distance décide, et elle n'est pas linéaire* — « très loin, on ne fait pas le lien ; très
+  près, on croit l'avoir déjà fait ». Leur cas était à six cent cinquante lignes, le nôtre à un
+  paragraphe, et **le nôtre était le pire** : une contradiction proche se lit comme délibérée.
+
+
 ## [0.1.154] — 2026-09-03
 
 ### Added
