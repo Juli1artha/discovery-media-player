@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.154] — 2026-09-03
+
 ### Added
 
 - ⚠️ **Une garde refuse désormais tout `DELETE`, `PATCH` ou `PUT` écrit sans prédicat — et elle est
@@ -6123,7 +6125,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.153...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.154...HEAD
+[0.1.154]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.153...v0.1.154
 [0.1.153]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.152...v0.1.153
 [0.1.152]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.151...v0.1.152
 [0.1.151]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.150...v0.1.151
