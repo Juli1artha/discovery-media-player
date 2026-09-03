@@ -1360,6 +1360,28 @@ the wording**. So the numbers were removed rather than corrected. A magnitude th
 argument survives as *most*, *every*, or a dated measurement; a magnitude that carries only
 impressiveness is rot with no upside.
 
+⚠️ **And the rule has a constructive half, which a host supplied after running our own sweep on
+their files.** Ours came back with three rotted numbers; theirs came back with **one** — and the
+interesting part was why the rest were sound. Not care. **Form.** Three shapes cannot rot, and
+between them they cover most of what a number is ever written for:
+
+| shape | their example | why it holds |
+|---|---|---|
+| a reading in the **past tense** | *"Verified: 1739 tests green (148 files)"* | it records an event; an event does not change |
+| anchored to an **artefact** | *"30 migrations, v12321 → v12417"* | bounded by two identifiers, so it re-verifies itself |
+| a **dated citation** of the defect | the four *"255 tests"* documenting its own removal | it quotes rather than claims |
+
+**Removal is the fourth, and the only one left when none of the three applies** — which is what the
+three cases above needed. A magnitude carrying an argument survives as *most*, *every*, or one of
+these three shapes; a magnitude carrying only impressiveness has no shape that saves it.
+
+⚠️ Their single rotted case is worth its own line, because it is this section's own failure at a
+larger scale: a present-tense sentence about a file that **had been deleted from the repository** —
+with the correction sitting six hundred and fifty lines above it, in the same file. Ours put a
+count in the paragraph disproving counts; theirs put the warning and the claim so far apart that
+neither reader ever holds both. **A warning in one place does not protect a claim in another**, and
+distance is what decides that, not intent.
+
 ⚠️ **A *position* is one of these numbers too — and neither this repository nor the host who caught
 it had read that into the rule.** Every catch above is a count or a date, so the rule reads as being
 about counts, and a cross-reference by line number slips underneath it. Two did, **in this very

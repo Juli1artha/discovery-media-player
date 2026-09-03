@@ -12,6 +12,52 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- ⚠️ **Une garde refuse désormais tout `DELETE`, `PATCH` ou `PUT` écrit sans prédicat — et elle est
+  verte le jour de sa naissance, ce qui est le sujet.** Nos onze sites d'écriture portent déjà un
+  filtre ; ce n'est pas ce qu'elle protège. Elle protège le prochain, écrit dans six mois par
+  quelqu'un qui n'aura pas eu cette conversation.
+  Ce qui la motive est **une mesure d'hôte, pas une crainte** : un intégrateur a `safeupdate`
+  préchargé sur `authenticator`, donc chez lui une écriture sans clause restrictive est refusée même
+  sous `service_role` — et le message d'erreur ne nomme pas `safeupdate`, si bien que le refus arrive
+  sans sa raison. Il l'a payé une fois, sur une de nos fonctions.
+  ⚠️ **Et il faut lire ce refus à l'envers : `safeupdate` est le FILET, pas l'obstacle.** Chez un
+  hôte qui l'a, l'écriture sans filtre échoue bruyamment ; chez un hôte qui ne l'a pas — et rien dans
+  le contrat ne l'exige — la même ligne réussit et vide la table. Le défaut est silencieux
+  exactement là où il est grave.
+  La garde exige un **prédicat**, pas un point d'interrogation : `?select=id` est une projection, pas
+  un filtre, et c'est la forme qui survit à une relecture. Treize bancs, dont quatre contrôles
+  positifs — un `DELETE` nu refusé, un `PATCH` à projection seule refusé, un `DELETE` nu **en
+  commentaire** qui n'accuse personne, et zéro site reconnu qui rend NON CONCLUANT plutôt que
+  conforme.
+
+### Changed
+
+- **Le délai de lecture de la purge passe de 8 000 à 12 000 ms, pour cesser d'être ÉGAL à un plafond
+  serveur connu.** Un hôte a mesuré un `statement_timeout` de 8 s sur son rôle `authenticator`, que
+  le `SET ROLE` de PostgREST ne réinitialise pas : notre code hérite donc du plafond alors que
+  `service_role` n'en affiche aucun. Deux minuteries à la même valeur ne rendent pas un résultat faux
+  ici — les deux voies retombent sur `null`, un banc l'éprouve — mais elles rendent la **cause**
+  indécidable : quand notre abandon gagne la course, le `57014` du serveur ne nous parvient jamais.
+  C'est la règle de la marge sur le sujet, appliquée à du code de production.
+- **`docs/HOST-CONTRACT.md` documente ce plafond invisible**, et son titre « Four things that will
+  bite » perd son compte en même temps qu'il gagne une cinquième entrée — sans quoi il pourrissait à
+  la ligne suivante. ⚠️ **L'ancre `#four-things-that-will-bite` a été déplacée du même geste** : un
+  renvoi laissé derrière aurait été la variante « position » du même défaut, que ce fichier décrit
+  déjà.
+- **`AGENTS.md` : la règle « un nombre au présent pourrit » gagne sa moitié constructive**, fournie
+  par un hôte qui a passé notre balayage sur ses propres fichiers. Le nôtre a rendu trois nombres
+  pourris, le sien **un** — et l'intéressant est pourquoi les autres tenaient : non par soin, mais
+  par **forme**. Un relevé au passé, un compte borné par deux identifiants, une citation datée du
+  défaut : aucune des trois ne peut pourrir. Le retrait est la quatrième, et la seule quand aucune
+  des trois ne s'applique.
+  Son unique cas pourri vaut sa ligne : une phrase au présent sur un fichier **supprimé du dépôt**,
+  la correction siégeant six cent cinquante lignes plus haut dans le même fichier. **Un
+  avertissement à un endroit ne protège pas une affirmation à un autre**, et c'est la distance qui en
+  décide, pas l'intention.
+
+
 ## [0.1.153] — 2026-09-02
 
 ### Added

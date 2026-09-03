@@ -25,7 +25,7 @@ need.
    it the same day, and remove it when the release lands.
 6. **Describe what you do — including what you think is trivial.** Not *"report deviations"*: you
    cannot know what one is, because that would mean knowing this page better than we do. ⚠️ The
-   over-specified sentence in [the `tts-cache` section](#four-things-that-will-bite) stood for
+   over-specified sentence in [the `tts-cache` section](#what-will-bite) stood for
    weeks, and it took a host mentioning its own naming **as a curiosity** for anyone to look. Its
    own account of it, on 27/08: *"je ne l'ai décrite que parce que je citais `preview-fr-v2` comme
    une curiosité, sans savoir que c'était un écart. Si j'avais su que votre page l'interdisait, je
@@ -745,7 +745,7 @@ The rule underneath, safer than the list: **never fall back on a refusal of *acc
 back on an inability to *reach*.** And "do not fall back" applies to what you **offer** — an
 "Open ↗" button left in place is falling back one second later.
 
-## Four things that will bite
+## What will bite
 
 **Your document-opening doors reappear.** A host has more than one place that opens a file, and new
 ones get written. Keep the list and hunt it periodically — and note that **your search criteria
@@ -892,6 +892,32 @@ cannot. Setting the number spares you that reasoning entirely.
 **Configured is not served.** When a diagnosis is disputed, the useful question is not who is right
 but *did you measure exactly what fails*. Two true statements about the same instance can describe
 different responses.
+
+**⚠️ The ceiling on your requests is set by the role that OPENS the connection, not the one they run
+as.** A host measured this and it is invisible from our side. Their `authenticator` role carries a
+`statement_timeout`; PostgREST's `SET ROLE` does **not** reset it, so code running as `service_role`
+inherits it — while `service_role` itself shows no setting at all, so nothing our code can read
+suggests a limit exists. At that host every request we issue is capped at 8 seconds, and a lock
+waited on for longer than that fails. Your paginated `selectAll`, a batched retention sweep, a
+`count` on a large table: each is one statement, so each gets the whole budget and no more,
+whatever the batch size.
+
+Our own client abort no longer sits at that same value, deliberately. Two timers set to the same
+number do not produce a wrong answer here — both routes fall back to `null`, and a bench proves it —
+but they make the *cause* undecidable: when our abort wins the race, the server's `57014` never
+reaches us and "too slow" becomes indistinguishable from "the network died".
+
+**⚠️ And `safeupdate` refuses an unrestricted write even under `service_role` — read that backwards.**
+The same host has it preloaded on `authenticator`: a `DELETE` or `UPDATE` with no restricting clause
+is rejected outright, and the error message does not name `safeupdate`, so the refusal arrives
+without its reason. They paid for that once, on one of our functions.
+
+The trap is not the refusal. **`safeupdate` is the net.** At a host that has it, an unfiltered write
+fails loudly; at a host that does not — and nothing in this contract requires it — the very same
+line succeeds and empties the table. The defect is therefore silent exactly where it is severe. A
+guard in this repository now refuses any `DELETE`, `PATCH` or `PUT` we write without a restricting
+predicate, and it counts `?select=…` as a projection rather than a filter, because that is the shape
+that survives a review.
 
 ## What you can see and we cannot
 
