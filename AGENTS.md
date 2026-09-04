@@ -1678,6 +1678,25 @@ from a line we could simply not write.
 ⚠️ And the corollary for reading reports: a host telling you about a defect is evidence they had the
 protection, not evidence they are the affected one. The affected ones are silent by construction.
 
+⚠️ **Which makes the whole channel biased, not just one report.** A host drew out the consequence
+after reading the rule back to us, and it is sharper than what we had written:
+
+> what you receive as field reports is filtered by the ability to see, so it is systematically biased
+> toward the best-instrumented installations. **The reports you will never get come from where it
+> breaks the most.**
+
+This is survivorship bias applied to a host contract, and it says what to do with a quiet channel:
+silence from an installation is not evidence that it is healthy, it is an absence of evidence
+weighted toward the installations least able to produce any. So do not rank a defect by how many
+hosts reported it — that count measures instrumentation, not incidence. And when a report arrives
+from a well-instrumented host, ask what the *unequipped* version of that installation would have
+experienced instead, because that version exists and will not write.
+
+⚠️ It also bounds what our own "What you can see and we cannot" section can achieve. Asking hosts
+what they cannot verify improves the answers from those who can already answer; it does nothing for
+the ones whose whole problem is that nothing at their installation would notice. Those are reached by
+closing defects on our side, never by asking better questions.
+
 ## A guard that only serves when another has failed is the least exercised and the most needed
 
 The same week, a host pointed out that the timeout we had just corrected sits on a path their

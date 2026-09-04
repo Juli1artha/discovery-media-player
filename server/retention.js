@@ -29,6 +29,14 @@ const MIN_MOIS = 1, MAX_MOIS = 120;
 // négative calculerait une borne FUTURE (perte massive), zéro purgerait tout, une chaîne/NaN/
 // Infinity produirait une date invalide. On refuse AVANT le premier DELETE, en NOMMANT la clé.
 // Zéro n'est PAS une purge immédiate : ce serait un geste trop dangereux pour un défaut de config.
+//
+// ⚠️ ET LE FRÈRE DE CETTE FONCTION FAIT DÉLIBÉRÉMENT L'INVERSE — c'est dit ici parce qu'il est à
+// quatre cent cinquante lignes d'ici et qu'un lecteur n'arrive jamais aux deux. `delaiLecture()`
+// RETOMBE sur son défaut au lieu de lever. La sévérité se règle sur la CONSÉQUENCE DE L'ERREUR, pas
+// sur la nature du réglage : une fenêtre fausse supprime des lignes, un délai faux fait au pire
+// attendre. Un hôte a prédit le défaut de ne l'écrire qu'à un seul bout — « sans la phrase, le
+// prochain lecteur harmonisera, dans un sens ou dans l'autre, et croira corriger une incohérence ».
+// Uniformiser les deux serait donc une régression, quel que soit le sens choisi.
 function fenetresValidees() {
   const brut = { ...FENETRES, ...((PLAYER.config && PLAYER.config.retention) || {}) };
   const out = Object.create(null);   // nu : la garde de forme reconnaît cet accumulateur
