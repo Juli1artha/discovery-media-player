@@ -12,6 +12,71 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- ⚠️ **Une garde refuse désormais qu'on PHOTOGRAPHIE le contexte injecté — et la question vient d'un
+  hôte, pas de nous.** Il avait écrit un utilitaire de pagination après un incident, avec sa raison
+  en tête, et cet utilitaire n'était appelé **nulle part**. La cause n'est apparue qu'en essayant de
+  s'en servir : il appelait la liaison **locale** de son client de base, alors que ses bancs
+  remplacent l'**export** — l'adopter cassait donc le banc censé le couvrir. Sa phrase est ce qu'il
+  faut retenir : *« personne n'écrit "je ne l'utilise pas parce qu'il casse mes doubles" — on renonce
+  en silence »*. Une aide non substituable ne produit aucun rouge : elle produit une **absence
+  d'usage**, que rien ne distingue d'un besoin qui n'existait pas.
+  `tools/couture-substituable.mjs` refuse toute capture (`const db = PLAYER.db`, une
+  déstructuration, l'objet entier) dans `server/` et `context/`. **Verte le jour où elle est
+  écrite, et c'est le sujet** : nos 144 appels passent déjà par l'objet au point d'usage. Elle
+  protège le prochain. Quatre mutations meurent (motif de déstructuration retiré, anti-vacuité
+  retirée, commentaires non filtrés, liste des membres réduite), et zéro appel reconnu rend
+  **inconcluant**, jamais conforme.
+  ⚠️ **La sévérité est ici celle du silence** : une capture ne casse aucun banc chez nous, puisque
+  nos bancs injectent avant d'appeler. Elle casse le double de l'hôte, chez l'hôte, sans que rien
+  ici ne rougisse.
+
+### Changed
+
+- ⚠️ **Le contrat dit où est la couture, parce qu'un hôte l'a demandé et que ce n'était écrit nulle
+  part.** Réponse en deux moitiés dont une seule est une promesse, mesurées le 05/09 sur `server/`
+  et `context/` : le **contexte injecté est substituable** — 144 appels, **0 capture**, chacun
+  relit `PLAYER.<membre>` à l'instant où il tire, donc le double de l'hôte est bien celui qui
+  s'exécute ; **nos exports ne le sont pas entre eux** — **64 noms exportés sur 75** sont aussi
+  appelés par leur liaison locale. Doubler `getShareBySlug` sur le module exporté n'atteindra pas
+  `overview()`. C'est du CommonJS ordinaire, on ne réécrit pas 64 sites pour ça — mais l'hôte
+  l'aurait découvert à ses frais, donc c'est écrit.
+- ⚠️ **Le tri des lectures se fait sur ce que la valeur DEVIENT, pas sur le nombre de lignes — et
+  c'est un hôte qui a corrigé notre axe.** Il a balayé les siennes, les a toutes fermées, et rapporté
+  que le compte de lignes était le mauvais critère depuis le début. Les plus chères étaient des
+  **agrégations** : un solde de crédits sommé par `reduce`, un compteur pris comme `rows.length`,
+  un cumul de visites. **Une somme tronquée est fausse ET plausible**, ce qui est pire que le symptôme
+  habituel du plafond — une liste visiblement vieille. Son registre de crédits était à 503 lignes et
+  grossit à chaque appel IA : la facture serait devenue fausse avant que la table paraisse suspecte.
+  La question utile n'est donc pas « ceci peut-il dépasser 1000 ? » mais **« cette valeur est-elle
+  agrégée ou affichée ? »**
+- ⚠️ **« Non mesuré » et « non mesurable ici » ne suffisaient pas : il existe un TROISIÈME cas, et
+  nous avions posé le choix comme s'il était binaire.** Un hôte a refusé les deux branches pour ses
+  deux chiffres de sauvegarde, après vérification sur **deux jeux d'outils indépendants** : *non
+  mesurable par une session* — ni l'API de la plateforme ni les outils MCP n'exposent la fenêtre PITR
+  ni l'âge de la plus ancienne sauvegarde — mais *mesurable par un humain*, une session authentifiée
+  au tableau de bord les affiche. C'est donc une dette dont le payeur est **nécessairement une
+  personne** : elle se comporte comme une limite structurelle envers tout agent, et comme une dette
+  envers l'installation. D'où la règle que nous n'avions jamais écrite, sur **qui** est interrogé :
+  une question qu'un hôte ne peut pas résoudre avec les outils qu'il exécute n'est pas résolue en la
+  reposant.
+- ⚠️ **`AGENTS.md` : deux messages identiques sont UNE lecture — le relais copie, les auteurs non.**
+  Mesuré dans les deux sens, chez deux hôtes, indépendamment : deux réponses nous sont parvenues
+  identiques à l'octet près ; interrogés, les deux hôtes ont confirmé n'avoir écrit qu'une fois. L'un
+  a fourni la mesure réciproque, qui tranche — notre annonce des gestes 0024 lui est parvenue **trois
+  fois**, et notre message de l'autre hôte **deux fois**. Le défaut a la même forme que le biais
+  d'instrumentation et le même confort : **il gonfle le signal sans gonfler l'information, dans le
+  sens qui rassure.** Un relais dupliqué fabrique l'apparence du second hôte gratuitement — or c'est
+  exactement ce sur quoi ce dépôt promeut une anecdote en propriété. Avant de compter un second hôte
+  comme corroboration, **établir que c'est un second auteur**.
+- ⚠️ **Et un hôte a affûté la borne de notre propre section d'appel aux hôtes** : *« elle ne corrige
+  pas le biais, elle l'exploite mieux — la seule action qui atteint les hôtes silencieux est celle
+  qui ne dépend pas d'eux »*. La section vaut d'être gardée, elle a produit le plafond, le délai de
+  la plateforme et la couture ; mais c'est un gain de **rendement** sur la population qui répond
+  déjà, et compter ses succès comme une preuve de bonne santé du canal est la même erreur d'un cran
+  plus haut.
+
 ## [0.1.156] — 2026-09-05
 
 ### Fixed

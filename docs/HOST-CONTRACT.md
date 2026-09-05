@@ -947,6 +947,20 @@ previous version claimed nothing. Four hours after the release, a host measured 
 deployment caps, times out, paginates, or rewrites anything between us and your database, that
 limit is invisible from here and our arithmetic is probably wrong about it.
 
+⚠️ **If you sweep your own reads for this, sort them by what the value BECOMES, not by how many rows
+it holds.** This criterion is not ours: a host swept theirs, closed all of them, and reported that
+the row count had been the wrong axis the whole time. The expensive ones were the **aggregations** —
+a credit balance summed with a `reduce`, a read counter taken as `rows.length`, a visit tally
+incremented per row. A truncated sum does not look truncated: **it is wrong *and* plausible**, which
+is worse than the ceiling's usual symptom, a list that at least renders visibly stale. Their credit
+ledger stood at 503 rows and grows on every AI call — the invoice would have gone wrong before the
+table ever looked big enough to suspect.
+
+So the useful question about one of your reads is not *"could this exceed 1000?"* but **"is this
+value aggregated, or displayed?"** A displayed list degrades visibly. An aggregate degrades into a
+number someone will believe. Truncation you have decided to keep is fine and cheap to make honest —
+theirs kept one, bounded to 1000 and stated rather than assumed.
+
 **2. Something this card asserts that you can check against your own database.** Not "does it look
 right" — *does this number match what a query returns right now*. The purge card is the obvious one:
 `vide: true` is what authorises dropping a column, so a wrong `true` is expensive and a wrong `0`
@@ -990,6 +1004,51 @@ measurement came from rather than only what it said.
 
 The two kinds want opposite things from us: a debt should be chased, a structural limit should be
 written down and stopped being asked about.
+
+⚠️ **And there is a third kind, which we proposed as a false choice and a host corrected.** We asked
+another host to sort two backup figures — the PITR window, and the age of the oldest snapshot — into
+debt or structural limit. Their answer was neither, and the distinction is operational rather than
+pedantic:
+
+- **Not measurable by a session.** Checked against two independent toolsets — a second host's and
+  their own — neither the platform API nor the MCP tools expose either figure. The one tool with a
+  near-enough name restores a *paused* project.
+- **Measurable by a human.** An authenticated dashboard session displays both.
+
+So it is a debt whose payer is *necessarily a person*, and that is what makes it its own kind: it
+behaves like a structural limit toward every automated agent (chasing it changes nothing, no session
+will ever produce it), and like a debt toward the installation (someone can pay it, and until they
+do, the purge is not datable end to end). Their own phrasing, which we adopt: *"no session can
+render them; a human can, and until one has, the purge is not datable end to end."* They had raised
+it with theirs four times.
+
+The practical consequence for us is a rule about **who we are asking**, which we had never written:
+a question a host cannot answer with the tools they run on is not answered by asking again. Either
+it reaches a person, or it should be recorded and dropped.
+
+⚠️ **Where the substitution seam is, because a host asked and the answer was not written anywhere.**
+Their question came from their own defect: they had written a pagination helper after an incident,
+with its reason at the top, and it was called *nowhere*. The cause turned up only when they tried to
+use it — it called the **local binding** of their database client, while their benches replace the
+**export**, so adopting it broke the very bench that covered it. Their sentence is the part worth
+keeping: *"nobody writes «I don't use it because it breaks my doubles» — you give up in silence."*
+A non-substitutable helper produces no red, no complaint, no trace. It produces an absence of use,
+which nothing distinguishes from a need that never existed.
+
+Asked of us, the answer has two halves and only one of them is a promise:
+
+- **The injected context is substitutable, and that is the seam.** Every call reads `PLAYER.<member>`
+  at the moment it fires; nothing captures it into a local binding at module load, before you have
+  injected anything. Measured on 2026-09-05 across `server/` and `context/`: **144 calls, 0
+  captures.** Your double of `db.request` is the one that runs. `tools/couture-substituable.mjs`
+  now refuses a capture, so this stays true rather than happening to be true today.
+- **Our exports are not substitutable among themselves, and we do not promise they are.** Same date,
+  same zones: **64 of 75 exported names are also called internally through their local binding.**
+  If you stub `getShareBySlug` on the module we export and expect `overview()` to see your stub, it
+  will not. That is ordinary CommonJS and we are not changing 64 call sites for it — but you would
+  have discovered it the expensive way, so it is written here instead.
+
+Bring us the seam you need and cannot get, rather than working around a missing one in silence.
 
 **What not to send.** Shapes and counts, never contents. No row data, no reader IPs or User-Agents —
 those are the columns half this contract exists to get rid of — no keys, tokens, connection strings,
