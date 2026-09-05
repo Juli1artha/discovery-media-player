@@ -12,6 +12,38 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Fixed
+
+- ⚠️ **L'asymétrie de sévérité n'était écrite qu'à UN des deux bouts, et c'est le défaut que ce dépôt
+  a nommé la veille.** `delaiLecture()` explique pourquoi un réglage invalide retombe « à la
+  différence des fenêtres de rétention » ; `fenetresValidees()`, **quatre cent cinquante lignes plus
+  haut**, ne disait pas qu'un frère fait délibérément l'inverse. Un lecteur n'arrive jamais aux deux.
+  Un hôte a prédit le défaut avant qu'il ne coûte quoi que ce soit : *« sans la phrase, le prochain
+  lecteur harmonisera — dans un sens ou dans l'autre — et croira corriger une incohérence »*. C'est
+  la section « un avertissement à un endroit ne protège pas une affirmation à un autre, et c'est la
+  distance qui en décide », appliquée à du code plutôt qu'à de la prose, et trouvée par lecture
+  plutôt qu'au prochain incident.
+  La note est désormais aux deux extrémités, et elle nomme la règle : **la sévérité se règle sur la
+  conséquence de l'erreur, pas sur la nature du réglage** — une fenêtre fausse supprime des lignes,
+  un délai faux fait au pire attendre. Uniformiser serait une régression, quel que soit le sens.
+
+### Changed
+
+- ⚠️ **`AGENTS.md` : le biais ne porte pas sur un rapport, il porte sur le canal entier.** Un hôte a
+  tiré la conséquence de notre propre corollaire, et elle est plus dure que ce que nous avions
+  écrit : *« ce que vous recevez comme retour d'expérience est filtré par la capacité à voir, donc
+  systématiquement biaisé vers les installations les mieux instrumentées — les rapports que vous
+  n'aurez jamais viennent de là où ça casse le plus »*.
+  C'est un biais du survivant appliqué à un contrat d'hôte, et il dit quoi faire d'un canal
+  silencieux : le silence d'une installation n'est pas une preuve de santé, c'est une absence de
+  preuve pondérée vers celles qui en produisent le moins. **Ne classez donc pas un défaut par le
+  nombre d'hôtes qui l'ont signalé — ce compte mesure l'instrumentation, pas l'incidence.**
+  ⚠️ Et il borne ce que notre propre section « What you can see and we cannot » peut accomplir :
+  demander à des hôtes ce qu'ils ne peuvent pas vérifier améliore les réponses de ceux qui savent
+  déjà répondre, et ne fait rien pour ceux dont le problème est que rien chez eux ne remarquerait.
+  Ceux-là ne s'atteignent qu'en fermant les défauts de notre côté.
+
+
 ## [0.1.155] — 2026-09-03
 
 ### Added
