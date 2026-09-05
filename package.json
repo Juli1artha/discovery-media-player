@@ -98,6 +98,6 @@
     "yaml": "2.9.0"
   },
   "dependencies": {
-    "pdfjs-dist": "6.2.108"
+    "pdfjs-dist": "6.3.289"
   }
 }
