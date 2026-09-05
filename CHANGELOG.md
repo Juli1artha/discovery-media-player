@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.156] — 2026-09-05
+
 ### Fixed
 
 - ⚠️ **L'asymétrie de sévérité n'était écrite qu'à UN des deux bouts, et c'est le défaut que ce dépôt
@@ -26,6 +28,14 @@ the notes there are this file's section for that version.
   La note est désormais aux deux extrémités, et elle nomme la règle : **la sévérité se règle sur la
   conséquence de l'erreur, pas sur la nature du réglage** — une fenêtre fausse supprime des lignes,
   un délai faux fait au pire attendre. Uniformiser serait une régression, quel que soit le sens.
+- **Les trois exemples épinglaient `0.1.154`, que la publication de `0.1.156` pousse hors de la
+  fenêtre.** Repinés sur `0.1.155`, que le registre sert. C'est le **cinquième train d'affilée** où
+  cette garde parle, et chaque fois pour la bonne raison : **publier une version invalide un fait
+  écrit ailleurs dans le dépôt**, et trois `package.json` que personne n'allait rouvrir. Corrigé
+  *avant* le tag cette fois, plutôt qu'au refus qui suit la publication — la garde mesure la fenêtre
+  des versions **publiées**, donc elle est verte à l'instant du tag et rougirait une heure plus tard.
+  Une garde qui ne rougit qu'après coup a raison trop tard ; c'est au poseur du tag d'anticiper ce
+  qu'il déplace.
 
 ### Changed
 
@@ -42,7 +52,6 @@ the notes there are this file's section for that version.
   demander à des hôtes ce qu'ils ne peuvent pas vérifier améliore les réponses de ceux qui savent
   déjà répondre, et ne fait rien pour ceux dont le problème est que rien chez eux ne remarquerait.
   Ceux-là ne s'atteignent qu'en fermant les défauts de notre côté.
-
 
 ## [0.1.155] — 2026-09-03
 
@@ -6206,7 +6215,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.155...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.156...HEAD
+[0.1.156]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.155...v0.1.156
 [0.1.155]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.154...v0.1.155
 [0.1.154]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.153...v0.1.154
 [0.1.153]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.152...v0.1.153
