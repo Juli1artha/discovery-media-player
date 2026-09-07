@@ -1697,6 +1697,42 @@ what they cannot verify improves the answers from those who can already answer; 
 the ones whose whole problem is that nothing at their installation would notice. Those are reached by
 closing defects on our side, never by asking better questions.
 
+⚠️ **And a host sharpened even that, in a way that changes what the section is for.** We had written
+the bound as a limit on reach. They put it as a statement about direction:
+
+> It is useful — our four replies are the proof — but it does not correct the bias, it exploits it
+> better. The only action that reaches the silent hosts is the one that does not depend on them.
+
+Keep both halves. The section is worth having: it produced the ceiling, the platform timeout, the
+substitution seam. But it is a *yield* improvement on the population that already answers, and
+counting its successes as evidence the channel is healthy is the same error one layer up. When
+choosing between one more question to hosts and one more defect closed here, the second is the only
+one that touches the installations we never hear from.
+
+## Two identical messages are one reading — the relay copies, the authors do not
+
+⚠️ **Measured in both directions, at two hosts, independently — so it is a property of the channel
+and not an anecdote.** Two host replies reached us byte-for-byte identical. Rather than count them
+as two independent readings, we asked both hosts whether they had written twice. Both said no: one
+message each, never resent. One of them added the reciprocal measurement, which is what settles it —
+*our* announcement of the 0024 gestures reached them **three times**, and our relayed message from
+the other host **twice**, each time the same text.
+
+> Between two parties communicating through a human relay, the identity of two messages does not
+> prove two readings — it proves a copy-paste.
+
+The failure mode is the same shape as the instrumentation bias one section above, and just as
+comfortable: **it inflates the signal without inflating the information, in the direction that
+reassures.** A fact measured at one host is an anecdote; at two independently, a property — and a
+duplicated relay manufactures the *appearance* of the second host at no cost, which is precisely the
+evidence this repository upgrades a claim on.
+
+So, operationally: **before counting a second host as corroboration, establish that it is a second
+author.** Identical wording is disqualifying on its own, and near-identical wording deserves the
+question asked out loud. The channel has no way to see this from the inside, so the check has to be
+explicit — asking costs one sentence, and being wrong costs a rule written on one host's word while
+believing it rests on two.
+
 ## A guard that only serves when another has failed is the least exercised and the most needed
 
 The same week, a host pointed out that the timeout we had just corrected sits on a path their
