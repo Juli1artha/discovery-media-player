@@ -1733,6 +1733,41 @@ question asked out loud. The channel has no way to see this from the inside, so 
 explicit — asking costs one sentence, and being wrong costs a rule written on one host's word while
 believing it rests on two.
 
+## Before asking anyone to change behaviour, check whether you need the information instead
+
+⚠️ **We asked every host to stay within one release of current. A host showed the ask was wrong, and
+the demonstration is the useful part, not the verdict.**
+
+> You are asking that hosts be up to date; what you need is to know which version a measurement was
+> taken on. They are not the same thing, and the second is strictly cheaper.
+
+The premise we had written — *a report we cannot reproduce is a report we cannot act on* — was
+sound. The conclusion did not follow from it. A report stamped with its version is reproducible
+however old the installation; an unstamped report is not, however current. So the need was for a
+**field in the report**, and we had asked for a **change in everyone's deployment cadence**: a far
+larger request, imposed on far more people, that does not even achieve the thing.
+
+Three things make this worth a section rather than a correction:
+
+- **Asking for a behaviour is the expensive way to get a fact.** When a request is about how others
+  should operate, look for the datum that would make the behaviour unnecessary. Usually it exists,
+  usually it is one field, and usually you already serve it — we serve `version` in the identity
+  card; we simply never asked anyone to quote it back.
+- ⚠️ **A request only the compliant can honour reads back as compliance.** Hosts who answer us would
+  have adopted the cadence; hosts who had drifted would neither adopt it nor tell us. The channel
+  would then have shown "hosts are aligned", and the number would have been measuring who replies.
+  This is the instrumentation bias two sections up, applied to cadence instead of yield — **and we
+  wrote it into the document within a day of writing the bias itself.** Knowing a failure mode by
+  name does not stop you walking into it; only checking each new ask against it does.
+- ⚠️ **Blaming a gap on the population you can see is how you miss that it is yours.** We attributed
+  the irreproducibility to host drift. Measured: of twelve host findings recorded in the contract,
+  **zero** name the version they were measured on, and several came from hosts who were current.
+  The information was lost when we wrote it down. **No behaviour change on their side would have
+  restored a field we never asked for and never recorded.**
+
+The test, before any ask that requires other people to act: *what fact would make this request
+unnecessary, is it cheaper, and can I get it without their cooperation changing?*
+
 ## A guard that only serves when another has failed is the least exercised and the most needed
 
 The same week, a host pointed out that the timeout we had just corrected sits on a path their

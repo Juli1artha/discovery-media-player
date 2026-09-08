@@ -12,6 +12,40 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Changed
+
+- ⚠️ **Nous demandions la mauvaise chose, et un hôte l'a démontré plutôt qu'affirmé.** Le contrat
+  priait les hôtes de rester à un train de la dernière version, au motif qu'*un rapport que nous ne
+  pouvons pas reproduire est un rapport sur lequel nous ne pouvons pas agir*. La prémisse est juste ;
+  **la conclusion n'en découlait pas** : *« vous demandez que les hôtes soient à jour ; ce dont vous
+  avez besoin est de savoir sur quelle version une mesure a été prise — ce n'est pas la même chose,
+  et la seconde est strictement moins chère. »* Un hôte de onze trains en retard qui écrit « mesuré
+  sur 0.1.146 : la table de 1600 lignes en rend 1000 » donne un rapport reproductible ; un hôte
+  parfaitement aligné qui écrit « ça renvoie 1000 » n'en donne pas.
+  **La demande est donc remplacée par l'estampille** : la version mesurée devient un champ attendu de
+  tout rapport, au même rang que « formes et comptages, jamais de contenus ». Elle ne coûte rien —
+  `version` est déjà servi dans la carte d'identité. Rester à jour garde une valeur propre et plus
+  petite, mais n'est plus présenté comme ce qui rend un rapport exploitable.
+- ⚠️ **Et le défaut était chez nous, pas chez eux — mesuré dans notre propre document.** Ils
+  comptaient 12 constats d'hôtes rapportés dans le contrat dont **1** portant une version à
+  proximité. Nous avons **re-mesuré plutôt que de les croire**, et le résultat est plus dur : sur ces
+  douze, **zéro** ne nomme la version mesurée. La seule ligne datée du fichier estampille **notre**
+  mesure de **notre** code. Plusieurs de ces constats venaient d'hôtes à jour ce jour-là.
+  **L'information a été perdue à la rédaction, pas au déploiement, et aucun alignement futur ne la
+  restaure** — c'est écrit tel quel, avec le fait que les entrées antérieures **ne peuvent pas être
+  ré-estampillées**.
+- ⚠️ **La demande avait la forme exacte du biais que nous venions d'écrire contre nous-mêmes.** Elle
+  n'aurait été honorée que par les hôtes qui répondent, et serait restée invisible chez ceux qui ont
+  dérivé : le canal aurait affiché « les hôtes sont alignés » en mesurant qui répond. C'est le biais
+  d'instrumentation appliqué à la cadence au lieu du rendement — **et nous l'avons écrit dans le
+  document moins d'un jour après avoir écrit le biais lui-même.**
+- **`AGENTS.md` gagne la règle générale** : *avant de demander à quiconque de changer de
+  comportement, vérifier si c'est l'information dont on a besoin.* Demander un comportement est la
+  façon coûteuse d'obtenir un fait ; **une demande que seuls les conformes peuvent honorer se relit
+  comme de la conformité** ; et imputer un manque à la population qu'on voit est la façon de rater
+  qu'il est le sien. Le test : *quel fait rendrait cette demande inutile, est-il moins cher, et
+  puis-je l'obtenir sans que leur coopération change ?*
+
 ## [0.1.157] — 2026-09-08
 
 ### Added
