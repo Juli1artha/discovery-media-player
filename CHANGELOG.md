@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.158] — 2026-09-08
+
 ### Changed
 
 - ⚠️ **Une propriété peut être TENUE sans être ÉPROUVÉE — un hôte l'a trouvé chez lui en
@@ -107,6 +109,36 @@ the notes there are this file's section for that version.
   comme de la conformité** ; et imputer un manque à la population qu'on voit est la façon de rater
   qu'il est le sien. Le test : *quel fait rendrait cette demande inutile, est-il moins cher, et
   puis-je l'obtenir sans que leur coopération change ?*
+- **Les trois exemples épinglaient `0.1.156`, que la publication de `0.1.158` pousse hors de la
+  fenêtre.** Repinés sur `0.1.157`, que le registre sert. **Septième train d'affilée**, troisième
+  fois devancé : la garde mesure la fenêtre des versions **publiées**, donc verte à l'instant du tag
+  et rouge une heure plus tard.
+- **Le verrou est régénéré par l'outillage** — `npm install --package-lock-only --ignore-scripts`,
+  deux lignes, aucune dépendance. Deuxième train sous la procédure écrite le 07/09.
+- ⚠️ **Le compte de gardes que nous publiions à chaque train n'était pas fondé — et nous l'avons
+  trouvé en le mesurant, pas en le relisant.** Les commits annonçaient *« 42 gardes conformes, 0
+  violation, 3 non concluantes hors forge, sur 45 exécutées »*. Le dénominateur était `tools/*.mjs`
+  moins deux fichiers connus, et **le classement de chacun était son CODE DE SORTIE**. Or dix des
+  quarante-sept ne rendent aucun verdict : quatre bibliothèques sans bloc d'exécution directe
+  (`resultat-garde`, `execute-directement`, `inventaire-tarball`, `workflows-yaml`), un installateur
+  de crochets, un filtre qui lit `stdin` (`plus-haut-tag`), une sentinelle horaire qui sort
+  **volontairement** 0 quand le registre est injoignable (`exemples-en-retard`), un générateur de
+  rapport et un serveur de fixture qui prennent des arguments, et le préflight lui-même. **Sorties 0,
+  donc comptées conformes.**
+  ⚠️ **Et deux des trois « non concluantes » étaient des messages d'usage.** `zones-du-tarball` et
+  `zap-base-de-scan` attendent des arguments ; lancés sans, ils écrivent `usage : …` et sortent 2 —
+  que la boucle lisait comme *NON CONCLUANT*. **Ce n'était pas une garde qui refuse de conclure,
+  c'était notre invocation qui était fausse.** Une seule des trois, `verdict-zap`, l'était vraiment.
+  ⚠️ **Le symptôme est celui contre lequel `execute-directement.mjs` a été écrit, retourné contre le
+  compte qui le contient.** Son en-tête prévient qu'*« il tourne et ne fait rien » est le pire
+  symptôme possible : pas d'erreur, pas de message, un code de sortie qui dit « tout va bien »* — et
+  ce module était lui-même compté comme une garde verte pour avoir tourné sans rien faire en sortant
+  0. **Un compte qui additionne des fichiers ouverts au lieu de verdicts rendus est la règle
+  anti-vacuité, appliquée à l'instrument qui la vérifie.**
+  Le chiffre publié désormais compte **les gardes qui rendent un verdict** — celles dont le bloc
+  d'exécution directe appelle `conclure()`, plus `requete-diagnostic` qui rend le sien par `rendre()`
+  et son code. Les dix autres sont nommées ci-dessus et **ne sont pas des gardes**. Aucune garde n'est
+  ajoutée sur ce motif dans ce train : la faire naître ici la ferait naître le jour où elle est verte.
 
 ## [0.1.157] — 2026-09-08
 
@@ -6414,7 +6446,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.157...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.158...HEAD
+[0.1.158]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.157...v0.1.158
 [0.1.157]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.156...v0.1.157
 [0.1.156]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.155...v0.1.156
 [0.1.155]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.154...v0.1.155
