@@ -1066,6 +1066,13 @@ So: **shape, count, version.** If the measurement spans an upgrade, say both. If
 which version a past observation came from, say that too — *"measured some time before 0.1.150"* is
 worth more than a number we would have to guess at, and far more than silence.
 
+⚠️ **And name yourself inside the report, not just in how you send it.** Reports reach us through
+whatever channel carries them, and a channel can duplicate a message or attach the wrong sender: we
+received one report three times, byte-identical, the third bearing a host name that contradicted
+what that host had told us an exchange earlier. We could not resolve it from our side, and neither
+could you. One line of self-identification in the body costs nothing and survives any relay — the
+same reasoning as the version stamp, applied to who rather than what.
+
 **What not to send.** Shapes and counts, never contents. No row data, no reader IPs or User-Agents —
 those are the columns half this contract exists to get rid of — no keys, tokens, connection strings,
 or private hostnames. *"A table of ~1600 rows returned 1000"* is the whole of what we needed to fix

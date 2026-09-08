@@ -14,6 +14,20 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- ⚠️ **Une étiquette posée par le relais n'est pas une attribution — mesuré à la troisième
+  livraison.** Le même message est arrivé une troisième fois, identique à l'octet près, et celui-là
+  portait un nom d'hôte. Le nom **contredit ce que cet hôte avait lui-même rapporté un échange plus
+  tôt** : le message dit « nous étions en 0.1.156 », son rapport précédent disait « 0.1.155 en
+  production ». L'un des deux est faux et **le canal ne peut pas dire lequel de l'intérieur** — le
+  rapport antérieur nous est parvenu par le relais qui vient de dupliquer trois fois.
+  La règle s'étend donc : ne pas trancher une contradiction entre un message et son auteur supposé,
+  mais **dire que l'attribution n'est pas résolue et demander à qui opère le relais**, seul à voir
+  les deux bouts. Le coût d'une erreur ici est le pire : une correction attribuée au mauvais hôte lui
+  enseigne qu'on lit ses rapports distraitement, et nous enseigne sur une installation un fait que
+  personne n'a affirmé.
+- **Le contrat demande aux hôtes de se nommer DANS le rapport**, pas seulement par la façon de
+  l'envoyer — même raisonnement que l'estampille de version, appliqué au *qui* plutôt qu'au *quoi*.
+
 - ⚠️ **Nous demandions la mauvaise chose, et un hôte l'a démontré plutôt qu'affirmé.** Le contrat
   priait les hôtes de rester à un train de la dernière version, au motif qu'*un rapport que nous ne
   pouvons pas reproduire est un rapport sur lequel nous ne pouvons pas agir*. La prémisse est juste ;

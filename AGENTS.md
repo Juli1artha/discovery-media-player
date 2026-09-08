@@ -1733,6 +1733,20 @@ question asked out loud. The channel has no way to see this from the inside, so 
 explicit — asking costs one sentence, and being wrong costs a rule written on one host's word while
 believing it rests on two.
 
+⚠️ **And the label the relay attaches is not authorship — measured on the third delivery.** The same
+message arrived a third time, byte-identical to the first two, and this one carried a host's name.
+The name conflicted with what that host had itself reported one exchange earlier: the message says
+*"we were on 0.1.156"*, and the named host's own prior report said *"0.1.155 in production"*. One of
+the two is wrong and **the channel cannot tell which from inside** — the earlier report reached us
+through the same relay that just duplicated three times.
+
+So the rule extends: **a name supplied by the transport is a routing hint, not an attribution.** Do
+not resolve a contradiction between a message and its supposed author by deciding which one the
+author "really" meant; say that the attribution is unresolved, and ask the person operating the
+relay, who is the only party who can see both ends. The cost of guessing here is the worst kind: a
+correction attributed to the wrong host teaches them we do not read their reports carefully, and
+teaches us a fact about an installation that was never claimed.
+
 ## Before asking anyone to change behaviour, check whether you need the information instead
 
 ⚠️ **We asked every host to stay within one release of current. A host showed the ask was wrong, and
