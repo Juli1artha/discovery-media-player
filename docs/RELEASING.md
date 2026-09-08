@@ -70,6 +70,32 @@ instead. There is no third option, and pretending otherwise is how the divergenc
 Either way the Release says which it is: when the dispatch ref is not the tag, the body carries
 both commits and warns that a rebuild from the attested one will not match.
 
+## Cutting the train: the version goes in two files, not one
+
+⚠️ **`package.json` is not the only file that carries the version — `package-lock.json` does too,
+and writing the first without the second drifted silently for eleven trains.** On 05/09 the package
+declared `0.1.156` and the lockfile still declared `0.1.145`. Nothing broke: npm ignores that field
+when installing, so no test, no guard and no preflight had any reason to speak. The cause is
+mechanical rather than careless — a train raises the version by *writing* `package.json`, and only
+`npm version` would have propagated it.
+
+So a train regenerates the lockfile, with the tooling and never by hand:
+
+```bash
+npm install --package-lock-only --ignore-scripts
+```
+
+On a version bump alone this touches exactly two lines and no dependency. `version-du-verrou.mjs`
+now refuses the drift, so CI catches it before it can land — but the guard is the net, not the
+procedure: the step belongs here so the next person does it rather than discovers it.
+
+⚠️ **And the reason it is worth guarding at all is what the lockfile is *for*.** It is what tools
+read when they do not run npm — `plancher-de-node.mjs` concludes from it offline, an SBOM takes it
+as source, a supply-chain audit compares it against the tag. Each would read `0.1.145` for an
+artefact declaring `0.1.156`, and that inconsistency looks like tampering rather than neglect. A
+repository that publishes provenance attestations cannot afford a version field that misstates
+itself.
+
 ## Before the tag
 
 ⚠️ **Tag the release commit, not the `main` you fetched before merging it.** On 27/08 `v0.1.141`
