@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.157] — 2026-09-08
+
 ### Added
 
 - ⚠️ **Le verrou déclarait une version de ONZE TRAINS en retard, et rien ne le disait.**
@@ -108,6 +110,10 @@ the notes there are this file's section for that version.
   la plateforme et la couture ; mais c'est un gain de **rendement** sur la population qui répond
   déjà, et compter ses succès comme une preuve de bonne santé du canal est la même erreur d'un cran
   plus haut.
+- **Les trois exemples épinglaient `0.1.155`, que la publication de `0.1.157` pousse hors de la
+  fenêtre.** Repinés sur `0.1.156`, que le registre sert. **Sixième train d'affilée**, et corrigé
+  *avant* le tag pour la deuxième fois : la garde mesure la fenêtre des versions **publiées**, donc
+  elle est verte à l'instant du tag et rougirait une heure plus tard, sur `main`.
 
 ## [0.1.156] — 2026-09-05
 
@@ -6312,7 +6318,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.156...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.157...HEAD
+[0.1.157]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.156...v0.1.157
 [0.1.156]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.155...v0.1.156
 [0.1.155]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.154...v0.1.155
 [0.1.154]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.153...v0.1.154
