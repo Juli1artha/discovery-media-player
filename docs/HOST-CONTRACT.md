@@ -1050,6 +1050,35 @@ Asked of us, the answer has two halves and only one of them is a promise:
 
 Bring us the seam you need and cannot get, rather than working around a missing one in silence.
 
+⚠️ **What every report must carry: the version you measured on.** One field, and it is the one we
+kept losing. `version` is already in the identity card — `GET /api/doc` serves it — so this costs
+you a copy-paste and nothing else: *"measured on 0.1.146"*, beside the shape and the count.
+
+This is here because a host showed that we had asked for the wrong thing. We had asked hosts to stay
+current, reasoning that we cannot act on a report we cannot reproduce. Their correction: **what we
+need is not that you are up to date, it is knowing which version the measurement came from** — and a
+stamped report from a host eleven releases behind is reproducible, while an unstamped one from a
+perfectly current host is not. We then measured this document: of twelve host findings recorded in
+it, **none** names the version it was measured on. Some of those hosts were current at the time. The
+information was lost when we wrote it down, and no amount of future alignment brings it back.
+
+So: **shape, count, version.** If the measurement spans an upgrade, say both. If you no longer know
+which version a past observation came from, say that too — *"measured some time before 0.1.150"* is
+worth more than a number we would have to guess at, and far more than silence.
+
+⚠️ **And name yourself inside the report, not just in how you send it.** Reports reach us through
+whatever channel carries them, and a channel can deliver the same message twice or put one host's
+text under another host's name — both happened to us in a single round, and we spent an exchange
+establishing who had said what instead of acting on it. Neither you nor we could tell from our own
+end; only the person relaying could, and they did. **One line of self-identification in the body
+costs nothing and survives any relay** — the same reasoning as the version stamp, applied to *who*
+rather than *what*.
+
+The consequence for us is worth stating too, since it is about how much we can claim to have heard:
+when a duplicate is resolved, the reading it seemed to provide does not turn up elsewhere. It leaves
+us with one fewer host heard from, and we would rather record that plainly than let a channel look
+wider than it is.
+
 **What not to send.** Shapes and counts, never contents. No row data, no reader IPs or User-Agents —
 those are the columns half this contract exists to get rid of — no keys, tokens, connection strings,
 or private hostnames. *"A table of ~1600 rows returned 1000"* is the whole of what we needed to fix
@@ -1060,23 +1089,61 @@ dated entry naming the case. That last part is deliberate and a host asked for i
 justification rots, a dated incident does not. In six months someone will read a field and ask why
 it exists, and the answer will name you.
 
+⚠️ **But that date is ours, and for a long time we mistook it for yours.** Every changelog section
+carries the day *we shipped the fix* — 155 out of 155, checked. None carries the version *you*
+measured on, and the two answer different questions: ours says when it was closed, yours says what
+the observation was of. We had that backwards long enough to ask hosts for the wrong thing, so it is
+worth stating plainly rather than quietly correcting: **the entries above this line are unstamped,
+and cannot be retro-stamped** — the versions they were measured on were never recorded and are not
+recoverable. Everything from here on carries the stamp you send.
+
 ## Versioning
 
 Semantic versioning on the package, independent of the `contract` number. Pin an **exact** version:
 the player and its hosts deploy separately, and a range brings in a version nobody decided to
 deploy, on a day someone ran `npm install` for another reason.
 
-⚠️ **And please keep that pin current — one train behind at most.** A host asked whether this
-mattered, having verified a release without moving onto it: the diff was comments only, no
-migration, and their argument was that what makes a verification useful is the verification, not the
-pin. That reasoning is sound, and the answer is still yes, for a reason that is ours rather than
-theirs: **a report we cannot reproduce is a report we cannot act on.** Every finding in this
-document arrived as "we measured X" — the ceiling, the platform timeout, the truncated aggregate.
-Each was worth something because we could stand the same version up beside it. When installations
-drift apart by several versions, a measurement stops being about the player and starts being about
-which player, and the first thing we spend on any report is establishing that.
+⚠️ **When we say a release "changes nothing for you", check it from *your* version — ours is not
+yours.** The zone table in every Release compares the new version to **the one immediately before
+it**. That is our convenience, not your situation: a host two or three releases back is looking at a
+different diff, and theirs is the one that decides. A host caught this by redoing it — we had
+compared `0.1.156 → 0.1.157`; they were jumping from `0.1.155`, ran their own comparison, and got a
+third file we had not mentioned. Same conclusion in the end (no migrations, zero lines of code in
+`server/` once comments are excluded), **but reached on their span rather than on our word.**
 
-It is a request, not a requirement: nothing here refuses to run on an older version, the contract
-number has not moved, and a release whose notes say it changes nothing for you genuinely changes
-nothing for you. But we are asking for the alignment explicitly rather than assuming it — which is
-the point of writing it down at all.
+So take the reassurance as a starting point and not as a finding. The tarballs are public: `npm pack`
+both versions and `diff -rq` the two trees is a minute's work, and it is the only version of the
+question that is about your installation.
+
+⚠️ **We asked you to stay current. That was the wrong ask, and a host took it apart.** The previous
+version of this paragraph requested that hosts keep the pin no more than one release behind, on the
+grounds that *a report we cannot reproduce is a report we cannot act on.* The premise is right. The
+conclusion did not follow:
+
+> You are asking that hosts be up to date; what you need is to know **which version a measurement
+> was taken on**. They are not the same thing, and the second is strictly cheaper.
+
+They are exactly right, and the counter-example is decisive. A host eleven releases behind who
+writes *"measured on 0.1.146: the 1600-row table returned 1000"* has given us a reproducible report.
+A perfectly aligned host who writes *"it returns 1000"* has not — and we find out only on the day we
+try to replay it. **Alignment neither implies the stamp nor substitutes for it.**
+
+⚠️ **And it is measurable in this very document — which is how we know the drift was never the
+cause.** They counted twelve places where this contract reports a host's finding and found one
+carrying a version nearby. We re-measured rather than take it: of those twelve, **zero** carry the
+version the host measured on. The single dated line in this file stamps *our own* measurement of our
+own code, not anyone's report. Several of those findings came from hosts who were current at the
+time. **The information was lost in the writing, not in the deployment, and no future alignment
+restores it.**
+
+⚠️ **Worse: the ask had the shape of the bias we had just written against ourselves.** A request to
+stay aligned can only be honoured by hosts who answer us, and is invisible in hosts who have
+drifted — so the channel would have reported "hosts are aligned" because the aligned are the only
+ones we hear from. That is the instrumentation bias one level up, applied to cadence instead of
+yield. The host who named it also took the release anyway, which is why the correction is theirs and
+not a concession.
+
+**So the ask is now the stamp, and it is above, in what a report must carry.** Staying current keeps
+a smaller and separate value — you get fixes sooner, and a release that changes nothing for you
+costs nothing to take — but it is no longer presented as what makes your reports usable. It never
+was.

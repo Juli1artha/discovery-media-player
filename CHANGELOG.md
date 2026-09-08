@@ -12,6 +12,102 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Changed
+
+- ⚠️ **Une propriété peut être TENUE sans être ÉPROUVÉE — un hôte l'a trouvé chez lui en
+  appliquant notre propre réponse sur la substituabilité.** Trois de ses bancs doublent notre export
+  `shares` ; aucun ne prouvait que le double était atteint. **En retirant le double, quatre tests
+  rougissent** — et c'est précisément ce qui déguisait le défaut : sans la fixture, la page ne rend
+  rien et les globales manquent, donc tout tombe pour des raisons étrangères à la propriété. **Un
+  rouge au retrait ne prouve pas que l'assertion couvre la chose ; il peut ne prouver que l'échafaudage
+  portait la charge.**
+  Leur diagnostic vaut mieux que « y a-t-il un plancher ? » et il se transporte : **ne pas retirer le
+  double, changer sa VALEUR** — le retrait effondre le montage et tout rougit sans rien apprendre,
+  la mutation laisse le montage debout et pose la seule question qui compte, *une assertion s'en
+  aperçoit-elle ?*. Le cas qui échappait était un vrai enregistrement répondant pour la même clé :
+  page rendue, globales présentes, et seul un contrôle sur la **valeur** de la fixture le voit.
+  ⚠️ **Un test de REFUS peut passer au vert parce que le sujet était inatteignable**, pas parce que
+  le refus fonctionne. Même forme que les cinq gardes corrigées le 31/08 — vertes avec leur sonde
+  aveuglée — mais d'un cran plus loin : là la sonde ne lisait rien, ici le **harnais** ne présentait
+  rien à refuser. La règle existait pour les gardes, pas pour les bancs. Elle y est désormais.
+  ⚠️ **Et une preuve peut exister sans être nommée** : chez eux elle était enfouie dans un test de mur
+  d'accès affirmant « Réservé » à propos d'autre chose. Une reformulation l'aurait retirée sans que
+  personne ne le voie.
+- ⚠️ **Notre propre audit sur ce motif est NON CONCLUANT, et c'est écrit comme tel.** Une sonde sur
+  les 101 `not.toContain` littéraux a rendu 77 sans contrôle positif dans le même fichier, puis 12
+  dont le sujet n'apparaît nulle part ailleurs. À l'inspection, le plus fort est un **faux positif de
+  la sonde** : le sujet est construit par interpolation (`${id}@lu.example`), donc l'assertion mord.
+  **La sonde ne sait pas voir un sujet construit, ce qu'est la plupart d'entre eux.** Cela ne dit pas
+  que nos bancs sont sains ; cela dit que cet instrument ne pouvait pas trancher — la règle que nos
+  gardes doivent à leurs propres verdicts, appliquée à un audit maison.
+- ⚠️ **Le contrat prévient que le diff d'une livraison est le NÔTRE, pas celui de l'hôte.** Le tableau
+  des zones compare toujours la nouvelle version à **celle qui précède**. Un hôte deux ou trois trains
+  en arrière regarde un autre diff, et c'est le sien qui décide. Un hôte l'a attrapé en le refaisant :
+  nous comparions `0.1.156 → 0.1.157`, il sautait depuis `0.1.155`, et sa comparaison rend un
+  troisième fichier que nous n'avions pas nommé. Même conclusion au bout — zéro migration, zéro ligne
+  de code dans `server/` hors commentaires — **mais obtenue sur son écart, pas sur notre parole.**
+
+- ⚠️ **La règle « deux messages identiques sont une lecture » était juste ; la preuve que nous en
+  donnions était fausse, et de la manière exacte que la règle décrit.** Le texte affirmait « mesuré
+  dans les deux sens, chez deux hôtes, indépendamment ». Faux : **l'opérateur du relais avait collé
+  deux fois le message du même hôte.** Une réponse nous est parvenue deux fois et nous l'avons
+  comptée pour deux. La mesure réciproque vient de ce même hôte unique. **Un hôte, pas deux.**
+  ⚠️ **Nous avons appliqué la règle à leurs messages en exemptant notre propre résumé.** La section
+  avertit noir sur blanc qu'un relais dupliqué fabrique gratuitement l'apparence d'un second hôte —
+  et revendiquait quatre lignes plus haut deux hôtes indépendants sur une preuve qui en valait un.
+  **Une règle sur les preuves doit être passée sur l'affirmation qu'on s'apprête à écrire, pas
+  seulement sur l'entrée.**
+  ⚠️ **L'affirmation fausse a été PUBLIÉE** — section `[0.1.157]` de ce fichier, et notes de la
+  Release `v0.1.157`. Elle n'est **pas réécrite** : les notes publiées sont un artefact daté, et les
+  corriger en silence ferait diverger le dépôt de ce que les lecteurs ont déjà reçu. La correction
+  est ici, elle nomme la version où le défaut est paru, et c'est la seule façon qu'un lecteur de
+  `0.1.157` a de la trouver.
+- ⚠️ **Une étiquette peut être juste alors que le contenu placé dessous ne l'est pas** — plus
+  difficile à attraper qu'une étiquette absente. Une troisième livraison portait un nom d'hôte qui
+  contredisait le rapport antérieur de cet hôte. Nous n'avons **pas** tranché ; l'opérateur du relais
+  a expliqué : l'étiquette était celle qu'il visait, le texte collé dessous était celui de l'autre
+  hôte. Ce qui a résolu l'affaire est l'étape que la règle prescrivait déjà — **demander à qui opère
+  le relais, seul à voir les deux bouts**. À garder comme premier geste, pas comme dernier recours.
+- ⚠️ **Et le corollaire sur ce qu'on a le droit de dire qu'on possède** : quand un doublon est
+  résolu, la lecture qu'il semblait fournir ne réapparaît pas ailleurs — elle n'a jamais existé.
+  Découvrir que deux messages n'en font qu'un laisse **un hôte de moins entendu**, pas la même preuve
+  mieux étiquetée. Le dire est un fait de couverture ; le taire est la façon dont un canal paraît
+  plus large qu'il n'est.
+- **Le contrat demande aux hôtes de se nommer DANS le rapport**, pas seulement par la façon de
+  l'envoyer — même raisonnement que l'estampille de version, appliqué au *qui* plutôt qu'au *quoi*.
+
+- ⚠️ **Nous demandions la mauvaise chose, et un hôte l'a démontré plutôt qu'affirmé.** Le contrat
+  priait les hôtes de rester à un train de la dernière version, au motif qu'*un rapport que nous ne
+  pouvons pas reproduire est un rapport sur lequel nous ne pouvons pas agir*. La prémisse est juste ;
+  **la conclusion n'en découlait pas** : *« vous demandez que les hôtes soient à jour ; ce dont vous
+  avez besoin est de savoir sur quelle version une mesure a été prise — ce n'est pas la même chose,
+  et la seconde est strictement moins chère. »* Un hôte de onze trains en retard qui écrit « mesuré
+  sur 0.1.146 : la table de 1600 lignes en rend 1000 » donne un rapport reproductible ; un hôte
+  parfaitement aligné qui écrit « ça renvoie 1000 » n'en donne pas.
+  **La demande est donc remplacée par l'estampille** : la version mesurée devient un champ attendu de
+  tout rapport, au même rang que « formes et comptages, jamais de contenus ». Elle ne coûte rien —
+  `version` est déjà servi dans la carte d'identité. Rester à jour garde une valeur propre et plus
+  petite, mais n'est plus présenté comme ce qui rend un rapport exploitable.
+- ⚠️ **Et le défaut était chez nous, pas chez eux — mesuré dans notre propre document.** Ils
+  comptaient 12 constats d'hôtes rapportés dans le contrat dont **1** portant une version à
+  proximité. Nous avons **re-mesuré plutôt que de les croire**, et le résultat est plus dur : sur ces
+  douze, **zéro** ne nomme la version mesurée. La seule ligne datée du fichier estampille **notre**
+  mesure de **notre** code. Plusieurs de ces constats venaient d'hôtes à jour ce jour-là.
+  **L'information a été perdue à la rédaction, pas au déploiement, et aucun alignement futur ne la
+  restaure** — c'est écrit tel quel, avec le fait que les entrées antérieures **ne peuvent pas être
+  ré-estampillées**.
+- ⚠️ **La demande avait la forme exacte du biais que nous venions d'écrire contre nous-mêmes.** Elle
+  n'aurait été honorée que par les hôtes qui répondent, et serait restée invisible chez ceux qui ont
+  dérivé : le canal aurait affiché « les hôtes sont alignés » en mesurant qui répond. C'est le biais
+  d'instrumentation appliqué à la cadence au lieu du rendement — **et nous l'avons écrit dans le
+  document moins d'un jour après avoir écrit le biais lui-même.**
+- **`AGENTS.md` gagne la règle générale** : *avant de demander à quiconque de changer de
+  comportement, vérifier si c'est l'information dont on a besoin.* Demander un comportement est la
+  façon coûteuse d'obtenir un fait ; **une demande que seuls les conformes peuvent honorer se relit
+  comme de la conformité** ; et imputer un manque à la population qu'on voit est la façon de rater
+  qu'il est le sien. Le test : *quel fait rendrait cette demande inutile, est-il moins cher, et
+  puis-je l'obtenir sans que leur coopération change ?*
+
 ## [0.1.157] — 2026-09-08
 
 ### Added

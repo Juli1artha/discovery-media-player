@@ -481,6 +481,37 @@ base.
 frame. The last two fail the first: the frame was fine and the bar moved. Either half alone passes
 four of the six.
 
+⚠️ **A third failure the two questions do not catch: the property is held, but by side effect, and
+no assertion names it.** A host applied our own substitution answer to their harness and found this
+in their benches. Three of them double our `shares` export; none proved the double was reached.
+Removing the double turned **four** tests red — so the property *was* held, and that is exactly what
+disguised it: without the fixture the page renders nothing and the bundle globals are missing, so
+everything falls for reasons that have nothing to do with the property. **A red on removal is not
+evidence the assertion covers the thing; it may only prove the scaffolding was load-bearing.**
+
+Their diagnostic is better than "is there a floor?", and it transfers:
+
+- **Do not remove the double — change its value.** Removal collapses the setup and everything goes
+  red uninformatively. Mutating what the double *returns* leaves the setup standing and asks the
+  only question that matters: does any assertion notice? Theirs did not, until they added one; the
+  escaping case was a real record answering for the same key, where the page renders, the globals
+  exist, and only a check on the fixture's **value** sees the substitution.
+- ⚠️ **A refusal test can go green because the subject was unreachable, not because the refusal
+  works.** That is the same shape as the guard floors this repo fixed on 31/08 — five guards green
+  with their probe blinded — but one layer out: there the probe read nothing, here the *harness*
+  never presented anything to refuse. The guard-level rule was written; the bench-level one was not.
+- **A proof can exist and still be unnamed.** In their security guard the property *was* pinned —
+  buried in an access-wall test asserting `"Réservé"` while ostensibly about something else. A
+  rewording of that test would have removed the proof and nobody would have seen it go.
+
+⚠️ **And the honest result of running this against our own suite: inconclusive.** A probe over the
+101 literal `not.toContain` assertions flagged 77 with no positive assertion in the same file, then
+12 whose subject appears nowhere else in the file. On inspection the strongest candidate was **a
+false positive of the probe** — the subject is built by interpolation (`${id}@lu.example`), so the
+assertion does bite. The probe cannot see a constructed subject, which is most of them. **This does
+not say our benches are clean; it says this instrument could not tell.** Recorded as inconclusive
+rather than as a clean bill, which is the same rule the guards owe their verdicts.
+
 The remedy for the second question has a house form, and the count is worth writing down rather
 than the impression: **three test files carry an explicit anti-vacuity
 case** — `gardesAgent`, `voixNonCablee`, `etiquetteBornee`, added 24, 27 and 27 August — where the
@@ -1711,12 +1742,24 @@ one that touches the installations we never hear from.
 
 ## Two identical messages are one reading — the relay copies, the authors do not
 
-⚠️ **Measured in both directions, at two hosts, independently — so it is a property of the channel
-and not an anecdote.** Two host replies reached us byte-for-byte identical. Rather than count them
-as two independent readings, we asked both hosts whether they had written twice. Both said no: one
-message each, never resent. One of them added the reciprocal measurement, which is what settles it —
-*our* announcement of the 0024 gestures reached them **three times**, and our relayed message from
-the other host **twice**, each time the same text.
+⚠️ **The rule below is sound. The evidence this section first claimed for it was not — and the way
+it was wrong is the rule biting the person who wrote it.** The original text said *"measured in both
+directions, at two hosts, independently — so it is a property of the channel and not an anecdote."*
+That was false. Two byte-identical replies arrived; we asked whether each host had written twice and
+recorded that "both said no". In fact **the relay operator had pasted the same host's message twice**
+— so one answer reached us twice, and we counted it as two. The reciprocal measurement (*our*
+announcement reaching them three times, our relayed message twice) is that same single host's
+report. One host, not two.
+
+⚠️ **We applied the rule to their messages and exempted our own summary of them.** The section warns
+in as many words that a duplicated relay manufactures the appearance of a second host at no cost —
+and then, four lines up, claimed two independent hosts on evidence that was one host twice. Checking
+the hosts' identity and not checking our own sentence about it is the whole failure: **a rule about
+evidence has to be run against the claim you are about to write, not only against the input.**
+
+What did settle it was the step the rule already prescribed: **asking the person who operates the
+relay**, the only party who can see both ends. They answered plainly that the duplication was theirs.
+Keep that as the first move, not the last.
 
 > Between two parties communicating through a human relay, the identity of two messages does not
 > prove two readings — it proves a copy-paste.
@@ -1732,6 +1775,60 @@ author.** Identical wording is disqualifying on its own, and near-identical word
 question asked out loud. The channel has no way to see this from the inside, so the check has to be
 explicit — asking costs one sentence, and being wrong costs a rule written on one host's word while
 believing it rests on two.
+
+⚠️ **A label can be right while the payload under it is wrong — and that is harder to catch than a
+missing label.** A third delivery arrived, byte-identical to the first two, carrying a host's name.
+The name conflicted with what that host had itself reported an exchange earlier — the message said
+*"we were on 0.1.156"*, their own prior report said *"0.1.155 in production"*. The temptation was to
+decide which one they "really" meant. We did not, and the relay operator then explained: the label
+was the one they intended; the text pasted under it was the other host's.
+
+So: **a name attached by the transport is a routing intent, not evidence of authorship**, and a
+contradiction between a message and its named author is a question for the relay, never something to
+resolve by choosing the more convenient reading. The cost of guessing is the worst kind — a
+correction attributed to the wrong host teaches them we read their reports carelessly, and teaches
+us a fact about an installation nobody claimed.
+
+⚠️ **And a corollary about what you are then entitled to say you have.** When a duplicate is
+resolved, the reading it appeared to supply does not reappear elsewhere — it was never there.
+Discovering that two messages were one leaves you with **one fewer host heard from**, not with the
+same evidence better labelled. Say so: *"we have no reading from that host this round"* is a fact
+about coverage, and suppressing it is how a channel comes to look broader than it is.
+
+## Before asking anyone to change behaviour, check whether you need the information instead
+
+⚠️ **We asked every host to stay within one release of current. A host showed the ask was wrong, and
+the demonstration is the useful part, not the verdict.**
+
+> You are asking that hosts be up to date; what you need is to know which version a measurement was
+> taken on. They are not the same thing, and the second is strictly cheaper.
+
+The premise we had written — *a report we cannot reproduce is a report we cannot act on* — was
+sound. The conclusion did not follow from it. A report stamped with its version is reproducible
+however old the installation; an unstamped report is not, however current. So the need was for a
+**field in the report**, and we had asked for a **change in everyone's deployment cadence**: a far
+larger request, imposed on far more people, that does not even achieve the thing.
+
+Three things make this worth a section rather than a correction:
+
+- **Asking for a behaviour is the expensive way to get a fact.** When a request is about how others
+  should operate, look for the datum that would make the behaviour unnecessary. Usually it exists,
+  usually it is one field, and usually you already serve it — we serve `version` in the identity
+  card; we simply never asked anyone to quote it back.
+- ⚠️ **A request only the compliant can honour reads back as compliance.** Hosts who answer us would
+  have adopted the cadence; hosts who had drifted would neither adopt it nor tell us. The channel
+  would then have shown "hosts are aligned", and the number would have been measuring who replies.
+  This is the instrumentation bias two sections up, applied to cadence instead of yield — **and we
+  wrote it into the document within a day of writing the bias itself.** Knowing a failure mode by
+  name does not stop you walking into it; only checking each new ask against it does.
+- ⚠️ **Blaming a gap on the population you can see is how you miss that it is yours.** We attributed
+  the irreproducibility to host drift. Measured: of twelve host findings recorded in the contract,
+  **zero** name the version they were measured on, and several came from hosts who were current.
+  The information was lost when we wrote it down. **No behaviour change on their side would have
+  restored a field we never asked for and never recorded.**
+
+The test, before any ask that requires other people to act: *what fact would make this request
+unnecessary, is it cheaper, and can I get it without their cooperation changing?*
 
 ## A guard that only serves when another has failed is the least exercised and the most needed
 
