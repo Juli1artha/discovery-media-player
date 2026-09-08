@@ -1067,11 +1067,17 @@ which version a past observation came from, say that too — *"measured some tim
 worth more than a number we would have to guess at, and far more than silence.
 
 ⚠️ **And name yourself inside the report, not just in how you send it.** Reports reach us through
-whatever channel carries them, and a channel can duplicate a message or attach the wrong sender: we
-received one report three times, byte-identical, the third bearing a host name that contradicted
-what that host had told us an exchange earlier. We could not resolve it from our side, and neither
-could you. One line of self-identification in the body costs nothing and survives any relay — the
-same reasoning as the version stamp, applied to who rather than what.
+whatever channel carries them, and a channel can deliver the same message twice or put one host's
+text under another host's name — both happened to us in a single round, and we spent an exchange
+establishing who had said what instead of acting on it. Neither you nor we could tell from our own
+end; only the person relaying could, and they did. **One line of self-identification in the body
+costs nothing and survives any relay** — the same reasoning as the version stamp, applied to *who*
+rather than *what*.
+
+The consequence for us is worth stating too, since it is about how much we can claim to have heard:
+when a duplicate is resolved, the reading it seemed to provide does not turn up elsewhere. It leaves
+us with one fewer host heard from, and we would rather record that plainly than let a channel look
+wider than it is.
 
 **What not to send.** Shapes and counts, never contents. No row data, no reader IPs or User-Agents —
 those are the columns half this contract exists to get rid of — no keys, tokens, connection strings,

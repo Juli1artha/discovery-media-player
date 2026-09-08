@@ -14,17 +14,32 @@ the notes there are this file's section for that version.
 
 ### Changed
 
-- ⚠️ **Une étiquette posée par le relais n'est pas une attribution — mesuré à la troisième
-  livraison.** Le même message est arrivé une troisième fois, identique à l'octet près, et celui-là
-  portait un nom d'hôte. Le nom **contredit ce que cet hôte avait lui-même rapporté un échange plus
-  tôt** : le message dit « nous étions en 0.1.156 », son rapport précédent disait « 0.1.155 en
-  production ». L'un des deux est faux et **le canal ne peut pas dire lequel de l'intérieur** — le
-  rapport antérieur nous est parvenu par le relais qui vient de dupliquer trois fois.
-  La règle s'étend donc : ne pas trancher une contradiction entre un message et son auteur supposé,
-  mais **dire que l'attribution n'est pas résolue et demander à qui opère le relais**, seul à voir
-  les deux bouts. Le coût d'une erreur ici est le pire : une correction attribuée au mauvais hôte lui
-  enseigne qu'on lit ses rapports distraitement, et nous enseigne sur une installation un fait que
-  personne n'a affirmé.
+- ⚠️ **La règle « deux messages identiques sont une lecture » était juste ; la preuve que nous en
+  donnions était fausse, et de la manière exacte que la règle décrit.** Le texte affirmait « mesuré
+  dans les deux sens, chez deux hôtes, indépendamment ». Faux : **l'opérateur du relais avait collé
+  deux fois le message du même hôte.** Une réponse nous est parvenue deux fois et nous l'avons
+  comptée pour deux. La mesure réciproque vient de ce même hôte unique. **Un hôte, pas deux.**
+  ⚠️ **Nous avons appliqué la règle à leurs messages en exemptant notre propre résumé.** La section
+  avertit noir sur blanc qu'un relais dupliqué fabrique gratuitement l'apparence d'un second hôte —
+  et revendiquait quatre lignes plus haut deux hôtes indépendants sur une preuve qui en valait un.
+  **Une règle sur les preuves doit être passée sur l'affirmation qu'on s'apprête à écrire, pas
+  seulement sur l'entrée.**
+  ⚠️ **L'affirmation fausse a été PUBLIÉE** — section `[0.1.157]` de ce fichier, et notes de la
+  Release `v0.1.157`. Elle n'est **pas réécrite** : les notes publiées sont un artefact daté, et les
+  corriger en silence ferait diverger le dépôt de ce que les lecteurs ont déjà reçu. La correction
+  est ici, elle nomme la version où le défaut est paru, et c'est la seule façon qu'un lecteur de
+  `0.1.157` a de la trouver.
+- ⚠️ **Une étiquette peut être juste alors que le contenu placé dessous ne l'est pas** — plus
+  difficile à attraper qu'une étiquette absente. Une troisième livraison portait un nom d'hôte qui
+  contredisait le rapport antérieur de cet hôte. Nous n'avons **pas** tranché ; l'opérateur du relais
+  a expliqué : l'étiquette était celle qu'il visait, le texte collé dessous était celui de l'autre
+  hôte. Ce qui a résolu l'affaire est l'étape que la règle prescrivait déjà — **demander à qui opère
+  le relais, seul à voir les deux bouts**. À garder comme premier geste, pas comme dernier recours.
+- ⚠️ **Et le corollaire sur ce qu'on a le droit de dire qu'on possède** : quand un doublon est
+  résolu, la lecture qu'il semblait fournir ne réapparaît pas ailleurs — elle n'a jamais existé.
+  Découvrir que deux messages n'en font qu'un laisse **un hôte de moins entendu**, pas la même preuve
+  mieux étiquetée. Le dire est un fait de couverture ; le taire est la façon dont un canal paraît
+  plus large qu'il n'est.
 - **Le contrat demande aux hôtes de se nommer DANS le rapport**, pas seulement par la façon de
   l'envoyer — même raisonnement que l'estampille de version, appliqué au *qui* plutôt qu'au *quoi*.
 

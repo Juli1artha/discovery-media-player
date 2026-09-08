@@ -1711,12 +1711,24 @@ one that touches the installations we never hear from.
 
 ## Two identical messages are one reading — the relay copies, the authors do not
 
-⚠️ **Measured in both directions, at two hosts, independently — so it is a property of the channel
-and not an anecdote.** Two host replies reached us byte-for-byte identical. Rather than count them
-as two independent readings, we asked both hosts whether they had written twice. Both said no: one
-message each, never resent. One of them added the reciprocal measurement, which is what settles it —
-*our* announcement of the 0024 gestures reached them **three times**, and our relayed message from
-the other host **twice**, each time the same text.
+⚠️ **The rule below is sound. The evidence this section first claimed for it was not — and the way
+it was wrong is the rule biting the person who wrote it.** The original text said *"measured in both
+directions, at two hosts, independently — so it is a property of the channel and not an anecdote."*
+That was false. Two byte-identical replies arrived; we asked whether each host had written twice and
+recorded that "both said no". In fact **the relay operator had pasted the same host's message twice**
+— so one answer reached us twice, and we counted it as two. The reciprocal measurement (*our*
+announcement reaching them three times, our relayed message twice) is that same single host's
+report. One host, not two.
+
+⚠️ **We applied the rule to their messages and exempted our own summary of them.** The section warns
+in as many words that a duplicated relay manufactures the appearance of a second host at no cost —
+and then, four lines up, claimed two independent hosts on evidence that was one host twice. Checking
+the hosts' identity and not checking our own sentence about it is the whole failure: **a rule about
+evidence has to be run against the claim you are about to write, not only against the input.**
+
+What did settle it was the step the rule already prescribed: **asking the person who operates the
+relay**, the only party who can see both ends. They answered plainly that the duplication was theirs.
+Keep that as the first move, not the last.
 
 > Between two parties communicating through a human relay, the identity of two messages does not
 > prove two readings — it proves a copy-paste.
@@ -1733,19 +1745,24 @@ question asked out loud. The channel has no way to see this from the inside, so 
 explicit — asking costs one sentence, and being wrong costs a rule written on one host's word while
 believing it rests on two.
 
-⚠️ **And the label the relay attaches is not authorship — measured on the third delivery.** The same
-message arrived a third time, byte-identical to the first two, and this one carried a host's name.
-The name conflicted with what that host had itself reported one exchange earlier: the message says
-*"we were on 0.1.156"*, and the named host's own prior report said *"0.1.155 in production"*. One of
-the two is wrong and **the channel cannot tell which from inside** — the earlier report reached us
-through the same relay that just duplicated three times.
+⚠️ **A label can be right while the payload under it is wrong — and that is harder to catch than a
+missing label.** A third delivery arrived, byte-identical to the first two, carrying a host's name.
+The name conflicted with what that host had itself reported an exchange earlier — the message said
+*"we were on 0.1.156"*, their own prior report said *"0.1.155 in production"*. The temptation was to
+decide which one they "really" meant. We did not, and the relay operator then explained: the label
+was the one they intended; the text pasted under it was the other host's.
 
-So the rule extends: **a name supplied by the transport is a routing hint, not an attribution.** Do
-not resolve a contradiction between a message and its supposed author by deciding which one the
-author "really" meant; say that the attribution is unresolved, and ask the person operating the
-relay, who is the only party who can see both ends. The cost of guessing here is the worst kind: a
-correction attributed to the wrong host teaches them we do not read their reports carefully, and
-teaches us a fact about an installation that was never claimed.
+So: **a name attached by the transport is a routing intent, not evidence of authorship**, and a
+contradiction between a message and its named author is a question for the relay, never something to
+resolve by choosing the more convenient reading. The cost of guessing is the worst kind — a
+correction attributed to the wrong host teaches them we read their reports carelessly, and teaches
+us a fact about an installation nobody claimed.
+
+⚠️ **And a corollary about what you are then entitled to say you have.** When a duplicate is
+resolved, the reading it appeared to supply does not reappear elsewhere — it was never there.
+Discovering that two messages were one leaves you with **one fewer host heard from**, not with the
+same evidence better labelled. Say so: *"we have no reading from that host this round"* is a fact
+about coverage, and suppressing it is how a channel comes to look broader than it is.
 
 ## Before asking anyone to change behaviour, check whether you need the information instead
 
