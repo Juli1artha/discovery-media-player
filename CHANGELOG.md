@@ -14,6 +14,39 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- ⚠️ **Une propriété peut être TENUE sans être ÉPROUVÉE — un hôte l'a trouvé chez lui en
+  appliquant notre propre réponse sur la substituabilité.** Trois de ses bancs doublent notre export
+  `shares` ; aucun ne prouvait que le double était atteint. **En retirant le double, quatre tests
+  rougissent** — et c'est précisément ce qui déguisait le défaut : sans la fixture, la page ne rend
+  rien et les globales manquent, donc tout tombe pour des raisons étrangères à la propriété. **Un
+  rouge au retrait ne prouve pas que l'assertion couvre la chose ; il peut ne prouver que l'échafaudage
+  portait la charge.**
+  Leur diagnostic vaut mieux que « y a-t-il un plancher ? » et il se transporte : **ne pas retirer le
+  double, changer sa VALEUR** — le retrait effondre le montage et tout rougit sans rien apprendre,
+  la mutation laisse le montage debout et pose la seule question qui compte, *une assertion s'en
+  aperçoit-elle ?*. Le cas qui échappait était un vrai enregistrement répondant pour la même clé :
+  page rendue, globales présentes, et seul un contrôle sur la **valeur** de la fixture le voit.
+  ⚠️ **Un test de REFUS peut passer au vert parce que le sujet était inatteignable**, pas parce que
+  le refus fonctionne. Même forme que les cinq gardes corrigées le 31/08 — vertes avec leur sonde
+  aveuglée — mais d'un cran plus loin : là la sonde ne lisait rien, ici le **harnais** ne présentait
+  rien à refuser. La règle existait pour les gardes, pas pour les bancs. Elle y est désormais.
+  ⚠️ **Et une preuve peut exister sans être nommée** : chez eux elle était enfouie dans un test de mur
+  d'accès affirmant « Réservé » à propos d'autre chose. Une reformulation l'aurait retirée sans que
+  personne ne le voie.
+- ⚠️ **Notre propre audit sur ce motif est NON CONCLUANT, et c'est écrit comme tel.** Une sonde sur
+  les 101 `not.toContain` littéraux a rendu 77 sans contrôle positif dans le même fichier, puis 12
+  dont le sujet n'apparaît nulle part ailleurs. À l'inspection, le plus fort est un **faux positif de
+  la sonde** : le sujet est construit par interpolation (`${id}@lu.example`), donc l'assertion mord.
+  **La sonde ne sait pas voir un sujet construit, ce qu'est la plupart d'entre eux.** Cela ne dit pas
+  que nos bancs sont sains ; cela dit que cet instrument ne pouvait pas trancher — la règle que nos
+  gardes doivent à leurs propres verdicts, appliquée à un audit maison.
+- ⚠️ **Le contrat prévient que le diff d'une livraison est le NÔTRE, pas celui de l'hôte.** Le tableau
+  des zones compare toujours la nouvelle version à **celle qui précède**. Un hôte deux ou trois trains
+  en arrière regarde un autre diff, et c'est le sien qui décide. Un hôte l'a attrapé en le refaisant :
+  nous comparions `0.1.156 → 0.1.157`, il sautait depuis `0.1.155`, et sa comparaison rend un
+  troisième fichier que nous n'avions pas nommé. Même conclusion au bout — zéro migration, zéro ligne
+  de code dans `server/` hors commentaires — **mais obtenue sur son écart, pas sur notre parole.**
+
 - ⚠️ **La règle « deux messages identiques sont une lecture » était juste ; la preuve que nous en
   donnions était fausse, et de la manière exacte que la règle décrit.** Le texte affirmait « mesuré
   dans les deux sens, chez deux hôtes, indépendamment ». Faux : **l'opérateur du relais avait collé

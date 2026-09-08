@@ -1103,6 +1103,18 @@ Semantic versioning on the package, independent of the `contract` number. Pin an
 the player and its hosts deploy separately, and a range brings in a version nobody decided to
 deploy, on a day someone ran `npm install` for another reason.
 
+⚠️ **When we say a release "changes nothing for you", check it from *your* version — ours is not
+yours.** The zone table in every Release compares the new version to **the one immediately before
+it**. That is our convenience, not your situation: a host two or three releases back is looking at a
+different diff, and theirs is the one that decides. A host caught this by redoing it — we had
+compared `0.1.156 → 0.1.157`; they were jumping from `0.1.155`, ran their own comparison, and got a
+third file we had not mentioned. Same conclusion in the end (no migrations, zero lines of code in
+`server/` once comments are excluded), **but reached on their span rather than on our word.**
+
+So take the reassurance as a starting point and not as a finding. The tarballs are public: `npm pack`
+both versions and `diff -rq` the two trees is a minute's work, and it is the only version of the
+question that is about your installation.
+
 ⚠️ **We asked you to stay current. That was the wrong ask, and a host took it apart.** The previous
 version of this paragraph requested that hosts keep the pin no more than one release behind, on the
 grounds that *a report we cannot reproduce is a report we cannot act on.* The premise is right. The

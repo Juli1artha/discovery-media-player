@@ -481,6 +481,37 @@ base.
 frame. The last two fail the first: the frame was fine and the bar moved. Either half alone passes
 four of the six.
 
+⚠️ **A third failure the two questions do not catch: the property is held, but by side effect, and
+no assertion names it.** A host applied our own substitution answer to their harness and found this
+in their benches. Three of them double our `shares` export; none proved the double was reached.
+Removing the double turned **four** tests red — so the property *was* held, and that is exactly what
+disguised it: without the fixture the page renders nothing and the bundle globals are missing, so
+everything falls for reasons that have nothing to do with the property. **A red on removal is not
+evidence the assertion covers the thing; it may only prove the scaffolding was load-bearing.**
+
+Their diagnostic is better than "is there a floor?", and it transfers:
+
+- **Do not remove the double — change its value.** Removal collapses the setup and everything goes
+  red uninformatively. Mutating what the double *returns* leaves the setup standing and asks the
+  only question that matters: does any assertion notice? Theirs did not, until they added one; the
+  escaping case was a real record answering for the same key, where the page renders, the globals
+  exist, and only a check on the fixture's **value** sees the substitution.
+- ⚠️ **A refusal test can go green because the subject was unreachable, not because the refusal
+  works.** That is the same shape as the guard floors this repo fixed on 31/08 — five guards green
+  with their probe blinded — but one layer out: there the probe read nothing, here the *harness*
+  never presented anything to refuse. The guard-level rule was written; the bench-level one was not.
+- **A proof can exist and still be unnamed.** In their security guard the property *was* pinned —
+  buried in an access-wall test asserting `"Réservé"` while ostensibly about something else. A
+  rewording of that test would have removed the proof and nobody would have seen it go.
+
+⚠️ **And the honest result of running this against our own suite: inconclusive.** A probe over the
+101 literal `not.toContain` assertions flagged 77 with no positive assertion in the same file, then
+12 whose subject appears nowhere else in the file. On inspection the strongest candidate was **a
+false positive of the probe** — the subject is built by interpolation (`${id}@lu.example`), so the
+assertion does bite. The probe cannot see a constructed subject, which is most of them. **This does
+not say our benches are clean; it says this instrument could not tell.** Recorded as inconclusive
+rather than as a clean bill, which is the same rule the guards owe their verdicts.
+
 The remedy for the second question has a house form, and the count is worth writing down rather
 than the impression: **three test files carry an explicit anti-vacuity
 case** — `gardesAgent`, `voixNonCablee`, `etiquetteBornee`, added 24, 27 and 27 August — where the
