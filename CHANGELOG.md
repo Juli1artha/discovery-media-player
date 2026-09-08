@@ -14,6 +14,19 @@ the notes there are this file's section for that version.
 
 ### Added
 
+- ⚠️ **Le verrou déclarait une version de ONZE TRAINS en retard, et rien ne le disait.**
+  `package.json` était à `0.1.156`, `package-lock.json` à `0.1.145`. Aucun banc, aucune garde,
+  aucun préflight n'avait de raison de parler : **npm ne lit pas ce champ à l'installation**, donc
+  rien ne cassait. La cause est mécanique et non un oubli — un train monte la version en *écrivant*
+  `package.json`, et seul `npm version` l'aurait propagée. Le défaut se reproduisait donc à
+  chaque publication.
+  `tools/version-du-verrou.mjs` refuse l'écart aux **deux** emplacements du verrou qui décrivent ce
+  paquet, et son constat nomme le remède (`npm install --package-lock-only`) plutôt que le seul
+  symptôme. Quatre mutations meurent ; un verrou dont la forme change rend **inconcluant** plutôt que
+  vert — sans quoi un `lockfileVersion` futur ferait taire la garde au lieu de la faire parler, et
+  l'écart repartirait invisible comme il l'a été onze trains durant.
+  ⚠️ **Contrairement aux deux gardes précédentes, celle-ci naît sur un défaut RÉEL** : le contrôle
+  positif réintroduit l'écart mesuré du 05/09 et exige le rouge.
 - ⚠️ **Une garde refuse désormais qu'on PHOTOGRAPHIE le contexte injecté — et la question vient d'un
   hôte, pas de nous.** Il avait écrit un utilitaire de pagination après un incident, avec sa raison
   en tête, et cet utilitaire n'était appelé **nulle part**. La cause n'est apparue qu'en essayant de
@@ -34,6 +47,25 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- **L'écart est refermé**, régénéré par l'outillage et non à la main : exactement deux lignes, aucun
+  brassage de dépendances.
+- ⚠️ **`docs/RELEASING.md` : la version va dans DEUX fichiers, et la procédure le dit maintenant.**
+  Une garde refuse, une procédure explique — la garde est le filet, pas le mode d'emploi. Avec la
+  raison pour laquelle l'écart méritait une garde alors qu'il ne cassait rien : le verrou est ce que
+  lisent les outils qui n'exécutent pas npm (`plancher-de-node.mjs` conclut hors ligne à partir de
+  lui, un SBOM le prend pour source, un audit de chaîne le compare au tag). Chacun aurait lu
+  `0.1.145` pour un artefact déclarant `0.1.156`, et **une incohérence pareille ressemble à une
+  falsification plutôt qu'à une négligence** — ce qu'un dépôt qui publie des attestations de
+  provenance ne peut pas se permettre.
+- ⚠️ **`docs/HOST-CONTRACT.md` demande explicitement aux hôtes de rester à jour — un train
+  d'écart au plus.** Un hôte avait posé la question après avoir vérifié une version sans monter
+  dessus, en faisant valoir que ce qui rend une vérification utile est la vérification, pas
+  l'épinglage. Le raisonnement est juste et la réponse est quand même oui, pour une raison qui est la
+  nôtre et non la leur : **un rapport que nous ne pouvons pas reproduire est un rapport sur lequel
+  nous ne pouvons pas agir.** Tout ce que ce document contient est arrivé sous la forme « nous avons
+  mesuré X », et valait quelque chose parce que la même version pouvait être dressée à côté.
+  C'est écrit comme une **demande, pas une exigence** : rien ne refuse de tourner sur une version
+  plus ancienne et le numéro de contrat ne bouge pas.
 - ⚠️ **Le contrat dit où est la couture, parce qu'un hôte l'a demandé et que ce n'était écrit nulle
   part.** Réponse en deux moitiés dont une seule est une promesse, mesurées le 05/09 sur `server/`
   et `context/` : le **contexte injecté est substituable** — 144 appels, **0 capture**, chacun

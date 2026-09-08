@@ -1065,3 +1065,18 @@ it exists, and the answer will name you.
 Semantic versioning on the package, independent of the `contract` number. Pin an **exact** version:
 the player and its hosts deploy separately, and a range brings in a version nobody decided to
 deploy, on a day someone ran `npm install` for another reason.
+
+⚠️ **And please keep that pin current — one train behind at most.** A host asked whether this
+mattered, having verified a release without moving onto it: the diff was comments only, no
+migration, and their argument was that what makes a verification useful is the verification, not the
+pin. That reasoning is sound, and the answer is still yes, for a reason that is ours rather than
+theirs: **a report we cannot reproduce is a report we cannot act on.** Every finding in this
+document arrived as "we measured X" — the ceiling, the platform timeout, the truncated aggregate.
+Each was worth something because we could stand the same version up beside it. When installations
+drift apart by several versions, a measurement stops being about the player and starts being about
+which player, and the first thing we spend on any report is establishing that.
+
+It is a request, not a requirement: nothing here refuses to run on an older version, the contract
+number has not moved, and a release whose notes say it changes nothing for you genuinely changes
+nothing for you. But we are asking for the alignment explicitly rather than assuming it — which is
+the point of writing it down at all.
