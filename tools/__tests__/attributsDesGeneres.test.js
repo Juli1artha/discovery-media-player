@@ -74,3 +74,17 @@ describe("⚠️ un glob converti en expression régulière ne doit pas devenir 
     expect(couvre("a+b.js", "aab.js"), "« + » échappé ne répète pas le « a »").toBe(false);
   });
 });
+
+// ⚠️ MÊME TROU, MÊME JOUR. Cette garde non plus n'était citée dans aucun workflow ni appliquée à ce
+// dépôt par un banc. Son verdict vit dans le bloc d'exécution directe et non dans une fonction
+// exportée : on la LANCE donc, plutôt que de refactorer une garde verte pour la commodité du banc.
+describe("le dépôt lui-même", () => {
+  it("⚠️ la règle est appliquée à CE dépôt — la garde est lancée et doit conclure CONFORME", () => {
+    const { spawnSync } = require("node:child_process");
+    const { join } = require("node:path");
+    const r = spawnSync(process.execPath, [join(__dirname, "..", "attributs-des-generes.mjs")], {
+      cwd: join(__dirname, "..", ".."), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+    });
+    expect(r.status, `sortie ${r.status} — ${r.stderr || r.stdout}`).toBe(0);
+  });
+});

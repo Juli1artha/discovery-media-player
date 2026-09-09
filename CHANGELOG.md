@@ -12,6 +12,71 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.159] — 2026-09-09
+
+### Added
+
+- ⚠️ **Un témoin planté exprès dans le banc des planchers — sans lui, toutes ses assertions étaient
+  gratuites.** `planchersDesGardes` monte un dépôt vide et exige que chaque outil **refuse** plutôt
+  que de conclure au vert. Il portait déjà un plancher sur le **comptage** — *« la sonde trouve bien
+  des outils à éprouver »*, au moins 8 — qui prouve qu'on a **trouvé** des fichiers. Il ne prouvait
+  rien sur le **lanceur**. Or toutes ses assertions sont de la forme *« le code n'est pas 0 »*, et un
+  lanceur cassé les satisfait **toutes**, gratuitement et en silence : `node` introuvable, un `cwd`
+  qui n'existe pas, un arbre mal monté.
+  **La forme vient de la session ADV**, qui l'a trouvée chez elle un cran plus bas, dans le shell :
+  `zsh` avorte la commande entière quand un glob ne correspond à rien, donc leur `ls` n'a jamais
+  tourné et le comptage a rendu `0` **sans avoir compté**. *« Un zéro produit par une commande qui
+  n'a pas eu lieu ressemble exactement à un zéro mesuré. »* Ici c'est le **non-zéro** qui l'était.
+  Le banc plante désormais un outil dont il **sait** qu'il doit sortir en 0, et refuse tout le relevé
+  s'il n'est pas attrapé. Deux mutations, deux tuées.
+
+### Changed
+
+- ⚠️ **LA GARDE DEMANDÉE N'A PAS ÉTÉ AJOUTÉE : LE DÉPÔT L'AVAIT DÉJÀ, ET EN MIEUX.** Elle a pourtant
+  été écrite en entier — inventaire, squelette, témoin, 14 bancs, **6 mutations sur 6 tuées**, 4
+  secondes d'exécution — avant qu'on découvre qu'elle doublait
+  `tools/__tests__/planchersDesGardes.test.js`, qui fait exactement cela depuis `ecdb78e`. Et le fait
+  **mieux** : ses exemptions portent un prédicat qui revérifie leur motif (`tientEncore`), là où les
+  nôtres étaient une liste de chaînes qu'il aurait fallu croire.
+  ⚠️ **Ce n'est pas une relecture qui l'a trouvé, c'est le banc existant qui a rougi sur la garde
+  neuve** — parce qu'une garde dont le corpus est *les autres gardes* voyage avec son corpus, et
+  reste donc verte sur un dépôt vide. **L'outil écrit pour détecter ce défaut le portait.** Le
+  doublon est supprimé ; ce qui survit est **une assertion**, greffée sur le fichier existant.
+  La règle est écrite dans `AGENTS.md` : *proposer de construire est une affirmation d'inexistence,
+  et elle se mesure avant la première ligne de code — moins cher à ce moment-là.* L'envie de
+  construire est la plus forte juste après qu'un problème a été nommé clairement, c'est-à-dire au
+  moment précis où la recherche serait la plus courte.
+- ⚠️ **Deux de nos gardes n'étaient appliquées à ce dépôt nulle part, et rien ne le montrait.**
+  `filtre-avant-ecriture` et `attributs-des-generes` : correctes, entièrement couvertes par des bancs
+  unitaires, citées dans **aucun** workflow, et éprouvées uniquement contre des arbres **fabriqués**.
+  La règle était tenue sur des fixtures et sur rien d'autre — bancs verts, couverture réelle,
+  fichiers indiscernables de ceux qui fonctionnent. **Une garde appliquée à rien et une garde jamais
+  appliquée valent la même chose.** Les deux reçoivent un banc « le dépôt lui-même » ; les deux
+  étaient déjà conformes, donc le trou n'a rien laissé passer — cette fois. L'exiger mécaniquement
+  reste à écrire, et c'est nommé comme tel plutôt que promis.
+- **`AGENTS.md` gagne cinq règles**, dont trois viennent des hôtes : le **sujet vide par
+  construction** — une table d'exceptions vide rend le filtre structurellement faux et la somme
+  structurellement nulle, donc l'assertion ne peut rougir que si l'on édite le test (*« elle observe
+  l'instrument, pas l'objet »*, leur formule, meilleure que la nôtre) ; le **zéro d'une commande qui
+  n'a pas eu lieu** ; et la règle du STUDIO sur la convergence — *quand on pose la même question à
+  deux sources avec les mêmes mots, la convergence mesure la question, pas les sources* — avec leur
+  correction sur le **moment** de le dire : avant que les réponses arrivent, pas après. Les deux
+  dernières sont les nôtres : *une garde appliquée à rien et une garde jamais appliquée valent la
+  même chose*, et *chercher avant de construire*.
+- ⚠️ **Une mesure venue d'un tiers peut se tromper dans le sens qui vous flatte.** ADV comptait 1
+  constat estampillé sur 12 dans notre contrat, nous en comptions 0. Ils tranchent pour notre zéro :
+  leur critère acceptait une version citée deux lignes plus loin, ce qui attrape une mention de
+  **livraison** et non de **mesure**. Quand un tiers vous mesure et trouve mieux que vous, suspecter
+  sa méthode avant votre pessimisme.
+- **Première corroboration externe de la chaîne de provenance.** ADV a recalculé les trois empreintes
+  de `0.1.158` sur l'octet reçu — SHA-1, sha512, sha256 — et les trois correspondent caractère pour
+  caractère aux nôtres, sur un téléchargement séparé et une autre chaîne d'outils. Ils étaient en
+  `0.1.157` : notre tableau de zones **était** leur diff, première fois que la mise en garde
+  `N-1 → N` se résout en « oui, c'est le vôtre ».
+- **Les trois exemples sont repinés sur `0.1.158`**, que la publication de `0.1.159` laisse dans la
+  fenêtre. **Huitième train d'affilée.** Le verrou est régénéré par l'outillage — deux lignes, aucune
+  dépendance. Troisième train sous la procédure écrite le 07/09.
+
 ## [0.1.158] — 2026-09-08
 
 ### Changed
@@ -6446,7 +6511,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.158...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.159...HEAD
+[0.1.159]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.158...v0.1.159
 [0.1.158]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.157...v0.1.158
 [0.1.157]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.156...v0.1.157
 [0.1.156]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.155...v0.1.156

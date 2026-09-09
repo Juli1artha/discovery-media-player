@@ -104,6 +104,30 @@ describe("aucune garde ne déclare victoire sur un dépôt vide", () => {
     expect(outils().length, "aucun outil relevé : cette garde vise à côté").toBeGreaterThanOrEqual(8);
   });
 
+  it("⚠️ UN TÉMOIN PLANTÉ EXPRÈS SORT EN 0 — sans quoi tous les `not.toBe(0)` d'en dessous sont gratuits", () => {
+    // ⚠️ LE PLANCHER DU COMPTAGE NE COUVRE PAS LE LANCEUR. Celui du dessus prouve qu'on a TROUVÉ des
+    // outils ; il ne prouve pas qu'on sache en EXÉCUTER un. Or toutes les assertions de ce fichier
+    // sont de la forme « le code n'est pas 0 » : un lanceur cassé — `node` introuvable, un `cwd`
+    // qui n'existe pas, un arbre mal monté — les satisfait TOUTES, gratuitement et en silence.
+    //
+    // La forme nous vient de la session ADV le 09/09, qui l'a trouvée chez elle au niveau du shell :
+    // `zsh` avorte la commande entière quand un glob ne correspond à rien, donc leur `ls` n'a jamais
+    // tourné et le comptage a rendu 0 SANS AVOIR COMPTÉ. « Un zéro produit par une commande qui n'a
+    // pas eu lieu ressemble exactement à un zéro mesuré. » Ici, c'est le NON-zéro qui serait gratuit.
+    //
+    // Le remède est un contrôle positif : on plante un outil dont on SAIT qu'il doit sortir en 0, et
+    // s'il ne le fait pas, aucun refus mesuré dans ce fichier ne prouve quoi que ce soit.
+    const ou = arbre((d) => writeFileSync(join(d, "tools", "temoin-vacuite.mjs"),
+      'import { conclure, conforme } from "./resultat-garde.mjs";\n'
+      + 'conclure(conforme("je ne regarde rien, et je sors en 0"));\n'));
+    try {
+      const { code, sortie } = lancer("temoin-vacuite.mjs", ou);
+      expect(code, "le témoin — une fausse garde qui rend CONFORME sans rien regarder — n'a pas rendu 0 : "
+        + `le montage ne sait pas exécuter un outil (${sortie.slice(0, 200)}), donc les refus mesurés `
+        + "plus bas ne séparent pas « la garde a refusé » de « rien n'a tourné »").toBe(0);
+    } finally { rmSync(ou, { recursive: true, force: true }); }
+  });
+
   it("chaque outil est soit ÉPROUVÉ, soit EXEMPTÉ avec une raison qui tient encore", () => {
     const fautes = [];
     for (const nom of outils()) {

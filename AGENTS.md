@@ -1844,6 +1844,121 @@ normal operation looks like a candidate for less care, not more. It deserves mor
 reason a fallback deserves a bench — the first time it runs, everything else is already wrong, and
 nobody is in a position to notice that it ran badly.
 
+## An assertion whose subject is empty by construction observes the instrument, not the object
+
+A host returned our own question to us and brought back a shape our anti-vacuity rule does not
+cover. Their dark-theme guard carries a counter — *"the DEBT does not grow quietly"* — which sums
+the tokens present in their screens **and** listed in a `DEBT` exceptions table. That table is
+empty. So the filter `DEBT.has(t)` is structurally false, the sum is structurally `0`, and
+`expect(n).toBe(0)` cannot fail on **any** change to the code. It fails only if someone edits the
+test file itself.
+
+> It observes the instrument, not the object.
+
+⚠️ **This is one notch beyond "the probe recognised nothing."** Our rule from 31/08 covers the
+missing floor: a probe opens a corpus, recognises nothing in it, and returns CONFORMING instead of
+INCONCLUSIVE. Here the probe recognises perfectly well — it is its **subject** that cannot exist.
+The same audit passes over both, and only the second reads as a deliberate, documented assertion.
+The comment defending theirs said it would redden *"the day someone puts something back in"* — true,
+and that is the defect: *in* means the test, not the code that runs.
+
+The question that separates them is not *does this have a floor?* but ***is there a state of the
+world, reachable by changing only the code, in which this assertion fails?*** If the only path to
+red runs through the test file, the test measures the test.
+
+## A zero produced by a command that never ran looks exactly like a measured zero
+
+The same host, in the same report, caught themselves: their first reading announced `0` files in a
+directory their guard sweeps, and they nearly wrote to us that the guard swept the void. It was an
+artefact of the shell. **`zsh` aborts the entire command when a glob matches nothing**, so the `ls`
+never ran at all, and the count returned `0` without having counted anything. Checked another way:
+4 files.
+
+> A zero produced by a command that never ran looks exactly like a measured zero.
+
+This is the same family as the two above, one layer lower — beneath the probe, in the thing that was
+supposed to launch it. Our rules all assumed the measurement happened and asked what it saw. None
+asked whether it happened. The forms are ordinary and none of them announces itself: a failed glob
+under `zsh`, a pipeline killed by `set -e` before its last stage, a binary that is not installed, a
+`cd` that failed so every following command ran somewhere else. Each yields a number, and the number
+is indistinguishable from a real one.
+
+The remedy is the one this repository already applies to probes, moved up a level: **a count must be
+accompanied by something that proves the counting occurred.** A positive control is the cheapest
+form — plant something you know the instrument must find, and refuse the whole reading if it is not
+found.
+
+⚠️ **And a floor on the count does not supply it.** `tools/__tests__/planchersDesGardes.test.js`
+already carried one — *"the probe does find tools to exercise"*, at least 8 — which proves files
+were **found**. It proves nothing about the launcher. Every assertion in that file has the form
+*"the exit code is not 0"*, and a broken launcher satisfies all of them at once, silently and for
+free: `node` missing, a `cwd` that does not exist, a tree that failed to mount. The file now plants
+a tool it **knows** must exit 0 and refuses the whole reading if that plant is not caught. Without
+it, *"no guard is green"* and *"no guard ran"* are the same reading — and the second one is
+indistinguishable from success.
+
+## When you ask two sources the same question in the same words, convergence measures the question
+
+We had written a caution into a message before sending it: *if your two answers converge, it may be
+our shared wording rather than two observations.* A host sent it back to us as a rule, better
+stated than we had it:
+
+> When you put the same question to two sources in the same words, convergence measures the
+> question, not the sources.
+
+It is the reciprocal of the duplicate-relay rule, and worth keeping separate from it. There, two
+identical messages turned out to be one reading because the **channel** had copied. Here, two
+genuinely independent readings can still fail to be independent evidence, because the **question**
+supplied the answer. The channel case is an accident to be detected; this one is manufactured by us,
+at the moment we write the question.
+
+The practical consequence is not to stop asking two sources the same thing — it is to say so in the
+body, so that whoever reads the answers knows what the agreement is worth. Their note on timing is
+the part we had wrong: we had raised it as an honesty disclaimer after the fact. **Raise it before
+the answers arrive**, where it can still change what you conclude.
+
+## A guard applied to nothing and a guard never applied are worth the same
+
+Writing the guard above turned up two of our own, and the shape is a third variant of the family.
+`tools/filtre-avant-ecriture.mjs` and `tools/attributs-des-generes.mjs` were correct, fully covered
+by unit benches — and **applied to this repository nowhere**. Neither appears in any workflow, and
+every bench exercised them against fabricated temporary trees. The rule was enforced on fixtures and
+on nothing else.
+
+Nothing about that is visible from the outside: the benches are green, the coverage is real, the
+guard file reads exactly like the ones that do work. What was missing is a single assertion running
+the guard against the actual repository, and its absence looks identical to its presence in any
+summary that counts guards or counts tests.
+
+> Two questions, and the second is the one nobody asks: *does this guard look at anything?* and
+> *does anyone ever point it at us?*
+
+Both are now closed with a `le dépôt lui-même` bench, which is the convention the older guards
+already followed — it had simply never been required. Requiring it mechanically is a guard we have
+not written; it is named here so the next person writing one does not rediscover this by accident.
+
+## Before building the instrument, look for it — this repository already had it, and better
+
+The sharpest lesson of the day is not any of the three above. Asked to build a guard that runs every
+guard against an empty repository, we built it: inventory, skeleton, witness, benches, six mutations
+killed. It was green, it was fast, and it was **a worse duplicate of
+`tools/__tests__/planchersDesGardes.test.js`**, which has done exactly that since `ecdb78e` — and
+does it better, because its exemptions carry a predicate that re-verifies the reason
+(`tientEncore`) instead of a string we would have to believe.
+
+We did not discover this by reading. **The existing bench failed on the new guard within minutes of
+its being written** — because a guard whose corpus is the other guards travels with its corpus, and
+is therefore green on an empty repository. The thing we built to detect that defect had it.
+
+> A proposal to build is a claim that it does not exist. That claim is measurable before any code
+> is written, and it is cheaper then.
+
+The rule generalises past this repository. The instinct to build is strongest exactly when a problem
+has just been named clearly — which is also the moment when the search is shortest, because the
+name is fresh and searchable. What survived here is one assertion, grafted onto the existing file:
+the witness above, which was genuinely missing. That is the normal outcome of looking first — not
+nothing, but far less than what was proposed, and in the right place.
+
 ## Distance decides whether a warning protects a claim — and it is not linear
 
 Recorded above: a warning in one place does not protect a claim in another. A host sharpened it after
