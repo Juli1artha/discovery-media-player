@@ -107,3 +107,13 @@ describe("anti-vacuité", () => {
     expect(r.raisons[0]).toContain("la sonde vise à côté");
   });
 });
+
+// ⚠️ CE BANC MANQUAIT, ET SON ABSENCE NE SE VOYAIT PAS. Le 09/09 : cette garde n'était citée dans
+// aucun workflow, et aucun de ses bancs ne l'appliquait à CE dépôt — uniquement à des arbres
+// temporaires. Règle correcte, couverture unitaire complète, objet jamais regardé. Une garde qui
+// n'est jamais exécutée sur son objet vaut exactement autant qu'une garde exécutée sur rien.
+describe("le dépôt lui-même", () => {
+  it("⚠️ la règle est appliquée à CE dépôt, pas seulement à des arbres fabriqués", () => {
+    expect(garde.auditer().code).toBe(0);
+  });
+});
