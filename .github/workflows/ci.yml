@@ -30,7 +30,20 @@ jobs:
       matrix:
         node: ["22", "24"]
     steps:
+      # ⚠️ LES TAGS SONT NÉCESSAIRES, ET SANS EUX UNE GARDE NE VOIT PLUS SON OBJET. `checkout` ne
+      # les rapporte pas par défaut : `git tag -l` rend une liste VIDE sur le runner. La garde
+      # `sections-et-tags.mjs` confronte les sections du CHANGELOG aux tags qui existent — sans
+      # tags, elle rend honnêtement NON CONCLUANT (« la confrontation ne peut pas être établie »),
+      # c'est-à-dire qu'elle ne garde rien ici. `fetch-tags` coûte une liste de références ; la
+      # profondeur reste à 1, l'historique n'est pas rapatrié.
+      #
+      # ⚠️ NE RELÂCHEZ PAS LE BANC POUR FAIRE PASSER CE JOB. Le banc « le dépôt lui-même » de cette
+      # garde EXIGE le vert, exprès : le rendre tolérant à l'absence de tags le rendrait vert en ne
+      # regardant rien, ce qui est la vacuité que ce dépôt retire partout. C'est l'environnement qui
+      # doit fournir l'objet, pas l'assertion qui doit baisser.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-tags: true
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ matrix.node }}

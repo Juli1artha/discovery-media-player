@@ -154,14 +154,26 @@ describe("ce que la garde refuse d'affirmer", () => {
 });
 
 describe("le dépôt lui-même", () => {
+  // ⚠️ CE BANC EXIGE LE VERT, ET IL A D'ABORD ROUGI EN FORGE. `actions/checkout` ne rapporte PAS
+  // les tags par défaut : `git tag -l` rendait une liste vide sur le runner, la garde rendait
+  // honnêtement NON CONCLUANT, et ces deux assertions tombaient. Le correctif est dans
+  // `.github/workflows/ci.yml` — `fetch-tags: true` — et NON ici.
+  //
+  // ⚠️ NE RENDEZ PAS CES ASSERTIONS TOLÉRANTES POUR FAIRE PASSER LA FORGE. Accepter « non
+  // concluant » les rendrait vertes partout où les tags manquent, c'est-à-dire vertes en ne
+  // regardant rien — la vacuité exacte que cette garde existe pour retirer. C'est l'environnement
+  // qui doit fournir l'objet, jamais l'assertion qui doit baisser.
+  const pourquoi = "si ceci rougit avec le code 2, le clone n'a pas de tags (`git fetch --tags`) :"
+    + " la garde refuse de conclure, et c'est le bon verdict — corrigez l'environnement, pas le banc";
+
   it("⚠️ la confrontation tient sur CE dépôt — et c'est CE banc qui le mesure", () => {
     const r = garde.auditer();
-    expect(r.code).toBe(0);
+    expect(r.code, `${pourquoi} · ${(r.raisons || r.constats || []).join(" ")}`).toBe(0);
   });
 
   it("⚠️ les deux dettes réelles sont NOMMÉES, pas seulement tolérées", () => {
     const dit = garde.auditer().avertissements.join(" ");
-    expect(dit).toContain("0.1.159");
-    expect(dit).toContain("v0.1.84");
+    expect(dit, pourquoi).toContain("0.1.159");
+    expect(dit, pourquoi).toContain("v0.1.84");
   });
 });

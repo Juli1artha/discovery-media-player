@@ -82,6 +82,19 @@ the notes there are this file's section for that version.
   sémantique. Le correctif stocke le fuseau **à côté** de l'instant et ne change jamais l'instant.
   Et leur réponse sur l'emplacement est reprise : **pas une clause du contrat d'hôte** — la valeur
   est construite chez eux et ne traverse notre surface qu'en lecture.
+- ⚠️ **La garde neuve a rougi en forge, et la cause était que la forge ne lui donnait pas son objet.**
+  `actions/checkout` ne rapporte **pas** les tags par défaut : sur le runner, `git tag -l` rend une
+  liste vide, la garde rend honnêtement NON CONCLUANT — *« la confrontation ne peut pas être
+  établie »* — et les deux bancs « le dépôt lui-même » tombent. **Le plancher anti-vacuité a
+  fonctionné exactement comme prévu ; c'est l'environnement qui ne fournissait rien à confronter.**
+  Le correctif est `fetch-tags: true` sur le job `check` — la profondeur reste à 1, l'historique
+  n'est pas rapatrié. `verifier`, qui lance aussi la suite au moment du tag, utilise déjà
+  `fetch-depth: 0` et rapporte donc les tags : la publication n'était pas menacée.
+  ⚠️ **Ce qui n'a PAS été fait, et le commentaire l'écrit aux deux endroits : relâcher le banc.**
+  Accepter « non concluant » l'aurait rendu vert partout où les tags manquent — vert en ne regardant
+  rien, la vacuité même que cette garde retire. **C'est l'environnement qui doit fournir l'objet,
+  jamais l'assertion qui doit baisser.** L'échec a été reproduit avant d'être corrigé, puis le même
+  contrôle remontré au vert.
 - **Les exemples sont repinés sur `0.1.160`**, mesuré plutôt que déduit : `0.1.158` est encore dans
   la fenêtre aujourd'hui mais en sortirait dès la publication de `0.1.161`. Le verrou est régénéré
   par l'outillage — deux lignes, aucune dépendance. Cinquième train sous la procédure du 07/09.
