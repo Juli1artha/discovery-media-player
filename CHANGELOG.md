@@ -12,6 +12,70 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.160] — 2026-09-09
+
+### Changed
+
+- ⚠️ **Un témoin prouve que l'instrument tourne ; il ne prouve pas que le stimulus est arrivé.** Le
+  contrôle positif ajouté en `0.1.159` répond à *« ce montage sait-il exécuter quoi que ce soit ? »*.
+  Un hôte a rapporté la couche en dessous, depuis son propre quasi-accident : sa campagne de mutation
+  annonçait **deux** gardes survivantes, et il allait nous écrire que deux sur sept sont aveugles.
+  Vérification avant envoi — son `sed` avait produit un **diff vide** sur l'une d'elles. Le mutant
+  n'a jamais atterri. **La garde avait été déclarée aveugle pour n'avoir rien eu à voir.** Refaite,
+  elle tue ce mutant deux fois, sur des égalités exactes.
+  ⚠️ **Et celle-ci accuse au lieu de rassurer**, ce qui lui vaut son propre nom. Toutes les autres
+  défaillances de cette famille fabriquent du confort : un vert qui ne dit rien, un compte qui n'a
+  rien compté. Celle-ci fabrique un défaut **chez soi**, et envoie quelqu'un réparer une chose qui
+  n'était pas cassée.
+  **Le raffinement qui divise le coût : seul un survivant a besoin du contrôle.** Un mutant tué
+  prouve son propre atterrissage — le rouge *est* la preuve que le changement a atteint son sujet.
+  La règle n'est donc pas « vérifier chaque mutation », c'est **ne jamais croire un survivant dont
+  on n'a pas vu le diff**.
+  ⚠️ **Nous tenons déjà la propriété, et c'est vérifié plutôt que supposé.**
+  `tools/fixture-types/eprouver.mjs` — notre unique campagne de mutation automatisée — teste
+  `if (mute === original)` et enregistre ce cas comme survivant **avec son propre message**, *« le
+  motif n'existe plus dans la fixture »*. Il fait échouer la campagne, et **sépare les deux causes
+  dans le constat** au lieu de les confondre : un cran au-dessus d'exiger un diff non vide, puisque
+  le lecteur apprend laquelle des deux s'est produite.
+- ⚠️ **Une valeur que le test a lui-même fournie n'est jamais la preuve qu'un double a été atteint.**
+  Nous demandions à un hôte si son quatrième `describe` portait un contrôle. Sa réponse déplace
+  l'unité : ce n'est pas le `describe`, c'est **le double que chacun emprunte**. Trois voies, dont
+  une — son rendu d'aperçu — n'emprunte **aucun double**, sa sortie venant des paramètres de requête.
+  Sa valeur d'allure fixture était celle que **le test avait envoyée dans la requête**. *« J'aurais
+  pu la prendre pour une preuve, et c'en aurait été une fausse. »*
+  La question qui sépare : *si le composant éprouvé était remplacé par un composant qui rend son
+  entrée inchangée, cette assertion passerait-elle encore ?* Si oui, elle parle du test.
+  Et leur comptabilité vaut d'être reprise : le fichier est clos non parce que chaque `describe`
+  porte un contrôle, mais parce que **chaque double participant est affirmé au moins une fois** —
+  la couverture est due aux coutures, pas à la syntaxe.
+- ⚠️ **Le nombre de tests qui tombent sous une mutation est un second relevé — celui du couplage.**
+  Nous avions observé que muter la valeur d'une fixture discrimine mieux que la retirer. Un hôte
+  pousse l'observation plus loin que nous : le nombre de tests qui tombent **n'est pas du bruit
+  autour du verdict**, c'est une seconde mesure. Chez eux, un fichier en fait tomber quatre dont
+  trois pour des raisons étrangères ; un autre en fait tomber exactement un, celui qui mesure. Même
+  méthode, même intention — la différence est une propriété des **fichiers**. Le premier leur disait
+  *« il manque un contrôle »* et, dans le même souffle, *« trop de choses dépendent ici d'un seul
+  rendu »*, et ils n'avaient lu que la première phrase.
+- ⚠️ **Un tiers peut aussi vous imputer un défaut que vous n'avez pas — et nous avons vérifié avant
+  d'accepter.** C'est le miroir de la règle écrite en `0.1.159`, et il mérite d'être posé à part
+  parce que l'instinct va dans l'autre sens : accepter une critique **ressemble** à de la rigueur.
+  Un hôte a lu nos deux corrections et en a tiré une règle — *« deux fois en trois jours, une
+  vérification annoncée et non existante »* — avec un diagnostic excellent : celui qui décrit un
+  outil sait ce qu'il **devrait** faire, et cette connaissance l'empêche de lire ce qu'il fait.
+  **Le diagnostic est juste ; l'instance est fausse.** `docs/RELEASING.md` énumère sept conditions de
+  refus plus la réserve sur la CI non vérifiée, et elles correspondent à ce que le préflight imprime.
+  **Le document n'a jamais prétendu que le verrou était confronté.** Les deux affirmations fausses
+  étaient dans la conversation, pas dans le dépôt. Concéder aurait coûté plus que la flatterie
+  refusée : cela aurait inscrit un défaut fabriqué dans notre propre trace, où le prochain lecteur
+  l'aurait trouvé et aurait agi dessus. **Une critique est une mesure, et se vérifie comme telle** —
+  y compris, et surtout, quand elle vient de quelqu'un dont les trois derniers constats étaient bons.
+- **Les exemples ne sont PAS repinés, et c'est la première fois en huit trains.** `acceptables()` rend
+  les deux plus hautes versions **publiées**, lues à l'exécution : les exemples épinglent `0.1.158`,
+  qui reste dans la fenêtre que `0.1.159` soit publiée ou non. La règle a été **lue plutôt que
+  déduite** — l'habitude de repiner à chaque train aurait épinglé une version que le registre ne sert
+  pas encore, donc un rouge garanti. Le verrou est régénéré par l'outillage : deux lignes, aucune
+  dépendance. Quatrième train sous la procédure écrite le 07/09.
+
 ## [0.1.159] — 2026-09-09
 
 ### Added
@@ -6511,7 +6575,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.159...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.160...HEAD
+[0.1.160]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.159...v0.1.160
 [0.1.159]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.158...v0.1.159
 [0.1.158]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.157...v0.1.158
 [0.1.157]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.156...v0.1.157

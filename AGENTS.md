@@ -1959,6 +1959,106 @@ name is fresh and searchable. What survived here is one assertion, grafted onto 
 the witness above, which was genuinely missing. That is the normal outcome of looking first — not
 nothing, but far less than what was proposed, and in the right place.
 
+## A witness proves the instrument ran; it does not prove the stimulus arrived
+
+The positive control added in 0.1.159 answers *"can this harness execute anything at all?"*. A host
+brought back the layer beneath it, from their own near-miss. Their mutation campaign reported two
+surviving guards, and they were about to tell us that two of seven were blind. Checking before
+sending: the `sed` for one of them had produced an **empty diff**. The mutant never landed. The
+guard had been **declared blind for having had nothing to see**. Redone properly, it kills that
+mutant twice, on exact equalities.
+
+> A witness proves the launcher runs. It does not prove the stimulus arrived.
+
+This is the fourth layer of the same family, and they are worth keeping distinct because each is
+invisible to the check above it:
+
+| what is missing | what it looks like |
+|---|---|
+| the probe recognised nothing in its corpus | green on nothing |
+| the command never ran (a failed glob, a killed pipeline) | a zero that looks measured |
+| the harness cannot execute anything | a non-zero that costs nothing |
+| **the stimulus never reached the subject** | **a healthy guard reported as blind** |
+
+⚠️ **And this one accuses rather than reassures**, which is why it deserves its own name. Every
+other failure in this family produces false comfort: a green that means nothing, a count that was
+never counted. This one fabricates a defect *at home*, and sends someone to fix a thing that was
+never broken. The cost lands on whoever is asked to repair the imaginary hole.
+
+**The refinement that halves the cost: only a survivor needs the check.** A killed mutant proves its
+own landing — the red is the evidence that the change reached the subject. It is exclusively the
+*surviving* mutant that is ambiguous, because "the guard did not notice" and "there was nothing to
+notice" produce the identical result. So the rule is not *verify every mutation*; it is **never
+believe a survivor whose diff you have not seen**.
+
+We hold this already, and it was verified rather than assumed:
+`tools/fixture-types/eprouver.mjs` — our one automated mutation campaign — does
+`if (mute === original)` and records that case as a survivor **with its own message**, *"the pattern
+no longer exists in the fixture"*. It fails the run, and it separates the two causes in the constat
+rather than merging them. That is the remedy, one notch better than requiring a non-empty diff,
+because the reader is told which of the two happened.
+
+## A value the test itself supplied is never evidence that a double was reached
+
+A host closed a file we had asked about, and the interesting part was not the answer but the unit.
+We had asked whether their fourth `describe` had a control. Their answer: the unit is not the
+`describe`, it is **the double each one borrows**. Three routes existed; one of them —
+their preview renderer — borrows **no double at all**, because its output comes from query
+parameters. Its fixture-looking value was the one **the test had sent in the request**.
+
+> They could have taken it for proof, and it would have been a false one.
+
+The shape generalises past test doubles. Any assertion that finds a value it supplied itself is
+measuring the round trip of its own input, not the mechanism in between: a header echoed back, an id
+you generated appearing in a response, a filename you wrote turning up in a listing. The value's
+presence proves transport, and transport is rarely the property under test.
+
+The question that separates them: ***if the component under test were replaced by one that returns
+its input unchanged, would this assertion still pass?*** If yes, the assertion is about the test.
+
+Their conclusion about the file is worth keeping too, because it changes the accounting: the file is
+closed not because every `describe` carries a control, but because **every participating double is
+asserted at least once**, and the routes that repeat an already-proven double would take the whole
+file red if that double broke. Coverage is owed to the seams, not to the syntax.
+
+## The count of tests that fall under a mutation is a second reading, of the coupling
+
+We had observed that mutating a fixture's value discriminates better than removing it, and that the
+discrimination sharpens as the harness gets healthier. A host took the observation further than we
+had, and the extension is the useful half:
+
+> The number of tests that fall is not noise around the verdict. It is a second measurement — of how
+> coupled the file is.
+
+In their case: mutating one file's fixture took down four tests, of which three fell for reasons
+unrelated to the property. Mutating another took down exactly one, the one that measures. Same
+method, same intent, and the difference is a property of the **files**, not of the mutation. The
+first file was telling them *"a control is missing"* and, in the same breath, *"too much here depends
+on a single render"* — and they had read only the first sentence.
+
+So a mutation campaign yields two outputs per subject and it is worth writing both down: **did
+anything notice** (the verdict), and **how much noticed for the wrong reasons** (the coupling). The
+second is free, arrives unbidden, and is the one nobody records.
+
+## A third party can also impute a defect you do not have
+
+The mirror of the rule from 0.1.159 — *when someone measures you and finds better than you, suspect
+their method before your own pessimism* — and it needs stating separately, because the instinct runs
+the other way. Accepting a criticism feels like rigour. It is only rigour if the criticism is true.
+
+A host read two corrections we had published and drew a rule from the pair: *"twice in three days, a
+verification announced and not existing"*, with a diagnosis about the writer of a tool's description
+knowing what the tool **should** do and therefore being unable to read what it does. **The diagnosis
+is excellent. The instance was wrong**, and we checked before accepting it: `docs/RELEASING.md`
+lists seven refusal conditions plus the caveat on the unverified CI check, and they correspond to
+what the preflight actually prints. **The document never claimed the lockfile was confronted.** Both
+false statements were made in conversation, not written in the repository.
+
+Conceding here would have cost more than the flattery it refused: it would have put a fabricated
+defect into our own record, where the next reader would find it and act on it. **A criticism is a
+measurement, and it is checked like one** — including, and especially, when it comes from someone
+whose last three findings were right.
+
 ## Distance decides whether a warning protects a claim — and it is not linear
 
 Recorded above: a warning in one place does not protect a claim in another. A host sharpened it after
