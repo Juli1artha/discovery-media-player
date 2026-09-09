@@ -2059,6 +2059,119 @@ defect into our own record, where the next reader would find it and act on it. *
 measurement, and it is checked like one** — including, and especially, when it comes from someone
 whose last three findings were right.
 
+## A surviving mutant has three causes, and two of them accuse the guard wrongly
+
+We had written that only a survivor needs the diff check, because a killed mutant proves its own
+landing. A host took that back one step further, by **retracting the survivor they had reported to
+us**. Their mutant was not undetected — it was *benign*. They had planted a light background on an
+element that already carried a dark counterpart for the same property, so in dark mode the
+counterpart applies and the element is correctly themed. **The guard was right to stay silent.**
+They had also described its mechanism wrongly, and found that out only by reading the extractor
+instead of inferring it from the result.
+
+> The three causes of a survivor: the instrument is blind, the stimulus never arrived, or **there
+> was nothing to report**. Two of the three are the measurer's error, and both accuse the measured.
+
+So the control on a survivor must establish two things, not one: *did the mutation land* — and *was
+the mutation a defect*. The second is the one that gets skipped, because planting a mutant feels
+like it settles the question of whether it is a defect. It does not: a change that alters the source
+and changes no observable behaviour is exactly what a good guard must ignore, and flagging it would
+be shouting at correct code — which is how a guard ends up disabled.
+
+## A positive control proves the instrument answers; it does not prove the quantity means anything
+
+The same host produced the sharpest finding of the exchange, and it bounds everything above. Their
+exemption counter returned **−12**. A count of exemptions cannot be negative. **Their positive
+control passed** — the injected witness moved the number by exactly `+1`, so the instrument was
+answering. The method was nonetheless confounded: removing counterparts to simulate the absence of
+the rule also removed the tokens the rule excused, and the result netted two effects.
+
+> A positive control proves the instrument responds. It does not prove the measured quantity means
+> anything. What saved the measurement was not the control — it was an **impossible number**.
+
+This is the limit of every control in this file, ours included: the witness in
+`planchersDesGardes`, the stimulus check on a mutation, the floor on a corpus. **They all validate
+the instrument. None validates the definition.** A quantity can be measured faithfully by a working
+instrument and still be the wrong quantity, and no amount of instrument-checking will say so.
+
+The only free witness for a definition is a **bound**:
+
+> A bounded quantity leaving its bounds is the only free witness we have — and it exists only if the
+> bound was written.
+
+A count that cannot be negative, a percentage that cannot exceed 100, a subset that cannot be larger
+than its set, a duration that cannot precede its start. Each is one assertion, costs nothing, and
+fires precisely when the definition — not the instrument — has gone wrong. Writing it is cheap; the
+reason nobody writes it is that the impossible case *feels* unreachable, which is the same instinct
+that leaves a floor off a probe.
+
+## An admission is the cheapest source to believe, because nobody contests it
+
+A host had inferred a pattern in our repository from two corrections we had published about
+ourselves, without opening the file. When we showed the instance was wrong, their diagnosis of their
+own error was better than our refusal:
+
+> I generalised from your own admissions — the cheapest source to believe, since nobody contests a
+> confession.
+
+It is worth keeping because it runs against a habit this repository actively cultivates: we report
+our own defects, at length, on purpose. That practice has a side effect nobody warned us about — a
+self-reported defect arrives pre-authenticated. Nobody cross-checks the party accusing themselves,
+so the admission propagates further and faster than a finding that had to be argued for, and it gets
+generalised into a pattern that was never measured.
+
+Their second sentence is the one to keep with it: **accumulated credit is exactly what makes the
+fourth claim dangerous.** Three correct findings buy the fourth an unearned pass, from the same
+reader, on the same subject.
+
+And the consequence for the party being credited wrongly: **a polite concession is a piece of
+writing, not a silence.** Agreeing to a fabricated defect puts it in the record, where the next
+reader finds it and acts on it.
+
+## Contradicting your own recorded measurement is not the same failure as not checking
+
+Every rule in this file about unverified claims assumes the writer did not look. There is a worse
+case, and it is ours: **we measured, we wrote the measurement down, and then we asserted the
+opposite.**
+
+Verifying `0.1.158`, we unpacked the published tarball and recorded that `CHANGELOG.md` does not
+travel in it — only `HOST-CONTRACT.md` and `RETENTION.md` ship under `docs/`. Three trains later we
+told two hosts that a dead link in the changelog was *"in the package you install"*. One of them
+measured the tarball and sent the correction back.
+
+> Not "I did not check". **"I checked, I recorded the answer, and then I said the opposite."**
+
+No amount of checking prevents this one, because the check was already done. What it needs is a
+different reflex: **before asserting a fact about an artefact, ask whether this session has already
+measured it** — and if so, read what was written rather than what is remembered. A measurement's
+value decays not because it becomes wrong but because the memory of it drifts while the record sits
+still.
+
+The consequence is worth naming too, because it decides who pays: the false claim was addressed to
+people who act on what we tell them. An error in our own trace costs us a train; an error we send
+out costs someone else their afternoon.
+
+## A day-deadline carried as an instant must carry the timezone of its decision
+
+A host named a residual in their own code and we owed them this note for two trains: a broadcast
+link's expiry is built in the browser and stored as an absolute instant, so a link created outside
+the intended country would expire at the end of *its* day, not the intended one.
+
+Their framing was "the dependency is on the write side", which says where it lives. Ours, which they
+adopted: **the storage is right and the ambiguity is at construction.** An absolute instant is the
+correct representation; what is missing is that "end of day" is not a property of the instant, it is
+a property of the *place where the decision was made*. So the residual is not a semantics defect —
+it is an **unrecorded field**: which day, in which timezone.
+
+The remedy shape follows from that, and it matters because the intuitive fix is the wrong one: store
+the decision's timezone beside the instant; **never change the instant**. Changing the semantics of
+an already-stored value to fix a theoretical case is how existing data gets broken.
+
+They also answered the question of where this belongs, and we take their answer: **not a clause in
+the host contract.** The value is constructed at the host and only crosses our surface on read, so a
+contract describing how a host must build its instants would reach past anything we can verify. It
+belongs here, as a documented trap.
+
 ## Distance decides whether a warning protects a claim — and it is not linear
 
 Recorded above: a warning in one place does not protect a claim in another. A host sharpened it after

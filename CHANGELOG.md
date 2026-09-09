@@ -12,6 +12,80 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.161] — 2026-09-09
+
+### Added
+
+- ⚠️ **`tools/sections-et-tags.mjs` — une section sans tag publie un lien qui ne résout pas, un tag
+  sans section publie une version que personne ne peut lire.** La garde naît sur **deux** défauts
+  réels, dont un a **soixante-seize versions**.
+  ⚠️ **Le lien mort n'était pas une négligence : il est EXIGÉ par une autre garde.** Le bloc de
+  références du CHANGELOG est régénéré mécaniquement depuis l'ordre des sections (`changelog.mjs`,
+  `urlAttendue`), donc une section `[0.1.159]` produit obligatoirement `compare/v0.1.158...v0.1.159`
+  — vers un tag qui n'existera jamais. Le modèle de cette garde suppose que **toute section a un
+  tag**, et personne ne l'avait éprouvé.
+  ⚠️ **Et la mesure en a sorti un autre.** Sur 158 sections confrontées à 160 tags : une seule
+  section sans tag (`0.1.159`, celle du jour), et **trois tags sans section**. Deux sont des tags
+  morts documentés ; **`v0.1.84` est PUBLIÉE au registre et n'a aucune section** — quiconque
+  l'installe ou ouvre sa Release ne trouve nulle part ce qu'elle a changé. Personne ne l'avait vu.
+  ⚠️ **L'en-tête de `changelog.mjs` décrit ce monde de travers**, et c'est ce qui a masqué le
+  défaut : il justifie son calcul par *« l'historique a au moins une discontinuité (la 0.1.85 suit
+  la 0.1.83) »*. **C'est faux** — la 0.1.84 existe et le registre la sert. La discontinuité est dans
+  le CHANGELOG, pas dans l'historique. Son calcul reste juste, mais pour une raison qui n'est pas
+  celle qu'il écrit.
+  12 bancs, **7 mutations sur 7 tuées**, chacune sous contrôle de stimulus — motif présent **et**
+  diff non vide assertés avant de croire un verdict.
+
+### Changed
+
+- ⚠️ **Un survivant a trois causes, et deux accusent la garde à tort.** Un hôte a **retiré le
+  survivant** qu'il nous avait rapporté : son mutant n'était pas ignoré, il était **bénin** — une
+  surface claire posée sur un élément portant déjà un pendant sombre de la même propriété, donc
+  correctement thématisé. **La garde avait raison de se taire.** Notre raffinement de la 0.1.160
+  n'en couvrait que la moitié : un survivant doit prouver que la mutation a **atterri** *et* qu'elle
+  était **un défaut**. Signaler un mutant bénin, c'est crier sur du bon code — la façon dont une
+  garde finit désactivée.
+- ⚠️ **Un contrôle positif prouve que l'instrument répond ; il ne prouve pas que la grandeur a un
+  sens.** Le même hôte a produit la trouvaille la plus forte de l'échange, et elle **borne tout ce
+  qui précède**. Leur compteur d'exemptions a rendu **−12**. Un compte d'exemptions ne peut pas être
+  négatif. **Leur contrôle positif passait** — le témoin injecté déplaçait le chiffre de `+1`. La
+  méthode était pourtant confondue.
+  **C'est la limite de tous nos contrôles, le témoin de la 0.1.159 compris : ils valident
+  l'instrument, aucun ne valide la définition.** Une grandeur peut être mesurée fidèlement par un
+  instrument qui marche et rester la mauvaise grandeur.
+  ⚠️ **Le seul témoin gratuit d'une définition est une borne** — *« une grandeur bornée qui sort de
+  ses bornes, et elle n'existe que si on a écrit la borne »*. Un compte qui ne peut pas être négatif,
+  un pourcentage qui ne peut pas dépasser 100, un sous-ensemble qui ne peut pas excéder son ensemble.
+  Une assertion, coût nul, et elle tire exactement quand la **définition** a dérapé.
+- ⚠️ **Un aveu est la source la moins chère à croire, parce que personne ne le conteste.** Un hôte
+  avait déduit un motif dans notre dépôt à partir de deux corrections que nous avions publiées sur
+  nous-mêmes, sans ouvrir le fichier. Son diagnostic de sa propre erreur vaut mieux que notre refus.
+  **Cela court contre une pratique que ce dépôt cultive** : nous rapportons nos défauts, longuement,
+  exprès — et un défaut auto-signalé arrive **pré-authentifié**. Personne ne recoupe celui qui
+  s'accuse. Avec son corollaire : *le crédit accumulé est exactement ce qui rend la quatrième
+  affirmation dangereuse*, et *une concession polie est une écriture, pas un silence*.
+- ⚠️ **Contredire sa propre mesure enregistrée n'est pas la même faute que ne pas vérifier.** Toutes
+  nos règles supposent que l'auteur n'a pas regardé. Il y a pire, et c'est de nous : en vérifiant la
+  `0.1.158`, nous avions dépaqueté le tarball et **écrit** que le CHANGELOG n'y voyage pas. Trois
+  trains plus tard, nous avons dit à deux hôtes que le lien mort était *« dans le paquet que vous
+  installez »*. L'un d'eux a mesuré et nous a renvoyé la correction.
+  **Aucune vérification n'empêche celle-là, puisque la vérification avait déjà eu lieu.** Il y faut
+  un autre réflexe : *cette session a-t-elle déjà mesuré ce fait ?* — et lire ce qui a été écrit
+  plutôt que ce dont on se souvient. Une mesure ne devient pas fausse ; **c'est la mémoire qui dérive
+  pendant que la trace reste immobile.** Et l'erreur partait vers des gens qui agissent sur ce que
+  nous leur disons : une faute dans notre trace coûte un train, une faute qu'on envoie coûte
+  l'après-midi de quelqu'un d'autre.
+- **La dette du STUDIO est payée avec deux trains de retard** : *une échéance-jour transportée comme
+  instant doit porter le fuseau de sa décision.* Le stockage est juste, l'ambiguïté est à la
+  construction — « fin de journée » n'est pas une propriété de l'instant mais du **lieu où la
+  décision est prise**, donc le résiduel est un **champ non enregistré**, pas un défaut de
+  sémantique. Le correctif stocke le fuseau **à côté** de l'instant et ne change jamais l'instant.
+  Et leur réponse sur l'emplacement est reprise : **pas une clause du contrat d'hôte** — la valeur
+  est construite chez eux et ne traverse notre surface qu'en lecture.
+- **Les exemples sont repinés sur `0.1.160`**, mesuré plutôt que déduit : `0.1.158` est encore dans
+  la fenêtre aujourd'hui mais en sortirait dès la publication de `0.1.161`. Le verrou est régénéré
+  par l'outillage — deux lignes, aucune dépendance. Cinquième train sous la procédure du 07/09.
+
 ## [0.1.160] — 2026-09-09
 
 ### Changed
@@ -6575,7 +6649,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.160...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.161...HEAD
+[0.1.161]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.160...v0.1.161
 [0.1.160]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.159...v0.1.160
 [0.1.159]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.158...v0.1.159
 [0.1.158]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.157...v0.1.158
