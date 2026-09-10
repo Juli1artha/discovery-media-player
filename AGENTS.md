@@ -2172,6 +2172,33 @@ the host contract.** The value is constructed at the host and only crosses our s
 contract describing how a host must build its instants would reach past anything we can verify. It
 belongs here, as a documented trap.
 
+## A grep over the callers does not see a call placed in a lifecycle
+
+We changed CI so a guard could see its object, then asked the obvious question — *does anything else
+run the suite?* — and answered it with `grep "npm test" .github/workflows/`. Two hits, both checked,
+both fine. We told two people the publication was not at risk.
+
+The publication failed. `npm publish` triggers `prepublishOnly`, which is `npm run build && npm
+test`. **The suite runs in that job without any `- run: npm test` line existing anywhere in it**,
+because the caller is `npm`, not the workflow.
+
+> A grep over the callers does not see a call placed in a lifecycle.
+
+The family is larger than npm: `prepare`, `postinstall`, `pretest`, git hooks, `Makefile` implicit
+rules, framework auto-discovery of files by name, a test runner globbing a directory. In each, the
+invocation exists in a **convention** rather than in a line someone wrote — so any search for the
+line comes back empty and reads as absence.
+
+The check that would have worked is not a better regex, it is a different question: **not "who calls
+this?" but "what runs here?"** — enumerated from the thing that does the running. For npm, that is
+the `scripts` block, where `prepublishOnly` sits three entries from `test`. We had even printed that
+block earlier in the same session.
+
+⚠️ **And the fact was not missing, it was unread.** The workflow file carried, twenty lines above the
+checkout we did not open, a comment beginning *"`npm publish` triggers `prepublishOnly`"*. Someone
+had already met this, written it down, and put it where the next person would need it. The search we
+ran could not reach it, and we never opened the file it was in.
+
 ## Distance decides whether a warning protects a claim — and it is not linear
 
 Recorded above: a warning in one place does not protect a claim in another. A host sharpened it after
