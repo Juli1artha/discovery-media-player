@@ -110,6 +110,53 @@ the notes there are this file's section for that version.
   rien, la vacuité même que cette garde retire. **C'est l'environnement qui doit fournir l'objet,
   jamais l'assertion qui doit baisser.** L'échec a été reproduit avant d'être corrigé, puis le même
   contrôle remontré au vert.
+- ⚠️ **Un hôte diagnostique notre séquence de numéros mieux que nous : ce n'est pas un défaut de
+  rigueur, c'est un défaut de COUPLAGE.** *« Taguer, publier et vérifier sont trois gestes qui
+  échouent séparément, et votre `prepublishOnly` en soude deux sans le dire. »* Le tag mort est le
+  symptôme propre : `v0.1.161` existe, rien n'est publié, et **aucun geste ne possède cet état** — le
+  tag dit que la version est coupée, le registre dit qu'elle n'existe pas, le changelog dit qu'elle
+  est sortie. Chacun est localement cohérent, l'ensemble ne l'est pas, parce que rien n'est
+  responsable de la **conjonction**. Le remède n'est pas de fusionner les trois — ils échouent
+  séparément pour de bonnes raisons — mais de reconnaître qu'**un état qui enjambe plusieurs gestes a
+  besoin d'un propriétaire, et que ce propriétaire ne peut pas être l'un d'eux.** Le nôtre est
+  `sections-et-tags.mjs`, qui ne tient aucun geste et ne fait que confronter leurs traces.
+- ⚠️ **Une sonde qui cherche un VOCABULAIRE rate un mécanisme exprimé autrement — et un hôte a failli
+  nous rapporter un défaut inexistant pour cette raison.** Leur relevé cherchait
+  `exit|throw|catch|existsSync` dans deux scripts de recopie ; l'un n'avait rien, et ils allaient
+  écrire « celui-ci échoue ouvert ». En **ouvrant le fichier** : il appelle `copyFileSync`, qui
+  **lève** sur une source absente, et une exception non rattrapée sort en code non nul. **Il échoue
+  bruyamment, simplement pas par les mots cherchés.** C'est notre défaut vu de l'autre côté : nos
+  propres sondes ont cherché `inconclusif(` et raté un plancher posé en `throw`. Un terme de
+  recherche est toujours **une supposition sur la façon dont un autre a écrit** ; ce qui tient est de
+  demander ce que le code FAIT sur la mauvaise entrée — donc de l'y lancer.
+  Et ce que leur comparaison a réellement trouvé est plus petit et meilleur : **une copie qui réussit
+  en produisant le mauvais fichier passe**, et le contrôle qui manque était écrit quinze lignes plus
+  loin, chez son frère.
+- ⚠️ **Nous avons concédé trop large, et l'hôte a refusé la concession.** Notre hypothèse — l'angle
+  mort d'une garde corrélé à l'endroit où les régressions atterrissent — a été mesurée chez eux
+  (12 sur 770) et ne tient pas dans leur architecture. Nous avons abandonné le tout. Leur réponse :
+  *« votre architecture invalide votre corrélation, pas votre raisonnement »*. La règle reste vraie ;
+  c'est **l'indicateur** qui était faux. **Concéder trop est un défaut à soi seul, et flatteur** : ça
+  ressemble à de l'humilité, et ça détruit une règle générale juste pour régler un cas particulier
+  faux. Quand une correction arrive, demander **laquelle des deux elle a atteinte**.
+- ⚠️ **Une limite supposée est une affirmation déguisée en précaution.** Un hôte avait écrit, dans le
+  fichier de bancs qui existe pour ne rien affirmer sans l'éprouver, un test **déclarant une limite
+  connue**. Le banc a rougi : l'outil traitait très bien le cas. *« Du même bois qu'un nombre nu :
+  elle a l'air d'une précaution et c'est une affirmation. »* Plus dangereuse qu'un nombre nu, parce
+  que sa forme lui achète la confiance — une limite énoncée se lit comme de la modestie, donc
+  personne n'en demande la preuve, et le suivant contourne un mur qui n'existe pas.
+- **Un outil non écrit ne laisse aucune trace ; une règle non écrite laisse au moins la
+  conversation.** Deux dettes de cet échange ont mis deux trains, pour la même raison — nommées dans
+  un message, pas dans un fichier. La distinction vient de l'hôte qui devait l'autre : une règle
+  survit dans l'échange qui l'a produite, un outil ne laisse rien du tout, et le suivant ne le
+  reconstruit pas parce qu'il n'apprend jamais qu'on le voulait. **Quand les deux sont dus et qu'un
+  seul peut être fait, l'outil passe devant.**
+- **L'audit réciproque de nos propres scripts de cycle de vie ne trouve rien, et c'est écrit comme
+  tel.** La question d'un hôte, retournée sur nous : deux scripts, `prepublishOnly` (celui qui nous a
+  coûté la `0.1.161`) et `prepare → install-hooks.mjs`, qui s'exécute à **chaque `npm ci`** sans
+  qu'aucun workflow ne le nomme. Mesuré plutôt que supposé : il échoue **en sécurité, délibérément et
+  documenté** — rien hors d'un dépôt git, rien depuis `node_modules`, et sur `stderr` jamais `stdout`
+  parce qu'une autre garde parse un `npm pack --json`. Un résultat négatif reste un résultat.
 - **Les exemples sont repinés sur `0.1.160`**, mesuré plutôt que déduit : `0.1.158` est encore dans
   la fenêtre aujourd'hui mais en sortirait dès la publication de `0.1.161`. Le verrou est régénéré
   par l'outillage — deux lignes, aucune dépendance. Cinquième train sous la procédure du 07/09.
