@@ -2199,6 +2199,107 @@ checkout we did not open, a comment beginning *"`npm publish` triggers `prepubli
 had already met this, written it down, and put it where the next person would need it. The search we
 ran could not reach it, and we never opened the file it was in.
 
+## Tagging, publishing and verifying fail separately — and a dead tag is a state none of them owns
+
+We had recorded three numbering anomalies in four releases and filed them under carelessness. A host
+read the sequence and returned a better diagnosis:
+
+> It is not a rigour defect, it is a coupling one. Tagging, publishing and verifying are three
+> gestures that fail separately, and your `prepublishOnly` welds two of them without saying so.
+
+The dead tag is the clean symptom: `v0.1.161` exists, nothing was published, and **no single gesture
+owns that state**. The tag says the version is cut. The registry says it does not exist. The
+changelog says it shipped. Each is locally consistent and the set is not, because nothing in the
+system is responsible for the *conjunction*.
+
+The practical consequence is not to merge the three — they fail separately for good reasons, and
+that is a feature. It is to notice that **a state spanning several gestures needs an owner**, and
+that the owner cannot be one of the gestures. Ours is now `tools/sections-et-tags.mjs`, which holds
+no gesture and only confronts their traces. That is why it can see what none of them can.
+
+⚠️ **And a welded pair is worse than a coupled one, because it is invisible.** `npm publish` runs
+`prepublishOnly`, so the suite executes inside the publish job with no line saying so. Two gestures
+became one at the moment of failure, and the failure was attributed to the wrong one.
+
+## A probe that searches a vocabulary misses a mechanism expressed differently
+
+A host turned the lifecycle rule on their own build and nearly sent us a defect that did not exist.
+Their sweep looked for `exit|throw|catch|existsSync|console.error` in two asset-copy scripts. One
+had none, and they were about to report it as *failing open*.
+
+Opening the file — which the search does not do — it calls `copyFileSync`, which **throws** on a
+missing source, and an uncaught exception in Node exits non-zero. **It fails loudly; simply not in
+the words that were being looked for.**
+
+> A probe that searches a vocabulary finds only the mechanisms that chose that vocabulary.
+
+The failure mode is ours from the other side: our own probes have looked for `inconclusif(` and
+missed a floor implemented as a `throw` caught by a wrapper. Same shape, and it will recur, because
+a search term is always a *guess about how someone else wrote it*. The check that survives is to ask
+what the code **does** on the bad input — which usually means running it on the bad input, not
+reading it for keywords.
+
+⚠️ **What their comparison actually found was smaller and better.** One script verifies its copy (a
+size floor); the other verifies only what Node gives for free — the source existed, the copy
+happened. **A copy that succeeds while producing the wrong file passes** — which is precisely the
+incident its own header documents. The missing control was already written fifteen lines away, in
+its sibling.
+
+## When a correction lands, separate the reasoning from the indicator
+
+We had proposed that a guard's blind spot might be correlated with where regressions land, using
+"carries an explicit dark-mode counterpart" as the indicator for "gets worked on". A host measured
+it — 12 of 770 — and showed the correlation does not hold in their architecture, where the dark
+theme is written once in the stylesheet. **We conceded the whole thing.** They refused the
+concession:
+
+> Your architecture invalidates the correlation, not the reasoning.
+
+The rule — *a blind spot correlated with where regressions land is a trap, not merely a risk* —
+holds everywhere. What failed was the **indicator**: carrying a counterpart does not mark what gets
+touched *there*. The right question in their codebase is *which colour families does the stylesheet
+not cite?* — same form, right predicate.
+
+Conceding too much is a failure mode of its own, and a flattering one: it looks like humility and it
+destroys a true general rule to settle a false particular one. **When a correction arrives, ask
+which of the two it reached** — the reasoning, or the thing you used to stand in for it.
+
+## An assumed limitation is an assertion wearing the clothes of a precaution
+
+A host built a tool and wrote, in the bench file that exists so nothing is claimed without being
+tried, a test declaring a known limitation: *a slash inside a character class derails it*. **The
+bench went red.** The tool handles it correctly. Six cases later, exactly one real breakage
+remained, and it was not the one they had assumed.
+
+> An assumed limitation is the same wood as a bare number: it looks like a precaution and it is a
+> claim.
+
+It is more dangerous than a bare number, because its form buys it trust. A stated limit reads as
+modesty — the author naming what they could not do — so nobody asks for its evidence. And it
+propagates: the next person plans around a wall that is not there, and the effort spent avoiding it
+is invisible in every measurement.
+
+The remedy is the one already applied to counts: **a limitation is a measurement and carries its
+case.** If you cannot produce the input that breaks it, you have not found a limit — you have found
+something you did not try.
+
+## An unwritten tool leaves no trace; an unwritten rule leaves at least the conversation
+
+Two debts in this exchange took the same two releases to be paid, for the same reason: each was
+named in a message rather than written into a file. The host who owed the other one drew the
+distinction we had missed:
+
+> Mine was a tool and yours was a rule — and an unwritten tool leaves no trace at all, where an
+> unwritten rule leaves at least the conversation.
+
+So the two decay differently. An unwritten rule survives in the exchange that produced it: someone
+can quote it back, and it will be re-derived from the same evidence next time. **An unwritten tool
+leaves nothing** — no artefact, no message worth quoting, and the next person does not rebuild it
+because they never learn it was wanted.
+
+The consequence for how debts are recorded: a rule can wait in a message for one round without
+being lost, and a tool cannot. When both are owed and only one can be done, **the tool goes first**.
+
 ## Distance decides whether a warning protects a claim — and it is not linear
 
 Recorded above: a warning in one place does not protect a claim in another. A host sharpened it after
