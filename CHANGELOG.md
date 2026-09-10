@@ -12,7 +12,7 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
-## [0.1.161] — 2026-09-09
+## [0.1.162] — 2026-09-10
 
 ### Added
 
@@ -82,6 +82,21 @@ the notes there are this file's section for that version.
   sémantique. Le correctif stocke le fuseau **à côté** de l'instant et ne change jamais l'instant.
   Et leur réponse sur l'emplacement est reprise : **pas une clause du contrat d'hôte** — la valeur
   est construite chez eux et ne traverse notre surface qu'en lecture.
+- ⚠️ **PUIS ELLE A FAIT ÉCHOUER LA PUBLICATION, ET LE FAIT QUI MANQUAIT ÉTAIT ÉCRIT VINGT LIGNES
+  AU-DESSUS DU CHECKOUT QUE JE N'AI PAS OUVERT.** Le tag `v0.1.161` a été poussé, `verifier` a tout
+  validé — puis `publier` a échoué. Cause : `npm publish` déclenche `prepublishOnly`
+  (« npm run build && npm test »), donc **la suite tourne dans ce job sans qu'aucun `- run: npm test`
+  n'y apparaisse**, et son checkout ne rapportait pas les tags. La garde a rendu NON CONCLUANT, les
+  bancs sont tombés, rien n'a été publié.
+  ⚠️ **Et l'affirmation « la publication n'était pas menacée » était fausse.** Elle reposait sur un
+  `grep npm test` **dans les workflows** : deux occurrences trouvées, deux vérifiées. La troisième
+  est déclenchée par **npm**, pas par le workflow. *Un grep sur les appelants ne voit pas un appel
+  posé dans un cycle de vie.* Le commentaire de `release.yml` disait déjà *« `npm publish` déclenche
+  `prepublishOnly` »* — trois lignes au-dessus du checkout non ouvert. **Le fait n'était pas absent,
+  il était non lu.**
+  Reprise conforme à `docs/RELEASING.md` : un tag mort ne se déplace pas, **on coupe le numéro
+  suivant**. `v0.1.161` rejoint donc les tags morts déclarés — et cette entrée est **réellement
+  exercée** par la garde, vérifié plutôt que supposé. `fetch-tags: true` est posé sur `publier`.
 - ⚠️ **La garde neuve a rougi en forge, et la cause était que la forge ne lui donnait pas son objet.**
   `actions/checkout` ne rapporte **pas** les tags par défaut : sur le runner, `git tag -l` rend une
   liste vide, la garde rend honnêtement NON CONCLUANT — *« la confrontation ne peut pas être
@@ -6662,8 +6677,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.161...HEAD
-[0.1.161]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.160...v0.1.161
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.162...HEAD
+[0.1.162]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.160...v0.1.162
 [0.1.160]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.159...v0.1.160
 [0.1.159]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.158...v0.1.159
 [0.1.158]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.157...v0.1.158

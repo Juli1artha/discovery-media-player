@@ -49,6 +49,7 @@ export const TAGS_MORTS = {
   // la longueur des raisons l'a attrapée, et la vérification a rendu le fait : les deux tags
   // portent le MÊME défaut mesurable, chacun avec son chiffre.
   "v0.1.141": "tag posé le 27/08 sur le `main` récupéré AVANT la fusion du commit de sortie : il pointe un commit dont package.json déclare 0.1.140. `verifier` a donc refusé, rien n'a été publié, et la reprise documentée dans docs/RELEASING.md est de couper le numéro suivant plutôt que de déplacer un tag qu'un ruleset interdit de supprimer",
+  "v0.1.161": "tag poussé le 09/09 sur un commit correct, mais `publier` a échoué AVANT toute publication : son checkout ne rapportait pas les tags, donc `prepublishOnly` (« npm run build && npm test ») faisait tomber les bancs de cette garde même. Registre jamais servi ; reprise conforme à docs/RELEASING.md, le numéro suivant a été coupé",
   "v0.1.146": "même défaut mesuré séparément : le tag pointe un commit dont package.json déclare 0.1.145, donc jamais publié non plus. Il est posé — et c'est le détail qui mérite d'être gardé — sur le commit « Aucun document n'annonce une version qui n'existe pas » (#480)",
 };
 

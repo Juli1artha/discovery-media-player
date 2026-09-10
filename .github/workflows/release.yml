@@ -237,9 +237,20 @@ jobs:
       contents: read
       id-token: write        # OIDC : publication npm sans jeton stocké
     steps:
+      # ⚠️ LES TAGS SONT NÉCESSAIRES ICI AUSSI, ET LA 0.1.161 L'A PAYÉ D'UNE PUBLICATION MANQUÉE.
+      # `npm publish` déclenche `prepublishOnly` (« npm run build && npm test ») — c'est écrit vingt
+      # lignes plus haut — donc la SUITE tourne dans ce job, sans qu'aucun `- run: npm test`
+      # n'apparaisse. `checkout` ne rapporte pas les tags par défaut : `sections-et-tags.mjs`
+      # confronte les sections du CHANGELOG aux tags, ne trouvait aucun tag, rendait NON CONCLUANT,
+      # et `npm test` échouait APRÈS que `verifier` eut tout validé. Le tag v0.1.161 est mort ainsi.
+      #
+      # ⚠️ ET LA LEÇON DE MÉTHODE : chercher « npm test » dans les workflows rate cette exécution,
+      # parce que c'est `npm` qui la déclenche et non le workflow. Un grep sur les appelants ne voit
+      # pas un appel posé dans un cycle de vie.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
+          fetch-tags: true
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           # ⚠️ npm ≥ 11.5 est la version minimale qui sait s'authentifier auprès de npm par OIDC.
