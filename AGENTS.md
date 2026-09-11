@@ -2353,6 +2353,48 @@ measures the code we guard, weakened, with nothing saying so, is worse for this 
 product defect: every conclusion drawn through it inherits the flaw silently. **Hold the tools that
 measure to the bar of the thing measured.**
 
+## A control that is not itself controlled proves nothing
+
+Three things in one train, and they are the same thing seen from three distances.
+
+**A rule written by hand is not a rule enforced.** A bench file here carried the comment *"a test
+that depends on its rank within the file does not prove what it claims"* directly above a test that
+obtained a "fresh module" with `vi.resetModules()` then `require`. Measured: both return the **same
+exports object** in CommonJS — `resetModules` clears vite's module registry, not Node's `require`
+cache. The test had always been reading its neighbours' leftovers. It passed only because it sits
+first in its block.
+
+**What it hid was in production.** `init()` discarded one execution memo and kept its twin, in a
+file that states three times that the two behave identically. They did — on the *read* path, the
+only one the benches looked at.
+
+⚠️ **And the control itself rotted mid-experiment.** Hand mutation testing needs a pristine copy to
+restore from. A killed run left a mutated file on disk; the next run copied *that* as its reference.
+Every "restored, identical" check afterwards compared the corruption to itself and said **true**.
+The measurements that followed were worthless and looked fine.
+
+So, three rules, cheapest first:
+
+- **Fingerprint the witness, don't diff against a copy of unknown provenance.** `sha1sum` the
+  pristine file once, print it, and assert it after every restore. A diff against a backup only
+  proves the two agree — not that either is right.
+- **A guard that spawns the suite must refuse to run inside it.** Otherwise the bench that launches
+  every tool launches this one, which launches the suite, which contains that bench. Here it left
+  **391 stray processes** and a load average of 224; nothing failed, everything just got slower and
+  wrong.
+- **An aggregate test declares its rank or gets fixed.** A test that reads what its neighbours
+  accumulated must say so — when it runs early it should report *"3 of 47 ran"*, not accuse the
+  repository of losing something it still has. A red that names the wrong culprit is worse than no
+  red, because someone learns the gesture for clicking past it.
+
+⚠️ **The guard that came out of this was itself refused by the repository's own floor bench, and it
+was right to be.** The first version blamed every file that went red under shuffle. The floor's
+fixture copies `tools/` wholesale into an empty tree, so vitest finds benches there that fail for
+want of a repository — and the guard called them order-dependent. Every red now gets **replayed
+alone, unshuffled**: still red means the failure pre-existed and this guard has nothing to say about
+it; green means the shuffle is the cause. **Presence under a stimulus is not causation by it** —
+the same control a host taught us for mutants, applied to a guard.
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives

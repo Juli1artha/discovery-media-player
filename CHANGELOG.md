@@ -12,6 +12,46 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Fixed
+
+- ⚠️ **La règle était écrite à la main dans le dépôt, au-dessus d'un mécanisme qui ne l'appliquait
+  pas.** `server/__tests__/repliRpcSignature.test.js` portait le commentaire *« un essai qui dépend
+  de son rang dans le fichier ne prouve pas ce qu'il annonce »* au-dessus d'un essai qui obtenait un
+  « module neuf » par `vi.resetModules()` puis `require`. **Mesuré : les deux rendent le MÊME objet
+  d'exports en CommonJS** — `resetModules` vide le registre des modules transformés par vite, pas le
+  cache `require` de Node. L'essai lisait donc l'héritage de ses voisins depuis toujours, et ne
+  passait que parce qu'il se trouve en tête de son bloc.
+- ⚠️ **Et ce qu'il masquait était en PRODUCTION.** `presentations.init()` jetait le mémo
+  d'exécution du durcissement et **gardait celui de la fusion**, alors que le fichier écrit **trois
+  fois** que les deux jumeaux se comportent identiquement — *« même patron que 0018 »*, *« même
+  lecture que `etatDurcissementBootstrap`, délibérément »*. Ils l'étaient sur le chemin de LECTURE,
+  le seul que les bancs regardaient, et pas sur la remise à zéro. Un hôte qui rappelle `init` avec
+  un autre contexte — donc possiblement une autre base — lisait une observation faite sur la base
+  **précédente** sous le nom de la nouvelle. Banc écrit : il échoue sans le correctif.
+- ⚠️ **`tools/ordre-des-bancs.mjs` — la suite mélangée, avec le contrôle de stimulus que sa
+  première écriture n'avait pas.** Elle accusait tout fichier rouge sous mélange ; **le plancher
+  `planchersDesGardes` l'a REFUSÉE**, et il avait raison : son éprouvette copie `tools/` en entier
+  dans un arbre vide, donc vitest y trouve des bancs qui échouent faute de dépôt, et la garde les
+  déclarait dépendants de leur rang. Chaque rouge est désormais **rejoué seul, sans mélange** : s'il
+  échoue aussi, l'échec préexiste et la garde se tait ; s'il passe, le mélange est bien la cause. Et
+  si un rouge préexiste, l'ordre n'est pas mesurable du tout — **NON CONCLUANT**, jamais vert.
+  ⚠️ **Elle refuse de se lancer depuis un lancement de bancs, et c'est une propriété.**
+  `planchersDesGardes` lance chaque outil de `tools/`, donc celui-ci, donc la suite — qui contient
+  `planchersDesGardes`. Écrite sans ce garde-fou, elle a fait ce qu'on attend d'une imbrication : le
+  banc ne finissait plus, et **391 processus résiduels ont écrasé la machine** — au point que le
+  témoin de référence est devenu faux sans le dire.
+  ⚠️ **La graine est imprimée**, parce qu'une garde non déterministe dont l'échec ne se reproduit
+  pas est un rouge qu'on apprend à ignorer. Par défaut le jour UTC ; `--graine=<n>` rejoue.
+  ⚠️ **Elle n'exige pas que tout banc survive au mélange.** Des fichiers dépendent de leur ordre
+  légitimement — un verdict agrégé, un écouteur posé une fois. Ils sont **déclarés avec leur raison
+  et nommés à chaque exécution** : une dette déclarée, pas une exemption muette. 10 bancs,
+  **5 mutations sur 5 tuées**, dont une par expiration — l'imbrication qu'elle empêche.
+- ⚠️ **Un essai qui résume ses voisins le DÉCLARE désormais plutôt que de le subir.** Le dernier
+  essai de `planchersDesGardes` lit un accumulateur rempli par les essais générés au-dessus ;
+  exécuté avant eux, il échouait en accusant le dépôt d'avoir perdu une formule qu'il n'avait pas
+  perdue — un rouge qui désigne le mauvais coupable. Il dit maintenant combien d'essais ont tourné.
+
+
 ## [0.1.163] — 2026-09-11
 
 ### Fixed

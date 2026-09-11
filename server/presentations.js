@@ -15,7 +15,23 @@ const crypto = require("crypto");
 const ROTATIONS = [0, 90, 180, 270];
 
 let PLAYER = null;
-function init(ctx) { PLAYER = ctx; _bumpSansDurcissementJusqua = 0; _avertRpcPresence = false; _etatDurcissement = "inconnu"; }
+/**
+ * ⚠️ `init` JETTE LES OBSERVATIONS, ET IL DOIT LES JETER TOUTES. Les mémos d'exécution disent ce que
+ * CE processus a constaté de CETTE base. Un contexte neuf peut être une autre base : reporter une
+ * observation d'avant, c'est rapporter une propriété de la base précédente sous le nom de la
+ * nouvelle.
+ *
+ * ⚠️ LE MÉMO DE LA FUSION MANQUAIT ICI, ET LES DEUX JUMEAUX SE DISENT IDENTIQUES TROIS FOIS DANS CE
+ * FICHIER — « même patron que 0018 », « même lecture que `etatDurcissementBootstrap`,
+ * délibérément ». Ils l'étaient sur le chemin de LECTURE, le seul que les bancs regardaient, et pas
+ * sur la remise à zéro. Une règle énoncée n'est pas une règle tenue, et celle-ci était énoncée.
+ */
+function init(ctx) {
+  PLAYER = ctx;
+  _bumpSansDurcissementJusqua = 0; _etatDurcissement = "inconnu";
+  _bumpSansFusionJusqua = 0; _etatFusion = "inconnu";
+  _avertRpcPresence = false;
+}
 
 /**
  * L'état OBSERVÉ du durcissement des bootstraps — pas sa configuration.
