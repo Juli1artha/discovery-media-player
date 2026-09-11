@@ -171,7 +171,10 @@ async function touchPresentation(slug, control) {
 
 // Liste des présentations en cours (membre authentifié). Auto-purge : une présentation active dont le
 // dernier heartbeat remonte à > STALE_MS (présentateur parti sans clôturer) est marquée inactive.
-const STALE_MS = 3 * 60 * 1000;
+// ⚠️ LE SEUIL VIT DÉSORMAIS DANS UNE FEUILLE, et `schema.js` le lit de là plutôt que d'ici. Il
+// était défini ici et emprunté par un `require()` dynamique croisé, ce qui fermait le seul cycle du
+// graphe serveur. Le commentaire ci-dessus reste : il explique POURQUOI trois minutes.
+const { STALE_MS } = require("./constantes-presentation.js");
 
 /**
  * ÉCRIRE SEULEMENT SI LA CONDITION TIENT ENCORE — au moment de l'écriture, pas au moment du contrôle.

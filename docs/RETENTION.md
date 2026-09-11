@@ -131,8 +131,11 @@ it is the trace. The row records a fingerprint and a date and nothing else: writ
 would recreate, inside the database, whatever personal data the bucket may already hold — and make
 it queryable, which is strictly worse than not having it.
 
-⚠️ **A visitor chooses what goes in.** `bot-tts` accepts the caller's text, so a unique text leaves
-an MP3 and a JSON in a public bucket. The grouping and ceilings added in 0.1.140 bound the cost per
+⚠️ **This paragraph used to say a visitor chooses what goes in. That stopped being true** when
+`bot-tts` began confronting the text with what the assistant actually said in that session — an
+external audit found the stale claim on 2026-09-11. The caller **proposes** a text; only a text the
+assistant already spoke is accepted. What still holds is the consequence: each *distinct accepted*
+text leaves an MP3 and a JSON in a public bucket. The grouping and ceilings added in 0.1.140 bound the cost per
 hour; only this window bounds the **duration**.
 
 ## Purging the reader IP and User-Agent (migrations 0026 and 0027)

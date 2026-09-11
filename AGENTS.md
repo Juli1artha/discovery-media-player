@@ -2320,6 +2320,39 @@ across a file at least looks like an oversight someone might check. When a corre
 it corrects sit close together, neither distance nor good faith does the work: only stating the
 contradiction outright does.
 
+## Nothing here confronts a sentence with what it describes
+
+An external audit read this repository cold and returned four defects. Three of them share one
+shape: **a sentence that was true when it was written, and that the code stopped honouring under
+it.** The host contract said the shared rate counter "is not atomic" — false since migration
+`0004`, and contradicting the paragraph directly above it. An integration example omitted a field
+the route now requires. A comment claimed the visitor chooses what enters the voice cache, which
+stopped being true when the route began confronting the text with what the assistant actually said.
+
+⚠️ **The 38 guards saw none of them, and could not have.** They confront code with code, numbers
+with bounds, sections with tags. None confronts *prose* with what it describes, because the
+confrontation has no mechanical form: the fact that migration `0004` exists does not tell a program
+which English paragraph now lies.
+
+Two things follow, and the second is the one that costs.
+
+- **A doc correction is not bookkeeping here, it is a defect fix.** A host who reads a stale
+  warning builds a compensating control it does not need, or skips one it does. Correct the
+  sentence in place and say what it used to say — deleting it quietly leaves that host with no way
+  to learn their compensation was for nothing.
+- **When you change a behaviour, the prose that described the old one is part of the change.**
+  Grep for the mechanism you just moved, not for the words you happen to remember. The three stale
+  sentences above were each written by someone who fixed the code well and never searched for what
+  else spoke about it.
+
+⚠️ **And the fourth defect names the sharper version of this.** `vider()` in `server/mesures.js`
+promised "a fresh instance" and reset two counters out of four. Production never noticed —
+production never calls it. The **endurance benches** call it between warm-up and measurement, so
+they were charging the current scenario with the previous one's numbers. An instrument that
+measures the code we guard, weakened, with nothing saying so, is worse for this repository than a
+product defect: every conclusion drawn through it inherits the flaw silently. **Hold the tools that
+measure to the bar of the thing measured.**
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives

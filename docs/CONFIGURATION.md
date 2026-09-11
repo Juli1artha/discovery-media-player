@@ -484,8 +484,11 @@ embedding this assistant knows it must wire them; these four were the only ones 
 was driven by a server secret.
 
 So `bot-tts` is an **integration point, not a feature**: a host that wants a speaking assistant
-issues an HTTP POST of `{ action: "bot-tts", slug, text }` from its own front end, and wires those
-controls itself. Reported on 26/08 by an integrating host who went looking for the caller and
+issues an HTTP POST of `{ action: "bot-tts", slug, sessionId, text }` from its own front end, and
+wires those controls itself. ⚠️ **`sessionId` is required, and this example omitted it** — an
+external audit found the omission on 2026-09-11. The route refuses without it, and it refuses again
+if the text was not one the assistant actually spoke in that session: the caller *proposes* a text,
+it does not choose one. Reported on 26/08 by an integrating host who went looking for the caller and
 found none — with 908 objects in its own `tts-cache` bucket, written by its own code.
 
 ⚠️ **THE ROUTE ONLY SPEAKS WHAT THE ASSISTANT ACTUALLY SAID.** Until 26/08 it accepted `text` as

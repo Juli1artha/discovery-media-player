@@ -58,6 +58,16 @@ function creerHistogramme() {
     },
     compte: () => n,
     max: () => Math.round(maxMs),
+    /**
+     * ⚠️ REMET À ZÉRO SANS CHANGER D'IDENTITÉ, ET C'EST LA RAISON DE CETTE MÉTHODE. `histoBase` est
+     * un `const` exporté par identité (`__histoBase`) : le réassigner périmerait l'export et les
+     * bancs mesureraient un objet que le module n'utilise plus. On vide l'état en place.
+     */
+    reset() {
+      seaux.fill(0);
+      n = 0;
+      maxMs = 0;
+    },
   };
 }
 
@@ -218,8 +228,24 @@ function relever() {
 }
 
 /** Pour les bancs : repartir d'une instance vierge sans recharger le module. */
+/**
+ * ⚠️ CETTE FONCTION PROMETTAIT PLUS QUE CE QU'ELLE FAISAIT, ET C'EST UN INSTRUMENT QUI MENTAIT.
+ *
+ * Elle annonçait « repartir d'une instance vierge sans recharger le module » et ne remettait à zéro
+ * que les histogrammes de routes et les compteurs de statut. `histoBase` et le retard de boucle
+ * survivaient. La télémétrie de production n'en souffrait pas — `vider()` n'y est jamais appelée —
+ * mais les BANCS D'ENDURANCE l'appellent entre l'échauffement et la mesure, puis entre scénarios.
+ * Ils pouvaient donc attribuer au scénario courant les appels base de l'échauffement et les
+ * ralentissements de boucle du scénario précédent.
+ *
+ * ⚠️ CE N'EST PAS UN DÉFAUT DE PRODUIT, C'EST PIRE POUR CE DÉPÔT : un instrument affaibli mesure
+ * moins bien le code qu'il surveille, et rien ne le dit. Trouvé par un audit externe le 11/09, qui
+ * l'a REPRODUIT plutôt que lu — `avant base n=1 boucle n=0` puis `apresVider base n=1 boucle n=2`.
+ */
 function vider() {
   for (const nom of FAMILLES) histos.set(nom, creerHistogramme());
+  histoBase.reset();
+  boucle.reset();
   // Écrits un par un, pour la même raison que les deux enveloppes de `observerBase` : une clé
   // calculée sur un objet ordinaire est la forme que `proprieteEcrite.test.js` refuse.
   statuts.ok = 0; statuts.refus4xx = 0; statuts.debit429 = 0; statuts.occupe503 = 0; statuts.erreur5xx = 0;
