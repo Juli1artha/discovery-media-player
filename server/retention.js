@@ -231,8 +231,11 @@ async function purgerMessagesPresentation(slug, opts, base, plafond) {
  * `list` : il n'y avait littéralement rien à parcourir. `doc_tts_objects` (migration 0021) est la
  * trace, et c'est elle qui rend cette purge possible.
  *
- * ⚠️ ET C'EST UN VISITEUR QUI DÉCIDE DE CE QUI Y ENTRE. `bot-tts` accepte le texte de l'appelant :
- * un texte unique laisse un MP3 et un JSON dans un bucket PUBLIC. Les plafonds de la 0.1.140
+ * ⚠️ CE COMMENTAIRE DISAIT « C'EST UN VISITEUR QUI DÉCIDE DE CE QUI Y ENTRE ». CE N'EST PLUS VRAI
+ * depuis que `bot-tts` confronte le texte à ce que l'assistant a réellement dit dans cette session :
+ * l'appelant PROPOSE, il ne choisit pas. Trouvé par un audit externe le 11/09, en même temps que la
+ * phrase jumelle de `docs/RETENTION.md`. Ce qui reste vrai est la conséquence : chaque texte DISTINCT
+ * ACCEPTÉ laisse un MP3 et un JSON dans un bucket PUBLIC. Les plafonds de la 0.1.140
  * bornent le coût par heure ; seule cette fenêtre borne la DURÉE.
  */
 async function purgerCacheDeVoix(opts, borneDate) {

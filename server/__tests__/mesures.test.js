@@ -305,3 +305,44 @@ describe("mesurer la base ne doit RIEN changer à ce qui s'exécute", () => {
     expect(player.__contexte().config.supabaseUrl).toBe("https://pose-apres.example");
   });
 });
+
+// ⚠️ `vider()` PROMETTAIT PLUS QUE CE QU'ELLE FAISAIT, ET C'EST UN INSTRUMENT QUI MENTAIT. Elle
+// annonçait « repartir d'une instance vierge » et laissait `histoBase` et le retard de boucle
+// intacts. Les bancs d'endurance l'appellent entre l'échauffement et la mesure : ils attribuaient
+// donc au scénario courant les appels base de l'échauffement et les ralentissements du scénario
+// précédent. Trouvé par un audit externe le 11/09, REPRODUIT avant d'être corrigé.
+describe("⚠️ vider() remet à zéro les TROIS relevés, pas seulement les routes", () => {
+  it("les appels base repartent de zéro", async () => {
+    const vu = mesures.observerBase({ request: async () => [] });
+    await vu.request("x");
+    await vu.request("y");
+    expect(mesures.__histoBase.compte()).toBeGreaterThan(0);
+    mesures.vider();
+    expect(mesures.__histoBase.compte(), "histoBase survivait à vider()").toBe(0);
+  });
+
+  it("⚠️ le retard de boucle repart à `null`, jamais à zéro", async () => {
+    // La distinction que ce module défend ailleurs : « pas encore mesuré » n'est pas « sain ».
+    const t = Date.now();
+    while (Date.now() - t < 60) { /* on occupe la boucle pour produire des échantillons */ }
+    await new Promise((r) => setTimeout(r, 120));
+    expect(mesures.relever().boucleMs.n, "aucun échantillon : le banc ne mesure rien").toBeGreaterThan(0);
+
+    mesures.vider();
+    const apres = mesures.relever().boucleMs;
+    expect(apres.n, "le retard de boucle survivait à vider()").toBe(0);
+    expect(apres.moyen, "un zéro se lirait « la boucle est saine »").toBeNull();
+    expect(apres.p99).toBeNull();
+  });
+
+  it("les routes continuent d'être remises à zéro — et la famille DISPARAÎT du relevé", () => {
+    // ⚠️ La première rédaction de ce banc affirmait `routes.document.n === 0`. Faux : `relever()`
+    // n'émet que les familles qui ont des échantillons, donc après `vider()` la clé n'existe plus.
+    // Une famille absente et une famille à zéro ne sont pas la même affirmation — c'est la même
+    // distinction que ce module tient déjà sur le retard de boucle.
+    mesures.chrono("document")(200);
+    expect(mesures.relever().routes.document.n).toBeGreaterThan(0);
+    mesures.vider();
+    expect(mesures.relever().routes).toEqual({});
+  });
+});

@@ -441,10 +441,25 @@ Two deliberate exceptions, both written next to the code:
   with a shared counter would make the guard pay the price we had just spared the thing it guards.
   On that path the real protection is the cache, not the counter.
 
-⚠️ **The shared count is not atomic.** PostgREST cannot express "increment": it is a read then a
-write. Two instances can read the same value and write one. The counter therefore **under**-estimates
-under heavy concurrency — it lets a little more through, never refuses wrongly. Said plainly rather
-than implying a precision we do not have.
+⚠️ **The paragraph that used to stand here said the shared count was not atomic. That has been
+false since `0004`, and it contradicted the paragraph above it in this same document.** It was
+written before the database function existed and outlived what it described. An external audit found
+it on 2026-09-11; it is corrected rather than quietly deleted, because a host who read it may have
+built a compensating control they do not need.
+
+Here is the matrix, stated once, so nothing has to be inferred:
+
+| Installed | What actually protects you |
+|---|---|
+| `0003` **and** `0004` | fast local refusal **+ shared atomic counter** — the limit means what it says for the instance |
+| `0003` without `0004` | **local only.** The function is absent, PostgREST answers 404, and the shared stage lets through after warning by name |
+| neither | **local only**, in memory, warned by name |
+| keys prefixed `pread:` | local only, **deliberately** — see the exception above |
+
+⚠️ **Read the second row carefully: without `0004` the shared stage does not count less well, it
+does not count at all.** The degradation is to the local counter, not to a weaker shared one. The
+warning the player emits used to say *"non-atomic rate counters"*, which named a mode that does not
+exist; it now says the shared counter is unavailable.
 
 ## The three things a host implements
 
@@ -793,7 +808,10 @@ claimed the opposite. Two consequences you must act on:
 - **`bot-tts` now requires a `sessionId`**, bound to the requested `slug`, and the text must match
   something the assistant said in that session. The player reads `listMessages(sessionId)` and
   treats a message as the assistant's when its `role` is `bot`, `assistant` or `ai`, taking the text
-  from `text` or `content`. **Anything it cannot read counts as "not said"** — an unrecognised shape
+  from `text`, `content` or `body` — the same three fields, in the same order, as everywhere else in
+  this document. ⚠️ **This sentence named only the first two**, and an external audit found the
+  mismatch on 2026-09-11: a host whose messages carry `body` and nothing else would have read here
+  that its assistant never speaks, while the code reads it perfectly well. **Anything it cannot read counts as "not said"** — an unrecognised shape
   yields an empty set and every request is refused. On the one route that spends money, *"I could
   not verify"* must read as **no**, never as *go ahead*.
 

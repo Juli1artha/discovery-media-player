@@ -12,6 +12,66 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.163] — 2026-09-11
+
+### Fixed
+
+- ⚠️ **Un audit externe a lu ce dépôt sans rien en savoir, et les quatre défauts qu'il rend tiennent
+  tous en une phrase : ce qui est écrit ici a cessé d'être vrai sans que rien ne le dise.** Aucun
+  n'est une régression de code — trois sont des affirmations que le code a démenties en évoluant
+  sous elles, le quatrième une fonction qui promettait plus qu'elle ne faisait. **Nos 38 gardes en
+  ont vu zéro**, parce qu'elles confrontent du code à du code et des nombres à des bornes : aucune
+  ne confronte une *phrase* à ce qu'elle décrit. C'est la limite, mesurée, de tout ce qui précède.
+- ⚠️ **`context/standalone.js` bornait UN appel réseau sur quatre, et le raisonnement pour le borner
+  était écrit à côté du seul qui l'était.** `db.request` abandonne après 15 s, avec le motif en
+  commentaire : un service qui accepte la connexion et ne répond plus immobilise la requête, sa
+  socket **et** la place d'admission jusqu'à ce que la plateforme tue la fonction. Les trois autres
+  — suppression Storage, signature d'envoi, vérification de jeton — partaient nus. **L'audit l'a
+  mesuré plutôt que lu**, en remplaçant `fetch` : `REST hasSignal true`, les trois autres `false`.
+  ⚠️ **Ce n'est pas un contournement d'autorisation** : ces chemins refusent en cas d'échec. Le
+  risque est de **disponibilité**, et il frappe aussi les purges et les consultations protégées.
+  Corrigé par un `fetchBorne()` unique et **quatre délais nommés et inégaux** — une vérification de
+  jeton est sur le chemin d'une réponse qu'un visiteur attend (5 s), un transfert Storage ne l'est
+  pas (15 s) ; un délai unique ferait patienter le visiteur au rythme du service le plus lent. Il
+  ne reste **aucun `fetch` nu** dans le fichier. 3 bancs neufs, **4 mutations sur 4 tuées**.
+- ⚠️ **`vider()` dans `server/mesures.js` annonçait « repartir d'une instance vierge » et laissait
+  survivre `histoBase` et le retard de boucle.** La télémétrie de production ne s'en plaignait pas
+  — `vider()` n'y est jamais appelée. **Les bancs d'endurance, eux, l'appellent entre l'échauffement
+  et la mesure**, puis entre scénarios : ils attribuaient au scénario courant les appels base de
+  l'échauffement et les ralentissements de boucle du scénario précédent. ⚠️ **Ce n'est pas un défaut
+  de produit, c'est pire pour ce dépôt : un instrument affaibli mesure moins bien le code qu'il
+  surveille, et rien ne le dit.** L'audit l'a **reproduit** — `avant base n=1 boucle n=0`, puis
+  `apresVider base n=1 boucle n=2`. La remise à zéro se fait **en place** (`reset()`), parce que
+  réassigner `histoBase` périmerait l'export par identité `__histoBase` et les bancs mesureraient un
+  objet que le module n'utilise plus.
+- ⚠️ **Le contrat hôte affirmait que le compteur de débit partagé « n'est pas atomique ». C'est faux
+  depuis la migration `0004`, et la phrase contredisait le paragraphe juste au-dessus d'elle.** Elle
+  a été écrite avant que la fonction de base n'existe et a survécu à ce qu'elle décrivait. ⚠️ **Et
+  la dégradation réelle est l'inverse de ce qu'elle laissait croire : sans `0004`, l'étage partagé
+  ne compte pas moins bien, il ne compte PAS DU TOUT** — le code laisse passer et seul le compteur
+  local, par processus, subsiste ; une limite de 120/h en autorise alors 120 *par exécution*.
+  L'avertissement émis par le lecteur nommait le même mode inexistant : il dit désormais que le
+  compteur partagé est **indisponible**. Le contrat porte maintenant une **matrice à quatre lignes**
+  plutôt qu'une phrase — corrigée et non supprimée, parce qu'un hôte qui l'a lue a pu bâtir une
+  compensation dont il n'a pas besoin.
+- ⚠️ **Trois autres phrases décrivaient un `bot-tts` que la 0.1.140 avait déjà remplacé.** L'exemple
+  d'intégration de `docs/CONFIGURATION.md` omettait `sessionId`, pourtant **exigé** — un hôte qui le
+  recopiait recevait un refus sans comprendre ; `docs/RETENTION.md` et `server/retention.js`
+  affirmaient toujours qu'« un visiteur décide de ce qui entre » dans le cache de voix, alors que la
+  route confronte le texte à ce que l'assistant a réellement dit : l'appelant **propose**, il ne
+  choisit pas. Ce qui reste vrai est la conséquence — chaque texte **distinct accepté** laisse un
+  MP3 et un JSON dans un bucket public, et seule la fenêtre de rétention en borne la durée.
+  Le contrat hôte, lui, ne nommait que `text` et `content` là où le code lit `text`, `content` **ou**
+  `body` : un hôte dont les messages ne portent que `body` aurait lu ici que son assistant ne parle
+  jamais.
+- ⚠️ **Le seul cycle du graphe des modules serveur est rompu, et il tenait à une constante.**
+  `schema.js` empruntait `STALE_MS` et `signatureAbsente` à `presentations.js` par `require()`
+  dynamiques, alors que `presentations.js` importe lui-même `signatureAbsente` de `erreurs-base.js`
+  — trois modules pour une fonction qui en habite un. Le seuil vit désormais dans une feuille,
+  `server/constantes-presentation.js`, qui n'importe rien et ne peut donc fermer aucun cycle ;
+  `schema.js` lit la fonction à sa source. Graphe mesuré après coup : **27 fichiers, 57 arcs, zéro
+  cycle**.
+
 ## [0.1.162] — 2026-09-10
 
 ### Added
@@ -6724,7 +6784,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.162...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.163...HEAD
+[0.1.163]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.162...v0.1.163
 [0.1.162]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.160...v0.1.162
 [0.1.160]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.159...v0.1.160
 [0.1.159]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.158...v0.1.159

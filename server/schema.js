@@ -471,7 +471,10 @@ async function ajouterMigrationsDePresence(etat) {
     p_max_gap_ms: 0, p_anon_cap: 0, p_has_token: null, p_only_if_unclaimed: true,
   };
   const estSignatureAbsente = (erreur) => {
-    try { return require("./presentations.js").signatureAbsente(erreur); } catch { return false; }
+    // ⚠️ À LA SOURCE, PAS PAR `presentations.js`. Ce détour fermait le seul cycle du graphe serveur
+    // (audit externe du 11/09) alors que `presentations.js` importe lui-même cette fonction de
+    // `erreurs-base.js` : trois modules pour une fonction qui en habite un.
+    try { return require("./erreurs-base.js").signatureAbsente(erreur); } catch { return false; }
   };
 
   etat.fusionBaseCouvre = PORTEE_FUSION;
@@ -612,7 +615,7 @@ async function ajouterPresence(etat) {
     // même que celui du balayage des présentations orphelines — plutôt que d'inventer un second
     // nombre qui divergerait. Le présentateur bat toutes les 30 s (`present-touch`) : une présentation
     // sans battement depuis trois minutes est abandonnée, pas silencieuse. (Relevé du second hôte.)
-    const vivantDepuis = new Date(Date.now() - require("./presentations").STALE_MS).toISOString();
+    const vivantDepuis = new Date(Date.now() - require("./constantes-presentation.js").STALE_MS).toISOString();
     const actives = await PLAYER.db.request(`doc_presentations?active=eq.true&last_seen=gt.${encodeURIComponent(vivantDepuis)}&select=slug${bornee}`);
     const nActives = Array.isArray(actives) ? actives.length : 0;
     // ⚠️ `couvre` VOYAGE AVEC LES NOMBRES, ET C'EST LE POINT. Le commentaire ci-dessus protège celui

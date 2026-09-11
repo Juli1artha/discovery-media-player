@@ -41,6 +41,41 @@ function sansBarreFinale(valeur) {
 }
 
 /** Client REST minimal (PostgREST). Absent de configuration ⇒ chaque appel échoue franchement. */
+/**
+ * ⚠️ UN SEUL ENDROIT QUI BORNE, PARCE QU'IL Y EN AVAIT UN SUR QUATRE.
+ *
+ * `db.request` abandonnait déjà après un délai, avec le raisonnement écrit à côté : sans signal, un
+ * service qui accepte la connexion et ne répond plus immobilise la requête, sa socket ET la place
+ * d'admission jusqu'à ce que la plateforme tue la fonction. Trois autres appels — suppression
+ * Storage, signature d'envoi, vérification de jeton — partaient nus. Un audit externe l'a mesuré le
+ * 11/09 en remplaçant `fetch` : `REST hasSignal true`, les trois autres `false`.
+ *
+ * ⚠️ CE N'EST PAS UN CONTOURNEMENT D'AUTORISATION : ces chemins refusent en cas d'échec, ils rendent
+ * `null` ou `false`. Le risque est de DISPONIBILITÉ — sous concurrence, des sockets, de la mémoire
+ * et des exécutions serverless retenues par un tiers lent, y compris pour les purges et les
+ * consultations protégées.
+ *
+ * ⚠️ ET UNE COURSE DE PROMESSES NE SUFFIRAIT PAS : elle rendrait la main sans ANNULER le `fetch`,
+ * donc sans rien libérer. C'est `AbortSignal` ou rien. Un signal fourni par l'appelant a priorité —
+ * un hôte qui borne lui-même une opération longue n'est pas écrasé.
+ */
+function fetchBorne(cible, options = {}, delaiMs) {
+  const signal = options.signal
+    || (typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(delaiMs) : undefined);
+  return fetch(cible, { ...options, ...(signal ? { signal } : {}) });
+}
+
+/**
+ * Les délais, nommés plutôt qu'écrits en clair sur l'appel. ⚠️ ILS NE SONT PAS ÉGAUX, ET C'EST LE
+ * SUJET : une vérification de jeton est sur le chemin d'une réponse qu'un visiteur attend, un
+ * transfert vers Storage ne l'est pas. Un délai unique ferait patienter le visiteur au rythme du
+ * service le plus lent.
+ */
+const DELAI_AUTH_MS = 5000;
+const DELAI_ROUTE_HOTE_MS = 4000;
+const DELAI_STOCKAGE_MS = 15000;
+const DELAI_BASE_MS = 15000;
+
 function creerDb(env) {
   const url = sansBarreFinale(env.SUPABASE_URL);
   const cle = String(env.SUPABASE_SERVICE_ROLE_KEY || "");
@@ -67,12 +102,10 @@ function creerDb(env) {
     // transforme un ralentissement en refus général. Une course `Promise.race` ne suffirait pas —
     // elle rendrait la main sans ANNULER le fetch, donc sans libérer quoi que ce soit. L'hôte peut
     // fournir son propre `signal` (opérations longues : purges, transferts). (Audit externe.)
-    const delai = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 15000;
-    const signal = options.signal || (typeof AbortSignal !== "undefined" && AbortSignal.timeout
-      ? AbortSignal.timeout(delai) : undefined);
-    const r = await fetch(`${url}/rest/v1/${chemin}`, {
+    const delai = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : DELAI_BASE_MS;
+    const r = await fetchBorne(`${url}/rest/v1/${chemin}`, {
       method: methode,
-      ...(signal ? { signal } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
       headers: {
         apikey: cle,
         Authorization: `Bearer ${cle}`,
@@ -80,7 +113,7 @@ function creerDb(env) {
         ...(options.headers || {}),
       },
       body: options.body ? JSON.stringify(options.body) : undefined,
-    });
+    }, delai);
     if (!r.ok) {
       // ⚠️ LE CORPS DIT POURQUOI, LE CODE NE DIT QUE COMBIEN. Un « 400 » nu a coûté un aller-retour
       // de forge complet pour apprendre ce que PostgREST avait écrit dans sa réponse depuis le
@@ -166,15 +199,14 @@ async function appelHote(url, secret, corps, errors) {
   // perdu exactement ce temps-là.
   const signaler = (quoi) => { try { errors && errors.capture(new Error(`route hôte : ${quoi}`), { url }); } catch { /* jamais bloquant */ } };
   try {
-    const r = await fetch(url, {
+    const r = await fetchBorne(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...(secret ? { "x-player-fetch-secret": secret } : {}),
       },
       body: JSON.stringify(corps),
-      signal: AbortSignal.timeout(4000), // une décision qui tarde est une décision absente
-    });
+    }, DELAI_ROUTE_HOTE_MS); // une décision qui tarde est une décision absente
     if (!r.ok) { signaler(`réponse ${r.status}`); return null; }
     const d = await r.json().catch(() => null);
     if (!d || typeof d !== "object") { signaler("réponse illisible (JSON attendu)"); return null; }
@@ -306,8 +338,14 @@ function creerLimites(db, journal) {
         // passer ; dans les deux cas on le dit, en NOMMANT le fichier à appliquer. C'est la règle
         // du chemin de migration : dégrader, jamais casser, et ne jamais dégrader en silence.
         prevenirUneFois(
-          "compteurs de débit non atomiques : appliquez supabase/migrations/0004-limites-atomiques.sql. "
-          + "Sans elle, plusieurs requêtes simultanées peuvent dépasser la limite ensemble. "
+          // ⚠️ CE MESSAGE NOMMAIT UN MODE QUI N'EXISTE PAS. Il disait « compteurs non atomiques »,
+          // ce qui décrit un comptage partagé plus faible. Or ici il n'y a PLUS de comptage partagé
+          // du tout : le `return true` ci-dessous laisse passer, et seul l'étage local subsiste.
+          // Dire « non atomique » laisse croire qu'un plafond d'instance tient encore, en moins
+          // précis. Trouvé par un audit externe le 11/09, avec la contradiction jumelle du contrat.
+          "compteur de débit PARTAGÉ INDISPONIBLE : appliquez supabase/migrations/0004-limites-atomiques.sql. "
+          + "Sans elle il ne reste que le compteur LOCAL, par processus — une limite de 120/h en "
+          + "autorise 120 PAR EXÉCUTION. Ce n'est pas un comptage partagé dégradé, c'est aucun. "
           + "(" + ((erreur && erreur.message) || erreur) + ")",
         );
         return true;
@@ -358,9 +396,9 @@ function createStandaloneContext(env = process.env) {
           if (seg === "" || seg === "." || seg === ".." || !/^[A-Za-z0-9._-]+$/.test(seg)) return false;
         }
         try {
-          const r = await fetch(`${base}/storage/v1/object/${encodeURIComponent(bucket)}/${segs.map(encodeURIComponent).join("/")}`, {
+          const r = await fetchBorne(`${base}/storage/v1/object/${encodeURIComponent(bucket)}/${segs.map(encodeURIComponent).join("/")}`, {
             method: "DELETE", headers: { apikey: cle, Authorization: `Bearer ${cle}` },
-          });
+          }, DELAI_STOCKAGE_MS);
           return r.ok;
         } catch { return false; }
       },
@@ -382,11 +420,11 @@ function createStandaloneContext(env = process.env) {
         const cle = String(env.SUPABASE_SERVICE_ROLE_KEY || "");
         if (!base || !cle || !bucket || !chemin) return null;
         try {
-          const r = await fetch(`${base}/storage/v1/object/upload/sign/${bucket}/${chemin}`, {
+          const r = await fetchBorne(`${base}/storage/v1/object/upload/sign/${bucket}/${chemin}`, {
             method: "POST",
             headers: { apikey: cle, Authorization: `Bearer ${cle}`, "Content-Type": "application/json" },
             body: "{}",
-          });
+          }, DELAI_STOCKAGE_MS);
           if (!r.ok) return null;
           const d = await r.json().catch(() => null);
           const url = d && d.url;
@@ -474,9 +512,9 @@ function createStandaloneContext(env = process.env) {
         }
         if (!jeton || !url || !cle) return null;
         try {
-          const r = await fetch(`${url}/auth/v1/user`, {
+          const r = await fetchBorne(`${url}/auth/v1/user`, {
             headers: { apikey: cle, Authorization: `Bearer ${jeton}` },
-          });
+          }, DELAI_AUTH_MS);
           return r.ok ? await r.json() : null;
         } catch { return null; }
       },
