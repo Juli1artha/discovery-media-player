@@ -825,6 +825,23 @@ was a correct `bot`, and the reader would have returned an empty string for ever
 set, so every request refused, on a perfectly correct integration. If your field is none of those
 three, tell us and we widen the list. The field name carries no security; the **role** filter does.
 
+⚠️ **`reshare` now answers with a three-state `delivery`, and the state you must handle is
+`"unknown"`.** The response used to carry a single `sent` boolean, which collapsed three different
+outcomes: your mail path declined, *we* declined, or **the call failed without us learning what your
+side did**. Only the third is dangerous — if your host really sent the message and then answered too
+late, a caller reading `sent: false` retries, creating a **second child link and a second email**.
+
+| `delivery` | what happened | what to do |
+|---|---|---|
+| `"sent"` | your mail path reported success | nothing |
+| `"refused"` | a decision was made — yours or ours; `sendRefused` names it | surface the reason; retrying will refuse again |
+| `"unknown"` | the call failed (timeout, network). **We do not know whether the mail went out** | surface it to a human. **Do not retry automatically** — a retry may duplicate the email |
+| `"not-requested"` | `send` was falsy | nothing |
+
+`sent` is unchanged for integrations already reading it. ⚠️ **True idempotency — a key that makes a
+retry land on the *same* child link — needs a column and therefore a migration; it is not here yet.**
+Until it is, `"unknown"` is a decision for a person, not a loop.
+
 ⚠️ **Avatars are only loaded from origins the page already serves content from, and everything else
 degrades to initials.** An avatar URL is an `<img>` in the browser of **every other viewer**: an
 arbitrary URL therefore sends each of them — their IP, user agent, the time, the page origin — to

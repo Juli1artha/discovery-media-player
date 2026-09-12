@@ -14,6 +14,35 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- ⚠️ **`sent: false` mentait quand la vérité était « je ne sais pas », et c'est ce mensonge qui
+  duplique les courriers.** Trois issues tenaient dans un booléen : l'hôte a refusé, **nous** avons
+  refusé, ou l'appel a échoué **sans que nous sachions ce que l'hôte a fait**. Seul le dernier est
+  dangereux — si l'hôte a réellement envoyé puis répondu trop tard, un client qui lit « false »
+  réessaie et crée un **second lien enfant** en envoyant un **second courrier**.
+  ⚠️ **C'est la doctrine de `bot-tts` retournée.** Là-bas, « je n'ai pas pu vérifier » doit se lire
+  **non**, parce que le doute empêche une dépense. Ici, le doute lu comme « non » **provoque** la
+  dépense. La règle constante n'est donc pas « dans le doute, non » — c'est **« dans le doute,
+  dis-le »**, et laisse l'appelant choisir en sachant. `delivery` porte les quatre états ; `sent`
+  reste inchangé pour les intégrations qui le lisent. L'idempotence vraie demande une colonne, donc
+  une migration : elle n'est pas là, et le contrat dit quoi faire en attendant.
+- ⚠️ **Le délai des relais de fichiers bornait un SAUT, pas l'opération.** Chaque tour de boucle
+  créait son propre `AbortSignal.timeout(60 s)` : avec six tours possibles, une chaîne de
+  redirections lente immobilisait requête, socket et place d'admission jusqu'à **six minutes** —
+  alors que le commentaire juste en dessous affirmait « le délai est large mais il est **borné** ».
+  Un seul signal, créé avant la boucle, partagé par tous les sauts. Ce n'est pas un trou de sécurité
+  — chaque saut repasse la garde d'origine et recalcule le secret — c'est de la **disponibilité**.
+  ⚠️ Le banc compare l'**identité** des signaux : quatre signaux différents, c'est quatre fois
+  soixante secondes ; un seul, c'est l'opération bornée.
+- ⚠️ **Un `catch` vide confondait « non bloquant » et « muet ».** L'installation du hook git avalait
+  toute erreur sans un mot : un audit externe a rendu le dossier non inscriptible et obtenu sortie 0,
+  aucun message, aucun hook — le développeur croit son garde-fou posé et travaille sans. Le principe
+  était juste (échouer là ferait échouer `npm install` pour une commodité), la conclusion ne l'était
+  pas. Il l'écrit désormais sur **stderr**, jamais stdout, parce qu'une garde parse ce canal.
+  ⚠️ **Et le stimulus du banc ne passe plus par les permissions** : rendre un dossier non
+  inscriptible ne reproduit rien **sous root**, qui écrit malgré le mode — mesuré dans ce conteneur,
+  l'essai prenait une branche de secours et passait en ne prouvant rien. Un stimulus dont la présence
+  dépend de l'utilisateur qui lance les bancs n'est pas un stimulus.
+
 - ⚠️ **Un banc prouvait « la requête porte un signal d'abandon » en cherchant le motif dans la SOURCE
   — et c'est la deuxième fois que ce proxy mord.** La première est écrite dans sa propre correction :
   il cherchait dans la source brute, le commentaire au-dessus du code contenait les mots, donc

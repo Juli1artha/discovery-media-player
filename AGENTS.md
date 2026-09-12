@@ -2541,6 +2541,35 @@ verdict.
 - **The replacement is usually cheap.** A `fetch` that never resolves and a race against a timer:
   four lines, and it fails for exactly one reason — the request was not abandoned.
 
+## "In doubt, say no" is not the rule — "in doubt, say so" is
+
+Two routes here, two opposite-looking conclusions from the same uncertainty, and the rule that
+actually covers both.
+
+On the route that spends money, the doctrine is explicit: a text the player cannot verify as
+something the assistant said counts as *not said*, and the request is refused. *"I could not
+verify"* must read as **no**.
+
+On the reshare route, the same uncertainty was reported the same way — `sent: false` when the host
+call timed out — and it caused the harm. The caller reads "not sent", retries, and a host that
+**did** send the mail before answering late now sends a second one, on a second child link.
+
+The difference is not the confidence level. It is **who acts on the answer, and in which
+direction**. Where doubt blocks a spend, collapsing it to "no" is safe. Where doubt is read by
+something that retries, "no" *is* the spend. So:
+
+- **Never collapse "unknown" into the failure value when a caller may retry.** Give it its own
+  state, name it, and say in the contract that a retry may duplicate.
+- **Keep the old field.** Integrations read `sent`; changing its meaning to fix a third case would
+  break the two that worked. Add beside, don't redefine.
+- **A three-state answer is only useful if the third state reaches a person.** Document it as a
+  decision, not as a retry condition, or you have renamed the bug.
+
+⚠️ **And "non-blocking" is not "silent".** A hook installer swallowed every error to avoid failing
+`npm install` — correct principle — and said nothing, which turns *"we could not"* into *"all
+good"*. The developer believes the guard rail is in place and works without it. Non-blocking means
+the exit code is zero; it does not mean stderr is empty.
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives

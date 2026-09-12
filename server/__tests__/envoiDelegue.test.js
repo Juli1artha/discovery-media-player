@@ -45,10 +45,14 @@ require.cache[require.resolve("../shares.js")] = {
       return t ? { ...t } : null;
     },
     createReshare: async () => ({ slug: "Enfant-_xY12", docTitle: "Doc" }),
-    sendReshareEmail: async (m) => { courriers.push(m); return { sent: true }; },
+    // ⚠️ PILOTABLE, parce que les trois issues d'un envoi ne se distinguent que par ce que l'hôte
+    // fait : accepter, refuser, ou ne pas répondre à temps. Un envoyeur figé n'en montre qu'une.
+    sendReshareEmail: async (m) => { courriers.push(m); return envoyeur(m); },
     logShareEvent: async () => {},
   },
 };
+
+let envoyeur = async () => ({ sent: true });
 
 const player = require("../handler.js");
 
@@ -67,8 +71,9 @@ function contexte() {
   };
 }
 
-async function repartager(slugParent, { send = true } = {}) {
+async function repartager(slugParent, { send = true, envoi } = {}) {
   courriers = [];
+  envoyeur = envoi || (async () => ({ sent: true }));
   player.init(contexte());
   const res = { statusCode: 0, headers: {}, body: "", setHeader(k, v) { this.headers[k.toLowerCase()] = v; }, end(b) { this.body = String(b == null ? "" : b); } };
   await player.handler(
@@ -141,5 +146,55 @@ describe("ce que la charge utile permet à l'hôte", () => {
     // l'ignorer d'un seul geste, au lieu d'avoir à se souvenir lequel des champs est douteux.
     expect(m.untrusted.toName).toBe("<script>Bob");
     expect(m.doc.title).not.toContain("script");
+  });
+});
+
+// ⚠️ « SENT: FALSE » MENTAIT QUAND LA VÉRITÉ ÉTAIT « JE NE SAIS PAS », ET C'EST CE MENSONGE QUI
+// DUPLIQUE LES COURRIERS.
+//
+// Trois issues tenaient dans un booléen : l'hôte a refusé, NOUS avons refusé, ou l'appel a échoué
+// sans que nous sachions ce que l'hôte a fait. Le dernier cas est le seul dangereux — si l'hôte a
+// réellement envoyé puis répondu trop tard, un client qui lit « false » réessaie, et crée un SECOND
+// lien enfant en envoyant un SECOND courrier. Relevé par un audit externe le 12/09.
+//
+// ⚠️ C'EST LA DOCTRINE DE `bot-tts` RETOURNÉE. Là-bas, « je n'ai pas pu vérifier » doit se lire NON,
+// parce que le doute empêche une dépense. Ici, le doute lu comme « non » PROVOQUE la dépense. La
+// règle constante n'est donc pas « dans le doute, non » — c'est « dans le doute, DIS-LE ».
+describe("⚠️ les trois issues d'un envoi ne tiennent pas dans un booléen", () => {
+  const NOMINATIF = Object.values(PARENTS).find((p) => p.recipient_email).slug;
+
+  it("l'hôte envoie : delivery « sent »", async () => {
+    const r = await repartager(NOMINATIF);
+    expect(r.corps.sent).toBe(true);
+    expect(r.corps.delivery).toBe("sent");
+  });
+
+  it("⚠️ l'appel ÉCHOUE sans réponse : « unknown », jamais « refused » ni un simple false", async () => {
+    const r = await repartager(NOMINATIF, { envoi: async () => { throw new Error("délai dépassé"); } });
+    expect(r.corps.sent, "le booléen historique ne change pas — les intégrations le lisent").toBe(false);
+    expect(r.corps.delivery,
+      "« refused » ferait croire à une décision ; un réessai sur « unknown » peut DOUBLER le courrier")
+      .toBe("unknown");
+    expect(r.corps.sendRefused, "aucun refus n'a été prononcé").toBeUndefined();
+    expect(r.corps.slug, "le lien enfant existe quand même : on perd l'envoi, pas le suivi").toBeTruthy();
+  });
+
+  it("l'hôte répond « non » : « refused », et la cause est nommée", async () => {
+    const r = await repartager(NOMINATIF, { envoi: async () => ({ sent: false }) });
+    expect(r.corps.delivery).toBe("refused");
+    expect(r.corps.sendRefused).toBe("host-declined");
+  });
+
+  it("notre propre refus reste « refused », avec sa cause d'origine", async () => {
+    const anonyme = Object.values(PARENTS).find((p) => !p.recipient_email).slug;
+    const r = await repartager(anonyme);
+    expect(r.corps.delivery).toBe("refused");
+    expect(r.corps.sendRefused).toBe("no-recipient");
+  });
+
+  it("rien n'a été demandé : « not-requested » — ne pas confondre avec un échec", async () => {
+    const r = await repartager(NOMINATIF, { send: false });
+    expect(r.corps.delivery).toBe("not-requested");
+    expect(r.corps.sent).toBe(false);
   });
 });

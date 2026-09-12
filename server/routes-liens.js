@@ -360,12 +360,35 @@ async function traiter(req, res, body, slug) {
             const origin = publique;
             const r = await sendReshareEmail({ parent, childSlug: out.slug, origin, toEmail: mail, toName: body.name });
             sent = !!(r && r.sent);
+            if (!sent) refusEnvoi = refusEnvoi || "host-declined";
           } catch { /* best-effort : le lien existe quand même */ }
         }
+        // ⚠️ `sent: false` MENTAIT QUAND LA VÉRITÉ ÉTAIT « JE NE SAIS PAS », ET C'EST CE MENSONGE QUI
+        // DUPLIQUE LES COURRIERS.
+        //
+        // Trois issues se ressemblaient dans un seul booléen : l'hôte a refusé, nous avons refusé,
+        // ou l'appel a échoué SANS que nous sachions ce que l'hôte a fait. Le dernier cas est le
+        // seul dangereux : si l'hôte a réellement envoyé puis répondu trop tard, un client qui lit
+        // « false » réessaie — et crée un SECOND lien enfant en envoyant un SECOND courrier.
+        // Relevé par un audit externe le 12/09.
+        //
+        // ⚠️ C'EST LA DOCTRINE DE `bot-tts` RETOURNÉE. Là-bas, « je n'ai pas pu vérifier » doit se
+        // lire NON, parce que le doute empêche une dépense. Ici, le doute lu comme « non » PROVOQUE
+        // la dépense, parce que quelqu'un réessaie. La règle constante n'est pas « dans le doute,
+        // non » : c'est « dans le doute, DIS-LE » — et laisse l'appelant choisir, en sachant.
+        //
+        // `sent` reste, inchangé, pour les intégrations qui le lisent déjà. `delivery` porte les
+        // trois états. L'IDEMPOTENCE VRAIE — une clé qui ferait retomber un réessai sur le MÊME
+        // lien enfant — demande une colonne, donc une migration : elle n'est pas ici, et
+        // `docs/HOST-CONTRACT.md` dit ce que l'appelant doit faire en attendant.
+        const delivery = !body.send ? "not-requested"
+          : sent ? "sent"
+            : refusEnvoi ? "refused"
+              : "unknown";
         // Le refus se DIT : « rien n'est parti » et « l'envoi n'était pas permis » ne se
         // ressemblent pas, et une interface qui les confond propose un bouton qui ne marchera
         // jamais.
-        return j(200, { ok: true, slug: out.slug, sent, ...(refusEnvoi ? { sendRefused: refusEnvoi } : {}) });
+        return j(200, { ok: true, slug: out.slug, sent, delivery, ...(refusEnvoi ? { sendRefused: refusEnvoi } : {}) });
       }
       // ⚠️ CE REPLI NE COUVRE QUE LES ÉVÉNEMENTS ANALYTIQUES (P2 huitième audit). Une action POST
       // qu'aucune famille n'a reconnue tombait ici et repartait `{"ok":true}` — une faute de

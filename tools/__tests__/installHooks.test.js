@@ -12,7 +12,7 @@
 // l'inverse l'un de l'autre.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, chmodSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, chmodSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
@@ -218,5 +218,55 @@ describe("⚠️ IL N'ÉCRIT RIEN SUR stdout — LE CANAL DES DONNÉES N'EST PAS
     const r = lancerDansUnDepotNeuf();
     const melange = r.stdout + JSON.stringify([{ id: "x", files: [{ path: "README.md" }] }]);
     expect(() => JSON.parse(melange)).not.toThrow();
+  });
+});
+
+// ⚠️ NON BLOQUANT N'EST PAS MUET, ET LE `catch` VIDE CONFONDAIT LES DEUX.
+//
+// Le principe était juste : un hook non installé ne doit jamais faire échouer `npm install`, parce
+// qu'échouer là ferait échouer l'installation du projet pour une commodité de développement. Mais
+// n'en RIEN DIRE transforme « nous n'avons pas pu » en « tout va bien ». Un audit externe a rendu le
+// dossier de hooks non inscriptible le 12/09 : sortie 0, aucun message, aucun hook. Le développeur
+// croit son garde-fou posé, et travaille sans.
+describe("⚠️ UN ÉCHEC D'INSTALLATION SE DIT, MÊME S'IL NE BLOQUE PAS", () => {
+  // ⚠️ LE STIMULUS NE PASSE PAS PAR LES PERMISSIONS, ET LA PREMIÈRE ÉCRITURE LE FAISAIT. Elle
+  // rendait `.git/hooks` non inscriptible (0555) — ce qui reproduit bien le défaut sur la machine
+  // d'un développeur, et RIEN DU TOUT sous root, qui écrit malgré le mode. Mesuré dans ce conteneur :
+  // le hook s'installait, l'essai prenait une branche de secours et passait en ne prouvant rien.
+  // Un stimulus dont la présence dépend de l'utilisateur qui lance les bancs n'est pas un stimulus.
+  //
+  // `.git/hooks` est donc un FICHIER : créer un enfant dedans échoue pour tout le monde, root
+  // compris, et toujours avec la même erreur.
+  const lancerAvecHooksImpossible = () => {
+    const racine = mkdtempSync(join(tmpdir(), "impossible-"));
+    execFileSync("git", ["init", "-q", racine]);
+    const outils = join(racine, "tools");
+    mkdirSync(join(outils, "git-hooks"), { recursive: true });
+    for (const f of ["install-hooks.mjs", "execute-directement.mjs"]) {
+      writeFileSync(join(outils, f), readFileSync(join("tools", f), "utf8"));
+    }
+    writeFileSync(join(outils, "git-hooks", "pre-push"), NOTRE_HOOK);
+    const hooks = join(racine, ".git", "hooks");
+    rmSync(hooks, { recursive: true, force: true });
+    writeFileSync(hooks, "je ne suis pas un dossier");
+    const r = spawnSync(process.execPath, [join(outils, "install-hooks.mjs")], { cwd: racine, encoding: "utf8" });
+    return { ...r, racine, hooks };
+  };
+
+  it("⚠️ le hook ne peut PAS être posé, et l'échec est ÉCRIT sur stderr", () => {
+    const r = lancerAvecHooksImpossible();
+    expect(statSync(r.hooks).isFile(), "l'éprouvette doit vraiment rendre l'installation impossible").toBe(true);
+    expect(r.stderr, "un échec silencieux fait croire au développeur qu'il a un garde-fou").toMatch(/NON install/i);
+    expect(r.stderr, "et il doit dire que ce n'est pas bloquant, sinon on cherche une panne d'installation")
+      .toMatch(/pas bloquant/);
+  });
+
+  it("et il ne bloque toujours pas : le code de sortie reste 0", () => {
+    expect(lancerAvecHooksImpossible().status,
+      "échouer ici ferait échouer `npm install` pour une commodité de développement").toBe(0);
+  });
+
+  it("⚠️ et toujours rien sur stdout, même en échec — une garde PARSE ce canal", () => {
+    expect(lancerAvecHooksImpossible().stdout).toBe("");
   });
 });
