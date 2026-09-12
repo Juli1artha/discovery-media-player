@@ -2353,6 +2353,280 @@ measures the code we guard, weakened, with nothing saying so, is worse for this 
 product defect: every conclusion drawn through it inherits the flaw silently. **Hold the tools that
 measure to the bar of the thing measured.**
 
+## A control that is not itself controlled proves nothing
+
+Three things in one train, and they are the same thing seen from three distances.
+
+**A rule written by hand is not a rule enforced.** A bench file here carried the comment *"a test
+that depends on its rank within the file does not prove what it claims"* directly above a test that
+obtained a "fresh module" with `vi.resetModules()` then `require`. Measured: both return the **same
+exports object** in CommonJS — `resetModules` clears vite's module registry, not Node's `require`
+cache. The test had always been reading its neighbours' leftovers. It passed only because it sits
+first in its block.
+
+**What it hid was in production.** `init()` discarded one execution memo and kept its twin, in a
+file that states three times that the two behave identically. They did — on the *read* path, the
+only one the benches looked at.
+
+⚠️ **And the control itself rotted mid-experiment.** Hand mutation testing needs a pristine copy to
+restore from. A killed run left a mutated file on disk; the next run copied *that* as its reference.
+Every "restored, identical" check afterwards compared the corruption to itself and said **true**.
+The measurements that followed were worthless and looked fine.
+
+So, three rules, cheapest first:
+
+- **Fingerprint the witness, don't diff against a copy of unknown provenance.** `sha1sum` the
+  pristine file once, print it, and assert it after every restore. A diff against a backup only
+  proves the two agree — not that either is right.
+- **A guard that spawns the suite must refuse to run inside it.** Otherwise the bench that launches
+  every tool launches this one, which launches the suite, which contains that bench. Here it left
+  **391 stray processes** and a load average of 224; nothing failed, everything just got slower and
+  wrong.
+- **An aggregate test declares its rank or gets fixed.** A test that reads what its neighbours
+  accumulated must say so — when it runs early it should report *"3 of 47 ran"*, not accuse the
+  repository of losing something it still has. A red that names the wrong culprit is worse than no
+  red, because someone learns the gesture for clicking past it.
+
+⚠️ **Declaring is easier than repairing, and the easy one is usually wrong.** Three files depended
+on their rank; the first instinct was to declare all three as legitimate sequence contracts. An
+external audit asked for the opposite, and two of the three turned out to be repairable in a few
+lines: listeners removed between benches, an aggregate verdict moved into `afterAll` where a verdict
+over everything belongs. A declaration is owed only where the dependency is genuinely a contract —
+and "I could not see how to fix it in five minutes" is not that.
+
+⚠️ **A measurement made on one machine is a claim about that machine.** A bench here proved "a block
+declared `sh` is judged by sh" by finding a form the two parsers read differently — and its own
+comment said *"measured before being believed"*. Measured on dash, believed universally. On macOS
+`/bin/sh` **is** bash, so the suite of this repository was red on its author's own machine while CI,
+on Linux, stayed green and could not see it. Where a property depends on the environment, make the
+part that does not depend on it a **pure function** and test that everywhere; let the behavioural
+half run only where the system can show it, and **skip it by name** rather than pass on nothing.
+
+⚠️ **The guard that came out of this was itself refused by the repository's own floor bench, and it
+was right to be.** The first version blamed every file that went red under shuffle. The floor's
+fixture copies `tools/` wholesale into an empty tree, so vitest finds benches there that fail for
+want of a repository — and the guard called them order-dependent. Every red now gets **replayed
+alone, unshuffled**: still red means the failure pre-existed and this guard has nothing to say about
+it; green means the shuffle is the cause. **Presence under a stimulus is not causation by it** —
+the same control a host taught us for mutants, applied to a guard.
+
+## A correct explanation of the noise is the best place to hide a signal
+
+The voice-cache sweep removed **nothing at all** in this repository's own reference host context,
+for as long as it existed. `storage.remove` carries an allow-list — a last barrier before a DELETE
+with the service-role key — and it named one bucket out of the two the sweep must reach. Every
+removal of a voice object was refused **before any network call**, the trace row was erased anyway,
+and the object stayed in a public bucket with no path left to it. That is the exact harm the
+migration behind the feature was written to make repairable, realised in full.
+
+⚠️ **What kept it invisible was not a lie. It was a true, measured, well-written paragraph.** Those
+refusals landed in an error counter, and the documentation attributes a high value there to
+alignment files that legitimately do not exist — with a host's own measurement to back it, 552
+audio files for 356 companions. Every word of that is right. And it is exactly why nobody looked: a
+correct account of why a number is noisy tells the reader to stop reading the number.
+
+So, when you document noise:
+
+- **Say what the number looks like when the thing is completely broken.** If "a third of these are
+  normal" and "all of these are failures" produce the same reading, the counter cannot be used, and
+  the documentation should say so instead of explaining the noise away.
+- **Separate the counts rather than annotate one.** Two numbers that cannot both be explained by the
+  same benign cause are worth more than one number with a paragraph.
+- **Be most suspicious of the counters you have already explained.** An unexplained anomaly gets
+  investigated. An explained one is finished business, and stays finished long after the explanation
+  stops covering what is actually happening.
+
+⚠️ **It was found while writing the documentation for a different fix on the same path** — not by a
+guard, not by a test, not by the audit that opened the file. Writing down precisely what a mechanism
+does forces you to check it, and that is a different act from reading the code.
+
+## The defect named inside the comment of its own fix
+
+A test file here opens by listing three ways a status could be claimed rather than proven. The third
+reads: a `track({role:"presenter"})` was enough to appear as the presenter to the whole audience,
+*"with the name and the avatar of his choice."* The **role** was then arbitrated by the server and
+tested thoroughly. The **avatar** stayed exactly as described — for months, in the sentence that
+describes the harm, in the file written to close it.
+
+Escaping made it look finished. `escapeHtml` on an avatar URL prevents markup injection, and does
+nothing about the `<img>` being **fetched**: every other viewer's IP, user agent, clock and page
+origin go to whoever wrote the URL. Not an XSS. A tracking pixel, aimed at the audience.
+
+- **When a fix enumerates what was wrong, each noun in that list is a separate defect.** "Name and
+  avatar of his choice" is two, and closing one does not close the other. Re-read your own incident
+  lists as checklists, not as prose.
+- **"It is escaped" answers one question.** Escaping governs how bytes are interpreted, never
+  whether a request leaves the machine. Ask both, separately.
+- **A barrier belongs where the paths converge, not where the first one arrives.** Two routes fed
+  this avatar: our own endpoints, and a peer-to-peer presence channel we never see. A server-side
+  check would have been thorough, provable, benched — and blind to half the traffic. The render is
+  the only place both arrive.
+
+⚠️ **And when the honest fix costs a feature, degrade visibly rather than keep the leak.** Member
+avatars hosted on a third party now render as initials. That is a real loss, reversible by the host
+in one move; the leak was neither visible nor theirs to notice.
+
+## A helper that cannot fail the way its callers fail
+
+`tenter(travail)` wraps a guard's work so that an exception becomes INCONCLUSIVE rather than
+VIOLATION — the difference between *"the probe could not look"* and *"your branch is wrong"*. It is
+four lines, it reads perfectly, and it is **synchronous**: `try { return travail(); }`. Hand it an
+`async` function and the `try` sees a promise being *returned*, not an error being thrown. The
+`catch` is never reached. The rejection surfaces later, outside, and Node exits 1.
+
+So the first tool here that touched the network would have announced *"this repository violates the
+rule"* on every connection blip — the exact inverse of what the taxonomy exists to say, from the
+helper written to guarantee it.
+
+- **A wrapper's contract includes which failures it can see.** "Catches exceptions" is not a
+  property; "catches exceptions thrown synchronously by a synchronous callee" is. Write the second.
+- **Async-shaped mistakes do not fail in tests that never reject.** Nothing here would have noticed:
+  the code is short, it reads well, and it only misbehaves when something *else* misbehaves.
+- **When you add the async sibling, keep both.** Deleting the sync one to "simplify" pushes every
+  existing caller through a promise for no reason; leaving them unlabelled invites the next person to
+  pick by autocomplete. The comment on each says what it cannot see.
+
+⚠️ **And the same pattern one level up:** a destructive tool's safeguards must each be mutated
+individually. Here, five of them — reporting by default, the age threshold, unreadable dates,
+foreign filenames, and the confirmation count. A safeguard nobody has tried to break is a comment.
+
+## The mechanisable sliver of "this sentence stopped being true"
+
+An earlier section here says no guard in this repository confronts prose with what it describes, and
+that the confrontation has no mechanical form: the existence of a migration does not tell a program
+which English paragraph now lies. **That still stands.** What turned out to be mechanisable is a much
+narrower thing, and naming the difference is the whole point.
+
+Once we **decide** a claim is retired, that decision is data. A guard can then confront the
+repository with the decision — not with reality. `tools/affirmations-retirees.mjs` does exactly that
+and nothing more.
+
+It exists because the same failure recurred four times in two days: a sentence corrected in one
+place and left standing in its twin. One of them sat **95 lines above a correction made the same day
+in the same file**. One declared a whole stage out of scope in `SECURITY.md` — and a document that
+puts something out of scope is not neutral, it tells a researcher not to look. And the guard's very
+first run found a fourth copy that two human audits had walked past.
+
+- **A correction is not done when the sentence you were reading is fixed.** Grep for the *mechanism*
+  you changed, not the words you remember. You will not remember the translation, the SQL comment, or
+  the bench header.
+- **Keep the retired claim, marked.** Deleting it silently leaves a host who read it with no way to
+  learn their compensation was for nothing. So the rule is not "never write it" but "never write it
+  unmarked" — and the marker is searched on the line and the two above it, never below: a reader who
+  gives up at the false sentence never reaches the correction.
+- **Say what the guard does not do, inside the guard.** The temptation is to present this as "we
+  detect stale documentation". We do not. We detect one retracted phrase still being asserted, from a
+  list we maintain by hand. A guard oversold is a guard that will be trusted where it is blind.
+
+## The second repair of a proxy is the signal to stop using it
+
+A bench here proved "the database request carries an abort signal" by searching the source text of
+`standalone.js` for `AbortSignal.timeout(` in a window of characters around the request. It had
+already been bitten once: the first version searched the **raw** source, and the comment above the
+code contained those very words — so deleting the real call left it green. The repair was to strip
+comments before searching. The proxy was fixed, and kept.
+
+Then the signal composition was extracted into a function, the pattern moved out of the scanned
+window, and the bench went **red on a change that improves the property it guards**.
+
+That is the full shape of a bad proxy, seen twice from both sides: **green when the property is
+gone, red when the property is strengthened.** One of those is an accident; both of them is a
+verdict.
+
+- **Watch for the second repair.** The first failure of a proxy looks like a bug in the proxy. The
+  second tells you the proxy is measuring the wrong thing, and no third repair will fix that.
+- **A `describe` that promises "really" and a body that greps is the tell.** This one said *"the
+  standalone context really abandons a request that does not answer"* while checking spelling. Read
+  your titles as specifications.
+- **The replacement is usually cheap.** A `fetch` that never resolves and a race against a timer:
+  four lines, and it fails for exactly one reason — the request was not abandoned.
+
+## "In doubt, say no" is not the rule — "in doubt, say so" is
+
+Two routes here, two opposite-looking conclusions from the same uncertainty, and the rule that
+actually covers both.
+
+On the route that spends money, the doctrine is explicit: a text the player cannot verify as
+something the assistant said counts as *not said*, and the request is refused. *"I could not
+verify"* must read as **no**.
+
+On the reshare route, the same uncertainty was reported the same way — `sent: false` when the host
+call timed out — and it caused the harm. The caller reads "not sent", retries, and a host that
+**did** send the mail before answering late now sends a second one, on a second child link.
+
+The difference is not the confidence level. It is **who acts on the answer, and in which
+direction**. Where doubt blocks a spend, collapsing it to "no" is safe. Where doubt is read by
+something that retries, "no" *is* the spend. So:
+
+- **Never collapse "unknown" into the failure value when a caller may retry.** Give it its own
+  state, name it, and say in the contract that a retry may duplicate.
+- **Keep the old field.** Integrations read `sent`; changing its meaning to fix a third case would
+  break the two that worked. Add beside, don't redefine.
+- **A three-state answer is only useful if the third state reaches a person.** Document it as a
+  decision, not as a retry condition, or you have renamed the bug.
+
+⚠️ **And "non-blocking" is not "silent".** A hook installer swallowed every error to avoid failing
+`npm install` — correct principle — and said nothing, which turns *"we could not"* into *"all
+good"*. The developer believes the guard rail is in place and works without it. Non-blocking means
+the exit code is zero; it does not mean stderr is empty.
+
+## A campaign that refuses to guess beats one that guesses well
+
+Mutation testing was this repository's acceptance bar for two months, and it was performed **by
+hand**. Dozens of "N of N mutants killed" in the changelog: each true the day it was written, none
+reproducible afterwards — not by a reader, not by us. `tools/mutations.mjs` is the manifest that
+makes them replayable, and its design is mostly about what it refuses to say.
+
+**Three ways a mutation campaign lies, all of them in the direction of green:**
+
+- **The target is gone.** The code moved, the mutation applies to nothing, no bench reddens — and
+  "no bench reddened" reads as *killed*. The campaign gets greener as it drifts further from the
+  code.
+- **The target appears twice.** Something was mutated; which one is unknown, so the verdict names
+  nothing. This is not theoretical — it happened on the very first run here, and the tool said
+  INCONCLUSIVE instead of counting a kill.
+- **The baseline was already red.** Then every mutant touching that bench "kills", and the campaign
+  is greenest when the repository is most broken.
+
+All three must be a third state, never a kill. A campaign whose failure mode is optimism is worse
+than none.
+
+⚠️ **And fingerprint the file after restoring it.** A hand campaign here was interrupted mid-mutant,
+left the mutated file on disk, and the next run copied *that* as its pristine reference. Every
+"restored, identical" check afterwards compared the corruption to itself and said **true**. The tool
+now hashes before and after, and a mismatch stops everything — a repository in an unknown state is
+not a place to keep testing.
+
+⚠️ **Do not reach for a generic mutator over the whole codebase.** Hundreds of benign survivors —
+equivalent code, dead branches, defensive paths — teach the reader to skim the output, and a guard
+people skim is worse than a guard that is absent. A manifest of exact targets, each one a defect
+that actually happened, says something a reader can check.
+
+## A guard that is lazy about work can still be wasteful about existence
+
+The viewer's page rendering was already carefully bounded: canvases rendered lazily, a sliding
+window evicting the far ones, a pixel budget so two A4 pages on a ×3 screen could not blow the tab.
+Every one of those guards was about **work**. None was about **existence**: a placeholder `<div>`
+per page and a `<button>` per thumbnail were created for the whole document, up front. Ten thousand
+pages, seventy thousand nodes, measured in a real browser by an external audit — with every lazy
+guard working exactly as designed.
+
+- **"Lazy" bounds what you compute; it does not bound what you allocate.** Ask both questions
+  separately, and ask the second one about the cheapest-looking object in the loop. The placeholder
+  was so cheap nobody counted it.
+- **The hostile input is not always the heavy one.** A long document of blank pages costs nothing
+  to decode and everything to represent. Bound on the dimension the attacker controls for free.
+- **Keep the deciding arithmetic pure, and keep the DOM reconciliation dumb.** `fenetreVirtuelle`
+  is a function of numbers; the template only makes the DOM match its answer. That is what lets the
+  window be tested with `floor` edge cases and mutated in the campaign, while the template test just
+  counts nodes at 10 000 and 50 000 pages and finds the same six.
+
+⚠️ **And when a harness has to hook the source, make the hook assert its own success.** The viewer
+loads pdf.js through an ES `import()` that fails under jsdom and takes the refusal path — never
+`start()`. The bench substitutes a fake at that one call and then **checks the substitution
+happened**; a bench that evaluates a page which never starts is green on nothing, and that is
+precisely the kind of green this repository has learned to distrust.
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives

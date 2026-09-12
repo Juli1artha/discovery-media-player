@@ -303,7 +303,17 @@ var Live=(function(){
   var RSVG='<svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2 stroke-linecap=round><circle cx=12 cy=12 r=9 /><path d="M8.5 14.5s1.4 1.7 3.5 1.7 3.5-1.7 3.5-1.7"/><line x1=9 y1=9.2 x2=9.01 y2=9.2 /><line x1=15 y1=9.2 x2=15.01 y2=9.2 /></svg>';
   function esc(s){return Player.live.escapeHtml(s);}
   function ini(n){return Player.live.initials(n);}
-  function av(u,n){return Player.live.avatarHtml(u,n);}
+  // ⚠️ LES ORIGINES AUTORISÉES POUR UN AVATAR, CALCULÉES UNE FOIS. Sans liste, avatarHtml ne rend
+  // une image que depuis la MÊME origine : une URL arbitraire retombe sur les initiales plutôt que
+  // de faire partir l'IP de chaque spectateur chez un inconnu. On déclare le stockage de l'hôte,
+  // d'où viennent les avatars légitimes ; rien d'autre. Voir origineAvatarAutorisee dans
+  // src/live.ts pour le pourquoi, et pour le chemin Realtime que le serveur ne voit pas passer.
+  //
+  // ⚠️ PAS D'ACCENT GRAVE DANS CE FICHIER : il est lui-même un littéral de gabarit, et un accent
+  // grave dans un COMMENTAIRE le referme. Le lint l'a refusé — « Unexpected token » sur une ligne
+  // qui n'est que du commentaire.
+  var ORIGINES_AV=(function(){var o=[];try{if(LIVECFG&&LIVECFG.supaUrl)o.push(String(LIVECFG.supaUrl));}catch(e){}return o;})();
+  function av(u,n){return Player.live.avatarHtml(u,n,ORIGINES_AV);}
   function isOverlay(){var pn=document.getElementById('chatPanel');return !!(window.matchMedia&&window.matchMedia('(max-width:720px)').matches)||!!(pn&&pn.classList.contains('float'));}
   // Aplatit l'état de présence en DÉDOUBLONNANT par identité (email, sinon nom) → un participant reconnecté
   // (nouveau MYID) ou un fantôme websocket non nettoyé n'apparaît qu'une fois. On garde la méta présentateur si dispo.

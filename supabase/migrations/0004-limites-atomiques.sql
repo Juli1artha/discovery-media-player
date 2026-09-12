@@ -16,9 +16,13 @@
 -- indéfiniment — un visiteur régulier ne verrait jamais son compteur repartir de zéro.
 --
 -- Sans lui : le player laisse passer, et le dit une fois dans son journal en nommant ce fichier.
--- Les limites restent celles d'avant — comptées par instance et non atomiques — donc plusieurs
--- requêtes simultanées peuvent dépasser le plafond ensemble. Rien ne casse, rien ne se ferme : un
--- 429 raté coûte moins cher qu'une visionneuse morte, et une garde qui s'ouvre doit le dire.
+-- ⚠️ ET CE QUI RESTE ALORS EST LE COMPTEUR LOCAL SEUL, PAS UN COMPTAGE PARTAGÉ DÉGRADÉ. Cette
+-- phrase disait « comptées par instance ET NON ATOMIQUES » : la première moitié est exacte, la
+-- seconde nomme un mode qui n'existe pas. Sans cette migration l'étage partagé ne compte pas moins
+-- bien, il ne compte PAS — une limite de 120/h en autorise 120 par exécution. Dire « non atomique »
+-- laissait croire qu'un plafond d'instance tient encore, en moins précis.
+-- Rien ne casse, rien ne se ferme : un 429 raté coûte moins cher qu'une visionneuse morte, et une
+-- garde qui s'ouvre doit le dire — mais elle doit dire JUSTE ce qu'elle laisse passer.
 --
 -- Applicable pendant que la version précédente tourne : tant que le code ne l'appelle pas, elle
 -- ne fait rien ; dès qu'il l'appelle, elle compte juste.

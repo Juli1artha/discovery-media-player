@@ -79,9 +79,51 @@ export function initials(name?: string): string {
   return (((parts[0] || "")[0] || "?") + ((parts[1] || "")[0] || "")).toUpperCase();
 }
 
-/** Avatar : l'image si elle existe, sinon les initiales. Les deux sont échappées. */
-export function avatarHtml(url?: string, name?: string): string {
-  return url ? `<img src="${escapeHtml(url)}" alt="">` : escapeHtml(initials(name));
+/**
+ * ⚠️ UNE URL D'AVATAR QUELCONQUE EST UN PIXEL DE SUIVI, ET `escapeHtml` NE PROTÈGE PAS DE ÇA.
+ *
+ * L'échappement empêche l'injection de balisage ; il n'empêche pas le CHARGEMENT. Une `<img>` vers
+ * un hôte arbitraire fait partir, depuis le navigateur de CHAQUE spectateur, son adresse IP, son
+ * agent, l'heure et l'origine de la page — vers quelqu'un qui a simplement écrit une URL. Ce n'est
+ * pas un XSS ; c'est une fuite de confidentialité, et elle vise l'audience, pas l'hôte.
+ *
+ * ⚠️ DEUX CHEMINS Y MÈNENT, ET UN SEUL PASSE PAR LE SERVEUR. Le chat et la présence enregistrée
+ * transitent par nos routes, donc une barrière serveur les couvre. La présence Realtime, NON : un
+ * participant appelle `track({avatar: …})` depuis SON navigateur, et la charge arrive chez les
+ * autres sans nous voir. Aucune correction serveur ne peut l'atteindre — c'est ICI, au rendu, que
+ * les deux chemins se rejoignent.
+ *
+ * ⚠️ ET CE DÉFAUT EST NOMMÉ DANS LE COMMENTAIRE DE SA PROPRE CORRECTION. `gabarit-live.js` explique
+ * qu'un `track({role:"presenter"})` permettait d'apparaître comme le présentateur « avec le nom et
+ * l'avatar de son choix ». Le RÔLE a été réparé — le serveur arbitre, l'audience compare. L'avatar
+ * est resté, cité dans la phrase qui décrit le mal.
+ *
+ * La règle : une image n'est rendue que si son origine est déclarée. Sinon, les initiales — une
+ * dégradation VISIBLE, jamais une image vers un inconnu.
+ */
+export function origineAvatarAutorisee(url: string | undefined, origines?: readonly string[]): boolean {
+  const brut = String(url || "").trim();
+  if (!brut) return false;
+  // ⚠️ PAS DE `data:` NI DE `blob:`. Ils ne joignent personne, mais ils ne servent à rien ici et
+  // ouvrir une forme « inoffensive » de plus, c'est une forme de plus à raisonner au prochain audit.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(brut) === false && !brut.startsWith("//")) return true;   // relative ⇒ même origine
+  const ici = typeof location !== "undefined" && location ? location.origin : "";
+  let u: URL;
+  try { u = new URL(brut, ici || "https://invalide.exemple"); } catch { return false; }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return false;
+  if (ici && u.origin === ici) return true;
+  // ⚠️ COMPARAISON D'ORIGINE, PAS DE PRÉFIXE DE CHAÎNE. « https://bon.exemple.attaquant.net »
+  // commence par rien d'utile, mais un `startsWith("https://bon.exemple")` l'aurait accepté.
+  return (origines || []).some((o) => {
+    try { return new URL(String(o)).origin === u.origin; } catch { return false; }
+  });
+}
+
+/** Avatar : l'image si son origine est déclarée, sinon les initiales. Les deux sont échappées. */
+export function avatarHtml(url?: string, name?: string, origines?: readonly string[]): string {
+  return origineAvatarAutorisee(url, origines)
+    ? `<img src="${escapeHtml(url)}" alt="">`
+    : escapeHtml(initials(name));
 }
 
 /**

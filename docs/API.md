@@ -326,7 +326,7 @@ estimated:
 
 | | |
 |---|---|
-| Call sites | **72**†, in **7**† files |
+| Call sites | **73**†, in **7**† files |
 | Tables | **11**†, plus **8**† call sites that build their path at run time — their tables are named literally by the caller, and are counted above |
 | Verbs | `GET`, `POST`, `PATCH`, one `HEAD`, and `DELETE` only in `server/retention.js` — every one bounded by an age filter (`docs/RETENTION.md`) |
 | Embedded selects (`select=*,other(*)`) | **0** |

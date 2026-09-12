@@ -90,3 +90,175 @@ describe("⚠️ tout appel sortant rend la main, même si le service ne répond
     expect(resultat, "l'appel n'a pas rendu la main sur abandon").toBe("AbortError");
   });
 });
+
+// ⚠️ « DÉJÀ ABSENT » EST UN SUCCÈS, ET CE N'EST PLUS UNE NUANCE DE COMPTAGE DEPUIS QUE LA PURGE RETIENT.
+//
+// La purge RETIENT la ligne quand `storage.remove` rend `false`, parce que la ligne est le seul
+// chemin vers l'objet — la capacité expose `put` et `remove`, jamais `list`. Rendre `false` sur un
+// objet qui n'est plus là retiendrait donc la ligne POUR TOUJOURS, en attendant un fichier qui
+// n'existe pas : la sur-rétention créée par le correctif de la sous-rétention.
+//
+// ⚠️ CE QUI EST ÉPROUVÉ ICI EST LA CORRESPONDANCE, PAS LA FORME DU FOURNISSEUR. Le statut et le
+// corps sont fabriqués ; qu'un Supabase vivant émette bien ces formes-là n'est pas vérifiable
+// depuis ce dépôt, et le commentaire du code le dit plutôt que de le taire.
+describe("⚠️ retirer un objet déjà absent", () => {
+  const ctxAvecFetch = (reponse) => {
+    const anciens = { fetch: globalThis.fetch };
+    globalThis.fetch = async () => reponse;
+    const ctx = createStandaloneContext({
+      SUPABASE_URL: "https://x.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "cle",
+    });
+    return { ctx, rendre: () => { globalThis.fetch = anciens.fetch; } };
+  };
+  const rep = (status, corps) => ({ ok: status >= 200 && status < 300, status, text: async () => corps, json: async () => ({}) });
+
+  const cas = [
+    ["retiré (200)", rep(200, ""), true],
+    ["absent (404)", rep(404, ""), true],
+    ["absent (400 « Object not found ») — la réponse RÉELLE de Supabase", rep(400, '{"error":"Object not found"}'), true],
+    ["absent (« does not exist »)", rep(400, "the resource does not exist"), true],
+    ["⚠️ vraie panne (500) : PAS un succès, sinon on perd le fichier", rep(500, "internal error"), false],
+    ["⚠️ refus d'autorisation (403) : PAS un succès", rep(403, "not authorized"), false],
+  ];
+  for (const [nom, reponse, attendu] of cas) {
+    it(nom, async () => {
+      const { ctx, rendre } = ctxAvecFetch(reponse);
+      try {
+        expect(await ctx.storage.remove("present-attachments", "s-a/x.png")).toBe(attendu);
+      } finally { rendre(); }
+    });
+  }
+});
+
+// ⚠️ LA PURGE DU CACHE DE VOIX N'A JAMAIS RETIRÉ UN SEUL OBJET, ET LE RAPPORT DISAIT « ERREUR » —
+// CE QUE LA DOCUMENTATION EXPLIQUAIT PAR UN FAIT VRAI.
+//
+// `tts-cache` était refusé par la liste blanche de `remove`, AVANT tout appel réseau. Chaque retrait
+// rendait `false`, la trace partait quand même, et l'objet restait dans un bucket PUBLIC sans plus
+// aucun chemin vers lui — la capacité expose `put` et `remove`, jamais `list`. C'est le mal que la
+// migration 0021 existait pour rendre réparable, réalisé à 100 %.
+//
+// ⚠️ ET CE QUI L'A CACHÉ EST UNE EXPLICATION JUSTE. `docs/RETENTION.md` attribue un `fichiersErreur`
+// élevé à l'absence légitime du `.json` d'alignement (552 mp3 pour 356 json, mesuré par un hôte).
+// Vrai — et suffisant pour rendre un échec TOTAL indiscernable du fonctionnement normal. Une
+// explication correcte du bruit est le meilleur endroit où cacher un signal.
+describe("⚠️ les buckets que la rétention doit atteindre", () => {
+  const ctxSonde = () => {
+    const ancien = globalThis.fetch;
+    const vus = [];
+    globalThis.fetch = async (url) => { vus.push(String(url)); return { ok: true, status: 200, text: async () => "" }; };
+    const ctx = createStandaloneContext({ SUPABASE_URL: "https://x.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "cle" });
+    return { ctx, vus, rendre: () => { globalThis.fetch = ancien; } };
+  };
+
+  it("⚠️ `tts-cache` est ATTEINT — sans quoi la purge des voix ne retire rien du tout", async () => {
+    const { ctx, vus, rendre } = ctxSonde();
+    try {
+      expect(await ctx.storage.remove("tts-cache", "aaa.mp3")).toBe(true);
+      expect(vus.join(" "), "l'appel doit vraiment partir vers le bon bucket").toContain("/object/tts-cache/aaa.mp3");
+    } finally { rendre(); }
+  });
+
+  it("`present-attachments` reste atteint", async () => {
+    const { ctx, vus, rendre } = ctxSonde();
+    try {
+      expect(await ctx.storage.remove("present-attachments", "s-a/x.png")).toBe(true);
+      expect(vus.join(" ")).toContain("/object/present-attachments/s-a/x.png");
+    } finally { rendre(); }
+  });
+
+  // ⚠️ LA BARRIÈRE GARDE SON OBJET. Élargir une liste blanche est le moment exact où l'on cesse de
+  // garder : ce qu'elle protège est un DELETE à la clé service_role, qui ouvre toute la base. Le
+  // refus doit tomber AVANT le réseau — un refus qui a déjà émis la requête n'a rien refusé.
+  it("⚠️ tout autre bucket est refusé AVANT le réseau", async () => {
+    const { ctx, vus, rendre } = ctxSonde();
+    try {
+      for (const b of ["autre-bucket", "storage", "", "tts-cache2", "../present-attachments"]) {
+        expect(await ctx.storage.remove(b, "x.png"), `bucket « ${b} »`).toBe(false);
+      }
+      expect(vus, "aucune requête ne doit être partie pour un bucket refusé").toEqual([]);
+    } finally { rendre(); }
+  });
+
+  it("la traversée de chemin reste refusée dans les deux buckets", async () => {
+    const { ctx, vus, rendre } = ctxSonde();
+    try {
+      for (const b of ["present-attachments", "tts-cache"]) {
+        for (const c of ["../x.png", "a/../../x", "a//x", "a/./x", "a\\x"]) {
+          expect(await ctx.storage.remove(b, c), `${b} : ${c}`).toBe(false);
+        }
+      }
+      expect(vus).toEqual([]);
+    } finally { rendre(); }
+  });
+});
+
+// ⚠️ UN SIGNAL FOURNI S'AJOUTE AU PLANCHER, IL NE LE REMPLACE PAS.
+//
+// La première écriture disait `options.signal || AbortSignal.timeout(delai)` : un hôte qui bornait
+// lui-même une opération longue croyait AJOUTER une garantie et en RETIRAIT une. Et le commentaire
+// bénissait le défaut — « un signal fourni par l'appelant a priorité ». L'intention était juste ;
+// « a priorité » était la mauvaise traduction de « borner ». Défaut LATENT : aucun appel du produit
+// ne transmet aujourd'hui de signal, donc rien ne l'aurait montré avant qu'un hôte n'en pose un.
+// Rapporté par un audit externe le 12/09, reproduit ici avant correction.
+describe("⚠️ composer les signaux plutôt que les remplacer", () => {
+  const fetchQuiNeRepondJamais = () => (_u, o) => new Promise((_res, rej) => {
+    const s = o && o.signal;
+    if (s) { if (s.aborted) rej(new Error("abandon")); else s.addEventListener("abort", () => rej(new Error("abandon"))); }
+  });
+  const avecFetch = async (fn) => {
+    const ancien = globalThis.fetch;
+    globalThis.fetch = fetchQuiNeRepondJamais();
+    try { return await fn(); } finally { globalThis.fetch = ancien; }
+  };
+  const ctx = () => createStandaloneContext({ SUPABASE_URL: "https://x.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "cle" });
+  const course = (p, ms) => Promise.race([
+    p.then(() => "RÉSOLU", () => "REJETÉ"),
+    new Promise((r) => setTimeout(() => r("ENCORE_EN_ATTENTE"), ms)),
+  ]);
+
+  it("⚠️ un signal qui n'expire JAMAIS ne supprime pas le délai interne", async () => {
+    const v = await avecFetch(() => {
+      const jamais = new globalThis.AbortController().signal;
+      return course(ctx().db.request("t", { timeoutMs: 20, signal: jamais }), 300);
+    });
+    expect(v, "le plancher doit parler : sinon l'appel immobilise socket et exécution").toBe("REJETÉ");
+  });
+
+  it("le signal de l'appelant garde son pouvoir d'abandonner PLUS TÔT", async () => {
+    const v = await avecFetch(() => {
+      const ctrl = new globalThis.AbortController();
+      setTimeout(() => ctrl.abort(), 10);
+      // Délai interne très long : seul le signal de l'appelant peut conclure ici.
+      return course(ctx().db.request("t", { timeoutMs: 60000, signal: ctrl.signal }), 300);
+    });
+    expect(v, "le premier des deux qui parle gagne — c'est ce que « borner » veut dire").toBe("REJETÉ");
+  });
+
+  it("un signal DÉJÀ abandonné conclut tout de suite, sans attendre un événement qui ne viendra plus", async () => {
+    const v = await avecFetch(() => {
+      const ctrl = new globalThis.AbortController();
+      ctrl.abort();
+      return course(ctx().db.request("t", { timeoutMs: 60000, signal: ctrl.signal }), 300);
+    });
+    expect(v).toBe("REJETÉ");
+  });
+
+  // ⚠️ LE REPLI, ÉPROUVÉ PLUTÔT QU'ESPÉRÉ. `AbortSignal.any` existe dans notre plancher Node, mais
+  // le code porte un chemin sans lui — et un chemin de repli que personne n'exécute est une
+  // supposition. On le force en retirant la méthode le temps de l'essai.
+  it("⚠️ sans `AbortSignal.any`, le repli borne quand même", async () => {
+    const vrai = AbortSignal.any;
+    try {
+      Object.defineProperty(AbortSignal, "any", { value: undefined, configurable: true });
+      const v = await avecFetch(() => {
+        const jamais = new globalThis.AbortController().signal;
+        return course(ctx().db.request("t", { timeoutMs: 20, signal: jamais }), 300);
+      });
+      expect(v).toBe("REJETÉ");
+    } finally {
+      Object.defineProperty(AbortSignal, "any", { value: vrai, configurable: true });
+    }
+  });
+});

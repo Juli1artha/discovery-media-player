@@ -56,12 +56,43 @@ function sansBarreFinale(valeur) {
  * consultations protégées.
  *
  * ⚠️ ET UNE COURSE DE PROMESSES NE SUFFIRAIT PAS : elle rendrait la main sans ANNULER le `fetch`,
- * donc sans rien libérer. C'est `AbortSignal` ou rien. Un signal fourni par l'appelant a priorité —
- * un hôte qui borne lui-même une opération longue n'est pas écrasé.
+ * donc sans rien libérer. C'est `AbortSignal` ou rien. Un signal fourni par l'appelant s'AJOUTE au
+ * plancher — voir `composerSignaux` : le premier des deux qui parle gagne.
  */
+/**
+ * ⚠️ ON COMPOSE LES SIGNAUX, ON NE LES REMPLACE PAS — ET LA PREMIÈRE ÉCRITURE LES REMPLAÇAIT.
+ *
+ * Elle disait `options.signal || AbortSignal.timeout(delai)` : un signal fourni par l'appelant
+ * SUPPRIMAIT le plancher, au lieu de s'y ajouter. Un hôte qui borne lui-même une opération longue
+ * croyait donc ajouter une garantie, et en retirait une. Mesuré : avec un signal qui n'expire jamais
+ * et `timeoutMs: 20`, la promesse est encore en attente après 150 ms.
+ *
+ * ⚠️ ET LE COMMENTAIRE BÉNISSAIT LE DÉFAUT. Il écrivait « un signal fourni par l'appelant a
+ * priorité — un hôte qui borne lui-même une opération longue n'est pas écrasé ». L'intention est
+ * juste ; « a priorité » était la mauvaise traduction. Le premier des deux qui parle gagne : c'est
+ * ce que « borner » veut dire. Rapporté par un audit externe le 12/09 comme défaut LATENT — aucun
+ * appel du produit ne transmet aujourd'hui de signal, donc personne ne l'aurait vu arriver.
+ */
+function composerSignaux(fourni, delaiMs) {
+  const horloge = (typeof AbortSignal !== "undefined" && AbortSignal.timeout)
+    ? AbortSignal.timeout(delaiMs) : undefined;
+  if (!fourni) return horloge;
+  if (!horloge) return fourni;
+  if (typeof AbortSignal.any === "function") return AbortSignal.any([fourni, horloge]);
+  // ⚠️ REPLI SANS `AbortSignal.any` : un contrôleur qui suit les deux. Le `aborted` se teste AVANT
+  // de s'abonner — un signal déjà déclenché n'émettra plus jamais son événement, et l'attendre
+  // serait une attente infinie posée par la précaution elle-même.
+  const relais = new globalThis.AbortController();
+  const abandonner = () => { try { relais.abort(); } catch { /* déjà abandonné */ } };
+  for (const s of [fourni, horloge]) {
+    if (s.aborted) { abandonner(); break; }
+    try { s.addEventListener("abort", abandonner, { once: true }); } catch { /* signal exotique */ }
+  }
+  return relais.signal;
+}
+
 function fetchBorne(cible, options = {}, delaiMs) {
-  const signal = options.signal
-    || (typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(delaiMs) : undefined);
+  const signal = composerSignaux(options.signal, delaiMs);
   return fetch(cible, { ...options, ...(signal ? { signal } : {}) });
 }
 
@@ -243,13 +274,33 @@ async function appelHote(url, secret, corps, errors) {
  * base. Y adosser un compteur partagé ferait payer à la garde le prix qu'on venait d'épargner à ce
  * qu'elle garde. Sur ce chemin, la protection réelle est le cache, pas le compteur.
  *
- * ⚠️ LE COMPTE PARTAGÉ N'EST PAS ATOMIQUE. PostgREST ne sait pas exprimer « incrémente » : c'est une
- * lecture puis une écriture. Deux instances peuvent donc lire la même valeur et n'en écrire qu'une —
- * le compteur SOUS-estime sous forte concurrence. Pour une limite de débit, sous-estimer signifie
- * laisser passer un peu plus, jamais refuser à tort. Le dire vaut mieux que laisser croire à une
- * exactitude qu'on n'a pas.
+ * ⚠️ CE PARAGRAPHE DISAIT QUE LE COMPTE PARTAGÉ N'EST PAS ATOMIQUE. C'EST FAUX DEPUIS 0004, et il
+ * a survécu à ce qu'il décrivait — écrit quand PostgREST ne savait pas exprimer « incrémente »,
+ * donc quand compter était une lecture puis une écriture. La migration `0004-limites-atomiques.sql`
+ * a remplacé les deux par UNE instruction serveur : `player_rate_limit_bump`. Corrigé plutôt que
+ * supprimé, parce qu'un hôte qui l'a lu a pu bâtir une compensation dont il n'a pas besoin.
+ *
+ * ⚠️ ET LA DÉGRADATION RÉELLE EST L'INVERSE DE CE QU'IL LAISSAIT CROIRE. Sans 0004, l'étage partagé
+ * ne compte pas moins bien : IL NE COMPTE PAS DU TOUT. Le `return true` plus bas laisse passer, et
+ * seul le compteur LOCAL, par processus, subsiste — une limite de 120/h en autorise 120 PAR
+ * EXÉCUTION. « Non atomique » nommait un mode qui n'existe pas : un comptage partagé dégradé.
+ *
+ * La matrice complète est dans `docs/HOST-CONTRACT.md` ; elle est la version qui fait foi.
+ *
+ * ⚠️ CETTE PHRASE-CI EST LE JUMEAU FRANÇAIS DE CELLE CORRIGÉE DANS LE CONTRAT LE 11/09 — À 95
+ * LIGNES DE L'AVERTISSEMENT CORRIGÉ LE MÊME JOUR, DANS CE MÊME FICHIER. Corriger un exemplaire
+ * d'une affirmation et pas l'autre est le mode de panne que ce dépôt traque partout ailleurs : deux
+ * copies d'une règle divergent, et personne ne les confronte. Cherchez le MÉCANISME que vous venez
+ * de changer, pas les mots dont vous vous souvenez.
  */
-function creerLimites(db, journal) {
+/**
+ * @param horloge lecture du temps, injectable. ⚠️ ELLE EXISTE POUR QU'UN BANC N'AIT PAS À REMPLACER
+ * `Date.now` GLOBALEMENT. Une simulation d'une heure d'audience doit faire avancer le temps ; le
+ * seul moyen était de rustiner un global, ce qui laisse l'instrument dépendre d'un `finally` posé au
+ * bon endroit — et la première écriture de cette simulation l'avait posé au mauvais, mesurant en
+ * partie le temps RÉEL sans le dire. Une horloge passée en argument ne peut pas fuir.
+ */
+function creerLimites(db, journal, horloge = () => Date.now()) {
   const seaux = new Map();
   const PREFIXES_LOCAUX = ["pread:"];
   let partageDisponible = null;   // null = pas encore demandé
@@ -263,7 +314,7 @@ function creerLimites(db, journal) {
   // anti-inondation, et c'est le compromis explicitement recommandé.
   const PLAFOND_CLES = 5000;
   function localAutorise(cle, max, fenetreSecondes) {
-    const maintenant = Date.now();
+    const maintenant = horloge();
     const fenetreMs = fenetreSecondes * 1000;
     let e = seaux.get(cle);
     if (!e || maintenant - e.debut >= fenetreMs) e = { debut: maintenant, compte: 0 };
@@ -390,7 +441,23 @@ function createStandaloneContext(env = process.env) {
         // ⚠️ DERNIÈRE BARRIÈRE avant un DELETE à la clé service_role (P1 huitième audit). Bucket en
         // liste blanche, et refus de toute traversée — chaque segment sur l'alphabet des chemins
         // signés. `fetch` normalise `..` : un chemin non validé sortirait du bucket visé.
-        if (bucket !== "present-attachments") return false;
+        //
+        // ⚠️ LA LISTE NE PORTAIT QU'UN BUCKET SUR LES DEUX, ET LA PURGE DU CACHE DE VOIX N'A DONC
+        // JAMAIS RIEN RETIRÉ. `tts-cache` était refusé ICI, avant tout appel réseau : chaque retrait
+        // rendait `false`, la trace partait quand même, et l'objet restait dans un bucket PUBLIC
+        // sans plus aucun chemin vers lui — puisque cette capacité expose `put` et `remove`, jamais
+        // `list`. C'est très exactement le mal que la migration 0021 avait été écrite pour rendre
+        // réparable, à 100 %, en silence.
+        //
+        // ⚠️ ET CE SILENCE ÉTAIT DOCUMENTÉ. Le rapport comptait ces refus dans `fichiersErreur`, que
+        // `docs/RETENTION.md` explique par un fait vrai — un tiers des empreintes n'a pas de `.json`
+        // d'alignement (552 mp3 pour 356 json, mesuré par un hôte). Une explication JUSTE rendait
+        // donc un échec TOTAL indiscernable d'un fonctionnement normal. Trouvé le 12/09 en écrivant
+        // la documentation du correctif d'un AUTRE défaut du même chemin.
+        //
+        // La liste énumère maintenant les deux buckets que la rétention doit atteindre, et rien
+        // d'autre : la barrière garde son objet, elle cesse d'interdire le travail qu'on lui demande.
+        if (bucket !== "present-attachments" && bucket !== "tts-cache") return false;
         const segs = String(chemin).split("/");
         for (const seg of segs) {
           if (seg === "" || seg === "." || seg === ".." || !/^[A-Za-z0-9._-]+$/.test(seg)) return false;
@@ -399,7 +466,23 @@ function createStandaloneContext(env = process.env) {
           const r = await fetchBorne(`${base}/storage/v1/object/${encodeURIComponent(bucket)}/${segs.map(encodeURIComponent).join("/")}`, {
             method: "DELETE", headers: { apikey: cle, Authorization: `Bearer ${cle}` },
           }, DELAI_STOCKAGE_MS);
-          return r.ok;
+          if (r.ok) return true;
+          // ⚠️ UN OBJET DÉJÀ ABSENT EST UN SUCCÈS POUR CE QU'ON DEMANDE ICI, ET CE N'EST PLUS UNE
+          // NUANCE DE COMPTAGE. La purge RETIENT désormais la ligne quand ce
+          // retrait rend `false`, parce que la ligne est le seul chemin vers l'objet (`storage`
+          // expose `put` et `remove`, jamais `list`). Rendre `false` sur un objet qui n'est plus là
+          // retiendrait donc la ligne POUR TOUJOURS, en attendant un fichier qui n'existe pas —
+          // exactement la sur-rétention que le correctif de la sous-rétention ne doit pas créer.
+          // Ce qu'on demande est « l'objet n'est plus là », et il n'y est plus.
+          //
+          // ⚠️ ON LIT LE CORPS PARCE QUE LE CODE NE SUFFIT PAS. Le Storage de Supabase répond 400
+          // sur un objet manquant, pas seulement 404 : se fier au seul statut raterait le cas le
+          // plus fréquent. NON VÉRIFIÉ CONTRE UN SUPABASE VIVANT DEPUIS CE DÉPÔT — ce qui est
+          // éprouvé ici est la CORRESPONDANCE (statut et corps vers verdict), pas la forme exacte
+          // que le fournisseur émet. Un hôte qui observerait une autre formulation doit la dire.
+          if (r.status === 404) return true;
+          const corps = await r.text().catch(() => "");
+          return /not[_ ]?found|no such key|does not exist/i.test(corps);
         } catch { return false; }
       },
 

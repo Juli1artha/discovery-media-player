@@ -33,6 +33,14 @@ export interface ChatRenderContext {
   me: Me | null | undefined;
   /** Balisage de l'icône « réagir » — fourni par l'hôte, jamais construit ici. */
   reactIcon?: string;
+  /**
+   * ⚠️ LES ORIGINES D'OÙ UN AVATAR PEUT ÊTRE CHARGÉ — absent ⇒ MÊME ORIGINE SEULEMENT.
+   *
+   * Porté par le contexte plutôt que par un état de module, exprès : une configuration cachée dans
+   * un module survit aux essais, et ce dépôt vient de payer un mémo d'exécution qui faisait
+   * exactement ça. Ici, ce qui n'est pas passé n'existe pas.
+   */
+  avatarOrigins?: readonly string[];
 }
 
 /** Pastilles de réaction. L'emoji vient du réseau : il est échappé comme le reste. */
@@ -84,7 +92,7 @@ export function renderMessage(msg: ChatMessageFull, ctx: ChatRenderContext): str
   const presenterTag = msg.is_presenter ? ' <span class=tag>présentateur</span>' : "";
 
   return (
-    `<span class=a>${avatarHtml(msg.author_avatar, msg.author_name)}</span>` +
+    `<span class=a>${avatarHtml(msg.author_avatar, msg.author_name, ctx.avatarOrigins)}</span>` +
     `<span class=b><div class=who><b>${escapeHtml(msg.author_name || "Invité")}</b>${presenterTag}</div>` +
     quote +
     body +

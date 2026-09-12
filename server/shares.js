@@ -67,7 +67,7 @@ async function createShare({ docId, docTitle, fileUrl, fileName, recipientEmail,
 
 // Re-partage depuis la visionneuse publique (forward) : crée un lien ENFANT tracé pour un nouveau
 // destinataire, rattaché au lien parent (parent_slug) → chaîne de diffusion. created_by = celui qui forwarde.
-async function createReshare(parentSlug, { email, name }) {
+async function createReshare(parentSlug, { email, name, clientKey }) {
   const parent = await getShareBySlug(parentSlug);
   if (!parent) throw Object.assign(new Error("lien introuvable"), { statusCode: 404 });
   const slug = newSlug();
@@ -103,7 +103,44 @@ async function createReshare(parentSlug, { email, name }) {
   //
   // `created_at` est retiré : la base le pose. `is_test` est hérité — un lien de répétition dont
   // un enfant compterait dans les vraies statistiques les fausserait.
+  // ⚠️ LA CLÉ D'IDEMPOTENCE EXISTE DÉJÀ SUR CETTE TABLE, ET AJOUTER LA MIENNE AURAIT ÉTÉ UN
+  // DOUBLON. `idem_key` (migration 0011) est globalement unique quand elle est renseignée, et sert
+  // depuis toujours au chemin serveur-à-serveur. Elle n'avait simplement jamais été offerte au
+  // re-partage. Une colonne neuve aurait donné deux mécanismes d'idempotence à la même table, dont
+  // un seul aurait été contraint par l'autre : le pire des deux mondes.
+  //
+  // ⚠️ ET LA CLÉ DE L'APPELANT EST EMPREINTÉE ICI, PAS RECOPIÉE. Le format est « genre:sha256 » et
+  // les genres existants — `hote`, `repetition` — désignent des liens SYSTÈME. Recopier une chaîne
+  // fournie laisserait un appelant écrire « hote:… » et entrer en collision avec le lien système
+  // d'un document : la contrainte d'unicité ferait alors retomber son re-partage sur ce lien-là.
+  // Le genre est donc posé par nous, et la chaîne de l'appelant n'est qu'un composant parmi
+  // d'autres — le parent en fait partie, sinon la même clé réutilisée ailleurs collisionnerait.
+  const cle = clientKey
+    ? cleIdempotence("repartage", [parent.slug, low(email) || "", String(clientKey).slice(0, 200)])
+    : null;
+  const cleDispo = cle ? await require("./schema.js").attendue("liensUniques") : false;
+
+  // ⚠️ ON REGARDE AVANT D'ÉCRIRE, PUIS APRÈS AVOIR ÉCHOUÉ. Le premier coup d'œil sert le cas
+  // courant — un réessai après un délai dépassé ; l'index unique sert le cas concurrent, où deux
+  // réessais partent ensemble. Une lecture seule est une course ; une contrainte seule transforme
+  // un réessai ordinaire en erreur. C'est le même patron que `createShare` deux fonctions plus haut.
+  if (cleDispo) {
+    const existant = await reshareParCle(cle);
+    if (existant) return { slug: existant.slug, docTitle: parent.doc_title, idempotent: true };
+  }
+
+  // ⚠️ LA CLÉ DU PARENT NE S'HÉRITE PAS — elle désigne le lien du PARENT, et l'index unique la
+  // refuserait sur un second porteur. C'est très exactement la décision que le commentaire
+  // ci-dessus réclame d'écrire plutôt que d'oublier.
+  //
+  // ⚠️ ET C'EST UN `delete`, PAS UN DÉSTRUCTURAGE, POUR UNE RAISON DE GARDE. Écrit
+  // `{ idem_key: _herite, ...reste }`, ce retrait ressemble à une ÉCRITURE pour
+  // `colonneMigreeConditionnelle.test.js`, qui cherche `idem_key\s*:` hors d'une portée
+  // conditionnelle — et qui a raison de ne pas tenter de distinguer les deux par expression
+  // régulière. On ne relâche pas la garde : on écrit l'exclusion sous une forme qui ne se confond
+  // avec rien.
   const { created_at: _cree, ...herite } = parent;
+  delete herite.idem_key;
   const row = {
     ...herite,
     slug,
@@ -112,9 +149,27 @@ async function createReshare(parentSlug, { email, name }) {
     created_by: parent.recipient_email || parent.created_by || null,
     parent_slug: parent.slug,
     revoked: false,
+    ...(cleDispo ? { idem_key: cle } : {}),
   };
-  await PLAYER.db.request("commercial_doc_shares", { method: "POST", headers: { Prefer: "return=minimal" }, body: [row] });
-  return { slug, docTitle: parent.doc_title };
+  try {
+    await PLAYER.db.request("commercial_doc_shares", { method: "POST", headers: { Prefer: "return=minimal" }, body: [row] });
+  } catch (erreur) {
+    // ⚠️ SANS CLÉ DISPONIBLE, ON NE RATTRAPE RIEN : une erreur d'écriture doit remonter. « Déjà là »
+    // n'est une réussite que lorsqu'une clé a été posée pour que ce soit le cas.
+    if (!cleDispo) throw erreur;
+    const existant = await reshareParCle(cle);
+    if (existant) return { slug: existant.slug, docTitle: parent.doc_title, idempotent: true };
+    throw erreur;
+  }
+  return { slug, docTitle: parent.doc_title, idempotent: false };
+}
+
+/** Le lien déjà créé pour cette clé d'idempotence, s'il existe. */
+async function reshareParCle(cle) {
+  try {
+    const rows = await PLAYER.db.request(`commercial_doc_shares?idem_key=eq.${enc(String(cle))}&select=slug&limit=1`);
+    return Array.isArray(rows) && rows[0] ? rows[0] : null;
+  } catch { return null; }
 }
 
 async function getShareBySlug(slug) {

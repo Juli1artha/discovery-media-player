@@ -12,6 +12,310 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.164] — 2026-09-12
+
+### Fixed
+
+- ⚠️ **Le présentateur créait un élément par page et un bouton par vignette, pour TOUT le document.**
+  Le rendu des canvas était déjà paresseux et borné — fenêtre glissante, budget de pixels — mais les
+  **gabarits**, eux, étaient tous là. Mesuré par un audit externe dans un Chrome réel : 10 000 pages
+  → ~70 000 nœuds, 50 000 → ~450 000, et une reconstruction au zoom de 2,4 s. Un document hostile
+  n'a pas besoin d'être lourd : il lui suffit d'être **long**.
+  La visionneuse ne matérialise plus qu'une **fenêtre** de pages et de vignettes autour du visible ;
+  deux espaceurs portent la hauteur des absents. Mesuré en jsdom, à 10, 10 000 et 50 000 pages :
+  **6 nœuds dans `#pages`, 18 dans `#vignIn`, identiques aux trois échelles** — 4 pages
+  matérialisées, 8 vignettes, 7 et 13 après un saut au milieu du document. Les observateurs,
+  l'éviction des canvas et le rendu paresseux sont inchangés : ils voient simplement moins
+  d'éléments.
+  ⚠️ **Le calcul de la fenêtre est pur et vit dans `src/viewer.ts`**, pas dans le gabarit : c'est
+  lui qui décide ce qui existe, et s'il se trompe un lecteur voit un trou ou une page en double. Il
+  s'éprouve donc seul, avec des nombres — `floor` des deux côtés et un `+1` d'index, parce qu'un
+  `ceil` d'un côté laisse un trou d'une page exactement sur une frontière. `positionDe` est son
+  inverse : la page demandée se rejoint par sa position calculée, puis **naît**, puis s'aligne.
+  Le banc navigateur suit : il ne cherche plus la page 30 dans le DOM (elle n'y est pas avant
+  qu'on s'en approche) mais déduit sa position des pages nées, compte la **fenêtre** de vignettes
+  plutôt que 40 boutons, et exige que chaque parcours ait **eu lieu** (`cur ≥ 38`) — l'un d'eux,
+  écrit avec `if (el)`, passait vert sans avoir bougé.
+  ⚠️ **Le banc compte des nœuds, jamais des millisecondes** — c'est la demande de l'audit et la
+  règle du dépôt. La borne est `plafondFenetre`, calculée avec les constantes du gabarit ; et
+  avant + matérialisées + après = tout le document, la borne de compte qui trahit une définition qui
+  dérape. Cinq mutants ajoutés à la campagne : fenêtre non virtuelle, pages toutes matérialisées,
+  saut sans matérialisation, vignettes toutes matérialisées, chargement sans échéance.
+  ⚠️ **Et un document qui n'arrive jamais est désormais abandonné.** La tâche `getDocument` n'était
+  ni bornée ni détruite : un transfert qui ne finit pas gardait son worker jusqu'à la fermeture de
+  l'onglet. Délai global de deux minutes, `destroy()`, et un message — éprouvé à 119 s puis 121 s.
+  ⚠️ **Le harnais a dû substituer le chargement de pdf.js par crochet de source** — la visionneuse
+  l'importe en module ES, ce qui échoue en jsdom et conduit à `refuserWorker()`, jamais à `start()`.
+  Le banc **vérifie que la substitution a eu lieu** : sans elle, il évaluerait une page qui ne
+  démarre pas et prouverait vert sur rien.
+
+- ⚠️ **`tools/mutations.mjs` — notre critère d'acceptation était manuel, et il est désormais
+  rejouable.** Le CHANGELOG porte des dizaines de « N mutations sur N tuées » : chacune était vraie
+  le jour où elle a été écrite, produite **à la main**, sans artefact, **non rejouable par
+  quiconque** — y compris par nous, le lendemain. Nous avions d'abord annoncé « zéro outil de
+  mutation », ce qui était **faux** (`tools/fixture-types/eprouver.mjs` en est un, sur les types) ;
+  la formulation juste est celle de l'audit, et celle-ci est la campagne sur le **comportement**.
+  **12 mutants, 12 tués.** Chacun est un défaut qui a **réellement existé** — aucun inventé pour
+  faire nombre : prédicat de purge absent du DELETE, trace effacée au-dessus d'un objet resté,
+  bucket des voix hors liste blanche, objet absent compté en échec, signal qui remplace le plancher,
+  budget de relais par saut, avatar de toute origine, comparaison par préfixe, avatar anonyme
+  resservi sur deux chemins, échec de hook muet.
+  ⚠️ **Pas de mutation générique sur 10 800 lignes, et le refus est motivé** : des centaines de
+  survivants bénins apprendraient à ignorer la sortie, et une garde qu'on ignore est pire
+  qu'absente.
+  ⚠️ **Elle refuse de conclure de trois façons, et chacune la rendrait plus verte qu'elle ne
+  devrait** : cible absente (le code a bougé, le mutant ne mute rien), cible **en double** (le
+  verdict ne désigne aucune des deux), base **déjà rouge** (tous les mutants qui touchent ce banc
+  passeraient pour tués — la campagne serait d'autant plus verte que le dépôt est cassé).
+  ⚠️ **Et le contrôle a servi dès le premier passage** : `avatar-anonyme-resservi` a rendu **non
+  concluant** parce que sa cible existait **deux fois**. Scindé en deux mutants portant chacun le
+  contexte qui le rend unique. Un outil qui refuse de deviner vaut mieux qu'un outil qui devine bien.
+  ⚠️ **L'empreinte est vérifiée après chaque restauration**, parce qu'une campagne manuelle
+  interrompue a déjà laissé un fichier muté sur disque que l'exécution suivante a pris pour sa
+  référence. Un écart arrête tout : le dépôt est alors dans un état inconnu.
+
+- ⚠️ **La clé d'idempotence du re-partage EXISTAIT DÉJÀ, et écrire la migration demandée aurait été
+  un doublon.** `idem_key` est sur cette table depuis la **migration 0011**, globalement unique
+  quand elle est renseignée, avec son attente de schéma déjà câblée — elle servait au chemin
+  serveur-à-serveur et n'avait jamais été offerte au re-partage. Une colonne neuve aurait donné
+  **deux** mécanismes d'idempotence à la même table, dont un seul contraint par l'autre. La 0028
+  écrite puis **supprimée** : le travail était de brancher, pas d'ajouter.
+  ⚠️ **La clé de l'appelant est empreintée côté serveur, jamais recopiée.** Le format est
+  `genre:sha256` et les genres existants désignent des liens **système** : recopier une chaîne
+  fournie laisserait un appelant écrire `hote:…` et faire retomber son re-partage sur le lien
+  système d'un document, par la grâce même de la contrainte d'unicité.
+  ⚠️ **Et le banc a trouvé la moitié manquante** : un lien idempotent qui réexpédie laisse le défaut
+  entier — le destinataire reçoit deux courriers, ce qu'on répare. `delivery: "idempotent"` dit
+  « c'était déjà fait », pas « ça a échoué ».
+- ⚠️ **Une salle de mille personnes derrière une sortie unique décroche à la 37ᵉ minute, AU REPOS.**
+  Simulé contre le **vrai limiteur**, aux constantes réelles du produit : le quota est dimensionné
+  pour **25** lecteurs par sortie, et une sortie en porte **613**. À 700 spectateurs le premier refus
+  tombe à 53 min ; à 1 000, à 37 min — sans qu'un seul geste du présentateur n'ait lieu. La campagne
+  de charge existante distribue mille clients sur 250 adresses, donc quarante par sortie : elle ne
+  pose pas cette question. ⚠️ Ce n'est **pas** une campagne de charge et il ne faut pas la lire ainsi
+  — rien n'y mesure de millisecondes. Le chiffre est une **décision d'exploitation**, et le relevé
+  est imprimé pour qui déploie.
+  ⚠️ **Une borne écrite a attrapé mon propre harnais** : 88 401 acceptées pour un plafond de 88 400.
+  Le `finally` qui restaurait l'horloge s'exécutait **au `return`**, donc la boucle asynchrone
+  tournait contre le temps **réel**. Le limiteur était juste ; l'instrument dérivait, et il l'a dit
+  parce qu'une borne était écrite.
+  ⚠️ **`creerLimites` accepte désormais une horloge**, pour qu'un banc n'ait plus à rustiner un
+  global : une horloge passée en argument ne peut pas fuir hors de son appel.
+
+- ⚠️ **`sent: false` mentait quand la vérité était « je ne sais pas », et c'est ce mensonge qui
+  duplique les courriers.** Trois issues tenaient dans un booléen : l'hôte a refusé, **nous** avons
+  refusé, ou l'appel a échoué **sans que nous sachions ce que l'hôte a fait**. Seul le dernier est
+  dangereux — si l'hôte a réellement envoyé puis répondu trop tard, un client qui lit « false »
+  réessaie et crée un **second lien enfant** en envoyant un **second courrier**.
+  ⚠️ **C'est la doctrine de `bot-tts` retournée.** Là-bas, « je n'ai pas pu vérifier » doit se lire
+  **non**, parce que le doute empêche une dépense. Ici, le doute lu comme « non » **provoque** la
+  dépense. La règle constante n'est donc pas « dans le doute, non » — c'est **« dans le doute,
+  dis-le »**, et laisse l'appelant choisir en sachant. `delivery` porte les quatre états ; `sent`
+  reste inchangé pour les intégrations qui le lisent. L'idempotence vraie demande une colonne, donc
+  une migration : elle n'est pas là, et le contrat dit quoi faire en attendant.
+- ⚠️ **Le délai des relais de fichiers bornait un SAUT, pas l'opération.** Chaque tour de boucle
+  créait son propre `AbortSignal.timeout(60 s)` : avec six tours possibles, une chaîne de
+  redirections lente immobilisait requête, socket et place d'admission jusqu'à **six minutes** —
+  alors que le commentaire juste en dessous affirmait « le délai est large mais il est **borné** ».
+  Un seul signal, créé avant la boucle, partagé par tous les sauts. Ce n'est pas un trou de sécurité
+  — chaque saut repasse la garde d'origine et recalcule le secret — c'est de la **disponibilité**.
+  ⚠️ Le banc compare l'**identité** des signaux : quatre signaux différents, c'est quatre fois
+  soixante secondes ; un seul, c'est l'opération bornée.
+- ⚠️ **Un `catch` vide confondait « non bloquant » et « muet ».** L'installation du hook git avalait
+  toute erreur sans un mot : un audit externe a rendu le dossier non inscriptible et obtenu sortie 0,
+  aucun message, aucun hook — le développeur croit son garde-fou posé et travaille sans. Le principe
+  était juste (échouer là ferait échouer `npm install` pour une commodité), la conclusion ne l'était
+  pas. Il l'écrit désormais sur **stderr**, jamais stdout, parce qu'une garde parse ce canal.
+  ⚠️ **Et le stimulus du banc ne passe plus par les permissions** : rendre un dossier non
+  inscriptible ne reproduit rien **sous root**, qui écrit malgré le mode — mesuré dans ce conteneur,
+  l'essai prenait une branche de secours et passait en ne prouvant rien. Un stimulus dont la présence
+  dépend de l'utilisateur qui lance les bancs n'est pas un stimulus.
+
+- ⚠️ **Un banc prouvait « la requête porte un signal d'abandon » en cherchant le motif dans la SOURCE
+  — et c'est la deuxième fois que ce proxy mord.** La première est écrite dans sa propre correction :
+  il cherchait dans la source brute, le commentaire au-dessus du code contenait les mots, donc
+  retirer l'appel réel le laissait **vert**. On avait filtré les commentaires — proxy réparé, gardé.
+  Cette fois, extraire la composition des signaux dans une fonction a sorti le motif de la fenêtre :
+  **rouge sur un remaniement qui améliore la propriété gardée**. Vert quand la propriété disparaît,
+  rouge quand elle se renforce : l'un est un accident, les deux sont un verdict. Le bloc s'appelait
+  déjà « abandonne **réellement** » ; il éprouve désormais le comportement, avec un `fetch` qui ne
+  répond jamais.
+
+- ⚠️ **`tools/affirmations-retirees.mjs` — la sous-classe mécanisable de « une phrase a cessé d'être
+  vraie », et elle est née de QUATRE récidives en deux jours.** « Le compte partagé n'est pas
+  atomique » corrigé dans le contrat anglais, laissé **95 lignes plus haut dans le fichier français
+  qu'on éditait le même jour**. « Un visiteur décide de ce qui entre » corrigé dans deux fichiers sur
+  **quatre**. Et « par processus par conception » laissé dans `SECURITY.md` et
+  `docs/THREAT-MODEL.md`, où il mettait **hors périmètre un étage que le code implémente** — un
+  document qui déclare quelque chose hors périmètre n'est pas neutre : il dit à un chercheur de ne
+  pas regarder.
+  ⚠️ **Elle ne confronte PAS une phrase à ce qu'elle décrit, et il ne faut pas le croire.**
+  `AGENTS.md` dit qu'aucune garde ici ne sait faire ça, et ça reste vrai : le fait qu'une migration
+  existe ne dit à aucun programme quel paragraphe ment. Ce qui est mécanisable, c'est la sous-classe
+  où **nous avons déjà décidé** qu'une affirmation est retirée. Elle confronte le dépôt à cette
+  décision, pas à la réalité. C'est beaucoup moins — et c'est exactement ce qui a échoué quatre fois.
+  ⚠️ **Son premier passage a trouvé une copie que DEUX audits humains avaient manquée** : l'en-tête
+  d'un banc, quatrième exemplaire d'une phrase corrigée trois fois ailleurs.
+  La règle : une affirmation retirée peut encore s'écrire — on corrige **en place** pour qu'un hôte
+  qui l'a lue l'apprenne — mais la ligne doit porter un marqueur de rétractation, cherché sur elle et
+  les **deux précédentes** (une citation s'enroule), **jamais après** (un lecteur qui abandonne à la
+  phrase fausse ne lira pas la correction). Archives exclues : un CHANGELOG cite ce qui était vrai à
+  sa date. 386 fichiers confrontés. 12 bancs, **4 mutations sur 4 tuées**.
+- ⚠️ **Un signal fourni par l'appelant SUPPRIMAIT le plancher au lieu de s'y ajouter.**
+  `options.signal || AbortSignal.timeout(delai)` : un hôte qui bornait lui-même une opération longue
+  croyait **ajouter** une garantie et en **retirait** une. Mesuré : avec un signal qui n'expire jamais
+  et `timeoutMs: 20`, la promesse était encore en attente après 150 ms ; elle est rejetée après 20 ms.
+  ⚠️ **Et le commentaire bénissait le défaut** — « un signal fourni par l'appelant a priorité ».
+  L'intention était juste ; « a priorité » était la mauvaise traduction de « borner ». Le premier des
+  deux qui parle gagne. Défaut **latent** (aucun appel du produit ne transmet de signal aujourd'hui),
+  rapporté par un audit externe. Le repli sans `AbortSignal.any` est éprouvé en retirant la méthode,
+  pas supposé.
+
+- ⚠️ **`tools/orphelins-tts.mjs` — le stock que la purge cassée a échoué, et qu'aucune correction ne
+  rattrape.** Les objets « purgés » sont toujours dans le bucket, ligne effacée : inatteignables par
+  le produit, par construction. Cet outil **sort du contrat exprès** — il parle à l'API Storage pour
+  faire la seule chose que le contrat n'expose pas, `list`. Il n'est donc pas une garde, ne tourne
+  dans aucun workflow, et **ne joint personne** tant qu'on ne le lui demande pas.
+  ⚠️ **Il ne peut pas distinguer nos orphelins de ceux d'un hôte, et aucune mesure ne le peut.** Un
+  objet sans ligne est l'un de trois : orphelin de la purge, vestige d'avant la 0021, ou fichier
+  écrit par l'hôte sous notre convention — un intégrateur en a rapporté **908**. D'où : rapport par
+  défaut, candidats limités à ce qui dépasse la fenêtre de rétention, **nombre à recopier** depuis un
+  rapport produit sur l'état courant, et rien de touché dont on ne sache pas lire la date. 11 bancs,
+  **5 mutations sur 5 tuées**.
+- ⚠️ **`tenter` ne pouvait pas attraper une exception asynchrone, et l'échec était silencieux.** Son
+  `try { return travail(); }` voit une fonction `async` **rendre** une promesse sans lever : le
+  `catch` n'est jamais atteint, la promesse est rejetée plus tard, et Node sort en **1**. Un outil
+  qui joint le réseau aurait donc annoncé « ce dépôt viole la règle » à chaque coupure — l'inverse
+  exact de ce que la taxonomie existe pour dire. `tenterAsync` fait le `await` dans le `try`. Le code
+  fautif est court, il se lit bien, et il n'échoue que quand autre chose échoue : rien ne l'aurait
+  signalé.
+
+- ⚠️ **Un avatar pouvait être n'importe quelle URL, et devenait une `<img>` dans le navigateur de
+  CHAQUE spectateur — un pixel de suivi, pas un XSS.** L'échappement protège le balisage, pas le
+  **chargement** : l'IP, l'agent, l'heure et l'origine de la page de tout le public partaient chez
+  quiconque avait écrit l'URL. Reproduit par un audit externe contre le vrai rendu du chat.
+  ⚠️ **Le défaut était nommé dans le commentaire de sa propre correction.** `titreUsurpe.test.js`
+  raconte depuis sa première ligne qu'un `track({role:"presenter"})` permettait d'apparaître comme
+  le présentateur « **avec le nom et l'avatar de son choix** ». Le **rôle** a été arbitré par le
+  serveur ; l'avatar est resté, cité dans la phrase qui décrit le mal, jamais éprouvé.
+  ⚠️ **Deux chemins y menaient, et un seul passe par le serveur.** Le chat et la présence
+  enregistrée transitent par nos routes ; la présence **Realtime** part en pair-à-pair et n'est
+  jamais vue par nous. Aucune barrière serveur ne pouvait l'atteindre — d'où une barrière **au
+  rendu**, seul point où les deux chemins se rejoignent.
+  Trois barrières : un anonyme ne fournit plus d'avatar (une identité prouvée remplace ce qu'on
+  affirme, et il ne prouve rien) ; un avatar stocké doit venir de l'origine du stockage de l'hôte ;
+  et le rendu refuse toute origine non déclarée, initiales à la place. ⚠️ **La comparaison porte sur
+  l'ORIGINE, pas sur un préfixe** — `https://<base>.attaquant.net` commence comme ce qu'on
+  reconnaît. Mutations posées sur les trois barrières, toutes tuées.
+  ⚠️ **Conséquence visible pour les hôtes** : des avatars de membres hébergés ailleurs (Gravatar,
+  un CDN) s'affichent désormais en initiales. Dégradation **visible et réversible** — il suffit de
+  les servir depuis son propre stockage — là où la fuite était invisible et subie par l'audience.
+
+- ⚠️ **La purge du cache de voix n'a JAMAIS retiré un seul objet dans le contexte de référence, et
+  ce qui l'a caché est une explication juste.** `storage.remove` porte une liste blanche de buckets
+  — dernière barrière avant un DELETE à la clé service_role — et elle ne nommait que
+  `present-attachments`. `tts-cache` était refusé **avant tout appel réseau** : chaque retrait
+  rendait `false`, la trace partait quand même, et l'objet restait dans un bucket **public** sans
+  plus aucun chemin vers lui, puisque cette capacité expose `put` et `remove` mais **jamais `list`**.
+  C'est exactement le mal que la migration 0021 avait été écrite pour rendre réparable, réalisé à
+  **100 %**.
+  ⚠️ **Le masquage vaut le défaut.** Ces refus étaient comptés dans `fichiersErreur`, que
+  `docs/RETENTION.md` explique par un fait **vrai et mesuré** — un tiers des empreintes n'a pas de
+  `.json` d'alignement (552 mp3 pour 356 json, relevé par un hôte). Une explication correcte du
+  bruit rendait un échec **total** indiscernable du fonctionnement normal. Trouvé en écrivant la
+  documentation du correctif d'un **autre** défaut du même chemin.
+  La liste blanche nomme désormais les deux buckets que la rétention doit atteindre, et rien
+  d'autre : le refus de tout autre bucket, et de toute traversée de chemin, tombe toujours **avant**
+  le réseau — éprouvé, parce qu'élargir une liste blanche est le moment exact où l'on cesse de garder.
+- ⚠️ **Une ligne ne part plus au-dessus d'un fichier qui a résisté.** La suppression était
+  inconditionnelle : un `storage.remove` en échec effaçait quand même la ligne, donc le seul chemin
+  vers l'objet. Une ligne retenue est récupérable — le passage suivant réessaie ; un fichier perdu ne
+  l'est pas. `retenues` le NOMME dans le rapport, sans quoi on remplacerait un défaut muet par un
+  autre. ⚠️ **Et l'alignement `.json` ne retient rien** : un tiers des empreintes n'en a pas, donc
+  seul l'audio commande — sinon le correctif de la sous-rétention créait une sur-rétention d'un tiers
+  du cache. ⚠️ **Ni le parent au-dessus d'un enfant retenu** : la condition ne connaissait que
+  « tronqué », et « retenu » est une seconde façon de ne pas être parti — sans quoi cette réparation
+  rouvrait l'orphelin parent/enfant fermé par un audit précédent.
+  ⚠️ **Et « déjà absent » devient un succès, à la source.** Notre propre contexte rendait `r.ok` :
+  Supabase répond en erreur pour un objet manquant, donc le correctif ci-dessus aurait retenu des
+  lignes **pour toujours** en attendant des fichiers inexistants. 404 et un corps nommant l'absence
+  valent « retiré » ; une vraie panne (500) ou un refus (403) restent des échecs.
+- ⚠️ **Le prédicat de purge voyage avec le DELETE.** On sélectionnait par date et on supprimait par
+  **identifiant seul** : un battement arrivant entre les deux requêtes rafraîchissait une ligne, qui
+  était effacée quand même — jugée sur une date qui n'était plus la sienne. Reproduit par un audit
+  externe, reproduit ici avant correction. PostgREST applique tous les prédicats de l'URL au moment
+  du DELETE : rejouer le filtre fait juger la ligne sur son état **à cet instant-là**. La fenêtre de
+  course ne disparaît pas, elle cesse d'être destructrice. Le filtre est un paramètre **obligatoire**,
+  parce qu'optionnel il s'oublie.
+  ⚠️ **Et l'éprouvette des bancs modélisait une base indifférente aux prédicats** — elle n'appliquait
+  que `in.(…)`. Aucune assertion écrite au-dessus d'elle ne POUVAIT voir le prédicat manquant : l'URL
+  fautive et l'URL correcte y produisent le même résultat. Le nouveau bloc porte sa propre éprouvette,
+  qui applique les prédicats, et l'ancienne dit désormais ce qu'elle ne voit pas.
+
+- ⚠️ **La règle était écrite à la main dans le dépôt, au-dessus d'un mécanisme qui ne l'appliquait
+  pas.** `server/__tests__/repliRpcSignature.test.js` portait le commentaire *« un essai qui dépend
+  de son rang dans le fichier ne prouve pas ce qu'il annonce »* au-dessus d'un essai qui obtenait un
+  « module neuf » par `vi.resetModules()` puis `require`. **Mesuré : les deux rendent le MÊME objet
+  d'exports en CommonJS** — `resetModules` vide le registre des modules transformés par vite, pas le
+  cache `require` de Node. L'essai lisait donc l'héritage de ses voisins depuis toujours, et ne
+  passait que parce qu'il se trouve en tête de son bloc.
+- ⚠️ **Et ce qu'il masquait était en PRODUCTION.** `presentations.init()` jetait le mémo
+  d'exécution du durcissement et **gardait celui de la fusion**, alors que le fichier écrit **trois
+  fois** que les deux jumeaux se comportent identiquement — *« même patron que 0018 »*, *« même
+  lecture que `etatDurcissementBootstrap`, délibérément »*. Ils l'étaient sur le chemin de LECTURE,
+  le seul que les bancs regardaient, et pas sur la remise à zéro. Un hôte qui rappelle `init` avec
+  un autre contexte — donc possiblement une autre base — lisait une observation faite sur la base
+  **précédente** sous le nom de la nouvelle. Banc écrit : il échoue sans le correctif.
+- ⚠️ **`tools/ordre-des-bancs.mjs` — la suite mélangée, avec le contrôle de stimulus que sa
+  première écriture n'avait pas.** Elle accusait tout fichier rouge sous mélange ; **le plancher
+  `planchersDesGardes` l'a REFUSÉE**, et il avait raison : son éprouvette copie `tools/` en entier
+  dans un arbre vide, donc vitest y trouve des bancs qui échouent faute de dépôt, et la garde les
+  déclarait dépendants de leur rang. Chaque rouge est désormais **rejoué seul, sans mélange** : s'il
+  échoue aussi, l'échec préexiste et la garde se tait ; s'il passe, le mélange est bien la cause. Et
+  si un rouge préexiste, l'ordre n'est pas mesurable du tout — **NON CONCLUANT**, jamais vert.
+  ⚠️ **Elle refuse de se lancer depuis un lancement de bancs, et c'est une propriété.**
+  `planchersDesGardes` lance chaque outil de `tools/`, donc celui-ci, donc la suite — qui contient
+  `planchersDesGardes`. Écrite sans ce garde-fou, elle a fait ce qu'on attend d'une imbrication : le
+  banc ne finissait plus, et **391 processus résiduels ont écrasé la machine** — au point que le
+  témoin de référence est devenu faux sans le dire.
+  ⚠️ **La graine est imprimée**, parce qu'une garde non déterministe dont l'échec ne se reproduit
+  pas est un rouge qu'on apprend à ignorer. Par défaut le jour UTC ; `--graine=<n>` rejoue.
+  ⚠️ **Elle n'exige pas que tout banc survive au mélange.** Des fichiers dépendent de leur ordre
+  légitimement — un verdict agrégé, un écouteur posé une fois. Ils sont **déclarés avec leur raison
+  et nommés à chaque exécution** : une dette déclarée, pas une exemption muette. 10 bancs,
+  **5 mutations sur 5 tuées**, dont une par expiration — l'imbrication qu'elle empêche.
+- ⚠️ **Déclarer était plus facile que réparer, et un audit externe a demandé l'inverse. Il avait
+  raison : deux des trois déclarations d'ordre sont supprimées parce que les fichiers sont RÉPARÉS.**
+  `finDePresentation` exigeait d'être en tête de son fichier — chaque banc ré-injecte le HTML dans la
+  MÊME fenêtre jsdom, donc les scripts se rejouent et empilent un écouteur de départ de page ; sept
+  bancs produisaient sept avis de fin. ⚠️ **Et le fichier disait déjà la solution sans l'appliquer** :
+  son commentaire sur les minuteries annonce *« c'est la même cause que les beacons empilés, traitée
+  cette fois à la racine plutôt que contournée »*. Les minuteries l'étaient ; les écouteurs ne
+  l'étaient pas. Ils sont désormais retirés entre bancs, et **un essai monte deux bancs exprès** pour
+  le prouver — sans lui : trois avis de fin au lieu d'un.
+  ⚠️ **Compter les écouteurs aurait été un mauvais témoin, et la mesure l'a dit** : un banc en pose
+  **deux** sur `pagehide`, pas un. Exiger « exactement un » rougissait à tous les rangs, premier
+  compris. Ce qui se prouve n'est pas leur nombre, c'est qu'il **ne croît pas**.
+- ⚠️ **`coutParGeste` portait deux verdicts agrégés écrits comme des essais qui espéraient être
+  derniers.** Ils confrontent le témoin daté et les documents à ce que la campagne vient de mesurer,
+  en lisant un relevé que les essais d'avant remplissent : exécutés avant eux, ils annonçaient
+  « PLUS MESURÉ » sur cinq gestes et accusaient le produit d'une régression inexistante. Ils vivent
+  dans `afterAll` — un verdict sur l'ensemble appartient à l'après-ensemble — et **mordent toujours**,
+  éprouvé en faussant le témoin puis en retirant un marqueur d'un document.
+- ⚠️ **La suite de ce dépôt était ROUGE sur la machine de son auteur, et la forge ne pouvait pas le
+  voir.** `shellDesWorkflows` éprouvait « un bloc déclaré `sh` est jugé par sh » en cherchant une
+  forme que les deux analyseurs lisent différemment — un littéral de tableau, que dash refuse. Son
+  commentaire dit *« mesuré avant d'être cru »* : **mesuré sur dash, et cru universel**. Sur macOS,
+  `/bin/sh` EST bash et l'accepte. Le choix du binaire devient une **fonction pure**, éprouvable
+  partout ; le comportement réel reste éprouvé là où le système peut le montrer, et **sauté en le
+  disant dans son titre** là où il n'y a rien à discriminer — jamais vert sur rien. Trouvé par un
+  audit externe qui a lancé la suite sur un autre système que le nôtre.
+- ⚠️ **Un essai qui résume ses voisins le DÉCLARE désormais plutôt que de le subir.** Le dernier
+  essai de `planchersDesGardes` lit un accumulateur rempli par les essais générés au-dessus ;
+  exécuté avant eux, il échouait en accusant le dépôt d'avoir perdu une formule qu'il n'avait pas
+  perdue — un rouge qui désigne le mauvais coupable. Il dit maintenant combien d'essais ont tourné.
+
+
 ## [0.1.163] — 2026-09-11
 
 ### Fixed
@@ -6784,7 +7088,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.163...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.164...HEAD
+[0.1.164]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.163...v0.1.164
 [0.1.163]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.162...v0.1.163
 [0.1.162]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.160...v0.1.162
 [0.1.160]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.159...v0.1.160

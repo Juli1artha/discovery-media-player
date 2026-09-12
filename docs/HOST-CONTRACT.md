@@ -825,6 +825,75 @@ was a correct `bot`, and the reader would have returned an empty string for ever
 set, so every request refused, on a perfectly correct integration. If your field is none of those
 three, tell us and we widen the list. The field name carries no security; the **role** filter does.
 
+⚠️ **`reshare` now answers with a three-state `delivery`, and the state you must handle is
+`"unknown"`.** The response used to carry a single `sent` boolean, which collapsed three different
+outcomes: your mail path declined, *we* declined, or **the call failed without us learning what your
+side did**. Only the third is dangerous — if your host really sent the message and then answered too
+late, a caller reading `sent: false` retries, creating a **second child link and a second email**.
+
+| `delivery` | what happened | what to do |
+|---|---|---|
+| `"sent"` | your mail path reported success | nothing |
+| `"refused"` | a decision was made — yours or ours; `sendRefused` names it | surface the reason; retrying will refuse again |
+| `"unknown"` | the call failed (timeout, network). **We do not know whether the mail went out** | surface it to a human. **Do not retry automatically** — a retry may duplicate the email |
+| `"not-requested"` | `send` was falsy | nothing |
+
+`sent` is unchanged for integrations already reading it.
+
+⚠️ **And you can now make the retry safe: pass a `clientKey`.** Two `reshare` calls with the same
+parent, the same recipient and the same `clientKey` return the **same child link** and send **one**
+email — the second answers `delivery: "idempotent"`, which means *"this was already done"*, not
+*"this failed"*. Generate the key before the first call and reuse it on every retry.
+
+- The key you send is **fingerprinted on our side**, together with the parent and the recipient. It
+  is never stored as you wrote it, and it cannot collide with the system links the host-to-host path
+  creates.
+- ⚠️ **This rides on migration `0011`, which you may already have.** No new column was added: the
+  table has carried a unique idempotency key since then, and the reshare route had simply never been
+  offered it. If `0011` is not applied, `clientKey` is ignored and you get the old behaviour — a
+  retry creates a second link. Nothing breaks; the guarantee is what degrades, and `delivery` still
+  tells you when you are in doubt.
+- Without a `clientKey`, nothing changes: several links to the same recipient remain possible, which
+  is a legitimate thing to want.
+
+⚠️ **Avatars are only loaded from origins the page already serves content from, and everything else
+degrades to initials.** An avatar URL is an `<img>` in the browser of **every other viewer**: an
+arbitrary URL therefore sends each of them — their IP, user agent, the time, the page origin — to
+whoever wrote it. That is not an XSS (the markup is escaped); it is a privacy leak aimed at your
+audience, and an external audit reproduced it on 2026-09-12 against the real chat renderer.
+
+Three things changed, and the second one is the one you may notice:
+
+- **A participant who is not authenticated no longer supplies an avatar at all.** A proven identity
+  replaces what is asserted; an anonymous visitor proves nothing, so the field is dropped and the
+  audience sees initials.
+- **A member's avatar must come from your Supabase origin (or be a relative URL).** It arrives from
+  your identity provider's metadata, and a provider that lets a user edit that field would hand us
+  an arbitrary URL under a proven name. ⚠️ **If your members' avatars live elsewhere — Gravatar, a
+  CDN, Google — they will now render as initials.** Serve them from your own storage to get the
+  images back. The degradation is visible and reversible; the leak was neither.
+- **The renderer refuses the same URLs again**, because one path never reaches this server: a
+  participant can broadcast presence over Realtime straight to the other viewers. No server-side
+  barrier can see that, so the check also lives where every path converges — at render time.
+
+⚠️ **What your `storage.remove` returns now decides whether a row survives.** It returns a boolean:
+`true` means the object is gone, `false` means it is still there. Until 0.1.163 the retention sweep
+erased the row either way — and since this capability exposes `put` and `remove` but **never
+`list`**, the row is the only path to the object: erasing it stranded the file in the bucket
+permanently. The sweep now **keeps the row** when `remove` returns `false`, and reports it as
+`retenues`. Two consequences for you:
+
+- **Do not return `false` for an object that was already absent.** An already-gone object is a
+  success for this purpose — returning `false` makes the sweep retain a row forever, waiting for a
+  file that does not exist. ⚠️ **The player's own standalone context used to have exactly this bug**,
+  found while writing this paragraph: it returned `r.ok`, and Supabase Storage answers an error for a
+  missing object, so the fix for lost files would have created permanent retention instead. It now
+  treats 404 — and a body naming "not found" — as removed, because what is being asked is *"the
+  object is no longer there"*, and it is not there. If you wrap a different provider, do the same.
+- **`retenues > 0` in a retention report means your provider refused a removal**, not that the purge
+  is broken. The next pass retries. A row that lingers is recoverable; a file whose only pointer was
+  erased is not.
+
 **If you write to the `tts-cache` bucket yourself, write the trace too.** Retention removes an object
 only when its fingerprint has a row in `doc_tts_objects`, and only the player's own route writes that
 row. Anything your code puts in that bucket is therefore invisible to the sweep — **permanently**,

@@ -6,6 +6,7 @@ import {
   escapeHtml,
   initials,
   avatarHtml,
+  origineAvatarAutorisee,
   formatMessageBody,
   flattenPresence,
   attendeeKey,
@@ -318,5 +319,62 @@ describe("le jeton d'auteur est imprévisible", () => {
       (globalThis as { crypto?: unknown }).crypto = vrai;
       console.warn = vraiWarn;
     }
+  });
+});
+
+// ⚠️ UNE URL D'AVATAR QUELCONQUE EST UN PIXEL DE SUIVI, ET L'ÉCHAPPEMENT N'Y CHANGE RIEN.
+//
+// `escapeHtml` empêche l'injection de balisage ; il n'empêche pas le CHARGEMENT. Une `<img>` vers
+// un hôte arbitraire fait partir, depuis le navigateur de CHAQUE spectateur, son IP, son agent,
+// l'heure et l'origine de la page — vers quiconque a écrit l'URL. Rapporté par un audit externe le
+// 12/09, avec une reproduction contre le vrai rendu du chat.
+//
+// ⚠️ ET LE DÉFAUT EST NOMMÉ DANS LE COMMENTAIRE DE SA PROPRE CORRECTION. `gabarit-live.js` raconte
+// qu'un `track({role:"presenter"})` permettait d'apparaître comme le présentateur « avec le nom et
+// l'avatar de son choix ». Le rôle a été réparé ; l'avatar est resté, cité dans la phrase qui
+// décrit le mal.
+//
+// ⚠️ C'EST ICI QUE LES DEUX CHEMINS SE REJOIGNENT. Le chat passe par nos routes, donc une barrière
+// serveur le couvre. La présence Realtime, NON : un participant appelle `track({avatar})` depuis son
+// navigateur et la charge arrive chez les autres sans nous voir. Le rendu est le seul point commun.
+describe("⚠️ un avatar ne se charge que depuis une origine déclarée", () => {
+  const SUPA = "https://projet.supabase.co";
+
+  it("une URL relative passe — c'est la même origine", () => {
+    expect(origineAvatarAutorisee("/a/b.png")).toBe(true);
+    expect(origineAvatarAutorisee("a/b.png")).toBe(true);
+  });
+
+  it("une origine déclarée passe", () => {
+    expect(origineAvatarAutorisee(`${SUPA}/storage/v1/object/public/av/x.png`, [SUPA])).toBe(true);
+  });
+
+  it("⚠️ le bucket d'un inconnu ne passe PAS — c'est la reproduction de l'audit", () => {
+    const pixel = "https://storage.googleapis.com/attacker-bucket/pixel.png";
+    expect(origineAvatarAutorisee(pixel, [SUPA])).toBe(false);
+    expect(avatarHtml(pixel, "Léa Martin", [SUPA]), "aucune `<img>` : les initiales prennent la place")
+      .toBe("LM");
+  });
+
+  // ⚠️ LA COMPARAISON PORTE SUR L'ORIGINE, PAS SUR UN PRÉFIXE DE CHAÎNE. Un `startsWith` aurait
+  // accepté cette URL, dont le début ressemble à celui qu'on autorise.
+  it("⚠️ une origine qui COMMENCE comme la nôtre ne passe pas", () => {
+    expect(origineAvatarAutorisee("https://projet.supabase.co.attaquant.net/x.png", [SUPA])).toBe(false);
+    expect(origineAvatarAutorisee("https://projet.supabase.co@attaquant.net/x.png", [SUPA])).toBe(false);
+  });
+
+  it("sans liste, seule la même origine passe — un défaut SÛR", () => {
+    expect(origineAvatarAutorisee(`${SUPA}/x.png`)).toBe(false);
+    expect(avatarHtml(`${SUPA}/x.png`, "Ada Lovelace")).toBe("AL");
+  });
+
+  it("ni schéma exotique, ni URL vide", () => {
+    for (const u of ["javascript:alert(1)", "data:image/png;base64,AAA", "blob:https://x/y", "", "   ", undefined]) {
+      expect(origineAvatarAutorisee(u as string | undefined, [SUPA]), String(u)).toBe(false);
+    }
+  });
+
+  it("une image autorisée reste échappée — l'ancienne protection n'est pas perdue", () => {
+    expect(avatarHtml(`${SUPA}/a"b.png`, "n", [SUPA])).toBe(`<img src="${SUPA}/a&quot;b.png" alt="">`);
   });
 });

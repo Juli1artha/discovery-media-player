@@ -363,6 +363,56 @@ jobs:
       # exemplaires d'une règle divergent, personne ne les confronte, et le jour où l'un se corrige
       # l'autre continue de bénir — c'est le défaut que ce dépôt traque partout ailleurs. Un seul
       # module décide (tools/changelog.mjs), il a ses tests, la forge et le préflight l'appellent.
+      # ⚠️ UN BANC QUI DÉPEND DE SON RANG NE PROUVE PAS CE QU'IL ANNONCE — et cette règle était
+      # DÉJÀ ÉCRITE dans le dépôt, à la main, au-dessus d'un mécanisme qui ne l'appliquait pas.
+      # `repliRpcSignature.test.js` obtenait un « module neuf » par `vi.resetModules()` puis
+      # `require` : mesuré, les deux rendent le MÊME objet d'exports en CommonJS. L'essai lisait
+      # l'héritage de ses voisins, et ne passait que parce qu'il est en tête de bloc. Ce qu'il
+      # masquait était en PRODUCTION : `presentations.init()` jetait un mémo d'exécution et gardait
+      # son jumeau, que le fichier déclare identique trois fois.
+      #
+      # ⚠️ ÉTAPE DE FORGE ET NON BANC, PAR CONSTRUCTION : cette garde LANCE la suite, donc l'appeler
+      # depuis la suite l'imbriquerait dans elle-même — elle refuse de tourner quand `VITEST` est
+      # posé. La propriété ne peut donc pas être gardée par un banc ; elle l'est ici.
+      #
+      # ⚠️ ET ELLE N'EXIGE PAS QUE TOUT BANC SURVIVE AU MÉLANGE. Des fichiers dépendent de leur ordre
+      # LÉGITIMEMENT ; ils sont déclarés dans la garde avec leur raison et nommés à chaque exécution.
+      # Rougir dessus serait crier sur du bon code — la façon dont une garde finit désactivée.
+      # ⚠️ UNE AFFIRMATION QU'ON A DÉCIDÉ DE RETIRER NE DOIT PLUS SE LIRE COMME VRAIE, NULLE PART.
+      # Quatre fois en deux jours, la même panne : une phrase corrigée à un endroit, son jumeau
+      # laissé ailleurs — dont une copie que DEUX audits humains avaient manquée, et une qui mettait
+      # hors périmètre, dans SECURITY.md, un étage que le code implémente : elle disait à un
+      # chercheur de ne pas regarder.
+      #
+      # ⚠️ CETTE GARDE NE CONFRONTE PAS UNE PHRASE À CE QU'ELLE DÉCRIT, et il ne faut pas le croire :
+      # AGENTS.md dit qu'aucune garde ici ne sait faire ça, et ça reste vrai. Elle confronte le dépôt
+      # à une DÉCISION que nous avons déjà prise — la sous-classe étroite, et la seule mécanisable.
+      # ⚠️ NOTRE CRITÈRE D'ACCEPTATION ÉTAIT MANUEL, ET UN AUDIT EXTERNE L'A CORRIGÉ EN DEUX TEMPS.
+      # Le CHANGELOG porte des dizaines de « N mutations sur N tuées » : chacune était vraie le jour
+      # où elle a été écrite, produite à la main, sans artefact, non rejouable — y compris par nous,
+      # le lendemain. Nous avions d'abord annoncé « zéro outil de mutation », ce qui était FAUX :
+      # `tools/fixture-types/eprouver.mjs` en est un, sur les TYPES. Ceci est la campagne sur le
+      # COMPORTEMENT, et chaque mutant est un défaut qui a réellement existé.
+      #
+      # ⚠️ PAS DE MUTATION GÉNÉRIQUE SUR 10 800 LIGNES : des centaines de survivants bénins
+      # apprendraient à ignorer la sortie, et une garde qu'on ignore est pire qu'absente. Un
+      # manifeste de cibles exactes dit quelque chose de vérifiable.
+      #
+      # ⚠️ ELLE MODIFIE DES FICHIERS PUIS LES RESTAURE, et vérifie l'empreinte après chaque mutant :
+      # une campagne manuelle interrompue a déjà laissé un fichier muté sur disque, que l'exécution
+      # suivante a pris pour sa référence. Elle refuse aussi de tourner depuis les bancs.
+      - name: Every recorded defect is still guarded — behaviour mutation campaign
+        if: matrix.node == '22'
+        run: node tools/mutations.mjs
+
+      - name: No retracted claim is still written as true
+        if: matrix.node == '22'
+        run: node tools/affirmations-retirees.mjs
+
+      - name: No bench depends on its rank within its file
+        if: matrix.node == '22'
+        run: node tools/ordre-des-bancs.mjs
+
       - name: Every changelog section has its exact comparison link
         if: matrix.node == '22'
         run: node tools/changelog.mjs

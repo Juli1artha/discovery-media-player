@@ -298,11 +298,15 @@ async function traiter(req, res, body, slug) {
         const allowed = await PLAYER.limits.allow(`reshare:${ip}`, 8, 3600);
         if (!allowed) return j(429, { ok: false, error: "rate", message: "Trop de partages, réessayez plus tard." });
         let out = null;
-        try { out = await createReshare(body.slug || slug, { email: mail, name: body.name }); } catch { /* parent introuvable */ }
+        try { out = await createReshare(body.slug || slug, { email: mail, name: body.name, clientKey: body.clientKey }); } catch { /* parent introuvable */ }
         if (!out) return j(404, { ok: false });
         let sent = false;
         let refusEnvoi = null;
-        if (body.send) {
+        // ⚠️ UN LIEN IDEMPOTENT NE RENVOIE PAS DE COURRIER, ET C'EST L'AUTRE MOITIÉ DU CORRECTIF.
+        // Rendre le même enfant tout en réexpédiant laisserait le défaut entier : le destinataire
+        // reçoit deux messages, ce qui est exactement ce qu'on répare. Trouvé par le banc de
+        // l'idempotence, qui rougissait sur un lien pourtant correctement dédoublonné.
+        if (body.send && !out.idempotent) {
           try {
             const parent = await getShareBySlug(body.slug || slug);
             // ⚠️ ON N'ENVOIE DE COURRIER QUE POUR UN LIEN QUI A UN DESTINATAIRE.
@@ -360,12 +364,36 @@ async function traiter(req, res, body, slug) {
             const origin = publique;
             const r = await sendReshareEmail({ parent, childSlug: out.slug, origin, toEmail: mail, toName: body.name });
             sent = !!(r && r.sent);
+            if (!sent) refusEnvoi = refusEnvoi || "host-declined";
           } catch { /* best-effort : le lien existe quand même */ }
         }
+        // ⚠️ `sent: false` MENTAIT QUAND LA VÉRITÉ ÉTAIT « JE NE SAIS PAS », ET C'EST CE MENSONGE QUI
+        // DUPLIQUE LES COURRIERS.
+        //
+        // Trois issues se ressemblaient dans un seul booléen : l'hôte a refusé, nous avons refusé,
+        // ou l'appel a échoué SANS que nous sachions ce que l'hôte a fait. Le dernier cas est le
+        // seul dangereux : si l'hôte a réellement envoyé puis répondu trop tard, un client qui lit
+        // « false » réessaie — et crée un SECOND lien enfant en envoyant un SECOND courrier.
+        // Relevé par un audit externe le 12/09.
+        //
+        // ⚠️ C'EST LA DOCTRINE DE `bot-tts` RETOURNÉE. Là-bas, « je n'ai pas pu vérifier » doit se
+        // lire NON, parce que le doute empêche une dépense. Ici, le doute lu comme « non » PROVOQUE
+        // la dépense, parce que quelqu'un réessaie. La règle constante n'est pas « dans le doute,
+        // non » : c'est « dans le doute, DIS-LE » — et laisse l'appelant choisir, en sachant.
+        //
+        // `sent` reste, inchangé, pour les intégrations qui le lisent déjà. `delivery` porte les
+        // trois états. L'IDEMPOTENCE VRAIE — une clé qui ferait retomber un réessai sur le MÊME
+        // lien enfant — demande une colonne, donc une migration : elle n'est pas ici, et
+        // `docs/HOST-CONTRACT.md` dit ce que l'appelant doit faire en attendant.
+        const delivery = out.idempotent ? "idempotent"
+          : !body.send ? "not-requested"
+            : sent ? "sent"
+              : refusEnvoi ? "refused"
+                : "unknown";
         // Le refus se DIT : « rien n'est parti » et « l'envoi n'était pas permis » ne se
         // ressemblent pas, et une interface qui les confond propose un bouton qui ne marchera
         // jamais.
-        return j(200, { ok: true, slug: out.slug, sent, ...(refusEnvoi ? { sendRefused: refusEnvoi } : {}) });
+        return j(200, { ok: true, slug: out.slug, sent, delivery, ...(refusEnvoi ? { sendRefused: refusEnvoi } : {}) });
       }
       // ⚠️ CE REPLI NE COUVRE QUE LES ÉVÉNEMENTS ANALYTIQUES (P2 huitième audit). Une action POST
       // qu'aucune famille n'a reconnue tombait ici et repartait `{"ok":true}` — une faute de

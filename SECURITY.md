@@ -64,8 +64,14 @@ here first, in this table, before it is promised anywhere else.
   documentation warns against — with one exception: **if a plausible typo widens a guard, that is
   a vulnerability**, and we will fix it by normalising the input rather than by documenting it.
   A trailing slash missing from an environment variable already caused one.
-- Rate limiting in the standalone context. It is per-process by design and says so; a shared
-  counter belongs in the host's wiring.
+- ⚠️ **Volume-based denial of service against your own instance.** This bullet used to read *"rate
+  limiting in the standalone context — it is per-process by design and says so; a shared counter
+  belongs in the host's wiring."* **That described the world before migration `0004`**, and it put
+  out of scope something the code actually implements: the standalone context runs a **two-stage**
+  limiter — a fast local refusal, then a **shared atomic counter** in the database
+  (`player_rate_limit_bump`). A flaw in that shared stage is in scope, and we would rather hear
+  about it. Found stale by an external audit on 2026-09-12; corrected rather than deleted, because
+  a researcher who read it may have decided not to look.
 - Denial of service by volume against your own instance.
 
 ## Design notes worth knowing before you test

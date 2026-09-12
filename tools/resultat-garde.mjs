@@ -76,6 +76,24 @@ export function tenter(travail) {
 }
 
 /**
+ * La même chose pour un travail ASYNCHRONE — et ce n'est pas un doublon de confort.
+ *
+ * ⚠️ `tenter` NE PEUT PAS ATTRAPER UNE EXCEPTION ASYNCHRONE, ET L'ÉCHEC EST SILENCIEUX. Son
+ * `try { return travail(); }` voit une fonction `async` RENDRE une promesse sans lever : le `catch`
+ * n'est jamais atteint, la promesse est rejetée plus tard, et Node sort en 1. Un outil qui joint le
+ * réseau annoncerait donc « ce dépôt viole la règle » à chaque coupure — précisément l'inverse de
+ * ce que la taxonomie existe pour dire. Rien ne l'aurait signalé : le code est court, il se lit
+ * bien, et il échoue seulement quand quelque chose d'autre échoue.
+ */
+export async function tenterAsync(travail) {
+  try {
+    return await travail();
+  } catch (e) {
+    return inconclusif(e?.message ? String(e.message) : String(e));
+  }
+}
+
+/**
  * Écrit le verdict et rend le code. ⚠️ SÉPARÉE DE `conclure()` POUR QUE LE BANC PUISSE L'ÉPROUVER :
  * un module qui appelle `process.exit` n'est pas testable, et une garde dont on ne teste pas la
  * sortie est précisément ce qui a permis les trois défauts ci-dessus.
