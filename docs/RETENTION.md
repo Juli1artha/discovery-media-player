@@ -289,6 +289,17 @@ age of its oldest snapshot. Take the later of the deadlines that *exist*.
 
 ## Limits stated rather than left unsaid
 
+- ⚠️ **Until the next release the voice-cache sweep removed nothing at all, in the reference host context,
+  and the paragraph below is what hid it.** `storage.remove` carries an allow-list — a last barrier
+  before a DELETE with the service-role key — and it named only `present-attachments`. `tts-cache`
+  was refused **before any network call**: every removal returned `false`, the trace row was erased
+  anyway, and the object stayed in a public bucket with no path left to it. That is precisely the
+  harm migration 0021 was written to make repairable, realised at 100%.
+  ⚠️ **What concealed it is a true explanation.** Those refusals were counted in `fichiersErreur`,
+  which the next bullet attributes — correctly — to alignment files that legitimately do not exist.
+  A correct account of the noise is the best place to hide a signal. Found on 2026-09-12 while
+  writing the documentation for a *different* fix on the same path; the allow-list now names both
+  buckets the sweep must reach, and nothing else.
 - ⚠️ **`fichiersErreur` can be high without any removal having failed.** Each fingerprint has two
   objects, and the alignment `.json` is not always there — the provider does not always return one.
   Measured on an integrating host's bucket on 27/08: **552 `.mp3` for 356 `.json`**, so 196 audio
@@ -312,6 +323,28 @@ age of its oldest snapshot. Take the later of the deadlines that *exist*.
 - **The dryRun report is complete for presentations**: `messagesExaminees`, `presencesExaminees`
   and `fichiersCandidats` say what the REAL purge would do — same selection walk, no-op deletion,
   `efface.* = 0`.
+- ⚠️ **A row is never erased above a file that resisted, and `retenues` counts the rows kept.**
+  Until 0.1.163 the deletion was unconditional: a failed `storage.remove` still erased the row — and
+  with it the only path to the object. The `storage` capability exposes `put` and `remove`, **never
+  `list`**, which is the very argument that justified migration 0021: with no row there is nothing
+  to walk, so the object stays in the bucket **permanently**, beyond the reach of any sweep. Found
+  by an external audit on 2026-09-12, reproduced before being fixed. A retained row is recoverable —
+  the next pass retries it; a lost file is not. Read `retenues > 0` as *"the storage provider refused
+  a removal; look at it"*, not as a purge failure.
+- ⚠️ **The alignment `.json` never retains anything — only the audio does.** A third of fingerprints
+  legitimately have no companion (see the 552/356 measurement above); gating the row on both objects
+  would hold a third of the cache forever to protect files that do not exist. So the `.mp3` alone
+  decides, and a missing `.json` is still **counted** in `fichiersErreur` rather than masked.
+- ⚠️ **A presentation is not deleted above a retained message.** The condition used to require only
+  that nothing was `tronque`; "retained" is a second way of not having gone, and without it the fix
+  above would have reopened the parent/child orphan an earlier audit had closed.
+- ⚠️ **The delete carries the purge predicate, not just the identifiers.** The sweep selects by date
+  and used to delete by identifier alone: a heartbeat landing between the two requests refreshed a
+  row that was then erased anyway, judged on a date that was no longer its own. Same audit, same
+  day, also reproduced. PostgREST applies every predicate in the URL at delete time, so replaying
+  the original filter makes the row be judged on its state **at that instant**. The race window does
+  not disappear — it stops being destructive. `select=` returns only what actually went, so the
+  counts stay honest when the database spares a row at the last moment.
 - **The purge advances in BOUNDED BATCHES** (200 rows, a ceiling of 5000 per table and 500
   presentations per run): it selects a batch of identifiers, deletes them with `id=in.(…)`, and
   starts again. The report (`r.rapport`) carries, per table: `examinees`, `supprimees`, `tronque`

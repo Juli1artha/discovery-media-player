@@ -390,7 +390,23 @@ function createStandaloneContext(env = process.env) {
         // ⚠️ DERNIÈRE BARRIÈRE avant un DELETE à la clé service_role (P1 huitième audit). Bucket en
         // liste blanche, et refus de toute traversée — chaque segment sur l'alphabet des chemins
         // signés. `fetch` normalise `..` : un chemin non validé sortirait du bucket visé.
-        if (bucket !== "present-attachments") return false;
+        //
+        // ⚠️ LA LISTE NE PORTAIT QU'UN BUCKET SUR LES DEUX, ET LA PURGE DU CACHE DE VOIX N'A DONC
+        // JAMAIS RIEN RETIRÉ. `tts-cache` était refusé ICI, avant tout appel réseau : chaque retrait
+        // rendait `false`, la trace partait quand même, et l'objet restait dans un bucket PUBLIC
+        // sans plus aucun chemin vers lui — puisque cette capacité expose `put` et `remove`, jamais
+        // `list`. C'est très exactement le mal que la migration 0021 avait été écrite pour rendre
+        // réparable, à 100 %, en silence.
+        //
+        // ⚠️ ET CE SILENCE ÉTAIT DOCUMENTÉ. Le rapport comptait ces refus dans `fichiersErreur`, que
+        // `docs/RETENTION.md` explique par un fait vrai — un tiers des empreintes n'a pas de `.json`
+        // d'alignement (552 mp3 pour 356 json, mesuré par un hôte). Une explication JUSTE rendait
+        // donc un échec TOTAL indiscernable d'un fonctionnement normal. Trouvé le 12/09 en écrivant
+        // la documentation du correctif d'un AUTRE défaut du même chemin.
+        //
+        // La liste énumère maintenant les deux buckets que la rétention doit atteindre, et rien
+        // d'autre : la barrière garde son objet, elle cesse d'interdire le travail qu'on lui demande.
+        if (bucket !== "present-attachments" && bucket !== "tts-cache") return false;
         const segs = String(chemin).split("/");
         for (const seg of segs) {
           if (seg === "" || seg === "." || seg === ".." || !/^[A-Za-z0-9._-]+$/.test(seg)) return false;
@@ -399,7 +415,23 @@ function createStandaloneContext(env = process.env) {
           const r = await fetchBorne(`${base}/storage/v1/object/${encodeURIComponent(bucket)}/${segs.map(encodeURIComponent).join("/")}`, {
             method: "DELETE", headers: { apikey: cle, Authorization: `Bearer ${cle}` },
           }, DELAI_STOCKAGE_MS);
-          return r.ok;
+          if (r.ok) return true;
+          // ⚠️ UN OBJET DÉJÀ ABSENT EST UN SUCCÈS POUR CE QU'ON DEMANDE ICI, ET CE N'EST PLUS UNE
+          // NUANCE DE COMPTAGE. La purge RETIENT désormais la ligne quand ce
+          // retrait rend `false`, parce que la ligne est le seul chemin vers l'objet (`storage`
+          // expose `put` et `remove`, jamais `list`). Rendre `false` sur un objet qui n'est plus là
+          // retiendrait donc la ligne POUR TOUJOURS, en attendant un fichier qui n'existe pas —
+          // exactement la sur-rétention que le correctif de la sous-rétention ne doit pas créer.
+          // Ce qu'on demande est « l'objet n'est plus là », et il n'y est plus.
+          //
+          // ⚠️ ON LIT LE CORPS PARCE QUE LE CODE NE SUFFIT PAS. Le Storage de Supabase répond 400
+          // sur un objet manquant, pas seulement 404 : se fier au seul statut raterait le cas le
+          // plus fréquent. NON VÉRIFIÉ CONTRE UN SUPABASE VIVANT DEPUIS CE DÉPÔT — ce qui est
+          // éprouvé ici est la CORRESPONDANCE (statut et corps vers verdict), pas la forme exacte
+          // que le fournisseur émet. Un hôte qui observerait une autre formulation doit la dire.
+          if (r.status === 404) return true;
+          const corps = await r.text().catch(() => "");
+          return /not[_ ]?found|no such key|does not exist/i.test(corps);
         } catch { return false; }
       },
 

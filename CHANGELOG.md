@@ -14,6 +14,47 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- ⚠️ **La purge du cache de voix n'a JAMAIS retiré un seul objet dans le contexte de référence, et
+  ce qui l'a caché est une explication juste.** `storage.remove` porte une liste blanche de buckets
+  — dernière barrière avant un DELETE à la clé service_role — et elle ne nommait que
+  `present-attachments`. `tts-cache` était refusé **avant tout appel réseau** : chaque retrait
+  rendait `false`, la trace partait quand même, et l'objet restait dans un bucket **public** sans
+  plus aucun chemin vers lui, puisque cette capacité expose `put` et `remove` mais **jamais `list`**.
+  C'est exactement le mal que la migration 0021 avait été écrite pour rendre réparable, réalisé à
+  **100 %**.
+  ⚠️ **Le masquage vaut le défaut.** Ces refus étaient comptés dans `fichiersErreur`, que
+  `docs/RETENTION.md` explique par un fait **vrai et mesuré** — un tiers des empreintes n'a pas de
+  `.json` d'alignement (552 mp3 pour 356 json, relevé par un hôte). Une explication correcte du
+  bruit rendait un échec **total** indiscernable du fonctionnement normal. Trouvé en écrivant la
+  documentation du correctif d'un **autre** défaut du même chemin.
+  La liste blanche nomme désormais les deux buckets que la rétention doit atteindre, et rien
+  d'autre : le refus de tout autre bucket, et de toute traversée de chemin, tombe toujours **avant**
+  le réseau — éprouvé, parce qu'élargir une liste blanche est le moment exact où l'on cesse de garder.
+- ⚠️ **Une ligne ne part plus au-dessus d'un fichier qui a résisté.** La suppression était
+  inconditionnelle : un `storage.remove` en échec effaçait quand même la ligne, donc le seul chemin
+  vers l'objet. Une ligne retenue est récupérable — le passage suivant réessaie ; un fichier perdu ne
+  l'est pas. `retenues` le NOMME dans le rapport, sans quoi on remplacerait un défaut muet par un
+  autre. ⚠️ **Et l'alignement `.json` ne retient rien** : un tiers des empreintes n'en a pas, donc
+  seul l'audio commande — sinon le correctif de la sous-rétention créait une sur-rétention d'un tiers
+  du cache. ⚠️ **Ni le parent au-dessus d'un enfant retenu** : la condition ne connaissait que
+  « tronqué », et « retenu » est une seconde façon de ne pas être parti — sans quoi cette réparation
+  rouvrait l'orphelin parent/enfant fermé par un audit précédent.
+  ⚠️ **Et « déjà absent » devient un succès, à la source.** Notre propre contexte rendait `r.ok` :
+  Supabase répond en erreur pour un objet manquant, donc le correctif ci-dessus aurait retenu des
+  lignes **pour toujours** en attendant des fichiers inexistants. 404 et un corps nommant l'absence
+  valent « retiré » ; une vraie panne (500) ou un refus (403) restent des échecs.
+- ⚠️ **Le prédicat de purge voyage avec le DELETE.** On sélectionnait par date et on supprimait par
+  **identifiant seul** : un battement arrivant entre les deux requêtes rafraîchissait une ligne, qui
+  était effacée quand même — jugée sur une date qui n'était plus la sienne. Reproduit par un audit
+  externe, reproduit ici avant correction. PostgREST applique tous les prédicats de l'URL au moment
+  du DELETE : rejouer le filtre fait juger la ligne sur son état **à cet instant-là**. La fenêtre de
+  course ne disparaît pas, elle cesse d'être destructrice. Le filtre est un paramètre **obligatoire**,
+  parce qu'optionnel il s'oublie.
+  ⚠️ **Et l'éprouvette des bancs modélisait une base indifférente aux prédicats** — elle n'appliquait
+  que `in.(…)`. Aucune assertion écrite au-dessus d'elle ne POUVAIT voir le prédicat manquant : l'URL
+  fautive et l'URL correcte y produisent le même résultat. Le nouveau bloc porte sa propre éprouvette,
+  qui applique les prédicats, et l'ancienne dit désormais ce qu'elle ne voit pas.
+
 - ⚠️ **La règle était écrite à la main dans le dépôt, au-dessus d'un mécanisme qui ne l'appliquait
   pas.** `server/__tests__/repliRpcSignature.test.js` portait le commentaire *« un essai qui dépend
   de son rang dans le fichier ne prouve pas ce qu'il annonce »* au-dessus d'un essai qui obtenait un

@@ -2410,6 +2410,36 @@ alone, unshuffled**: still red means the failure pre-existed and this guard has 
 it; green means the shuffle is the cause. **Presence under a stimulus is not causation by it** —
 the same control a host taught us for mutants, applied to a guard.
 
+## A correct explanation of the noise is the best place to hide a signal
+
+The voice-cache sweep removed **nothing at all** in this repository's own reference host context,
+for as long as it existed. `storage.remove` carries an allow-list — a last barrier before a DELETE
+with the service-role key — and it named one bucket out of the two the sweep must reach. Every
+removal of a voice object was refused **before any network call**, the trace row was erased anyway,
+and the object stayed in a public bucket with no path left to it. That is the exact harm the
+migration behind the feature was written to make repairable, realised in full.
+
+⚠️ **What kept it invisible was not a lie. It was a true, measured, well-written paragraph.** Those
+refusals landed in an error counter, and the documentation attributes a high value there to
+alignment files that legitimately do not exist — with a host's own measurement to back it, 552
+audio files for 356 companions. Every word of that is right. And it is exactly why nobody looked: a
+correct account of why a number is noisy tells the reader to stop reading the number.
+
+So, when you document noise:
+
+- **Say what the number looks like when the thing is completely broken.** If "a third of these are
+  normal" and "all of these are failures" produce the same reading, the counter cannot be used, and
+  the documentation should say so instead of explaining the noise away.
+- **Separate the counts rather than annotate one.** Two numbers that cannot both be explained by the
+  same benign cause are worth more than one number with a paragraph.
+- **Be most suspicious of the counters you have already explained.** An unexplained anomaly gets
+  investigated. An explained one is finished business, and stays finished long after the explanation
+  stops covering what is actually happening.
+
+⚠️ **It was found while writing the documentation for a different fix on the same path** — not by a
+guard, not by a test, not by the audit that opened the file. Writing down precisely what a mechanism
+does forces you to check it, and that is a different act from reading the code.
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives

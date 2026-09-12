@@ -119,3 +119,59 @@ describe("la purge du cache de voix", () => {
     expect(r.rapport.doc_tts_objects.fichiersCandidats).toBe(2);
   });
 });
+
+// ⚠️ UNE LIGNE QUI PART AU-DESSUS D'UN FICHIER RESTÉ EST UNE PERTE IRRÉVERSIBLE, PAS UN COMPTAGE
+// IMPRÉCIS — reproduit par un audit externe le 12/09.
+//
+// La suppression de la trace était INCONDITIONNELLE. Un retrait qui échoue laissait donc la ligne
+// partir, et avec elle le CHEMIN de l'objet. L'en-tête de ce fichier dit pourquoi c'est définitif :
+// la capacité `storage` expose `put` et `remove`, JAMAIS `list` — sans ligne, « il n'y a
+// littéralement rien à parcourir ». L'objet reste dans un bucket PUBLIC, pour toujours, et aucun
+// balayage ne peut le retrouver. C'est l'argument même qui a justifié la migration 0021, retourné
+// contre le code qu'elle a rendu possible.
+describe("⚠️ la trace ne part pas au-dessus d'un audio qui a résisté", () => {
+  it("⚠️ le retrait échoue : la ligne est RETENUE, et le rapport le dit", async () => {
+    const { restant } = contexte({
+      traces: [{ hash: "aaa", created_at: VIEUX }],
+      remove: async () => false,
+    });
+    const r = await retention.purgerRetention(MAINTENANT, {});
+    const c = r.rapport.doc_tts_objects;
+    expect(c.supprimees, "purger la trace d'un objet resté purge le seul moyen de le purger").toBe(0);
+    expect(c.retenues, "une ligne gardée exprès doit se LIRE — sinon on remplace un défaut muet par un autre").toBe(1);
+    expect(restant(), "la trace reste : le prochain passage réessaiera").toHaveLength(1);
+  });
+
+  // ⚠️ LE CAS LÉGITIME, ET IL EST MAJORITAIRE. Un hôte a mesuré 552 `.mp3` pour 356 `.json` : un
+  // tiers des empreintes n'a PAS de compagnon d'alignement, parce que le fournisseur n'en rend pas
+  // toujours. Faire dépendre la ligne des DEUX objets retiendrait un tiers du cache pour toujours,
+  // en croyant protéger des fichiers qui n'existent pas. C'est l'audio, et lui seul, qui commande.
+  it("⚠️ l'alignement absent ne retient RIEN — sinon un tiers du cache ne se purgerait plus jamais", async () => {
+    const tentes = [];
+    const { restant } = contexte({
+      traces: [{ hash: "aaa", created_at: VIEUX }],
+      remove: async (bucket, chemin) => { tentes.push(chemin); return !String(chemin).endsWith(".json"); },
+    });
+    const r = await retention.purgerRetention(MAINTENANT, {});
+    const c = r.rapport.doc_tts_objects;
+    expect(tentes.sort(), "les deux objets sont bien tentés").toEqual(["aaa.json", "aaa.mp3"]);
+    expect(c.supprimees, "l'audio est parti : la ligne n'a plus rien à protéger").toBe(1);
+    expect(c.retenues).toBe(0);
+    expect(c.fichiersErreur, "l'absence du compagnon reste COMPTÉE — on ne masque pas pour faire joli").toBe(1);
+    expect(restant()).toHaveLength(0);
+  });
+
+  // ⚠️ LES BORNES. Une grandeur bornée qui sort de ses bornes est le seul témoin gratuit d'une
+  // DÉFINITION : un contrôle positif prouve que l'instrument répond, pas que la grandeur a un sens.
+  it("⚠️ bornes : retirés + erreurs ≤ candidats, et supprimées + retenues ≤ examinées", async () => {
+    for (const remove of [async () => true, async () => false, async (b, c) => !String(c).endsWith(".json")]) {
+      contexte({ traces: [{ hash: "aaa", created_at: VIEUX }, { hash: "bbb", created_at: VIEUX }], remove });
+      const c = (await retention.purgerRetention(MAINTENANT, {})).rapport.doc_tts_objects;
+      expect(c.fichiers + c.fichiersErreur, "un objet est retiré ou en erreur, jamais les deux ni ni l'un ni l'autre")
+        .toBeLessThanOrEqual(c.fichiersCandidats);
+      expect(c.supprimees + c.retenues, "une ligne examinée est supprimée, retenue, ou pas encore atteinte")
+        .toBeLessThanOrEqual(c.examinees);
+      for (const n of [c.fichiers, c.fichiersErreur, c.supprimees, c.retenues]) expect(n).toBeGreaterThanOrEqual(0);
+    }
+  });
+});

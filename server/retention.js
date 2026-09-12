@@ -110,9 +110,26 @@ const guill = (v) => encodeURIComponent('"' + String(v).replace(/\\/g, "\\\\").r
 // exige qu'il n'y en ait qu'une (server/__tests__/retentionUnePorte.test.js). Un troisième chemin
 // d'écriture DEVRA passer par ces portes, ou il rougira le compte. C'est « retirer la seconde
 // source de vérité » appliqué à la suppression : un seul endroit peut détruire.
-async function effacerParIds(table, colId, ids, opts) {
+/**
+ * ⚠️ LE PRÉDICAT DE PURGE VOYAGE AVEC LE DELETE, ET C'EST TOUT LE SUJET. On SÉLECTIONNE par date,
+ * puis on supprimait par IDENTIFIANT SEUL — deux requêtes, et entre les deux une ligne peut
+ * redevenir active. Un battement qui rafraîchit `last_at` juste après le SELECT laissait une ligne
+ * VIVANTE se faire supprimer, sur la foi d'une date qui n'était plus la sienne. Reproduit le 12/09
+ * (audit externe) : le DELETE émis était `session_id=in.("vivante")` et rien d'autre.
+ *
+ * ⚠️ CE N'EST PAS UN VERROU, ET ÇA N'A PAS À L'ÊTRE. PostgREST applique TOUS les prédicats de l'URL
+ * au moment du DELETE : rejouer le filtre d'origine fait juger la ligne sur son état À CET
+ * INSTANT-LÀ. Une ligne redevenue récente ne satisfait plus `last_at=lt.<borne>` et survit. La
+ * fenêtre de course ne disparaît pas, elle cesse d'être DESTRUCTRICE.
+ *
+ * ⚠️ ET LE FILTRE EST UN PARAMÈTRE OBLIGATOIRE, PAS OPTIONNEL. Optionnel, il s'oublie : un
+ * quatrième périmètre de purge écrit dans six mois recréerait le défaut en silence, et tout
+ * resterait vert. `select=` ne rend que ce qui a RÉELLEMENT été supprimé, donc le compte reste
+ * honnête quand la base refuse une ligne au dernier moment.
+ */
+async function effacerParIds(table, filtre, colId, ids, opts) {
   if (opts.dryRun || !ids || !ids.length) return 0;
-  const del = await PLAYER.db.request(`${table}?${colId}=in.(${ids.map(guill).join(",")})&select=${colId}`, { method: "DELETE", headers: { Prefer: "return=representation" } });
+  const del = await PLAYER.db.request(`${table}?${filtre}&${colId}=in.(${ids.map(guill).join(",")})&select=${colId}`, { method: "DELETE", headers: { Prefer: "return=representation" } });
   return Array.isArray(del) ? del.length : 0;   // lignes RENDUES, pas ids présélectionnés
 }
 // ⚠️ LE BUCKET EST UN PARAMÈTRE, PAS UNE CONSTANTE — ET LA PORTE RESTE UNIQUE. Deux périmètres
@@ -174,7 +191,7 @@ async function purgerParLots(table, filtre, colId, { dryRun = false, taille = LO
     if (!Array.isArray(lot) || !lot.length) break;
     examinees += lot.length;
     curseur = lot[lot.length - 1][colId];
-    supprimees += await effacerParIds(table, colId, lot.map((r) => r[colId]).filter((v) => v != null), { dryRun });
+    supprimees += await effacerParIds(table, filtre, colId, lot.map((r) => r[colId]).filter((v) => v != null), { dryRun });
     if (lot.length < limite) break;   // dernier lot (moins que demandé → plus rien après)
   }
   return { examinees, supprimees, tronque };
@@ -199,7 +216,7 @@ const { cheminPieceJointe: cheminSurSlug } = require("./presentations");
 // pour que l'appelant décide de garder ou non la présentation. Compte les lignes RENDUES.
 async function purgerMessagesPresentation(slug, opts, base, plafond) {
   const { dryRun, taille } = opts;
-  let supprimees = 0, fichiers = 0, fichiersErreur = 0, fichiersCandidats = 0, examinees = 0, tronque = false, curseur = null;
+  let supprimees = 0, retenues = 0, fichiers = 0, fichiersErreur = 0, fichiersCandidats = 0, examinees = 0, tronque = false, curseur = null;
   for (;;) {
     const reste = plafond - examinees;
     if (reste <= 0) { tronque = await resteEncore("doc_presentation_messages", `slug=eq.${enc(slug)}`, "id", curseur, dryRun); break; }
@@ -209,17 +226,34 @@ async function purgerMessagesPresentation(slug, opts, base, plafond) {
     if (!Array.isArray(lot) || !lot.length) break;
     examinees += lot.length;
     curseur = lot[lot.length - 1].id;
+    // ⚠️ LA LIGNE NE PART QUE SI SON FICHIER EST PARTI — ET LE CONTRAIRE ÉTAIT UN DÉFAUT DE
+    // RÉTENTION, PAS UNE IMPRÉCISION DE COMPTAGE. La suppression était INCONDITIONNELLE : un retrait
+    // qui échoue laissait la ligne partir, donc le CHEMIN du fichier disparaissait avec elle. Or la
+    // capacité `storage` du contrat expose `put` et `remove`, JAMAIS `list` — c'est l'argument que
+    // ce fichier écrit lui-même vingt lignes plus bas pour justifier la migration 0021. Sans ligne,
+    // il n'y a « littéralement rien à parcourir » : l'objet devient inatteignable POUR TOUJOURS,
+    // dans un bucket, et aucun balayage ne peut le rattraper. Reproduit le 12/09 (audit externe).
+    //
+    // ⚠️ ET UNE LIGNE RETENUE EST RÉCUPÉRABLE, UN FICHIER PERDU NE L'EST PAS. Le passage suivant la
+    // reverra et réessaiera ; une perte irréversible ne se rattrape par rien. Entre un retard visible
+    // et une perte silencieuse, on garde le retard — et `retenues` le NOMME dans le rapport, sans
+    // quoi on aurait remplacé un défaut muet par un autre.
+    const aEffacer = [];
     for (const j of lot) {
       const url = j.attachment && (typeof j.attachment === "object" ? j.attachment.url : j.attachment);
       const chemin = cheminSurSlug(url, slug, base);   // hors du dossier du slug → null → jamais retiré (barrière 2)
       if (chemin) fichiersCandidats += 1;              // compté même en dry-run (ce que la vraie purge tenterait)
       const issue = await retirerFichier("present-attachments", chemin, { dryRun });
       if (issue === true) fichiers += 1; else if (issue === false) fichiersErreur += 1;   // false = échec compté
+      // `null` = rien tenté (pas de capacité `storage`, dry-run, ou aucun fichier) : la ligne part,
+      // comme avant, et le rapport ne prétend pas avoir retiré quoi que ce soit.
+      if (issue === false) { retenues += 1; continue; }
+      if (j.id != null) aEffacer.push(j.id);
     }
-    supprimees += await effacerParIds("doc_presentation_messages", "id", lot.map((r) => r.id).filter((v) => v != null), { dryRun });
+    supprimees += await effacerParIds("doc_presentation_messages", `slug=eq.${enc(slug)}`, "id", aEffacer, { dryRun });
     if (lot.length < limite) break;
   }
-  return { supprimees, fichiers, fichiersErreur, fichiersCandidats, examinees, tronque };
+  return { supprimees, retenues, fichiers, fichiersErreur, fichiersCandidats, examinees, tronque };
 }
 
 /**
@@ -241,7 +275,7 @@ async function purgerMessagesPresentation(slug, opts, base, plafond) {
 async function purgerCacheDeVoix(opts, borneDate) {
   const { dryRun, taille, plafond } = opts;
   const filtre = `created_at=lt.${enc(borneDate)}`;
-  let supprimees = 0, fichiers = 0, fichiersErreur = 0, fichiersCandidats = 0, examinees = 0, tronque = false, curseur = null;
+  let supprimees = 0, retenues = 0, fichiers = 0, fichiersErreur = 0, fichiersCandidats = 0, examinees = 0, tronque = false, curseur = null;
   for (;;) {
     const reste = plafond - examinees;
     if (reste <= 0) { tronque = await resteEncore("doc_tts_objects", filtre, "hash", curseur, dryRun); break; }
@@ -251,6 +285,7 @@ async function purgerCacheDeVoix(opts, borneDate) {
     if (!Array.isArray(lot) || !lot.length) break;
     examinees += lot.length;
     curseur = lot[lot.length - 1].hash;
+    const aEffacer = [];
     for (const o of lot) {
       const h = o && o.hash;
       if (!h) continue;
@@ -269,18 +304,32 @@ async function purgerCacheDeVoix(opts, borneDate) {
       // ait échoué — un tiers des empreintes n'a légitimement pas de compagnon à retirer. Le compte
       // reste non masqué, mais sa lecture demande ce paragraphe : un exploitant qui découvrirait
       // deux cents « erreurs » à sa première purge chercherait une panne qui n'existe pas.
+      // ⚠️ C'EST L'AUDIO QUI COMMANDE LA LIGNE, PAS SON COMPAGNON — ET LA RAISON EST DÉJÀ ÉCRITE
+      // CI-DESSUS. Un tiers des empreintes n'a légitimement PAS de `.json` : faire dépendre la ligne
+      // des deux retiendrait un tiers du cache pour toujours, en croyant protéger des fichiers qui
+      // n'existent pas. Le `.mp3`, lui, existe toujours — c'est lui, et lui seul, dont la survie
+      // rendrait la ligne indispensable.
+      let audioPerdu = false;
       for (const suffixe of [".mp3", ".json"]) {
         fichiersCandidats += 1;   // compté même en dry-run : ce que la vraie purge tenterait
         const issue = await retirerFichier("tts-cache", h + suffixe, { dryRun });
         if (issue === true) fichiers += 1; else if (issue === false) fichiersErreur += 1;
+        if (suffixe === ".mp3" && issue === false) audioPerdu = true;
       }
+      // ⚠️ SANS LA LIGNE, L'OBJET EST INATTEIGNABLE — c'est l'argument exact qui justifie l'existence
+      // de `doc_tts_objects` (migration 0021), écrit dans l'en-tête de cette fonction : la capacité
+      // `storage` expose `put` et `remove`, jamais `list`, donc « il n'y a littéralement rien à
+      // parcourir ». Effacer la trace d'un audio qui a résisté, c'est purger le seul moyen de le
+      // purger. Un audit externe l'a reproduit le 12/09 : deux objets restés, la ligne partie.
+      if (audioPerdu) { retenues += 1; continue; }
+      aEffacer.push(h);
     }
     // ⚠️ LA LIGNE PART APRÈS LES OBJETS, JAMAIS AVANT. Effacer la trace d'abord rendrait les deux
     // objets définitivement inatteignables — on aurait purgé le seul moyen de les purger.
-    supprimees += await effacerParIds("doc_tts_objects", "hash", lot.map((r) => r.hash).filter((v) => v != null), { dryRun });
+    supprimees += await effacerParIds("doc_tts_objects", filtre, "hash", aEffacer, { dryRun });
     if (lot.length < limite) break;
   }
-  return { supprimees, fichiers, fichiersErreur, fichiersCandidats, examinees, tronque };
+  return { supprimees, retenues, fichiers, fichiersErreur, fichiersCandidats, examinees, tronque };
 }
 
 async function purgerRetention(now, optsBrutes = {}) {
@@ -334,7 +383,7 @@ async function purgerRetention(now, optsBrutes = {}) {
   // des présentations ; la boucle s'arrête quand ils sont épuisés (tronque), sans supprimer les
   // parents restants. En dry-run, on parcourt quand même pour REMONTER ce que la vraie purge
   // ferait (examinés), sans jamais détruire.
-  const presRapport = { examinees: 0, supprimees: 0, messages: 0, presences: 0, messagesExaminees: 0, presencesExaminees: 0, fichiers: 0, fichiersErreur: 0, fichiersCandidats: 0, tronque: troncPres };
+  const presRapport = { examinees: 0, supprimees: 0, retenues: 0, messages: 0, presences: 0, messagesExaminees: 0, presencesExaminees: 0, fichiers: 0, fichiersErreur: 0, fichiersCandidats: 0, tronque: troncPres };
   let budgetMessages = opts.plafond, budgetPresences = opts.plafond;
   for (const p of (Array.isArray(mortes) ? mortes : [])) {
     const slug = p && p.slug; if (!slug) continue;
@@ -346,6 +395,7 @@ async function purgerRetention(now, optsBrutes = {}) {
     presRapport.fichiers += msgs.fichiers;
     presRapport.fichiersErreur += msgs.fichiersErreur;
     presRapport.fichiersCandidats += msgs.fichiersCandidats;
+    presRapport.retenues += msgs.retenues;
     budgetMessages -= opts.dryRun ? msgs.examinees : msgs.supprimees;
     // Présences : interrogées AUSSI en dry-run (pour remonter presencesExaminees), suppression
     // no-op via effacerParIds. Budget global partagé.
@@ -357,7 +407,14 @@ async function purgerRetention(now, optsBrutes = {}) {
     // (P2 onzième audit — sinon la supervision croit la purge complète alors qu'un reste subsiste).
     presRapport.tronque = presRapport.tronque || msgs.tronque || pres.tronque;
     // La présentation n'est supprimée que si TOUS ses enfants sont partis (9e audit).
-    if (!opts.dryRun && !msgs.tronque && !pres.tronque) {
+    //
+    // ⚠️ ET « RETENU » EST UNE FAÇON DE NE PAS ÊTRE PARTI QUE CETTE CONDITION NE CONNAISSAIT PAS.
+    // Elle ne regardait que `tronque` — « il en reste pour le prochain passage ». Le correctif du
+    // 12/09 introduit une SECONDE façon : un message dont le fichier a résisté est gardé exprès.
+    // Sans cette ligne, le parent serait supprimé au-dessus d'un enfant retenu — exactement
+    // l'orphelin que le neuvième audit avait fermé, rouvert par le correctif d'un autre défaut.
+    // Une réparation qui recrée ailleurs ce qu'elle ferme ici ne répare rien.
+    if (!opts.dryRun && !msgs.tronque && !pres.tronque && !msgs.retenues) {
       presRapport.supprimees += (await purgerParLots("doc_presentations", `slug=eq.${enc(slug)}`, "slug", opts)).supprimees;
     }
   }

@@ -825,6 +825,24 @@ was a correct `bot`, and the reader would have returned an empty string for ever
 set, so every request refused, on a perfectly correct integration. If your field is none of those
 three, tell us and we widen the list. The field name carries no security; the **role** filter does.
 
+⚠️ **What your `storage.remove` returns now decides whether a row survives.** It returns a boolean:
+`true` means the object is gone, `false` means it is still there. Until 0.1.163 the retention sweep
+erased the row either way — and since this capability exposes `put` and `remove` but **never
+`list`**, the row is the only path to the object: erasing it stranded the file in the bucket
+permanently. The sweep now **keeps the row** when `remove` returns `false`, and reports it as
+`retenues`. Two consequences for you:
+
+- **Do not return `false` for an object that was already absent.** An already-gone object is a
+  success for this purpose — returning `false` makes the sweep retain a row forever, waiting for a
+  file that does not exist. ⚠️ **The player's own standalone context used to have exactly this bug**,
+  found while writing this paragraph: it returned `r.ok`, and Supabase Storage answers an error for a
+  missing object, so the fix for lost files would have created permanent retention instead. It now
+  treats 404 — and a body naming "not found" — as removed, because what is being asked is *"the
+  object is no longer there"*, and it is not there. If you wrap a different provider, do the same.
+- **`retenues > 0` in a retention report means your provider refused a removal**, not that the purge
+  is broken. The next pass retries. A row that lingers is recoverable; a file whose only pointer was
+  erased is not.
+
 **If you write to the `tts-cache` bucket yourself, write the trace too.** Retention removes an object
 only when its fingerprint has a row in `doc_tts_objects`, and only the player's own route writes that
 row. Anything your code puts in that bucket is therefore invisible to the sweep — **permanently**,
