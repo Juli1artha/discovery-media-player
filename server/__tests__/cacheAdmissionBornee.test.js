@@ -110,26 +110,65 @@ describe("le poids est mesuré en OCTETS, pas en unités UTF-16", () => {
 // le plafond transforme alors un ralentissement en refus GÉNÉRAL et permanent. C'est le mode de
 // panne que le plafond seul introduirait — une garde qui, mal accompagnée, devient la panne.
 describe("le contexte autonome abandonne réellement une requête base qui ne répond pas", () => {
-  // ⚠️ ON SCANNE DU CODE, PAS DES COMMENTAIRES. Première version de cette garde : elle cherchait
-  // « AbortSignal.timeout » dans la source brute — et le COMMENTAIRE au-dessus du code contenait ces
-  // mots. Retirer l'appel réel la laissait VERTE. Une garde qu'une phrase suffit à satisfaire mesure
-  // la prose, pas le programme ; vérifié par mutation cette fois, dans les deux sens.
-  const brut = require("node:fs").readFileSync(
-    require("node:path").join(__dirname, "..", "..", "context", "standalone.js"), "utf8");
-  const src = brut.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+  // ⚠️ CE BLOC LISAIT LA SOURCE, ET C'EST LA DEUXIÈME FOIS QUE CE PROXY MORD — LA PREMIÈRE EST
+  // ÉCRITE CI-DESSOUS, DANS SA PROPRE CORRECTION.
+  //
+  // Première version : elle cherchait « AbortSignal.timeout » dans la source BRUTE — et le
+  // commentaire au-dessus du code contenait ces mots, donc retirer l'appel réel la laissait VERTE.
+  // On avait alors filtré les commentaires : le proxy réparé, gardé. Le 12/09, la composition des
+  // signaux a été extraite dans une fonction, et le motif est sorti de la fenêtre scannée : ROUGE
+  // sur un remaniement qui AMÉLIORE la propriété.
+  //
+  // Un proxy qui casse sur un bon changement ET passe sur un mauvais n'est pas à régler, il est à
+  // remplacer. La deuxième réparation d'un proxy est le signal d'arrêter de l'employer. On éprouve
+  // désormais le comportement, avec un `fetch` qui ne répond jamais — ce que le titre de ce bloc
+  // promettait depuis le début en écrivant « réellement ».
 
-  it("la requête PostgREST porte un signal d'abandon", () => {
-    const i = src.indexOf("/rest/v1/");
-    expect(i, "la requête PostgREST doit exister").toBeGreaterThan(0);
-    const bloc = src.slice(Math.max(0, i - 900), i + 400);
-    expect(bloc, "sans signal, la socket et la place d'admission restent prises jusqu'à la mort de la fonction")
-      .toMatch(/signal/);
-    expect(bloc, "un abandon se fait par AbortSignal — une course de promesses n'annule rien")
-      .toMatch(/AbortSignal\.timeout\(/);
+  // ⚠️ CES DEUX ESSAIS LISAIENT LE TEXTE SOURCE, ET LE BLOC AU-DESSUS PROMET « RÉELLEMENT ».
+  //
+  // Ils cherchaient `AbortSignal.timeout(` dans une fenêtre de caractères autour de la requête. Un
+  // proxy de texte casse sur un bon remaniement — c'est arrivé le 12/09, quand la composition des
+  // signaux a été extraite dans une fonction — et, pire, il PASSE sur un mauvais : écrire le motif
+  // sans jamais transmettre le signal à `fetch` l'aurait satisfait. On éprouve donc ce que le titre
+  // annonce : la requête est réellement abandonnée.
+  const fetchMuet = () => {
+    const vus = [];
+    const ancien = globalThis.fetch;
+    globalThis.fetch = (_u, o) => {
+      vus.push(o && o.signal);
+      return new Promise((_res, rej) => {
+        const s = o && o.signal;
+        if (!s) return;                                   // aucun signal : la promesse pend, comme la vraie
+        if (s.aborted) return rej(new Error("abandon"));
+        s.addEventListener("abort", () => rej(new Error("abandon")));
+      });
+    };
+    return { vus, rendre: () => { globalThis.fetch = ancien; } };
+  };
+  const course = (p, ms) => Promise.race([
+    p.then(() => "RÉSOLU", () => "REJETÉ"),
+    new Promise((r) => setTimeout(() => r("ENCORE_EN_ATTENTE"), ms)),
+  ]);
+  const ctxAutonome = () => require("../../context/standalone.js")
+    .createStandaloneContext({ SUPABASE_URL: "https://x.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "cle" });
+
+  it("la requête PostgREST porte un signal d'abandon, et il PART", async () => {
+    const { vus, rendre } = fetchMuet();
+    try {
+      const v = await course(ctxAutonome().db.request("t", { timeoutMs: 20 }), 300);
+      expect(vus[0], "sans signal transmis à fetch, la socket et la place d'admission restent prises").toBeTruthy();
+      expect(v, "une course de promesses rendrait la main sans ANNULER : ici la requête est abandonnée").toBe("REJETÉ");
+    } finally { rendre(); }
   });
 
-  it("et l'hôte peut fournir le sien (opérations longues : purges, transferts)", () => {
-    expect(src).toMatch(/options\.signal/);
+  it("et l'hôte peut fournir le sien (opérations longues : purges, transferts)", async () => {
+    const { rendre } = fetchMuet();
+    try {
+      const ctrl = new globalThis.AbortController();
+      setTimeout(() => ctrl.abort(), 10);
+      const v = await course(ctxAutonome().db.request("t", { timeoutMs: 60000, signal: ctrl.signal }), 300);
+      expect(v, "le signal de l'hôte doit pouvoir conclure AVANT le plancher").toBe("REJETÉ");
+    } finally { rendre(); }
   });
 });
 

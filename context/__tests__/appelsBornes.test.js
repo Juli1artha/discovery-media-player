@@ -193,3 +193,72 @@ describe("⚠️ les buckets que la rétention doit atteindre", () => {
     } finally { rendre(); }
   });
 });
+
+// ⚠️ UN SIGNAL FOURNI S'AJOUTE AU PLANCHER, IL NE LE REMPLACE PAS.
+//
+// La première écriture disait `options.signal || AbortSignal.timeout(delai)` : un hôte qui bornait
+// lui-même une opération longue croyait AJOUTER une garantie et en RETIRAIT une. Et le commentaire
+// bénissait le défaut — « un signal fourni par l'appelant a priorité ». L'intention était juste ;
+// « a priorité » était la mauvaise traduction de « borner ». Défaut LATENT : aucun appel du produit
+// ne transmet aujourd'hui de signal, donc rien ne l'aurait montré avant qu'un hôte n'en pose un.
+// Rapporté par un audit externe le 12/09, reproduit ici avant correction.
+describe("⚠️ composer les signaux plutôt que les remplacer", () => {
+  const fetchQuiNeRepondJamais = () => (_u, o) => new Promise((_res, rej) => {
+    const s = o && o.signal;
+    if (s) { if (s.aborted) rej(new Error("abandon")); else s.addEventListener("abort", () => rej(new Error("abandon"))); }
+  });
+  const avecFetch = async (fn) => {
+    const ancien = globalThis.fetch;
+    globalThis.fetch = fetchQuiNeRepondJamais();
+    try { return await fn(); } finally { globalThis.fetch = ancien; }
+  };
+  const ctx = () => createStandaloneContext({ SUPABASE_URL: "https://x.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "cle" });
+  const course = (p, ms) => Promise.race([
+    p.then(() => "RÉSOLU", () => "REJETÉ"),
+    new Promise((r) => setTimeout(() => r("ENCORE_EN_ATTENTE"), ms)),
+  ]);
+
+  it("⚠️ un signal qui n'expire JAMAIS ne supprime pas le délai interne", async () => {
+    const v = await avecFetch(() => {
+      const jamais = new globalThis.AbortController().signal;
+      return course(ctx().db.request("t", { timeoutMs: 20, signal: jamais }), 300);
+    });
+    expect(v, "le plancher doit parler : sinon l'appel immobilise socket et exécution").toBe("REJETÉ");
+  });
+
+  it("le signal de l'appelant garde son pouvoir d'abandonner PLUS TÔT", async () => {
+    const v = await avecFetch(() => {
+      const ctrl = new globalThis.AbortController();
+      setTimeout(() => ctrl.abort(), 10);
+      // Délai interne très long : seul le signal de l'appelant peut conclure ici.
+      return course(ctx().db.request("t", { timeoutMs: 60000, signal: ctrl.signal }), 300);
+    });
+    expect(v, "le premier des deux qui parle gagne — c'est ce que « borner » veut dire").toBe("REJETÉ");
+  });
+
+  it("un signal DÉJÀ abandonné conclut tout de suite, sans attendre un événement qui ne viendra plus", async () => {
+    const v = await avecFetch(() => {
+      const ctrl = new globalThis.AbortController();
+      ctrl.abort();
+      return course(ctx().db.request("t", { timeoutMs: 60000, signal: ctrl.signal }), 300);
+    });
+    expect(v).toBe("REJETÉ");
+  });
+
+  // ⚠️ LE REPLI, ÉPROUVÉ PLUTÔT QU'ESPÉRÉ. `AbortSignal.any` existe dans notre plancher Node, mais
+  // le code porte un chemin sans lui — et un chemin de repli que personne n'exécute est une
+  // supposition. On le force en retirant la méthode le temps de l'essai.
+  it("⚠️ sans `AbortSignal.any`, le repli borne quand même", async () => {
+    const vrai = AbortSignal.any;
+    try {
+      Object.defineProperty(AbortSignal, "any", { value: undefined, configurable: true });
+      const v = await avecFetch(() => {
+        const jamais = new globalThis.AbortController().signal;
+        return course(ctx().db.request("t", { timeoutMs: 20, signal: jamais }), 300);
+      });
+      expect(v).toBe("REJETÉ");
+    } finally {
+      Object.defineProperty(AbortSignal, "any", { value: vrai, configurable: true });
+    }
+  });
+});

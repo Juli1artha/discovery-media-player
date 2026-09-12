@@ -10,9 +10,14 @@
 // atteindre ce bucket. L'audit CODEX du 26/08 l'a estimé à « une demi-journée de politique » ; ce
 // n'était pas une politique qui manquait, c'était la trace (migration 0021).
 //
-// ⚠️ ET UN VISITEUR DÉCIDE DE CE QUI Y ENTRE. `bot-tts` accepte le texte de l'appelant : un texte
-// unique laisse un MP3 et un JSON dans un bucket public. Les plafonds de la 0.1.140 bornent le coût
-// par HEURE ; seule cette fenêtre borne la DURÉE.
+// ⚠️ CET EN-TÊTE DISAIT « ET UN VISITEUR DÉCIDE DE CE QUI Y ENTRE ». Ce n'est plus vrai depuis que
+// `bot-tts` confronte le texte à ce que l'assistant a réellement dit dans la session : l'appelant
+// PROPOSE, il ne choisit pas. Corrigé en place le 12/09 — et trouvé par une GARDE, pas par une
+// relecture : c'est la quatrième copie de cette phrase, après les deux corrigées le 11/09 et celle
+// d'un fichier de production. Deux audits humains l'avaient manquée.
+// Ce qui reste vrai est la conséquence : chaque texte DISTINCT ACCEPTÉ laisse un MP3 et un JSON dans
+// un bucket public. Les plafonds de la 0.1.140 bornent le coût par HEURE ; seule cette fenêtre borne
+// la DURÉE.
 
 const retention = require("../retention.js");
 const schema = require("../schema.js");

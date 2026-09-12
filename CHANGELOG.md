@@ -14,6 +14,46 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- ⚠️ **Un banc prouvait « la requête porte un signal d'abandon » en cherchant le motif dans la SOURCE
+  — et c'est la deuxième fois que ce proxy mord.** La première est écrite dans sa propre correction :
+  il cherchait dans la source brute, le commentaire au-dessus du code contenait les mots, donc
+  retirer l'appel réel le laissait **vert**. On avait filtré les commentaires — proxy réparé, gardé.
+  Cette fois, extraire la composition des signaux dans une fonction a sorti le motif de la fenêtre :
+  **rouge sur un remaniement qui améliore la propriété gardée**. Vert quand la propriété disparaît,
+  rouge quand elle se renforce : l'un est un accident, les deux sont un verdict. Le bloc s'appelait
+  déjà « abandonne **réellement** » ; il éprouve désormais le comportement, avec un `fetch` qui ne
+  répond jamais.
+
+- ⚠️ **`tools/affirmations-retirees.mjs` — la sous-classe mécanisable de « une phrase a cessé d'être
+  vraie », et elle est née de QUATRE récidives en deux jours.** « Le compte partagé n'est pas
+  atomique » corrigé dans le contrat anglais, laissé **95 lignes plus haut dans le fichier français
+  qu'on éditait le même jour**. « Un visiteur décide de ce qui entre » corrigé dans deux fichiers sur
+  **quatre**. Et « par processus par conception » laissé dans `SECURITY.md` et
+  `docs/THREAT-MODEL.md`, où il mettait **hors périmètre un étage que le code implémente** — un
+  document qui déclare quelque chose hors périmètre n'est pas neutre : il dit à un chercheur de ne
+  pas regarder.
+  ⚠️ **Elle ne confronte PAS une phrase à ce qu'elle décrit, et il ne faut pas le croire.**
+  `AGENTS.md` dit qu'aucune garde ici ne sait faire ça, et ça reste vrai : le fait qu'une migration
+  existe ne dit à aucun programme quel paragraphe ment. Ce qui est mécanisable, c'est la sous-classe
+  où **nous avons déjà décidé** qu'une affirmation est retirée. Elle confronte le dépôt à cette
+  décision, pas à la réalité. C'est beaucoup moins — et c'est exactement ce qui a échoué quatre fois.
+  ⚠️ **Son premier passage a trouvé une copie que DEUX audits humains avaient manquée** : l'en-tête
+  d'un banc, quatrième exemplaire d'une phrase corrigée trois fois ailleurs.
+  La règle : une affirmation retirée peut encore s'écrire — on corrige **en place** pour qu'un hôte
+  qui l'a lue l'apprenne — mais la ligne doit porter un marqueur de rétractation, cherché sur elle et
+  les **deux précédentes** (une citation s'enroule), **jamais après** (un lecteur qui abandonne à la
+  phrase fausse ne lira pas la correction). Archives exclues : un CHANGELOG cite ce qui était vrai à
+  sa date. 386 fichiers confrontés. 12 bancs, **4 mutations sur 4 tuées**.
+- ⚠️ **Un signal fourni par l'appelant SUPPRIMAIT le plancher au lieu de s'y ajouter.**
+  `options.signal || AbortSignal.timeout(delai)` : un hôte qui bornait lui-même une opération longue
+  croyait **ajouter** une garantie et en **retirait** une. Mesuré : avec un signal qui n'expire jamais
+  et `timeoutMs: 20`, la promesse était encore en attente après 150 ms ; elle est rejetée après 20 ms.
+  ⚠️ **Et le commentaire bénissait le défaut** — « un signal fourni par l'appelant a priorité ».
+  L'intention était juste ; « a priorité » était la mauvaise traduction de « borner ». Le premier des
+  deux qui parle gagne. Défaut **latent** (aucun appel du produit ne transmet de signal aujourd'hui),
+  rapporté par un audit externe. Le repli sans `AbortSignal.any` est éprouvé en retirant la méthode,
+  pas supposé.
+
 - ⚠️ **`tools/orphelins-tts.mjs` — le stock que la purge cassée a échoué, et qu'aucune correction ne
   rattrape.** Les objets « purgés » sont toujours dans le bucket, ligne effacée : inatteignables par
   le produit, par construction. Cet outil **sort du contrat exprès** — il parle à l'API Storage pour

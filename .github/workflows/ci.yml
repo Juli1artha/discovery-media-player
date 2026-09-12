@@ -378,6 +378,19 @@ jobs:
       # ⚠️ ET ELLE N'EXIGE PAS QUE TOUT BANC SURVIVE AU MÉLANGE. Des fichiers dépendent de leur ordre
       # LÉGITIMEMENT ; ils sont déclarés dans la garde avec leur raison et nommés à chaque exécution.
       # Rougir dessus serait crier sur du bon code — la façon dont une garde finit désactivée.
+      # ⚠️ UNE AFFIRMATION QU'ON A DÉCIDÉ DE RETIRER NE DOIT PLUS SE LIRE COMME VRAIE, NULLE PART.
+      # Quatre fois en deux jours, la même panne : une phrase corrigée à un endroit, son jumeau
+      # laissé ailleurs — dont une copie que DEUX audits humains avaient manquée, et une qui mettait
+      # hors périmètre, dans SECURITY.md, un étage que le code implémente : elle disait à un
+      # chercheur de ne pas regarder.
+      #
+      # ⚠️ CETTE GARDE NE CONFRONTE PAS UNE PHRASE À CE QU'ELLE DÉCRIT, et il ne faut pas le croire :
+      # AGENTS.md dit qu'aucune garde ici ne sait faire ça, et ça reste vrai. Elle confronte le dépôt
+      # à une DÉCISION que nous avons déjà prise — la sous-classe étroite, et la seule mécanisable.
+      - name: No retracted claim is still written as true
+        if: matrix.node == '22'
+        run: node tools/affirmations-retirees.mjs
+
       - name: No bench depends on its rank within its file
         if: matrix.node == '22'
         run: node tools/ordre-des-bancs.mjs

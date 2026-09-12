@@ -2490,6 +2490,57 @@ helper written to guarantee it.
 individually. Here, five of them — reporting by default, the age threshold, unreadable dates,
 foreign filenames, and the confirmation count. A safeguard nobody has tried to break is a comment.
 
+## The mechanisable sliver of "this sentence stopped being true"
+
+An earlier section here says no guard in this repository confronts prose with what it describes, and
+that the confrontation has no mechanical form: the existence of a migration does not tell a program
+which English paragraph now lies. **That still stands.** What turned out to be mechanisable is a much
+narrower thing, and naming the difference is the whole point.
+
+Once we **decide** a claim is retired, that decision is data. A guard can then confront the
+repository with the decision — not with reality. `tools/affirmations-retirees.mjs` does exactly that
+and nothing more.
+
+It exists because the same failure recurred four times in two days: a sentence corrected in one
+place and left standing in its twin. One of them sat **95 lines above a correction made the same day
+in the same file**. One declared a whole stage out of scope in `SECURITY.md` — and a document that
+puts something out of scope is not neutral, it tells a researcher not to look. And the guard's very
+first run found a fourth copy that two human audits had walked past.
+
+- **A correction is not done when the sentence you were reading is fixed.** Grep for the *mechanism*
+  you changed, not the words you remember. You will not remember the translation, the SQL comment, or
+  the bench header.
+- **Keep the retired claim, marked.** Deleting it silently leaves a host who read it with no way to
+  learn their compensation was for nothing. So the rule is not "never write it" but "never write it
+  unmarked" — and the marker is searched on the line and the two above it, never below: a reader who
+  gives up at the false sentence never reaches the correction.
+- **Say what the guard does not do, inside the guard.** The temptation is to present this as "we
+  detect stale documentation". We do not. We detect one retracted phrase still being asserted, from a
+  list we maintain by hand. A guard oversold is a guard that will be trusted where it is blind.
+
+## The second repair of a proxy is the signal to stop using it
+
+A bench here proved "the database request carries an abort signal" by searching the source text of
+`standalone.js` for `AbortSignal.timeout(` in a window of characters around the request. It had
+already been bitten once: the first version searched the **raw** source, and the comment above the
+code contained those very words — so deleting the real call left it green. The repair was to strip
+comments before searching. The proxy was fixed, and kept.
+
+Then the signal composition was extracted into a function, the pattern moved out of the scanned
+window, and the bench went **red on a change that improves the property it guards**.
+
+That is the full shape of a bad proxy, seen twice from both sides: **green when the property is
+gone, red when the property is strengthened.** One of those is an accident; both of them is a
+verdict.
+
+- **Watch for the second repair.** The first failure of a proxy looks like a bug in the proxy. The
+  second tells you the proxy is measuring the wrong thing, and no third repair will fix that.
+- **A `describe` that promises "really" and a body that greps is the tell.** This one said *"the
+  standalone context really abandons a request that does not answer"* while checking spelling. Read
+  your titles as specifications.
+- **The replacement is usually cheap.** A `fetch` that never resolves and a race against a timer:
+  four lines, and it fails for exactly one reason — the request was not abandoned.
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives

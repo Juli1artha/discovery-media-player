@@ -56,12 +56,43 @@ function sansBarreFinale(valeur) {
  * consultations protégées.
  *
  * ⚠️ ET UNE COURSE DE PROMESSES NE SUFFIRAIT PAS : elle rendrait la main sans ANNULER le `fetch`,
- * donc sans rien libérer. C'est `AbortSignal` ou rien. Un signal fourni par l'appelant a priorité —
- * un hôte qui borne lui-même une opération longue n'est pas écrasé.
+ * donc sans rien libérer. C'est `AbortSignal` ou rien. Un signal fourni par l'appelant s'AJOUTE au
+ * plancher — voir `composerSignaux` : le premier des deux qui parle gagne.
  */
+/**
+ * ⚠️ ON COMPOSE LES SIGNAUX, ON NE LES REMPLACE PAS — ET LA PREMIÈRE ÉCRITURE LES REMPLAÇAIT.
+ *
+ * Elle disait `options.signal || AbortSignal.timeout(delai)` : un signal fourni par l'appelant
+ * SUPPRIMAIT le plancher, au lieu de s'y ajouter. Un hôte qui borne lui-même une opération longue
+ * croyait donc ajouter une garantie, et en retirait une. Mesuré : avec un signal qui n'expire jamais
+ * et `timeoutMs: 20`, la promesse est encore en attente après 150 ms.
+ *
+ * ⚠️ ET LE COMMENTAIRE BÉNISSAIT LE DÉFAUT. Il écrivait « un signal fourni par l'appelant a
+ * priorité — un hôte qui borne lui-même une opération longue n'est pas écrasé ». L'intention est
+ * juste ; « a priorité » était la mauvaise traduction. Le premier des deux qui parle gagne : c'est
+ * ce que « borner » veut dire. Rapporté par un audit externe le 12/09 comme défaut LATENT — aucun
+ * appel du produit ne transmet aujourd'hui de signal, donc personne ne l'aurait vu arriver.
+ */
+function composerSignaux(fourni, delaiMs) {
+  const horloge = (typeof AbortSignal !== "undefined" && AbortSignal.timeout)
+    ? AbortSignal.timeout(delaiMs) : undefined;
+  if (!fourni) return horloge;
+  if (!horloge) return fourni;
+  if (typeof AbortSignal.any === "function") return AbortSignal.any([fourni, horloge]);
+  // ⚠️ REPLI SANS `AbortSignal.any` : un contrôleur qui suit les deux. Le `aborted` se teste AVANT
+  // de s'abonner — un signal déjà déclenché n'émettra plus jamais son événement, et l'attendre
+  // serait une attente infinie posée par la précaution elle-même.
+  const relais = new globalThis.AbortController();
+  const abandonner = () => { try { relais.abort(); } catch { /* déjà abandonné */ } };
+  for (const s of [fourni, horloge]) {
+    if (s.aborted) { abandonner(); break; }
+    try { s.addEventListener("abort", abandonner, { once: true }); } catch { /* signal exotique */ }
+  }
+  return relais.signal;
+}
+
 function fetchBorne(cible, options = {}, delaiMs) {
-  const signal = options.signal
-    || (typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(delaiMs) : undefined);
+  const signal = composerSignaux(options.signal, delaiMs);
   return fetch(cible, { ...options, ...(signal ? { signal } : {}) });
 }
 
@@ -243,11 +274,24 @@ async function appelHote(url, secret, corps, errors) {
  * base. Y adosser un compteur partagé ferait payer à la garde le prix qu'on venait d'épargner à ce
  * qu'elle garde. Sur ce chemin, la protection réelle est le cache, pas le compteur.
  *
- * ⚠️ LE COMPTE PARTAGÉ N'EST PAS ATOMIQUE. PostgREST ne sait pas exprimer « incrémente » : c'est une
- * lecture puis une écriture. Deux instances peuvent donc lire la même valeur et n'en écrire qu'une —
- * le compteur SOUS-estime sous forte concurrence. Pour une limite de débit, sous-estimer signifie
- * laisser passer un peu plus, jamais refuser à tort. Le dire vaut mieux que laisser croire à une
- * exactitude qu'on n'a pas.
+ * ⚠️ CE PARAGRAPHE DISAIT QUE LE COMPTE PARTAGÉ N'EST PAS ATOMIQUE. C'EST FAUX DEPUIS 0004, et il
+ * a survécu à ce qu'il décrivait — écrit quand PostgREST ne savait pas exprimer « incrémente »,
+ * donc quand compter était une lecture puis une écriture. La migration `0004-limites-atomiques.sql`
+ * a remplacé les deux par UNE instruction serveur : `player_rate_limit_bump`. Corrigé plutôt que
+ * supprimé, parce qu'un hôte qui l'a lu a pu bâtir une compensation dont il n'a pas besoin.
+ *
+ * ⚠️ ET LA DÉGRADATION RÉELLE EST L'INVERSE DE CE QU'IL LAISSAIT CROIRE. Sans 0004, l'étage partagé
+ * ne compte pas moins bien : IL NE COMPTE PAS DU TOUT. Le `return true` plus bas laisse passer, et
+ * seul le compteur LOCAL, par processus, subsiste — une limite de 120/h en autorise 120 PAR
+ * EXÉCUTION. « Non atomique » nommait un mode qui n'existe pas : un comptage partagé dégradé.
+ *
+ * La matrice complète est dans `docs/HOST-CONTRACT.md` ; elle est la version qui fait foi.
+ *
+ * ⚠️ CETTE PHRASE-CI EST LE JUMEAU FRANÇAIS DE CELLE CORRIGÉE DANS LE CONTRAT LE 11/09 — À 95
+ * LIGNES DE L'AVERTISSEMENT CORRIGÉ LE MÊME JOUR, DANS CE MÊME FICHIER. Corriger un exemplaire
+ * d'une affirmation et pas l'autre est le mode de panne que ce dépôt traque partout ailleurs : deux
+ * copies d'une règle divergent, et personne ne les confronte. Cherchez le MÉCANISME que vous venez
+ * de changer, pas les mots dont vous vous souvenez.
  */
 function creerLimites(db, journal) {
   const seaux = new Map();
