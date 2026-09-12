@@ -14,6 +14,35 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- ⚠️ **Le présentateur créait un élément par page et un bouton par vignette, pour TOUT le document.**
+  Le rendu des canvas était déjà paresseux et borné — fenêtre glissante, budget de pixels — mais les
+  **gabarits**, eux, étaient tous là. Mesuré par un audit externe dans un Chrome réel : 10 000 pages
+  → ~70 000 nœuds, 50 000 → ~450 000, et une reconstruction au zoom de 2,4 s. Un document hostile
+  n'a pas besoin d'être lourd : il lui suffit d'être **long**.
+  La visionneuse ne matérialise plus qu'une **fenêtre** de pages et de vignettes autour du visible ;
+  deux espaceurs portent la hauteur des absents. Mesuré en jsdom, à 10, 10 000 et 50 000 pages :
+  **6 nœuds dans `#pages`, 18 dans `#vignIn`, identiques aux trois échelles** — 4 pages
+  matérialisées, 8 vignettes, 7 et 13 après un saut au milieu du document. Les observateurs,
+  l'éviction des canvas et le rendu paresseux sont inchangés : ils voient simplement moins
+  d'éléments.
+  ⚠️ **Le calcul de la fenêtre est pur et vit dans `src/viewer.ts`**, pas dans le gabarit : c'est
+  lui qui décide ce qui existe, et s'il se trompe un lecteur voit un trou ou une page en double. Il
+  s'éprouve donc seul, avec des nombres — `floor` des deux côtés et un `+1` d'index, parce qu'un
+  `ceil` d'un côté laisse un trou d'une page exactement sur une frontière. `positionDe` est son
+  inverse : la page demandée se rejoint par sa position calculée, puis **naît**, puis s'aligne.
+  ⚠️ **Le banc compte des nœuds, jamais des millisecondes** — c'est la demande de l'audit et la
+  règle du dépôt. La borne est `plafondFenetre`, calculée avec les constantes du gabarit ; et
+  avant + matérialisées + après = tout le document, la borne de compte qui trahit une définition qui
+  dérape. Cinq mutants ajoutés à la campagne : fenêtre non virtuelle, pages toutes matérialisées,
+  saut sans matérialisation, vignettes toutes matérialisées, chargement sans échéance.
+  ⚠️ **Et un document qui n'arrive jamais est désormais abandonné.** La tâche `getDocument` n'était
+  ni bornée ni détruite : un transfert qui ne finit pas gardait son worker jusqu'à la fermeture de
+  l'onglet. Délai global de deux minutes, `destroy()`, et un message — éprouvé à 119 s puis 121 s.
+  ⚠️ **Le harnais a dû substituer le chargement de pdf.js par crochet de source** — la visionneuse
+  l'importe en module ES, ce qui échoue en jsdom et conduit à `refuserWorker()`, jamais à `start()`.
+  Le banc **vérifie que la substitution a eu lieu** : sans elle, il évaluerait une page qui ne
+  démarre pas et prouverait vert sur rien.
+
 - ⚠️ **`tools/mutations.mjs` — notre critère d'acceptation était manuel, et il est désormais
   rejouable.** Le CHANGELOG porte des dizaines de « N mutations sur N tuées » : chacune était vraie
   le jour où elle a été écrite, produite **à la main**, sans artefact, **non rejouable par

@@ -140,6 +140,49 @@ export const MUTANTS = [
     pourquoi: "chat : le chemin qui atteint le plus de monde, et le même avatar arbitraire",
     bancs: ["server/__tests__/titreUsurpe.test.js"],
   },
+  // ⚠️ LA VIRTUALISATION DE LA VISIONNEUSE : quatre façons de la perdre sans qu'aucun pixel ne change
+  // pour un lecteur de dix pages. C'est un document de dix MILLE qui les révèle — d'où un banc qui
+  // COMPTE des nœuds à cette échelle.
+  {
+    id: "viewer-fenetre-non-virtuelle",
+    fichier: "src/viewer.ts",
+    avant: "  return { debut, fin, avant: (debut - 1) * pas, apres: (total - fin) * pas };",
+    apres: "  return { debut: 1, fin: total, avant: 0, apres: 0 };",
+    pourquoi: "une fenêtre qui couvre tout le document matérialise dix mille gabarits : ~70 000 nœuds mesurés pour 10 000 pages",
+    bancs: ["src/__tests__/viewer.test.ts"],
+  },
+  {
+    id: "visionneuse-pages-toutes-materialisees",
+    fichier: "server/page-visionneuse.js",
+    avant: "      if(!force&&f.debut===pagesFenetre.debut&&f.fin===pagesFenetre.fin)return;\n      pagesFenetre=f;",
+    apres: "      f={debut:1,fin:numPages,avant:0,apres:0};\n      if(!force&&f.debut===pagesFenetre.debut&&f.fin===pagesFenetre.fin)return;\n      pagesFenetre=f;",
+    pourquoi: "le gabarit ignore la fenêtre calculée et pose un élément par page — l'état d'avant, revenu par une autre porte",
+    bancs: ["server/__tests__/visionneuseVirtuelle.test.js"],
+  },
+  {
+    id: "visionneuse-saut-sans-materialiser",
+    fichier: "server/page-visionneuse.js",
+    avant: "      if(!el){ scrollEl.scrollTop=Player.viewer.positionDe(p,geoPages()); reconcilierPages(true,p); el=pagesEl.querySelector('.page[data-p=\"'+p+'\"]'); }",
+    apres: "      if(!el){ scrollEl.scrollTop=Player.viewer.positionDe(p,geoPages()); }",
+    pourquoi: "aller à une page qui n'existe pas encore doit la faire naître — sinon le saut vers la page 5 000 tombe dans un espaceur",
+    bancs: ["server/__tests__/visionneuseVirtuelle.test.js"],
+  },
+  {
+    id: "visionneuse-vignettes-toutes-materialisees",
+    fichier: "server/page-visionneuse.js",
+    avant: "      if(!force&&f.debut===vignFenetre.debut&&f.fin===vignFenetre.fin)return;",
+    apres: "      f={debut:1,fin:numPages,avant:0,apres:0};\n      if(!force&&f.debut===vignFenetre.debut&&f.fin===vignFenetre.fin)return;",
+    pourquoi: "un bouton par vignette pour tout le document : la moitié des nœuds mesurés par l'audit venait de là",
+    bancs: ["server/__tests__/visionneuseVirtuelle.test.js"],
+  },
+  {
+    id: "visionneuse-chargement-sans-echeance",
+    fichier: "server/page-visionneuse.js",
+    avant: "      tChargement=setTimeout(function(){ if(genDoc!==docGen)return;",
+    apres: "      tChargement=setTimeout(function(){ if(true)return;",
+    pourquoi: "un document qui n'arrive jamais gardait son transfert et son worker ouverts jusqu'à la fermeture de l'onglet",
+    bancs: ["server/__tests__/visionneuseVirtuelle.test.js"],
+  },
   {
     id: "hook-echec-muet",
     fichier: "tools/install-hooks.mjs",

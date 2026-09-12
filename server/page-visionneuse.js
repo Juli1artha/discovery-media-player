@@ -137,6 +137,7 @@ function viewerHtml(share, nonce, logoUrl, pitch) {
   .scroll{flex:1;overflow:auto;position:relative;touch-action:pan-x pan-y} /* ⚠️ pan-x pan-y, PAS auto : le navigateur garde le défilement et NOUS rendons le pincement. Sans cette ligne le geste à deux doigts est happé par le zoom de page avant qu'aucun événement de pointeur ne nous parvienne. Le zoom navigateur reste disponible SUR LE RESTE de l'interface — le retirer partout serait une régression d'accessibilité pour qui grossit le chrome, pas le document. */
   #pages{display:flex;flex-direction:column;align-items:center;gap:16px;width:max-content;min-width:100%;margin:0 auto;padding:22px 14px}
   .page{position:relative;background:#fff;box-shadow:0 6px 22px #0006;border-radius:3px}
+  .pspace{flex:0 0 auto;width:1px;visibility:hidden} /* porte la hauteur des pages ou vignettes NON materialisees */
   .page canvas{display:block;border-radius:3px}
   /* Couche texte pdf.js : invisible, superposée au canvas → sélection du texte possible (requiert --scale-factor). */
   .textLayer{position:absolute;inset:0;overflow:hidden;line-height:1;opacity:1;z-index:2;forced-color-adjust:none}
@@ -333,6 +334,7 @@ ${LEGAL_CSS}
       get cur(){return cur;},get numPages(){return numPages;},get pdfDoc(){return pdfDoc;},
       get onePage(){return onePage;},
       get reportEnAttente(){return tRestaurer!==null;},
+      get fenetre(){return pagesFenetre;},get vignFenetre(){return vignFenetre;},
       get soloOffered(){return soloOffered;},set soloOffered(v){soloOffered=!!v;}};
     var pdfDoc=null, zoom=1, rot=0, firstAspect=1.35, rendered={}, io=null, ioCur=null;
     // ATTENTION : LE LECTEUR GARDAIT TOUTES LES PAGES RENDUES (P1 audit externe).
@@ -348,6 +350,13 @@ ${LEGAL_CSS}
     var taches={};            // n -> RenderTask, pour pouvoir ANNULER
     var enCours={};           // n -> 1 tant que la page n a pas abouti
     var MARGE_PAGES=2;        // on garde la page courante et deux de chaque cote
+    // FENETRE VIRTUELLE : seuls les gabarits de pages (et de vignettes) proches du visible EXISTENT
+    // dans le DOM ; deux espaceurs portent la hauteur des absents. Voir src/viewer.ts.
+    var pagesFenetre={debut:0,fin:0}, vignFenetre={debut:0,fin:0};
+    var MARGE_VIRTUELLE=3, ESPACE_PAGES=16, HAUT_PAGES=22;             // = CSS #pages (gap, padding-top)
+    var VIGN_MARGE_VIRTUELLE=4, ESPACE_VIGN=10, HAUT_VIGN=12, VIGN_BORDURE=4; // = CSS .vign-in / .vg
+    var pagesAvant=null, pagesApres=null, vignAvant=null, vignApres=null, rafPages=0, rafVign=0;
+    var tacheDoc=null, docGen=0, tChargement=null, DELAI_CHARGEMENT_MS=120000;
     // ATTENTION : UNE GENERATION PAR PAGE. La generation globale (renderGen) ne bouge qu au build ;
     // une page liberee PENDANT que son rendu ou sa couche texte est en vol gardait donc la meme
     // generation, et le resultat tardif se posait sur une page remise en reserve. On incremente
@@ -588,7 +597,8 @@ ${LEGAL_CSS}
           var rotPres=Player.viewer.rotationEffective(0,d.rotation);
           if(rotPres!==rot){ rot=rotPres; if(pdfDoc||IS_IMG){ build(); if(vignOuvert) vignConstruire(); } }
           var target=Math.max(1,d.page||1);
-          var tries=0; (function jump(){ var el=(document.getElementById('pages')||document).querySelector('.page[data-p="'+target+'"]'); if(el){ el.scrollIntoView({block:'start'}); } else if(tries++<40){ setTimeout(jump,150); } })();
+          if(typeof window.__allerPage==='function'){ try{ window.__allerPage(target); }catch(e){} }
+          var tries=0; (function jump(){ var el=(document.getElementById('pages')||document).querySelector('.page[data-p="'+target+'"]'); if(el){ if(el.scrollIntoView) el.scrollIntoView({block:'start'}); } else if(tries++<40){ setTimeout(jump,150); } })();
         }).catch(function(){});
     }
     // Carte live : persiste le contenu (present-content) → l'audience bascule/suit via Realtime.
@@ -674,6 +684,8 @@ ${LEGAL_CSS}
       // Un document d une seule page, ou une image : le panneau n aurait rien a montrer.
       if(IS_IMG){ var vb=document.getElementById('vignBtn'); if(vb) vb.style.display='none'; }
       brancherZoomAuGeste();
+      scrollEl.addEventListener('scroll',planifierPages,{passive:true});
+      if(vignIn) vignIn.addEventListener('scroll',planifierVignettes,{passive:true});
       render();
     }
     // ── ZOOM AU GESTE : apercu immediat, reconstruction differee ─────────────────────────────────
@@ -910,9 +922,19 @@ ${LEGAL_CSS}
     }
     function render(){
       if(IS_IMG){ renderImage(); return; }
+      // ATTENTION : UNE TACHE DE CHARGEMENT N ETAIT JAMAIS DETRUITE, NI BORNEE. Un document qui ne finit
+      // jamais d arriver gardait ouverts son transfert et son worker jusqu a la fermeture de l onglet.
+      // (Audit externe, 12/09.) Un delai global, et destroy() quand il expire ou qu une autre tache prend la place.
+      if(tacheDoc){ try{ tacheDoc.destroy(); }catch(e){} tacheDoc=null; }
+      clearTimeout(tChargement);
+      var genDoc=++docGen;
       var task=pdfjsLib.getDocument({url:CFG.fileUrl,isEvalSupported:false});
+      tacheDoc=task;
+      tChargement=setTimeout(function(){ if(genDoc!==docGen)return; try{ task.destroy(); }catch(e){} if(tacheDoc===task) tacheDoc=null; loadError("Le document met trop longtemps a charger."); },DELAI_CHARGEMENT_MS);
       task.onProgress=function(p){ if(p&&p.total){ var pct=Math.max(8,Math.min(99,Math.round(p.loaded/p.total*100))); var bar=document.getElementById('lbar'); if(bar)bar.classList.remove('idle'); var f=document.getElementById('lbarFill'); if(f)f.style.width=pct+'%'; var l=document.getElementById('lpct'); if(l)l.textContent=pct+' %'; } };
       task.promise.then(function(pdf){
+        if(genDoc!==docGen)return;      // une tache plus recente a pris la place
+        clearTimeout(tChargement);
         pdfDoc=pdf; numPages=pdf.numPages; window.__n=pdf.numPages; T.setPageCount(pdf.numPages);
         // Un document d une seule page : le panneau de vignettes n aurait rien a montrer.
         if(numPages<2){ var vb1=document.getElementById('vignBtn'); if(vb1) vb1.style.display='none'; }
@@ -921,6 +943,42 @@ ${LEGAL_CSS}
           .catch(function(){ build(); try{if(window.PlayerBot)window.PlayerBot.init(VIEWER);}catch(e){} });
       }).catch(function(){ loadError("Impossible d'afficher ce document."); });
     }
+    // ── FENETRE VIRTUELLE ────────────────────────────────────────────────────────────────────
+    //
+    // ATTENTION : LE PRESENTATEUR CREAIT UN ELEMENT PAR PAGE ET UN BOUTON PAR VIGNETTE, POUR TOUT LE
+    // DOCUMENT. Le rendu des canvas etait deja paresseux et borne (fenetre glissante, budget de
+    // pixels) ; les GABARITS, eux, etaient tous la. Mesure par un audit externe dans un Chrome
+    // reel : 10 000 pages = ~70 000 noeuds, 50 000 pages = ~450 000, reconstruction au zoom 2,4 s.
+    // Un document hostile n a pas besoin d etre lourd : il lui suffit d etre long.
+    //
+    // Le calcul de la fenetre est PUR et vit dans src/viewer.ts ; ici on ne fait que reconcilier
+    // le DOM avec ce qu il decide. Les observateurs, l eviction des canvas et le rendu paresseux
+    // restent exactement ce qu ils etaient : ils voient simplement moins d elements.
+    //
+    // Note de forme : ce script vit dans un litteral de gabarit — pas d accent grave ici.
+    function espaceur(id){ var s=document.createElement('div'); s.id=id; s.className='pspace'; s.setAttribute('aria-hidden','true'); return s; }
+    // Un espaceur present ajoute un ECART de flex avant/apres lui : sa hauteur est reduite d autant, et
+    // un espaceur vide est retire du flux, sinon il decalerait tout de la valeur d un ecart.
+    function poserEspaceur(el,hauteur,ecart){ if(hauteur>0){ el.style.display=''; el.style.height=Math.max(0,hauteur-ecart)+'px'; } else { el.style.display='none'; el.style.height='0px'; } }
+    function hauteurPage(){ return Math.round(Math.round(targetWidth())*aspectEffectif()); }
+    function geoPages(){ return {hauteurElement:hauteurPage(),ecart:ESPACE_PAGES,decalageHaut:HAUT_PAGES}; }
+    function creerPage(i,w,h){ var d=document.createElement('div'); d.className='page ph'; d.dataset.p=i; d.style.width=w+'px'; d.style.height=h+'px'; d.textContent='Page '+i; if(io)io.observe(d); if(ioCur)ioCur.observe(d); return d; }
+    function retirerPage(el){ var n=+el.dataset.p; libererPage(n); try{ if(io)io.unobserve(el); if(ioCur)ioCur.unobserve(el); }catch(e){} if(el.parentNode) el.parentNode.removeChild(el); }
+    function reconcilierPages(force,autour){
+      if(!pagesEl||!pagesAvant||!pagesApres||!numPages)return;
+      var g=geoPages(), f;
+      if(onePage){ var c=autour||cur||1; var pas=Player.viewer.pasVertical(g.hauteurElement,g.ecart); var d0=Math.max(1,c-1), f0=Math.min(numPages,c+1); f={debut:d0,fin:f0,avant:(d0-1)*pas,apres:(numPages-f0)*pas}; }
+      else f=Player.viewer.fenetreVirtuelle({debutVisible:scrollEl.scrollTop||0,hauteurVisible:scrollEl.clientHeight||0,hauteurElement:g.hauteurElement,ecart:g.ecart,decalageHaut:g.decalageHaut,total:numPages,marge:MARGE_VIRTUELLE});
+      if(!force&&f.debut===pagesFenetre.debut&&f.fin===pagesFenetre.fin)return;
+      pagesFenetre=f;
+      var w=Math.round(targetWidth()), h=g.hauteurElement, presents={};
+      var els=pagesEl.querySelectorAll('.page');
+      for(var i=0;i<els.length;i++){ var n=+els[i].dataset.p; if(n<f.debut||n>f.fin) retirerPage(els[i]); else presents[n]=els[i]; }
+      var suivant=pagesApres;
+      for(var p=f.fin;p>=f.debut;p--){ var el=presents[p]; if(!el){ el=creerPage(p,w,h); pagesEl.insertBefore(el,suivant); } else if(el.nextSibling!==suivant){ pagesEl.insertBefore(el,suivant); } suivant=el; }
+      poserEspaceur(pagesAvant,f.avant,ESPACE_PAGES); poserEspaceur(pagesApres,f.apres,ESPACE_PAGES);
+    }
+    function planifierPages(){ if(rafPages)return; var raf=window.requestAnimationFrame||function(fn){return setTimeout(fn,16);}; rafPages=raf(function(){ rafPages=0; reconcilierPages(false); }); }
     function build(){
       // Un apercu de zoom n a plus de sens des qu on reconstruit : le laisser poserait une
       // transformation orpheline sur des pages neuves. Cas reel : un redimensionnement de
@@ -940,14 +998,16 @@ ${LEGAL_CSS}
       // pas polluée par la marge de pré-rendu. Corrige le décalage d'une page présentateur ↔ audience.
       ioCur=new IntersectionObserver(function(es){es.forEach(function(e){ if(e.isIntersecting){ setCur(+e.target.dataset.p); } });},{root:scrollEl,rootMargin:Player.viewer.CURRENT_PAGE_MARGIN,threshold:0});
       pagesEl.innerHTML='';
-      var w=Math.round(targetWidth());
-      for(var i=1;i<=numPages;i++){ var d=document.createElement('div'); d.className='page ph'; d.dataset.p=i; d.style.width=w+'px'; d.style.height=Math.round(w*aspectEffectif())+'px'; d.textContent='Page '+i; pagesEl.appendChild(d); io.observe(d); ioCur.observe(d); }
+      pagesAvant=espaceur('pagesAvant'); pagesApres=espaceur('pagesApres'); pagesEl.appendChild(pagesAvant); pagesEl.appendChild(pagesApres);
+      pagesFenetre={debut:0,fin:0};
+      reconcilierPages(true,cur||1);
       var _band=capReserve(); var _pb=document.body.classList.contains('botplayer')?(document.body.classList.contains('vsplit')?Math.round(window.innerHeight*0.38)+50:(isLand()?0:240)):(botOverlap()+(_band?_band+12:(document.body.classList.contains('deskaudio')?16:0))); pagesEl.style.paddingBottom = onePage ? (_pb+'px') : ''; // centre la page dans l'espace VISIBLE (au-dessus de la sheet mobile / du bandeau desktop / sous le header en audio seul)
       if(onePage) showPage(cur||1);
     }
     // ── Mode « une seule page » : afficher / tourner une page à la fois, sans défilement ──────────────────
     function syncArrows(){ var st=Player.viewer.arrowState(cur,numPages); var pv=document.getElementById('opPrev'), nx=document.getElementById('opNext'); if(pv)pv.disabled=st.prevDisabled; if(nx)nx.disabled=st.nextDisabled; }
     function showPage(p){ p=Player.viewer.clampPage(p,numPages); try{ document.body.classList.toggle('pgback',(+p)<(cur||1)); }catch(e){} // sens du glissé (avant/arrière)
+      reconcilierPages(true,p);
       var els=pagesEl.querySelectorAll('.page'); for(var i=0;i<els.length;i++){ els[i].classList.toggle('cur',(+els[i].dataset.p)===p); } var el=pagesEl.querySelector('.page[data-p="'+p+'"]'); if(el){ renderPage(p,el); var nx=pagesEl.querySelector('.page[data-p="'+(p+1)+'"]'); if(nx)renderPage(p+1,nx); } setCur(p); syncArrows();
       var pf=document.getElementById('pglineF'); if(pf&&numPages)pf.style.width=Player.viewer.progressPercent(p,numPages)+'%'; } // ligne de progression (mode présentation)
     function enterOnePage(){ if(onePage)return; onePage=true; document.body.classList.add('onepage'); document.body.classList.add('botlock'); if(pdfDoc){ var c=cur||1; build(); showPage(c); } syncArrows(); }
@@ -972,7 +1032,10 @@ ${LEGAL_CSS}
     function scrollToPage(p){
       // Toute navigation explicite PERIME le report en attente : c est ce qui ferme la course.
       clearTimeout(tRestaurer); tRestaurer=null;
-      var el=pagesEl.querySelector('.page[data-p="'+p+'"]'); if(el) el.scrollIntoView({block:'start'});
+      var el=pagesEl.querySelector('.page[data-p="'+p+'"]');
+      // La page peut ne pas EXISTER encore : on se place a sa position calculee, on materialise, puis on aligne.
+      if(!el){ scrollEl.scrollTop=Player.viewer.positionDe(p,geoPages()); reconcilierPages(true,p); el=pagesEl.querySelector('.page[data-p="'+p+'"]'); }
+      if(el&&el.scrollIntoView) el.scrollIntoView({block:'start'});
     }
     // ⚠️ ET « NAVIGUER » NE SE RESUME PAS A CLIQUER. Le report ne se perimait qu au passage par
     // scrollToPage — donc au clic sur une vignette, une fleche, le sommaire. Le lecteur qui ouvre le
@@ -1076,14 +1139,47 @@ ${LEGAL_CSS}
     }
     function vignMarquer(p){
       if(!vignOuvert||!vignIn)return;
+      if(vignSuivi){
+        // On deplace le defilement DU PANNEAU, jamais scrollIntoView : celui-ci remonte la chaine des
+        // ancetres scrollables et emporterait le document avec lui. La position est CALCULEE : le
+        // bouton peut ne pas exister encore, et c est ce deplacement qui le fera naitre.
+        var g=geoVign();
+        vignIn.scrollTop=Math.max(0,Player.viewer.positionDe(p,g)-(vignIn.clientHeight-g.hauteurElement)/2);
+        reconcilierVignettes(true);
+      }
       var els=vignIn.querySelectorAll('.vg');
       for(var i=0;i<els.length;i++) els[i].classList.toggle('on',(+els[i].dataset.p)===p);
-      if(!vignSuivi)return;
-      var el=vignIn.querySelector('.vg[data-p="'+p+'"]');
-      // On deplace le defilement DU PANNEAU, jamais scrollIntoView : celui-ci remonte la chaine des
-      // ancetres scrollables et emporterait le document avec lui.
-      if(el) vignIn.scrollTop=Math.max(0,el.offsetTop-(vignIn.clientHeight-el.offsetHeight)/2);
     }
+    function geoVign(){ return {hauteurElement:Math.round(VIGN_LARGEUR*aspectEffectif())+VIGN_BORDURE,ecart:ESPACE_VIGN,decalageHaut:HAUT_VIGN}; }
+    function vignCreer(i){
+      var bt=document.createElement('button');
+      bt.type='button'; bt.className='vg'; bt.dataset.p=i; bt.setAttribute('role','listitem');
+      bt.setAttribute('aria-label','Aller à la page '+i);
+      vignVider(bt);
+      bt.addEventListener('click',function(){
+        var n=+this.dataset.p; vignSuivi=true;
+        if(onePage) showPage(n); else scrollToPage(n);
+        vignMarquer(n);
+      });
+      if(vignIO) vignIO.observe(bt);
+      return bt;
+    }
+    function vignRetirer(bt){ var n=+bt.dataset.p; try{ if(vignIO) vignIO.unobserve(bt); }catch(e){} delete vignFaites[n]; var j=vignOrdre.indexOf(n); if(j>=0) vignOrdre.splice(j,1); if(bt.parentNode) bt.parentNode.removeChild(bt); }
+    // Meme fenetre virtuelle que les pages : seuls les boutons proches du visible existent.
+    function reconcilierVignettes(force){
+      if(!vignIn||!vignAvant||!vignApres||!vignOuvert||numPages<2)return;
+      var g=geoVign();
+      var f=Player.viewer.fenetreVirtuelle({debutVisible:vignIn.scrollTop||0,hauteurVisible:vignIn.clientHeight||0,hauteurElement:g.hauteurElement,ecart:g.ecart,decalageHaut:g.decalageHaut,total:numPages,marge:VIGN_MARGE_VIRTUELLE});
+      if(!force&&f.debut===vignFenetre.debut&&f.fin===vignFenetre.fin)return;
+      vignFenetre=f;
+      var presents={}, els=vignIn.querySelectorAll('.vg');
+      for(var i=0;i<els.length;i++){ var n=+els[i].dataset.p; if(n<f.debut||n>f.fin) vignRetirer(els[i]); else presents[n]=els[i]; }
+      var suivant=vignApres;
+      for(var p=f.fin;p>=f.debut;p--){ var bt=presents[p]; if(!bt){ bt=vignCreer(p); vignIn.insertBefore(bt,suivant); } else if(bt.nextSibling!==suivant){ vignIn.insertBefore(bt,suivant); } suivant=bt; }
+      poserEspaceur(vignAvant,f.avant,ESPACE_VIGN); poserEspaceur(vignApres,f.apres,ESPACE_VIGN);
+      var c=cur||1, elc=presents[c]||vignIn.querySelector('.vg[data-p="'+c+'"]'); if(elc) elc.classList.add('on');
+    }
+    function planifierVignettes(){ if(rafVign)return; var raf=window.requestAnimationFrame||function(fn){return setTimeout(fn,16);}; rafVign=raf(function(){ rafVign=0; reconcilierVignettes(false); }); }
     function vignConstruire(){
       if(!vignIn)return;
       if(vignIO){ vignIO.disconnect(); vignIO=null; }
@@ -1092,18 +1188,9 @@ ${LEGAL_CSS}
       vignIO=new IntersectionObserver(function(es){
         es.forEach(function(e){ if(e.isIntersecting){ vignIO.unobserve(e.target); vignRendre(e.target); } });
       },{root:vignIn,rootMargin:'220px 0px'});
-      for(var i=1;i<=numPages;i++){
-        var bt=document.createElement('button');
-        bt.type='button'; bt.className='vg'; bt.dataset.p=i; bt.setAttribute('role','listitem');
-        bt.setAttribute('aria-label','Aller à la page '+i);
-        vignVider(bt);
-        bt.addEventListener('click',function(){
-          var n=+this.dataset.p; vignSuivi=true;
-          if(onePage) showPage(n); else scrollToPage(n);
-          vignMarquer(n);
-        });
-        vignIn.appendChild(bt); vignIO.observe(bt);
-      }
+      vignAvant=espaceur('vignAvant'); vignApres=espaceur('vignApres'); vignIn.appendChild(vignAvant); vignIn.appendChild(vignApres);
+      vignFenetre={debut:0,fin:0};
+      reconcilierVignettes(true);
       vignMarquer(cur||1);
     }
     function basculerVignettes(){
@@ -1129,6 +1216,7 @@ ${LEGAL_CSS}
       if(onePage) showPage(c); else restaurerPage(c);
     }
     window.__refit=function(){ if(!pdfDoc)return; var c=cur||1; build(); restaurerPage(c); };
+    window.__allerPage=scrollToPage;   // le saut d audience cherchait l element par data-p : il n existe plus forcement
     var _rzT; window.addEventListener('resize',function(){ clearTimeout(_rzT); _rzT=setTimeout(function(){ window.__refit(); },160); });
     // ÉCRAN PARTAGÉ mobile : le fond au-dessus/en-dessous du document prolonge les couleurs de la page
     // (échantillon des bords haut/bas du canvas) — du header jusqu'à la vidéo, dynamique à chaque page.

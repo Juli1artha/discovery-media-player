@@ -2602,6 +2602,31 @@ equivalent code, dead branches, defensive paths — teach the reader to skim the
 people skim is worse than a guard that is absent. A manifest of exact targets, each one a defect
 that actually happened, says something a reader can check.
 
+## A guard that is lazy about work can still be wasteful about existence
+
+The viewer's page rendering was already carefully bounded: canvases rendered lazily, a sliding
+window evicting the far ones, a pixel budget so two A4 pages on a ×3 screen could not blow the tab.
+Every one of those guards was about **work**. None was about **existence**: a placeholder `<div>`
+per page and a `<button>` per thumbnail were created for the whole document, up front. Ten thousand
+pages, seventy thousand nodes, measured in a real browser by an external audit — with every lazy
+guard working exactly as designed.
+
+- **"Lazy" bounds what you compute; it does not bound what you allocate.** Ask both questions
+  separately, and ask the second one about the cheapest-looking object in the loop. The placeholder
+  was so cheap nobody counted it.
+- **The hostile input is not always the heavy one.** A long document of blank pages costs nothing
+  to decode and everything to represent. Bound on the dimension the attacker controls for free.
+- **Keep the deciding arithmetic pure, and keep the DOM reconciliation dumb.** `fenetreVirtuelle`
+  is a function of numbers; the template only makes the DOM match its answer. That is what lets the
+  window be tested with `floor` edge cases and mutated in the campaign, while the template test just
+  counts nodes at 10 000 and 50 000 pages and finds the same six.
+
+⚠️ **And when a harness has to hook the source, make the hook assert its own success.** The viewer
+loads pdf.js through an ES `import()` that fails under jsdom and takes the refusal path — never
+`start()`. The bench substitutes a fake at that one call and then **checks the substitution
+happened**; a bench that evaluates a page which never starts is green on nothing, and that is
+precisely the kind of green this repository has learned to distrust.
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives
