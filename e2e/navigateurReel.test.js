@@ -446,34 +446,47 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
   //
   // Ce banc est le SEUL qui puisse le voir : jsdom n'a pas de canvas, et un test unitaire du script
   // ne rendrait rien. On parcourt donc 40 pages dans un vrai Chromium et on compte.
+  //
+  // Depuis la virtualisation, les NŒUDS aussi sont bornés — pas seulement les canvas : un document
+  // de 10 000 pages ne pose plus 10 000 éléments. Le total se lit donc sur le document, plus dans
+  // le DOM ; et un parcours qui n'aurait pas eu lieu se voit à `cur`, resté au début.
   it("un document long : les canvas restent bornés après un parcours complet", async () => {
-    const page = await navigateur.newPage();
-    await page.goto(`http://127.0.0.1:${port}/doc/${SLUG_PDF_LONG}`, { waitUntil: "load" });
+    const ctx = await navigateur.newContext();
+    const page = await pageAvecLecteur(ctx);
     await page.waitForFunction(
       () => { const c = document.querySelector("#pages .page canvas"); return !!c && c.width > 0; },
       { timeout: 25_000 });
-    const total = await page.evaluate(() => document.querySelectorAll("#pages .page").length);
+    const total = await page.evaluate(() => window.__viewerEssai.numPages);
     expect(total, "la fixture doit bien avoir 40 pages, sinon ce banc ne prouve rien").toBe(40);
 
-    // Parcours complet, page par page, en laissant le rendu se faire.
-    let maxVus = 0;
+    // Parcours complet, page par page, par le geste du lecteur, en laissant le rendu se faire.
+    let maxVus = 0, maxNoeuds = 0;
     for (let n = 1; n <= 40; n++) {
-      await page.evaluate((i) => {
-        const el = document.querySelector(`#pages .page[data-p="${i}"]`);
-        if (el) el.scrollIntoView({ block: "start" });
-      }, n);
+      await page.evaluate((i) => { document.getElementById("scroll").scrollTop = window.__essaiPositionDe(i); }, n);
       await new Promise((r) => setTimeout(r, 60));
-      const vus = await page.evaluate(() => document.querySelectorAll("#pages .page canvas").length);
+      const { vus, noeuds } = await page.evaluate(() => ({
+        vus: document.querySelectorAll("#pages .page canvas").length,
+        noeuds: document.querySelectorAll("#pages .page").length,
+      }));
       if (vus > maxVus) maxVus = vus;
+      if (noeuds > maxNoeuds) maxNoeuds = noeuds;
     }
+    await new Promise((r) => setTimeout(r, 400));
+    expect(await page.evaluate(() => window.__viewerEssai.cur),
+      "le lecteur n'est pas arrivé au bout : le parcours n'a pas eu lieu, et ses bornes ne valent rien")
+      .toBeGreaterThanOrEqual(38);
 
-    // Fenêtre = page courante ± 2, plus quelques rendus en vol : une dizaine est large, quarante ne
+    // Fenêtre = page courante ± 3, plus quelques rendus en vol : une dizaine est large, quarante ne
     // l'est pas. Seuil LARGE : on détecte l'EFFONDREMENT du principe, pas une consommation exacte.
     expect(maxVus,
       `${maxVus} canvas simultanés sur un document de 40 pages : les pages ne sont plus évincées,\n`
       + "et la mémoire de l'onglet suit la longueur du document.")
       .toBeLessThanOrEqual(12);
-    await page.close();
+    expect(maxNoeuds,
+      `${maxNoeuds} éléments de page simultanés sur un document de 40 pages : la fenêtre virtuelle\n`
+      + "ne retire plus les pages éloignées, et le DOM suit la longueur du document.")
+      .toBeLessThanOrEqual(12);
+    await page.close(); await ctx.close();
   });
 
   // ⚠️ LE TAMPON D'UN CANVAS EST BORNÉ EN PIXELS — et c'est CETTE borne qui mord, pas celle du DPR.
@@ -493,10 +506,25 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
   // ⚠️ ON PILOTE LE LECTEUR PAR UNE COUTURE QUI EXISTE DÉJÀ : `PlayerBot.init(VIEWER)` reçoit la
   // surface du lecteur au démarrage. En déclarant `window.PlayerBot` AVANT le chargement, le banc
   // récupère cette surface sans qu'une seule ligne de production change pour lui.
+  //
+  // ⚠️ LE LECTEUR EST VIRTUALISÉ : LA PAGE 30 N'EXISTE PAS avant qu'on s'en approche. Les bancs qui
+  // cherchaient `.page[data-p="30"]` pour y défiler ne trouvaient plus rien — et l'un d'eux, écrit
+  // avec `if (el)`, passait VERT sans avoir bougé. On déduit donc la position d'une page de la
+  // géométrie des pages déjà nées (toutes de même hauteur, à pas constant) : c'est le geste du
+  // lecteur — un défilement brut — et non `scrollToPage`, qui périmerait lui-même ce que certains
+  // bancs veulent voir périmer par le geste.
   async function pageAvecLecteur(ctx) {
     const p = await ctx.newPage();
     await p.addInitScript(() => {
       window.PlayerBot = { init: (v) => { window.__viewerEssai = v; } };
+      window.__essaiPositionDe = (n) => {
+        const sc = document.getElementById("scroll");
+        const nees = document.querySelectorAll("#pages .page");
+        if (nees.length < 2) return NaN;
+        const haut = (el) => el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
+        const pas = haut(nees[1]) - haut(nees[0]);
+        return haut(nees[0]) + (n - Number(nees[0].dataset.p)) * pas;
+      };
     });
     await p.goto(`http://127.0.0.1:${port}/doc/${SLUG_PDF_LONG}`, { waitUntil: "load" });
     await p.waitForFunction(() => !!window.__viewerEssai && window.__viewerEssai.numPages > 1, { timeout: 25_000 });
@@ -788,6 +816,9 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     rendues: document.querySelectorAll("#vignIn .vg canvas").length,
     marquee: (document.querySelector("#vignIn .vg.on") || { dataset: {} }).dataset.p,
     defilPanneau: document.getElementById("vignIn").scrollTop,
+    hauteurPanneau: document.getElementById("vignIn").scrollHeight,
+    cadrePanneau: document.getElementById("vignIn").clientHeight,
+    fenetre: window.__viewerEssai.vignFenetre,
     largeurPage: Math.round(document.querySelector("#pages .page").getBoundingClientRect().width),
   }));
 
@@ -800,7 +831,19 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     await p.click("#vignBtn");
     await p.waitForFunction(() => document.querySelectorAll("#vignIn .vg canvas").length > 0, { timeout: 20_000 });
     const apres = await vignettes(p);
-    expect(apres.boutons, "le panneau n'a pas été peuplé").toBe(40);
+    // ⚠️ LE PANNEAU EST VIRTUALISÉ : 40 pages, mais seuls les boutons de la FENÊTRE naissent, et
+    // l'espace des autres est porté par des espaceurs. Exiger 40 boutons exigerait le défaut que la
+    // virtualisation ferme ; on exige donc la fenêtre — non vide, plus courte que le document,
+    // exactement ce que le lecteur annonce — et un panneau qui a plus à faire défiler que ce
+    // qu'il montre : la place des pages non nées.
+    expect(await p.evaluate(() => window.__viewerEssai.numPages), "la fixture doit avoir 40 pages").toBe(40);
+    expect(apres.boutons, "le panneau n'a pas été peuplé").toBeGreaterThan(0);
+    expect(apres.boutons, `${apres.boutons} boutons pour 40 pages dans un cadre de ${apres.cadrePanneau} px :\n`
+      + "le panneau pose toutes les vignettes, il n'est plus virtualisé").toBeLessThan(40);
+    expect(apres.boutons, `boutons nés (${apres.boutons}) ≠ fenêtre annoncée [${apres.fenetre.debut}, ${apres.fenetre.fin}]`)
+      .toBe(apres.fenetre.fin - apres.fenetre.debut + 1);
+    expect(apres.hauteurPanneau, "le panneau n'a rien à faire défiler : les pages non nées n'ont pas de place réservée")
+      .toBeGreaterThan(apres.cadrePanneau);
     // ⚠️ LE PLANCHER. Sans lui, un moteur qui échoue en silence rendrait tous les bancs suivants verts.
     expect(apres.rendues, "aucune vignette rendue : tout ce qui suit mesurerait le vide").toBeGreaterThan(0);
     expect(requetes,
@@ -820,11 +863,15 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     await p.click("#vignBtn");
     await p.waitForFunction(() => document.querySelectorAll("#vignIn .vg canvas").length > 0, { timeout: 20_000 });
     for (let n = 1; n <= 40; n += 2) {
-      await p.evaluate((k) => { const el = document.querySelector(`#pages .page[data-p="${k}"]`); if (el) el.scrollIntoView({ block: "start" }); }, n);
+      await p.evaluate((k) => { document.getElementById("scroll").scrollTop = window.__essaiPositionDe(k); }, n);
       await new Promise((r) => setTimeout(r, 90));
     }
     await new Promise((r) => setTimeout(r, 1500));
     const v = await vignettes(p);
+    // ⚠️ CONTRÔLE POSITIF : ce banc, écrit avec `if (el)`, a passé VERT sans bouger d'une page le jour
+    // où la page 30 a cessé d'exister d'avance. Un parcours qui n'a pas eu lieu n'accumule rien.
+    expect(await p.evaluate(() => window.__viewerEssai.cur), "le lecteur n'est pas arrivé au bout : le parcours n'a pas eu lieu")
+      .toBeGreaterThanOrEqual(38);
     expect(v.rendues, "zéro vignette vivante après le parcours : un zéro ne prouve aucune borne").toBeGreaterThan(0);
     expect(v.rendues,
       `${v.rendues} vignettes portent un canvas. Le cache est borné à 48 : au-delà, un document de\n`
@@ -886,8 +933,7 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     await p.evaluate(() => {
       document.getElementById("vignIn").dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 200 }));
       document.getElementById("vignIn").scrollTop = 0;
-      const el = document.querySelector('#pages .page[data-p="30"]');
-      if (el) el.scrollIntoView({ block: "start" });
+      document.getElementById("scroll").scrollTop = window.__essaiPositionDe(30);
     });
     await new Promise((r) => setTimeout(r, 900));
     const v = await vignettes(p);
@@ -919,12 +965,13 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
         let ev; try { ev = C ? new C(nom, { bubbles: true }) : new TouchEvent(nom, { bubbles: true }); }
         catch (e) { ev = new Event(nom, { bubbles: true }); }
         sc.dispatchEvent(ev);
-        const el = document.querySelector('#pages .page[data-p="30"]');
-        if (el) el.scrollIntoView({ block: "start" });
-        return { arme, trouvee: !!el };
+        const position = window.__essaiPositionDe(30);
+        sc.scrollTop = position;
+        return { arme, position, total: window.__viewerEssai.numPages };
       }, geste);
       expect(etat.arme, "aucun report n'était en attente au moment du geste : ce banc ne prouve rien").toBe(true);
-      expect(etat.trouvee, "le document d'essai n'a pas de page 30 : rien à atteindre").toBe(true);
+      expect(etat.total, "le document d'essai n'a pas de page 30 : rien à atteindre").toBeGreaterThanOrEqual(30);
+      expect(etat.position, "position de la page 30 incalculable : le défilement n'a pas eu lieu").toBeGreaterThan(0);
       await new Promise((r) => setTimeout(r, 900));
       expect(await p.evaluate(() => window.__viewerEssai.cur),
         `le report armé par l'ouverture du panneau a défait le défilement du lecteur (${geste}) :\n`

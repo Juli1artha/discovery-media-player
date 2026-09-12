@@ -32,6 +32,10 @@ the notes there are this file's section for that version.
   s'éprouve donc seul, avec des nombres — `floor` des deux côtés et un `+1` d'index, parce qu'un
   `ceil` d'un côté laisse un trou d'une page exactement sur une frontière. `positionDe` est son
   inverse : la page demandée se rejoint par sa position calculée, puis **naît**, puis s'aligne.
+  Le banc navigateur suit : il ne cherche plus la page 30 dans le DOM (elle n'y est pas avant
+  qu'on s'en approche) mais déduit sa position des pages nées, compte la **fenêtre** de vignettes
+  plutôt que 40 boutons, et exige que chaque parcours ait **eu lieu** (`cur ≥ 38`) — l'un d'eux,
+  écrit avec `if (el)`, passait vert sans avoir bougé.
   ⚠️ **Le banc compte des nœuds, jamais des millisecondes** — c'est la demande de l'audit et la
   règle du dépôt. La borne est `plafondFenetre`, calculée avec les constantes du gabarit ; et
   avant + matérialisées + après = tout le document, la borne de compte qui trahit une définition qui
