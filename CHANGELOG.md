@@ -46,6 +46,32 @@ the notes there are this file's section for that version.
   légitimement — un verdict agrégé, un écouteur posé une fois. Ils sont **déclarés avec leur raison
   et nommés à chaque exécution** : une dette déclarée, pas une exemption muette. 10 bancs,
   **5 mutations sur 5 tuées**, dont une par expiration — l'imbrication qu'elle empêche.
+- ⚠️ **Déclarer était plus facile que réparer, et un audit externe a demandé l'inverse. Il avait
+  raison : deux des trois déclarations d'ordre sont supprimées parce que les fichiers sont RÉPARÉS.**
+  `finDePresentation` exigeait d'être en tête de son fichier — chaque banc ré-injecte le HTML dans la
+  MÊME fenêtre jsdom, donc les scripts se rejouent et empilent un écouteur de départ de page ; sept
+  bancs produisaient sept avis de fin. ⚠️ **Et le fichier disait déjà la solution sans l'appliquer** :
+  son commentaire sur les minuteries annonce *« c'est la même cause que les beacons empilés, traitée
+  cette fois à la racine plutôt que contournée »*. Les minuteries l'étaient ; les écouteurs ne
+  l'étaient pas. Ils sont désormais retirés entre bancs, et **un essai monte deux bancs exprès** pour
+  le prouver — sans lui : trois avis de fin au lieu d'un.
+  ⚠️ **Compter les écouteurs aurait été un mauvais témoin, et la mesure l'a dit** : un banc en pose
+  **deux** sur `pagehide`, pas un. Exiger « exactement un » rougissait à tous les rangs, premier
+  compris. Ce qui se prouve n'est pas leur nombre, c'est qu'il **ne croît pas**.
+- ⚠️ **`coutParGeste` portait deux verdicts agrégés écrits comme des essais qui espéraient être
+  derniers.** Ils confrontent le témoin daté et les documents à ce que la campagne vient de mesurer,
+  en lisant un relevé que les essais d'avant remplissent : exécutés avant eux, ils annonçaient
+  « PLUS MESURÉ » sur cinq gestes et accusaient le produit d'une régression inexistante. Ils vivent
+  dans `afterAll` — un verdict sur l'ensemble appartient à l'après-ensemble — et **mordent toujours**,
+  éprouvé en faussant le témoin puis en retirant un marqueur d'un document.
+- ⚠️ **La suite de ce dépôt était ROUGE sur la machine de son auteur, et la forge ne pouvait pas le
+  voir.** `shellDesWorkflows` éprouvait « un bloc déclaré `sh` est jugé par sh » en cherchant une
+  forme que les deux analyseurs lisent différemment — un littéral de tableau, que dash refuse. Son
+  commentaire dit *« mesuré avant d'être cru »* : **mesuré sur dash, et cru universel**. Sur macOS,
+  `/bin/sh` EST bash et l'accepte. Le choix du binaire devient une **fonction pure**, éprouvable
+  partout ; le comportement réel reste éprouvé là où le système peut le montrer, et **sauté en le
+  disant dans son titre** là où il n'y a rien à discriminer — jamais vert sur rien. Trouvé par un
+  audit externe qui a lancé la suite sur un autre système que le nôtre.
 - ⚠️ **Un essai qui résume ses voisins le DÉCLARE désormais plutôt que de le subir.** Le dernier
   essai de `planchersDesGardes` lit un accumulateur rempli par les essais générés au-dessus ;
   exécuté avant eux, il échouait en accusant le dépôt d'avoir perdu une formule qu'il n'avait pas

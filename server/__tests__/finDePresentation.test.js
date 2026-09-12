@@ -119,10 +119,26 @@ const vraiSetTimeout = window.setTimeout.bind(window);
 window.setInterval = (f, ms, ...r) => { const id = vraiSetInterval(f, ms, ...r); minuteriesOuvertes.push(id); return id; };
 window.setTimeout = (f, ms, ...r) => { const id = vraiSetTimeout(f, ms, ...r); minuteriesOuvertes.push(id); return id; };
 
-let bancsCrees = 0;
+// ⚠️ ET LES ÉCOUTEURS, POUR LA RAISON QUE LE COMMENTAIRE CI-DESSUS ANNONÇAIT SANS L'APPLIQUER. Il
+// dit « c'est la même cause que les beacons empilés, traitée cette fois à la racine plutôt que
+// contournée » — les minuteries l'étaient, les écouteurs ne l'étaient pas. Chaque banc ré-injecte le
+// HTML dans la MÊME fenêtre jsdom, donc les scripts de la page se rejouent et posent un écouteur
+// « pagehide » de plus. Le contournement était d'exiger que le bloc reste PREMIER ; le coût était
+// qu'un essai dépendait de son rang, donc ne prouvait pas ce qu'il annonçait — mesuré par
+// `tools/ordre-des-bancs.mjs`, cinq beacons au lieu d'un dès que l'ordre change.
+//
+// On retire donc les écouteurs des bancs précédents, exactement comme on coupe leurs minuteries.
+const ecouteursPoses = [];
+const vraiAjouterEcouteur = window.addEventListener.bind(window);
+window.addEventListener = (type, fn, opts) => { ecouteursPoses.push({ type, fn, opts }); return vraiAjouterEcouteur(type, fn, opts); };
+function retirerLesEcouteursPrecedents() {
+  for (const e of ecouteursPoses.splice(0)) {
+    try { window.removeEventListener(e.type, e.fn, e.opts); } catch { /* déjà parti */ }
+  }
+}
 async function banc() {
-  bancsCrees++;
   couperLesMinuteriesPrecedentes();
+  retirerLesEcouteursPrecedents();
   const html = await htmlPresentateur();
   // ⚠️ ON NE RETIRE PAS LES BALISES DE SCRIPT, ET C'EST PLUS SÛR QUE DE LES RETIRER. Un script
   // posé par « innerHTML » ne s'exécute jamais — la spec HTML l'interdit — donc le filtrage
@@ -182,18 +198,22 @@ async function banc() {
   };
 }
 
-// ⚠️ CE BLOC DOIT RESTER LE PREMIER, ET LE TEST LE DIT LUI-MÊME.
+// ⚠️ CE BLOC N'A PLUS BESOIN D'ÊTRE LE PREMIER, ET L'HYPOTHÈSE EST VÉRIFIÉE AUTREMENT.
 //
-// Chaque banc ré-évalue les scripts de la page dans la MÊME fenêtre jsdom, donc empile un écouteur
-// « pagehide » de plus. Après sept bancs, un départ de page produit sept envois : le compte devient
-// illisible, et un test qui ne peut plus compter ne peut plus dire non. Plutôt que d'assouplir
-// l'assertion — « au moins un », qui passerait aussi avec zéro écouteur des bancs précédents et un
-// bug ici — on garde le compte exact et on vérifie l'hypothèse qui le rend exact.
+// Il l'exigeait, et le disait — « ce bloc doit rester en tête du fichier ». C'était un contournement
+// honnête d'un empilement d'écouteurs, au prix d'un essai qui dépendait de son rang : il ne prouvait
+// donc pas ce qu'il annonçait, et il tombait dès que l'ordre changeait (cinq beacons au lieu d'un).
+// Les écouteurs des bancs précédents sont maintenant RETIRÉS à la racine.
+//
+// ⚠️ ON NE RELÂCHE PAS L'ASSERTION POUR AUTANT : le compte de beacons reste EXACT. Et l'hypothèse
+// qui le rend exact — rien ne s'empile — est éprouvée par l'essai suivant, qui monte DEUX bancs.
+//
+// ⚠️ COMPTER LES ÉCOUTEURS AURAIT ÉTÉ UN MAUVAIS PROXY, ET LA MESURE L'A DIT. Un banc en pose DEUX
+// sur « pagehide », pas un : exiger « exactement un écouteur » rougissait à tous les rangs, y
+// compris le premier. Ce qui se prouve n'est pas leur nombre, c'est que ce nombre NE CROÎT PAS.
 describe("le beacon est à sa place, sur le départ de la page", () => {
   it("fermer l'onglet en pleine présentation envoie l'avis de fin", async () => {
     const b = await banc();
-    expect(bancsCrees, "ce bloc doit rester en tête du fichier : un second banc empilerait un écouteur")
-      .toBe(1);
 
     const envoyes = [];
     navigator.sendBeacon = (url, blob) => { envoyes.push({ url, blob }); return true; };
@@ -203,6 +223,25 @@ describe("le beacon est à sa place, sur le départ de la page", () => {
     expect(envoyes.length, "sinon l'audience suit une présentation morte jusqu'à la péremption")
       .toBe(1);
     expect(String(envoyes[0].url)).toContain("/api/doc");
+    void b;
+  });
+
+  // ⚠️ L'HYPOTHÈSE DE L'ESSAI CI-DESSUS, ÉPROUVÉE PLUTÔT QUE GARANTIE PAR LE RANG. Avant le retrait
+  // des écouteurs, deux bancs successifs produisaient DEUX avis de fin pour un seul départ de page,
+  // et sept bancs en produisaient sept — d'où l'ancienne exigence « ce bloc doit rester le premier »,
+  // qui faisait dépendre un essai de son rang. Celui-ci monte deux bancs exprès : il échoue sans le
+  // retrait, et il ne dépend d'aucun ordre.
+  it("⚠️ deux bancs de suite ne doublent pas l'avis de fin — sinon le compte ci-dessus ne prouve rien", async () => {
+    await banc();
+    const b = await banc();
+
+    const envoyes = [];
+    navigator.sendBeacon = (url) => { envoyes.push(url); return true; };
+    window.dispatchEvent(new window.Event("pagehide"));
+    await respirer();
+
+    expect(envoyes.length, "un écouteur du banc précédent a survécu : le compte de beacons ne dit plus rien")
+      .toBe(1);
     void b;
   });
 });

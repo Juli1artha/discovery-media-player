@@ -60,14 +60,17 @@ import { estExecuteDirectement } from "./execute-directement.mjs";
  * ⚠️ CETTE LISTE NE SE PURGE PAS TOUTE SEULE, ET LA GARDE NE PEUT PAS LE FAIRE POUR ELLE. Un
  * fichier déclaré qui passe sous UNE graine n'a rien prouvé : il pouvait ne pas être mélangé de la
  * façon qui le casse. Retirer une entrée est une décision humaine, pas une déduction.
+ *
+ * ⚠️ ET DEUX ENTRÉES EN SONT SORTIES PARCE QU'ON A RÉPARÉ, PAS PARCE QU'ELLES PASSAIENT.
+ * `finDePresentation` exigeait d'être en tête : ses écouteurs de départ de page sont désormais
+ * RETIRÉS entre bancs, comme l'étaient déjà ses minuteries, et un essai monte deux bancs exprès
+ * pour le prouver. `coutParGeste` portait deux verdicts agrégés écrits en `it()` : ils vivent dans
+ * `afterAll`, où un verdict sur l'ensemble appartient. Déclarer était plus facile que réparer ;
+ * c'est un audit externe qui a demandé l'inverse, et il avait raison.
  */
 export const ORDRE_DECLARE = new Map([
-  ["server/__tests__/finDePresentation.test.js",
-    "le premier bloc assert `bancsCrees === 1` : un second banc empilerait un écouteur de départ de page, et c'est l'essai lui-même qui le dit"],
   ["tools/__tests__/planchersDesGardes.test.js",
     "le dernier essai RÉSUME les essais générés au-dessus (un par garde) en lisant ce qu'ils ont accumulé — il le déclare lui-même, et dit combien ont tourné quand il s'exécute trop tôt"],
-  ["charge/coutParGeste.test.js",
-    "le dernier essai est un relevé DATÉ qui confronte ce que les essais d'avant viennent de mesurer — il n'a de sens qu'après eux"],
 ]);
 
 export const grainePourJour = (d = new Date()) =>

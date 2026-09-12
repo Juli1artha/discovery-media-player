@@ -8,7 +8,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import { analyserAvecBash, blocsDe, blocsFautifs, sautes, estBash, lireDossier, temoinNonVu, PLANCHER_BLOCS } from "../shell-des-workflows.mjs";
+import { analyserAvecBash, blocsDe, blocsFautifs, sautes, estBash, lireDossier, temoinNonVu, PLANCHER_BLOCS, binaireDe } from "../shell-des-workflows.mjs";
 
 const wf = (steps, extra = "") => `name: T\non: push\njobs:\n  j:\n${extra}    steps:\n${steps}`;
 
@@ -147,17 +147,35 @@ describe("⚠️ le plancher sur ce que la phrase verte PRONONCE", () => {
 // aucune n'était éprouvée. Le choix du binaire n'a aujourd'hui aucun sujet — les 112 blocs du dépôt
 // sont tous en `bash` — et c'est justement pourquoi il fallait un cas fabriqué.
 describe("⚠️ l'analyse elle-même : quel binaire, et ce qu'on garde de son refus", () => {
-  it("⚠️ un bloc déclaré `sh` est jugé par SH, pas par bash", () => {
-    // ⚠️ IL FAUT UNE FORME QUE LES DEUX BINAIRES NE PARSENT PAS PAREIL, et `-n` ne fait
-    // qu'analyser : `declare -A t` — le premier cas écrit ici — est syntaxiquement valide pour
-    // dash, qui n'y voit qu'une commande et ses arguments. Un littéral de TABLEAU, lui, est une
-    // syntaxe que dash refuse à l'analyse. Mesuré avant d'être cru.
-    const propreAuBash = "tableau=(un deux)\n";
-    expect(analyserAvecBash(propreAuBash, "bash"), "bash accepte un littéral de tableau").toBeNull();
-    expect(analyserAvecBash(propreAuBash, "sh"),
-      "sh le refuse — si le choix du binaire ne se lisait plus, ce cas rendrait null")
-      .toBeTruthy();
+  // ⚠️ LE CHOIX DU BINAIRE EST UNE FONCTION PURE, ET C'EST CE QUI LE REND ÉPROUVABLE PARTOUT. La
+  // version d'avant ne le vérifiait qu'en trouvant une forme que les deux analyseurs lisent
+  // différemment — un littéral de tableau, refusé par dash. Son commentaire disait « mesuré avant
+  // d'être cru » : mesuré sur dash, et cru UNIVERSEL. Sur macOS, `/bin/sh` EST bash et accepte ce
+  // littéral, donc le banc y rougissait sur une propriété du SYSTÈME et non du dépôt — la suite de
+  // ce dépôt était rouge sur la machine de son auteur sans que la forge, en Linux, puisse le voir.
+  it("⚠️ un bloc déclaré `sh` est dirigé vers SH, pas vers bash", () => {
+    expect(["sh", "sh -eu {0}"].map(binaireDe)).toEqual(["sh", "sh"]);
+    expect(["bash", "bash -e {0}", "pwsh", "", undefined].map(binaireDe))
+      .toEqual(["bash", "bash", "bash", "bash", "bash"]);
   });
+
+  // ⚠️ ET LE COMPORTEMENT RÉEL, LÀ OÙ LE SYSTÈME PEUT ENCORE LE MONTRER. Cet essai demande que
+  // `sh` soit un analyseur DISTINCT de bash ; là où il ne l'est pas, il n'y a rien à observer — pas
+  // un défaut, pas un succès. Il est alors sauté en le DISANT dans son titre, plutôt que passé en
+  // vert sur rien. Le choix du binaire reste gardé par l'essai pur ci-dessus, en toutes
+  // circonstances : ce qui est sauté ici est un supplément, jamais la seule preuve.
+  const LITTERAL_TABLEAU = "tableau=(un deux)\n";
+  const shEstDistinct = (() => {
+    try { return analyserAvecBash(LITTERAL_TABLEAU, "sh") !== null; } catch { return false; }
+  })();
+  it.skipIf(!shEstDistinct)(
+    "⚠️ et sh le REFUSE réellement — sauté là où /bin/sh est bash, car il n'y a rien à discriminer",
+    () => {
+      expect(analyserAvecBash(LITTERAL_TABLEAU, "bash"), "bash accepte un littéral de tableau").toBeNull();
+      expect(analyserAvecBash(LITTERAL_TABLEAU, "sh"),
+        "sh le refuse — si le choix du binaire ne se lisait plus, ce cas rendrait null")
+        .toBeTruthy();
+    });
 
   it("un shell inconnu retombe sur bash plutôt que d'échouer à lancer quoi que ce soit", () => {
     expect(analyserAvecBash("if [ -z ]; then\n", "pwsh"), "un script cassé reste refusé").toBeTruthy();

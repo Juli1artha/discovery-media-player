@@ -2387,6 +2387,21 @@ So, three rules, cheapest first:
   repository of losing something it still has. A red that names the wrong culprit is worse than no
   red, because someone learns the gesture for clicking past it.
 
+⚠️ **Declaring is easier than repairing, and the easy one is usually wrong.** Three files depended
+on their rank; the first instinct was to declare all three as legitimate sequence contracts. An
+external audit asked for the opposite, and two of the three turned out to be repairable in a few
+lines: listeners removed between benches, an aggregate verdict moved into `afterAll` where a verdict
+over everything belongs. A declaration is owed only where the dependency is genuinely a contract —
+and "I could not see how to fix it in five minutes" is not that.
+
+⚠️ **A measurement made on one machine is a claim about that machine.** A bench here proved "a block
+declared `sh` is judged by sh" by finding a form the two parsers read differently — and its own
+comment said *"measured before being believed"*. Measured on dash, believed universally. On macOS
+`/bin/sh` **is** bash, so the suite of this repository was red on its author's own machine while CI,
+on Linux, stayed green and could not see it. Where a property depends on the environment, make the
+part that does not depend on it a **pure function** and test that everywhere; let the behavioural
+half run only where the system can show it, and **skip it by name** rather than pass on nothing.
+
 ⚠️ **The guard that came out of this was itself refused by the repository's own floor bench, and it
 was right to be.** The first version blamed every file that went red under shuffle. The floor's
 fixture copies `tools/` wholesale into an empty tree, so vitest finds benches there that fail for
