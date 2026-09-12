@@ -44,7 +44,8 @@ require.cache[require.resolve("../shares.js")] = {
       const t = Object.values(PARENTS).find((x) => x.slug === slug);
       return t ? { ...t } : null;
     },
-    createReshare: async () => ({ slug: "Enfant-_xY12", docTitle: "Doc" }),
+    // ⚠️ PILOTABLE, pour éprouver l'idempotence : un réessai doit retomber sur le MÊME enfant.
+    createReshare: async (parentSlug, opts) => { creations.push({ parentSlug, ...opts }); return createur(parentSlug, opts); },
     // ⚠️ PILOTABLE, parce que les trois issues d'un envoi ne se distinguent que par ce que l'hôte
     // fait : accepter, refuser, ou ne pas répondre à temps. Un envoyeur figé n'en montre qu'une.
     sendReshareEmail: async (m) => { courriers.push(m); return envoyeur(m); },
@@ -53,6 +54,8 @@ require.cache[require.resolve("../shares.js")] = {
 };
 
 let envoyeur = async () => ({ sent: true });
+let creations = [];
+let createur = async () => ({ slug: "Enfant-_xY12", docTitle: "Doc", idempotent: false });
 
 const player = require("../handler.js");
 
@@ -71,17 +74,19 @@ function contexte() {
   };
 }
 
-async function repartager(slugParent, { send = true, envoi } = {}) {
+async function repartager(slugParent, { send = true, envoi, creation, cle } = {}) {
   courriers = [];
   envoyeur = envoi || (async () => ({ sent: true }));
+  creations = [];
+  createur = creation || (async () => ({ slug: "Enfant-_xY12", docTitle: "Doc", idempotent: false }));
   player.init(contexte());
   const res = { statusCode: 0, headers: {}, body: "", setHeader(k, v) { this.headers[k.toLowerCase()] = v; }, end(b) { this.body = String(b == null ? "" : b); } };
   await player.handler(
     { method: "POST", headers: { "content-type": "application/json" }, socket: {}, query: {},
-      body: { action: "reshare", slug: slugParent, email: "destinataire@exemple.fr", name: "Destinataire", send } },
+      body: { action: "reshare", slug: slugParent, email: "destinataire@exemple.fr", name: "Destinataire", send, ...(cle ? { clientKey: cle } : {}) } },
     res,
   );
-  return { statut: res.statusCode, corps: JSON.parse(res.body || "{}"), courriers };
+  return { statut: res.statusCode, corps: JSON.parse(res.body || "{}"), courriers, creations };
 }
 
 describe("qui a le droit de faire partir un email", () => {
@@ -196,5 +201,45 @@ describe("⚠️ les trois issues d'un envoi ne tiennent pas dans un booléen", 
     const r = await repartager(NOMINATIF, { send: false });
     expect(r.corps.delivery).toBe("not-requested");
     expect(r.corps.sent).toBe(false);
+  });
+});
+
+// ⚠️ LA CLÉ D'IDEMPOTENCE EXISTAIT DÉJÀ SUR CETTE TABLE, ET C'EST LA MOITIÉ DU CONSTAT.
+//
+// `idem_key` (migration 0011) est globalement unique quand elle est renseignée et sert depuis
+// toujours au chemin serveur-à-serveur. Elle n'avait jamais été offerte au re-partage. Ajouter une
+// colonne neuve aurait donné DEUX mécanismes d'idempotence à la même table, dont un seul contraint.
+//
+// ⚠️ ET LA CLÉ DE L'APPELANT EST EMPREINTÉE CÔTÉ SERVEUR, PAS RECOPIÉE. Le format est
+// « genre:sha256 » et les genres existants désignent des liens SYSTÈME : recopier une chaîne fournie
+// laisserait un appelant écrire « hote:… » et faire retomber son re-partage sur le lien système d'un
+// document, par la grâce de la contrainte d'unicité.
+describe("⚠️ un réessai porteur de la même clé ne crée pas un second lien", () => {
+  const NOMINATIF = Object.values(PARENTS).find((p) => p.recipient_email).slug;
+
+  it("la clé de l'appelant est transmise à la création", async () => {
+    const r = await repartager(NOMINATIF, { cle: "ma-cle-123" });
+    expect(r.creations[0].clientKey, "sans ça, l'idempotence n'a rien sur quoi s'appuyer").toBe("ma-cle-123");
+  });
+
+  it("sans clé, rien ne change : le comportement d'avant", async () => {
+    const r = await repartager(NOMINATIF);
+    expect(r.creations[0].clientKey).toBeUndefined();
+  });
+
+  it("⚠️ un réessai qui retombe sur un lien existant n'envoie PAS un second courrier", async () => {
+    const r = await repartager(NOMINATIF, {
+      cle: "ma-cle-123",
+      creation: async () => ({ slug: "Enfant-_xY12", docTitle: "Doc", idempotent: true }),
+    });
+    expect(r.corps.slug, "le MÊME enfant, pas un nouveau").toBe("Enfant-_xY12");
+    expect(r.courriers, "le courrier était déjà parti au premier appel").toHaveLength(0);
+    expect(r.corps.delivery, "rien n'a été tenté : ce n'est ni un envoi, ni un refus").toBe("idempotent");
+  });
+
+  it("une création NEUVE envoie bien, elle", async () => {
+    const r = await repartager(NOMINATIF, { cle: "autre-cle" });
+    expect(r.courriers).toHaveLength(1);
+    expect(r.corps.delivery).toBe("sent");
   });
 });

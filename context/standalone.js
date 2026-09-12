@@ -293,7 +293,14 @@ async function appelHote(url, secret, corps, errors) {
  * copies d'une règle divergent, et personne ne les confronte. Cherchez le MÉCANISME que vous venez
  * de changer, pas les mots dont vous vous souvenez.
  */
-function creerLimites(db, journal) {
+/**
+ * @param horloge lecture du temps, injectable. ⚠️ ELLE EXISTE POUR QU'UN BANC N'AIT PAS À REMPLACER
+ * `Date.now` GLOBALEMENT. Une simulation d'une heure d'audience doit faire avancer le temps ; le
+ * seul moyen était de rustiner un global, ce qui laisse l'instrument dépendre d'un `finally` posé au
+ * bon endroit — et la première écriture de cette simulation l'avait posé au mauvais, mesurant en
+ * partie le temps RÉEL sans le dire. Une horloge passée en argument ne peut pas fuir.
+ */
+function creerLimites(db, journal, horloge = () => Date.now()) {
   const seaux = new Map();
   const PREFIXES_LOCAUX = ["pread:"];
   let partageDisponible = null;   // null = pas encore demandé
@@ -307,7 +314,7 @@ function creerLimites(db, journal) {
   // anti-inondation, et c'est le compromis explicitement recommandé.
   const PLAFOND_CLES = 5000;
   function localAutorise(cle, max, fenetreSecondes) {
-    const maintenant = Date.now();
+    const maintenant = horloge();
     const fenetreMs = fenetreSecondes * 1000;
     let e = seaux.get(cle);
     if (!e || maintenant - e.debut >= fenetreMs) e = { debut: maintenant, compte: 0 };

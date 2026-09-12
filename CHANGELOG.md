@@ -14,6 +14,34 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- ⚠️ **La clé d'idempotence du re-partage EXISTAIT DÉJÀ, et écrire la migration demandée aurait été
+  un doublon.** `idem_key` est sur cette table depuis la **migration 0011**, globalement unique
+  quand elle est renseignée, avec son attente de schéma déjà câblée — elle servait au chemin
+  serveur-à-serveur et n'avait jamais été offerte au re-partage. Une colonne neuve aurait donné
+  **deux** mécanismes d'idempotence à la même table, dont un seul contraint par l'autre. La 0028
+  écrite puis **supprimée** : le travail était de brancher, pas d'ajouter.
+  ⚠️ **La clé de l'appelant est empreintée côté serveur, jamais recopiée.** Le format est
+  `genre:sha256` et les genres existants désignent des liens **système** : recopier une chaîne
+  fournie laisserait un appelant écrire `hote:…` et faire retomber son re-partage sur le lien
+  système d'un document, par la grâce même de la contrainte d'unicité.
+  ⚠️ **Et le banc a trouvé la moitié manquante** : un lien idempotent qui réexpédie laisse le défaut
+  entier — le destinataire reçoit deux courriers, ce qu'on répare. `delivery: "idempotent"` dit
+  « c'était déjà fait », pas « ça a échoué ».
+- ⚠️ **Une salle de mille personnes derrière une sortie unique décroche à la 37ᵉ minute, AU REPOS.**
+  Simulé contre le **vrai limiteur**, aux constantes réelles du produit : le quota est dimensionné
+  pour **25** lecteurs par sortie, et une sortie en porte **613**. À 700 spectateurs le premier refus
+  tombe à 53 min ; à 1 000, à 37 min — sans qu'un seul geste du présentateur n'ait lieu. La campagne
+  de charge existante distribue mille clients sur 250 adresses, donc quarante par sortie : elle ne
+  pose pas cette question. ⚠️ Ce n'est **pas** une campagne de charge et il ne faut pas la lire ainsi
+  — rien n'y mesure de millisecondes. Le chiffre est une **décision d'exploitation**, et le relevé
+  est imprimé pour qui déploie.
+  ⚠️ **Une borne écrite a attrapé mon propre harnais** : 88 401 acceptées pour un plafond de 88 400.
+  Le `finally` qui restaurait l'horloge s'exécutait **au `return`**, donc la boucle asynchrone
+  tournait contre le temps **réel**. Le limiteur était juste ; l'instrument dérivait, et il l'a dit
+  parce qu'une borne était écrite.
+  ⚠️ **`creerLimites` accepte désormais une horloge**, pour qu'un banc n'ait plus à rustiner un
+  global : une horloge passée en argument ne peut pas fuir hors de son appel.
+
 - ⚠️ **`sent: false` mentait quand la vérité était « je ne sais pas », et c'est ce mensonge qui
   duplique les courriers.** Trois issues tenaient dans un booléen : l'hôte a refusé, **nous** avons
   refusé, ou l'appel a échoué **sans que nous sachions ce que l'hôte a fait**. Seul le dernier est

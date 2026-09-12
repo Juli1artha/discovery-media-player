@@ -838,9 +838,23 @@ late, a caller reading `sent: false` retries, creating a **second child link and
 | `"unknown"` | the call failed (timeout, network). **We do not know whether the mail went out** | surface it to a human. **Do not retry automatically** — a retry may duplicate the email |
 | `"not-requested"` | `send` was falsy | nothing |
 
-`sent` is unchanged for integrations already reading it. ⚠️ **True idempotency — a key that makes a
-retry land on the *same* child link — needs a column and therefore a migration; it is not here yet.**
-Until it is, `"unknown"` is a decision for a person, not a loop.
+`sent` is unchanged for integrations already reading it.
+
+⚠️ **And you can now make the retry safe: pass a `clientKey`.** Two `reshare` calls with the same
+parent, the same recipient and the same `clientKey` return the **same child link** and send **one**
+email — the second answers `delivery: "idempotent"`, which means *"this was already done"*, not
+*"this failed"*. Generate the key before the first call and reuse it on every retry.
+
+- The key you send is **fingerprinted on our side**, together with the parent and the recipient. It
+  is never stored as you wrote it, and it cannot collide with the system links the host-to-host path
+  creates.
+- ⚠️ **This rides on migration `0011`, which you may already have.** No new column was added: the
+  table has carried a unique idempotency key since then, and the reshare route had simply never been
+  offered it. If `0011` is not applied, `clientKey` is ignored and you get the old behaviour — a
+  retry creates a second link. Nothing breaks; the guarantee is what degrades, and `delivery` still
+  tells you when you are in doubt.
+- Without a `clientKey`, nothing changes: several links to the same recipient remain possible, which
+  is a legitimate thing to want.
 
 ⚠️ **Avatars are only loaded from origins the page already serves content from, and everything else
 degrades to initials.** An avatar URL is an `<img>` in the browser of **every other viewer**: an
