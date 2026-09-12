@@ -12,6 +12,36 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Fixed
+
+- ⚠️ **`storage.remove` absent était un TROISIÈME état, et il faisait partir la ligne.** La 0.1.164
+  distinguait « a échoué » de « a réussi » ; elle ne voyait pas « n'a pas été tenté ». Un hôte qui
+  fournit `put` sans `remove` (STUDIO) fabriquait des objets définitivement inatteignables à chaque
+  passage, sans qu'aucun compteur ne bouge — la perte irréversible que le correctif nommait, par
+  l'autre porte. Trouvé par l'hôte en lisant `retention.js:141` et `:248`, pas le contrat, qui
+  supposait qu'on en fournit un. Désormais : ligne porteuse de fichier **retenue**, comptée dans
+  `retenues`, `sansRemove: true` sur le résultat (en `dryRun` aussi, pour le lire avant d'armer), et
+  la capacité manquante dite **une fois par processus** (`errors.capture`, `benin`). Une ligne sans
+  fichier part toujours. Deux bancs disaient l'inverse — « les lignes partent quand même, la limite
+  est dite, pas simulée » — une décision antérieure à la règle « jamais une ligne au-dessus d'un
+  fichier resté » ; réécrits. Sa leçon, reçue de l'hôte : quand on annonce « `false` fait désormais
+  X », la question suivante est ce que font `null`, `undefined` et l'exception.
+- ⚠️ **L'hôte déclarait le motif de son refus de courrier, et on le jetait.** Un hôte (ADV) répond
+  `{ sent: false, motif }` à chaque refus — huit motifs — précisément pour que « refusé » ne se lise
+  pas « en panne » ; `reshare` ne lisait que `sent`. La désambiguïsation que le contrat disait
+  manquante, au moins un hôte l'envoyait déjà. `hostReason` porte désormais `reason` ou `motif`
+  quand c'est une chaîne, bornée à 80 caractères ; un objet n'est pas recopié.
+- ⚠️ **Une migration publiée ne change plus — pas même un commentaire.** La 0004 a changé entre
+  0.1.163 et 0.1.164 (prose corrigée en place, aucune instruction SQL) ; un hôte qui empreinte ses
+  migrations a reçu l'alarme « migration modifiée après application » et a dû faire un `diff -u`
+  pour la lever. Les migrations voyagent dans le tarball : ce sont des artefacts exécutés, pas des
+  documents. `tools/migrations-immuables.mjs` confronte l'arbre au **tag le plus haut** (triplets
+  numériques, pas l'ordre lexical) : toute différence d'octet ou disparition est une violation ; sans
+  tag lisible, NON CONCLUANT. `affirmations-retirees` traite `supabase/migrations/` comme une archive,
+  sinon les deux gardes se contrediraient. 8 bancs. Câblée sur la forge.
+- Le contrat dit que les avatars `data:` et `blob:` sont refusés au rendu, et pourquoi — un hôte les
+  utilisait comme repli et voyait des initiales sans une ligne pour le dire.
+
 ## [0.1.164] — 2026-09-12
 
 ### Fixed

@@ -191,6 +191,23 @@ export const MUTANTS = [
     pourquoi: "non bloquant n'est pas muet : un échec silencieux fait croire au développeur qu'il a un garde-fou",
     bancs: ["tools/__tests__/installHooks.test.js"],
   },
+  // ── 13/09 — les deux défauts que les HÔTES ont rendus sur la 0.1.164 ─────────────────────────
+  {
+    id: "retention-sans-remove-ligne-part",
+    fichier: "server/retention.js",
+    avant: "    return opts.dryRun ? null : false;\n  }\n  if (opts.dryRun) return null;",
+    apres: "    return null;\n  }\n  if (opts.dryRun) return null;",
+    pourquoi: "troisième état : sans storage.remove la ligne partait au-dessus d'un objet que rien ne pouvait retirer (relevé STUDIO)",
+    bancs: ["server/__tests__/retention.test.js", "server/__tests__/retentionCacheDeVoix.test.js"],
+  },
+  {
+    id: "reshare-motif-hote-jete",
+    fichier: "server/routes-liens.js",
+    avant: "              motifHote = motifDeclare(r);",
+    apres: "              motifHote = null;",
+    pourquoi: "l'hôte déclarait le motif de son refus et on ne lisait que `sent` (relevé ADV)",
+    bancs: ["server/__tests__/envoiDelegue.test.js"],
+  },
 ];
 
 export const empreinte = (texte) => createHash("sha256").update(texte).digest("hex").slice(0, 16);

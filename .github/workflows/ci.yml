@@ -409,6 +409,14 @@ jobs:
         if: matrix.node == '22'
         run: node tools/affirmations-retirees.mjs
 
+      # ⚠️ UNE MIGRATION LIVRÉE NE CHANGE PLUS — PAS MÊME UN COMMENTAIRE. Entre 0.1.163 et 0.1.164 la
+      # 0004 a bougé (prose corrigée en place) ; les migrations voyagent dans le tarball, des hôtes
+      # les ont exécutées et empreintées, et l'un d'eux a dû faire un `diff -u` pour savoir qu'il
+      # n'avait rien à ré-appliquer. La référence est le tag le plus haut : d'où `fetch-tags` en
+      # tête de ce job, sans quoi la garde rend NON CONCLUANT.
+      - name: A published migration never changes, not even a comment
+        run: node tools/migrations-immuables.mjs
+
       - name: No bench depends on its rank within its file
         if: matrix.node == '22'
         run: node tools/ordre-des-bancs.mjs

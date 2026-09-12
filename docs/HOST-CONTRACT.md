@@ -834,11 +834,17 @@ late, a caller reading `sent: false` retries, creating a **second child link and
 | `delivery` | what happened | what to do |
 |---|---|---|
 | `"sent"` | your mail path reported success | nothing |
-| `"refused"` | a decision was made — yours or ours; `sendRefused` names it | surface the reason; retrying will refuse again |
+| `"refused"` | a decision was made — yours or ours; `sendRefused` names it, and when your mail hook answered `{ sent: false, reason }` (or `motif`) that word comes back as `hostReason`, trimmed to 80 characters | surface the reason; retrying will refuse again |
 | `"unknown"` | the call failed (timeout, network). **We do not know whether the mail went out** | surface it to a human. **Do not retry automatically** — a retry may duplicate the email |
 | `"not-requested"` | `send` was falsy | nothing |
 
 `sent` is unchanged for integrations already reading it.
+
+⚠️ **Your refusal reason was being thrown away.** One host answers every refusal with
+`{ sent: false, motif }` — eight distinct reasons — precisely so that *refused* never reads as *down*;
+the route read only `sent`. From this train on, a string `reason` or `motif` on your hook's answer travels
+back to the caller as `hostReason` (a string, at most 80 characters; an object is ignored). It is
+your word to your own caller, not a channel: keep it short and non-sensitive.
 
 ⚠️ **And you can now make the retry safe: pass a `clientKey`.** Two `reshare` calls with the same
 parent, the same recipient and the same `clientKey` return the **same child link** and send **one**
@@ -875,6 +881,11 @@ Three things changed, and the second one is the one you may notice:
 - **The renderer refuses the same URLs again**, because one path never reaches this server: a
   participant can broadcast presence over Realtime straight to the other viewers. No server-side
   barrier can see that, so the check also lives where every path converges — at render time.
+- ⚠️ **`data:` and `blob:` URLs are refused too, deliberately.** They reach no one, but a data URL
+  travels inside every message row and every presence broadcast, and one more "harmless" form is
+  one more form to reason about at the next audit. A host that stores avatars as data URLs — as an
+  offline fallback, say — will see initials, and nothing will say why except this line. (Asked for by
+  a host, 13/09: three of its members carry one.)
 
 ⚠️ **What your `storage.remove` returns now decides whether a row survives.** It returns a boolean:
 `true` means the object is gone, `false` means it is still there. Until 0.1.163 the retention sweep
@@ -893,6 +904,14 @@ permanently. The sweep now **keeps the row** when `remove` returns `false`, and 
 - **`retenues > 0` in a retention report means your provider refused a removal**, not that the purge
   is broken. The next pass retries. A row that lingers is recoverable; a file whose only pointer was
   erased is not.
+- ⚠️ **If you provide no `storage.remove` at all, file-bearing rows are retained too — and the report
+  says so.** There were three states, not two: `true`, `false`, and *not attempted*. Until 0.1.164 the
+  third one let the row go "as before" — so a host providing `put` without `remove` manufactured
+  permanently unreachable objects at every sweep, with no counter moving. A host found it by reading
+  `retention.js`, not this paragraph, which assumed you provide one. Now: the row stays, `retenues`
+  counts it, the report carries `sansRemove: true` (in `dryRun` too, so you can read it before arming
+  the sweep), and the missing capability is reported once per process through `errors.capture` with
+  `benin: true`. Provide `storage.remove` and the next pass lets them go.
 
 **If you write to the `tts-cache` bucket yourself, write the trace too.** Retention removes an object
 only when its fingerprint has a row in `doc_tts_objects`, and only the player's own route writes that

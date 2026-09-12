@@ -366,6 +366,12 @@ what keeps them out of this tool's candidate list.
   by an external audit on 2026-09-12, reproduced before being fixed. A retained row is recoverable —
   the next pass retries it; a lost file is not. Read `retenues > 0` as *"the storage provider refused
   a removal; look at it"*, not as a purge failure.
+- ⚠️ **And "not attempted" is the third state, found by a host on 0.1.164.** A host providing `put`
+  without `remove` had no capability to refuse with: `retirerFichier` answered `null` and the row
+  went "as before" — the irreversible loss above, through the other door. Now a missing
+  `storage.remove` retains every file-bearing row, counts it in `retenues`, sets `sansRemove: true` on
+  the result (also in `dryRun`), and is reported once per process (`errors.capture`, `benin: true`).
+  A row without a file still goes.
 - ⚠️ **The alignment `.json` never retains anything — only the audio does.** A third of fingerprints
   legitimately have no companion (see the 552/356 measurement above); gating the row on both objects
   would hold a third of the cache forever to protect files that do not exist. So the `.mp3` alone

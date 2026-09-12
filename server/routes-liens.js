@@ -12,6 +12,18 @@ const { SESSION_QUOTA_PER_HOUR, VIEW_QUOTA_PER_HOUR } = require("./shared.genera
 let PLAYER = null;
 const init = (ctx) => { PLAYER = ctx; };
 
+/**
+ * Le motif qu'un crochet de courrier DÉCLARE avec son refus (`reason` ou `motif`), borné : une chaîne
+ * courte, ou rien. Jamais un objet, jamais plus de 80 caractères — c'est un mot de l'hôte à son
+ * appelant, pas un canal.
+ */
+function motifDeclare(r) {
+  const m = r && (r.reason !== undefined ? r.reason : r.motif);
+  if (m === null || m === undefined || typeof m === "object") return null;
+  const t = String(m).trim().slice(0, 80);
+  return t || null;
+}
+
 // Traite les actions de cette famille. Le MARQUEUR est le retour : les blocs répondent puis
 // sortent par leurs `return` d'origine (valeur ≠ false) ; si aucune action ne correspond, la
 // chute au bout rend `false` et le dispatch continue. Aucune liste d'actions n'est dupliquée
@@ -301,7 +313,7 @@ async function traiter(req, res, body, slug) {
         try { out = await createReshare(body.slug || slug, { email: mail, name: body.name, clientKey: body.clientKey }); } catch { /* parent introuvable */ }
         if (!out) return j(404, { ok: false });
         let sent = false;
-        let refusEnvoi = null;
+        let refusEnvoi = null, motifHote = null;
         // ⚠️ UN LIEN IDEMPOTENT NE RENVOIE PAS DE COURRIER, ET C'EST L'AUTRE MOITIÉ DU CORRECTIF.
         // Rendre le même enfant tout en réexpédiant laisserait le défaut entier : le destinataire
         // reçoit deux messages, ce qui est exactement ce qu'on répare. Trouvé par le banc de
@@ -364,7 +376,15 @@ async function traiter(req, res, body, slug) {
             const origin = publique;
             const r = await sendReshareEmail({ parent, childSlug: out.slug, origin, toEmail: mail, toName: body.name });
             sent = !!(r && r.sent);
-            if (!sent) refusEnvoi = refusEnvoi || "host-declined";
+            if (!sent) {
+              refusEnvoi = refusEnvoi || "host-declined";
+              // ⚠️ L'HÔTE DIT POURQUOI, ET ON LE JETAIT. Un hôte (ADV, 13/09) répond délibérément
+              // `{ sent: false, motif }` à chaque refus — huit motifs distincts — précisément pour que
+              // « refusé » ne se confonde pas avec « en panne ». On ne lisait que `sent` : la
+              // désambiguïsation que le contrat disait manquante, au moins un hôte l'envoyait déjà.
+              // Bornée et recopiée telle quelle : c'est un mot de l'hôte à son propre appelant.
+              motifHote = motifDeclare(r);
+            }
           } catch { /* best-effort : le lien existe quand même */ }
         }
         // ⚠️ `sent: false` MENTAIT QUAND LA VÉRITÉ ÉTAIT « JE NE SAIS PAS », ET C'EST CE MENSONGE QUI
@@ -393,7 +413,7 @@ async function traiter(req, res, body, slug) {
         // Le refus se DIT : « rien n'est parti » et « l'envoi n'était pas permis » ne se
         // ressemblent pas, et une interface qui les confond propose un bouton qui ne marchera
         // jamais.
-        return j(200, { ok: true, slug: out.slug, sent, delivery, ...(refusEnvoi ? { sendRefused: refusEnvoi } : {}) });
+        return j(200, { ok: true, slug: out.slug, sent, delivery, ...(refusEnvoi ? { sendRefused: refusEnvoi } : {}), ...(motifHote ? { hostReason: motifHote } : {}) });
       }
       // ⚠️ CE REPLI NE COUVRE QUE LES ÉVÉNEMENTS ANALYTIQUES (P2 huitième audit). Une action POST
       // qu'aucune famille n'a reconnue tombait ici et repartait `{"ok":true}` — une faute de

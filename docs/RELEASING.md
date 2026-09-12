@@ -98,6 +98,11 @@ itself.
 
 ## Before the tag
 
+⚠️ **A published migration does not change between two tags — not even a comment.** Migrations ship
+in the tarball, hosts have applied and fingerprinted them, and a file that moves after application
+reads as *something to re-apply*. `tools/migrations-immuables.mjs` refuses the train; put the
+correction in the contract or in a new migration (see `docs/MIGRATIONS.md`).
+
 ⚠️ **Tag the release commit, not the `main` you fetched before merging it.** On 27/08 `v0.1.141`
 was pushed onto the commit *preceding* the release merge — a commit still declaring `0.1.140`, with
 no `[0.1.141]` changelog section. `verifier` refused (`tag v0.1.141 != package.json version`) and

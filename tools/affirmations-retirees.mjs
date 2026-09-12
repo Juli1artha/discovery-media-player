@@ -71,7 +71,13 @@ export const EXTENSIONS = [".md", ".js", ".mjs", ".ts", ".sql"];
  * l'histoire qu'ils portent. Tout le reste du dépôt parle au présent.
  */
 export const estArchive = (chemin) =>
-  /(^|\/)CHANGELOG\.md$/.test(chemin) || /(^|\/)docs\/AUDIT-/.test(chemin);
+  /(^|\/)CHANGELOG\.md$/.test(chemin) || /(^|\/)docs\/AUDIT-/.test(chemin)
+  // ⚠️ ET LES MIGRATIONS PUBLIÉES, depuis le 13/09 : elles voyagent dans le tarball et des hôtes les
+  // ont EXÉCUTÉES et empreintées — `migrations-immuables.mjs` interdit d'y toucher. Corriger en
+  // place une phrase retirée dans une migration livrée, c'est signaler à un hôte une migration à
+  // ré-appliquer (relevé par l'hôte ADV). La correction vit dans le contrat, ou dans une migration
+  // neuve : ce fichier-ci est une archive au même titre qu'un CHANGELOG.
+  || /(^|\/)supabase\/migrations\//.test(chemin);
 
 /** La garde et son banc contiennent les motifs par nécessité : ils les DÉFINISSENT. */
 export const estLaGardeElleMeme = (chemin) =>
