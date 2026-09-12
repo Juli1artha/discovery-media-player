@@ -238,3 +238,39 @@ describe("le titre ne se compare plus à rien", () => {
     expect(cles).not.toContain("owner_email");
   });
 });
+
+// ⚠️ LE POINT 3 DE L'EN-TÊTE DE CE FICHIER NOMME L'AVATAR, ET SEUL LE TITRE AVAIT ÉTÉ RÉPARÉ.
+//
+// Il dit : « `track({role:'presenter'})` suffisait à apparaître comme le présentateur devant toute
+// l'audience, AVEC LE NOM ET L'AVATAR DE SON CHOIX ». Le rôle a été arbitré par le serveur ; le nom
+// est cosmétique ; l'avatar, lui, est une URL que le navigateur de CHAQUE spectateur va chercher.
+// Ce n'est pas un XSS — l'échappement tient — c'est un pixel de suivi : IP, agent, heure et origine
+// de la page partent chez qui a écrit l'URL. Le défaut était donc écrit, en toutes lettres, dans le
+// commentaire de sa propre correction, et personne ne l'avait éprouvé. Audit externe du 12/09.
+//
+// ⚠️ CE BANC NE COUVRE QUE LE CHEMIN SERVEUR. La présence Realtime ne passe pas par nous : sa
+// barrière est au RENDU (`origineAvatarAutorisee`, éprouvée dans src/__tests__/live.test.ts). Deux
+// chemins, deux barrières, et dire ici laquelle manque évite de croire ce banc plus large qu'il n'est.
+describe("⚠️ l'avatar d'un anonyme n'est pas resservi à l'audience", () => {
+  const PIXEL = "https://storage.googleapis.com/attacker-bucket/pixel.png";
+
+  it("⚠️ présence : l'avatar affirmé par un anonyme est IGNORÉ", async () => {
+    await assister({ avatar: PIXEL });
+    expect(recu.avatar, "une identité prouvée remplace ce qu'on affirme — un anonyme ne prouve rien")
+      .toBeFalsy();
+  });
+
+  it("⚠️ chat : idem, et c'est le chemin qui atteint le plus de monde", async () => {
+    await poster({ action: "present-chat", slug: "s1", name: "Mallory", body: "coucou", avatar: PIXEL });
+    expect(messageRecu.avatar).toBeFalsy();
+  });
+
+  // ⚠️ ET LE MEMBRE GARDE LE SIEN — sinon on aurait réparé en cassant. Son avatar vient du JETON,
+  // pas du corps de la requête : c'est la règle déjà écrite plus haut dans ce fichier, appliquée à
+  // un champ de plus.
+  it("un membre prouvé garde l'avatar de son jeton, et NON celui qu'il affirme", async () => {
+    await assister({ avatar: PIXEL }, "jeton-de-session-valide");
+    expect(recu.avatar, "celui du jeton").toBe("https://exemple.fr/camille.png");
+    expect(recu.avatar).not.toBe(PIXEL);
+  });
+});

@@ -603,6 +603,33 @@ function premierPublic(reponse) {
   return messagePublic(row);
 }
 
+/**
+ * ⚠️ UN AVATAR N'EST GARDÉ QUE S'IL VIENT D'UNE ORIGINE QU'ON SERT DÉJÀ — DEUXIÈME BARRIÈRE.
+ *
+ * La première est en amont : `routes-direct.js` n'accepte plus l'avatar d'un anonyme. Celle-ci
+ * couvre ce qui reste — l'avatar d'un MEMBRE, qui vient de son jeton, donc des métadonnées d'un
+ * fournisseur d'identité. Un fournisseur peut laisser son utilisateur écrire ce champ ; une
+ * identité prouvée prouve QUI parle, pas OÙ pointe son image.
+ *
+ * Ce qui passe : une URL relative, ou une URL dont l'origine est celle du stockage de l'hôte. Tout
+ * le reste devient `null`, et l'audience voit des initiales. ⚠️ C'est une dégradation VISIBLE et
+ * réversible — un hôte dont les avatars vivent ailleurs les sert depuis son stockage — là où la
+ * fuite, elle, était invisible et subie par les spectateurs.
+ *
+ * ⚠️ ON COMPARE DES ORIGINES, PAS DES PRÉFIXES. `https://<base>.attaquant.net` commence par ce
+ * qu'on croit reconnaître ; son origine, non.
+ */
+function avatarAdmissible(avatar, base) {
+  const brut = String(avatar || "").trim();
+  if (!brut) return null;
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(brut) && !brut.startsWith("//")) return brut.slice(0, 600);
+  let u, b;
+  try { u = new URL(brut); } catch { return null; }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  try { b = new URL(String(base || "")); } catch { return null; }
+  return u.origin === b.origin ? brut.slice(0, 600) : null;
+}
+
 async function addMessage(slug, { name, email, avatar, isPresenter, isMember, body, replyTo, replyName, replyText, authorToken, attachment, clientKey }) {
   if (await estArchive(slug)) return REFUS_ARCHIVE;
   const b = String(body || "").trim().slice(0, 2000);
@@ -630,7 +657,7 @@ async function addMessage(slug, { name, email, avatar, isPresenter, isMember, bo
   const row = {
     slug: String(slug), author_name: (name || "").trim().slice(0, 80) || null,
     author_email: (email || "").trim().toLowerCase().slice(0, 160) || null,
-    author_avatar: (avatar || "").slice(0, 600) || null,
+    author_avatar: avatarAdmissible(avatar, (PLAYER.config && PLAYER.config.supabaseUrl) || ""),
     is_presenter: !!isPresenter, is_member: !!isMember, body: b, attachment: att,
     author_hash: authorToken ? sha(authorToken) : null,
     reply_to: rt, reply_name: rt ? ((replyName || "").slice(0, 80) || null) : null, reply_text: rt ? ((replyText || "").slice(0, 140) || null) : null,

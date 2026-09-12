@@ -199,7 +199,13 @@ async function traiter(req, res, body, _slug) {
             key: profil ? lcMembre(profil.email) : cleAnon,
             name: (profil && profil.name) || body.name,
             email: profil ? profil.email : body.email,
-            avatar: (profil && profil.avatar) || body.avatar,
+            // ⚠️ UN ANONYME N'A PAS D'AVATAR, ET C'EST LA RÈGLE ÉCRITE PLUS HAUT APPLIQUÉE JUSQU'AU
+            // BOUT : « une identité prouvée REMPLACE celle qu'on affirme ». L'avatar d'un membre
+            // vient de son jeton ; celui d'un anonyme n'était qu'une URL affirmée, resservie à
+            // TOUTE l'audience dans une `<img>`. Ce n'est pas un XSS — c'est un pixel de suivi :
+            // l'IP, l'agent et l'heure de chaque spectateur partent chez qui a écrit l'URL.
+            // Rapporté par un audit externe le 12/09. Les initiales prennent la place.
+            avatar: profil ? profil.avatar : null,
             // ⚠️ ON N'AFFIRME PLUS LE TITRE, ON FOURNIT LA PREUVE (`controlHash`, plus bas) : c'est
             // la base qui compare. Affirmer `false` ici n'enlève donc rien — le titre vient du jeton.
             isMember: !!profil, isPresenter: false,
@@ -298,7 +304,13 @@ async function traiter(req, res, body, _slug) {
           const r = await addMessage(String(body.slug || ""), {
             name: (profil && profil.name) || body.name,
             email: profil ? profil.email : body.email,
-            avatar: (profil && profil.avatar) || body.avatar,
+            // ⚠️ UN ANONYME N'A PAS D'AVATAR, ET C'EST LA RÈGLE ÉCRITE PLUS HAUT APPLIQUÉE JUSQU'AU
+            // BOUT : « une identité prouvée REMPLACE celle qu'on affirme ». L'avatar d'un membre
+            // vient de son jeton ; celui d'un anonyme n'était qu'une URL affirmée, resservie à
+            // TOUTE l'audience dans une `<img>`. Ce n'est pas un XSS — c'est un pixel de suivi :
+            // l'IP, l'agent et l'heure de chaque spectateur partent chez qui a écrit l'URL.
+            // Rapporté par un audit externe le 12/09. Les initiales prennent la place.
+            avatar: profil ? profil.avatar : null,
             isPresenter: validControl, isMember: !!profil, body: body.body, replyTo: body.replyTo, replyName: body.replyName, replyText: body.replyText, authorToken: body.authorToken, attachment: body.attachment , clientKey: body.clientKey });
           return jp(r.ok ? 200 : (r.status || 400), r);
         } catch (e) { try { PLAYER.errors.capture(e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }

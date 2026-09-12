@@ -2440,6 +2440,32 @@ So, when you document noise:
 guard, not by a test, not by the audit that opened the file. Writing down precisely what a mechanism
 does forces you to check it, and that is a different act from reading the code.
 
+## The defect named inside the comment of its own fix
+
+A test file here opens by listing three ways a status could be claimed rather than proven. The third
+reads: a `track({role:"presenter"})` was enough to appear as the presenter to the whole audience,
+*"with the name and the avatar of his choice."* The **role** was then arbitrated by the server and
+tested thoroughly. The **avatar** stayed exactly as described — for months, in the sentence that
+describes the harm, in the file written to close it.
+
+Escaping made it look finished. `escapeHtml` on an avatar URL prevents markup injection, and does
+nothing about the `<img>` being **fetched**: every other viewer's IP, user agent, clock and page
+origin go to whoever wrote the URL. Not an XSS. A tracking pixel, aimed at the audience.
+
+- **When a fix enumerates what was wrong, each noun in that list is a separate defect.** "Name and
+  avatar of his choice" is two, and closing one does not close the other. Re-read your own incident
+  lists as checklists, not as prose.
+- **"It is escaped" answers one question.** Escaping governs how bytes are interpreted, never
+  whether a request leaves the machine. Ask both, separately.
+- **A barrier belongs where the paths converge, not where the first one arrives.** Two routes fed
+  this avatar: our own endpoints, and a peer-to-peer presence channel we never see. A server-side
+  check would have been thorough, provable, benched — and blind to half the traffic. The render is
+  the only place both arrive.
+
+⚠️ **And when the honest fix costs a feature, degrade visibly rather than keep the leak.** Member
+avatars hosted on a third party now render as initials. That is a real loss, reversible by the host
+in one move; the leak was neither visible nor theirs to notice.
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives

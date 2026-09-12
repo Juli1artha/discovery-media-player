@@ -14,6 +14,27 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- ⚠️ **Un avatar pouvait être n'importe quelle URL, et devenait une `<img>` dans le navigateur de
+  CHAQUE spectateur — un pixel de suivi, pas un XSS.** L'échappement protège le balisage, pas le
+  **chargement** : l'IP, l'agent, l'heure et l'origine de la page de tout le public partaient chez
+  quiconque avait écrit l'URL. Reproduit par un audit externe contre le vrai rendu du chat.
+  ⚠️ **Le défaut était nommé dans le commentaire de sa propre correction.** `titreUsurpe.test.js`
+  raconte depuis sa première ligne qu'un `track({role:"presenter"})` permettait d'apparaître comme
+  le présentateur « **avec le nom et l'avatar de son choix** ». Le **rôle** a été arbitré par le
+  serveur ; l'avatar est resté, cité dans la phrase qui décrit le mal, jamais éprouvé.
+  ⚠️ **Deux chemins y menaient, et un seul passe par le serveur.** Le chat et la présence
+  enregistrée transitent par nos routes ; la présence **Realtime** part en pair-à-pair et n'est
+  jamais vue par nous. Aucune barrière serveur ne pouvait l'atteindre — d'où une barrière **au
+  rendu**, seul point où les deux chemins se rejoignent.
+  Trois barrières : un anonyme ne fournit plus d'avatar (une identité prouvée remplace ce qu'on
+  affirme, et il ne prouve rien) ; un avatar stocké doit venir de l'origine du stockage de l'hôte ;
+  et le rendu refuse toute origine non déclarée, initiales à la place. ⚠️ **La comparaison porte sur
+  l'ORIGINE, pas sur un préfixe** — `https://<base>.attaquant.net` commence comme ce qu'on
+  reconnaît. Mutations posées sur les trois barrières, toutes tuées.
+  ⚠️ **Conséquence visible pour les hôtes** : des avatars de membres hébergés ailleurs (Gravatar,
+  un CDN) s'affichent désormais en initiales. Dégradation **visible et réversible** — il suffit de
+  les servir depuis son propre stockage — là où la fuite était invisible et subie par l'audience.
+
 - ⚠️ **La purge du cache de voix n'a JAMAIS retiré un seul objet dans le contexte de référence, et
   ce qui l'a caché est une explication juste.** `storage.remove` porte une liste blanche de buckets
   — dernière barrière avant un DELETE à la clé service_role — et elle ne nommait que

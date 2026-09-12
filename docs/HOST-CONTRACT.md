@@ -825,6 +825,26 @@ was a correct `bot`, and the reader would have returned an empty string for ever
 set, so every request refused, on a perfectly correct integration. If your field is none of those
 three, tell us and we widen the list. The field name carries no security; the **role** filter does.
 
+⚠️ **Avatars are only loaded from origins the page already serves content from, and everything else
+degrades to initials.** An avatar URL is an `<img>` in the browser of **every other viewer**: an
+arbitrary URL therefore sends each of them — their IP, user agent, the time, the page origin — to
+whoever wrote it. That is not an XSS (the markup is escaped); it is a privacy leak aimed at your
+audience, and an external audit reproduced it on 2026-09-12 against the real chat renderer.
+
+Three things changed, and the second one is the one you may notice:
+
+- **A participant who is not authenticated no longer supplies an avatar at all.** A proven identity
+  replaces what is asserted; an anonymous visitor proves nothing, so the field is dropped and the
+  audience sees initials.
+- **A member's avatar must come from your Supabase origin (or be a relative URL).** It arrives from
+  your identity provider's metadata, and a provider that lets a user edit that field would hand us
+  an arbitrary URL under a proven name. ⚠️ **If your members' avatars live elsewhere — Gravatar, a
+  CDN, Google — they will now render as initials.** Serve them from your own storage to get the
+  images back. The degradation is visible and reversible; the leak was neither.
+- **The renderer refuses the same URLs again**, because one path never reaches this server: a
+  participant can broadcast presence over Realtime straight to the other viewers. No server-side
+  barrier can see that, so the check also lives where every path converges — at render time.
+
 ⚠️ **What your `storage.remove` returns now decides whether a row survives.** It returns a boolean:
 `true` means the object is gone, `false` means it is still there. Until 0.1.163 the retention sweep
 erased the row either way — and since this capability exposes `put` and `remove` but **never
