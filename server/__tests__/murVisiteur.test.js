@@ -153,6 +153,88 @@ describe("la vérification pose le jeton, ou ne pose rien", () => {
   });
 });
 
+// ⚠️ LA VÉRIFICATION N'AVAIT AUCUN PLAFOND — seule la demande de code en avait un. Mille tentatives
+// depuis une adresse, zéro appel au limiteur : reproduit par un audit externe le 13/09. Ces bancs
+// fixent les deux dimensions (adresse, identité) et le fait que le greffon n'est PAS appelé au-delà.
+describe("⚠️ la vérification est plafonnée avant tout appel au greffon", () => {
+  /** Un limiteur RÉEL en mémoire : fenêtre fixe, une par clé — pour voir les clés et les compter. */
+  function limiteur() {
+    const compte = new Map(), vues = [];
+    return {
+      vues,
+      allow: async (cle, max, fenetre) => { vues.push({ cle, max, fenetre }); const n = (compte.get(cle) || 0) + 1; compte.set(cle, n); return n <= max; },
+    };
+  }
+  const greffonCompteur = () => {
+    const appels = { verifyCode: 0, verifyGoogle: 0, requestCode: 0 };
+    return { appels, plugin: {
+      requestCode: async () => { appels.requestCode += 1; return { ok: true }; },
+      verifyCode: async (_e, code) => { appels.verifyCode += 1; if (code === "boum") throw new Error("greffon en panne"); return code === "bon" ? { ok: true, setCookie: "pv=j", visitor: { email: "a@b.fr" } } : { ok: false, error: "code" }; },
+      verifyGoogle: async () => { appels.verifyGoogle += 1; return { ok: false, error: "google" }; },
+    } };
+  };
+
+  it("⚠️ au-delà du plafond par adresse, le greffon n'est plus appelé — et l'email ne change rien", async () => {
+    const L = limiteur(); const G = greffonCompteur();
+    const ctx = contexte({ visitors: G.plugin, allow: L.allow });
+    let refus = 0;
+    for (let i = 0; i < 130; i += 1) {
+      // Une adresse qui varie les emails ne repart pas à zéro : le compteur par adresse compte tout.
+      const { res } = await appeler({ action: "visitor-verify", email: `v${i}@exemple.fr`, code: "faux", slug: "S" }, ctx);
+      if (res.statusCode === 429) refus += 1;
+    }
+    expect(G.appels.verifyCode, "100 appels au greffon, pas un de plus").toBe(100);
+    expect(refus).toBe(30);
+    expect(L.vues.some((v) => v.cle === "vverif:203.0.113.7" && v.max === 100 && v.fenetre === 3600)).toBe(true);
+  });
+
+  it("⚠️ plusieurs adresses ne forcent pas un même email : le plafond par identité tient, sur une empreinte", async () => {
+    const L = limiteur(); const G = greffonCompteur();
+    let refus = 0;
+    for (let i = 0; i < 14; i += 1) {
+      contexte({ visitors: G.plugin, allow: L.allow });
+      const reqIp = { socket: { remoteAddress: `198.51.100.${i + 1}` }, headers: {} };
+      const res = fauxRes();
+      await routes.traiter(reqIp, res, { action: "visitor-verify", email: " Cible@Exemple.fr ", code: "faux", slug: "S" }, "");
+      if (res.statusCode === 429) refus += 1;
+    }
+    expect(G.appels.verifyCode, "10 essais par identité et par quart d'heure").toBe(10);
+    expect(refus).toBe(4);
+    const cleId = L.vues.find((v) => v.cle.startsWith("vverif:id:"));
+    expect(cleId.max).toBe(10); expect(cleId.fenetre).toBe(900);
+    expect(cleId.cle, "l'email n'apparaît jamais en clair dans une clé de compteur").not.toMatch(/exemple|cible|@/i);
+    expect(L.vues.filter((v) => v.cle.startsWith("vverif:id:")).every((v) => v.cle === cleId.cle), "normalisé : casse et blancs ne font pas une autre identité").toBe(true);
+  });
+
+  it("réussite, échec et exception consomment les mêmes compteurs — pris à l'admission", async () => {
+    const L = limiteur(); const G = greffonCompteur();
+    const ctx = contexte({ visitors: G.plugin, allow: L.allow });
+    await appeler({ action: "visitor-verify", email: "a@b.fr", code: "bon", slug: "S" }, ctx);
+    await appeler({ action: "visitor-verify", email: "a@b.fr", code: "faux", slug: "S" }, ctx);
+    await appeler({ action: "visitor-verify", email: "a@b.fr", code: "boum", slug: "S" }, ctx).catch(() => {});
+    expect(L.vues.filter((v) => v.cle === "vverif:203.0.113.7").length).toBe(3);
+    expect(L.vues.filter((v) => v.cle.startsWith("vverif:id:")).length).toBe(3);
+  });
+
+  it("⚠️ Google : plafond par adresse avant l'appel au greffon", async () => {
+    const L = limiteur(); const G = greffonCompteur();
+    const ctx = contexte({ visitors: G.plugin, allow: L.allow });
+    for (let i = 0; i < 105; i += 1) await appeler({ action: "visitor-google", credential: "x", slug: "S" }, ctx);
+    expect(G.appels.verifyGoogle).toBe(100);
+    expect(L.vues.some((v) => v.cle === "vgoogle:203.0.113.7" && v.max === 100)).toBe(true);
+  });
+
+  it("la demande de code est aussi plafonnée par identité : une boîte ne se fait pas inonder depuis cent adresses", async () => {
+    const L = limiteur(); const G = greffonCompteur();
+    for (let i = 0; i < 8; i += 1) {
+      contexte({ visitors: G.plugin, allow: L.allow });
+      const reqIp = { socket: { remoteAddress: `198.51.100.${i + 1}` }, headers: {} };
+      await routes.traiter(reqIp, fauxRes(), { action: "visitor-request", email: "cible@exemple.fr", slug: "S" }, "");
+    }
+    expect(G.appels.requestCode, "cinq codes par heure et par email").toBe(5);
+  });
+});
+
 describe("le journal de déverrouillage", () => {
   it("enregistre qui a ouvert quoi, et par quel moyen", async () => {
     const ctx = contexte({ visitors: greffonOk });

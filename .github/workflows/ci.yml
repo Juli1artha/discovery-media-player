@@ -1049,6 +1049,33 @@ jobs:
           fi
           echo "init.sql contient déjà tout ce que les migrations apportent."
 
+      # ⚠️ LES ACL EFFECTIVES, PAS LES REVOKE ÉCRITS. Les migrations révoquent nommément quatre
+      # surcharges de player_attendance_bump et player_rate_limit_bump ; un `security definer`
+      # oublié, ou une surcharge de plus, est EXÉCUTABLE PAR PUBLIC par défaut Postgres — donc par
+      # anon et authenticated, avec les droits du propriétaire. Aucun banc ne l'interrogeait sur une
+      # vraie base (relevé par un audit externe, 13/09). Ici on lit pg_proc APRÈS init.sql ET les
+      # migrations : chaque fonction `prosecdef` doit être inexécutable par public (proacl explicite
+      # sans grantee 0 — un proacl NULL est le défaut, donc PUBLIC), par anon et par authenticated.
+      # Les rôles sont créés s'ils manquent (un Postgres nu ne les a pas, Supabase si) : sans eux
+      # has_function_privilege lève, et la vérification ne prouverait rien. Et le banc exige des
+      # LIGNES : zéro fonction lue, c'est la sonde qui vise à côté, pas une base propre.
+      - name: No SECURITY DEFINER function is executable by public, anon or authenticated
+        run: |
+          for r in anon authenticated; do $PSQL -c "create role $r nologin" 2>/dev/null || true; done
+          lignes=$($PSQL -c "select p.oid::regprocedure::text
+              || ' public=' || (p.proacl is null or exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0 and a.privilege_type = 'EXECUTE'))::text
+              || ' anon=' || has_function_privilege('anon', p.oid, 'execute')::text
+              || ' authenticated=' || has_function_privilege('authenticated', p.oid, 'execute')::text
+            from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+            where n.nspname = 'public' and p.prosecdef order by 1")
+          echo "$lignes"
+          n=$(printf '%s\n' "$lignes" | grep -c 'public=')
+          [ "$n" -ge 2 ] || { echo "::error::$n fonction(s) security definer lue(s) — attendu au moins 2 (player_rate_limit_bump, player_attendance_bump) : la sonde vise à côté"; exit 1; }
+          if printf '%s\n' "$lignes" | grep -E '=true'; then
+            echo "::error::une fonction security definer est exécutable par public, anon ou authenticated"; exit 1
+          fi
+          echo "$n fonction(s) security definer, aucune exécutable par public/anon/authenticated"
+
       # ⚠️ LA FORME NE VOIT NI LES PUBLICATIONS NI LE REPLICA IDENTITY SANS QU'ON LES LUI DONNE — le
       # relevé ci-dessus les inclut désormais, sans quoi la parité init/migrations ne couvrait ni
       # l'un ni l'autre (même angle mort, déjà comblé deux fois : nullabilité, triggers). Ce

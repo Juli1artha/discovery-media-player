@@ -8,6 +8,25 @@ const { repondreJson } = require("./reponses.js");
 
 const { getShareBySlug } = require("./shares");
 let PLAYER = null;
+
+// ⚠️ LA VÉRIFICATION N'AVAIT AUCUN PLAFOND — seule la DEMANDE de code en avait un (20/h par adresse).
+// `visitor-verify` et `visitor-google` appelaient le greffon directement : mille tentatives depuis
+// une adresse, zéro appel au limiteur (reproduit par un audit externe le 13/09). Un code court sans
+// compteur dans le greffon se force ; une vérification Google par requête anonyme est une
+// amplification réseau. Le player ne peut pas supposer que le greffon compte — c'est la même règle
+// que la liaison session ↔ document de l'assistant : une propriété de sécurité ne dépend pas d'un
+// code que le player ne contient pas.
+//
+// Deux dimensions pour le code, parce qu'une seule se contourne : par ADRESSE (une adresse ne
+// recommence pas à zéro en changeant d'email) et par IDENTITÉ (plusieurs adresses ne forcent pas un
+// même email). Les compteurs sont pris À L'ADMISSION, donc réussite, échec et exception les
+// consomment pareil. L'identité est une EMPREINTE de l'email normalisé, jamais l'email : la table des
+// compteurs n'a pas à porter d'adresses en clair. (Le cœur n'a pas de secret de serveur, par
+// conception — voir le contexte autonome — donc une empreinte, pas un HMAC.)
+const VERIF_PAR_ADRESSE = 100, VERIF_PAR_IDENTITE = 10, VERIF_FENETRE_IDENTITE_S = 900;
+const GOOGLE_PAR_ADRESSE = 100, DEMANDE_PAR_IDENTITE = 5;
+const empreinteIdentite = (email) =>
+  require("crypto").createHash("sha256").update(String(email || "").trim().toLowerCase()).digest("hex").slice(0, 32);
 const init = (ctx) => { PLAYER = ctx; };
 
 // Traite les actions de cette famille. Le MARQUEUR est le retour : les blocs répondent puis
@@ -25,6 +44,8 @@ async function traiter(req, res, body, _slug) {
         const ip = adresseAppelant(req) || "ip";
         if (body.action === "visitor-request") {
           if (!(await PLAYER.limits.allow(`vcode:${ip}`, 20, 3600))) return jv(429, { ok: false, error: "rate" });
+          // Une boîte ne se fait pas inonder depuis cent adresses : cinq codes par heure et par email.
+          if (!(await PLAYER.limits.allow(`vcode:id:${empreinteIdentite(body.email)}`, DEMANDE_PAR_IDENTITE, 3600))) return jv(429, { ok: false, error: "rate" });
           const sh = await getShareBySlug(String(body.slug || ""));
           return jv(200, await V.requestCode(body.email, { title: sh && sh.doc_title }));
         }
@@ -50,10 +71,13 @@ async function traiter(req, res, body, _slug) {
     }
         };
         if (body.action === "visitor-google") {
+          if (!(await PLAYER.limits.allow(`vgoogle:${ip}`, GOOGLE_PAR_ADRESSE, 3600))) return jv(429, { ok: false, error: "rate" });
           const r = await V.verifyGoogle(body.credential);
           if (r.ok) await recordUnlock(r.visitor, "google");
           return r.ok ? jv(200, { ok: true }, r.setCookie) : jv(400, r);
         }
+        if (!(await PLAYER.limits.allow(`vverif:${ip}`, VERIF_PAR_ADRESSE, 3600))) return jv(429, { ok: false, error: "rate" });
+        if (!(await PLAYER.limits.allow(`vverif:id:${empreinteIdentite(body.email)}`, VERIF_PAR_IDENTITE, VERIF_FENETRE_IDENTITE_S))) return jv(429, { ok: false, error: "rate" });
         const r = await V.verifyCode(body.email, body.code, body.name);
         if (r.ok) await recordUnlock(r.visitor, "email");
         return r.ok ? jv(200, { ok: true }, r.setCookie) : jv(400, r);

@@ -1406,4 +1406,131 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     expect(graves(violations).length, "axe n'a rien vu sur une page SANS lang, SANS alt, SANS label : il n'est pas branché").toBeGreaterThan(0);
     await page.close();
   }, 60_000);
+
+  // ── LOT 4 : LE PLAFOND DE DÉFILEMENT DU NAVIGATEUR ────────────────────────────────────────────
+  //
+  // ⚠️ LA VIRTUALISATION BORNE LE DOM, PAS LA GÉOMÉTRIE — et c'est un audit externe qui l'a mesuré,
+  // le 13/09, dans Chrome réel : la hauteur de défilement sature à 33 554 432 px, donc à 200 % la
+  // moitié d'un document de 10 000 pages est injoignable pendant que le nombre de nœuds reste
+  // parfaitement borné. « 6 nœuds à 50 000 pages » était vrai et incomplet. jsdom n'a pas ce plafond ;
+  // seul un vrai navigateur peut prouver que la visionneuse s'y arrête EN LE DISANT.
+  //
+  // pdf.js est remplacé par un document de laboratoire servi sur la MÊME URL (`?asset=pdf`) : on
+  // isole la navigation du coût de parsing, qui est une autre campagne. La substitution est comptée,
+  // sinon le banc mesurerait le vrai pdf.js sur un fichier de 40 pages et prouverait vert sur rien.
+  const PLAFOND_CHROME = 33_554_432;
+  const fauxPdfjsModule = (total) => `
+    export const GlobalWorkerOptions = {};
+    export class TextLayer { constructor() {} render() {} }
+    export function getDocument() {
+      const page = { rotate: 0, cleanup() {},
+        getViewport: (o) => { const s = (o && o.scale) || 1; return { width: 800 * s, height: 1100 * s, scale: s }; },
+        render: () => ({ promise: Promise.resolve(), cancel() {} }),
+        getTextContent: () => Promise.resolve({ items: [] }) };
+      const pdf = { numPages: ${total}, destroy() {}, getPage: () => Promise.resolve(page) };
+      return { promise: Promise.resolve(pdf), destroy() {} };
+    }`;
+  async function visionneuseDe(total, viewport) {
+    const ctx = await navigateur.newContext({ viewport: viewport || { width: 1440, height: 900 } });
+    const p = await ctx.newPage();
+    await p.addInitScript(() => { window.PlayerBot = { init: (v) => { window.__viewerEssai = v; } }; });
+    let substitutions = 0;
+    await p.route(/\/api\/doc\?asset=pdf(&|$)/, (route) => {
+      substitutions += 1;
+      route.fulfill({ status: 200, contentType: "text/javascript", body: fauxPdfjsModule(total) });
+    });
+    await p.goto(`http://127.0.0.1:${port}/doc/${SLUG_PDF_LONG}`, { waitUntil: "load" });
+    await p.waitForFunction((n) => !!window.__viewerEssai && window.__viewerEssai.numPages === n, total, { timeout: 25_000 });
+    expect(substitutions, "le pdf.js de laboratoire doit avoir été servi, sinon ce banc mesure autre chose").toBe(1);
+    return { p, ctx };
+  }
+  /** Zoom par les boutons de la barre : 0.2 par clic, comme le lecteur. */
+  async function zoomer(p, cible) {
+    // Depuis le zoom COURANT (lu sur l'étiquette), pas depuis 100 % : un second zoom dans le même banc
+    // partirait sinon du mauvais point. ⚠️ Math.round(-2.5) vaut -2 en JavaScript : on arrondit la
+    // DISTANCE, puis on signe.
+    const courant = await p.evaluate(() => parseInt(document.getElementById("zlbl").textContent, 10) / 100);
+    const clics = Math.sign(cible - courant) * Math.round(Math.abs(cible - courant) / 0.2);
+    for (let i = 0; i < Math.abs(clics); i += 1) await p.click(clics > 0 ? "#zin" : "#zout");
+    await p.waitForFunction((z) => document.getElementById("zlbl").textContent.trim() === Math.round(z * 100) + "%", cible, { timeout: 5_000 });
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  const geo = (p) => p.evaluate(() => {
+    // ⚠️ La hauteur qui compte est celle des ESPACEURS — la géométrie que la visionneuse tient pour
+    // les pages absentes — donc celle d'un gabarit non rendu (.ph, style.height). Une page rendue porte
+    // son canvas et plus de hauteur en style : un parseInt y rendait NaN, et NaN faisait tout paraître
+    // atteignable ; et sa boîte réelle peut différer de quelques pour cent au zoom fort (budget de
+    // pixels du canvas), ce qui n'est pas ce que le calcul de plafond utilise.
+    const ph = document.querySelector("#pages .page.ph") || document.querySelector("#pages .page");
+    const hStyle = parseInt(ph.style.height, 10);
+    return { h: Number.isFinite(hStyle) ? hStyle : Math.round(ph.getBoundingClientRect().height), sh: document.getElementById("scroll").scrollHeight,
+      noeuds: document.querySelectorAll("#pages .page").length, atteignables: window.__viewerEssai.atteignables,
+      avis: (() => { const a = document.getElementById("plafondAvis"); return a && a.style.display !== "none" ? a.textContent : ""; })() };
+  });
+  async function aller(p, k) {
+    await p.evaluate((n) => window.__allerPage(n), k);
+    await p.waitForFunction((n) => window.__viewerEssai.cur === n, k, { timeout: 10_000 });
+    return p.evaluate((n) => ({ presente: !!document.querySelector('#pages .page[data-p="' + n + '"]'), noeuds: document.querySelectorAll("#pages .page").length }), k);
+  }
+
+  it("⚠️ Chrome plafonne la hauteur de défilement à 33 554 432 px — mesuré, et c'est la constante du code", async () => {
+    const page = await navigateur.newPage();
+    await page.setContent('<div id=s style="height:600px;overflow:auto"><div id=a style="height:40000000px"></div></div>');
+    const mesure = await page.evaluate(() => { const s = document.getElementById("s"); s.scrollTop = 40_000_000; return { sh: s.scrollHeight, st: s.scrollTop }; });
+    // 33 554 428 ou 33 554 432 selon la mise en page (LayoutUnit) : la constante du code est la plus basse.
+    expect(mesure.sh, "40 M demandés").toBeGreaterThanOrEqual(PLAFOND_CHROME - 4);
+    expect(mesure.sh).toBeLessThanOrEqual(PLAFOND_CHROME);
+    expect(mesure.st, "et scrollTop ne dépasse pas non plus").toBeLessThan(PLAFOND_CHROME);
+    await page.close();
+    const { p, ctx } = await visionneuseDe(40);
+    const constante = await p.evaluate(() => window.Player.viewer.PLAFOND_DEFILEMENT_PX);
+    expect(constante, "la constante du code ne dépasse pas ce que le navigateur a rendu").toBeLessThanOrEqual(mesure.sh);
+    expect(constante).toBeGreaterThanOrEqual(PLAFOND_CHROME - 4);
+    await p.close(); await ctx.close();
+  });
+
+  for (const total of [10_000, 50_000]) {
+    for (const zoom of [0.5, 1, 2, 3]) {
+      it(`⚠️ ${total} pages à ${Math.round(zoom * 100)} % : première, milieu, dernière atteignable — et au-delà, l'avis, jamais le vide`, async () => {
+        const { p, ctx } = await visionneuseDe(total);
+        if (zoom !== 1) await zoomer(p, zoom);
+        const g = await geo(p);
+        const attendu = await p.evaluate(({ h, n }) => window.Player.viewer.pagesAtteignables({ hauteurElement: h, ecart: 16, decalageHaut: 22, total: n }), { h: g.h, n: total });
+        expect(g.atteignables, "le plafond exposé est celui du calcul, à la géométrie réelle de cette page").toBe(attendu);
+        expect(g.sh, "la hauteur de défilement reste sous le plafond du navigateur").toBeLessThanOrEqual(PLAFOND_CHROME);
+        const n = g.atteignables;
+        for (const k of [1, Math.max(1, Math.round(n / 2)), n]) {
+          const r = await aller(p, k);
+          expect(r.presente, `la page ${k} est matérialisée et courante`).toBe(true);
+          expect(r.noeuds, "le DOM reste borné pendant le parcours").toBeLessThanOrEqual(12);
+        }
+        if (n < total) {
+          await p.evaluate((t) => window.__allerPage(t), total);
+          await new Promise((r) => setTimeout(r, 400));
+          const apres = await geo(p);
+          expect(await p.evaluate(() => window.__viewerEssai.cur), "un saut au-delà s'arrête à la dernière atteignable").toBe(n);
+          expect(await p.evaluate((t) => !!document.querySelector('#pages .page[data-p="' + t + '"]'), total), "la dernière page du document n'est pas matérialisée : elle n'arrive jamais").toBe(false);
+          expect(apres.avis, "et l'avis le dit, avec le nombre").toContain(String(n));
+          expect(apres.avis).toContain(String(total));
+        } else {
+          expect(g.avis, "tout est atteignable : pas d'avis").toBe("");
+        }
+        await p.close(); await ctx.close();
+      }, 90_000);
+    }
+  }
+
+  it("⚠️ en portrait (900 × 1 440), même règle — la géométrie change, le plafond non", async () => {
+    const { p, ctx } = await visionneuseDe(50_000, { width: 900, height: 1440 });
+    await zoomer(p, 2);
+    const g = await geo(p);
+    expect(g.atteignables).toBeLessThan(50_000);
+    expect(g.sh).toBeLessThanOrEqual(PLAFOND_CHROME);
+    const r = await aller(p, g.atteignables);
+    expect(r.presente).toBe(true);
+    await zoomer(p, 0.5);
+    const g2 = await geo(p);
+    expect(g2.atteignables, "réduire le zoom rend des pages").toBeGreaterThan(g.atteignables);
+    await p.close(); await ctx.close();
+  }, 90_000);
 });

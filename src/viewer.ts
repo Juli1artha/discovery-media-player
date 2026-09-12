@@ -361,3 +361,39 @@ export function plafondFenetre(i: Pick<FenetreInput, "hauteurVisible" | "hauteur
   const pas = pasVertical(i.hauteurElement, i.ecart);
   return Math.ceil(Math.max(0, entier(i.hauteurVisible)) / pas) + 2 + 2 * Math.max(0, Math.trunc(entier(i.marge)));
 }
+
+// ── Ce que le navigateur peut faire défiler ──────────────────────────────────────────────────
+//
+// ⚠️ LA VIRTUALISATION BORNE LE DOM, PAS LA GÉOMÉTRIE. Les espaceurs portent la hauteur de TOUTES
+// les pages absentes, et Chrome plafonne la hauteur de défilement autour de 33 554 430 px
+// (mesuré : 34 M, 40 M et 100 M demandés rendent 33 554 428 ou 33 554 432 selon la mise en page —
+// on retient le plus BAS, une page comptée atteignable doit l'être). Au-delà, un `scrollTop` posé ne
+// mène nulle part : à 200 % sur 1 440 px, une page fait ~3 900 px et la 8 615ᵉ est la dernière
+// atteignable — la moitié d'un document de 10 000 pages est injoignable, et le nombre de nœuds,
+// lui, reste parfaitement borné. Reproduit par un audit externe le 13/09 dans Chrome réel :
+// « même nombre de nœuds à 50 000 pages » était vrai et incomplet.
+//
+// Le remède durable est un défilement segmenté (position logique en pages, segment physique de
+// quelques milliers de pages, hauteur CSS tenue sous le plafond). En attendant, la visionneuse
+// CALCULE la dernière page atteignable à la géométrie courante et le DIT au lecteur, plutôt que de
+// le laisser défiler vers une page qui n'arrive jamais. Réduire le zoom rend des pages.
+/** Hauteur de défilement maximale d'un conteneur dans Chrome (LayoutUnit), en px. */
+export const PLAFOND_DEFILEMENT_PX = 33_554_428;
+
+/**
+ * La dernière page dont le HAUT ET LE BAS tiennent sous le plafond de défilement, à la géométrie
+ * donnée — donc la dernière qu'un `scrollTop` peut présenter entière. Au plus `total`.
+ */
+export function pagesAtteignables(
+  i: Pick<FenetreInput, "hauteurElement" | "ecart" | "decalageHaut" | "total">,
+  plafond: number = PLAFOND_DEFILEMENT_PX,
+): number {
+  const total = Math.max(0, Math.trunc(entier(i.total)));
+  if (total === 0) return 0;
+  const pas = pasVertical(i.hauteurElement, i.ecart);
+  const h = Math.max(1, entier(i.hauteurElement, 1));
+  const haut = Math.max(0, entier(i.decalageHaut));
+  const place = Math.max(0, entier(plafond, PLAFOND_DEFILEMENT_PX)) - haut - h;
+  if (place < 0) return 1;                                   // même la première déborde : elle reste la seule
+  return Math.max(1, Math.min(total, Math.floor(place / pas) + 1));
+}

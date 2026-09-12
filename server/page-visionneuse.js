@@ -138,6 +138,9 @@ function viewerHtml(share, nonce, logoUrl, pitch) {
   #pages{display:flex;flex-direction:column;align-items:center;gap:16px;width:max-content;min-width:100%;margin:0 auto;padding:22px 14px}
   .page{position:relative;background:#fff;box-shadow:0 6px 22px #0006;border-radius:3px}
   .pspace{flex:0 0 auto;width:1px;visibility:hidden} /* porte la hauteur des pages ou vignettes NON materialisees */
+  /* Le navigateur plafonne la hauteur de défilement (Chrome : 33 554 432 px) : au-delà, des pages existent et ne se
+     joignent pas. L'avis le DIT, fixé au bas du cadre, et disparaît dès que le zoom rend tout le document atteignable. */
+  .plafond{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);max-width:min(92vw,560px);background:#111d;color:#fff;border:1px solid #fff3;border-radius:8px;padding:8px 12px;font-size:13px;line-height:1.4;text-align:center;z-index:40;box-shadow:0 6px 22px #0006}
   .page canvas{display:block;border-radius:3px}
   /* Couche texte pdf.js : invisible, superposée au canvas → sélection du texte possible (requiert --scale-factor). */
   .textLayer{position:absolute;inset:0;overflow:hidden;line-height:1;opacity:1;z-index:2;forced-color-adjust:none}
@@ -335,6 +338,7 @@ ${LEGAL_CSS}
       get onePage(){return onePage;},
       get reportEnAttente(){return tRestaurer!==null;},
       get fenetre(){return pagesFenetre;},get vignFenetre(){return vignFenetre;},
+      get atteignables(){return atteignables;},
       get soloOffered(){return soloOffered;},set soloOffered(v){soloOffered=!!v;}};
     var pdfDoc=null, zoom=1, rot=0, firstAspect=1.35, rendered={}, io=null, ioCur=null;
     // ATTENTION : LE LECTEUR GARDAIT TOUTES LES PAGES RENDUES (P1 audit externe).
@@ -353,6 +357,14 @@ ${LEGAL_CSS}
     // FENETRE VIRTUELLE : seuls les gabarits de pages (et de vignettes) proches du visible EXISTENT
     // dans le DOM ; deux espaceurs portent la hauteur des absents. Voir src/viewer.ts.
     var pagesFenetre={debut:0,fin:0}, vignFenetre={debut:0,fin:0};
+    // ⚠️ LA VIRTUALISATION BORNE LE DOM, PAS LA GEOMETRIE. Les espaceurs portent la hauteur de TOUTES les
+    // pages absentes et Chrome plafonne la hauteur de defilement a 33 554 432 px : au-dela, un scrollTop
+    // pose ne mene nulle part. A 200 % sur 1 440 px, la 8 615e page d un document de 10 000 est la
+    // derniere atteignable — reproduit par un audit externe le 13/09 dans Chrome reel. Le calcul vit
+    // dans src/viewer.ts (pagesAtteignables) ; ici on l applique, on le DIT au lecteur, et on ne le
+    // laisse pas defiler vers une page qui n arrive jamais. Le remede durable est un defilement
+    // segmente ; ceci est le plafond explicite, jamais silencieux, en attendant.
+    var atteignables=0;
     var MARGE_VIRTUELLE=3, ESPACE_PAGES=16, HAUT_PAGES=22;             // = CSS #pages (gap, padding-top)
     var VIGN_MARGE_VIRTUELLE=4, ESPACE_VIGN=10, HAUT_VIGN=12, VIGN_BORDURE=4; // = CSS .vign-in / .vg
     var pagesAvant=null, pagesApres=null, vignAvant=null, vignApres=null, rafPages=0, rafVign=0;
@@ -962,13 +974,25 @@ ${LEGAL_CSS}
     function poserEspaceur(el,hauteur,ecart){ if(hauteur>0){ el.style.display=''; el.style.height=Math.max(0,hauteur-ecart)+'px'; } else { el.style.display='none'; el.style.height='0px'; } }
     function hauteurPage(){ return Math.round(Math.round(targetWidth())*aspectEffectif()); }
     function geoPages(){ return {hauteurElement:hauteurPage(),ecart:ESPACE_PAGES,decalageHaut:HAUT_PAGES}; }
+    // La derniere page que le navigateur peut presenter a cette geometrie, et l avis qui va avec. En mode
+    // une page, le defilement ne sert pas a naviguer : tout est atteignable.
+    function majAtteignables(){
+      if(!numPages){ atteignables=0; return; }
+      var g=geoPages();
+      atteignables=onePage?numPages:Player.viewer.pagesAtteignables({hauteurElement:g.hauteurElement,ecart:g.ecart,decalageHaut:g.decalageHaut,total:numPages});
+      var el=document.getElementById('plafondAvis');
+      if(!el){ el=document.createElement('div'); el.id='plafondAvis'; el.className='plafond'; el.setAttribute('role','status'); el.setAttribute('aria-live','polite'); el.style.display='none'; (document.querySelector('.lmain')||document.body).appendChild(el); }
+      if(atteignables<numPages){ el.textContent='Ce navigateur ne peut pas faire défiler au-delà de la page '+atteignables+' sur '+numPages+' à ce zoom. Réduisez le zoom pour atteindre la suite du document.'; el.style.display=''; }
+      else { el.style.display='none'; el.textContent=''; }
+    }
+    function totalDefilable(){ return onePage?numPages:(atteignables||numPages); }
     function creerPage(i,w,h){ var d=document.createElement('div'); d.className='page ph'; d.dataset.p=i; d.style.width=w+'px'; d.style.height=h+'px'; d.textContent='Page '+i; if(io)io.observe(d); if(ioCur)ioCur.observe(d); return d; }
     function retirerPage(el){ var n=+el.dataset.p; libererPage(n); try{ if(io)io.unobserve(el); if(ioCur)ioCur.unobserve(el); }catch(e){} if(el.parentNode) el.parentNode.removeChild(el); }
     function reconcilierPages(force,autour){
       if(!pagesEl||!pagesAvant||!pagesApres||!numPages)return;
       var g=geoPages(), f;
       if(onePage){ var c=autour||cur||1; var pas=Player.viewer.pasVertical(g.hauteurElement,g.ecart); var d0=Math.max(1,c-1), f0=Math.min(numPages,c+1); f={debut:d0,fin:f0,avant:(d0-1)*pas,apres:(numPages-f0)*pas}; }
-      else f=Player.viewer.fenetreVirtuelle({debutVisible:scrollEl.scrollTop||0,hauteurVisible:scrollEl.clientHeight||0,hauteurElement:g.hauteurElement,ecart:g.ecart,decalageHaut:g.decalageHaut,total:numPages,marge:MARGE_VIRTUELLE});
+      else f=Player.viewer.fenetreVirtuelle({debutVisible:scrollEl.scrollTop||0,hauteurVisible:scrollEl.clientHeight||0,hauteurElement:g.hauteurElement,ecart:g.ecart,decalageHaut:g.decalageHaut,total:totalDefilable(),marge:MARGE_VIRTUELLE});
       if(!force&&f.debut===pagesFenetre.debut&&f.fin===pagesFenetre.fin)return;
       pagesFenetre=f;
       var w=Math.round(targetWidth()), h=g.hauteurElement, presents={};
@@ -1000,6 +1024,7 @@ ${LEGAL_CSS}
       pagesEl.innerHTML='';
       pagesAvant=espaceur('pagesAvant'); pagesApres=espaceur('pagesApres'); pagesEl.appendChild(pagesAvant); pagesEl.appendChild(pagesApres);
       pagesFenetre={debut:0,fin:0};
+      majAtteignables();
       reconcilierPages(true,cur||1);
       var _band=capReserve(); var _pb=document.body.classList.contains('botplayer')?(document.body.classList.contains('vsplit')?Math.round(window.innerHeight*0.38)+50:(isLand()?0:240)):(botOverlap()+(_band?_band+12:(document.body.classList.contains('deskaudio')?16:0))); pagesEl.style.paddingBottom = onePage ? (_pb+'px') : ''; // centre la page dans l'espace VISIBLE (au-dessus de la sheet mobile / du bandeau desktop / sous le header en audio seul)
       if(onePage) showPage(cur||1);
@@ -1032,6 +1057,9 @@ ${LEGAL_CSS}
     function scrollToPage(p){
       // Toute navigation explicite PERIME le report en attente : c est ce qui ferme la course.
       clearTimeout(tRestaurer); tRestaurer=null;
+      // Une page au-dela du plafond de defilement n arrive jamais : on s arrete a la derniere atteignable,
+      // et l avis (deja visible dans ce cas) dit pourquoi.
+      if(!onePage&&atteignables&&p>atteignables) p=atteignables;
       var el=pagesEl.querySelector('.page[data-p="'+p+'"]');
       // La page peut ne pas EXISTER encore : on se place a sa position calculee, on materialise, puis on aligne.
       if(!el){ scrollEl.scrollTop=Player.viewer.positionDe(p,geoPages()); reconcilierPages(true,p); el=pagesEl.querySelector('.page[data-p="'+p+'"]'); }
@@ -1169,7 +1197,7 @@ ${LEGAL_CSS}
     function reconcilierVignettes(force){
       if(!vignIn||!vignAvant||!vignApres||!vignOuvert||numPages<2)return;
       var g=geoVign();
-      var f=Player.viewer.fenetreVirtuelle({debutVisible:vignIn.scrollTop||0,hauteurVisible:vignIn.clientHeight||0,hauteurElement:g.hauteurElement,ecart:g.ecart,decalageHaut:g.decalageHaut,total:numPages,marge:VIGN_MARGE_VIRTUELLE});
+      var f=Player.viewer.fenetreVirtuelle({debutVisible:vignIn.scrollTop||0,hauteurVisible:vignIn.clientHeight||0,hauteurElement:g.hauteurElement,ecart:g.ecart,decalageHaut:g.decalageHaut,total:Math.min(numPages,Player.viewer.pagesAtteignables({hauteurElement:g.hauteurElement,ecart:g.ecart,decalageHaut:g.decalageHaut,total:numPages})),marge:VIGN_MARGE_VIRTUELLE});
       if(!force&&f.debut===vignFenetre.debut&&f.fin===vignFenetre.fin)return;
       vignFenetre=f;
       var presents={}, els=vignIn.querySelectorAll('.vg');

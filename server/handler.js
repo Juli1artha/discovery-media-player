@@ -40,6 +40,8 @@ function init(ctx) {
   // `init`, et un hôte a le même droit. On n'ajoute qu'une chose, on n'en fige aucune.
   if (ctx && ctx.db) { const vu = Object.create(ctx); vu.db = mesures.observerBase(ctx.db); ctx = vu; }
   PLAYER = ctx;
+  plafondRelais = borneRelais(ctx && ctx.config && ctx.config.maxConcurrentRelays);
+  relaisEnCours = 0;
   // Le domaine reçoit le même contexte : une seule construction pour tout le player.
   require("./shares").init(ctx);
   require("./retention").init(ctx);
@@ -54,6 +56,35 @@ function init(ctx) {
   docbot = ctx.plugins.bot;
 }
 const isAllowedStorageUrl = (url) => PLAYER.storage.isAllowedUrl(url);
+
+// ⚠️ LE FLUX BORNAIT LES OCTETS, RIEN NE BORNAIT LE NOMBRE DE FLUX. `fetchFile` partait sans
+// admission : 200 demandes lentes simultanées → 200 connexions amont, 200 pipelines, 200 réponses
+// ouvertes, dans un seul processus (reproduit par un audit externe le 13/09). Le streaming empêche
+// d'allouer 60 Mo par requête ; il n'empêche pas d'ouvrir mille sockets. Une admission par processus,
+// AVANT l'appel amont : refus immédiat 503 + Retry-After quand c'est plein — aucune file d'attente,
+// une file non bornée est le même défaut avec un délai — et la place rendue dans un `finally`, donc
+// aussi sur erreur amont et sur déconnexion cliente (le pipeline rejette alors). Le plafond vient du
+// contexte (`config.maxConcurrentRelays`, défaut 64) : assez pour les requêtes Range parallèles de
+// pdf.js, borné pour un processus. Sur serverless la plate-forme borne déjà la concurrence globale ;
+// ceci protège le mode autonome et chaque instance chaude.
+const RELAIS_SIMULTANES_DEFAUT = 64;
+let plafondRelais = RELAIS_SIMULTANES_DEFAUT, relaisEnCours = 0;
+function borneRelais(v) { const n = Math.trunc(Number(v)); return Number.isFinite(n) && n >= 1 ? n : RELAIS_SIMULTANES_DEFAUT; }
+async function relayerSousAdmission(res, travail) {
+  if (relaisEnCours >= plafondRelais) {
+    // Une fois par heure, l'exploitant l'apprend : un 503 muet ressemble à une panne d'amont.
+    try {
+      if (await PLAYER.limits.allow("relais:sature-avert", 1, 3600)) {
+        PLAYER.errors.capture(new Error(`relais refusés : ${plafondRelais} transferts simultanés atteints dans ce processus (config.maxConcurrentRelays)`), { route: "relais", benin: true });
+      }
+    } catch { /* jamais bloquant */ }
+    res.setHeader("Retry-After", "2");
+    refuserEnTexte(res, 503, "Trop de transferts en cours, réessayez dans un instant");
+    return;
+  }
+  relaisEnCours += 1;
+  try { await travail(); } finally { relaisEnCours -= 1; }
+}
 
 // GREFFONS de ce studio — jamais du player. `null` quand le module est absent ou coupé
 // (`PLAYER_PLUGINS_OFF`) : chaque usage doit donc être gardé, et le player continue sans eux.
@@ -850,10 +881,16 @@ async function handlerMesure(req, res) {
       // Placée AVANT `getPresentation` — écrite après, elle aurait laissé passer très exactement la
       // requête qu'elle est censée épargner. Le quota se déduit de la cadence de l'audience
       // (`src/cadence.ts`), il n'est pas choisi à la main.
-      const sondage = String(q.state || "") === "1" || String(q.chat || "") === "1";
-      if (sondage) {
-        const ipSondage = adresseAppelant(req) || "anon";
-        if (!(await PLAYER.limits.allow(`pread:${ipSondage}`, PRESENT_QUOTA_PER_HOUR, 3600))) {
+      // ⚠️ DEUX POINTS, DEUX CLÉS — LE QUOTA EST DÉRIVÉ « SUR CHACUN DES DEUX POINTS » ET UNE SEULE
+      // CLÉ LES FAISAIT PAYER LE MÊME BUDGET. Le filet du navigateur relit l'état ET le chat toutes
+      // les 25 s (`gabarit-live.js`) : sous `pread:<ip>`, une sortie unique portait 306 spectateurs
+      // au repos, pas les 613 annoncés — et une saturation du chat coupait l'état, qui fait autorité
+      // sur la page affichée. Reproduit par un audit externe le 13/09 contre le vrai limiteur. Une
+      // requête qui demanderait les deux points paie les deux.
+      const points = [String(q.state || "") === "1" ? "state" : null, String(q.chat || "") === "1" ? "chat" : null].filter(Boolean);
+      const ipSondage = points.length ? (adresseAppelant(req) || "anon") : "";
+      for (const point of points) {
+        if (!(await PLAYER.limits.allow(`pread:${point}:${ipSondage}`, PRESENT_QUOTA_PER_HOUR, 3600))) {
           // ⚠️ UN REFUS MUET FAIT UNE AUDIENCE QUI DÉCROCHE SANS CAUSE NOMMÉE. Le 429 n'apparaît
           // que dans la console du spectateur ; l'exploitant, lui, verrait des pages qui ne tournent
           // plus chez tout un bâtiment. Une fois par heure suffit à nommer la cause sans inonder.
@@ -976,8 +1013,10 @@ async function handlerMesure(req, res) {
       if (String(q.file || "") === "1") {
         if (!isAllowedStorageUrl(pres.file_url)) { refuserEnTexte(res, 404, "Fichier indisponible"); return; }
         const range = req.headers["range"];
-        const r = await PLAYER.storage.fetchFile(pres.file_url, { range });
-        await relayerFichier(res, r, null);
+        await relayerSousAdmission(res, async () => {
+          const r = await PLAYER.storage.fetchFile(pres.file_url, { range });
+          await relayerFichier(res, r, null);
+        });
         return;
       }
       const supaUrl = (PLAYER.config && PLAYER.config.supabaseUrl) || "";
@@ -999,8 +1038,10 @@ async function handlerMesure(req, res) {
       if (!isAllowedStorageUrl(url)) return sendRefusal(res, "url-not-allowed", embed);
       if (String(q.stream || "") === "1") {
         const range = req.headers["range"];
-        const r = await PLAYER.storage.fetchFile(url, { range });
-        await relayerFichier(res, r, dispositionInline(q.name));
+        await relayerSousAdmission(res, async () => {
+          const r = await PLAYER.storage.fetchFile(url, { range });
+          await relayerFichier(res, r, dispositionInline(q.name));
+        });
         return;
       }
       const supaUrl = (PLAYER.config && PLAYER.config.supabaseUrl) || "";
@@ -1051,8 +1092,10 @@ async function handlerMesure(req, res) {
       // Stream depuis le Storage en RELAYANT les requêtes Range → pdf.js charge progressivement (les 1res
       // pages s'affichent sans télécharger tout le PDF) → affichage bien plus rapide.
       const range = req.headers["range"];
-      const r = await PLAYER.storage.fetchFile(share.file_url, { range });
-      await relayerFichier(res, r, dispositionInline(share.file_name));
+      await relayerSousAdmission(res, async () => {
+        const r = await PLAYER.storage.fetchFile(share.file_url, { range });
+        await relayerFichier(res, r, dispositionInline(share.file_name));
+      });
       return;
     }
 

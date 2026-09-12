@@ -38,6 +38,28 @@ allocation is the cost. An upstream that announces no `Content-Length` passes an
 refuse what one cannot measure, and closing by default would cut off perfectly legitimate storages.
 This bounds the **large**, not the **unknown**.
 
+### The standalone server's own bounds (not variables)
+
+`bin/serve.js` is meant to be exposed directly, so it does not inherit Node's proxy-grade defaults.
+Since this train: **`requestTimeout` 30 s, `headersTimeout` 15 s, keep-alive 5 s** (Node's defaults
+were 300 s / 60 s — a socket trickling headers held a minute, a slow body five). A JSON body is read up
+to **1 MB**: above it the answer is **413** with `Connection: close` (the rest is not drained), an
+unreadable body gets **400**, and a connection that leaves mid-body gets nothing. Until this train the
+three cases collapsed into an empty body and a misleading `400 bad-event`. A reverse proxy in front may
+impose stricter bounds; it must not loosen these.
+
+### `PLAYER_MAX_RELAYS`
+
+Number of files relayed **at the same time** by one process (default **64**). The stream bounds the
+bytes of each relay; nothing bounded how many relays were open — an external audit opened 200 slow
+transfers at once and got 200 upstream connections, 200 pipelines and 200 open responses (13/09).
+Above the ceiling the relay answers **503 with `Retry-After: 2` before any upstream call**; there is
+no queue, because an unbounded queue is the same defect with a delay. The slot is released in a
+`finally`, so an upstream error or a client that disconnects mid-stream gives it back. Sixty-four is
+plenty for pdf.js's parallel Range requests; a serverless platform bounds global concurrency itself,
+so this mostly protects the standalone server and each warm instance. Hosts wiring their own context
+set `config.maxConcurrentRelays`.
+
 ## The minimum
 
 | Variable | |

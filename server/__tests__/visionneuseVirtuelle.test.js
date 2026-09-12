@@ -53,7 +53,7 @@ const TOTAL = 10000;
 const VISIBLE_PAGES = 900, VISIBLE_VIGN = 700;
 
 /** Un pdf.js de laboratoire : un document de 10 000 pages, livré tout de suite ; `jamais` = un document qui n'arrive jamais. */
-function fauxPdfjs({ jamais = false } = {}) {
+function fauxPdfjs({ jamais = false, total = TOTAL } = {}) {
   const journal = { detruits: 0, pagesDemandees: [] };
   const page = {
     rotate: 0,
@@ -61,7 +61,7 @@ function fauxPdfjs({ jamais = false } = {}) {
     render: () => ({ promise: Promise.resolve(), cancel() {} }),
     getTextContent: () => Promise.resolve({ items: [] }),
   };
-  const pdf = { numPages: TOTAL, destroy() { journal.detruits += 1; }, getPage: (n) => { journal.pagesDemandees.push(n); return Promise.resolve(page); } };
+  const pdf = { numPages: total, destroy() { journal.detruits += 1; }, getPage: (n) => { journal.pagesDemandees.push(n); return Promise.resolve(page); } };
   return {
     journal,
     lib: {
@@ -166,6 +166,67 @@ describe("⚠️ la visionneuse ne matérialise qu'une fenêtre de pages", () =>
 
   // ⚠️ L'AUTRE DEMANDE DE L'AUDIT : un document qui n'arrive jamais gardait son transfert et son
   // worker ouverts jusqu'à la fermeture de l'onglet. Un délai global, et destroy() quand il expire.
+  // ⚠️ LA VIRTUALISATION BORNE LE DOM, PAS LA GÉOMÉTRIE — reproduit par un audit externe le 13/09 dans
+  // Chrome réel : la hauteur de défilement sature à 33 554 432 px, et à 200 % la moitié d'un document
+  // de 10 000 pages devient injoignable pendant que le nombre de nœuds reste parfaitement borné.
+  // « 6 nœuds à 50 000 pages » était vrai et incomplet. jsdom n'a pas ce plafond : ces bancs éprouvent
+  // ce que la visionneuse FAIT du calcul (src/viewer.ts), pas le plafond lui-même — lui vit dans le
+  // banc navigateur réel.
+  describe("⚠️ au-delà du plafond de défilement du navigateur, la visionneuse le DIT et s'arrête", () => {
+    const GRAND = 50000;   // à ~1 254 px par page ici, la 26 7xxᵉ est la dernière sous 33 554 432 px
+
+    it("le plafond est calculé, exposé, et l'avis est visible avec les deux nombres", async () => {
+      const { V, viewer } = await monter({ total: GRAND });
+      const h = parseInt(pages()[0].style.height, 10);
+      const attendu = viewer.pagesAtteignables({ hauteurElement: h, ecart: 16, decalageHaut: 22, total: GRAND });
+      expect(attendu, "contrôle positif : ce document DÉPASSE bien le plafond à cette géométrie").toBeLessThan(GRAND);
+      expect(V.atteignables).toBe(attendu);
+      const avis = document.getElementById("plafondAvis");
+      expect(avis, "l'avis existe").toBeTruthy();
+      expect(avis.style.display, "et il est visible").not.toBe("none");
+      expect(avis.textContent).toContain(String(attendu));
+      expect(avis.textContent).toContain(String(GRAND));
+      expect(avis.getAttribute("role")).toBe("status");
+    });
+
+    it("⚠️ un saut au-delà s'arrête à la dernière page atteignable — jamais un défilement vers nulle part", async () => {
+      const { V, viewer } = await monter({ total: GRAND });
+      const n = V.atteignables;
+      V.scrollToPage(GRAND);
+      expect(document.querySelector('#pages .page[data-p="' + GRAND + '"]'), "la dernière page n'est PAS matérialisée : elle n'arrive jamais").toBeNull();
+      expect(document.querySelector('#pages .page[data-p="' + n + '"]'), "la dernière ATTEIGNABLE l'est").toBeTruthy();
+      const f = V.fenetre;
+      expect(f.fin).toBeLessThanOrEqual(n);
+      // ⚠️ LA PROPRIÉTÉ QUE LA FENÊTRE BORNÉE NE GARDE PAS SEULE : la position DEMANDÉE au conteneur. Sans
+      // le plafond dans scrollToPage, on pose scrollTop = position(50 000) — jsdom l'accepte, Chrome la
+      // sature à 33 554 432 et aligne n'importe quoi. Le saut doit demander la position de la dernière
+      // atteignable, et rien au-delà du plafond. (Un mutant qui retire le plafond survivait sans ceci.)
+      const h = parseInt(pages()[0].style.height, 10);
+      const sc = document.getElementById("scroll");
+      expect(sc.scrollTop, "la position demandée est celle de la dernière page atteignable").toBe(viewer.positionDe(n, { hauteurElement: h, ecart: 16, decalageHaut: 22 }));
+      expect(sc.scrollTop + h).toBeLessThanOrEqual(viewer.PLAFOND_DEFILEMENT_PX);
+      expect((f.debut - 1) + (f.fin - f.debut + 1) + Math.round(f.apres / (parseInt(pages()[0].style.height, 10) + 16)),
+        "l'espace réservé s'arrête au plafond : avant + matérialisées + après = atteignables, pas le total").toBe(n);
+    });
+
+    it("un document sous le plafond n'a pas d'avis, et tout est atteignable", async () => {
+      const { V } = await monter();
+      expect(V.atteignables).toBe(TOTAL);
+      const avis = document.getElementById("plafondAvis");
+      expect(avis && avis.style.display, "pas d'avis quand rien n'est injoignable").toBe("none");
+    });
+
+    it("en mode une page, le défilement ne navigue pas : tout est atteignable et l'avis se retire", async () => {
+      const { V } = await monter({ total: GRAND });
+      expect(V.atteignables).toBeLessThan(GRAND);
+      V.enterOnePage();
+      expect(V.atteignables).toBe(GRAND);
+      expect(document.getElementById("plafondAvis").style.display).toBe("none");
+      V.showPage(GRAND);
+      expect(document.querySelector('#pages .page[data-p="' + GRAND + '"]'), "une page à la fois : la 50 000ᵉ se montre").toBeTruthy();
+    });
+  });
+
   it("⚠️ un document qui n'arrive jamais est abandonné : destroy() et un message", async () => {
     vi.useFakeTimers();
     try {

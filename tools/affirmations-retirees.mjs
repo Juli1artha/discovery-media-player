@@ -47,6 +47,18 @@ export const RETIREES = [
     pourquoi: "bot-tts confronte le texte à ce que l'assistant a réellement dit : l'appelant PROPOSE, il ne choisit pas",
     retiree: "2026-09-11",
   },
+  {
+    nom: "'map' reste appliqué tel quel depuis un canal public",
+    motif: /(?:'map' et 'typing' restent appliqués tels quels|map (?:reste|est) (?:encore )?(?:une commande publique )?appliqu[ée]+ (?:tels? quels?|directement))/i,
+    pourquoi: "le gestionnaire de 'map' ignore la charge et déclenche une relecture de l'état serveur ; seul 'typing' reste éphémère",
+    retiree: "2026-09-13",
+  },
+  {
+    nom: "le serveur renvoie une clé de présentateur que l'audience compare",
+    motif: /(?:le serveur renvoie la clé de celui qui a prouvé|l'audience compare|the audience compares)/i,
+    pourquoi: "presenter_key n'existe plus : le serveur ne rend que presenter_name, affiché séparément de la présence, et aucune métadonnée Realtime ne porte un privilège",
+    retiree: "2026-09-13",
+  },
 ];
 
 /**

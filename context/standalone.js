@@ -840,6 +840,9 @@ function createStandaloneContext(env = process.env) {
       supabasePublishableKey: env.SUPABASE_PUBLISHABLE_KEY || "",
       mapsKey: env.GOOGLE_MAPS_API_KEY || "",
       extraFrameAncestors: String(env.DOC_FRAME_ANCESTORS || "").split(/\s+/).filter(Boolean),
+      // Transferts de fichiers simultanés par processus (défaut 64) : le relais refuse en 503 au-delà,
+      // avant tout appel amont. Lu ICI, pas dans le cœur — la configuration entre par le contexte.
+      maxConcurrentRelays: Number(env.PLAYER_MAX_RELAYS || 0) || 64,
 
       /**
        * Clé de `localStorage` sous laquelle VOTRE application range la session de ses membres.

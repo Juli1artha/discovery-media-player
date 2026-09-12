@@ -179,7 +179,21 @@ async function servir(req, res) {
   // Le player lit `req.query` (convention des plateformes serverless) et `req.body` déjà analysé.
   req.query = q;
   if (req.method === "POST") {
-    req.body = await lireCorpsJson(req);
+    // ⚠️ TROIS ISSUES DISTINCTES, TROIS RÉPONSES — un corps invalide, trop gros ou coupé rendait
+    // `{}` dans les trois cas, et le gestionnaire répondait « bad-event » à un client qui n'avait
+    // qu'envoyé un fichier trop lourd. 413 pour le dépassement (avec `Connection: close` : on ne
+    // draine pas un corps sans fin), 400 pour un JSON illisible, rien pour une connexion partie.
+    // Relevé par un audit externe le 13/09.
+    const lu = await lireCorpsJson(req);
+    if (lu.etat === "too-large") {
+      res.setHeader("Connection", "close");
+      res.once("finish", () => { try { req.destroy(); } catch { /* déjà parti */ } });
+      player.refuserEnTexte(res, 413, "Corps trop volumineux (1 Mo au plus)");
+      return;
+    }
+    if (lu.etat === "invalid-json") { player.refuserEnTexte(res, 400, "Corps JSON illisible"); return; }
+    if (lu.etat === "aborted") { try { res.end(); } catch { /* flux clos */ } return; }
+    req.body = lu.corps;
   }
 
   try {
@@ -202,22 +216,40 @@ const serveur = http.createServer((req, res) => {
     player.refuserEnTexte(res, 500, "Erreur");
   });
 });
+// ⚠️ LES DÉLAIS DE NODE (300 s par requête, 60 s pour les en-têtes) SONT CEUX D'UN SERVEUR DERRIÈRE UN
+// PROXY, PAS D'UN SERVEUR EXPOSÉ. Mesurés par un audit externe le 13/09 : `requestTimeout` 300 000,
+// `headersTimeout` 60 000. Une connexion qui envoie ses en-têtes au goutte-à-goutte tenait donc une
+// minute, un corps lent cinq — par socket. Trente secondes couvrent un relais de 60 Mo à 2 Mo/s ; les
+// en-têtes n'ont aucune raison de prendre plus de quinze ; un keep-alive court rend les sockets. Un
+// proxy amont peut serrer davantage, jamais l'inverse : ces bornes sont celles de l'exposition directe.
+serveur.requestTimeout = 30_000;
+serveur.headersTimeout = 15_000;
+serveur.keepAliveTimeout = 5_000;
 
 /** Corps JSON, borné. Un corps sans fin est une façon peu coûteuse de faire tomber un serveur. */
+/**
+ * Rend `{ etat, corps }` : `ok` (corps = l'objet lu, `{}` pour un corps vide), `too-large` (la lecture
+ * s'arrête au premier octet au-delà de `maxOctets`, sans drainer la suite), `invalid-json`, ou
+ * `aborted` (la connexion est partie avant la fin). L'appelant choisit le code HTTP : ici, on ne sait
+ * que lire.
+ */
 function lireCorpsJson(req, maxOctets = 1_000_000) {
   return new Promise((resolve) => {
-    let taille = 0;
+    let taille = 0, regle = false;
     const morceaux = [];
+    const rendre = (v) => { if (!regle) { regle = true; resolve(v); } };
     req.on("data", (c) => {
+      if (regle) return;
       taille += c.length;
-      if (taille > maxOctets) { req.destroy(); resolve({}); return; }
+      if (taille > maxOctets) { try { req.pause(); } catch { /* déjà clos */ } rendre({ etat: "too-large", corps: null }); return; }
       morceaux.push(c);
     });
     req.on("end", () => {
-      try { resolve(JSON.parse(Buffer.concat(morceaux).toString("utf8") || "{}")); }
-      catch { resolve({}); }
+      try { rendre({ etat: "ok", corps: JSON.parse(Buffer.concat(morceaux).toString("utf8") || "{}") }); }
+      catch { rendre({ etat: "invalid-json", corps: null }); }
     });
-    req.on("error", () => resolve({}));
+    req.on("error", () => rendre({ etat: "aborted", corps: null }));
+    req.on("aborted", () => rendre({ etat: "aborted", corps: null }));
   });
 }
 
@@ -286,4 +318,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { serveur, servir, versParametres, pageAccueil, __arreterProprement: arreterProprement, DELAI_ARRET_MS };
+module.exports = { serveur, servir, versParametres, pageAccueil, lireCorpsJson, __arreterProprement: arreterProprement, DELAI_ARRET_MS };

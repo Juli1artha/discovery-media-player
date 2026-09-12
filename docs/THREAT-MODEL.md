@@ -150,6 +150,20 @@ The distinction matters for what you report to us:
 A section that declares something out of scope is not neutral: it tells a researcher not to look.
 This one told them not to look at a stage that exists. Found by an external audit on 2026-09-12.
 
+Three more bounds exist since 2026-09-13, each because an audit reproduced their absence:
+
+- **file relays are admitted per process** (`config.maxConcurrentRelays`, default 64): above it,
+  503 + `Retry-After` before any upstream call, no queue, slot released on error and on client
+  disconnect. Bytes were bounded; the number of open streams was not (200 slow requests → 200
+  upstream connections);
+- **the visitor wall counts verifications**, not only code requests — per address and per identity
+  fingerprint — and the plugin is not called beyond the limit (1 000 attempts from one address had
+  reached it with zero limiter calls);
+- **the standalone server** answers 413/400 to oversize/unreadable bodies instead of an empty body,
+  and runs with `requestTimeout` 30 s / `headersTimeout` 15 s rather than Node's 300 s / 60 s.
+  The polling quota is also **per endpoint** (`pread:state:`, `pread:chat:`): one shared key let a
+  saturated chat cut the state, and halved the announced capacity.
+
 ## What this model does not cover
 
 - **The host application.** Identity, authorisation, session handling and rate limits are the

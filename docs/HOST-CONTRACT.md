@@ -410,6 +410,43 @@ inheritance both refuse — without either of them knowing why.
 Requires `supabase/migrations/0001-destinataire-atteste.sql`. Until it is applied the player refuses
 the attested creation and names the file; it never falls back to the other column.
 
+## The visitor wall (`plugins.visitors`): what the player counts, and what your plugin must do
+
+A host can gate documents behind a soft wall — an e-mail code, or a Google credential — by providing
+`plugins.visitors` with `requestCode(email, { title })`, `verifyCode(email, code, name)` and
+`verifyGoogle(credential)`. The player exposes them as `visitor-request`, `visitor-verify` and
+`visitor-google`.
+
+⚠️ **Until this train, only the request was rate-limited; verification called your plugin directly.**
+An external audit reproduced 1 000 code attempts and 1 000 Google verifications from one address with
+zero limiter calls (13/09). A short code with no counter in the plugin was brute-forceable, and a
+Google verification per anonymous request was a network amplifier. The player no longer assumes your
+plugin counts — the same rule as the assistant's session↔document binding: a security property must
+not depend on code the player does not contain.
+
+| action | per address | per identity (fingerprint of the normalised e-mail, never the address) |
+|---|---|---|
+| `visitor-request` | 20 / hour | 5 / hour |
+| `visitor-verify` | 100 / hour | 10 / 15 minutes |
+| `visitor-google` | 100 / hour | — |
+
+Counters are taken **at admission**: success, failure and an exception in your plugin consume them
+alike. Beyond a limit the answer is `429 { error: "rate" }` and **your plugin is not called**. The
+identity key is a SHA-256 fingerprint (the player holds no server secret by design, so it is a
+fingerprint, not an HMAC); `player_rate_limits` never carries an address in clear.
+
+⚠️ **What your plugin must still guarantee — the player cannot do it for you:**
+
+- the code is **short-lived** (minutes, not hours) and **single-use**: a code that stays valid after a
+  successful verification can be replayed from a shoulder-surfed screen;
+- the code has enough entropy for 10 attempts per quarter-hour not to be a lottery — six digits give
+  one chance in 100 000 per attempt at that pace, which is acceptable; four digits are not;
+- `verifyGoogle` validates the credential's audience and issuer server-side, and does not accept an
+  expired token.
+
+The player's counters bound the *rate*; your plugin bounds the *code*. Both are needed, and neither
+replaces the other.
+
 ## ⚠️ What `limits.allow` promises changed
 
 It used to promise *best effort, per process*. The standalone context now counts in a **shared
@@ -712,6 +749,12 @@ Four requirements, in order of what they cost when missed:
    anywhere. Announce the length of what you send, request `Accept-Encoding: identity`, and refuse
    a compressed `206` — range bounds refer to compressed bytes.
 2. **Relay `Range`** (`206` + `Accept-Ranges: bytes`). Progressive loading depends on it.
+   ⚠️ And expect the player to hold **at most `config.maxConcurrentRelays` relays open per process**
+   (default 64; `PLAYER_MAX_RELAYS` in the standalone context): above it the player answers **503
+   with `Retry-After: 2` before calling you**, with no queue. The stream bounded bytes; nothing
+   bounded how many streams were open — an audit opened 200 slow transfers and got 200 upstream
+   connections (13/09). The slot is released in a `finally`, so your errors and a client leaving
+   mid-stream give it back.
 3. **Accept a server-to-server call.** A tracked link is opened by someone with no session on your
    side. Authenticate the player with the shared secret in the `x-player-fetch-secret` **header** —
    header only, never a query string: logs keep URLs.

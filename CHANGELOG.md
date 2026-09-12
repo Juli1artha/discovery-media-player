@@ -14,6 +14,56 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- ⚠️ **Deux points de relecture, une seule clé de quota : une sortie unique portait 306 spectateurs,
+  pas 613.** Le filet du navigateur relit l'état ET le chat toutes les 25 s ; le quota était dérivé
+  « sur chacun des deux points » et appliqué sous `pread:<ip>` — et saturer le chat coupait l'état,
+  qui fait autorité sur la page affichée. Reproduit par un audit externe (troisième passe, 13/09)
+  contre le vrai limiteur. Deux clés (`pread:state:`, `pread:chat:`), le quota par point, une requête
+  qui demande les deux paie les deux. La simulation (`charge/audienceDerriereUneIp`) pose désormais
+  deux décisions par intervalle — sa première écriture n'en posait qu'une, c'est elle qui annonçait
+  613 — et une **couture** neuve (`filetDeuxPoints`) exécute la vraie page d'audience pour compter ce
+  qu'un tick émet : un état, un chat, pas un troisième. ⚠️ **Et le filet ne part plus en chœur** :
+  mille spectateurs qui rejoignent ensemble relisaient ensemble, 2 000 GET en phase toutes les 25 s ;
+  le premier tick est tiré entre 0 et 25 s, la période ne change pas.
+- ⚠️ **La virtualisation bornait le DOM, pas la géométrie : à 200 %, la moitié d'un document de
+  10 000 pages était injoignable.** Chrome plafonne la hauteur de défilement autour de 33 554 430 px
+  (mesuré : 33 554 428 ou 33 554 432 selon la mise en page — on retient le plus bas). Les espaceurs
+  portaient la hauteur de TOUTES les pages absentes : au-delà, un `scrollTop` posé ne menait nulle
+  part. « 6 nœuds à 50 000 pages » était vrai et **incomplet** — l'audit l'a mesuré dans Chrome réel.
+  Le remède durable est un défilement segmenté (train suivant) ; en attendant, un **plafond explicite,
+  jamais silencieux** : `pagesAtteignables` (pur, `src/viewer.ts`) calcule la dernière page dont le
+  haut et le bas tiennent sous le plafond à la géométrie courante, la visionneuse s'y arrête, un saut
+  au-delà s'y arrête aussi, et un avis (`role=status`) dit « au-delà de la page N sur M à ce zoom —
+  réduisez le zoom ». Éprouvé **dans Chrome** : 10 000 et 50 000 pages × 50/100/200/300 %, portrait,
+  première/milieu/dernière atteignable matérialisées et courantes, DOM ≤ 12, `scrollHeight` sous le
+  plafond — avec un pdf.js de laboratoire servi sur la même URL, substitution comptée. Deux mutants.
+- ⚠️ **`visitor-verify` et `visitor-google` n'avaient aucun plafond** — seule la demande de code en
+  avait un : mille tentatives depuis une adresse, zéro appel au limiteur (audit externe, 13/09).
+  Deux dimensions pour le code — 100/h par adresse, 10 par quart d'heure par identité (empreinte de
+  l'email normalisé, jamais l'adresse en clair) — 100/h par adresse pour Google, 5/h par identité pour
+  la demande. Pris à l'admission : réussite, échec et exception consomment pareil, et le greffon n'est
+  **pas appelé** au-delà. Le contrat dit désormais ce que le greffon doit garantir de son côté (code
+  court, expirant, à usage unique). Mutant.
+- ⚠️ **Le flux bornait les octets, rien ne bornait le nombre de flux.** 200 demandes lentes, 200
+  connexions amont, 200 pipelines, 200 réponses ouvertes dans un processus (audit externe, 13/09).
+  Admission par processus AVANT l'appel amont — `config.maxConcurrentRelays`, `PLAYER_MAX_RELAYS`,
+  défaut 64 — refus 503 + `Retry-After` sans file d'attente, place rendue en `finally` (succès, erreur
+  amont, client parti au milieu du flux : éprouvés), dit une fois par heure à l'exploitant. Mutant.
+- ⚠️ **Le serveur autonome confondait trois issues dans un corps vide et gardait les délais de Node.**
+  Trop gros, illisible et connexion partie rendaient `{}` puis « bad-event » ; `requestTimeout`
+  300 s et `headersTimeout` 60 s sont ceux d'un serveur derrière un proxy (mesurés par l'audit).
+  Désormais 413 + `Connection: close` sans drainer, 400, rien ; 30 s / 15 s / keep-alive 5 s.
+- **Les ACL effectives des fonctions `security definer` sont lues sur une vraie base**, après
+  `init.sql` et les migrations : chaque `prosecdef` doit être inexécutable par `public` (un
+  `proacl` NULL est le défaut, donc PUBLIC), `anon` et `authenticated` — rôles créés s'ils manquent,
+  et le banc exige des lignes. Les `revoke` écrits ne prouvaient pas l'état.
+- **Trois commentaires décrivaient des mécanismes supprimés** — « `map` reste appliqué tel quel »
+  (le gestionnaire ignore la charge), « le serveur renvoie la clé et l'audience compare » (cette clé
+  n'existe plus, le serveur ne rend qu'un nom). Réécrits en invariant + raison, et les deux
+  affirmations sont **retirées** dans `affirmations-retirees` : elles ne reviendront pas sans marqueur.
+  ⚠️ La garde était verte pendant qu'ils mentaient : elle ne connaît que ce qu'on a décidé de retirer,
+  jamais une phrase historique neuve — c'est sa limite écrite, et c'est un audit qui les a trouvés.
+
 - ⚠️ **`storage.remove` absent était un TROISIÈME état, et il faisait partir la ligne.** La 0.1.164
   distinguait « a échoué » de « a réussi » ; elle ne voyait pas « n'a pas été tenté ». Un hôte qui
   fournit `put` sans `remove` (STUDIO) fabriquait des objets définitivement inatteignables à chaque

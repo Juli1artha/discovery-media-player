@@ -14,6 +14,8 @@ import {
   pasVertical,
   plafondFenetre,
   positionDe,
+  pagesAtteignables,
+  PLAFOND_DEFILEMENT_PX,
   aspectApresRotation,
   averageColor,
   clampPage,
@@ -444,5 +446,49 @@ describe("⚠️ la fenêtre virtuelle : ce qui existe, et ce qui n'est qu'une h
     }
     expect(positionDe(1, G)).toBe(22);
     expect(positionDe(0, G), "0 et les valeurs sous 1 valent 1").toBe(22);
+  });
+});
+
+// ⚠️ LA VIRTUALISATION BORNE LE DOM, PAS LA GÉOMÉTRIE — reproduit par un audit externe le 13/09 dans
+// Chrome réel : à 200 % un document de 10 000 pages s'arrête vers la 8 615ᵉ, parce que la hauteur de
+// défilement sature à 33 554 432 px. Ces bancs fixent le calcul de la dernière page atteignable.
+describe("⚠️ pagesAtteignables — ce que le plafond de défilement du navigateur laisse joindre", () => {
+  const G = { hauteurElement: 1200, ecart: 16, decalageHaut: 22 };
+
+  it("Chrome plafonne autour de 33 554 430 px — la constante est la plus BASSE des valeurs mesurées, pas une puissance de deux choisie", () => {
+    expect(PLAFOND_DEFILEMENT_PX).toBe(33554428);
+    expect(PLAFOND_DEFILEMENT_PX).toBeLessThan(2 ** 25);
+  });
+
+  it("un document court est entièrement atteignable", () => {
+    expect(pagesAtteignables({ ...G, total: 40 })).toBe(40);
+    expect(pagesAtteignables({ ...G, total: 1 })).toBe(1);
+  });
+
+  it("⚠️ la dernière page atteignable tient ENTIÈRE sous le plafond — haut et bas", () => {
+    const n = pagesAtteignables({ ...G, total: 100000 });
+    expect(positionDe(n, G) + G.hauteurElement, "le bas de la dernière atteignable est sous le plafond").toBeLessThanOrEqual(PLAFOND_DEFILEMENT_PX);
+    expect(positionDe(n + 1, G) + G.hauteurElement, "la suivante déborde").toBeGreaterThan(PLAFOND_DEFILEMENT_PX);
+  });
+
+  it("⚠️ à 200 % sur 1 440 px (page ≈ 3 900 px), la 8 615ᵉ est la dernière — le nombre de l'audit", () => {
+    const n = pagesAtteignables({ hauteurElement: 3879, ecart: 16, decalageHaut: 22, total: 10000 });
+    expect(n).toBeGreaterThanOrEqual(8600);
+    expect(n).toBeLessThanOrEqual(8630);
+  });
+
+  it("réduire le zoom rend des pages : la fonction est monotone en la hauteur", () => {
+    const a = pagesAtteignables({ ...G, hauteurElement: 2400, total: 100000 });
+    const b = pagesAtteignables({ ...G, hauteurElement: 1200, total: 100000 });
+    const c = pagesAtteignables({ ...G, hauteurElement: 600, total: 100000 });
+    expect(a).toBeLessThan(b);
+    expect(b).toBeLessThan(c);
+  });
+
+  it("un plafond plus bas (autre navigateur) se passe en argument, et des entrées absurdes ne donnent jamais 0 ni NaN", () => {
+    expect(pagesAtteignables({ ...G, total: 1000 }, 10_000)).toBe(8);
+    expect(pagesAtteignables({ ...G, total: 1000 }, 100), "même la première déborde : elle reste la seule").toBe(1);
+    expect(pagesAtteignables({ hauteurElement: NaN, ecart: NaN, decalageHaut: NaN, total: 5 })).toBe(5);
+    expect(pagesAtteignables({ ...G, total: 0 })).toBe(0);
   });
 });

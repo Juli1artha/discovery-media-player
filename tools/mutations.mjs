@@ -208,6 +208,47 @@ export const MUTANTS = [
     pourquoi: "l'hôte déclarait le motif de son refus et on ne lisait que `sent` (relevé ADV)",
     bancs: ["server/__tests__/envoiDelegue.test.js"],
   },
+  // ── 13/09 — troisième audit externe ──────────────────────────────────────────────────────────
+  {
+    id: "pread-une-cle-pour-deux-points",
+    fichier: "server/handler.js",
+    avant: "        if (!(await PLAYER.limits.allow(`pread:${point}:${ipSondage}`, PRESENT_QUOTA_PER_HOUR, 3600))) {",
+    apres: "        if (!(await PLAYER.limits.allow(`pread:${ipSondage}`, PRESENT_QUOTA_PER_HOUR, 3600))) {",
+    pourquoi: "l'état et le chat payaient le même budget : 306 spectateurs par sortie au lieu de 613, et un chat saturé coupait l'état",
+    bancs: ["server/__tests__/canalPublicLimite.test.js"],
+  },
+  {
+    id: "visionneuse-saut-au-dela-du-plafond",
+    fichier: "server/page-visionneuse.js",
+    avant: "      if(!onePage&&atteignables&&p>atteignables) p=atteignables;",
+    apres: "      if(false) p=atteignables;",
+    pourquoi: "un saut vers une page au-delà du plafond de défilement n'arrive jamais : Chrome sature à 33 554 432 px",
+    bancs: ["server/__tests__/visionneuseVirtuelle.test.js"],
+  },
+  {
+    id: "visionneuse-plafond-muet",
+    fichier: "server/page-visionneuse.js",
+    avant: "      if(atteignables<numPages){ el.textContent=",
+    apres: "      if(false){ el.textContent=",
+    pourquoi: "un plafond silencieux laisse le lecteur défiler vers une page qui n'arrive jamais sans un mot",
+    bancs: ["server/__tests__/visionneuseVirtuelle.test.js"],
+  },
+  {
+    id: "visiteur-verification-sans-plafond-par-identite",
+    fichier: "server/routes-visiteur.js",
+    avant: "        if (!(await PLAYER.limits.allow(`vverif:id:${empreinteIdentite(body.email)}`, VERIF_PAR_IDENTITE, VERIF_FENETRE_IDENTITE_S))) return jv(429, { ok: false, error: \"rate\" });",
+    apres: "        if (false) return jv(429, { ok: false, error: \"rate\" });",
+    pourquoi: "plusieurs adresses forçaient un même email : la vérification n'avait aucun plafond (audit externe, 13/09)",
+    bancs: ["server/__tests__/murVisiteur.test.js"],
+  },
+  {
+    id: "relais-sans-admission",
+    fichier: "server/handler.js",
+    avant: "  if (relaisEnCours >= plafondRelais) {",
+    apres: "  if (false) {",
+    pourquoi: "le flux bornait les octets, rien ne bornait le nombre de flux : 200 demandes lentes, 200 connexions amont (audit externe, 13/09)",
+    bancs: ["server/__tests__/relaisAdmission.test.js"],
+  },
 ];
 
 export const empreinte = (texte) => createHash("sha256").update(texte).digest("hex").slice(0, 16);
