@@ -14,6 +14,25 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- ⚠️ **`tools/orphelins-tts.mjs` — le stock que la purge cassée a échoué, et qu'aucune correction ne
+  rattrape.** Les objets « purgés » sont toujours dans le bucket, ligne effacée : inatteignables par
+  le produit, par construction. Cet outil **sort du contrat exprès** — il parle à l'API Storage pour
+  faire la seule chose que le contrat n'expose pas, `list`. Il n'est donc pas une garde, ne tourne
+  dans aucun workflow, et **ne joint personne** tant qu'on ne le lui demande pas.
+  ⚠️ **Il ne peut pas distinguer nos orphelins de ceux d'un hôte, et aucune mesure ne le peut.** Un
+  objet sans ligne est l'un de trois : orphelin de la purge, vestige d'avant la 0021, ou fichier
+  écrit par l'hôte sous notre convention — un intégrateur en a rapporté **908**. D'où : rapport par
+  défaut, candidats limités à ce qui dépasse la fenêtre de rétention, **nombre à recopier** depuis un
+  rapport produit sur l'état courant, et rien de touché dont on ne sache pas lire la date. 11 bancs,
+  **5 mutations sur 5 tuées**.
+- ⚠️ **`tenter` ne pouvait pas attraper une exception asynchrone, et l'échec était silencieux.** Son
+  `try { return travail(); }` voit une fonction `async` **rendre** une promesse sans lever : le
+  `catch` n'est jamais atteint, la promesse est rejetée plus tard, et Node sort en **1**. Un outil
+  qui joint le réseau aurait donc annoncé « ce dépôt viole la règle » à chaque coupure — l'inverse
+  exact de ce que la taxonomie existe pour dire. `tenterAsync` fait le `await` dans le `try`. Le code
+  fautif est court, il se lit bien, et il n'échoue que quand autre chose échoue : rien ne l'aurait
+  signalé.
+
 - ⚠️ **Un avatar pouvait être n'importe quelle URL, et devenait une `<img>` dans le navigateur de
   CHAQUE spectateur — un pixel de suivi, pas un XSS.** L'échappement protège le balisage, pas le
   **chargement** : l'IP, l'agent, l'heure et l'origine de la page de tout le public partaient chez

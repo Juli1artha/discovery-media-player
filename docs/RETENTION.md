@@ -287,6 +287,41 @@ numbers, say so; do not round the sentence.
 it defers nothing. A host with no PITR and eight daily snapshots has **one** deadline, not two: the
 age of its oldest snapshot. Take the later of the deadlines that *exist*.
 
+## Cleaning up the objects the broken sweep stranded
+
+The voice-cache sweep removed nothing until it was fixed (see above), so every voice object it
+"purged" is still in the bucket with its row deleted — unreachable by the product, by construction.
+`tools/orphelins-tts.mjs` exists for exactly that backlog, and for nothing else.
+
+```
+node tools/orphelins-tts.mjs --inspecter [--age-jours=N] [--limite=N]
+node tools/orphelins-tts.mjs --inspecter --supprimer --confirme=<the count from the report>
+```
+
+It reads `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from the environment, and it deliberately
+**steps outside the host contract**: it talks to the Storage API directly to do the one thing the
+contract does not expose — `list`. That is why it is not a guard, runs in no workflow, and contacts
+nothing at all until you pass `--inspecter`.
+
+⚠️ **It cannot tell our orphans from yours, and no measurement can.** An object with no row is one of
+three things: stranded by the broken sweep, a relic from before migration 0021, or **a file your own
+code wrote under the player's naming** — one integrating host reported 908 of those. The tool
+therefore:
+
+- **reports by default** and deletes nothing;
+- treats only objects **older than the retention window** as candidates — a recent object with no row
+  may be a synthesis whose trace write just failed, and deleting it would erase a file the product is
+  about to serve;
+- refuses to act unless you **type the candidate count back** from a report it produced on the
+  current state. If the number has changed since you looked, the bucket moved, and that is precisely
+  what the barrier is there to tell you;
+- never touches a name that is not `<fingerprint>.mp3` / `.json`, nor an object whose date it cannot
+  read — no date means *we do not know*, and we do not delete what we do not know.
+
+Read the report before passing `--supprimer`. If your own code writes to this bucket, write the trace
+too (see *Voice* in `docs/HOST-CONTRACT.md`) — that is what makes your objects distinguishable, and
+what keeps them out of this tool's candidate list.
+
 ## Limits stated rather than left unsaid
 
 - ⚠️ **Until the next release the voice-cache sweep removed nothing at all, in the reference host context,

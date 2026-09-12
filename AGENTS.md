@@ -2466,6 +2466,30 @@ origin go to whoever wrote the URL. Not an XSS. A tracking pixel, aimed at the a
 avatars hosted on a third party now render as initials. That is a real loss, reversible by the host
 in one move; the leak was neither visible nor theirs to notice.
 
+## A helper that cannot fail the way its callers fail
+
+`tenter(travail)` wraps a guard's work so that an exception becomes INCONCLUSIVE rather than
+VIOLATION — the difference between *"the probe could not look"* and *"your branch is wrong"*. It is
+four lines, it reads perfectly, and it is **synchronous**: `try { return travail(); }`. Hand it an
+`async` function and the `try` sees a promise being *returned*, not an error being thrown. The
+`catch` is never reached. The rejection surfaces later, outside, and Node exits 1.
+
+So the first tool here that touched the network would have announced *"this repository violates the
+rule"* on every connection blip — the exact inverse of what the taxonomy exists to say, from the
+helper written to guarantee it.
+
+- **A wrapper's contract includes which failures it can see.** "Catches exceptions" is not a
+  property; "catches exceptions thrown synchronously by a synchronous callee" is. Write the second.
+- **Async-shaped mistakes do not fail in tests that never reject.** Nothing here would have noticed:
+  the code is short, it reads well, and it only misbehaves when something *else* misbehaves.
+- **When you add the async sibling, keep both.** Deleting the sync one to "simplify" pushes every
+  existing caller through a promise for no reason; leaving them unlabelled invites the next person to
+  pick by autocomplete. The comment on each says what it cannot see.
+
+⚠️ **And the same pattern one level up:** a destructive tool's safeguards must each be mutated
+individually. Here, five of them — reporting by default, the age threshold, unreadable dates,
+foreign filenames, and the confirmation count. A safeguard nobody has tried to break is a comment.
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives
