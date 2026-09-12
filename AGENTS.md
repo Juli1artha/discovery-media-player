@@ -2570,6 +2570,38 @@ something that retries, "no" *is* the spend. So:
 good"*. The developer believes the guard rail is in place and works without it. Non-blocking means
 the exit code is zero; it does not mean stderr is empty.
 
+## A campaign that refuses to guess beats one that guesses well
+
+Mutation testing was this repository's acceptance bar for two months, and it was performed **by
+hand**. Dozens of "N of N mutants killed" in the changelog: each true the day it was written, none
+reproducible afterwards — not by a reader, not by us. `tools/mutations.mjs` is the manifest that
+makes them replayable, and its design is mostly about what it refuses to say.
+
+**Three ways a mutation campaign lies, all of them in the direction of green:**
+
+- **The target is gone.** The code moved, the mutation applies to nothing, no bench reddens — and
+  "no bench reddened" reads as *killed*. The campaign gets greener as it drifts further from the
+  code.
+- **The target appears twice.** Something was mutated; which one is unknown, so the verdict names
+  nothing. This is not theoretical — it happened on the very first run here, and the tool said
+  INCONCLUSIVE instead of counting a kill.
+- **The baseline was already red.** Then every mutant touching that bench "kills", and the campaign
+  is greenest when the repository is most broken.
+
+All three must be a third state, never a kill. A campaign whose failure mode is optimism is worse
+than none.
+
+⚠️ **And fingerprint the file after restoring it.** A hand campaign here was interrupted mid-mutant,
+left the mutated file on disk, and the next run copied *that* as its pristine reference. Every
+"restored, identical" check afterwards compared the corruption to itself and said **true**. The tool
+now hashes before and after, and a mismatch stops everything — a repository in an unknown state is
+not a place to keep testing.
+
+⚠️ **Do not reach for a generic mutator over the whole codebase.** Hundreds of benign survivors —
+equivalent code, dead branches, defensive paths — teach the reader to skim the output, and a guard
+people skim is worse than a guard that is absent. A manifest of exact targets, each one a defect
+that actually happened, says something a reader can check.
+
 ## Boundaries
 
 - `server/` must keep working with **zero knowledge of its host**: everything external arrives

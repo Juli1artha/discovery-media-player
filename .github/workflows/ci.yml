@@ -387,6 +387,24 @@ jobs:
       # ⚠️ CETTE GARDE NE CONFRONTE PAS UNE PHRASE À CE QU'ELLE DÉCRIT, et il ne faut pas le croire :
       # AGENTS.md dit qu'aucune garde ici ne sait faire ça, et ça reste vrai. Elle confronte le dépôt
       # à une DÉCISION que nous avons déjà prise — la sous-classe étroite, et la seule mécanisable.
+      # ⚠️ NOTRE CRITÈRE D'ACCEPTATION ÉTAIT MANUEL, ET UN AUDIT EXTERNE L'A CORRIGÉ EN DEUX TEMPS.
+      # Le CHANGELOG porte des dizaines de « N mutations sur N tuées » : chacune était vraie le jour
+      # où elle a été écrite, produite à la main, sans artefact, non rejouable — y compris par nous,
+      # le lendemain. Nous avions d'abord annoncé « zéro outil de mutation », ce qui était FAUX :
+      # `tools/fixture-types/eprouver.mjs` en est un, sur les TYPES. Ceci est la campagne sur le
+      # COMPORTEMENT, et chaque mutant est un défaut qui a réellement existé.
+      #
+      # ⚠️ PAS DE MUTATION GÉNÉRIQUE SUR 10 800 LIGNES : des centaines de survivants bénins
+      # apprendraient à ignorer la sortie, et une garde qu'on ignore est pire qu'absente. Un
+      # manifeste de cibles exactes dit quelque chose de vérifiable.
+      #
+      # ⚠️ ELLE MODIFIE DES FICHIERS PUIS LES RESTAURE, et vérifie l'empreinte après chaque mutant :
+      # une campagne manuelle interrompue a déjà laissé un fichier muté sur disque, que l'exécution
+      # suivante a pris pour sa référence. Elle refuse aussi de tourner depuis les bancs.
+      - name: Every recorded defect is still guarded — behaviour mutation campaign
+        if: matrix.node == '22'
+        run: node tools/mutations.mjs
+
       - name: No retracted claim is still written as true
         if: matrix.node == '22'
         run: node tools/affirmations-retirees.mjs

@@ -14,6 +14,31 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- ⚠️ **`tools/mutations.mjs` — notre critère d'acceptation était manuel, et il est désormais
+  rejouable.** Le CHANGELOG porte des dizaines de « N mutations sur N tuées » : chacune était vraie
+  le jour où elle a été écrite, produite **à la main**, sans artefact, **non rejouable par
+  quiconque** — y compris par nous, le lendemain. Nous avions d'abord annoncé « zéro outil de
+  mutation », ce qui était **faux** (`tools/fixture-types/eprouver.mjs` en est un, sur les types) ;
+  la formulation juste est celle de l'audit, et celle-ci est la campagne sur le **comportement**.
+  **12 mutants, 12 tués.** Chacun est un défaut qui a **réellement existé** — aucun inventé pour
+  faire nombre : prédicat de purge absent du DELETE, trace effacée au-dessus d'un objet resté,
+  bucket des voix hors liste blanche, objet absent compté en échec, signal qui remplace le plancher,
+  budget de relais par saut, avatar de toute origine, comparaison par préfixe, avatar anonyme
+  resservi sur deux chemins, échec de hook muet.
+  ⚠️ **Pas de mutation générique sur 10 800 lignes, et le refus est motivé** : des centaines de
+  survivants bénins apprendraient à ignorer la sortie, et une garde qu'on ignore est pire
+  qu'absente.
+  ⚠️ **Elle refuse de conclure de trois façons, et chacune la rendrait plus verte qu'elle ne
+  devrait** : cible absente (le code a bougé, le mutant ne mute rien), cible **en double** (le
+  verdict ne désigne aucune des deux), base **déjà rouge** (tous les mutants qui touchent ce banc
+  passeraient pour tués — la campagne serait d'autant plus verte que le dépôt est cassé).
+  ⚠️ **Et le contrôle a servi dès le premier passage** : `avatar-anonyme-resservi` a rendu **non
+  concluant** parce que sa cible existait **deux fois**. Scindé en deux mutants portant chacun le
+  contexte qui le rend unique. Un outil qui refuse de deviner vaut mieux qu'un outil qui devine bien.
+  ⚠️ **L'empreinte est vérifiée après chaque restauration**, parce qu'une campagne manuelle
+  interrompue a déjà laissé un fichier muté sur disque que l'exécution suivante a pris pour sa
+  référence. Un écart arrête tout : le dépôt est alors dans un état inconnu.
+
 - ⚠️ **La clé d'idempotence du re-partage EXISTAIT DÉJÀ, et écrire la migration demandée aurait été
   un doublon.** `idem_key` est sur cette table depuis la **migration 0011**, globalement unique
   quand elle est renseignée, avec son attente de schéma déjà câblée — elle servait au chemin
