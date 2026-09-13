@@ -253,7 +253,10 @@ export const MUTANTS = [
   {
     id: "relais-sans-delai-de-progression",
     fichier: "server/handler.js",
-    avant: "  const rearmer = () => { clearTimeout(stall); stall = setTimeout(() => abandon.abort(new Error(`relais abandonné : aucune progression depuis ${bornes.stallMs} ms`)), bornes.stallMs); };",
+    // La cible cite un gabarit de handler.js ; ce fichier exporte une fonction `bornes`, et CodeQL lit
+    // « ${bornes.stallMs} » dans un littéral simple comme une référence oubliée. La chaîne est coupée
+    // avant le « { » : même octets une fois concaténée, plus d'ambiguïté.
+    avant: "  const rearmer = () => { clearTimeout(stall); stall = setTimeout(() => abandon.abort(new Error(`relais abandonné : aucune progression depuis $" + "{bornes.stallMs} ms`)), bornes.stallMs); };",
     apres: "  const rearmer = () => { clearTimeout(stall); };",
     pourquoi: "un client qui cesse de lire gardait sa place pour toujours : requestTimeout ne borne pas l'émission d'une réponse",
     bancs: ["server/__tests__/relaisAdmission.test.js"],
