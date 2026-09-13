@@ -12,7 +12,39 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Fixed
+
+- ⚠️ **`init()` désarmait le plafond des relais.** Chaque réinitialisation remettait le compteur de
+  relais en vol à zéro, même avec des relais de l'ancien contexte encore ouverts : avec un plafond
+  de 1, la demande suivante partait vers l'amont pendant que la place était prise, puis le `finally`
+  de l'ancien relais rendait le compteur négatif (reproduit par un audit externe, cinquième passe,
+  13/09, sur le tag v0.1.165). Le compteur appartient au processus et ne se relit plus ; `init` ne
+  relit que la configuration, pour les relais admis après lui ; et les bornes de temps d'un relais
+  sont **capturées à son admission** — un `init` pendant le transfert ne les change pas. Couture
+  `__relaisEnCours` pour qu'un banc vérifie « jamais remis à zéro, jamais négatif ». Deux mutants.
+- ⚠️ **Un délai au-delà de la limite native de `setTimeout` était accepté, et durait 1 ms.** La
+  borne prenait « tout nombre fini positif » ; Node plafonne `setTimeout` à 2 147 483 647 ms et ramène
+  tout dépassement à 1 ms : un `relayStallMs` de 2 147 483 648 — « 24,8 jours » — abandonnait le
+  transfert en 6 ms, avec 65 `TimeoutOverflowWarning` (audit, cinquième passe). `server/bornes.js`
+  n'accepte plus qu'un **entier sûr dans une plage écrite** (relais 1–1024 ; délais 1–86 400 000 ms,
+  soit 24 h, bien sous la limite native) ; hors plage — décimale, chaîne, `Infinity`, booléen — le
+  défaut s'applique et le cœur le **dit une fois à `init`** avec la plage. Le contexte autonome
+  transmet la valeur d'environnement telle quelle, pour que cette seule vérification la voie ; il la
+  normalisait en silence. Mutant.
+- ⚠️ **Une affirmation annoncée retirée que la garde ne connaissait pas.** La 0.1.165 disait « le
+  cœur n'a aucun secret serveur » retirée ; la phrase vivait encore dans `routes-visiteur.js`, et
+  `affirmations-retirees` rendait « aucune écrite comme vraie » — vrai au sens strict (elle ne
+  confronte le dépôt qu'à sa liste), faux au sens qui compte (audit, cinquième passe). Le commentaire
+  est réécrit en place, l'affirmation est dans `RETIREES` sous ses formes française et anglaise, avec
+  un banc positif (la phrase nue est une violation) et négatif (une citation marquée passe ; « un
+  secret de serveur ne doit pas… » n'est pas la phrase). Mutant.
+
 ### Changed
+
+- ⚠️ **64 relais simultanés n'est pas une valeur sûre partout**, et les docs le disent désormais :
+  mesuré par l'audit avec le vrai chemin relais, 64 × 8 Mio et des clients lents font monter la RSS
+  du processus de 63 à 193–257 Mio. Sur un processus à 256 Mio, 16 à 32 ; 64 à partir de 512 Mio,
+  après mesure. Borne haute de configuration : 1024.
 
 - La forge rejoue la garde d'ordre des bancs sous **quatre** graines : jour, 42, 20260913 et
   **20260912** — cette dernière demandée par l'audit externe (quatrième passe) et omise du train

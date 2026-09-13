@@ -40,10 +40,22 @@ function init(ctx) {
   // `init`, et un hôte a le même droit. On n'ajoute qu'une chose, on n'en fige aucune.
   if (ctx && ctx.db) { const vu = Object.create(ctx); vu.db = mesures.observerBase(ctx.db); ctx = vu; }
   PLAYER = ctx;
-  plafondRelais = borneRelais(ctx && ctx.config && ctx.config.maxConcurrentRelays);
-  relaisStallMs = borneMs(ctx && ctx.config && ctx.config.relayStallMs, RELAIS_STALL_MS_DEFAUT);
-  relaisMaxMs = borneMs(ctx && ctx.config && ctx.config.relayMaxMs, RELAIS_MAX_MS_DEFAUT);
-  relaisEnCours = 0;
+  // ⚠️ LA CONFIGURATION SE RELIT, L'ÉTAT VIVANT NE SE REMET PAS À ZÉRO. Cette ligne posait
+  // `relaisEnCours = 0` : un hôte qui rappelle `init` pendant qu'un relais est ouvert désarmait le
+  // plafond — la demande suivante partait vers l'amont avec l'unique place encore prise, et le
+  // `finally` de l'ancien relais rendait ensuite le compteur négatif (reproduit par un audit externe,
+  // cinquième passe, 13/09). Le compteur appartient au processus, pas au contexte : il ne se relit pas.
+  // Les bornes de temps, elles, sont capturées à l'ADMISSION de chaque relais (`relayerSousAdmission`) :
+  // un relais admis sous 30 s reste sous 30 s, quoi qu'un `init` ultérieur décide.
+  const bornes = bornesRelais(ctx && ctx.config);
+  plafondRelais = bornes.plafond;
+  relaisStallMs = bornes.stallMs;
+  relaisMaxMs = bornes.maxMs;
+  if (bornes.invalides.length) {
+    // Une fois, ici — pas à chaque relais : un réglage hors plage est une erreur de déploiement, dite
+    // à l'exploitant avec la plage, plutôt qu'un défaut appliqué en silence.
+    try { PLAYER.errors.capture(new Error(`réglages de relais hors plage, défauts appliqués : ${bornes.invalides.join(" ; ")}`), { route: "relais", benin: true }); } catch { /* jamais bloquant */ }
+  }
   // Le domaine reçoit le même contexte : une seule construction pour tout le player.
   require("./shares").init(ctx);
   require("./retention").init(ctx);
@@ -69,7 +81,7 @@ const isAllowedStorageUrl = (url) => PLAYER.storage.isAllowedUrl(url);
 // contexte (`config.maxConcurrentRelays`, défaut 64) : assez pour les requêtes Range parallèles de
 // pdf.js, borné pour un processus. Sur serverless la plate-forme borne déjà la concurrence globale ;
 // ceci protège le mode autonome et chaque instance chaude.
-const RELAIS_SIMULTANES_DEFAUT = 64;
+const { bornesRelais, RELAIS_SIMULTANES_DEFAUT, RELAIS_STALL_MS_DEFAUT, RELAIS_MAX_MS_DEFAUT } = require("./bornes");
 let plafondRelais = RELAIS_SIMULTANES_DEFAUT, relaisEnCours = 0;
 // ⚠️ UNE PLACE N'EST BORNÉE QUE SI LE RELAIS QUI L'OCCUPE FINIT. Un client qui cesse de lire — ou un
 // amont qui cesse d'envoyer — laissait le pipeline en attente pour toujours : `finally` jamais atteint,
@@ -78,10 +90,9 @@ let plafondRelais = RELAIS_SIMULTANES_DEFAUT, relaisEnCours = 0;
 // réponse — le commentaire de `bin/serve.js` affirmait le contraire. Deux bornes, configurables par
 // le contexte : sans progression pendant `relayStallMs` (30 s), ou au-delà de `relayMaxMs` (15 min),
 // le pipeline est ABANDONNÉ par signal — source amont détruite, réponse détruite, rejet, `finally`.
-const RELAIS_STALL_MS_DEFAUT = 30_000, RELAIS_MAX_MS_DEFAUT = 900_000;
+// ⚠️ Les valeurs viennent de `server/bornes.js` : entiers dans une plage écrite, jamais « tout nombre
+// fini » — `setTimeout` ramène à 1 ms tout délai au-delà de 2 147 483 647 ms (audit, cinquième passe).
 let relaisStallMs = RELAIS_STALL_MS_DEFAUT, relaisMaxMs = RELAIS_MAX_MS_DEFAUT;
-const borneMs = (v, defaut) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : defaut; };
-function borneRelais(v) { const n = Math.trunc(Number(v)); return Number.isFinite(n) && n >= 1 ? n : RELAIS_SIMULTANES_DEFAUT; }
 async function relayerSousAdmission(res, travail) {
   if (relaisEnCours >= plafondRelais) {
     // Une fois par heure, l'exploitant l'apprend : un 503 muet ressemble à une panne d'amont.
@@ -94,8 +105,11 @@ async function relayerSousAdmission(res, travail) {
     refuserEnTexte(res, 503, "Trop de transferts en cours, réessayez dans un instant");
     return;
   }
+  // Les bornes de CE relais sont figées ici : un `init` pendant le transfert relit la configuration
+  // pour les suivants, jamais pour celui-ci.
+  const bornes = { stallMs: relaisStallMs, maxMs: relaisMaxMs };
   relaisEnCours += 1;
-  try { await travail(); } finally { relaisEnCours -= 1; }
+  try { await travail(bornes); } finally { relaisEnCours -= 1; }
 }
 
 // GREFFONS de ce studio — jamais du player. `null` quand le module est absent ou coupé
@@ -262,7 +276,7 @@ const { refuserEnTexte, repondreJson, repondreJsonTexte } = require("./reponses.
 // exemplaires d'un fait divergent, c'est la formule du dépôt.
 const POLITIQUE_PERMISSIONS = "camera=(), microphone=(), geolocation=(), payment=()";
 
-async function relayerFichier(res, r, disposition) {
+async function relayerFichier(res, r, disposition, bornes = { stallMs: relaisStallMs, maxMs: relaisMaxMs }) {
   if (!r) { refuserEnTexte(res, 404, "Fichier indisponible"); return; }
   // 413 et 416 sont des REFUS ARGUMENTÉS de l'amont local (plafond, borne absurde) : les fondre
   // dans un 502 dirait « panne » là où l'amont a dit « demande irrecevable ».
@@ -347,8 +361,8 @@ async function relayerFichier(res, r, disposition) {
   // ne se réarme jamais. L'abandon passe par le signal du pipeline, qui détruit la source ET la réponse.
   const abandon = new globalThis.AbortController();
   let stall = null;
-  const rearmer = () => { clearTimeout(stall); stall = setTimeout(() => abandon.abort(new Error(`relais abandonné : aucune progression depuis ${relaisStallMs} ms`)), relaisStallMs); };
-  const budget = setTimeout(() => abandon.abort(new Error(`relais abandonné : plus de ${relaisMaxMs} ms au total`)), relaisMaxMs);
+  const rearmer = () => { clearTimeout(stall); stall = setTimeout(() => abandon.abort(new Error(`relais abandonné : aucune progression depuis ${bornes.stallMs} ms`)), bornes.stallMs); };
+  const budget = setTimeout(() => abandon.abort(new Error(`relais abandonné : plus de ${bornes.maxMs} ms au total`)), bornes.maxMs);
   rearmer();
   try {
     await pipeline(Readable.fromWeb(r.body), async function* (source) {
@@ -1037,9 +1051,9 @@ async function handlerMesure(req, res) {
       if (String(q.file || "") === "1") {
         if (!isAllowedStorageUrl(pres.file_url)) { refuserEnTexte(res, 404, "Fichier indisponible"); return; }
         const range = req.headers["range"];
-        await relayerSousAdmission(res, async () => {
+        await relayerSousAdmission(res, async (bornes) => {
           const r = await PLAYER.storage.fetchFile(pres.file_url, { range });
-          await relayerFichier(res, r, null);
+          await relayerFichier(res, r, null, bornes);
         });
         return;
       }
@@ -1062,9 +1076,9 @@ async function handlerMesure(req, res) {
       if (!isAllowedStorageUrl(url)) return sendRefusal(res, "url-not-allowed", embed);
       if (String(q.stream || "") === "1") {
         const range = req.headers["range"];
-        await relayerSousAdmission(res, async () => {
+        await relayerSousAdmission(res, async (bornes) => {
           const r = await PLAYER.storage.fetchFile(url, { range });
-          await relayerFichier(res, r, dispositionInline(q.name));
+          await relayerFichier(res, r, dispositionInline(q.name), bornes);
         });
         return;
       }
@@ -1116,9 +1130,9 @@ async function handlerMesure(req, res) {
       // Stream depuis le Storage en RELAYANT les requêtes Range → pdf.js charge progressivement (les 1res
       // pages s'affichent sans télécharger tout le PDF) → affichage bien plus rapide.
       const range = req.headers["range"];
-      await relayerSousAdmission(res, async () => {
+      await relayerSousAdmission(res, async (bornes) => {
         const r = await PLAYER.storage.fetchFile(share.file_url, { range });
-        await relayerFichier(res, r, dispositionInline(share.file_name));
+        await relayerFichier(res, r, dispositionInline(share.file_name), bornes);
       });
       return;
     }
@@ -1211,6 +1225,9 @@ async function handlerMesure(req, res) {
 // regardant si le corps a été lu, ce qu aucune route ne peut montrer de l extérieur.
 // ⚠️ Exporté pour être ÉPROUVÉ : « le contexte reste vivant » ne se vérifie pas de l'extérieur.
 module.exports = { __contexte: () => PLAYER, handler, init, TIERS, POLITIQUE_PERMISSIONS, refuserEnTexte, repondreJson, __relayerFichier: relayerFichier, __jsonPourScript: jsonPourScript,
+  // ⚠️ COUTURE DE BANC : le compteur de relais en vol est un état du PROCESSUS, jamais remis à zéro par
+  // `init`. Un banc doit pouvoir vérifier qu'il revient à zéro et ne passe jamais sous zéro.
+  __relaisEnCours: () => relaisEnCours,
   // ⚠️ COUTURE DE BANC, PAS D'API : le cache de lecture est global au module, et un banc qui laisse des
   // lectures en vol contamine le suivant (128 promesses éternelles, 503 partout — trouvé par un audit
   // externe sous mélange, graine 20260913). Un banc doit pouvoir VÉRIFIER qu'il rend le cache vide.

@@ -181,7 +181,10 @@ export const INTERNES_TOLERES = {
   // laisse des lectures en vol contamine le suivant (128 promesses éternelles, 503 partout — trouvé
   // par un audit externe sous mélange). Un banc doit pouvoir VÉRIFIER qu'il rend le cache vide, et
   // cette propriété ne se lit pas du dehors. L'exporter est le prix d'un afterEach qui la garde.
-  ".": ["__relayerFichier", "__jsonPourScript", "__contexte", "__cacheLecture"],
+  // ⚠️ `__relaisEnCours` : DÉCIDÉ le 13/09 (cinquième passe de l'audit). `init` remettait le compteur
+  // de relais à zéro et désarmait le plafond ; la propriété « jamais remis à zéro, jamais négatif » ne
+  // se lit pas du dehors. L'exporter est le prix d'un banc qui la garde.
+  ".": ["__relayerFichier", "__jsonPourScript", "__contexte", "__cacheLecture", "__relaisEnCours"],
 };
 
 /**

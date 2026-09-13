@@ -100,6 +100,39 @@ describe("les entrées elles-mêmes", () => {
   });
 });
 
+// ⚠️ UNE AFFIRMATION ANNONCÉE RETIRÉE QUE LA LISTE NE CONNAISSAIT PAS. Le CHANGELOG de 0.1.165 disait
+// « le cœur n'a aucun secret serveur » retirée ; la phrase vivait encore dans `routes-visiteur.js`
+// et cette garde rendait « aucune écrite comme vraie » — vrai au sens strict (elle ne confronte le
+// dépôt qu'à SA liste), faux au sens qui compte. Trouvé par un audit externe (cinquième passe,
+// 13/09). Le moteur n'était pas en cause ; la définition l'était. Ces bancs fixent l'entrée.
+describe("⚠️ « le cœur n'a pas de secret de serveur »", () => {
+  const entree = RETIREES.filter((r) => /secret de serveur/.test(r.nom));
+  it("est dans la liste — c'est le défaut : l'annoncer retirée sans l'y mettre", () => {
+    expect(entree).toHaveLength(1);
+  });
+
+  it("la phrase NUE est une violation, sous ses quatre formes", () => {
+    for (const phrase of [
+      "(Le cœur n'a pas de secret de serveur, par conception — donc une empreinte, pas un HMAC.)",
+      "the player holds no server secret at all",
+      "le cœur n'a aucun secret serveur",
+      "il n'y a pas de secret de serveur dans le cœur",
+    ]) {
+      expect(nonMarquees(phrase, entree), phrase).toHaveLength(1);
+    }
+  });
+
+  it("une citation MARQUÉE reste permise — on corrige en place, on ne supprime pas l'histoire", () => {
+    expect(nonMarquees("ce paragraphe affirmait « le cœur n'a pas de secret de serveur » — retiré", entree)).toEqual([]);
+    expect(nonMarquees("An earlier version of this paragraph\nsaid the player holds no server secret at all", entree)).toEqual([]);
+  });
+
+  it("un secret de serveur qui EXISTE n'est pas la phrase retirée", () => {
+    expect(nonMarquees("Un secret de serveur ne doit pas donner à voir qui a lu quoi.", entree)).toEqual([]);
+    expect(nonMarquees("ELEVENLABS_API_KEY is a server secret against a paid API", entree)).toEqual([]);
+  });
+});
+
 // ⚠️ LE DÉPÔT LUI-MÊME, PARCE QUE C'EST LA PROPRIÉTÉ QUI COMPTE — et parce qu'elle a été fausse
 // quatre fois. Le premier passage de cette garde a trouvé une occurrence que DEUX audits humains
 // avaient manquée : l'en-tête d'un banc, quatrième copie d'une phrase corrigée trois fois ailleurs.

@@ -771,6 +771,15 @@ Four requirements, in order of what they cost when missed:
    `config.relayStallMs` (30 s) or a total beyond `config.relayMaxMs` (15 min) aborts the pipeline,
    destroying your response and the client's. A client that stops reading no longer keeps a slot
    forever; a route of yours that stops sending does not either.
+   ⚠️ Three things about those numbers, all measured on 0.1.165 by an audit: **64 is not a safe
+   default everywhere** — 64 relays × 8 MiB with slow consumers took the process RSS from ~63 MiB to
+   193–257 MiB; on a 256 MiB process set 16–32. The settings are **integers in a written range**
+   (`maxConcurrentRelays` 1–1024, the two delays 1–86 400 000 ms): out of range falls back to the
+   default and is reported once at `init` through `errors.capture`, because `setTimeout` clamps
+   anything above 2 147 483 647 ms to 1 ms and a "24-day" delay aborted a relay in 6 ms. And the
+   **counter of open relays is never reset by `init`**: calling `init` again re-reads the ceiling and
+   the delays for the relays admitted afterwards; one already in flight keeps its slot and its
+   bounds, so a re-initialisation cannot let a request past a full ceiling.
 3. **Accept a server-to-server call.** A tracked link is opened by someone with no session on your
    side. Authenticate the player with the shared secret in the `x-player-fetch-secret` **header** —
    header only, never a query string: logs keep URLs.

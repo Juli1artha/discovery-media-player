@@ -186,10 +186,91 @@ describe("⚠️ les relais de fichiers passent par une admission", () => {
     expect(src.destroyed, "la source amont est détruite").toBe(true);
   });
 
-  it("un plafond absurde retombe sur 64, un plafond posé est respecté", async () => {
-    const a = amont(); initialiser(a, { maxConcurrentRelays: "n'importe quoi" });
+  it("un plafond absurde retombe sur 64, un plafond posé est respecté — et le refus est DIT à l'initialisation", async () => {
+    const a = amont(); const captures = initialiser(a, { maxConcurrentRelays: "n'importe quoi" });
+    expect(captures.map((c) => c.message).join("\n")).toMatch(/maxConcurrentRelays=n'importe quoi \(entier de 1 à 1024, défaut 64\)/);
     const demandes = Array.from({ length: 65 }, () => demander()); await tour();
     expect(a.appels).toBe(64);
     a.liberer(); await Promise.all(demandes.map((d) => d.p));
+  });
+
+  // ⚠️ `init` REMETTAIT LE COMPTEUR À ZÉRO, ET DÉSARMAIT LE PLAFOND. Un hôte qui rappelle `init`
+  // pendant qu'un relais est ouvert : la demande suivante partait vers l'amont avec l'unique place
+  // encore prise, puis le `finally` de l'ancien relais rendait le compteur négatif (reproduit par un
+  // audit externe, cinquième passe, 13/09). Le compteur appartient au processus, pas au contexte.
+  it("⚠️ init() ne désarme pas le plafond : un relais admis AVANT la réinitialisation occupe toujours sa place", async () => {
+    const a1 = amont(); initialiser(a1, { maxConcurrentRelays: 1 });
+    const d1 = demander(); await tour();
+    expect(a1.appels, "contrôle positif : le premier relais est en vol").toBe(1);
+    expect(player.__relaisEnCours()).toBe(1);
+    const a2 = amont(); initialiser(a2, { maxConcurrentRelays: 1 });          // le même processus, un contexte neuf
+    expect(player.__relaisEnCours(), "la réinitialisation ne touche pas au compteur").toBe(1);
+    const d2 = demander(); await d2.p;
+    expect(d2.res.statusCode, "le second est refusé : la place est encore prise").toBe(503);
+    expect(a2.appels, "et l'amont du contexte neuf n'est PAS appelé").toBe(0);
+    a1.liberer(); await d1.p;
+    expect(player.__relaisEnCours(), "le premier a fini : zéro, pas moins").toBe(0);
+    const d3 = demander(); await tour();
+    expect(a2.appels, "un troisième est admis").toBe(1);
+    a2.liberer(); await d3.p;
+    expect(player.__relaisEnCours(), "jamais négatif").toBe(0);
+  });
+
+  it("⚠️ les bornes de temps d'un relais sont celles de son ADMISSION — un init pendant le transfert ne les change pas", async () => {
+    const { Readable, Writable } = require("node:stream");
+    const captures = [];
+    const contexte = (relayStallMs) => ({
+      plugins: {}, has: () => false,
+      storage: { isAllowedUrl: () => true, fetchFile: async () => ({ ok: true, status: 200, headers: { get: (k) => (k === "content-type" ? "application/pdf" : null) }, body: Readable.toWeb(new Readable({ read() { this.push(Buffer.alloc(1024)); } })) }), async put() {} },
+      db: { async request() { return []; }, async selectAll() { return []; } }, mail: { async send() {} },
+      identity: { async verifyToken() { return null; }, roleOf: () => "", isAdmin: () => false, async canManageShares() { return false; } },
+      limits: { async allow() { return true; } },
+      branding: { async logo() { return ""; }, name: "S", poweredBy: "", loaderName: "", async forKey() { return null; }, title: (b) => b },
+      errors: { async capture(e) { captures.push(String(e && e.message)); } }, legal: { sourceUrl: "", legalUrl: "", privacyUrl: "", trackingNotice: "" },
+      config: { supabaseUrl: "https://exemple.supabase.co", supabasePublishableKey: "k", mapsKey: "", extraFrameAncestors: [], relayStallMs },
+    });
+    player.init(contexte(80));
+    const fige = () => { let lus = 0; const w = new Writable({ write(_c, _e, cb) { lus += 1; if (lus === 1) cb(); } }); w.setHeader = () => {}; w.statusCode = 0; return w; };
+    const p1 = player.handler({ method: "GET", headers: {}, socket: {}, query: { preview: "1", url: URL_OK, stream: "1" } }, fige());
+    await tour(); await tour();
+    player.init(contexte(60_000));                              // pendant le transfert : 60 s pour les SUIVANTS
+    const debut = Date.now();
+    await p1;
+    expect(Date.now() - debut, "abandonné sous la borne de son admission, pas sous la nouvelle").toBeLessThan(5_000);
+    expect(captures.some((m) => /aucune progression depuis 80 ms/.test(m))).toBe(true);
+  });
+
+  // ⚠️ `setTimeout` RAMÈNE À 1 ms TOUT DÉLAI AU-DELÀ DE 2 147 483 647 ms. Un `relayStallMs` de
+  // 2 147 483 648 — « 24,8 jours » — abandonnait le transfert en 6 ms avec 65 TimeoutOverflowWarning
+  // (audit externe, cinquième passe). La borne n'accepte qu'un entier dans une plage écrite, et une
+  // valeur hors plage retombe sur le défaut EN LE DISANT.
+  it("⚠️ un délai au-delà de la limite native de setTimeout retombe sur le défaut : le relais FINIT, sans TimeoutOverflowWarning", async () => {
+    const { Readable, Writable } = require("node:stream");
+    const captures = [];
+    const avertissements = [];
+    const ecoute = (w) => { avertissements.push(String(w && w.name)); };
+    process.on("warning", ecoute);
+    try {
+      player.init({
+        plugins: {}, has: () => false,
+        storage: { isAllowedUrl: () => true, fetchFile: async () => { let n = 0; const src = new Readable({ read() { setTimeout(() => this.push(n++ < 5 ? Buffer.alloc(16) : null), 10); } }); return { ok: true, status: 200, headers: { get: (k) => (k === "content-type" ? "application/pdf" : null) }, body: Readable.toWeb(src) }; }, async put() {} },
+        db: { async request() { return []; }, async selectAll() { return []; } }, mail: { async send() {} },
+        identity: { async verifyToken() { return null; }, roleOf: () => "", isAdmin: () => false, async canManageShares() { return false; } },
+        limits: { async allow() { return true; } },
+        branding: { async logo() { return ""; }, name: "S", poweredBy: "", loaderName: "", async forKey() { return null; }, title: (b) => b },
+        errors: { async capture(e) { captures.push(String(e && e.message)); } }, legal: { sourceUrl: "", legalUrl: "", privacyUrl: "", trackingNotice: "" },
+        config: { supabaseUrl: "https://exemple.supabase.co", supabasePublishableKey: "k", mapsKey: "", extraFrameAncestors: [], relayStallMs: 2_147_483_648, relayMaxMs: 2_147_483_648 },
+      });
+      expect(captures.filter((m) => /réglages de relais hors plage/.test(m)), "dit UNE fois, à l'initialisation").toHaveLength(1);
+      expect(captures[0]).toMatch(/relayStallMs=2147483648 \(entier de 1 à 86400000 ms, défaut 30000\)/);
+      expect(captures[0]).toMatch(/relayMaxMs=2147483648/);
+      let recus = 0;
+      const w = new Writable({ write(c, _e, cb) { recus += c.length; cb(); } }); w.setHeader = () => {}; w.statusCode = 0;
+      await player.handler({ method: "GET", headers: {}, socket: {}, query: { preview: "1", url: URL_OK, stream: "1" } }, w);
+      await new Promise((r) => setImmediate(r));
+      expect(recus, "les cinq morceaux sont passés : rien n'a été abandonné en 6 ms").toBe(5 * 16);
+      expect(captures.some((m) => /abandonné/.test(m)), "aucun abandon").toBe(false);
+      expect(avertissements.filter((n) => n === "TimeoutOverflowWarning")).toEqual([]);
+    } finally { process.off("warning", ecoute); }
   });
 });

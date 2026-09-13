@@ -62,6 +62,21 @@ plenty for pdf.js's parallel Range requests; a serverless platform bounds global
 so this mostly protects the standalone server and each warm instance. Hosts wiring their own context
 set `config.maxConcurrentRelays`.
 
+⚠️ **64 is a default, not a safe value for every platform.** Measured by an external audit on
+0.1.165 with the real handler → storage → pipeline path, 64 relays of 8 MiB each and deliberately slow
+consumers: back-pressure holds (512 MiB went through, memory did not follow), but the process RSS
+rose from ~63 MiB to a peak of **193–257 MiB**, with ~85 MiB more in `arrayBuffers`. On a process
+capped at 256 MiB, set **16–32**; 64 from 512 MiB upwards, after measuring on your own sockets and
+memory profile. The accepted range is an **integer from 1 to 1024**; anything else (a decimal, a
+string, above the range) falls back to 64 and is reported **once at `init`** through `errors.capture`
+(`benin: true`) with the range — never silently.
+
+⚠️ **The counter of open relays belongs to the process, not to the context.** Until 0.1.165,
+calling `init` again reset it to zero while relays were still open: the next request went upstream
+with the only slot still taken, and the old relay's `finally` then drove the counter negative (audit,
+fifth pass). `init` re-reads the ceiling and the delays for the relays *admitted after it*; a relay
+already in flight keeps the bounds it was admitted under.
+
 ### `PLAYER_RELAY_STALL_MS`, `PLAYER_RELAY_MAX_MS`
 
 A slot is only bounded if the relay holding it ends. A client that stops reading — or an upstream
@@ -72,6 +87,15 @@ of the response. Two bounds, per relay: **no progress for `PLAYER_RELAY_STALL_MS
 re-armed on every chunk that actually passes) or **longer than `PLAYER_RELAY_MAX_MS`** (default
 15 min) aborts the pipeline through its signal: upstream source destroyed, response destroyed, slot
 released. Hosts wiring their own context set `config.relayStallMs` / `config.relayMaxMs`.
+
+⚠️ **Integers, in milliseconds, from 1 to 86 400 000 (24 h).** Node's `setTimeout` caps at
+2 147 483 647 ms and silently clamps anything above to **1 ms**: a stall delay of 2 147 483 648 —
+"about 24.8 days" — aborted a transfer after 6 ms, with 65 `TimeoutOverflowWarning` (audit, fifth
+pass). The first bound accepted "any finite positive number"; it now accepts an integer in the range
+above, and a value outside it (a decimal, a string, `Infinity`, above 24 h) falls back to the default
+and is reported once at `init`. The standalone context passes the environment value through
+**unparsed** so that this single check sees it and says so — normalising it there would hide the
+mistake from the operator.
 
 ## The minimum
 
