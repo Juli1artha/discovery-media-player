@@ -12,6 +12,12 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Changed
+
+- La forge rejoue la garde d'ordre des bancs sous **quatre** graines : jour, 42, 20260913 et
+  **20260912** — cette dernière demandée par l'audit externe (quatrième passe) et omise du train
+  0.1.165, ce qui lui avait été dit. Aucune dépendance d'ordre trouvée sous elle.
+
 ## [0.1.165] — 2026-09-13
 
 ### Fixed
