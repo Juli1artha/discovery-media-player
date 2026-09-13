@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.165] — 2026-09-13
+
 ### Fixed
 
 - ⚠️ **Deux points de relecture, une seule clé de quota : une sortie unique portait 306 spectateurs,
@@ -7202,7 +7204,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.164...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.165...HEAD
+[0.1.165]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.164...v0.1.165
 [0.1.164]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.163...v0.1.164
 [0.1.163]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.162...v0.1.163
 [0.1.162]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.160...v0.1.162
