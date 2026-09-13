@@ -417,11 +417,13 @@ jobs:
       - name: A published migration never changes, not even a comment
         run: node tools/migrations-immuables.mjs
 
-      # ⚠️ TROIS GRAINES : le jour (change chaque jour), 42 (fixe) et 20260913 — celle sous laquelle un
-      # audit externe a trouvé une dépendance d'ordre que la garde masquait en lisant la sortie texte.
+      # ⚠️ QUATRE GRAINES : le jour (change chaque jour), 42 (fixe), 20260913 — celle sous laquelle un
+      # audit externe a trouvé une dépendance d'ordre que la garde masquait en lisant la sortie texte —
+      # et 20260912, demandée par le même audit et d'abord omise : une graine qu'un auditeur nomme est
+      # une graine qu'il rejouera, autant qu'elle soit ici avant lui.
       - name: No bench depends on its rank within its file
         if: matrix.node == '22'
-        run: node tools/ordre-des-bancs.mjs --graine=jour,42,20260913
+        run: node tools/ordre-des-bancs.mjs --graine=jour,42,20260912,20260913
 
       - name: Every changelog section has its exact comparison link
         if: matrix.node == '22'
