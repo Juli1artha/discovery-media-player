@@ -245,4 +245,8 @@ export const PRESENT_CACHE_MS = PRESENT_READ_COALESCE_MS;
  */
 export const PRESENT_QUOTA_MARGIN = 4;
 
+// ⚠️ CE QUOTA VAUT POUR CHAQUE POINT — `state=1` et `chat=1` ont chacun leur clé (`pread:state:<ip>`,
+// `pread:chat:<ip>`). Il a été dérivé « sur chacun des deux points » (RESYNC_READS_PER_HOUR) et
+// appliqué sous UNE clé : une sortie unique portait 306 spectateurs au repos, pas 613, et saturer le
+// chat coupait l'état. Relevé par un audit externe le 13/09.
 export const PRESENT_QUOTA_PER_HOUR = (PRESENT_READS_PER_HOUR + PRESENT_READ_BURST) * READERS_PER_EGRESS * PRESENT_QUOTA_MARGIN;

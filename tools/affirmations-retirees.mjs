@@ -47,6 +47,18 @@ export const RETIREES = [
     pourquoi: "bot-tts confronte le texte à ce que l'assistant a réellement dit : l'appelant PROPOSE, il ne choisit pas",
     retiree: "2026-09-11",
   },
+  {
+    nom: "'map' reste appliqué tel quel depuis un canal public",
+    motif: /(?:'map' et 'typing' restent appliqués tels quels|map (?:reste|est) (?:encore )?(?:une commande publique )?appliqu[ée]+ (?:tels? quels?|directement))/i,
+    pourquoi: "le gestionnaire de 'map' ignore la charge et déclenche une relecture de l'état serveur ; seul 'typing' reste éphémère",
+    retiree: "2026-09-13",
+  },
+  {
+    nom: "le serveur renvoie une clé de présentateur que l'audience compare",
+    motif: /(?:le serveur renvoie la clé de celui qui a prouvé|l'audience compare|the audience compares)/i,
+    pourquoi: "presenter_key n'existe plus : le serveur ne rend que presenter_name, affiché séparément de la présence, et aucune métadonnée Realtime ne porte un privilège",
+    retiree: "2026-09-13",
+  },
 ];
 
 /**
@@ -71,7 +83,13 @@ export const EXTENSIONS = [".md", ".js", ".mjs", ".ts", ".sql"];
  * l'histoire qu'ils portent. Tout le reste du dépôt parle au présent.
  */
 export const estArchive = (chemin) =>
-  /(^|\/)CHANGELOG\.md$/.test(chemin) || /(^|\/)docs\/AUDIT-/.test(chemin);
+  /(^|\/)CHANGELOG\.md$/.test(chemin) || /(^|\/)docs\/AUDIT-/.test(chemin)
+  // ⚠️ ET LES MIGRATIONS PUBLIÉES, depuis le 13/09 : elles voyagent dans le tarball et des hôtes les
+  // ont EXÉCUTÉES et empreintées — `migrations-immuables.mjs` interdit d'y toucher. Corriger en
+  // place une phrase retirée dans une migration livrée, c'est signaler à un hôte une migration à
+  // ré-appliquer (relevé par l'hôte ADV). La correction vit dans le contrat, ou dans une migration
+  // neuve : ce fichier-ci est une archive au même titre qu'un CHANGELOG.
+  || /(^|\/)supabase\/migrations\//.test(chemin);
 
 /** La garde et son banc contiennent les motifs par nécessité : ils les DÉFINISSENT. */
 export const estLaGardeElleMeme = (chemin) =>

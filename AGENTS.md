@@ -2501,6 +2501,14 @@ Once we **decide** a claim is retired, that decision is data. A guard can then c
 repository with the decision — not with reality. `tools/affirmations-retirees.mjs` does exactly that
 and nothing more.
 
+⚠️ **Except in a published migration.** Correcting a retired claim *in place* in
+`supabase/migrations/0004` between 0.1.163 and 0.1.164 was the rule applied faithfully — and it sent a
+host who fingerprints his migrations a "migration changed after application" alarm he had to
+`diff -u` to dismiss. Migrations ship in the tarball; they are executed artefacts, not prose.
+`tools/migrations-immuables.mjs` now refuses any byte change to a migration present in the highest
+tag, and `affirmations-retirees` treats `supabase/migrations/` as an archive. The correction goes to
+the contract, or to a new migration.
+
 It exists because the same failure recurred four times in two days: a sentence corrected in one
 place and left standing in its twin. One of them sat **95 lines above a correction made the same day
 in the same file**. One declared a whole stage out of scope in `SECURITY.md` — and a document that

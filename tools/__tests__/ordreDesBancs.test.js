@@ -14,36 +14,71 @@ import { fileURLToPath } from "node:url";
 
 import { describe, it, expect } from "vitest";
 
-import { ORDRE_DECLARE, confronter, fichiersEnEchec, fichiersVus, grainePourJour } from "../ordre-des-bancs.mjs";
+import { ORDRE_DECLARE, confronter, fichiersEnEchec, fichiersVus, grainePourJour, grainesDemandees, verdict } from "../ordre-des-bancs.mjs";
 
-const SORTIE = `
- RUN  v4.1.11 /home/user/x
+// ⚠️ UN RAPPORT STRUCTURÉ, JAMAIS LA SORTIE TEXTE. La première écriture cherchait « FAIL <chemin> »
+// dans tout ce que vitest imprimait — y compris ce que les bancs impriment eux-mêmes en lançant des
+// gardes. Elle classait ces fichiers « déjà rouges », rendait NON CONCLUANT, et ce non-concluant
+// passait avant une violation confirmée : une vraie dépendance d'ordre est restée masquée (audit
+// externe, graine 20260913, 13/09). Ces bancs fixent les trois défauts.
+const RACINE_X = "/home/user/x";
+const RAPPORT = {
+  numTotalTestSuites: 900,
+  testResults: [
+    { name: "/home/user/x/server/__tests__/a.test.js", status: "failed", assertionResults: [{ status: "failed" }] },
+    { name: "/home/user/x/charge/b.test.js", status: "failed", assertionResults: [{ status: "failed" }, { status: "failed" }] },
+    { name: "/home/user/x/tools/__tests__/c.test.js", status: "passed", assertionResults: [{ status: "passed" }] },
+  ],
+};
 
- FAIL  server/__tests__/a.test.js > bloc > essai
- FAIL  charge/b.test.js > autre
- Test Files  2 failed | 214 passed (216)
-      Tests  3 failed | 2827 passed (2830)
-`;
-
-describe("lire la sortie de vitest", () => {
-  it("relève les fichiers en échec, sans doublon", () => {
-    expect(fichiersEnEchec(SORTIE).sort()).toEqual(["charge/b.test.js", "server/__tests__/a.test.js"]);
+describe("lire le rapport JSON de vitest", () => {
+  it("relève les fichiers en échec, relatifs à la racine, sans doublon", () => {
+    expect(fichiersEnEchec(RAPPORT, RACINE_X).sort()).toEqual(["charge/b.test.js", "server/__tests__/a.test.js"]);
   });
 
-  it("un même fichier cité par plusieurs essais ne compte qu'une fois", () => {
-    const deux = SORTIE + "\n FAIL  charge/b.test.js > encore un autre\n";
-    expect(fichiersEnEchec(deux).filter((f) => f === "charge/b.test.js")).toHaveLength(1);
+  it("⚠️ une ligne « FAIL » IMPRIMÉE par un banc n'est pas un échec : seul le statut compte", () => {
+    const rapport = { testResults: [
+      { name: "/home/user/x/tools/__tests__/planchers.test.js", status: "passed",
+        assertionResults: [{ status: "passed", title: "la garde imprime FAIL  server/__tests__/piege.test.js et sort en 1" }],
+        console: [{ type: "stdout", content: " FAIL  server/__tests__/piege.test.js > un faux rouge\n" }] },
+    ] };
+    expect(fichiersEnEchec(rapport, RACINE_X)).toEqual([]);
   });
 
   it("relève le nombre de fichiers de bancs VUS — c'est l'objet de la sonde", () => {
-    expect(fichiersVus(SORTIE)).toBe(216);
+    expect(fichiersVus(RAPPORT)).toBe(3);
   });
 
-  // ⚠️ LE CAS QUI COMPTE : une sortie qui ne dit RIEN. Sans ce retour `null`, la garde conclurait
-  // « aucun échec, donc vert » sur une sortie qu'elle n'a pas comprise — victoire sur rien.
-  it("⚠️ une sortie illisible ne rend pas zéro, elle rend `null`", () => {
+  it("⚠️ un rapport illisible ne rend pas zéro, il rend `null`", () => {
+    expect(fichiersVus(null)).toBe(null);
+    expect(fichiersVus({ testResults: [] })).toBe(null);
     expect(fichiersVus("vitest a explosé")).toBe(null);
-    expect(fichiersVus("")).toBe(null);
+  });
+});
+
+describe("⚠️ le verdict : une violation confirmée PRIME sur un cas non concluant", () => {
+  const base = { avertissements: [], entete: "graine 1", vus: 10 };
+  it("violation + rouge préexistant → VIOLATION, le rouge préexistant est dit en avertissement", () => {
+    const r = verdict({ ...base, constats: ["x.test.js dépend de son rang"], raisonsNonConcluance: ["y.test.js échoue AUSSI dans l'ordre normal"] });
+    expect(r.code).toBe(1);
+    expect(r.constats.join("\n")).toMatch(/x\.test\.js/);
+    expect(r.avertissements.join("\n")).toMatch(/non concluant par ailleurs — y\.test\.js/);
+  });
+  it("rouge préexistant seul → NON CONCLUANT", () => {
+    expect(verdict({ ...base, constats: [], raisonsNonConcluance: ["y"] }).code).toBe(2);
+  });
+  it("rien → CONFORME, avec le compte de fichiers", () => {
+    const r = verdict({ ...base, constats: [], raisonsNonConcluance: [] });
+    expect(r.code).toBe(0);
+    expect(r.resume).toMatch(/^10 fichiers/);
+  });
+});
+
+describe("les graines demandées", () => {
+  it("sans argument : le jour ; avec `--graine=42,jour,20260913` : les trois, `jour` résolu", () => {
+    expect(grainesDemandees([], 20260911)).toEqual([20260911]);
+    expect(grainesDemandees(["--graine=42,jour,20260913"], 20260911)).toEqual([42, 20260911, 20260913]);
+    expect(grainesDemandees(["--graine=jour,42,20260913"], 20260913), "jour = une graine fixe : une seule fois").toEqual([20260913, 42]);
   });
 });
 

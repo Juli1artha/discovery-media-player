@@ -188,6 +188,24 @@ describe("⚠️ les trois issues d'un envoi ne tiennent pas dans un booléen", 
     const r = await repartager(NOMINATIF, { envoi: async () => ({ sent: false }) });
     expect(r.corps.delivery).toBe("refused");
     expect(r.corps.sendRefused).toBe("host-declined");
+    expect(r.corps.hostReason, "sans motif déclaré, pas de champ inventé").toBeUndefined();
+  });
+
+  // ⚠️ L'HÔTE DISAIT POURQUOI, ET ON LE JETAIT. Un hôte (ADV, 13/09) répond `{ sent: false, motif }`
+  // à chaque refus — huit motifs distincts — pour que « refusé » ne se lise pas « en panne ». On ne
+  // lisait que `sent` : la désambiguïsation que le contrat disait manquante était déjà envoyée.
+  it("⚠️ le motif déclaré par l'hôte revient à l'appelant, borné — `reason` ou `motif`, jamais un objet", async () => {
+    const r1 = await repartager(NOMINATIF, { envoi: async () => ({ sent: false, motif: "cadence" }) });
+    expect(r1.corps.delivery).toBe("refused");
+    expect(r1.corps.sendRefused).toBe("host-declined");
+    expect(r1.corps.hostReason).toBe("cadence");
+    const r2 = await repartager(NOMINATIF, { envoi: async () => ({ sent: false, reason: "  " + "x".repeat(200) }) });
+    expect(r2.corps.hostReason, "borné à 80, sans blancs de tête").toBe("x".repeat(80));
+    const r3 = await repartager(NOMINATIF, { envoi: async () => ({ sent: false, reason: { code: 7 } }) });
+    expect(r3.corps.hostReason, "un objet n'est pas un motif : rien n'est recopié").toBeUndefined();
+    const r4 = await repartager(NOMINATIF, { envoi: async () => ({ sent: true, motif: "ignoré" }) });
+    expect(r4.corps.delivery, "un envoi réussi ne porte pas de motif de refus").toBe("sent");
+    expect(r4.corps.hostReason).toBeUndefined();
   });
 
   it("notre propre refus reste « refused », avec sa cause d'origine", async () => {

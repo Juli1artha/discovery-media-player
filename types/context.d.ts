@@ -128,6 +128,14 @@ export interface Reglages {
   supabasePublishableKey: string;
   mapsKey: string;
   extraFrameAncestors: string[];
+  /** Transferts de fichiers relayés simultanément par processus (défaut 64). Au-delà, le relais
+   *  répond 503 + Retry-After AVANT l'appel amont ; la place est rendue en `finally`. */
+  maxConcurrentRelays?: number;
+  /** Un relais sans progression pendant ce délai est abandonné — source et réponse détruites, place
+   *  rendue (défaut 30 000 ms). `requestTimeout` ne borne pas l'émission d'une réponse. */
+  relayStallMs?: number;
+  /** Durée totale maximale d'un relais (défaut 900 000 ms). */
+  relayMaxMs?: number;
   /** Ce qui est POSÉ, à côté de ce que le code SAIT faire : la carte d'identité publie les deux,
    *  parce qu'une capacité disponible mais non configurée se comporte comme une absence. */
   separateIssuer?: boolean;

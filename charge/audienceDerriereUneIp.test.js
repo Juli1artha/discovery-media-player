@@ -52,9 +52,15 @@ async function heureSimulee({ spectateurs, gestesPresentateurParHeure = 0, quota
     let acceptees = 0, refusees = 0, premierRefusMs = null;
     for (const { t, par } of instants) {
       instant = 1_700_000_000_000 + t;
+      // ⚠️ DEUX DÉCISIONS PAR INTERVALLE ET PAR SPECTATEUR — le navigateur relit l'état ET le chat.
+      // La première écriture n'en posait qu'une : elle annonçait 613 spectateurs par sortie là où
+      // le vrai limiteur, sous une clé unique, en portait 306. Reproduit par un audit externe le
+      // 13/09. Depuis, chaque point a sa clé, et ce banc les tient toutes les deux.
       for (let i = 0; i < par; i += 1) {
-        if (await limites.allow("pread:203.0.113.7", quota, 3600)) acceptees += 1;
-        else { refusees += 1; if (premierRefusMs === null) premierRefusMs = t; }
+        for (const point of ["state", "chat"]) {
+          if (await limites.allow(`pread:${point}:203.0.113.7`, quota, 3600)) acceptees += 1;
+          else { refusees += 1; if (premierRefusMs === null) premierRefusMs = t; }
+        }
       }
     }
     return { acceptees, refusees, premierRefusMs, demandes: acceptees + refusees };
@@ -103,11 +109,26 @@ describe("⚠️ une audience derrière une sortie unique", () => {
   // ⚠️ BORNES. Une grandeur bornée qui sort de ses bornes est le seul témoin gratuit d'une
   // définition : ici, qu'aucune demande n'est perdue ni comptée deux fois, et qu'on n'accepte
   // jamais plus que le quota dans une fenêtre.
-  it("⚠️ bornes : acceptées + refusées = demandes, et acceptées ≤ quota par fenêtre", async () => {
+  it("⚠️ bornes : acceptées + refusées = demandes, et acceptées ≤ quota × deux points par fenêtre", async () => {
     const r = await heureSimulee({ spectateurs: 1000 });
     expect(r.acceptees + r.refusees).toBe(r.demandes);
-    expect(r.acceptees, "la fenêtre est d'une heure : on ne peut pas dépasser le plafond")
-      .toBeLessThanOrEqual(PRESENT_QUOTA_PER_HOUR);
+    expect(r.demandes, "deux requêtes par spectateur et par intervalle — ce que le navigateur émet").toBe(2 * 1000 * RESYNC_READS_PER_HOUR);
+    expect(r.acceptees, "la fenêtre est d'une heure : deux clés, deux plafonds")
+      .toBeLessThanOrEqual(2 * PRESENT_QUOTA_PER_HOUR);
+  });
+
+  it("⚠️ à la capacité annoncée, les DEUX points tiennent l'heure — c'est ce que 613 veut dire depuis les deux clés", async () => {
+    const r = await heureSimulee({ spectateurs: capaciteAuRepos() });
+    expect(r.refusees, "613 spectateurs × 2 points × 144 relectures, aucun refus").toBe(0);
+  });
+
+  it("⚠️ saturer le chat ne refuse pas l'état : deux clés, deux budgets", async () => {
+    let instant = 1_700_000_000_000;
+    const limites = creerLimites(null, { warn() {} }, () => instant);
+    let chatRefuse = 0;
+    for (let i = 0; i < PRESENT_QUOTA_PER_HOUR + 5; i += 1) if (!(await limites.allow("pread:chat:203.0.113.7", PRESENT_QUOTA_PER_HOUR, 3600))) chatRefuse += 1;
+    expect(chatRefuse, "contrôle positif : le chat est bien saturé").toBe(5);
+    expect(await limites.allow("pread:state:203.0.113.7", PRESENT_QUOTA_PER_HOUR, 3600), "l'état passe encore").toBe(true);
   });
 });
 
@@ -122,7 +143,7 @@ afterAll(async () => {
     const minute = r.premierRefusMs === null ? "—" : `${Math.round(r.premierRefusMs / 60000)} min`;
     lignes.push(`    ${String(n).padStart(5)} spectateurs  ${String(r.demandes).padStart(7)} demandes  ${String(r.refusees).padStart(7)} refusées  premier refus : ${minute}`);
   }
-  console.log(`\n  UNE SORTIE UNIQUE, UNE HEURE, quota ${PRESENT_QUOTA_PER_HOUR}/h (dimensionné pour ${READERS_PER_EGRESS} lecteurs) :`);
+  console.log(`\n  UNE SORTIE UNIQUE, UNE HEURE, quota ${PRESENT_QUOTA_PER_HOUR}/h PAR POINT (état, chat), dimensionné pour ${READERS_PER_EGRESS} lecteurs :`);
   for (const l of lignes) console.log(l);
   console.log(`    capacité au repos : ${capaciteAuRepos()} spectateurs par sortie\n`);
 });

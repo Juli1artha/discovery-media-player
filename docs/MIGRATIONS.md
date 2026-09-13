@@ -35,6 +35,25 @@ deviner : le message parle d'une colonne, pas d'une version.
 Avec la règle, l'ordre ne compte plus. Migration avant code : la colonne existe et personne ne
 l'écrit encore. Code avant migration : le player détecte l'absence et **dégrade en la nommant**.
 
+## Une migration publiée ne change plus — pas même un commentaire
+
+Entre 0.1.163 et 0.1.164, `0004-limites-atomiques.sql` a changé : un commentaire corrigé en place,
+parce qu'il portait une affirmation retirée et que la règle de ce dépôt est de corriger là où la
+phrase a été lue. Aucune instruction SQL touchée. Mais **les migrations voyagent dans le tarball** :
+ce ne sont plus des documents, ce sont des artefacts que des hôtes ont déjà **exécutés** — et un
+hôte prudent les empreinte. Pour lui, un fichier de migration qui bouge après application est le
+scénario qu'il redoute, et il a dû faire un `diff -u` pour apprendre qu'il n'avait rien à
+ré-appliquer. (Relevé par l'hôte ADV, 13/09/2026.)
+
+> **Une migration présente dans la dernière version publiée est identique, octet pour octet, dans
+> l'arbre de travail.** `tools/migrations-immuables.mjs` le vérifie contre le tag le plus haut ;
+> sans tag lisible elle rend NON CONCLUANT, jamais vert.
+
+Une correction de prose se porte dans `docs/HOST-CONTRACT.md`, ici, ou dans une migration **neuve** —
+jamais dans un fichier qu'un hôte a déjà appliqué. `tools/affirmations-retirees.mjs` traite donc
+`supabase/migrations/` comme une archive, au même titre qu'un CHANGELOG : les deux gardes se
+contrediraient sinon. `supabase/init.sql`, lui, n'est pas une migration appliquée : il se corrige.
+
 ## Écrire une migration
 
 Un fichier par changement, dans `supabase/migrations/`, numéroté et jamais réécrit :

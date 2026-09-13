@@ -8,7 +8,54 @@ const { repondreJson } = require("./reponses.js");
 
 const { getShareBySlug } = require("./shares");
 let PLAYER = null;
-const init = (ctx) => { PLAYER = ctx; };
+
+// ⚠️ LA VÉRIFICATION N'AVAIT AUCUN PLAFOND — seule la DEMANDE de code en avait un (20/h par adresse).
+// `visitor-verify` et `visitor-google` appelaient le greffon directement : mille tentatives depuis
+// une adresse, zéro appel au limiteur (reproduit par un audit externe le 13/09). Un code court sans
+// compteur dans le greffon se force ; une vérification Google par requête anonyme est une
+// amplification réseau. Le player ne peut pas supposer que le greffon compte — c'est la même règle
+// que la liaison session ↔ document de l'assistant : une propriété de sécurité ne dépend pas d'un
+// code que le player ne contient pas.
+//
+// Deux dimensions pour le code, parce qu'une seule se contourne : par ADRESSE (une adresse ne
+// recommence pas à zéro en changeant d'email) et par IDENTITÉ (plusieurs adresses ne forcent pas un
+// même email). Les compteurs sont pris À L'ADMISSION, donc réussite, échec et exception les
+// consomment pareil. L'identité est une EMPREINTE de l'email normalisé, jamais l'email : la table des
+// compteurs n'a pas à porter d'adresses en clair. (Le cœur n'a pas de secret de serveur, par
+// conception — voir le contexte autonome — donc une empreinte, pas un HMAC.)
+const VERIF_PAR_ADRESSE = 100, VERIF_PAR_IDENTITE = 10, VERIF_FENETRE_IDENTITE_S = 900;
+const GOOGLE_PAR_ADRESSE = 100, DEMANDE_PAR_IDENTITE = 5;
+// ⚠️ UN SHA-256 D'EMAIL N'EST PAS UNE ANONYMISATION : il se renverse par dictionnaire — qui lit la
+// table des compteurs, une sauvegarde ou un outil d'administration précalcule les empreintes des
+// adresses probables (relevé par un audit externe le 13/09 ; `alice@example.com` → une valeur connue).
+// La clé vient donc du GREFFON quand il sait la produire : `visitors.rateLimitKey(email)` rend un HMAC
+// stable et opaque, avec un secret que le player ne voit jamais et une séparation de domaine
+// (`"visitor-email\0" + email normalisé`). Sans cette capacité, ou si elle échoue, on retombe sur
+// l'empreinte — pseudonyme, pas secrète — et on le DIT une fois : refuser la limite serait pire que la
+// limiter sous un pseudonyme faible, et la taire serait pire que les deux.
+const normaliserEmail = (email) => String(email || "").trim().toLowerCase();
+const empreinteIdentite = (email) =>
+  require("crypto").createHash("sha256").update(normaliserEmail(email)).digest("hex").slice(0, 32);
+let repliDit = false;
+async function cleIdentite(V, email) {
+  const norm = normaliserEmail(email);
+  if (V && typeof V.rateLimitKey === "function") {
+    try {
+      const k = await V.rateLimitKey(norm);
+      if (typeof k === "string" && k.trim()) return "h:" + k.trim().slice(0, 64);
+      throw new Error("rateLimitKey a rendu autre chose qu'une chaîne non vide");
+    } catch (e) { direLeRepli(`visitors.rateLimitKey a échoué (${e && e.message ? e.message : "cause inconnue"})`); }
+  } else direLeRepli("visitors.rateLimitKey n'est pas fourni");
+  return "e:" + empreinteIdentite(norm);
+}
+function direLeRepli(pourquoi) {
+  if (repliDit) return;
+  repliDit = true;
+  try {
+    PLAYER.errors.capture(new Error(`mur visiteur : ${pourquoi} — les compteurs par identité utilisent une EMPREINTE de l'email (SHA-256 tronqué), pseudonyme mais renversable par dictionnaire. Fournissez rateLimitKey (HMAC, secret côté hôte, séparation de domaine).`), { route: "visitor", benin: true });
+  } catch { /* jamais bloquant */ }
+}
+const init = (ctx) => { PLAYER = ctx; repliDit = false; };
 
 // Traite les actions de cette famille. Le MARQUEUR est le retour : les blocs répondent puis
 // sortent par leurs `return` d'origine (valeur ≠ false) ; si aucune action ne correspond, la
@@ -25,6 +72,8 @@ async function traiter(req, res, body, _slug) {
         const ip = adresseAppelant(req) || "ip";
         if (body.action === "visitor-request") {
           if (!(await PLAYER.limits.allow(`vcode:${ip}`, 20, 3600))) return jv(429, { ok: false, error: "rate" });
+          // Une boîte ne se fait pas inonder depuis cent adresses : cinq codes par heure et par email.
+          if (!(await PLAYER.limits.allow(`vcode:id:${await cleIdentite(V, body.email)}`, DEMANDE_PAR_IDENTITE, 3600))) return jv(429, { ok: false, error: "rate" });
           const sh = await getShareBySlug(String(body.slug || ""));
           return jv(200, await V.requestCode(body.email, { title: sh && sh.doc_title }));
         }
@@ -50,10 +99,13 @@ async function traiter(req, res, body, _slug) {
     }
         };
         if (body.action === "visitor-google") {
+          if (!(await PLAYER.limits.allow(`vgoogle:${ip}`, GOOGLE_PAR_ADRESSE, 3600))) return jv(429, { ok: false, error: "rate" });
           const r = await V.verifyGoogle(body.credential);
           if (r.ok) await recordUnlock(r.visitor, "google");
           return r.ok ? jv(200, { ok: true }, r.setCookie) : jv(400, r);
         }
+        if (!(await PLAYER.limits.allow(`vverif:${ip}`, VERIF_PAR_ADRESSE, 3600))) return jv(429, { ok: false, error: "rate" });
+        if (!(await PLAYER.limits.allow(`vverif:id:${await cleIdentite(V, body.email)}`, VERIF_PAR_IDENTITE, VERIF_FENETRE_IDENTITE_S))) return jv(429, { ok: false, error: "rate" });
         const r = await V.verifyCode(body.email, body.code, body.name);
         if (r.ok) await recordUnlock(r.visitor, "email");
         return r.ok ? jv(200, { ok: true }, r.setCookie) : jv(400, r);

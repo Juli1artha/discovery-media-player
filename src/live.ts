@@ -93,10 +93,13 @@ export function initials(name?: string): string {
  * autres sans nous voir. Aucune correction serveur ne peut l'atteindre — c'est ICI, au rendu, que
  * les deux chemins se rejoignent.
  *
- * ⚠️ ET CE DÉFAUT EST NOMMÉ DANS LE COMMENTAIRE DE SA PROPRE CORRECTION. `gabarit-live.js` explique
- * qu'un `track({role:"presenter"})` permettait d'apparaître comme le présentateur « avec le nom et
- * l'avatar de son choix ». Le RÔLE a été réparé — le serveur arbitre, l'audience compare. L'avatar
- * est resté, cité dans la phrase qui décrit le mal.
+ * ⚠️ ET CE DÉFAUT ÉTAIT NOMMÉ DANS LE COMMENTAIRE DE SA PROPRE CORRECTION. `gabarit-live.js`
+ * expliquait qu'un `track({role:"presenter"})` permettait d'apparaître comme le présentateur « avec
+ * le nom et l'avatar de son choix ». Le RÔLE ne porte plus rien : le titre vient de
+ * `state.presenter_name` relu au serveur, la présence n'affiche aucun badge et n'ouvre aucun droit.
+ * L'avatar, lui, était resté dans la charge, cité dans la phrase qui décrit le mal — d'où cette
+ * barrière au rendu. (Cette phrase disait « le serveur arbitre, l'audience compare » : il n'y a plus
+ * de clé comparée, réécrite le 13/09.)
  *
  * La règle : une image n'est rendue que si son origine est déclarée. Sinon, les initiales — une
  * dégradation VISIBLE, jamais une image vers un inconnu.

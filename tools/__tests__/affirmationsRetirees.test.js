@@ -55,6 +55,10 @@ describe("le périmètre", () => {
   it("⚠️ le CHANGELOG et les rapports d'audit sont hors périmètre", () => {
     expect(estArchive("CHANGELOG.md")).toBe(true);
     expect(estArchive("docs/AUDIT-2026-08-15-SECONDE-PASSE.md")).toBe(true);
+    // Une migration LIVRÉE est un artefact que des hôtes ont exécuté : `migrations-immuables.mjs`
+    // interdit d'y corriger quoi que ce soit, donc cette garde ne peut pas l'exiger.
+    expect(estArchive("supabase/migrations/0004-limites-atomiques.sql")).toBe(true);
+    expect(estArchive("supabase/init.sql"), "init.sql n'est pas une migration appliquée : il se corrige").toBe(false);
     expect(estArchive("docs/HOST-CONTRACT.md")).toBe(false);
     expect(estArchive("SECURITY.md")).toBe(false);
   });

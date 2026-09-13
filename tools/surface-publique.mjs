@@ -177,7 +177,11 @@ export const INTERNES_TOLERES = {
   // ⚠️ `__contexte` : DÉCIDÉ, pas subi. « Le contexte de l'hôte reste vivant après `init` » ne se
   // vérifie pas du dehors — et c'est précisément la propriété qu'une enveloppe de mesure a cassée
   // une fois (la forge l'a vue, pas nous). L'exporter est le prix d'un banc qui la garde.
-  ".": ["__relayerFichier", "__jsonPourScript", "__contexte"],
+  // ⚠️ `__cacheLecture` : DÉCIDÉ le 13/09. Le cache de lecture est global au module ; un banc qui
+  // laisse des lectures en vol contamine le suivant (128 promesses éternelles, 503 partout — trouvé
+  // par un audit externe sous mélange). Un banc doit pouvoir VÉRIFIER qu'il rend le cache vide, et
+  // cette propriété ne se lit pas du dehors. L'exporter est le prix d'un afterEach qui la garde.
+  ".": ["__relayerFichier", "__jsonPourScript", "__contexte", "__cacheLecture"],
 };
 
 /**

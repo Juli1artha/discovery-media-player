@@ -410,6 +410,56 @@ inheritance both refuse — without either of them knowing why.
 Requires `supabase/migrations/0001-destinataire-atteste.sql`. Until it is applied the player refuses
 the attested creation and names the file; it never falls back to the other column.
 
+## The visitor wall (`plugins.visitors`): what the player counts, and what your plugin must do
+
+A host can gate documents behind a soft wall — an e-mail code, or a Google credential — by providing
+`plugins.visitors` with `requestCode(email, { title })`, `verifyCode(email, code, name)` and
+`verifyGoogle(credential)`. The player exposes them as `visitor-request`, `visitor-verify` and
+`visitor-google`.
+
+⚠️ **Until this train, only the request was rate-limited; verification called your plugin directly.**
+An external audit reproduced 1 000 code attempts and 1 000 Google verifications from one address with
+zero limiter calls (13/09). A short code with no counter in the plugin was brute-forceable, and a
+Google verification per anonymous request was a network amplifier. The player no longer assumes your
+plugin counts — the same rule as the assistant's session↔document binding: a security property must
+not depend on code the player does not contain.
+
+| action | per address | per identity (fingerprint of the normalised e-mail, never the address) |
+|---|---|---|
+| `visitor-request` | 20 / hour | 5 / hour |
+| `visitor-verify` | 100 / hour | 10 / 15 minutes |
+| `visitor-google` | 100 / hour | — |
+
+Counters are taken **at admission**: success, failure and an exception in your plugin consume them
+alike. Beyond a limit the answer is `429 { error: "rate" }` and **your plugin is not called**.
+
+⚠️ **Provide `rateLimitKey(email): Promise<string>` on the plugin — the identity key should be
+yours.** Without it the player keys the per-identity counters on a truncated SHA-256 of the
+normalised e-mail: `player_rate_limits` never carries an address in clear, but a fingerprint is a
+**pseudonym, not a secret** — anyone reading that table, a backup or an admin tool can precompute the
+fingerprints of likely addresses (an audit showed it on 13/09). Your implementation should be a
+stable, opaque HMAC with a host-side secret and **domain separation**:
+`HMAC(secret, "visitor-email\0" + emailNormalised)`. The player calls it with the e-mail already
+trimmed and lower-cased, prefixes your key with `h:` (a fallback fingerprint gets `e:`, so the two
+never collide), and truncates it to 64 characters. If the capability is absent, throws, or returns
+anything but a non-empty string, the player **falls back to the fingerprint and reports it once per
+process** through `errors.capture` (`benin: true`): refusing to limit would be worse than limiting
+under a weak pseudonym, and silence would be worse than both. (An earlier version of this paragraph
+said the player holds no server secret at all — too absolute: the standalone context already carries
+`ipHashSecret` for another purpose. The key still belongs with you, not with that secret.)
+
+⚠️ **What your plugin must still guarantee — the player cannot do it for you:**
+
+- the code is **short-lived** (minutes, not hours) and **single-use**: a code that stays valid after a
+  successful verification can be replayed from a shoulder-surfed screen;
+- the code has enough entropy for 10 attempts per quarter-hour not to be a lottery — six digits give
+  one chance in 100 000 per attempt at that pace, which is acceptable; four digits are not;
+- `verifyGoogle` validates the credential's audience and issuer server-side, and does not accept an
+  expired token.
+
+The player's counters bound the *rate*; your plugin bounds the *code*. Both are needed, and neither
+replaces the other.
+
 ## ⚠️ What `limits.allow` promises changed
 
 It used to promise *best effort, per process*. The standalone context now counts in a **shared
@@ -712,6 +762,15 @@ Four requirements, in order of what they cost when missed:
    anywhere. Announce the length of what you send, request `Accept-Encoding: identity`, and refuse
    a compressed `206` — range bounds refer to compressed bytes.
 2. **Relay `Range`** (`206` + `Accept-Ranges: bytes`). Progressive loading depends on it.
+   ⚠️ And expect the player to hold **at most `config.maxConcurrentRelays` relays open per process**
+   (default 64; `PLAYER_MAX_RELAYS` in the standalone context): above it the player answers **503
+   with `Retry-After: 2` before calling you**, with no queue. The stream bounded bytes; nothing
+   bounded how many streams were open — an audit opened 200 slow transfers and got 200 upstream
+   connections (13/09). The slot is released in a `finally`, so your errors and a client leaving
+   mid-stream give it back — and so does a relay that **stops progressing**: no chunk for
+   `config.relayStallMs` (30 s) or a total beyond `config.relayMaxMs` (15 min) aborts the pipeline,
+   destroying your response and the client's. A client that stops reading no longer keeps a slot
+   forever; a route of yours that stops sending does not either.
 3. **Accept a server-to-server call.** A tracked link is opened by someone with no session on your
    side. Authenticate the player with the shared secret in the `x-player-fetch-secret` **header** —
    header only, never a query string: logs keep URLs.
@@ -761,6 +820,15 @@ back on an inability to *reach*.** And "do not fall back" applies to what you **
 "Open ↗" button left in place is falling back one second later.
 
 ## What will bite
+
+⚠️ **Every capability you provide must settle in bounded time — `db.request` first of all.** The
+player awaits your `db.request`, `storage.fetchFile`, `mail.send` and the visitor plugin; a promise
+that never settles keeps a request in flight, and the read cache admits at most 128 in-flight reads
+per process before answering **503 busy** to everyone. A database call that hangs is therefore not
+"slow", it is an availability incident for the whole instance — the exact mechanism an audit
+reproduced inside the test suite with a never-settling promise (13/09). Time out your own calls
+(the standalone context bounds its own with `AbortSignal`), and never return a promise you cannot
+guarantee will settle.
 
 **Your document-opening doors reappear.** A host has more than one place that opens a file, and new
 ones get written. Keep the list and hunt it periodically — and note that **your search criteria
@@ -834,11 +902,17 @@ late, a caller reading `sent: false` retries, creating a **second child link and
 | `delivery` | what happened | what to do |
 |---|---|---|
 | `"sent"` | your mail path reported success | nothing |
-| `"refused"` | a decision was made — yours or ours; `sendRefused` names it | surface the reason; retrying will refuse again |
+| `"refused"` | a decision was made — yours or ours; `sendRefused` names it, and when your mail hook answered `{ sent: false, reason }` (or `motif`) that word comes back as `hostReason`, trimmed to 80 characters | surface the reason; retrying will refuse again |
 | `"unknown"` | the call failed (timeout, network). **We do not know whether the mail went out** | surface it to a human. **Do not retry automatically** — a retry may duplicate the email |
 | `"not-requested"` | `send` was falsy | nothing |
 
 `sent` is unchanged for integrations already reading it.
+
+⚠️ **Your refusal reason was being thrown away.** One host answers every refusal with
+`{ sent: false, motif }` — eight distinct reasons — precisely so that *refused* never reads as *down*;
+the route read only `sent`. From this train on, a string `reason` or `motif` on your hook's answer travels
+back to the caller as `hostReason` (a string, at most 80 characters; an object is ignored). It is
+your word to your own caller, not a channel: keep it short and non-sensitive.
 
 ⚠️ **And you can now make the retry safe: pass a `clientKey`.** Two `reshare` calls with the same
 parent, the same recipient and the same `clientKey` return the **same child link** and send **one**
@@ -875,6 +949,11 @@ Three things changed, and the second one is the one you may notice:
 - **The renderer refuses the same URLs again**, because one path never reaches this server: a
   participant can broadcast presence over Realtime straight to the other viewers. No server-side
   barrier can see that, so the check also lives where every path converges — at render time.
+- ⚠️ **`data:` and `blob:` URLs are refused too, deliberately.** They reach no one, but a data URL
+  travels inside every message row and every presence broadcast, and one more "harmless" form is
+  one more form to reason about at the next audit. A host that stores avatars as data URLs — as an
+  offline fallback, say — will see initials, and nothing will say why except this line. (Asked for by
+  a host, 13/09: three of its members carry one.)
 
 ⚠️ **What your `storage.remove` returns now decides whether a row survives.** It returns a boolean:
 `true` means the object is gone, `false` means it is still there. Until 0.1.163 the retention sweep
@@ -893,6 +972,14 @@ permanently. The sweep now **keeps the row** when `remove` returns `false`, and 
 - **`retenues > 0` in a retention report means your provider refused a removal**, not that the purge
   is broken. The next pass retries. A row that lingers is recoverable; a file whose only pointer was
   erased is not.
+- ⚠️ **If you provide no `storage.remove` at all, file-bearing rows are retained too — and the report
+  says so.** There were three states, not two: `true`, `false`, and *not attempted*. Until 0.1.164 the
+  third one let the row go "as before" — so a host providing `put` without `remove` manufactured
+  permanently unreachable objects at every sweep, with no counter moving. A host found it by reading
+  `retention.js`, not this paragraph, which assumed you provide one. Now: the row stays, `retenues`
+  counts it, the report carries `sansRemove: true` (in `dryRun` too, so you can read it before arming
+  the sweep), and the missing capability is reported once per process through `errors.capture` with
+  `benin: true`. Provide `storage.remove` and the next pass lets them go.
 
 **If you write to the `tts-cache` bucket yourself, write the trace too.** Retention removes an object
 only when its fingerprint has a row in `doc_tts_objects`, and only the player's own route writes that

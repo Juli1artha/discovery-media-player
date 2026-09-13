@@ -17,7 +17,15 @@
 // confronte les colonnes du schéma vivant à docs/RETENTION.md.
 
 let PLAYER = null;
-const init = (ctx) => { PLAYER = ctx; };
+// ⚠️ TROISIÈME ÉTAT : `storage.remove` ABSENT. Un hôte qui fournit `put` sans `remove` fabrique des
+// objets, et le balayage effaçait leur ligne « comme avant » — le seul chemin vers l'objet, puisque
+// la capacité expose `put` et `remove` mais jamais `list`. Trouvé par un hôte (STUDIO, 13/09) en
+// lisant les lignes 141 et 248 de ce fichier, pas la prose du contrat, qui supposait qu'on fournit
+// un `remove`. Le correctif de 0.1.164 distinguait « a échoué » de « a réussi » ; il ne voyait pas
+// « n'a pas été tenté ». Désormais : ligne RETENUE, comptée, et la capacité manquante est dite une
+// fois par processus — ici, pas à chaque ligne, sinon un balayage de mille lignes crie mille fois.
+let sansRemove = false, sansRemoveDit = false;
+const init = (ctx) => { PLAYER = ctx; sansRemove = false; sansRemoveDit = false; };
 const enc = encodeURIComponent;
 
 // Fenêtres par défaut de docs/RETENTION.md — l'hôte ajuste via `config.retention`.
@@ -137,9 +145,23 @@ async function effacerParIds(table, filtre, colId, ids, opts) {
 // retrait donnerait deux chemins de destruction, dont un seul serait gardé. C'est exactement ce que
 // `retentionUnePorte.test.js` refuse de laisser arriver.
 async function retirerFichier(bucket, chemin, opts) {
-  if (opts.dryRun || !chemin) return null;   // null = rien tenté ; true = retiré ; false = échec
+  if (!chemin) return null;   // null = rien à retirer (ou dry-run) ; true = retiré ; false = pas retiré
   const retirer = PLAYER.storage && typeof PLAYER.storage.remove === "function" ? PLAYER.storage.remove.bind(PLAYER.storage) : null;
-  if (!retirer) return null;
+  if (!retirer) {
+    // Pas de capacité : l'objet ne peut PAS être retiré, donc la ligne ne doit pas partir. Même en
+    // dry-run on le note, pour qu'un hôte le lise AVANT d'armer le balayage.
+    sansRemove = true;
+    if (!sansRemoveDit) {
+      sansRemoveDit = true;
+      try {
+        PLAYER.errors.capture(new Error("rétention : `storage.remove` n'est pas fourni — les lignes porteuses de fichiers"
+          + " sont RETENUES (leur objet resterait sinon inatteignable, la capacité n'exposant jamais `list`)."
+          + " Fournissez `storage.remove` pour qu'elles partent."), { route: "retention", benin: true });
+      } catch { /* jamais bloquant */ }
+    }
+    return opts.dryRun ? null : false;
+  }
+  if (opts.dryRun) return null;
   try { return !!(await retirer(bucket, chemin)); } catch { return false; }
 }
 
@@ -333,6 +355,7 @@ async function purgerCacheDeVoix(opts, borneDate) {
 }
 
 async function purgerRetention(now, optsBrutes = {}) {
+  sansRemove = false;   // le rapport dit ce qui a manqué pendant CE passage, pas pendant la vie du processus
   let f, opts;
   try { f = fenetresValidees(); opts = optionsValidees(optsBrutes); }
   catch (e) {
@@ -436,7 +459,8 @@ async function purgerRetention(now, optsBrutes = {}) {
     doc_presentation_attendees: presRapport.presences,
     pieces_jointes: presRapport.fichiers,
   };
-  return { ok: true, dryRun: !!opts.dryRun, efface, rapport };
+  // `sansRemove` : la capacité manquait pendant CE passage, et `retenues` en porte la trace.
+  return { ok: true, dryRun: !!opts.dryRun, sansRemove, efface, rapport };
 }
 
 // Balayage opportuniste : au plus UN par fenêtre de 24 h (le verrou est le compteur de débit

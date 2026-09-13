@@ -409,9 +409,19 @@ jobs:
         if: matrix.node == '22'
         run: node tools/affirmations-retirees.mjs
 
+      # ⚠️ UNE MIGRATION LIVRÉE NE CHANGE PLUS — PAS MÊME UN COMMENTAIRE. Entre 0.1.163 et 0.1.164 la
+      # 0004 a bougé (prose corrigée en place) ; les migrations voyagent dans le tarball, des hôtes
+      # les ont exécutées et empreintées, et l'un d'eux a dû faire un `diff -u` pour savoir qu'il
+      # n'avait rien à ré-appliquer. La référence est le tag le plus haut : d'où `fetch-tags` en
+      # tête de ce job, sans quoi la garde rend NON CONCLUANT.
+      - name: A published migration never changes, not even a comment
+        run: node tools/migrations-immuables.mjs
+
+      # ⚠️ TROIS GRAINES : le jour (change chaque jour), 42 (fixe) et 20260913 — celle sous laquelle un
+      # audit externe a trouvé une dépendance d'ordre que la garde masquait en lisant la sortie texte.
       - name: No bench depends on its rank within its file
         if: matrix.node == '22'
-        run: node tools/ordre-des-bancs.mjs
+        run: node tools/ordre-des-bancs.mjs --graine=jour,42,20260913
 
       - name: Every changelog section has its exact comparison link
         if: matrix.node == '22'
@@ -1040,6 +1050,40 @@ jobs:
             exit 1
           fi
           echo "init.sql contient déjà tout ce que les migrations apportent."
+
+      # ⚠️ LES ACL EFFECTIVES, PAS LES REVOKE ÉCRITS. Les migrations révoquent nommément quatre
+      # surcharges de player_attendance_bump et player_rate_limit_bump ; un `security definer`
+      # oublié, ou une surcharge de plus, est EXÉCUTABLE PAR PUBLIC par défaut Postgres — donc par
+      # anon et authenticated, avec les droits du propriétaire. Aucun banc ne l'interrogeait sur une
+      # vraie base (relevé par un audit externe, 13/09). Ici on lit pg_proc APRÈS init.sql ET les
+      # migrations : chaque fonction `prosecdef` doit être inexécutable par public (proacl explicite
+      # sans grantee 0 — un proacl NULL est le défaut, donc PUBLIC), par anon et par authenticated.
+      # Les rôles sont créés s'ils manquent (un Postgres nu ne les a pas, Supabase si) : sans eux
+      # has_function_privilege lève, et la vérification ne prouverait rien. Et le banc exige des
+      # LIGNES : zéro fonction lue, c'est la sonde qui vise à côté, pas une base propre.
+      - name: No SECURITY DEFINER function is executable by public, anon or authenticated
+        run: |
+          # ⚠️ ON REND LA BASE COMME ON L'A TROUVÉE. Une étape plus bas exige que ces rôles soient ABSENTS
+          # (son contrôle « rôles absents » a rougi quand cette étape les a laissés derrière elle) : on ne
+          # crée que ceux qui manquent, et on retire exactement ceux-là à la fin.
+          crees=""
+          for r in anon authenticated; do
+            if [ "$($PSQL -c "select 1 from pg_roles where rolname='$r'")" != "1" ]; then $PSQL -c "create role $r nologin"; crees="$crees $r"; fi
+          done
+          lignes=$($PSQL -c "select p.oid::regprocedure::text
+              || ' public=' || (p.proacl is null or exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0 and a.privilege_type = 'EXECUTE'))::text
+              || ' anon=' || has_function_privilege('anon', p.oid, 'execute')::text
+              || ' authenticated=' || has_function_privilege('authenticated', p.oid, 'execute')::text
+            from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+            where n.nspname = 'public' and p.prosecdef order by 1")
+          echo "$lignes"
+          n=$(printf '%s\n' "$lignes" | grep -c 'public=')
+          [ "$n" -ge 2 ] || { echo "::error::$n fonction(s) security definer lue(s) — attendu au moins 2 (player_rate_limit_bump, player_attendance_bump) : la sonde vise à côté"; exit 1; }
+          if printf '%s\n' "$lignes" | grep -E '=true'; then
+            echo "::error::une fonction security definer est exécutable par public, anon ou authenticated"; exit 1
+          fi
+          echo "$n fonction(s) security definer, aucune exécutable par public/anon/authenticated"
+          for r in $crees; do $PSQL -c "drop role $r"; done
 
       # ⚠️ LA FORME NE VOIT NI LES PUBLICATIONS NI LE REPLICA IDENTITY SANS QU'ON LES LUI DONNE — le
       # relevé ci-dessus les inclut désormais, sans quoi la parité init/migrations ne couvrait ni

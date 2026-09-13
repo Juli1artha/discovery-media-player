@@ -112,16 +112,24 @@ describe("la purge du cache de voix", () => {
     expect(restant()).toHaveLength(1);
   });
 
-  it("un hôte sans `storage.remove` purge la ligne et NE PRÉTEND PAS avoir retiré les objets", async () => {
-    const { ctx } = contexte({ traces: [{ hash: "aaa", created_at: VIEUX }] });
+  // ⚠️ CE BANC DISAIT L'INVERSE — « purge la ligne et ne prétend pas avoir retiré les objets » — et
+  // c'était la perte irréversible du paragraphe ci-dessous, par l'autre porte : sans `remove`, la
+  // trace partait au-dessus d'un objet qui ne pouvait PAS être retiré. Trouvé par un hôte (STUDIO,
+  // 13/09) qui fournit `put` sans `remove`. Une ligne retenue se rattrape ; un objet sans ligne, non.
+  it("⚠️ un hôte sans `storage.remove` ne perd pas la trace : la ligne est RETENUE et la capacité manquante est dite", async () => {
+    const { ctx, appels } = contexte({ traces: [{ hash: "aaa", created_at: VIEUX }] });
     delete ctx.storage.remove;
+    const dits = [];
+    ctx.errors = { capture(e, meta) { dits.push({ message: e.message, meta }); } };
     retention.init(ctx);
     const r = await retention.purgerRetention(MAINTENANT, {});
-    // `null` = rien tenté : ni succès ni échec. Un compte à zéro qui se lirait « retiré » serait
-    // pire que la limite elle-même — c'est ce que docs/RETENTION.md dit plutôt que de simuler.
     expect(r.rapport.doc_tts_objects.fichiers).toBe(0);
-    expect(r.rapport.doc_tts_objects.fichiersErreur).toBe(0);
-    expect(r.rapport.doc_tts_objects.fichiersCandidats).toBe(2);
+    expect(r.rapport.doc_tts_objects.retenues).toBe(1);
+    expect(r.rapport.doc_tts_objects.supprimees).toBe(0);
+    expect(appels.some((a) => a.methode === "DELETE" && String(a.chemin).startsWith("doc_tts_objects")), "aucun DELETE de trace").toBe(false);
+    expect(r.sansRemove).toBe(true);
+    expect(dits.length, "dit une fois, avec `benin`").toBe(1);
+    expect(dits[0].meta.benin).toBe(true);
   });
 });
 
