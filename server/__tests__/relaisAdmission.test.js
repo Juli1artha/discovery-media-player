@@ -123,6 +123,69 @@ describe("⚠️ les relais de fichiers passent par une admission", () => {
     expect(r2.statusCode).not.toBe(503);
   });
 
+  // ⚠️ UNE PLACE N'EST BORNÉE QUE SI LE RELAIS FINIT. Plafond 1, un client qui cesse de lire : la place
+  // restait prise pour toujours et plus aucun fichier ne partait (audit externe, 13/09).
+  // `requestTimeout` ne couvre pas l'émission d'une réponse — seul un délai de progression le fait.
+  it("⚠️ un relais figé est ABANDONNÉ après le délai sans progression, et sa place rendue à la demande suivante", async () => {
+    const { Readable, Writable } = require("node:stream");
+    let ouverts = 0, sourcesDetruites = 0;
+    const captures = [];
+    const flux = () => {
+      const src = new Readable({ read() { this.push(Buffer.alloc(1024)); } });      // un amont qui a toujours de quoi envoyer
+      src.on("close", () => { sourcesDetruites += 1; });
+      return { ok: true, status: 200, headers: { get: (k) => (k === "content-type" ? "application/pdf" : null) }, body: Readable.toWeb(src) };
+    };
+    player.init({
+      plugins: {}, has: () => false,
+      storage: { isAllowedUrl: () => true, fetchFile: async () => { ouverts += 1; return flux(); }, async put() {} },
+      db: { async request() { return []; }, async selectAll() { return []; } }, mail: { async send() {} },
+      identity: { async verifyToken() { return null; }, roleOf: () => "", isAdmin: () => false, async canManageShares() { return false; } },
+      limits: { async allow() { return true; } },
+      branding: { async logo() { return ""; }, name: "S", poweredBy: "", loaderName: "", async forKey() { return null; }, title: (b) => b },
+      errors: { async capture(e) { captures.push(String(e && e.message)); } }, legal: { sourceUrl: "", legalUrl: "", privacyUrl: "", trackingNotice: "" },
+      config: { supabaseUrl: "https://exemple.supabase.co", supabasePublishableKey: "k", mapsKey: "", extraFrameAncestors: [], maxConcurrentRelays: 1, relayStallMs: 80 },
+    });
+    // Un client qui LIT UNE FOIS puis plus jamais : l'écriture suivante ne rappelle pas.
+    const fige = () => { let lus = 0; const w = new Writable({ write(_c, _e, cb) { lus += 1; if (lus === 1) cb(); /* la 2e ne rend jamais la main */ } }); w.setHeader = () => {}; w.statusCode = 0; return w; };
+    const r1 = fige();
+    const p1 = player.handler({ method: "GET", headers: {}, socket: {}, query: { preview: "1", url: URL_OK, stream: "1" } }, r1);
+    await tour(); await tour();
+    expect(ouverts, "contrôle positif : le relais est en vol").toBe(1);
+    const r2 = { statusCode: 0, headers: {}, setHeader(k, v) { this.headers[k.toLowerCase()] = v; }, end() {} };
+    await player.handler({ method: "GET", headers: {}, socket: {}, query: { preview: "1", url: URL_OK, stream: "1" } }, r2);
+    expect(r2.statusCode, "contrôle positif : tant que le premier est figé, le second est refusé").toBe(503);
+    await p1;                                                    // l'abandon fait rejeter le pipeline : le relais FINIT
+    expect(captures.some((m) => /aucune progression depuis 80 ms/.test(m)), "la cause est nommée").toBe(true);
+    expect(sourcesDetruites, "la source amont est détruite, pas laissée ouverte").toBe(1);
+    const r3 = { statusCode: 0, headers: {}, setHeader(k, v) { this.headers[k.toLowerCase()] = v; }, end() {} };
+    player.handler({ method: "GET", headers: {}, socket: {}, query: { preview: "1", url: URL_OK, stream: "1" } }, r3);
+    await tour(); await tour();
+    expect(ouverts, "la place rendue est reprise : le troisième part vers l'amont").toBe(2);
+    expect(r3.statusCode).not.toBe(503);
+  });
+
+  it("⚠️ le budget total abandonne aussi un relais qui PROGRESSE lentement sans jamais finir", async () => {
+    const { Readable, Writable } = require("node:stream");
+    const captures = [];
+    let src;
+    player.init({
+      plugins: {}, has: () => false,
+      storage: { isAllowedUrl: () => true, fetchFile: async () => { src = new Readable({ read() { setTimeout(() => this.push(Buffer.alloc(16)), 10); } }); return { ok: true, status: 200, headers: { get: (k) => (k === "content-type" ? "application/pdf" : null) }, body: Readable.toWeb(src) }; }, async put() {} },
+      db: { async request() { return []; }, async selectAll() { return []; } }, mail: { async send() {} },
+      identity: { async verifyToken() { return null; }, roleOf: () => "", isAdmin: () => false, async canManageShares() { return false; } },
+      limits: { async allow() { return true; } },
+      branding: { async logo() { return ""; }, name: "S", poweredBy: "", loaderName: "", async forKey() { return null; }, title: (b) => b },
+      errors: { async capture(e) { captures.push(String(e && e.message)); } }, legal: { sourceUrl: "", legalUrl: "", privacyUrl: "", trackingNotice: "" },
+      config: { supabaseUrl: "https://exemple.supabase.co", supabasePublishableKey: "k", mapsKey: "", extraFrameAncestors: [], relayStallMs: 5_000, relayMaxMs: 120 },
+    });
+    const w = new Writable({ write(_c, _e, cb) { cb(); } }); w.setHeader = () => {}; w.statusCode = 0;
+    const debut = Date.now();
+    await player.handler({ method: "GET", headers: {}, socket: {}, query: { preview: "1", url: URL_OK, stream: "1" } }, w);
+    expect(Date.now() - debut, "fini par le budget, pas par la progression").toBeLessThan(2_000);
+    expect(captures.some((m) => /plus de 120 ms au total/.test(m))).toBe(true);
+    expect(src.destroyed, "la source amont est détruite").toBe(true);
+  });
+
   it("un plafond absurde retombe sur 64, un plafond posé est respecté", async () => {
     const a = amont(); initialiser(a, { maxConcurrentRelays: "n'importe quoi" });
     const demandes = Array.from({ length: 65 }, () => demander()); await tour();

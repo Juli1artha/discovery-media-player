@@ -1520,6 +1520,39 @@ describe.skipIf(!chrome && !process.env.CI)("la page démarre dans un vrai navig
     }
   }
 
+  // ⚠️ LE MODE UNE PAGE : LA VRAIE DERNIÈRE PAGE, À L'ÉCRAN — pas « la dernière atteignable ». L'audit
+  // a mesuré la 10 000ᵉ présente, courante, et à 8 339 242 px du haut : les bancs prouvaient le DOM et
+  // le numéro, pas l'écran. Ici on mesure l'intersection du cadre de la page avec le cadre visible.
+  for (const total of [10_000, 50_000]) {
+    it(`⚠️ ${total} pages en mode une page : première, milieu et VRAIE dernière page sont à l'écran`, async () => {
+      const { p, ctx } = await visionneuseDe(total);
+      await p.evaluate(() => window.__viewerEssai.enterOnePage());
+      for (const k of [1, Math.round(total / 2), total]) {
+        await p.evaluate((n) => window.__viewerEssai.showPage(n), k);
+        await p.waitForFunction((n) => window.__viewerEssai.cur === n, k, { timeout: 10_000 });
+        const r = await p.evaluate((n) => {
+          const el = document.querySelector('#pages .page.cur[data-p="' + n + '"]');
+          if (!el) return null;
+          const b = el.getBoundingClientRect(), s = document.getElementById("scroll").getBoundingClientRect();
+          return { top: b.top, bottom: b.bottom, h: b.height, vTop: s.top, vBottom: s.bottom, visible: b.bottom > s.top && b.top < s.bottom, noeuds: document.querySelectorAll("#pages .page").length };
+        }, k);
+        expect(r, `la page ${k} est courante et présente`).not.toBeNull();
+        expect(r.h, "elle a une hauteur").toBeGreaterThan(0);
+        expect(r.visible, `la page ${k} intersecte le cadre visible (${Math.round(r.top)}–${Math.round(r.bottom)} dans ${Math.round(r.vTop)}–${Math.round(r.vBottom)})`).toBe(true);
+        expect(r.noeuds).toBeLessThanOrEqual(12);
+      }
+      await p.close(); await ctx.close();
+    }, 90_000);
+  }
+
+  it("l'avis du mode continu propose le mode une page — et dit si même le zoom minimal ne suffit pas", async () => {
+    const { p, ctx } = await visionneuseDe(50_000);
+    await zoomer(p, 2);
+    const avis = (await geo(p)).avis;
+    expect(avis).toMatch(/mode une page/);
+    await p.close(); await ctx.close();
+  }, 60_000);
+
   it("⚠️ en portrait (900 × 1 440), même règle — la géométrie change, le plafond non", async () => {
     const { p, ctx } = await visionneuseDe(50_000, { width: 900, height: 1440 });
     await zoomer(p, 2);

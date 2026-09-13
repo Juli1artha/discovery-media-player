@@ -49,9 +49,15 @@
 // `--graine=<n>` rejoue exactement.
 
 import { spawnSync } from "node:child_process";
+import { readFileSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { conclure, conforme, violation, inconclusif, tenter } from "./resultat-garde.mjs";
 import { estExecuteDirectement } from "./execute-directement.mjs";
+
+const RACINE = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
  * Les fichiers dont l'ordre INTERNE est un contrat, avec la raison. Chacun est relu à chaque
@@ -76,17 +82,52 @@ export const ORDRE_DECLARE = new Map([
 export const grainePourJour = (d = new Date()) =>
   Number(`${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`);
 
-/** Les fichiers cités par une ligne `FAIL  <chemin> > …` de vitest. */
-export function fichiersEnEchec(sortie) {
+// ⚠️ ON LIT LE RAPPORT JSON DE VITEST, JAMAIS SA SORTIE TEXTE. La première écriture cherchait les
+// lignes « FAIL <chemin> » dans tout ce que vitest imprimait — y compris ce que les bancs eux-mêmes
+// impriment : plusieurs lancent des gardes en sous-processus qui écrivent volontairement « FAIL ».
+// La garde prenait ces fichiers pour « déjà rouges », rendait NON CONCLUANT, et ce non-concluant
+// passait AVANT une violation confirmée : une vraie dépendance d'ordre (routeSlugEtSaturation, graine
+// 20260913) est restée masquée derrière. Relevé par un audit externe le 13/09. Un rapport structuré
+// ne contient que des verdicts ; une chaîne imprimée n'en est pas un.
+/** Les fichiers en échec d'un rapport JSON de vitest (`--reporter=json`), relatifs à `racine`. */
+export function fichiersEnEchec(rapport, racine = RACINE) {
   const vus = new Set();
-  for (const m of String(sortie).matchAll(/^\s*FAIL\s+(\S+?\.test\.[jt]s)/gm)) vus.add(m[1]);
+  const resultats = rapport && Array.isArray(rapport.testResults) ? rapport.testResults : [];
+  for (const t of resultats) if (t && t.status === "failed") vus.add(relatif(String(t.name || ""), racine));
   return [...vus];
 }
 
-/** Le compte de fichiers de bancs annoncé par vitest — l'objet de la sonde, pour refuser le vide. */
-export function fichiersVus(sortie) {
-  const m = /Test Files\s+.*?(\d+)\s*\)/.exec(String(sortie));
-  return m ? Number(m[1]) : null;
+/** Le compte de fichiers de bancs du rapport — l'objet de la sonde, pour refuser le vide. `null` si illisible. */
+export function fichiersVus(rapport) {
+  const n = rapport && Array.isArray(rapport.testResults) ? rapport.testResults.length : 0;
+  return n > 0 ? n : null;
+}
+
+function relatif(chemin, racine) {
+  const r = String(racine).replace(/\/+$/, "") + "/";
+  return chemin.startsWith(r) ? chemin.slice(r.length) : chemin;
+}
+
+/**
+ * Le verdict, dans le bon ordre : une VIOLATION confirmée prime sur un cas non concluant. Rendre non
+ * concluant dès qu'un rouge préexiste masquait la dépendance d'ordre prouvée à côté — le non-concluant
+ * est alors dit en avertissement, pas en verdict.
+ */
+export function verdict({ constats, avertissements, raisonsNonConcluance, entete, vus }) {
+  if (constats.length) {
+    return violation([entete, ...constats], [...avertissements, ...raisonsNonConcluance.map((r) => `non concluant par ailleurs — ${r}`)]);
+  }
+  if (raisonsNonConcluance.length) return inconclusif([entete, ...raisonsNonConcluance], avertissements);
+  return conforme(`${vus} fichiers de bancs passent leurs essais MÉLANGÉS (${entete})`, avertissements);
+}
+
+/** `--graine=a,b,jour` : plusieurs graines, `jour` = le jour UTC. Sans argument : le jour. */
+export function grainesDemandees(argv, aujourdhui = grainePourJour()) {
+  const arg = argv.find((a) => a.startsWith("--graine="));
+  if (!arg) return [aujourdhui];
+  // Dédoublonné : `jour` peut coïncider avec une graine fixe (le 13/09/2026, précisément).
+  return [...new Set(arg.slice("--graine=".length).split(",").map((t) => t.trim()).filter(Boolean)
+    .map((t) => (t === "jour" ? aujourdhui : Number(t))))];
 }
 
 export function confronter(dependants, dejaRouges, declares = ORDRE_DECLARE) {
@@ -105,40 +146,46 @@ export function confronter(dependants, dejaRouges, declares = ORDRE_DECLARE) {
 if (estExecuteDirectement(import.meta.url)) {
   conclure(tenter(() => {
     if (process.env.VITEST) return inconclusif([
-      "lancée DEPUIS une exécution de bancs (VITEST est posé) : cette garde lance la suite, donc elle l'imbriquerait dans elle-même. Lancez-la depuis un terminal ou une étape de forge dédiée.",
+      "lancée DEPUIS une exécution de bancs (VITEST est posé) : cette garde lance la suite, donc elle l'imbriquerait dans elle-même. Lancez-la depuis un terminal ou une étape de forge.",
     ]);
 
-    const arg = process.argv.find((a) => a.startsWith("--graine="));
-    const graine = arg ? Number(arg.slice("--graine=".length)) : grainePourJour();
-    if (!Number.isFinite(graine)) return inconclusif([`graine illisible : ${arg}`]);
+    const graines = grainesDemandees(process.argv);
+    if (!graines.length || graines.some((g) => !Number.isFinite(g))) return inconclusif([`graine illisible : ${process.argv.find((a) => a.startsWith("--graine="))}`]);
 
-    const vitest = (args) => {
-      const r = spawnSync("npx", ["vitest", "run", ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-      return { r, sortie: `${r.stdout || ""}\n${r.stderr || ""}` };
+    // Le rapport JSON va dans un fichier : la sortie texte reste lisible, et n'est jamais analysée.
+    const rapportDe = (args) => {
+      const fichier = join(tmpdir(), `ordre-des-bancs-${process.pid}-${Math.random().toString(36).slice(2)}.json`);
+      const r = spawnSync("npx", ["vitest", "run", ...args, "--reporter=json", `--outputFile=${fichier}`], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+      const rapport = (() => { try { return JSON.parse(readFileSync(fichier, "utf8")); } catch { return null; } })();
+      try { unlinkSync(fichier); } catch { /* déjà absent */ }
+      return { r, rapport };
     };
 
-    const { r, sortie } = vitest(["--sequence.shuffle.tests", `--sequence.seed=${graine}`]);
-    if (r.error) return inconclusif([`vitest n'a pas pu être lancé : ${r.error.message}`]);
+    let vus = null;
+    const rougesParGraine = new Map();   // fichier → graines sous lesquelles il a rougi
+    for (const graine of graines) {
+      const { r, rapport } = rapportDe(["--sequence.shuffle.tests", `--sequence.seed=${graine}`]);
+      if (r.error) return inconclusif([`vitest n'a pas pu être lancé : ${r.error.message}`]);
+      const n = fichiersVus(rapport);
+      if (!n) return inconclusif([
+        `aucun rapport JSON lisible de vitest (code ${r.status}, graine ${graine}) — la sonde n'a rien lu, donc rien n'est prouvé`,
+      ]);
+      vus = n;
+      for (const f of fichiersEnEchec(rapport)) rougesParGraine.set(f, [...(rougesParGraine.get(f) || []), graine]);
+    }
 
-    // ⚠️ AUCUN FICHIER LU N'EST PAS UN SUCCÈS. Si vitest change de format de sortie ou ne trouve
-    // aucun banc, cette sonde ne voit aucun échec — et conclurait VERTE sur rien.
-    const vus = fichiersVus(sortie);
-    if (!vus) return inconclusif([
-      `aucun compte de fichiers de bancs dans la sortie de vitest (code ${r.status}) — la sonde n'a rien lu, donc rien n'est prouvé`,
-    ]);
-
-    // Contrôle de stimulus : chaque rouge est rejoué SEUL et SANS mélange.
+    // ⚠️ Contrôle de stimulus : chaque rouge est rejoué SEUL, sans mélange. S'il échoue aussi, l'échec
+    // préexiste et n'accuse pas l'ordre ; s'il passe, le mélange est bien la cause.
     const dependants = [], dejaRouges = [];
-    for (const f of fichiersEnEchec(sortie)) {
-      const seul = vitest([f]);
+    for (const f of rougesParGraine.keys()) {
+      const seul = rapportDe([f]);
       if (seul.r.error) return inconclusif([`rejeu de ${f} impossible : ${seul.r.error.message}`]);
       (seul.r.status === 0 ? dependants : dejaRouges).push(f);
     }
 
     const { constats, avertissements, raisonsNonConcluance } = confronter(dependants, dejaRouges);
-    const entete = `graine ${graine} — rejouable par \`node tools/ordre-des-bancs.mjs --graine=${graine}\``;
-    if (raisonsNonConcluance.length) return inconclusif([entete, ...raisonsNonConcluance], avertissements);
-    if (constats.length) return violation([entete, ...constats], avertissements);
-    return conforme(`${vus} fichiers de bancs passent leurs essais MÉLANGÉS (${entete})`, avertissements);
+    const entete = `graine(s) ${graines.join(", ")} — rejouable par \`node tools/ordre-des-bancs.mjs --graine=${graines.join(",")}\``
+      + (dependants.length ? ` ; rouges sous : ${dependants.map((f) => `${f} (${rougesParGraine.get(f).join(", ")})`).join(" ; ")}` : "");
+    return verdict({ constats, avertissements, raisonsNonConcluance, entete, vus });
   }));
 }

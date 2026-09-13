@@ -228,15 +228,15 @@ export const MUTANTS = [
   {
     id: "visionneuse-plafond-muet",
     fichier: "server/page-visionneuse.js",
-    avant: "      if(atteignables<numPages){ el.textContent=",
-    apres: "      if(false){ el.textContent=",
+    avant: "      if(atteignables<numPages){\n        var auMin=atteignablesAuZoom(Player.viewer.MIN_ZOOM);",
+    apres: "      if(false){\n        var auMin=atteignablesAuZoom(Player.viewer.MIN_ZOOM);",
     pourquoi: "un plafond silencieux laisse le lecteur défiler vers une page qui n'arrive jamais sans un mot",
     bancs: ["server/__tests__/visionneuseVirtuelle.test.js"],
   },
   {
     id: "visiteur-verification-sans-plafond-par-identite",
     fichier: "server/routes-visiteur.js",
-    avant: "        if (!(await PLAYER.limits.allow(`vverif:id:${empreinteIdentite(body.email)}`, VERIF_PAR_IDENTITE, VERIF_FENETRE_IDENTITE_S))) return jv(429, { ok: false, error: \"rate\" });",
+    avant: "        if (!(await PLAYER.limits.allow(`vverif:id:${await cleIdentite(V, body.email)}`, VERIF_PAR_IDENTITE, VERIF_FENETRE_IDENTITE_S))) return jv(429, { ok: false, error: \"rate\" });",
     apres: "        if (false) return jv(429, { ok: false, error: \"rate\" });",
     pourquoi: "plusieurs adresses forçaient un même email : la vérification n'avait aucun plafond (audit externe, 13/09)",
     bancs: ["server/__tests__/murVisiteur.test.js"],
@@ -248,6 +248,31 @@ export const MUTANTS = [
     apres: "  if (false) {",
     pourquoi: "le flux bornait les octets, rien ne bornait le nombre de flux : 200 demandes lentes, 200 connexions amont (audit externe, 13/09)",
     bancs: ["server/__tests__/relaisAdmission.test.js"],
+  },
+  // ── 13/09 — quatrième passe de l'audit externe : « les deux P1 ne sont pas fermés » ─────────────
+  {
+    id: "relais-sans-delai-de-progression",
+    fichier: "server/handler.js",
+    avant: "  const rearmer = () => { clearTimeout(stall); stall = setTimeout(() => abandon.abort(new Error(`relais abandonné : aucune progression depuis ${relaisStallMs} ms`)), relaisStallMs); };",
+    apres: "  const rearmer = () => { clearTimeout(stall); };",
+    pourquoi: "un client qui cesse de lire gardait sa place pour toujours : requestTimeout ne borne pas l'émission d'une réponse",
+    bancs: ["server/__tests__/relaisAdmission.test.js"],
+  },
+  {
+    id: "visionneuse-une-page-avec-espaceurs",
+    fichier: "server/page-visionneuse.js",
+    avant: "      if(onePage){ var c=autour||cur||1; var d0=Math.max(1,c-1), f0=Math.min(numPages,c+1); f={debut:d0,fin:f0,avant:0,apres:0}; }",
+    apres: "      if(onePage){ var c=autour||cur||1; var pas=Player.viewer.pasVertical(g.hauteurElement,g.ecart); var d0=Math.max(1,c-1), f0=Math.min(numPages,c+1); f={debut:d0,fin:f0,avant:(d0-1)*pas,apres:(numPages-f0)*pas}; }",
+    pourquoi: "en mode une page, un espaceur portant les pages précédentes poussait la 10 000e à 8 339 242 px : présente, courante, invisible",
+    bancs: ["server/__tests__/visionneuseVirtuelle.test.js"],
+  },
+  {
+    id: "visiteur-cle-du-greffon-ignoree",
+    fichier: "server/routes-visiteur.js",
+    avant: "      if (typeof k === \"string\" && k.trim()) return \"h:\" + k.trim().slice(0, 64);",
+    apres: "      if (typeof k === \"string\" && k.trim()) return \"e:\" + empreinteIdentite(norm);",
+    pourquoi: "une empreinte SHA-256 d'email se renverse par dictionnaire : la clé d'identité doit venir du greffon quand il sait la produire",
+    bancs: ["server/__tests__/murVisiteur.test.js"],
   },
 ];
 

@@ -140,6 +140,15 @@ function viewerHtml(share, nonce, logoUrl, pitch) {
   .pspace{flex:0 0 auto;width:1px;visibility:hidden} /* porte la hauteur des pages ou vignettes NON materialisees */
   /* Le navigateur plafonne la hauteur de défilement (Chrome : 33 554 432 px) : au-delà, des pages existent et ne se
      joignent pas. L'avis le DIT, fixé au bas du cadre, et disparaît dès que le zoom rend tout le document atteignable. */
+  /* Mode « une seule page » — la STRUCTURE vit ici, dans la visionneuse de base : enterOnePage() est offert à
+     tout greffon (PlayerBot), pas seulement à l'assistant dont la feuille (gabarit-agent) porte les animations.
+     Sans ces règles, une page hors assistant en mode une page empilait courante et voisines, et la courante
+     se retrouvait sous le cadre (mesuré dans Chrome le 13/09). Un espaceur de pages absentes est caché aussi. */
+  body.onepage .scroll{overflow:hidden}
+  body.onepage #pages{height:100%;display:flex;align-items:center;justify-content:center;padding:0}
+  body.onepage #pages .page{display:none;margin:0}
+  body.onepage #pages .page.cur{display:block}
+  body.onepage #pages .pspace{display:none}
   .plafond{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);max-width:min(92vw,560px);background:#111d;color:#fff;border:1px solid #fff3;border-radius:8px;padding:8px 12px;font-size:13px;line-height:1.4;text-align:center;z-index:40;box-shadow:0 6px 22px #0006}
   .page canvas{display:block;border-radius:3px}
   /* Couche texte pdf.js : invisible, superposée au canvas → sélection du texte possible (requiert --scale-factor). */
@@ -982,16 +991,30 @@ ${LEGAL_CSS}
       atteignables=onePage?numPages:Player.viewer.pagesAtteignables({hauteurElement:g.hauteurElement,ecart:g.ecart,decalageHaut:g.decalageHaut,total:numPages});
       var el=document.getElementById('plafondAvis');
       if(!el){ el=document.createElement('div'); el.id='plafondAvis'; el.className='plafond'; el.setAttribute('role','status'); el.setAttribute('aria-live','polite'); el.style.display='none'; (document.querySelector('.lmain')||document.body).appendChild(el); }
-      if(atteignables<numPages){ el.textContent='Ce navigateur ne peut pas faire défiler au-delà de la page '+atteignables+' sur '+numPages+' à ce zoom. Réduisez le zoom pour atteindre la suite du document.'; el.style.display=''; }
+      if(atteignables<numPages){
+        var auMin=atteignablesAuZoom(Player.viewer.MIN_ZOOM);
+        el.textContent='Ce navigateur ne peut pas faire défiler au-delà de la page '+atteignables+' sur '+numPages+' à ce zoom. '
+          +(auMin>=numPages?'Réduisez le zoom, ou passez en mode une page pour lire la suite.':'Même au zoom minimal, seules '+auMin+' pages seraient atteignables : passez en mode une page pour lire la suite.');
+        el.style.display='';
+      }
       else { el.style.display='none'; el.textContent=''; }
     }
     function totalDefilable(){ return onePage?numPages:(atteignables||numPages); }
+    // Ce que le defilement continu atteindrait a un autre zoom — pour dire au lecteur si reduire suffit.
+    function atteignablesAuZoom(z){
+      var w=Math.round(Player.viewer.fitWidth({containerWidth:baseWidth(),containerHeight:scrollEl.clientHeight,zoom:z,onePage:false,aspect:firstAspect,rotation:rot,overlap:botOverlap(),reserve:onePageReserve()}));
+      return Player.viewer.pagesAtteignables({hauteurElement:Math.round(w*aspectEffectif()),ecart:ESPACE_PAGES,decalageHaut:HAUT_PAGES,total:numPages});
+    }
     function creerPage(i,w,h){ var d=document.createElement('div'); d.className='page ph'; d.dataset.p=i; d.style.width=w+'px'; d.style.height=h+'px'; d.textContent='Page '+i; if(io)io.observe(d); if(ioCur)ioCur.observe(d); return d; }
     function retirerPage(el){ var n=+el.dataset.p; libererPage(n); try{ if(io)io.unobserve(el); if(ioCur)ioCur.unobserve(el); }catch(e){} if(el.parentNode) el.parentNode.removeChild(el); }
     function reconcilierPages(force,autour){
       if(!pagesEl||!pagesAvant||!pagesApres||!numPages)return;
       var g=geoPages(), f;
-      if(onePage){ var c=autour||cur||1; var pas=Player.viewer.pasVertical(g.hauteurElement,g.ecart); var d0=Math.max(1,c-1), f0=Math.min(numPages,c+1); f={debut:d0,fin:f0,avant:(d0-1)*pas,apres:(numPages-f0)*pas}; }
+      // ⚠️ EN MODE UNE PAGE, AUCUN ESPACEUR : la page courante est centree par flex et les autres sont
+      // display:none — un espaceur portant la hauteur des milliers de pages precedentes poussait la
+      // 10 000e a 8 339 242 px du haut, presente dans le DOM, courante, et INVISIBLE. Mesure par un
+      // audit externe dans Chrome le 13/09 : les bancs prouvaient l existence et le numero, pas l ecran.
+      if(onePage){ var c=autour||cur||1; var d0=Math.max(1,c-1), f0=Math.min(numPages,c+1); f={debut:d0,fin:f0,avant:0,apres:0}; }
       else f=Player.viewer.fenetreVirtuelle({debutVisible:scrollEl.scrollTop||0,hauteurVisible:scrollEl.clientHeight||0,hauteurElement:g.hauteurElement,ecart:g.ecart,decalageHaut:g.decalageHaut,total:totalDefilable(),marge:MARGE_VIRTUELLE});
       if(!force&&f.debut===pagesFenetre.debut&&f.fin===pagesFenetre.fin)return;
       pagesFenetre=f;

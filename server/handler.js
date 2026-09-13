@@ -41,6 +41,8 @@ function init(ctx) {
   if (ctx && ctx.db) { const vu = Object.create(ctx); vu.db = mesures.observerBase(ctx.db); ctx = vu; }
   PLAYER = ctx;
   plafondRelais = borneRelais(ctx && ctx.config && ctx.config.maxConcurrentRelays);
+  relaisStallMs = borneMs(ctx && ctx.config && ctx.config.relayStallMs, RELAIS_STALL_MS_DEFAUT);
+  relaisMaxMs = borneMs(ctx && ctx.config && ctx.config.relayMaxMs, RELAIS_MAX_MS_DEFAUT);
   relaisEnCours = 0;
   // Le domaine reçoit le même contexte : une seule construction pour tout le player.
   require("./shares").init(ctx);
@@ -69,6 +71,16 @@ const isAllowedStorageUrl = (url) => PLAYER.storage.isAllowedUrl(url);
 // ceci protège le mode autonome et chaque instance chaude.
 const RELAIS_SIMULTANES_DEFAUT = 64;
 let plafondRelais = RELAIS_SIMULTANES_DEFAUT, relaisEnCours = 0;
+// ⚠️ UNE PLACE N'EST BORNÉE QUE SI LE RELAIS QUI L'OCCUPE FINIT. Un client qui cesse de lire — ou un
+// amont qui cesse d'envoyer — laissait le pipeline en attente pour toujours : `finally` jamais atteint,
+// place jamais rendue, et avec un plafond de 1, plus aucun fichier ne partait (reproduit par un audit
+// externe le 13/09). `requestTimeout` ne borne que la RÉCEPTION de la requête, pas l'émission de la
+// réponse — le commentaire de `bin/serve.js` affirmait le contraire. Deux bornes, configurables par
+// le contexte : sans progression pendant `relayStallMs` (30 s), ou au-delà de `relayMaxMs` (15 min),
+// le pipeline est ABANDONNÉ par signal — source amont détruite, réponse détruite, rejet, `finally`.
+const RELAIS_STALL_MS_DEFAUT = 30_000, RELAIS_MAX_MS_DEFAUT = 900_000;
+let relaisStallMs = RELAIS_STALL_MS_DEFAUT, relaisMaxMs = RELAIS_MAX_MS_DEFAUT;
+const borneMs = (v, defaut) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : defaut; };
 function borneRelais(v) { const n = Math.trunc(Number(v)); return Number.isFinite(n) && n >= 1 ? n : RELAIS_SIMULTANES_DEFAUT; }
 async function relayerSousAdmission(res, travail) {
   if (relaisEnCours >= plafondRelais) {
@@ -330,21 +342,33 @@ async function relayerFichier(res, r, disposition) {
   if (!compresse && brute) res.setHeader("Content-Length", brute);
 
   const plafond = PLAFOND_RELAIS;
+  // Deux minuteries et un signal : « sans progression » se réarme à chaque morceau qui PASSE (si le
+  // client ne lit plus, la contre-pression arrête les morceaux et la minuterie tombe) ; « budget total »
+  // ne se réarme jamais. L'abandon passe par le signal du pipeline, qui détruit la source ET la réponse.
+  const abandon = new globalThis.AbortController();
+  let stall = null;
+  const rearmer = () => { clearTimeout(stall); stall = setTimeout(() => abandon.abort(new Error(`relais abandonné : aucune progression depuis ${relaisStallMs} ms`)), relaisStallMs); };
+  const budget = setTimeout(() => abandon.abort(new Error(`relais abandonné : plus de ${relaisMaxMs} ms au total`)), relaisMaxMs);
+  rearmer();
   try {
     await pipeline(Readable.fromWeb(r.body), async function* (source) {
       let vus = 0;
       for await (const morceau of source) {
         vus += morceau.length;
         if (vus > plafond) throw new Error(`relais interrompu : ${vus} octets reçus, plafond ${plafond}`);
+        rearmer();
         yield morceau;
       }
-    }, res);
+    }, res, { signal: abandon.signal });
   } catch (erreur) {
     // ⚠️ ROMPRE, PAS RÉPONDRE — et le DIRE. Aucun code de retour n'est plus disponible ; ne
     // reste que la coupure. Une coupure fréquente ici est un plafond mal réglé ou un amont
     // défaillant : l'avaler ferait passer un défaut d'exploitation pour un caprice du réseau.
-    try { PLAYER.errors.capture(erreur instanceof Error ? erreur : new Error(String(erreur)), { route: "relais" }); } catch { /* jamais bloquant */ }
+    const cause = abandon.signal.aborted && abandon.signal.reason instanceof Error ? abandon.signal.reason : erreur;
+    try { PLAYER.errors.capture(cause instanceof Error ? cause : new Error(String(cause)), { route: "relais" }); } catch { /* jamais bloquant */ }
     try { res.destroy(); } catch { /* le socket est peut-être déjà parti */ }
+  } finally {
+    clearTimeout(stall); clearTimeout(budget);
   }
 }
 
@@ -1186,6 +1210,10 @@ async function handlerMesure(req, res) {
 // ⚠️ Exporté pour être ÉPROUVÉ, pas pour être appelé : le plafond du relais ne se vérifie qu en
 // regardant si le corps a été lu, ce qu aucune route ne peut montrer de l extérieur.
 // ⚠️ Exporté pour être ÉPROUVÉ : « le contexte reste vivant » ne se vérifie pas de l'extérieur.
-module.exports = { __contexte: () => PLAYER, handler, init, TIERS, POLITIQUE_PERMISSIONS, refuserEnTexte, repondreJson, __relayerFichier: relayerFichier, __jsonPourScript: jsonPourScript };
+module.exports = { __contexte: () => PLAYER, handler, init, TIERS, POLITIQUE_PERMISSIONS, refuserEnTexte, repondreJson, __relayerFichier: relayerFichier, __jsonPourScript: jsonPourScript,
+  // ⚠️ COUTURE DE BANC, PAS D'API : le cache de lecture est global au module, et un banc qui laisse des
+  // lectures en vol contamine le suivant (128 promesses éternelles, 503 partout — trouvé par un audit
+  // externe sous mélange, graine 20260913). Un banc doit pouvoir VÉRIFIER qu'il rend le cache vide.
+  __cacheLecture: cacheLecture };
 
 // redeploy: forcer le build production (Vercel a sauté la prod du merge #463 — wording re-partage).

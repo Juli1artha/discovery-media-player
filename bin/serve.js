@@ -219,9 +219,12 @@ const serveur = http.createServer((req, res) => {
 // ⚠️ LES DÉLAIS DE NODE (300 s par requête, 60 s pour les en-têtes) SONT CEUX D'UN SERVEUR DERRIÈRE UN
 // PROXY, PAS D'UN SERVEUR EXPOSÉ. Mesurés par un audit externe le 13/09 : `requestTimeout` 300 000,
 // `headersTimeout` 60 000. Une connexion qui envoie ses en-têtes au goutte-à-goutte tenait donc une
-// minute, un corps lent cinq — par socket. Trente secondes couvrent un relais de 60 Mo à 2 Mo/s ; les
-// en-têtes n'ont aucune raison de prendre plus de quinze ; un keep-alive court rend les sockets. Un
-// proxy amont peut serrer davantage, jamais l'inverse : ces bornes sont celles de l'exposition directe.
+// minute, un corps lent cinq — par socket. ⚠️ Ces bornes portent sur la REQUÊTE : `requestTimeout`
+// ne couvre PAS l'émission d'une réponse (cette phrase affirmait que « trente secondes couvrent un
+// relais de 60 Mo » — faux, relevé par le même audit) ; un relais lent est borné par ses propres
+// délais de progression et de budget (`relayStallMs`, `relayMaxMs` dans le gestionnaire). Les
+// en-têtes n'ont aucune raison de prendre plus de quinze secondes ; un keep-alive court rend les
+// sockets. Un proxy amont peut serrer davantage, jamais l'inverse.
 serveur.requestTimeout = 30_000;
 serveur.headersTimeout = 15_000;
 serveur.keepAliveTimeout = 5_000;

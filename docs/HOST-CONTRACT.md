@@ -431,9 +431,22 @@ not depend on code the player does not contain.
 | `visitor-google` | 100 / hour | — |
 
 Counters are taken **at admission**: success, failure and an exception in your plugin consume them
-alike. Beyond a limit the answer is `429 { error: "rate" }` and **your plugin is not called**. The
-identity key is a SHA-256 fingerprint (the player holds no server secret by design, so it is a
-fingerprint, not an HMAC); `player_rate_limits` never carries an address in clear.
+alike. Beyond a limit the answer is `429 { error: "rate" }` and **your plugin is not called**.
+
+⚠️ **Provide `rateLimitKey(email): Promise<string>` on the plugin — the identity key should be
+yours.** Without it the player keys the per-identity counters on a truncated SHA-256 of the
+normalised e-mail: `player_rate_limits` never carries an address in clear, but a fingerprint is a
+**pseudonym, not a secret** — anyone reading that table, a backup or an admin tool can precompute the
+fingerprints of likely addresses (an audit showed it on 13/09). Your implementation should be a
+stable, opaque HMAC with a host-side secret and **domain separation**:
+`HMAC(secret, "visitor-email\0" + emailNormalised)`. The player calls it with the e-mail already
+trimmed and lower-cased, prefixes your key with `h:` (a fallback fingerprint gets `e:`, so the two
+never collide), and truncates it to 64 characters. If the capability is absent, throws, or returns
+anything but a non-empty string, the player **falls back to the fingerprint and reports it once per
+process** through `errors.capture` (`benin: true`): refusing to limit would be worse than limiting
+under a weak pseudonym, and silence would be worse than both. (An earlier version of this paragraph
+said the player holds no server secret at all — too absolute: the standalone context already carries
+`ipHashSecret` for another purpose. The key still belongs with you, not with that secret.)
 
 ⚠️ **What your plugin must still guarantee — the player cannot do it for you:**
 
@@ -754,7 +767,10 @@ Four requirements, in order of what they cost when missed:
    with `Retry-After: 2` before calling you**, with no queue. The stream bounded bytes; nothing
    bounded how many streams were open — an audit opened 200 slow transfers and got 200 upstream
    connections (13/09). The slot is released in a `finally`, so your errors and a client leaving
-   mid-stream give it back.
+   mid-stream give it back — and so does a relay that **stops progressing**: no chunk for
+   `config.relayStallMs` (30 s) or a total beyond `config.relayMaxMs` (15 min) aborts the pipeline,
+   destroying your response and the client's. A client that stops reading no longer keeps a slot
+   forever; a route of yours that stops sending does not either.
 3. **Accept a server-to-server call.** A tracked link is opened by someone with no session on your
    side. Authenticate the player with the shared secret in the `x-player-fetch-secret` **header** —
    header only, never a query string: logs keep URLs.
@@ -804,6 +820,15 @@ back on an inability to *reach*.** And "do not fall back" applies to what you **
 "Open ↗" button left in place is falling back one second later.
 
 ## What will bite
+
+⚠️ **Every capability you provide must settle in bounded time — `db.request` first of all.** The
+player awaits your `db.request`, `storage.fetchFile`, `mail.send` and the visitor plugin; a promise
+that never settles keeps a request in flight, and the read cache admits at most 128 in-flight reads
+per process before answering **503 busy** to everyone. A database call that hangs is therefore not
+"slow", it is an availability incident for the whole instance — the exact mechanism an audit
+reproduced inside the test suite with a never-settling promise (13/09). Time out your own calls
+(the standalone context bounds its own with `AbortSignal`), and never return a promise you cannot
+guarantee will settle.
 
 **Your document-opening doors reappear.** A host has more than one place that opens a file, and new
 ones get written. Keep the list and hunt it periodically — and note that **your search criteria

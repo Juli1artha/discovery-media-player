@@ -206,6 +206,61 @@ describe("⚠️ la vérification est plafonnée avant tout appel au greffon", (
     expect(L.vues.filter((v) => v.cle.startsWith("vverif:id:")).every((v) => v.cle === cleId.cle), "normalisé : casse et blancs ne font pas une autre identité").toBe(true);
   });
 
+  // ⚠️ UN SHA-256 D'EMAIL SE RENVERSE PAR DICTIONNAIRE. La clé d'identité vient du greffon quand il
+  // sait la produire (HMAC, secret côté hôte) ; sinon empreinte, et le repli est DIT une fois.
+  it("⚠️ avec `visitors.rateLimitKey`, la clé est celle de l'hôte — normalisée, opaque, jamais l'empreinte SHA-256", async () => {
+    const L = limiteur(); const G = greffonCompteur();
+    const recus = [];
+    G.plugin.rateLimitKey = async (email) => { recus.push(email); return "hmac-" + Buffer.from(email).toString("base64url"); };
+    const ctx = contexte({ visitors: G.plugin, allow: L.allow });
+    await appeler({ action: "visitor-verify", email: " Alice@Example.com ", code: "faux", slug: "S" }, ctx);
+    await appeler({ action: "visitor-verify", email: "alice@example.com", code: "faux", slug: "S" }, ctx);
+    expect(recus, "le greffon reçoit l'email NORMALISÉ, une fois par appel").toEqual(["alice@example.com", "alice@example.com"]);
+    const cles = L.vues.filter((v) => v.cle.startsWith("vverif:id:")).map((v) => v.cle);
+    expect(cles[0]).toBe(cles[1]);
+    expect(cles[0].startsWith("vverif:id:h:hmac-")).toBe(true);
+    const sha = require("crypto").createHash("sha256").update("alice@example.com").digest("hex").slice(0, 32);
+    expect(cles[0], "la clé n'est pas l'empreinte SHA-256 connue").not.toContain(sha);
+    expect(cles[0]).not.toMatch(/alice|example/);
+    expect(ctx.captures, "aucun repli à dire").toEqual([]);
+  });
+
+  it("deux emails distincts donnent deux clés distinctes, par le greffon comme par l'empreinte", async () => {
+    for (const avec of [true, false]) {
+      const L = limiteur(); const G = greffonCompteur();
+      if (avec) G.plugin.rateLimitKey = async (e) => "k-" + Buffer.from(e).toString("base64url");
+      const ctx = contexte({ visitors: G.plugin, allow: L.allow });
+      await appeler({ action: "visitor-verify", email: "a@x.fr", code: "faux", slug: "S" }, ctx);
+      await appeler({ action: "visitor-verify", email: "b@x.fr", code: "faux", slug: "S" }, ctx);
+      const cles = L.vues.filter((v) => v.cle.startsWith("vverif:id:")).map((v) => v.cle);
+      expect(cles[0]).not.toBe(cles[1]);
+    }
+  });
+
+  it("⚠️ sans la capacité, ou si elle échoue ou rend n'importe quoi : repli sur l'empreinte, DIT une fois par processus", async () => {
+    const L = limiteur(); const G = greffonCompteur();
+    const ctx = contexte({ visitors: G.plugin, allow: L.allow });                 // pas de rateLimitKey
+    await appeler({ action: "visitor-verify", email: "a@x.fr", code: "faux", slug: "S" }, ctx);
+    await appeler({ action: "visitor-verify", email: "a@x.fr", code: "faux", slug: "S" }, ctx);
+    expect(L.vues.filter((v) => v.cle.startsWith("vverif:id:e:")).length, "empreinte, préfixée pour ne jamais se confondre avec une clé d'hôte").toBe(2);
+    expect(ctx.captures.length, "dit une fois, pas à chaque appel").toBe(1);
+    expect(ctx.captures[0]).toMatch(/rateLimitKey n'est pas fourni/);
+    expect(ctx.captures[0]).toMatch(/dictionnaire/);
+
+    const L2 = limiteur(); const G2 = greffonCompteur();
+    G2.plugin.rateLimitKey = async () => { throw new Error("KMS injoignable"); };
+    const ctx2 = contexte({ visitors: G2.plugin, allow: L2.allow });
+    await appeler({ action: "visitor-verify", email: "a@x.fr", code: "faux", slug: "S" }, ctx2);
+    expect(L2.vues.some((v) => v.cle.startsWith("vverif:id:e:")), "la limite tient quand même").toBe(true);
+    expect(ctx2.captures[0]).toMatch(/KMS injoignable/);
+
+    const L3 = limiteur(); const G3 = greffonCompteur();
+    G3.plugin.rateLimitKey = async () => ({ pas: "une chaîne" });
+    const ctx3 = contexte({ visitors: G3.plugin, allow: L3.allow });
+    await appeler({ action: "visitor-verify", email: "a@x.fr", code: "faux", slug: "S" }, ctx3);
+    expect(L3.vues.some((v) => v.cle.startsWith("vverif:id:e:"))).toBe(true);
+  });
+
   it("réussite, échec et exception consomment les mêmes compteurs — pris à l'admission", async () => {
     const L = limiteur(); const G = greffonCompteur();
     const ctx = contexte({ visitors: G.plugin, allow: L.allow });

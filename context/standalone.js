@@ -843,6 +843,10 @@ function createStandaloneContext(env = process.env) {
       // Transferts de fichiers simultanés par processus (défaut 64) : le relais refuse en 503 au-delà,
       // avant tout appel amont. Lu ICI, pas dans le cœur — la configuration entre par le contexte.
       maxConcurrentRelays: Number(env.PLAYER_MAX_RELAYS || 0) || 64,
+      // Un relais sans progression pendant relayStallMs, ou plus long que relayMaxMs, est abandonné
+      // (source et réponse détruites) : sans ça, un client qui cesse de lire garde sa place pour toujours.
+      relayStallMs: Number(env.PLAYER_RELAY_STALL_MS || 0) || 30_000,
+      relayMaxMs: Number(env.PLAYER_RELAY_MAX_MS || 0) || 900_000,
 
       /**
        * Clé de `localStorage` sous laquelle VOTRE application range la session de ses membres.

@@ -224,6 +224,20 @@ describe("⚠️ la visionneuse ne matérialise qu'une fenêtre de pages", () =>
       expect(document.getElementById("plafondAvis").style.display).toBe("none");
       V.showPage(GRAND);
       expect(document.querySelector('#pages .page[data-p="' + GRAND + '"]'), "une page à la fois : la 50 000ᵉ se montre").toBeTruthy();
+      // ⚠️ ET AUCUN ESPACEUR : la 50 000ᵉ était présente, courante, et à 33 554 432 px du haut — donc
+      // invisible — parce que l'espaceur portait la hauteur des 49 999 précédentes. Mesuré dans Chrome
+      // par un audit externe (13/09). jsdom ne mesure pas l'écran ; il mesure que l'espace n'est plus posé.
+      expect(document.getElementById("pagesAvant").style.display, "en mode une page, pas d'espace avant").toBe("none");
+      expect(document.getElementById("pagesApres").style.display, "ni après").toBe("none");
+      expect(document.querySelector("#pages .page.cur").dataset.p).toBe(String(GRAND));
+      expect(V.fenetre.avant + V.fenetre.apres).toBe(0);
+    });
+
+    it("l'avis dit si réduire le zoom suffit, ou s'il faut passer en mode une page", async () => {
+      const { V } = await monter({ total: GRAND });
+      const avis = document.getElementById("plafondAvis").textContent;
+      expect(avis).toMatch(/mode une page/);
+      expect(V.atteignables).toBeLessThan(GRAND);
     });
   });
 

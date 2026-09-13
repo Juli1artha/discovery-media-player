@@ -417,9 +417,11 @@ jobs:
       - name: A published migration never changes, not even a comment
         run: node tools/migrations-immuables.mjs
 
+      # ⚠️ TROIS GRAINES : le jour (change chaque jour), 42 (fixe) et 20260913 — celle sous laquelle un
+      # audit externe a trouvé une dépendance d'ordre que la garde masquait en lisant la sortie texte.
       - name: No bench depends on its rank within its file
         if: matrix.node == '22'
-        run: node tools/ordre-des-bancs.mjs
+        run: node tools/ordre-des-bancs.mjs --graine=jour,42,20260913
 
       - name: Every changelog section has its exact comparison link
         if: matrix.node == '22'

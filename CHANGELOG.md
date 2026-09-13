@@ -37,6 +37,15 @@ the notes there are this file's section for that version.
   réduisez le zoom ». Éprouvé **dans Chrome** : 10 000 et 50 000 pages × 50/100/200/300 %, portrait,
   première/milieu/dernière atteignable matérialisées et courantes, DOM ≤ 12, `scrollHeight` sous le
   plafond — avec un pdf.js de laboratoire servi sur la même URL, substitution comptée. Deux mutants.
+  ⚠️ **Et le mode une page rendait la VRAIE dernière page présente, courante et invisible** : la fenêtre
+  y posait encore les espaceurs des milliers de pages précédentes — la 10 000ᵉ était à 8 339 242 px
+  du haut, sous un cadre de 900 px. Nos bancs prouvaient le DOM et le numéro, pas l'écran ; l'audit
+  a mesuré l'écran (quatrième passe). En mode une page : aucun espaceur (`avant = apres = 0`), et
+  la structure de ce mode vit désormais dans la visionneuse de base — `enterOnePage()` est offert à
+  tout greffon, pas seulement à l'assistant dont la feuille portait seule les règles. Banc Chrome :
+  10 000 et 50 000 pages, première, milieu et **vraie dernière page** dont le cadre intersecte le
+  cadre visible. L'avis du mode continu propose « réduisez le zoom, ou passez en mode une page », et
+  dit quand même le zoom minimal ne suffirait pas. Mutant.
 - ⚠️ **`visitor-verify` et `visitor-google` n'avaient aucun plafond** — seule la demande de code en
   avait un : mille tentatives depuis une adresse, zéro appel au limiteur (audit externe, 13/09).
   Deux dimensions pour le code — 100/h par adresse, 10 par quart d'heure par identité (empreinte de
@@ -44,11 +53,25 @@ the notes there are this file's section for that version.
   la demande. Pris à l'admission : réussite, échec et exception consomment pareil, et le greffon n'est
   **pas appelé** au-delà. Le contrat dit désormais ce que le greffon doit garantir de son côté (code
   court, expirant, à usage unique). Mutant.
+  ⚠️ **Un SHA-256 d'email n'est pas une anonymisation** : il se renverse par dictionnaire (audit,
+  quatrième passe). La clé d'identité vient désormais du greffon — `visitors.rateLimitKey(email)`,
+  HMAC avec un secret côté hôte et séparation de domaine, appelé avec l'email normalisé, préfixé
+  `h:` — et, sans la capacité ou si elle échoue, l'empreinte reste (`e:`, jamais confondue) et le
+  repli est **dit une fois par processus**. « Le cœur n'a pas de secret serveur » était trop absolu
+  (le contexte autonome porte `ipHashSecret`) : la clé appartient à l'hôte, pas à ce secret. Mutant.
 - ⚠️ **Le flux bornait les octets, rien ne bornait le nombre de flux.** 200 demandes lentes, 200
   connexions amont, 200 pipelines, 200 réponses ouvertes dans un processus (audit externe, 13/09).
   Admission par processus AVANT l'appel amont — `config.maxConcurrentRelays`, `PLAYER_MAX_RELAYS`,
   défaut 64 — refus 503 + `Retry-After` sans file d'attente, place rendue en `finally` (succès, erreur
   amont, client parti au milieu du flux : éprouvés), dit une fois par heure à l'exploitant. Mutant.
+  ⚠️ **Une place n'est bornée que si le relais qui l'occupe FINIT** — et un client qui cesse de lire
+  le gardait pour toujours : `finally` jamais atteint, place jamais rendue, plafond à 1 → plus aucun
+  fichier (reproduit par l'audit, quatrième passe). `requestTimeout` ne borne que la réception de la
+  requête, pas l'émission de la réponse — le commentaire du serveur autonome affirmait le contraire,
+  corrigé. Deux bornes par relais, configurables (`config.relayStallMs` 30 s, `config.relayMaxMs`
+  15 min ; `PLAYER_RELAY_STALL_MS`, `PLAYER_RELAY_MAX_MS`) : abandon par le signal du pipeline,
+  source amont détruite, réponse détruite, place rendue — éprouvé : client figé, puis demande
+  suivante admise ; budget total sur un flux qui progresse sans jamais finir. Mutant.
 - ⚠️ **Le serveur autonome confondait trois issues dans un corps vide et gardait les délais de Node.**
   Trop gros, illisible et connexion partie rendaient `{}` puis « bad-event » ; `requestTimeout`
   300 s et `headersTimeout` 60 s sont ceux d'un serveur derrière un proxy (mesurés par l'audit).
@@ -63,6 +86,17 @@ the notes there are this file's section for that version.
   affirmations sont **retirées** dans `affirmations-retirees` : elles ne reviendront pas sans marqueur.
   ⚠️ La garde était verte pendant qu'ils mentaient : elle ne connaît que ce qu'on a décidé de retirer,
   jamais une phrase historique neuve — c'est sa limite écrite, et c'est un audit qui les a trouvés.
+- ⚠️ **« Suite mélangée verte » était faux, et la garde d'ordre masquait la violation.** Sous la
+  graine 20260913, `routeSlugEtSaturation` rougissait : son banc de saturation laissait **128
+  promesses éternelles** dans le cache de lecture global, et les essais suivants du fichier recevaient
+  503. La garde lisait les lignes « FAIL » de la **sortie texte** de vitest — y compris celles que des
+  bancs impriment volontairement en lançant des gardes — classait ces fichiers « déjà rouges »,
+  rendait NON CONCLUANT, et ce non-concluant passait avant la violation confirmée. Trois défauts,
+  trouvés par l'audit (quatrième passe). Le banc règle ses deferreds dans `afterEach` et **vérifie
+  que le cache est vide** (couture `__cacheLecture`) ; la garde lit le **rapport JSON** de vitest,
+  une violation prime sur un non-concluant, et la forge rejoue trois graines (jour, 42, 20260913).
+  Le contrat dit désormais que `db.request` — et toute capacité — doit se régler en temps borné :
+  128 lectures en vol et l'instance répond 503 à tous.
 
 - ⚠️ **`storage.remove` absent était un TROISIÈME état, et il faisait partir la ligne.** La 0.1.164
   distinguait « a échoué » de « a réussi » ; elle ne voyait pas « n'a pas été tenté ». Un hôte qui

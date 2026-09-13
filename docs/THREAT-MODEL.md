@@ -153,9 +153,10 @@ This one told them not to look at a stage that exists. Found by an external audi
 Three more bounds exist since 2026-09-13, each because an audit reproduced their absence:
 
 - **file relays are admitted per process** (`config.maxConcurrentRelays`, default 64): above it,
-  503 + `Retry-After` before any upstream call, no queue, slot released on error and on client
-  disconnect. Bytes were bounded; the number of open streams was not (200 slow requests → 200
-  upstream connections);
+  503 + `Retry-After` before any upstream call, no queue, slot released on error, on client
+  disconnect, and when a relay **stops progressing** (`relayStallMs`) or outlives its budget
+  (`relayMaxMs`) — a client that stops reading used to keep its slot forever. Bytes were bounded;
+  the number of open streams was not (200 slow requests → 200 upstream connections);
 - **the visitor wall counts verifications**, not only code requests — per address and per identity
   fingerprint — and the plugin is not called beyond the limit (1 000 attempts from one address had
   reached it with zero limiter calls);
