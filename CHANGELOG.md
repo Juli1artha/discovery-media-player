@@ -12,6 +12,17 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- **`relaisRefuses` sur la carte de contrat** — `{ total, fenetreS, derniereIlYaS }`, même forme que
+  `lectureSaturee`, autre plafond : les relais de fichiers refusés en 503 parce que
+  `config.maxConcurrentRelays` était atteint. Un hôte (ADV) a répondu « nous n'avons jamais saturé
+  les relais » par `lectureSaturee.total = 0`, qui ne compte que le cache de lecture — lecture
+  raisonnable d'une carte qui n'avait pas de compteur de relais, et `mesures.statuts.occupe503`
+  confond les deux. On demandait aux hôtes de chercher « relais refusés » dans leurs journaux ; une
+  question que la carte peut trancher ne doit pas être posée comme une fouille de journaux. État du
+  processus, jamais remis à zéro par `init`.
+
 ### Fixed
 
 - ⚠️ **`init()` désarmait le plafond des relais.** Chaque réinitialisation remettait le compteur de
@@ -41,6 +52,11 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- ⚠️ **Le tableau des zones a une zone `pages`** : `server/page-*.js`, `server/gabarit-*.js` et les
+  deux bundles générés — le HTML et le JavaScript de la page des spectateurs. « `browser` : 0 » a été
+  lu six trains de suite par un hôte comme « rien ne change pour nos visiteurs » ; c'était vrai de
+  `dist/bridge.js` et faux de la page, dont le code vivait dans `server`. Une mesure juste, mal
+  étiquetée, passe tous les contrôles de provenance — c'est l'hôte qui l'a dit, et il a raison.
 - ⚠️ **64 relais simultanés n'est pas une valeur sûre partout**, et les docs le disent désormais :
   mesuré par l'audit avec le vrai chemin relais, 64 × 8 Mio et des clients lents font monter la RSS
   du processus de 63 à 193–257 Mio. Sur un processus à 256 Mio, 16 à 32 ; 64 à partir de 512 Mio,

@@ -194,6 +194,30 @@ describe("⚠️ les relais de fichiers passent par une admission", () => {
     a.liberer(); await Promise.all(demandes.map((d) => d.p));
   });
 
+  // ⚠️ UN HÔTE A LU `lectureSaturee.total = 0` COMME « NOUS N'AVONS JAMAIS SATURÉ LES RELAIS » (13/09).
+  // Ce champ ne compte que le cache de lecture ; la carte n'avait rien pour les relais, et on demandait
+  // aux hôtes de fouiller leurs journaux. Le compteur est sur la carte, et c'est un état du processus.
+  it("⚠️ la carte compte les relais refusés — et init() ne remet pas ce compte à zéro", async () => {
+    const carte = async () => {
+      const res = { statusCode: 0, headers: {}, body: "", setHeader(k, v) { this.headers[k.toLowerCase()] = v; }, end(b) { this.body = String(b == null ? "" : b); } };
+      await player.handler({ method: "GET", headers: {}, socket: {}, query: { contract: "1" } }, res);
+      return JSON.parse(res.body);
+    };
+    const a = amont(); initialiser(a, { maxConcurrentRelays: 2 });
+    const avant = (await carte()).relaisRefuses;
+    expect(Object.keys(avant).sort(), "trois clés, jamais séparées").toEqual(["derniereIlYaS", "fenetreS", "total"]);
+    const demandes = Array.from({ length: 5 }, () => demander()); await tour();
+    const refusees = demandes.filter((d) => d.res.statusCode === 503).length;
+    expect(refusees, "contrôle positif : trois refus").toBe(3);
+    const apres = (await carte()).relaisRefuses;
+    expect(apres.total - avant.total).toBe(3);
+    expect(apres.derniereIlYaS, "le dernier refus vient d'avoir lieu").toBe(0);
+    expect(apres.fenetreS).toBeGreaterThanOrEqual(0);
+    a.liberer(); await Promise.all(demandes.map((d) => d.p));
+    initialiser(amont(), { maxConcurrentRelays: 64 });
+    expect((await carte()).relaisRefuses.total, "un contexte neuf ne réécrit pas l'histoire du processus").toBe(apres.total);
+  });
+
   // ⚠️ `init` REMETTAIT LE COMPTEUR À ZÉRO, ET DÉSARMAIT LE PLAFOND. Un hôte qui rappelle `init`
   // pendant qu'un relais est ouvert : la demande suivante partait vers l'amont avec l'unique place
   // encore prise, puis le `finally` de l'ancien relais rendait le compteur négatif (reproduit par un

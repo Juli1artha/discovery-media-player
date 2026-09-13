@@ -83,6 +83,13 @@ const isAllowedStorageUrl = (url) => PLAYER.storage.isAllowedUrl(url);
 // ceci protège le mode autonome et chaque instance chaude.
 const { bornesRelais, RELAIS_SIMULTANES_DEFAUT, RELAIS_STALL_MS_DEFAUT, RELAIS_MAX_MS_DEFAUT } = require("./bornes");
 let plafondRelais = RELAIS_SIMULTANES_DEFAUT, relaisEnCours = 0;
+// ⚠️ COMPTÉS, PARCE QU'UN HÔTE A CRU LES LIRE AILLEURS. On demandait aux hôtes de chercher « relais
+// refusés » dans leurs journaux ; l'un d'eux a répondu par `lectureSaturee.total = 0` de la carte —
+// qui ne compte que le cache de lecture, pas les relais (13/09). Une question qu'un hôte peut
+// trancher par la carte ne doit pas être posée comme une fouille de journaux : la carte est
+// structurée, datée, et répond même pour l'hôte qui ne lit jamais ses journaux. État du processus,
+// comme `relaisEnCours` : jamais remis à zéro par `init`.
+let relaisRefusesTotal = 0, dernierRefusRelais = null;
 // ⚠️ UNE PLACE N'EST BORNÉE QUE SI LE RELAIS QUI L'OCCUPE FINIT. Un client qui cesse de lire — ou un
 // amont qui cesse d'envoyer — laissait le pipeline en attente pour toujours : `finally` jamais atteint,
 // place jamais rendue, et avec un plafond de 1, plus aucun fichier ne partait (reproduit par un audit
@@ -95,6 +102,7 @@ let plafondRelais = RELAIS_SIMULTANES_DEFAUT, relaisEnCours = 0;
 let relaisStallMs = RELAIS_STALL_MS_DEFAUT, relaisMaxMs = RELAIS_MAX_MS_DEFAUT;
 async function relayerSousAdmission(res, travail) {
   if (relaisEnCours >= plafondRelais) {
+    relaisRefusesTotal += 1; dernierRefusRelais = Date.now();
     // Une fois par heure, l'exploitant l'apprend : un 503 muet ressemble à une panne d'amont.
     try {
       if (await PLAYER.limits.allow("relais:sature-avert", 1, 3600)) {
@@ -831,6 +839,15 @@ async function handlerMesure(req, res) {
             derniereIlYaS: dernier == null ? null : Math.max(0, Math.round((Date.now() - dernier) / 1000)),
           };
         })(),
+        // ⚠️ MÊME FORME, AUTRE PLAFOND. `lectureSaturee` est le cache de lecture ; ceci est l'admission
+        // des relais de fichiers (`config.maxConcurrentRelays`). Un hôte a lu le premier pour le second
+        // (13/09) parce que le second n'existait pas sur la carte — et `mesures.statuts.occupe503`
+        // les confond. Trois clés, jamais séparées : un total sans sa fenêtre ment par omission.
+        relaisRefuses: {
+          total: relaisRefusesTotal,
+          fenetreS: Math.round(process.uptime()),
+          derniereIlYaS: dernierRefusRelais == null ? null : Math.max(0, Math.round((Date.now() - dernierRefusRelais) / 1000)),
+        },
         // ⚠️ CE QUE CETTE INSTANCE A VÉCU — parce que `lectureSaturee` ne répondait qu'à UNE
         // question. « La route est-elle lente ? », « lesquelles ? », « la base ou nous ? »,
         // « combien de 5xx ? », « la boucle décroche-t-elle ? » n'avaient aucune réponse
