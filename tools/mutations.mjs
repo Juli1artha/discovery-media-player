@@ -253,7 +253,10 @@ export const MUTANTS = [
   {
     id: "relais-sans-delai-de-progression",
     fichier: "server/handler.js",
-    avant: "  const rearmer = () => { clearTimeout(stall); stall = setTimeout(() => abandon.abort(new Error(`relais abandonné : aucune progression depuis ${relaisStallMs} ms`)), relaisStallMs); };",
+    // La cible cite un gabarit de handler.js ; ce fichier exporte une fonction `bornes`, et CodeQL lit
+    // « ${bornes.stallMs} » dans un littéral simple comme une référence oubliée. La chaîne est coupée
+    // avant le « { » : même octets une fois concaténée, plus d'ambiguïté.
+    avant: "  const rearmer = () => { clearTimeout(stall); stall = setTimeout(() => abandon.abort(new Error(`relais abandonné : aucune progression depuis $" + "{bornes.stallMs} ms`)), bornes.stallMs); };",
     apres: "  const rearmer = () => { clearTimeout(stall); };",
     pourquoi: "un client qui cesse de lire gardait sa place pour toujours : requestTimeout ne borne pas l'émission d'une réponse",
     bancs: ["server/__tests__/relaisAdmission.test.js"],
@@ -273,6 +276,41 @@ export const MUTANTS = [
     apres: "      if (typeof k === \"string\" && k.trim()) return \"e:\" + empreinteIdentite(norm);",
     pourquoi: "une empreinte SHA-256 d'email se renverse par dictionnaire : la clé d'identité doit venir du greffon quand il sait la produire",
     bancs: ["server/__tests__/murVisiteur.test.js"],
+  },
+  // ── 13/09 — cinquième passe de l'audit externe, sur le tag v0.1.165 ─────────────────────────────
+  {
+    id: "relais-compteur-remis-a-zero-par-init",
+    fichier: "server/handler.js",
+    avant: "  relaisMaxMs = bornes.maxMs;",
+    apres: "  relaisMaxMs = bornes.maxMs; relaisEnCours = 0;",
+    pourquoi: "init() remettait le compteur de relais en vol à zéro : un relais ouvert avant la réinitialisation ne comptait plus, le plafond était désarmé et le compteur finissait négatif",
+    bancs: ["server/__tests__/relaisAdmission.test.js"],
+  },
+  {
+    id: "relais-bornes-relues-pendant-le-transfert",
+    fichier: "server/handler.js",
+    avant: "  const bornes = { stallMs: relaisStallMs, maxMs: relaisMaxMs };\n  relaisEnCours += 1;\n  try { await travail(bornes); } finally { relaisEnCours -= 1; }",
+    apres: "  relaisEnCours += 1;\n  try { await travail({ get stallMs() { return relaisStallMs; }, get maxMs() { return relaisMaxMs; } }); } finally { relaisEnCours -= 1; }",
+    pourquoi: "les bornes d'un relais doivent être celles de son admission : un init pendant le transfert ne relit la configuration que pour les suivants",
+    bancs: ["server/__tests__/relaisAdmission.test.js"],
+  },
+  {
+    id: "relais-delai-hors-plage-accepte",
+    fichier: "server/bornes.js",
+    avant: "  const valide = Number.isSafeInteger(n) && n >= min && n <= max;",
+    apres: "  const valide = Number.isFinite(n) && n > 0;",
+    pourquoi: "« tout nombre fini positif » laissait passer 2 147 483 648 ms jusqu'à setTimeout, qui le ramène à 1 ms : le transfert était abandonné en 6 ms",
+    bancs: ["server/__tests__/bornesRelais.test.js", "server/__tests__/relaisAdmission.test.js"],
+  },
+  {
+    id: "affirmation-secret-serveur-hors-liste",
+    fichier: "tools/affirmations-retirees.mjs",
+    // ⚠️ cette phrase est la CIBLE du mutant : citée ici, pas affirmée — la garde des affirmations
+    // retirées lit ce fichier, et sans ce marqueur elle relèverait sa propre définition.
+    avant: "    motif: /(?:le cœur n'a (?:pas|aucun) (?:de )?secrets? (?:de )?serveur|(?:the )?(?:core|player) (?:has|holds) no server secret|aucun secret serveur|pas de secret de serveur)/i,",
+    apres: "    motif: /(?:le cœur n'a (?:pas|aucun) (?:de )?secrets? (?:de )?serveur qui n'existe pas)/i,",
+    pourquoi: "une affirmation annoncée retirée dans le CHANGELOG mais absente de la liste laissait la garde verte sur une phrase encore écrite comme vraie",
+    bancs: ["tools/__tests__/affirmationsRetirees.test.js"],
   },
 ];
 

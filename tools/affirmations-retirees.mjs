@@ -59,6 +59,12 @@ export const RETIREES = [
     pourquoi: "presenter_key n'existe plus : le serveur ne rend que presenter_name, affiché séparément de la présence, et aucune métadonnée Realtime ne porte un privilège",
     retiree: "2026-09-13",
   },
+  {
+    nom: "« le cœur n'a pas de secret de serveur » — donc une empreinte d'email, pas un HMAC",
+    motif: /(?:le cœur n'a (?:pas|aucun) (?:de )?secrets? (?:de )?serveur|(?:the )?(?:core|player) (?:has|holds) no server secret|aucun secret serveur|pas de secret de serveur)/i,
+    pourquoi: "trop absolu (le contexte autonome porte déjà ipHashSecret) et hors sujet : la clé d'identité visiteur vient du greffon (rateLimitKey, HMAC chez l'hôte), l'empreinte n'est qu'un repli dit une fois — annoncée retirée dans 0.1.165 pendant que cette liste l'ignorait (audit, cinquième passe)",
+    retiree: "2026-09-13",
+  },
 ];
 
 /**

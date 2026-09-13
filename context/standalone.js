@@ -842,11 +842,16 @@ function createStandaloneContext(env = process.env) {
       extraFrameAncestors: String(env.DOC_FRAME_ANCESTORS || "").split(/\s+/).filter(Boolean),
       // Transferts de fichiers simultanés par processus (défaut 64) : le relais refuse en 503 au-delà,
       // avant tout appel amont. Lu ICI, pas dans le cœur — la configuration entre par le contexte.
-      maxConcurrentRelays: Number(env.PLAYER_MAX_RELAYS || 0) || 64,
+      // ⚠️ TRANSMIS TEL QUEL, PAS NORMALISÉ ICI. La première écriture faisait `Number(x) || 64` : une
+      // valeur illisible devenait le défaut EN SILENCE, et 2 147 483 648 passait jusqu'à `setTimeout`,
+      // qui ramène un tel délai à 1 ms (audit externe, cinquième passe). Les plages vivent dans
+      // `server/bornes.js`, et le cœur les applique à `init` en DISANT une fois ce qu'il a refusé —
+      // si on bornait ici, il ne verrait qu'une valeur valide et l'exploitant ne saurait jamais.
+      maxConcurrentRelays: env.PLAYER_MAX_RELAYS ? Number(env.PLAYER_MAX_RELAYS) : 64,
       // Un relais sans progression pendant relayStallMs, ou plus long que relayMaxMs, est abandonné
       // (source et réponse détruites) : sans ça, un client qui cesse de lire garde sa place pour toujours.
-      relayStallMs: Number(env.PLAYER_RELAY_STALL_MS || 0) || 30_000,
-      relayMaxMs: Number(env.PLAYER_RELAY_MAX_MS || 0) || 900_000,
+      relayStallMs: env.PLAYER_RELAY_STALL_MS ? Number(env.PLAYER_RELAY_STALL_MS) : 30_000,
+      relayMaxMs: env.PLAYER_RELAY_MAX_MS ? Number(env.PLAYER_RELAY_MAX_MS) : 900_000,
 
       /**
        * Clé de `localStorage` sous laquelle VOTRE application range la session de ses membres.

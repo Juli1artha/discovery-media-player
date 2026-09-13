@@ -20,9 +20,11 @@ let PLAYER = null;
 // Deux dimensions pour le code, parce qu'une seule se contourne : par ADRESSE (une adresse ne
 // recommence pas à zéro en changeant d'email) et par IDENTITÉ (plusieurs adresses ne forcent pas un
 // même email). Les compteurs sont pris À L'ADMISSION, donc réussite, échec et exception les
-// consomment pareil. L'identité est une EMPREINTE de l'email normalisé, jamais l'email : la table des
-// compteurs n'a pas à porter d'adresses en clair. (Le cœur n'a pas de secret de serveur, par
-// conception — voir le contexte autonome — donc une empreinte, pas un HMAC.)
+// consomment pareil. L'identité n'est jamais l'email : la table des compteurs n'a pas à porter
+// d'adresses en clair. La clé vient du GREFFON (un HMAC avec un secret chez l'hôte, ci-dessous) ;
+// l'empreinte SHA-256 n'est que le repli, et il est dit. ⚠️ Ce paragraphe affirmait « le cœur n'a
+// pas de secret de serveur, donc une empreinte, pas un HMAC » — retiré (cinquième passe de l'audit,
+// 13/09) : trop absolu, et surtout la clé n'a pas besoin d'un secret du cœur, elle vient de l'hôte.
 const VERIF_PAR_ADRESSE = 100, VERIF_PAR_IDENTITE = 10, VERIF_FENETRE_IDENTITE_S = 900;
 const GOOGLE_PAR_ADRESSE = 100, DEMANDE_PAR_IDENTITE = 5;
 // ⚠️ UN SHA-256 D'EMAIL N'EST PAS UNE ANONYMISATION : il se renverse par dictionnaire — qui lit la
