@@ -50,6 +50,7 @@ need.
   "presenceDurcissement": "inconnu",
   "presenceFusion": "inconnu",
   "lectureSaturee": { "total": 0, "fenetreS": 0, "derniereIlYaS": null },
+  "relaisRefuses": { "total": 0, "fenetreS": 0, "derniereIlYaS": null },
   "mesures": { "fenetreS": 0, "seauxMs": [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000], "familles": ["document", "presentation", "action", "fichier", "carte", "autre"], "routes": {}, "base": { "n": 0 }, "statuts": { "ok": 0, "refus4xx": 0, "debit429": 0, "occupe503": 0, "erreur5xx": 0 }, "memoireMio": { "rss": 0, "heap": 0, "tampons": 0 }, "boucleMs": { "n": 0, "moyen": null, "p99": null, "resolutionMs": 20 } },
   "retentionSweep": false,
   "hostShare": true,
@@ -240,6 +241,18 @@ object rather than as separate fields you could read apart.
 ⚠️ **It is process-local.** Behind a load balancer this is the count of the instance that answered,
 not of your deployment. Aggregating is your job — and letting you believe otherwise would be worse
 than returning nothing.
+
+### `relaisRefuses` — what the relay admission refused
+
+Same three keys, same reading rules, **another ceiling**: this counts the file relays refused with
+`503` + `Retry-After: 2` because `config.maxConcurrentRelays` was reached (see *Relay `Range`* in the
+three things a host implements). ⚠️ `lectureSaturee` does **not** cover it — it is the read cache
+only. A host answered *"we never saturate relays"* from `lectureSaturee.total = 0` (13/09), which was
+a reasonable reading of a card that had no relay counter; and `mesures.statuts.occupe503` mixes the
+two refusals. This field exists so that the question *did this instance refuse a relay?* is answered
+by the card, structured and dated, and never by a search through logs for `relais refusés` — the
+log line stays for diagnosis, the card is the way to *notice*. Process-local like everything on this
+card, and **never reset by `init`**, exactly like the counter of open relays.
 
 ⚠️ **Before you upgrade, do not read `presenceDurcissement` or `presenceFusion`.** They are *reports
 of execution*: on an instance where nothing is running they say `inconnu`, which means *nobody
