@@ -185,7 +185,7 @@ these numbers from their side.
 | `routes` | one entry per family of work — `document`, `presentation`, `action`, `fichier`, `carte`, `autre`. Families absent from the object were never exercised in this process |
 | `base` | the same shape, for calls through the `db` capability **you** supply — measured at the seam, so it covers every call, including ones nobody has written yet |
 | `statuts` | responses by class: `ok` (<400), `refus4xx`, `debit429`, `occupe503`, `erreur5xx` |
-| `memoireMio` | `rss`, `heap` (heap used), `tampons` (`arrayBuffers`) in MiB, read at the moment of the request |
+| `memoireMio` | `rss`, `heap` (heap used), `tampons` (`arrayBuffers`) in MiB, read at the moment of the request. ⚠️ **Half a number**: it is only judicable against the memory ceiling of the process, which the player does not know and no platform serves the same way — on Lambda-based functions (Vercel included) read `AWS_LAMBDA_FUNCTION_MEMORY_SIZE`; in a container, the cgroup limit. A host spent half a day finding that its project API, its logs and its `vercel.json` all left it out (14/09). Display the ceiling beside the RSS, or the RSS says nothing about the relay ceiling you can afford |
 | `boucleMs` | event-loop **delay** — `moyen` and `p99` in ms, with `n` samples and the sampler's `resolutionMs` |
 
 ⚠️ **A percentile over buckets is a bound, not a value.** `p95sousMs: 250` reads *"95% of calls

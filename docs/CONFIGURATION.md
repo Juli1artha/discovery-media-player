@@ -69,7 +69,10 @@ rose from ~63 MiB to a peak of **193–257 MiB**, with ~85 MiB more in `arrayBuf
 capped at 256 MiB, set **16–32**; 64 from 512 MiB upwards, after measuring on your own sockets and
 memory profile. The accepted range is an **integer from 1 to 1024**; anything else (a decimal, a
 string, above the range) falls back to 64 and is reported **once at `init`** through `errors.capture`
-(`benin: true`) with the range — never silently.
+(`benin: true`) with the range — never silently. ⚠️ The card's `mesures.memoireMio.rss` is half of
+the decision: the other half is the ceiling of your process, which the player cannot see — on
+Lambda-based functions it is `AWS_LAMBDA_FUNCTION_MEMORY_SIZE`, in a container the cgroup limit.
+Read both before touching this number; an RSS on a fresh process says nothing about 64 slow relays.
 
 ⚠️ **The counter of open relays belongs to the process, not to the context.** Until 0.1.165,
 calling `init` again reset it to zero while relays were still open: the next request went upstream

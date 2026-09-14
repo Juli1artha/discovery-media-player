@@ -20,6 +20,11 @@ the notes there are this file's section for that version.
   Un hôte (ADV) a lu ses deux domaines à quelques minutes d'écart : fenêtres de 15 et 19 s, puis 4
   et 7 s — `total: 0` y dit « rien depuis un quart de minute », presque aucune information. Limite
   d'applicabilité, pas défaut du champ ; écrite à côté du champ.
+- Le contrat et `CONFIGURATION.md` disent que `mesures.memoireMio` n'est que la moitié d'un chiffre :
+  l'autre moitié est le plafond mémoire du processus, que le lecteur ne connaît pas et qu'aucune
+  plateforme ne sert de la même façon (`AWS_LAMBDA_FUNCTION_MEMORY_SIZE` sur les fonctions Lambda,
+  Vercel compris ; la limite cgroup en conteneur). Un hôte (STUDIO) y a perdu une demi-journée :
+  ni l'API projet, ni les journaux, ni son `vercel.json` ne le portaient.
 - `server/bornes.js` dit que la coercition qui fabrique une valeur plausible n'est pas propre aux
   booléens (`Number(null)` et `Number("")` valent 0) et que l'ordre des opérations est le remède :
   l'absence est écartée avant toute conversion. Remarque d'un hôte qui l'avait payée six fois.
