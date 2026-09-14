@@ -174,14 +174,26 @@ export function classerRouge({ normal, melange }) {
 }
 
 /** Les pièces conservées pour un rouge : messages d'échec du rapport, code, signal, fin de stderr, graine, mode. */
+// ⚠️ « Error: STACK_TRACE_ERROR » N'EST PAS UNE CAUSE. La première ligne d'un `failureMessages` de
+// vitest est parfois ce libellé, la cause étant deux lignes plus bas — et un échec de hook peut ne
+// laisser qu'un `testResult.message`, ou rien. On prend la première ligne INFORMATIVE, on ajoute le
+// `message` du fichier quand il existe, et quand aucune pièce n'est exploitable on le DIT, avec la
+// commande qui en produira (audit, neuvième passe).
+const LIGNE_VIDE_DE_SENS = /^\s*(Error:?\s*)?(STACK_TRACE_ERROR)?\s*$/;
+export const premiereLigneInformative = (texte) => (String(texte || "").split("\n").map((l) => l.trim()).find((l) => l && !LIGNE_VIDE_DE_SENS.test(l) && !/^at /.test(l)) || "").slice(0, 200);
 export function piecesDe({ fichier, r, rapport, graine, mode, racine = RACINE }) {
   const t = rapport && Array.isArray(rapport.testResults) ? rapport.testResults.find((x) => relatif(String(x && x.name || ""), racine) === fichier) : null;
   const messages = t && Array.isArray(t.assertionResults)
-    ? t.assertionResults.filter((a) => a && a.status === "failed").flatMap((a) => (a.failureMessages || []).map((m) => `${a.fullName || a.title} — ${String(m).split("\n")[0].slice(0, 200)}`))
+    ? t.assertionResults.filter((a) => a && a.status === "failed").flatMap((a) => (a.failureMessages || []).map((m) => premiereLigneInformative(m)).filter(Boolean).map((m) => `${a.fullName || a.title} — ${m}`))
     : [];
+  const messageFichier = t && typeof t.message === "string" && t.message.trim() ? premiereLigneInformative(t.message) : "";
   const stderr = String((r && r.stderr) || "").trim().split("\n").slice(-5).join(" | ");
+  const rien = !messages.length && !messageFichier && !stderr;
   return `${fichier} [${mode}${graine != null ? `, graine ${graine}` : ""}] code ${r && r.status}, signal ${(r && r.signal) || "aucun"}`
-    + (messages.length ? ` ; échecs : ${messages.join(" ; ")}` : "") + (stderr ? ` ; stderr : ${stderr.slice(0, 300)}` : "");
+    + (messages.length ? ` ; échecs : ${messages.join(" ; ")}` : "")
+    + (messageFichier ? ` ; message du fichier : ${messageFichier}` : "")
+    + (stderr ? ` ; stderr : ${stderr.slice(0, 300)}` : "")
+    + (rien ? ` ; aucune cause exploitable dans le rapport JSON — rejouer : npx vitest run ${fichier} --reporter=verbose` : "");
 }
 
 /**

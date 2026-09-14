@@ -51,6 +51,14 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- **Les pièces de diagnostic traversent la chaîne.** Sur une forge au cache npm non inscriptible,
+  `npm pack` sortait en 255 avec `EPERM`, et `inventaire-tarball` jetait son stderr : la seule pièce
+  qui remontait était « code 255 » ; un audit a passé une passe à attribuer six rouges avant de
+  trouver la cause (neuvième passe). `lancerPack` lève désormais en nommant code, signal et fin de
+  stderr, bornés, et un banc lance un vrai sous-processus qui échoue avec une cause identifiable. La
+  garde d'ordre prend la première ligne **informative** d'un `failureMessages` (« Error:
+  STACK_TRACE_ERROR » n'est pas une cause), reprend le `message` du fichier quand un hook a échoué,
+  et quand rien n'est exploitable le dit avec la commande de rejeu détaillé. Deux mutants.
 - ⚠️ **La carte porte trois natures, et la règle « lire `fenetreS` avant `total` » n'en couvrait
   qu'une.** Le paragraphe de la veille l'étendait à « tout `mesures` » ; un hôte (ADV) a appliqué la
   règle des compteurs à `memoireMio`, qui est une **jauge** (`process.memoryUsage()` à l'instant de
