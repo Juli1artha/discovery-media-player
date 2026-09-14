@@ -53,7 +53,8 @@
         "commitSha",
         "packageVersion",
         "timestamp",
-        "runId"
+        "runId",
+        "schemaSha256"
       ],
       "properties": {
         "commitSha": {
@@ -72,6 +73,11 @@
           "type": "string",
           "minLength": 1,
           "description": "l'identité de la COURSE, commune aux artefacts d'une même séquence (100 → 1 000 → 100 en fait trois, même runId, positions 1, 2, 3)"
+        },
+        "schemaSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "sha256 du JSON canonique (sans blancs) du schéma sous lequel l'artefact a été produit ; le validateur exige qu'elle soit celle du schéma qu'il applique — un artefact dit lui-même contre quoi il a été jugé"
         }
       }
     },
@@ -313,7 +319,7 @@
         "n": {
           "type": "integer",
           "minimum": 0,
-          "description": "une observation par requête achevée (=== workload.completedRequests) ; au moins OBSERVATIONS_MIN (1 000) quand complete vaut true — 100 spectateurs ne veut pas dire 100 observations"
+          "description": "une observation par requête achevée (=== workload.completedRequests), quel que soit son statut ; au moins OBSERVATIONS_MIN (1 000) quand complete vaut true. Le débit se recalcule (n / measurementWindow.durationMs × 1000), il n'est pas stocké"
         },
         "min": {
           "type": "number",
@@ -348,17 +354,18 @@
         "unit",
         "binSetId",
         "edges",
-        "counts"
+        "counts",
+        "overflow"
       ],
-      "description": "classes FIXES, pour réinterpréter les percentiles après coup ; optionnel",
+      "description": "classes FIXES et nommées, pour réinterpréter les percentiles après coup ; optionnel",
       "properties": {
         "unit": {
           "const": "ms"
         },
         "binSetId": {
           "type": "string",
-          "minLength": 1,
-          "description": "le NOM du jeu de classes fixes : deux histogrammes ne se comparent que sous le même binSetId"
+          "pattern": "^edges-sha256-[0-9a-f]{16}$",
+          "description": "DÉRIVÉ des bornes : « edges-sha256- » puis les 16 premiers hexadécimaux du sha256 de JSON.stringify(edges) ; deux jeux de bornes différents ne peuvent pas porter le même identifiant, et le validateur recalcule"
         },
         "edges": {
           "type": "array",
@@ -367,7 +374,7 @@
             "type": "number",
             "minimum": 0
           },
-          "description": "strictement croissantes ; counts en a une de moins"
+          "description": "bornes finies, strictement croissantes, edges[0] === 0 ; la classe i est [edges[i], edges[i+1]) — borne basse incluse, borne haute exclue, une valeur égale à une borne tombe dans la classe qui commence à cette borne"
         },
         "counts": {
           "type": "array",
@@ -376,13 +383,14 @@
             "type": "integer",
             "minimum": 0
           },
-          "description": "leur somme vaut latencyMs.n"
+          "description": "une classe de moins que de bornes"
+        },
+        "overflow": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "les observations ≥ edges[edges.length − 1] : la classe ouverte, pour que des bornes FIXES ne perdent aucune observation et n'aient jamais à bouger ; counts + overflow sommés valent latencyMs.n"
         }
       }
-    },
-    "throughputRps": {
-      "type": "number",
-      "minimum": 0
     },
     "statuses": {
       "type": "object",
@@ -465,7 +473,6 @@
       "additionalProperties": false,
       "required": [
         "calls",
-        "callsPerRequest",
         "peakInFlight",
         "timeouts",
         "latencyMs"
@@ -473,10 +480,6 @@
       "properties": {
         "calls": {
           "type": "integer",
-          "minimum": 0
-        },
-        "callsPerRequest": {
-          "type": "number",
           "minimum": 0
         },
         "peakInFlight": {
@@ -490,7 +493,8 @@
         "latencyMs": {
           "$ref": "#/$defs/percentiles"
         }
-      }
+      },
+      "description": "calls : appels à la capacité db pendant la fenêtre ; timeouts ≤ calls. Le coût par requête se recalcule (calls / workload.completedRequests), il n'est pas stocké : une grandeur dérivée stockée peut diverger de ce qu'elle dérive"
     },
     "cache": {
       "type": "object",
@@ -551,7 +555,7 @@
             "end",
             "afterGc"
           ],
-          "description": "quatre relevés, pas seulement le pic : la RSS ne redescend pas après GC, et seul afterGc le montre",
+          "description": "quatre relevés, pas seulement le pic : la RSS ne redescend pas après GC, et seul afterGc le montre. peak ≥ baseline et peak ≥ end pour chaque grandeur (peak couvre la fenêtre qu'il prétend couvrir) ; afterGc est postérieur à la fenêtre et n'est pas borné par peak",
           "properties": {
             "baseline": {
               "$ref": "#/$defs/memoire"
@@ -573,12 +577,12 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "completed",
+        "correctResponses",
         "emptyResponses",
         "wrongPresentation"
       ],
       "properties": {
-        "completed": {
+        "correctResponses": {
           "type": "integer",
           "minimum": 0
         },
@@ -591,7 +595,7 @@
           "minimum": 0
         }
       },
-      "description": "completed : requêtes achevées dont la réponse est CORRECTE (2xx, la bonne présentation) ; emptyResponses et wrongPresentation : achevées et fausses. Les trois ne dépassent pas workload.completedRequests, et completed n'est PAS latencyMs.n : n compte toute requête achevée, correcte ou non"
+      "description": "le jugement de CHAQUE réponse 2xx : correctResponses (la bonne présentation, un corps), emptyResponses (2xx sans corps), wrongPresentation (2xx d'une autre présentation). Le validateur exige correctResponses + emptyResponses + wrongPresentation === statuses.2xx : aucune 2xx ne reste non inspectée. Ce n'est pas latencyMs.n, qui compte toute requête achevée quel que soit son statut"
     },
     "counters": {
       "type": "object",
@@ -674,7 +678,8 @@
             }
           }
         }
-      }
+      },
+      "description": "admitted : relais passés à l'admission (le flux a commencé) ; refused : refusés à l'admission (503, Retry-After: 2, plafond maxConcurrentRelays atteint) ; admitted + refused === workload.completedRequests pour ce scénario (une requête = une tentative de relais), et refused ≤ statuses.503 ; fileBytes : taille du fichier servi, la même pour tous ; bytesTransferred ≤ admitted × fileBytes ; descriptors.peak ≥ descriptors.idle"
     }
   },
   "allOf": [
@@ -684,12 +689,12 @@
           "complete": {
             "const": true
           }
-        }
+        },
+        "type": "object"
       },
       "then": {
         "required": [
           "latencyMs",
-          "throughputRps",
           "statuses",
           "http",
           "database",
@@ -707,9 +712,11 @@
                 "type": "string",
                 "minLength": 1
               }
-            }
+            },
+            "type": "object"
           }
-        }
+        },
+        "type": "object"
       }
     },
     {
@@ -727,9 +734,11 @@
               "name": {
                 "const": "relay"
               }
-            }
+            },
+            "type": "object"
           }
-        }
+        },
+        "type": "object"
       },
       "then": {
         "required": [

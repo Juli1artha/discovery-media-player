@@ -182,10 +182,10 @@ these numbers from their side.
 | `fenetreS` | seconds this process has been running — **the window every total below was counted over** |
 | `seauxMs` | the bucket ladder the percentiles are read off, published **with** the numbers |
 | `familles` | **the denominator of `routes`** — every family this build measures, whether or not it was exercised. It does not move with traffic; that is what makes it a denominator |
-| `routes` | one entry per family of work — `document`, `presentation`, `action`, `fichier`, `carte`, `autre`. Families absent from the object were never exercised in this process |
+| `routes` | one entry per family of work — `document`, `presentation`, `action`, `fichier`, `carte`, `autre`. Families absent from the object were never exercised in this process. ⚠️ **`familles` is the scale, `routes` is the measure: `familles` never varies; what was seen is in `routes`.** A host displayed the scale as the measure for a whole day — "6 familles", permanently, on an instance that had just restarted — because nothing on the card said which of the two was which (STUDIO, 14/09) |
 | `base` | the same shape, for calls through the `db` capability **you** supply — measured at the seam, so it covers every call, including ones nobody has written yet |
 | `statuts` | responses by class: `ok` (<400), `refus4xx`, `debit429`, `occupe503`, `erreur5xx` |
-| `memoireMio` | `rss`, `heap` (heap used), `tampons` (`arrayBuffers`) in MiB, read at the moment of the request. ⚠️ **Half a number**: it is only judicable against the memory ceiling of the process, which the player does not know and no platform serves the same way — on Lambda-based functions (Vercel included) read `AWS_LAMBDA_FUNCTION_MEMORY_SIZE`; in a container, the cgroup limit. A host spent half a day finding that its project API, its logs and its `vercel.json` all left it out (14/09). Display the ceiling beside the RSS, or the RSS says nothing about the relay ceiling you can afford |
+| `memoireMio` | `rss`, `heap` (heap used), `tampons` (`arrayBuffers`) in MiB, read at the moment of the request. ⚠️ **Half a number**: it is only judicable against the memory ceiling of the process, which the player does not know and no platform serves the same way — on Lambda-based functions (Vercel included) read `AWS_LAMBDA_FUNCTION_MEMORY_SIZE`; in a container, the cgroup limit. A host spent half a day finding that its project API, its logs and its `vercel.json` all left it out (14/09). Display the ceiling beside the RSS, or the RSS says nothing about the relay ceiling you can afford. And the ceiling makes the RSS **comparable, not the question decidable**: whether 64 relays fit is settled only by a reading under load, never by a gauge read at rest (STUDIO, 14/09) |
 | `boucleMs` | event-loop **delay** — `moyen` and `p99` in ms, with `n` samples and the sampler's `resolutionMs` |
 
 ⚠️ **A percentile over buckets is a bound, not a value.** `p95sousMs: 250` reads *"95% of calls
@@ -283,6 +283,15 @@ two refusals. This field exists so that the question *did this instance refuse a
 by the card, structured and dated, and never by a search through logs for `relais refusés` — the
 log line stays for diagnosis, the card is the way to *notice*. Process-local like everything on this
 card, and **never reset by `init`**, exactly like the counter of open relays.
+
+⚠️ **A zero is informative only beside the traffic that could have produced the event — `fenetreS`
+alone is not enough.** A host read `total: 0` over a 999-second window and showed *no relay
+refused*, *no saturated read* in green; over that window `mesures.routes` carried only `action`
+(3 calls) — not one file, not one presentation read, so neither counter had had a single occasion
+(STUDIO, 14/09). Read `mesures.routes.fichier.n` next to `relaisRefuses` and
+`mesures.routes.presentation.n` next to `lectureSaturee` — the families are `familleDe`'s, not
+guessed — and the timer wraps the whole handler, so `n` counts the refused calls too: it is the
+denominator you want. Both hosts' cards now say *no occasion yet* instead of green.
 
 ⚠️ **Before you upgrade, do not read `presenceDurcissement` or `presenceFusion`.** They are *reports
 of execution*: on an instance where nothing is running they say `inconnu`, which means *nobody
@@ -649,7 +658,9 @@ to decide or write. This section is for a host that implements the `db` capabili
 asked which of the two it was, and the answer was missing from this page: *"the two look alike in
 your code and not at all alike at your hosts."* ⚠️ **The same line decides which zone of a release
 reaches you, and it is read per capability, not per host.** Three forms. A host that runs
-`context/standalone` as is (ADV does, unchanged since August) executes every change to the `context`
+`context/standalone` as is (ADV does, unchanged since August — **read in its public wiring
+repository, not taken from a message**: for a host whose wiring is public, the file is the source,
+and a replaced context would show in a commit before it showed in a message) executes every change to the `context`
 zone — the environment pass-through, the journal helper — and its `errors.capture` is the player's
 own. A host that **composes** its context from `createStandaloneContext` and replaces some
 capabilities (the Vercel example in this repository does: `identity` and `branding` are its own,

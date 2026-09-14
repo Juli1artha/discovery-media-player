@@ -9,7 +9,8 @@
     "commitSha": "0000000000000000000000000000000000000000",
     "packageVersion": "0.0.0",
     "timestamp": "2026-09-14T00:00:00Z",
-    "runId": "exemple-incomplet — une FORME, pas une mesure"
+    "runId": "exemple-incomplet — une FORME, pas une mesure",
+    "schemaSha256": "ef61e9e95b5f158faf0de41e088efddcca2519bed0f19b6830fbf15bb4d02a8b"
   },
   "environment": {
     "node": "",

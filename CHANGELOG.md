@@ -33,21 +33,37 @@ the notes there are this file's section for that version.
   nouvelle fait un schéma suivant, le validateur choisit le schéma par `schemaVersion` — la
   première rédaction promettait des ajouts optionnels sans changement de numéro sur des objets
   fermés, deux promesses qu'on ne peut pas tenir ensemble (audit, onzième passe).
-- **Le validateur tient ce que le schéma ne sait pas dire.** `tools/artefact-de-charge.mjs`, sans
-  dépendance nouvelle : il lit le **vocabulaire** de chaque schéma en entier avant tout artefact
-  (la première version ne le contrôlait qu'en validant, et un mot-clé inconnu dans une branche
-  optionnelle qu'aucun exemple ne matérialisait n'était jamais visité — trouvé par l'audit) ;
-  puis la forme, chaque champ obligatoire absent nommé par son chemin, toute clé hors schéma
+- **Le validateur compile le schéma en entier et tient ce que le schéma ne sait pas dire.**
+  `tools/artefact-de-charge.mjs` compile chaque schéma avec `ajv` (2020-12, mode strict, dépendance
+  de développement épinglée) avant tout artefact : mot-clé inconnu, référence non résolue, motif
+  incompilable, `required` ou `enum` qui ne sont pas des listes, `type` inconnu rendent la garde
+  non concluante, même dans une branche qu'aucun exemple ne matérialise — un validateur maison d'un
+  sous-ensemble de JSON Schema avait été tenté d'abord, et un audit y a trouvé deux fois le même
+  jour une branche qu'il ne lisait pas (un mot-clé sauté, puis un `$ref` externe jamais résolu) ; un
+  parcours préalable ne subsiste que pour donner le chemin des trois défauts qu'`ajv` nomme sans
+  chemin. Puis la forme, chaque champ obligatoire absent nommé par son chemin, toute clé hors schéma
   refusée ; puis les **invariants entre nombres** : `complete: true` sans raison d'échec, durée
   positive, au moins 1 000 observations, `sequence[position − 1] === spectators`,
   `scheduled ≥ started ≥ completed === latencyMs.n`, quantiles ordonnés, `min ≤ mean ≤ max`,
-  classes d'histogramme strictement croissantes et sommant à `n` sous un `binSetId`,
-  `delta = after − before`, plafond mémoire `null` si et seulement si sa source est `unknown`,
-  statuts sommant à `completedRequests` ; et la **cohorte** quand plusieurs fichiers sont fournis :
-  même `runId`, même séquence, même commit, positions uniques, jeux de données distincts. Un corpus
-  de deux formes (minimal complet aux nombres cohérents, incomplet) est le test de compatibilité ;
-  **toutes** les clés du schéma 1 sont figées dans un banc, pas seulement la racine. Sept mutants.
-  Les vrais artefacts ne vivront pas dans le dépôt : ils seront attachés aux releases.
+  `timeouts ≤ calls`, pic mémoire ≥ départ et ≥ fin, classes d'histogramme fixes (`edges[0] = 0`,
+  strictement croissantes, `[a, b)`, une classe `overflow` ouverte, `counts + overflow = n`) sous un
+  `binSetId` **dérivé** des bornes et recalculé, `delta = after − before`, plafond mémoire `null` si
+  et seulement si sa source est `unknown`, statuts disjoints sommant à `completedRequests`, chaque
+  2xx jugée (`correctResponses + emptyResponses + wrongPresentation = 2xx`), relais
+  (`admitted + refused = completedRequests`, `refused ≤ 503`, `bytesTransferred ≤ admitted ×
+  fileBytes`, `descriptors.peak ≥ idle`). Les grandeurs dérivables (`throughputRps`,
+  `database.callsPerRequest`) ne sont **pas stockées** : elles se recalculent. Et la **cohorte** :
+  complète (positions exactement `1..n`, tous complets) ou interrompue (préfixe continu, dernier
+  `complete: false`, rien après), constantes nommées (`runId`, commit, version, empreinte du schéma,
+  environnement entier, scénario, modèle et forme d'arrivée, isolation), variables d'échelle
+  nommément exclues, même `binSetId` ⇒ mêmes bornes. Chaque artefact porte `identity.schemaSha256`,
+  l'empreinte canonique du schéma sous lequel il a été produit, exigée égale à celle du schéma
+  appliqué ; et `charge/artefacts/ancres.json` nommera, au premier artefact publié, le tag de cette
+  publication : la garde relit le schéma **à ce tag** et le confronte, empreinte contre empreinte —
+  l'immuabilité se prouve hors de la copie courante. Un corpus de deux formes (minimal complet aux
+  nombres cohérents, incomplet) est le test de compatibilité ; toutes les clés du schéma 1 sont
+  figées dans un banc. Dix mutants sur l'artefact. Les vrais artefacts ne vivront pas dans le
+  dépôt : ils seront attachés aux releases.
 
 ### Fixed
 
