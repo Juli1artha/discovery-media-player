@@ -154,7 +154,7 @@ async function retirerFichier(bucket, chemin, opts) {
     if (!sansRemoveDit) {
       sansRemoveDit = true;
       try {
-        PLAYER.errors.capture(new Error("rétention : `storage.remove` n'est pas fourni — les lignes porteuses de fichiers"
+        capturerSansBloquer(PLAYER.errors, new Error("rétention : `storage.remove` n'est pas fourni — les lignes porteuses de fichiers"
           + " sont RETENUES (leur objet resterait sinon inatteignable, la capacité n'exposant jamais `list`)."
           + " Fournissez `storage.remove` pour qu'elles partent."), { route: "retention", benin: true });
       } catch { /* jamais bloquant */ }
@@ -232,6 +232,7 @@ async function resteEncore(table, filtre, colId, curseur, dryRun) {
 // avec le slug de la présentation purgée. Une validation d'écriture n'est jamais la seule barrière
 // d'un delete : les lignes déjà en base d'avant le correctif peuvent porter une URL piégée.
 const { cheminPieceJointe: cheminSurSlug } = require("./presentations");
+const { capturerSansBloquer } = require("./capture");
 
 // Purge des messages d'une présentation morte, par lots bornés qui lisent id+attachment ENSEMBLE :
 // on retire les fichiers du bucket du lot (si l'hôte sait), puis on supprime le lot. Rend `tronque`
@@ -360,7 +361,7 @@ async function purgerRetention(now, optsBrutes = {}) {
   try { f = fenetresValidees(); opts = optionsValidees(optsBrutes); }
   catch (e) {
     if (!e.retentionInvalide) throw e;
-    try { PLAYER.errors.capture(e, { route: "retention" }); } catch { /* jamais bloquant */ }
+    try { capturerSansBloquer(PLAYER.errors, e, { route: "retention" }); } catch { /* jamais bloquant */ }
     return { ok: false, error: e.message };   // config OU option douteuse → zéro DELETE
   }
   const base = String((PLAYER.config && PLAYER.config.supabaseUrl) || "");
@@ -480,7 +481,7 @@ function tick() {
   Promise.resolve()
     .then(() => PLAYER.limits.allow("retention:sweep", 1, 86400))
     .then((permis) => { if (permis) return purgerRetention(Date.now()); })
-    .catch((e) => { try { PLAYER.errors.capture(e, { route: "retention", benin: true }); } catch { /* jamais bloquant */ } });
+    .catch((e) => { try { capturerSansBloquer(PLAYER.errors, e, { route: "retention", benin: true }); } catch { /* jamais bloquant */ } });
 }
 
 /**

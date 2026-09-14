@@ -9,6 +9,7 @@
 // des bancs) n'ont que WebCrypto, et la route rendait alors 500 à la première synthèse. Le banc
 // agentVoix.test.js échoue sans cette ligne.
 const crypto = require("node:crypto");
+const { capturerSansBloquer } = require("./capture");
 const { adresseAppelant } = require("./appelant");
 const { jsonPour, etiquetteRoute } = require("./reponses.js");
 
@@ -355,7 +356,7 @@ async function traiter(req, res, body, _slug) {
             cached: extrait.cached || undefined,
             spoken: spoken !== text ? spoken : undefined,
           });
-        } catch (e) { try { PLAYER.errors.capture(e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
+        } catch (e) { try { capturerSansBloquer(PLAYER.errors, e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
       }
       if (body.action === "bot-start" || body.action === "bot-say" || body.action === "bot-history" || body.action === "bot-nudge" || body.action === "bot-book" || body.action === "bot-contact" || body.action === "bot-rate" || body.action === "bot-script") {
         const jp = jsonPour(res);
@@ -470,7 +471,7 @@ async function traiter(req, res, body, _slug) {
           const r = await docbot.botSay(String(body.sessionId || ""), share, text, pages, mobile, blang);
           if (r.error) return jp(400, { ok: false, error: r.error });
           return jp(200, { ok: true, ...r });
-        } catch (e) { try { PLAYER.errors.capture(e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
+        } catch (e) { try { capturerSansBloquer(PLAYER.errors, e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
       }
       // Assistance (heartbeat) : PUBLIC (l'audience est anonyme). Journalise qui suit / combien de temps / pages vues.
       // Rate-limit généreux par IP (heartbeat ≈ 145/h/participant) : bloque le spam d'assistants factices sans

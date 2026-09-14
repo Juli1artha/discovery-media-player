@@ -12,6 +12,45 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Fixed
+
+- ⚠️ **Une promesse rejetée par `errors.capture` arrêtait le processus.** Trente-cinq appels
+  portaient « jamais bloquant » sous un `try/catch` — qui n'attrape qu'une exception synchrone. Le
+  contrat autorise `capture` à rendre une promesse ; un `capture` qui rejette, à `init`, avec une
+  configuration hors plage : `unhandledRejection`, sortie 1 avant le premier octet servi (reproduit
+  par un audit externe sur le tag v0.1.166, sixième passe). `server/capture.js` porte la règle une
+  fois pour tous : exception ET promesse neutralisées, jamais attendue. Banc dans un vrai
+  sous-processus : `capture` rejette, configuration invalide, le témoin est atteint, sortie 0. Le
+  contexte autonome applique la même règle à son propre journal. Mutant.
+- ⚠️ **Le contexte autonome disait « transmis tel quel » et convertissait encore.** `Number("abc")`
+  arrivait au cœur en `NaN`, et le diagnostic disait `relayStallMs=NaN` : l'exploitant ne retrouvait
+  pas ce qu'il avait saisi (audit, sixième passe). La chaîne d'environnement passe intacte, le cœur
+  la borne et cite ce qu'il a reçu ; les types disent qu'une chaîne est acceptée. Banc sur le chemin
+  autonome complet, pas seulement sur `entierBorne`. Mutant.
+
+### Changed
+
+- Deux textes contredisaient la mesure : « une chaîne est refusée » (alors que `"45000"` passe) devient
+  « une chaîne qui n'est pas un entier dans la plage » ; « la RSS passe de 130 à 194 Mio » (dans les
+  types et un nom de banc) redevient ce qui a été mesuré — de 63 à 193–257 Mio, une croissance de 130
+  à 194. `CONFIGURATION.md` porte la seconde mesure de l'audit (pic 181 Mio, la RSS ne redescend pas
+  après GC) et dit que 1024 est une borne syntaxique, pas une garantie mémoire.
+
+- Le contrat dit de lire `fenetreS` **avant** `total`, et pourquoi : sur du serverless, le
+  processus est l'unité qui meurt, et les compteurs de processus (`lectureSaturee`,
+  `relaisRefuses`, `mesures`) ne peuvent jamais accumuler plus que la vie d'un démarrage à froid.
+  Un hôte (ADV) a lu ses deux domaines à quelques minutes d'écart : fenêtres de 15 et 19 s, puis 4
+  et 7 s — `total: 0` y dit « rien depuis un quart de minute », presque aucune information. Limite
+  d'applicabilité, pas défaut du champ ; écrite à côté du champ.
+- Le contrat et `CONFIGURATION.md` disent que `mesures.memoireMio` n'est que la moitié d'un chiffre :
+  l'autre moitié est le plafond mémoire du processus, que le lecteur ne connaît pas et qu'aucune
+  plateforme ne sert de la même façon (`AWS_LAMBDA_FUNCTION_MEMORY_SIZE` sur les fonctions Lambda,
+  Vercel compris ; la limite cgroup en conteneur). Un hôte (STUDIO) y a perdu une demi-journée :
+  ni l'API projet, ni les journaux, ni son `vercel.json` ne le portaient.
+- `server/bornes.js` dit que la coercition qui fabrique une valeur plausible n'est pas propre aux
+  booléens (`Number(null)` et `Number("")` valent 0) et que l'ordre des opérations est le remède :
+  l'absence est écartée avant toute conversion. Remarque d'un hôte qui l'avait payée six fois.
+
 ## [0.1.166] — 2026-09-14
 
 ### Added

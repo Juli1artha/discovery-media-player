@@ -312,6 +312,23 @@ export const MUTANTS = [
     pourquoi: "une affirmation annoncée retirée dans le CHANGELOG mais absente de la liste laissait la garde verte sur une phrase encore écrite comme vraie",
     bancs: ["tools/__tests__/affirmationsRetirees.test.js"],
   },
+  // ── 14/09 — sixième passe de l'audit externe, sur le tag v0.1.166 ──────────────────────────────
+  {
+    id: "capture-rejet-asynchrone-non-attrape",
+    fichier: "server/capture.js",
+    avant: "    if (r && typeof r.then === \"function\") r.then(undefined, () => { /* un journal qui échoue ne doit rien arrêter */ });",
+    apres: "    void r;",
+    pourquoi: "« jamais bloquant » sous un try/catch n'attrapait qu'une exception synchrone : un capture qui rejette arrêtait le processus en unhandledRejection",
+    bancs: ["server/__tests__/captureSansBloquer.test.js"],
+  },
+  {
+    id: "autonome-valeur-d-environnement-convertie",
+    fichier: "context/standalone.js",
+    avant: "      relayStallMs: env.PLAYER_RELAY_STALL_MS,",
+    apres: "      relayStallMs: env.PLAYER_RELAY_STALL_MS ? Number(env.PLAYER_RELAY_STALL_MS) : 30_000,",
+    pourquoi: "« transmis tel quel » convertissait encore : abc arrivait en NaN et l'exploitant ne retrouvait pas ce qu'il avait saisi",
+    bancs: ["server/__tests__/captureSansBloquer.test.js"],
+  },
 ];
 
 export const empreinte = (texte) => createHash("sha256").update(texte).digest("hex").slice(0, 16);

@@ -185,7 +185,7 @@ these numbers from their side.
 | `routes` | one entry per family of work — `document`, `presentation`, `action`, `fichier`, `carte`, `autre`. Families absent from the object were never exercised in this process |
 | `base` | the same shape, for calls through the `db` capability **you** supply — measured at the seam, so it covers every call, including ones nobody has written yet |
 | `statuts` | responses by class: `ok` (<400), `refus4xx`, `debit429`, `occupe503`, `erreur5xx` |
-| `memoireMio` | `rss`, `heap` (heap used), `tampons` (`arrayBuffers`) in MiB, read at the moment of the request |
+| `memoireMio` | `rss`, `heap` (heap used), `tampons` (`arrayBuffers`) in MiB, read at the moment of the request. ⚠️ **Half a number**: it is only judicable against the memory ceiling of the process, which the player does not know and no platform serves the same way — on Lambda-based functions (Vercel included) read `AWS_LAMBDA_FUNCTION_MEMORY_SIZE`; in a container, the cgroup limit. A host spent half a day finding that its project API, its logs and its `vercel.json` all left it out (14/09). Display the ceiling beside the RSS, or the RSS says nothing about the relay ceiling you can afford |
 | `boucleMs` | event-loop **delay** — `moyen` and `p99` in ms, with `n` samples and the sampler's `resolutionMs` |
 
 ⚠️ **A percentile over buckets is a bound, not a value.** `p95sousMs: 250` reads *"95% of calls
@@ -237,6 +237,17 @@ no observable answer.
 saturate*; on a process that started four seconds ago it says *nobody has looked yet*. That is the
 same trap as `inconnu` in the two rows above, and the reason the three keys are returned as one
 object rather than as separate fields you could read apart.
+
+⚠️ **Read `fenetreS` first — and on serverless, expect it to stay short.** Every counter on this
+card belongs to the process, and on a serverless platform the process is the unit that dies: a host
+read its two domains a few minutes apart and got windows of 15 s and 19 s, then 4 s and 7 s — the
+processes had been recycled in between (14/09). There, `total: 0` over 15 seconds means *nothing in
+the last quarter of a minute*, which is almost no information, and these counters can structurally
+never accumulate more than a cold start's lifetime. This is not a defect of the field — on a
+long-lived process it says what it should — it is a limit of applicability, and `fenetreS` is the
+key that reveals it. So the reading order is: `fenetreS`, then `total`; and a fleet of short windows
+is a fact about your hosting to aggregate on your side (or to sample over time), never a reassurance.
+The same applies to `relaisRefuses` below and to everything under `mesures`.
 
 ⚠️ **It is process-local.** Behind a load balancer this is the count of the instance that answered,
 not of your deployment. Aggregating is your job — and letting you believe otherwise would be worse

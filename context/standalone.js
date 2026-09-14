@@ -228,7 +228,9 @@ async function appelHote(url, secret, corps, errors) {
   // indiscernable de « le droit est refusé », et on cherche pendant une demi-journée du côté des
   // rôles. Un hôte qui a écrit sa route sur la description du contrat plutôt que sur le code a
   // perdu exactement ce temps-là.
-  const signaler = (quoi) => { try { errors && errors.capture(new Error(`route hôte : ${quoi}`), { url }); } catch { /* jamais bloquant */ } };
+  // Un journal qui échoue — exception OU promesse rejetée — ne doit rien arrêter (même règle que
+  // `server/capture.js`, reprise ici sans importer le cœur depuis le contexte).
+  const signaler = (quoi) => { try { const r = errors && errors.capture(new Error(`route hôte : ${quoi}`), { url }); if (r && typeof r.then === "function") r.then(undefined, () => {}); } catch { /* jamais bloquant */ } };
   try {
     const r = await fetchBorne(url, {
       method: "POST",
@@ -847,11 +849,15 @@ function createStandaloneContext(env = process.env) {
       // qui ramène un tel délai à 1 ms (audit externe, cinquième passe). Les plages vivent dans
       // `server/bornes.js`, et le cœur les applique à `init` en DISANT une fois ce qu'il a refusé —
       // si on bornait ici, il ne verrait qu'une valeur valide et l'exploitant ne saurait jamais.
-      maxConcurrentRelays: env.PLAYER_MAX_RELAYS ? Number(env.PLAYER_MAX_RELAYS) : 64,
+      // ⚠️ ET « TEL QUEL » VEUT DIRE LA CHAÎNE, PAS `Number(chaîne)`. La seconde écriture convertissait
+      // encore : « abc » arrivait au cœur en NaN et le diagnostic disait `relayStallMs=NaN` — l'exploitant
+      // ne retrouvait pas ce qu'il avait saisi (audit, sixième passe). La chaîne passe intacte ; absente
+      // ou vide, le cœur applique le défaut sans avertir (« non posé »).
+      maxConcurrentRelays: env.PLAYER_MAX_RELAYS,
       // Un relais sans progression pendant relayStallMs, ou plus long que relayMaxMs, est abandonné
       // (source et réponse détruites) : sans ça, un client qui cesse de lire garde sa place pour toujours.
-      relayStallMs: env.PLAYER_RELAY_STALL_MS ? Number(env.PLAYER_RELAY_STALL_MS) : 30_000,
-      relayMaxMs: env.PLAYER_RELAY_MAX_MS ? Number(env.PLAYER_RELAY_MAX_MS) : 900_000,
+      relayStallMs: env.PLAYER_RELAY_STALL_MS,
+      relayMaxMs: env.PLAYER_RELAY_MAX_MS,
 
       /**
        * Clé de `localStorage` sous laquelle VOTRE application range la session de ses membres.

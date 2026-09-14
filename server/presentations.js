@@ -4,6 +4,7 @@
 // (cf. migration v12324) — écriture service role only. Le présentateur détient un control_token ; on en
 // stocke le HASH (sha256) → l'audience peut lire la ligne (Realtime) sans pouvoir piloter.
 const crypto = require("crypto");
+const { capturerSansBloquer } = require("./capture");
 // Base de données via le contexte injecté (cf. _player-context.js) — aucune adhérence au studio.
 // ⚠️ Le contexte est REÇU, pas construit. Ce module ne doit pas savoir d'où il vient : c'est ce
 // qui lui permettra de partir dans le dépôt du player sans emporter le studio avec lui.
@@ -487,7 +488,7 @@ async function createUploadUrl(slug, name, type) {
   // serait pire : une pièce jointe qui ne part jamais, sans que personne sache que la capacité
   // manque.
   if (!PLAYER.storage || typeof PLAYER.storage.signUpload !== "function") {
-    try { PLAYER.errors.capture(new Error("storage.signUpload absent du contexte : les pièces jointes de chat sont indisponibles"), {}); } catch { /* jamais bloquant */ }
+    try { capturerSansBloquer(PLAYER.errors, new Error("storage.signUpload absent du contexte : les pièces jointes de chat sont indisponibles"), {}); } catch { /* jamais bloquant */ }
     return { ok: false, status: 501 };
   }
   const signe = await PLAYER.storage.signUpload("present-attachments", path);
@@ -687,7 +688,7 @@ async function addMessage(slug, { name, email, avatar, isPresenter, isMember, bo
     // attendu est journalisé une fois, en clair, parce qu'un renvoi fréquent est une information.
     const conflit = cle && estConflit(erreur);
     if (!conflit) throw erreur;
-    try { PLAYER.errors.capture(new Error("message déjà enregistré (renvoi) : " + String(slug)), { route: "present-chat", benin: true }); } catch { /* jamais bloquant */ }
+    try { capturerSansBloquer(PLAYER.errors, new Error("message déjà enregistré (renvoi) : " + String(slug)), { route: "present-chat", benin: true }); } catch { /* jamais bloquant */ }
     const deja = await PLAYER.db.request(
       `doc_presentation_messages?slug=eq.${enc(String(slug))}&client_key=eq.${enc(cle)}&select=*&limit=1`);
     const ligne = Array.isArray(deja) && deja[0];
@@ -1022,7 +1023,7 @@ async function appelerBump(corps, durcissementVoulu) {
     // bootstrap auto-déclaré s'emparer d'une présence réclamée — c'est-à-dire une fermeture qui
     // rassure sans protéger. On nomme donc le fichier ET la conséquence.
     try {
-      PLAYER.errors.capture(new Error(
+      capturerSansBloquer(PLAYER.errors, new Error(
         "bootstrap de présence NON durci : appliquez supabase/migrations/0018-bootstrap-non-usurpable.sql. "
         + "Sans elle, un bootstrap auto-déclaré peut écraser une présence déjà réclamée par un porteur "
         + "de jeton — n'armez pas PLAYER_PRESENCE_STRICT avant de l'avoir appliquée.",
@@ -1162,7 +1163,7 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
     // battements ORDINAIRES, qui continuent de se replier normalement.
     if (onlyIfUnclaimed) {
       try {
-        PLAYER.errors.capture(new Error(
+        capturerSansBloquer(PLAYER.errors, new Error(
           "bootstrap de présence refusé : le contrôle anti-usurpation n'a pas pu s'exécuter — "
           + ((erreur && erreur.message) || erreur),
         ), { route: "present-attend" });
@@ -1181,7 +1182,7 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
         const fichier = transitionDispo
           ? "supabase/migrations/0017-jeton-presence.sql (ou 0015-presence-atomique.sql)"
           : "supabase/migrations/0015-presence-atomique.sql";
-        PLAYER.errors.capture(new Error(
+        capturerSansBloquer(PLAYER.errors, new Error(
           "présence non atomique : appliquez " + fichier + ". "
           + "Sans elle, la présence est écrite par lire-modifier-réécrire (correct) mais le plafond "
           + "de création de faux participants anonymes n'est pas appliqué. "
@@ -1235,7 +1236,7 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
         if (!estConflit(erreur)) throw erreur;
         // Journalisé comme bénin : deux onglets qui arrivent ensemble sont une information, pas
         // une panne — et la garde des écritures muettes exige que tout rattrapage parle.
-        try { PLAYER.errors.capture(new Error("présence déjà ouverte (second onglet) : " + String(slug)), { route: "present-attend", benin: true }); } catch { /* jamais bloquant */ }
+        try { capturerSansBloquer(PLAYER.errors, new Error("présence déjà ouverte (second onglet) : " + String(slug)), { route: "present-attend", benin: true }); } catch { /* jamais bloquant */ }
         continue;   // le tour suivant relit : la ligne que l'autre onglet vient de créer
       }
     }

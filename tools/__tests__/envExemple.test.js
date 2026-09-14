@@ -90,6 +90,11 @@ describe("les fichiers réels du dépôt", () => {
     // lui-même.
     const { soucis, ecartes } = ecarts({ cites, poses, lues: inventaire().lues });
     expect(soucis, soucis.join("\n")).toEqual([]);
-    expect(ecartes, "et les seuls écartés sont les noms de signaux de la prose").toEqual(["SIGINT", "SIGKILL", "SIGTERM"]);
+    // ⚠️ `AWS_LAMBDA_FUNCTION_MEMORY_SIZE` n'est pas une variable du lecteur : c'est celle de la
+    // plate-forme de l'hôte, citée parce qu'un hôte a passé une demi-journée à chercher son plafond
+    // mémoire (14/09). Elle est écartée comme les signaux — nommée ici pour qu'un nom de plus ne
+    // passe pas sans être décidé.
+    expect(ecartes, "et les seuls écartés sont les noms de signaux de la prose, plus la variable de plate-forme citée pour les hôtes")
+      .toEqual(["AWS_LAMBDA_FUNCTION_MEMORY_SIZE", "SIGINT", "SIGKILL", "SIGTERM"]);
   });
 });

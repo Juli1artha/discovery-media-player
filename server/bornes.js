@@ -29,7 +29,11 @@ const RELAIS_MS_MIN = 1, RELAIS_MS_MAX = 86_400_000;
 function entierBorne(v, { defaut, min, max }) {
   if (v === undefined || v === null || v === "") return { valeur: defaut, valide: true, posee: false };
   // Un nombre, ou une chaîne (l'environnement n'en connaît pas d'autre) — jamais un booléen, que
-  // `Number(true)` transformerait en un délai de 1 ms parfaitement « valide ».
+  // `Number(true)` transformerait en un délai de 1 ms parfaitement « valide ». ⚠️ La famille est plus
+  // large que les booléens, et un hôte l'a payée : `Number(null)` et `Number("")` valent 0, et chez
+  // lui une absence devenait une coordonnée (0, 0) valide, en six endroits dont un qui débitait un
+  // quota (ADV, 14/09). L'ORDRE des opérations est le seul remède général : l'absence est écartée
+  // ci-dessus AVANT toute conversion, et 0 tombe ensuite sous `min`. Ce n'est pas un hasard.
   const n = typeof v === "number" ? v : typeof v === "string" ? Number(v.trim()) : NaN;
   const valide = Number.isSafeInteger(n) && n >= min && n <= max;
   return { valeur: valide ? n : defaut, valide, posee: true };

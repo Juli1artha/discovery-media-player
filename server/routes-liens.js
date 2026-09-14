@@ -4,6 +4,7 @@
 // Reste à PLAT dans server/ (les gardes de forge ciblent server/*.js).
 
 const { adresseAppelant } = require("./appelant");
+const { capturerSansBloquer } = require("./capture");
 const { jsonPour, repondreJson, etiquetteRoute } = require("./reponses.js");
 const { estConflit } = require("./erreurs-base.js");
 const { createShare, createReshare, sendReshareEmail, revokeShare, setShareAuth, listSharesForDoc, listSessionsForDoc, listSessionsForRecipient, internalStatsForDoc, cleIdempotence, getShareBySlug, logView, upsertSession, upsertInternalSession, overview: docOverview } = require("./shares");
@@ -56,7 +57,7 @@ async function traiter(req, res, body, slug) {
           const { action: _a, ...opts } = body;
           const resultat = await require("./retention").purgerRetention(Date.now(), opts);
           return jd(resultat.ok === false ? 400 : 200, resultat);
-        } catch (e) { try { PLAYER.errors.capture(e, { route: "retention" }); } catch { /* jamais bloquant */ } return jd(500, { ok: false }); }
+        } catch (e) { try { capturerSansBloquer(PLAYER.errors, e, { route: "retention" }); } catch { /* jamais bloquant */ } return jd(500, { ok: false }); }
       }
       if (String(body.action || "").startsWith("docshare.")) {
         const jd = jsonPour(res);
@@ -159,7 +160,7 @@ async function traiter(req, res, body, slug) {
                 });
               } catch (erreur) {
                 if (!estConflit(erreur)) throw erreur;
-                try { PLAYER.errors.capture(new Error("backfill hôte : la clé était déjà posée ailleurs — " + docId), { route: "hostshare", benin: true }); } catch { /* jamais bloquant */ }
+                try { capturerSansBloquer(PLAYER.errors, new Error("backfill hôte : la clé était déjà posée ailleurs — " + docId), { route: "hostshare", benin: true }); } catch { /* jamais bloquant */ }
                 const gagnant = await PLAYER.db.request(`commercial_doc_shares?idem_key=eq.${encodeURIComponent(cleHote)}&select=slug&limit=1`);
                 if (!Array.isArray(gagnant) || !gagnant[0]) throw erreur;
                 return jd(200, { ok: true, slug: gagnant[0].slug, reused: true });
@@ -186,7 +187,7 @@ async function traiter(req, res, body, slug) {
               return jd(200, { ok: true, slug: neuf.slug, reused: false });
             } catch (erreur) {
               if (!estConflit(erreur)) throw erreur;
-              try { PLAYER.errors.capture(new Error("lien hôte déjà créé par une demande simultanée : " + docId), { route: "hostshare", benin: true }); } catch { /* jamais bloquant */ }
+              try { capturerSansBloquer(PLAYER.errors, new Error("lien hôte déjà créé par une demande simultanée : " + docId), { route: "hostshare", benin: true }); } catch { /* jamais bloquant */ }
               const gagnant = await PLAYER.db.request(`commercial_doc_shares?idem_key=eq.${encodeURIComponent(cleHote)}&select=slug&limit=1`);
               if (!Array.isArray(gagnant) || !gagnant[0]) throw erreur;   // 409 d'autre chose : on ne l'invente pas
               return jd(200, { ok: true, slug: gagnant[0].slug, reused: true });
@@ -266,7 +267,7 @@ async function traiter(req, res, body, slug) {
               await PLAYER.db.request(`commercial_doc_shares?slug=eq.${encodeURIComponent(ex[0].slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { doc_title: body.docTitle || null, file_url: String(body.fileUrl), file_name: body.fileName || null, bot_enabled: true, bot_guided: true, bot_profile_id: (body.profileId || "").trim() || null, revoked: false, ...(cleDispo ? { idem_key: cleTest } : {}) } });
             } catch (erreur) {
               if (!estConflit(erreur)) throw erreur;
-              try { PLAYER.errors.capture(new Error("backfill répétition : la clé était déjà posée ailleurs — " + docId), { route: "docshare-test", benin: true }); } catch { /* jamais bloquant */ }
+              try { capturerSansBloquer(PLAYER.errors, new Error("backfill répétition : la clé était déjà posée ailleurs — " + docId), { route: "docshare-test", benin: true }); } catch { /* jamais bloquant */ }
               const gagnant = await PLAYER.db.request(`commercial_doc_shares?idem_key=eq.${encodeURIComponent(cleTest)}&select=slug&limit=1`);
               if (!Array.isArray(gagnant) || !gagnant[0]) throw erreur;
               return jd(200, { ok: true, slug: gagnant[0].slug, reused: true });
@@ -279,7 +280,7 @@ async function traiter(req, res, body, slug) {
             return jd(200, { ok: true, slug: t.slug });
           } catch (erreur) {
             if (!estConflit(erreur)) throw erreur;
-            try { PLAYER.errors.capture(new Error("lien de répétition déjà créé par une demande simultanée : " + docId), { route: "docshare-test", benin: true }); } catch { /* jamais bloquant */ }
+            try { capturerSansBloquer(PLAYER.errors, new Error("lien de répétition déjà créé par une demande simultanée : " + docId), { route: "docshare-test", benin: true }); } catch { /* jamais bloquant */ }
             const gagnant = await PLAYER.db.request(`commercial_doc_shares?idem_key=eq.${encodeURIComponent(cleTest)}&select=slug&limit=1`);
             if (!Array.isArray(gagnant) || !gagnant[0]) throw erreur;
             return jd(200, { ok: true, slug: gagnant[0].slug, reused: true });
@@ -291,7 +292,7 @@ async function traiter(req, res, body, slug) {
         }
         const { slug } = await createShare({ brandKey: body.brandKey, docId: body.docId, docTitle: body.docTitle, fileUrl: body.fileUrl, fileName: body.fileName, recipientEmail: body.recipientEmail, recipientName: body.recipientName, createdBy: u.email, bot: body.bot, botScript: body.botScript, guided: body.guided, profileId: body.profileId, allowDownload: body.allowDownload, videoLayout: body.videoLayout, logo: body.logo, logoDark: body.logoDark });
         return jd(200, { ok: true, slug });
-        } catch (e) { try { PLAYER.errors.capture(e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jd(500, { ok: false }); }
+        } catch (e) { try { capturerSansBloquer(PLAYER.errors, e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jd(500, { ok: false }); }
       }
 
       // Re-partage (forward depuis la visionneuse) : crée un lien enfant tracé, et envoie l'email via 3D
@@ -369,7 +370,7 @@ async function traiter(req, res, body, slug) {
             // Signalé par la seconde passe d'audit (P1-1).
             const publique = String(PLAYER.legal.publicUrl || "").trim();
             if (!publique) {
-              try { PLAYER.errors.capture(new Error("PLAYER_PUBLIC_URL non configurée : envoi refusé (le lien de l'email serait construit depuis l'en-tête Host, que le client choisit)"), { route: "reshare" }); } catch { /* jamais bloquant */ }
+              try { capturerSansBloquer(PLAYER.errors, new Error("PLAYER_PUBLIC_URL non configurée : envoi refusé (le lien de l'email serait construit depuis l'en-tête Host, que le client choisit)"), { route: "reshare" }); } catch { /* jamais bloquant */ }
               refusEnvoi = "public-url-unconfigured";
               throw new Error("URL publique non configurée");
             }
@@ -468,7 +469,7 @@ async function traiter(req, res, body, slug) {
           // et le signalement passe AVANT le `return`, sans quoi il ne s'exécuterait jamais.
           try {
             if (await PLAYER.limits.allow("intsess:quota-avert", 1, 3600)) {
-              PLAYER.errors.capture(new Error(`session interne refusée : quota horaire atteint (${SESSION_QUOTA_PER_HOUR}/h par adresse) — la mesure s'arrête tant qu'il l'est`), { route: "internal-session" });
+              capturerSansBloquer(PLAYER.errors, new Error(`session interne refusée : quota horaire atteint (${SESSION_QUOTA_PER_HOUR}/h par adresse) — la mesure s'arrête tant qu'il l'est`), { route: "internal-session" });
             }
           } catch { /* un journal ne doit jamais empêcher une lecture */ }
           repondreJson(res, 429, { ok: false, error: "rate" });
@@ -486,7 +487,7 @@ async function traiter(req, res, body, slug) {
           // Une fois par heure et par instance : assez pour être vu dans les journaux, pas assez
           // pour les noyer — un avertissement répété à chaque battement ne se lit plus.
           if (await PLAYER.limits.allow("intsess:avert", 1, 3600)) {
-            try { PLAYER.errors.capture(new Error("session interne écrite sans jeton : l'identité vient du navigateur. Poser PLAYER_INTERNAL_STRICT=1 une fois l'hôte à jour"), { route: "internal-session" }); } catch { /* ignore */ }
+            try { capturerSansBloquer(PLAYER.errors, new Error("session interne écrite sans jeton : l'identité vient du navigateur. Poser PLAYER_INTERNAL_STRICT=1 une fois l'hôte à jour"), { route: "internal-session" }); } catch { /* ignore */ }
           }
         }
         // Le jeton fait foi quand il est là : c'est l'hôte qui se porte garant, pas l'appelant.
@@ -517,7 +518,7 @@ async function traiter(req, res, body, slug) {
           // de mesure.
           try {
             if (await PLAYER.limits.allow("intsess:echec", 1, 3600)) {
-              PLAYER.errors.capture(new Error(`écriture de session interne refusée : ${e && e.message ? e.message : "cause inconnue"} — la mesure ne s'enregistre pas`), { route: "internal-session" });
+              capturerSansBloquer(PLAYER.errors, new Error(`écriture de session interne refusée : ${e && e.message ? e.message : "cause inconnue"} — la mesure ne s'enregistre pas`), { route: "internal-session" });
             }
           } catch { /* un journal ne doit jamais empêcher une lecture */ }
         }
@@ -545,7 +546,7 @@ async function traiter(req, res, body, slug) {
         // que l'exploitant peut relier à un quota, plutôt qu'une mesure qui stagne sans explication.
         try {
           const avert = estSession ? "sess:quota-avert" : "view:quota-avert";
-          if (await PLAYER.limits.allow(avert, 1, 3600)) PLAYER.errors.capture(new Error(`télémétrie externe abandonnée (${body.event}) : quota horaire atteint (${quotaTrack}/h par adresse)`), { route: "track", abandon: true });
+          if (await PLAYER.limits.allow(avert, 1, 3600)) capturerSansBloquer(PLAYER.errors, new Error(`télémétrie externe abandonnée (${body.event}) : quota horaire atteint (${quotaTrack}/h par adresse)`), { route: "track", abandon: true });
         } catch { /* jamais bloquant */ }
         repondreJson(res, 200, { ok: true });
         return;
@@ -565,7 +566,7 @@ async function traiter(req, res, body, slug) {
           // n'aurait rien vu : c'est ce qui rend la classe dangereuse, pas l'instance.
           try {
             if (await PLAYER.limits.allow("sess:echec", 1, 3600)) {
-              PLAYER.errors.capture(new Error(`écriture de mesure refusée : ${e && e.message ? e.message : "cause inconnue"} — la lecture n'est pas comptée`), { route: "track" });
+              capturerSansBloquer(PLAYER.errors, new Error(`écriture de mesure refusée : ${e && e.message ? e.message : "cause inconnue"} — la lecture n'est pas comptée`), { route: "track" });
             }
           } catch { /* un journal ne doit jamais empêcher une lecture */ }
         }
