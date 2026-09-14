@@ -247,7 +247,18 @@ never accumulate more than a cold start's lifetime. This is not a defect of the 
 long-lived process it says what it should — it is a limit of applicability, and `fenetreS` is the
 key that reveals it. So the reading order is: `fenetreS`, then `total`; and a fleet of short windows
 is a fact about your hosting to aggregate on your side (or to sample over time), never a reassurance.
-The same applies to `relaisRefuses` below and to everything under `mesures`.
+The same applies to `relaisRefuses` below and to the **counters** under `mesures` (`statuts`,
+`routes`, `base`).
+
+⚠️ **Three natures share this card, and the rule above covers only the first.** An earlier version
+of this paragraph said it applied to "everything under `mesures`" — too broad, and a host applied
+the counter rule to a gauge because nothing told it the gauge was not covered (14/09).
+
+| nature | examples | what qualifies it | what saves it |
+|---|---|---|---|
+| **counter** | `lectureSaturee`, `relaisRefuses`, `mesures.statuts` | accumulates over `fenetreS` | read `fenetreS` first — a long window makes a zero informative |
+| **gauge** | `mesures.memoireMio` | the state **at the instant of the read** (`process.memoryUsage()`); no window enters its production | **nothing on the card**: a process idle for a week shows the same ~64 MiB as one born a minute ago, and a long window would only make it *look* trustworthy. It says nothing about what the process would weigh under load; the only way to learn that is to read it *during* a load — which an audit can provoke and a host must not on real readers |
+| **sample** | `mesures.boucleMs` | `{ n: 0, moyen: null, p99: null }` until something was observed | itself — it refuses to answer rather than return an interpretable zero |
 
 ⚠️ **It is process-local.** Behind a load balancer this is the count of the instance that answered,
 not of your deployment. Aggregating is your job — and letting you believe otherwise would be worse

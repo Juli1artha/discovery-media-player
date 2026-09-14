@@ -12,6 +12,17 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Changed
+
+- ⚠️ **La carte porte trois natures, et la règle « lire `fenetreS` avant `total` » n'en couvrait
+  qu'une.** Le paragraphe de la veille l'étendait à « tout `mesures` » ; un hôte (ADV) a appliqué la
+  règle des compteurs à `memoireMio`, qui est une **jauge** (`process.memoryUsage()` à l'instant de
+  la lecture, aucune fenêtre n'entre dans sa production) — et rien sur la carte ne lui disait qu'elle
+  n'était pas couverte. Le contrat distingue désormais compteur (sauvé par `fenetreS`), jauge (rien
+  ne la sauve : un processus au repos depuis une semaine pèse autant qu'un processus né il y a une
+  minute, seule une lecture sous charge dit quelque chose) et échantillon (`boucleMs`, qui rend
+  `null` tant qu'il n'a rien vu et se sauve tout seul). C'est l'hôte qui a dressé le tableau.
+
 ### Fixed
 
 - ⚠️ **Une promesse rejetée par `errors.capture` arrêtait le processus.** Trente-cinq appels
