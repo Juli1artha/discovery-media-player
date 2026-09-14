@@ -16,22 +16,38 @@ the notes there are this file's section for that version.
 
 - **L'artefact de charge a un schéma, et la forge le tient.** Les bancs de charge imprimaient leur
   relevé dans le journal de la forge, lu par un humain, jamais comparé ; un audit externe l'a dit :
-  la preuve runtime de la performance n'existe pas. Première pièce du lot : `charge/artefact.schema.json`
+  la preuve runtime de la performance n'existe pas. Première pièce du lot : `charge/artefact.schema-1.json`
   (`schemaVersion: 1`, JSON Schema 2020-12), la structure spécifiée par l'audit prise à la lettre —
   identité, environnement, scénario, générateur mesuré (`workload`, contre l'omission coordonnée),
   isolation, fenêtre de mesure, latences, statuts, base, cache, processus avec quatre relevés
   mémoire (`baseline`, `peak`, `end`, `afterGc`), exactitude, compteurs du processus en
-  avant/après/delta, bloc `relay` exigé pour ce scénario ; `complete: false` avec sa raison quand
-  la course s'arrête, et alors aucun bloc de mesure n'est exigé. Trois écarts à sa lettre, dits :
-  `scenario.position` et `scenario.sequence` portent l'ordre d'exécution que son protocole demande
-  d'enregistrer, et ses deux emplacements pour le plafond mémoire sont réunis en
-  `environment.memoryLimitMiB` + `memoryLimitSource`. Un corpus de deux formes (minimal, incomplet),
-  chaque nombre à zéro et le `runId` le dit ; `tools/artefact-de-charge.mjs` les éprouve à chaque
-  course de la forge, refuse un champ obligatoire absent par son chemin et toute clé hors schéma, et
-  **lève** sur un mot-clé de schéma qu'il ne lit pas au lieu de l'ignorer. Les clés de la racine et
-  les champs obligatoires du schéma 1 sont figés dans un banc : une clé obligatoire de plus casse
-  la série sans changer de numéro, et le banc le dit avant la forge. Trois mutants. Les vrais
-  artefacts ne vivront pas dans le dépôt : ils seront attachés aux releases.
+  avant/après/delta, bloc `relay` exigé pour ce scénario quand la course est allée au bout ;
+  `complete: false` avec sa raison quand elle s'arrête, et alors aucun bloc de mesure n'est exigé.
+  Écarts à sa lettre, dits : `scenario.position` et `scenario.sequence` portent l'ordre
+  d'exécution que son protocole demande d'enregistrer ; ses deux emplacements pour le plafond
+  mémoire sont réunis en `environment.memoryLimitMiB` + `memoryLimitSource` ; le modèle d'arrivée
+  (`open-loop|closed-loop`) et la forme du trafic (`uniform|jittered|burst`) sont deux axes, pas une
+  énumération ; les statuts sont **disjoints** (`2xx`, `429`, `other4xx`, `503`, `other5xx`,
+  `other`) ; `scenario.requests`, qui doublait `workload`, est retiré. **Doctrine de version** : un
+  schéma est immuable dès le premier artefact publié sous son numéro, toute clé ou sémantique
+  nouvelle fait un schéma suivant, le validateur choisit le schéma par `schemaVersion` — la
+  première rédaction promettait des ajouts optionnels sans changement de numéro sur des objets
+  fermés, deux promesses qu'on ne peut pas tenir ensemble (audit, onzième passe).
+- **Le validateur tient ce que le schéma ne sait pas dire.** `tools/artefact-de-charge.mjs`, sans
+  dépendance nouvelle : il lit le **vocabulaire** de chaque schéma en entier avant tout artefact
+  (la première version ne le contrôlait qu'en validant, et un mot-clé inconnu dans une branche
+  optionnelle qu'aucun exemple ne matérialisait n'était jamais visité — trouvé par l'audit) ;
+  puis la forme, chaque champ obligatoire absent nommé par son chemin, toute clé hors schéma
+  refusée ; puis les **invariants entre nombres** : `complete: true` sans raison d'échec, durée
+  positive, au moins 1 000 observations, `sequence[position − 1] === spectators`,
+  `scheduled ≥ started ≥ completed === latencyMs.n`, quantiles ordonnés, `min ≤ mean ≤ max`,
+  classes d'histogramme strictement croissantes et sommant à `n` sous un `binSetId`,
+  `delta = after − before`, plafond mémoire `null` si et seulement si sa source est `unknown`,
+  statuts sommant à `completedRequests` ; et la **cohorte** quand plusieurs fichiers sont fournis :
+  même `runId`, même séquence, même commit, positions uniques, jeux de données distincts. Un corpus
+  de deux formes (minimal complet aux nombres cohérents, incomplet) est le test de compatibilité ;
+  **toutes** les clés du schéma 1 sont figées dans un banc, pas seulement la racine. Sept mutants.
+  Les vrais artefacts ne vivront pas dans le dépôt : ils seront attachés aux releases.
 
 ### Fixed
 

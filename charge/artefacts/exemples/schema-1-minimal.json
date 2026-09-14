@@ -6,7 +6,7 @@
     "commitSha": "0000000000000000000000000000000000000000",
     "packageVersion": "0.0.0",
     "timestamp": "2026-09-14T00:00:00Z",
-    "runId": "exemple-minimal — une FORME, pas une mesure : chaque nombre vaut zéro"
+    "runId": "exemple-minimal — une FORME, pas une mesure : les nombres sont cohérents entre eux et n'ont été mesurés nulle part"
   },
   "environment": {
     "node": "", "os": "", "arch": "", "cpuCount": 1,
@@ -14,22 +14,23 @@
     "postgresVersion": "", "postgrestVersion": ""
   },
   "scenario": {
-    "name": "state-hot", "spectators": 0, "presentations": 0, "requests": 0, "repetition": 1,
-    "position": 1, "sequence": [0], "warmupRequests": 0, "maxInFlight": 0, "egressIps": 0
+    "name": "state-hot", "spectators": 100, "presentations": 1, "repetition": 1,
+    "position": 1, "sequence": [100], "warmupRequests": 0, "maxInFlight": 100, "egressIps": 1
   },
   "workload": {
-    "arrivalModel": "open-loop", "scheduledRequests": 0, "startedRequests": 0, "completedRequests": 0,
+    "arrivalModel": "open-loop", "arrivalPattern": "uniform",
+    "scheduledRequests": 1000, "startedRequests": 1000, "completedRequests": 1000,
     "generatorLagMs": { "p50": 0, "p95": 0, "p99": 0, "max": 0 }
   },
   "isolation": {
     "processReused": true, "databaseReset": true, "cacheReset": true, "metricsReset": false,
-    "countersReportedAsDeltas": true, "datasetId": "exemple"
+    "countersReportedAsDeltas": true, "datasetId": "exemple-1"
   },
-  "measurementWindow": { "startedAt": "2026-09-14T00:00:00Z", "durationMs": 0, "processUptimeStartMs": 0, "processUptimeEndMs": 0 },
-  "latencyMs": { "n": 0, "min": 0, "mean": 0, "p50": 0, "p95": 0, "p99": 0, "max": 0 },
-  "throughputRps": 0,
-  "statuses": { "2xx": 0, "4xx": 0, "429": 0, "503": 0, "5xx": 0 },
-  "http": { "responseBytes": { "total": 0, "p50": 0, "p95": 0, "max": 0 } },
+  "measurementWindow": { "startedAt": "2026-09-14T00:00:00Z", "durationMs": 1000, "processUptimeStartMs": 0, "processUptimeEndMs": 1000 },
+  "latencyMs": { "n": 1000, "min": 1, "mean": 1, "p50": 1, "p95": 1, "p99": 1, "max": 1 },
+  "throughputRps": 1000,
+  "statuses": { "2xx": 1000, "429": 0, "other4xx": 0, "503": 0, "other5xx": 0, "other": 0 },
+  "http": { "responseBytes": { "total": 1000, "p50": 1, "p95": 1, "max": 1 } },
   "database": { "calls": 0, "callsPerRequest": 0, "peakInFlight": 0, "timeouts": 0, "latencyMs": { "p50": 0, "p95": 0, "p99": 0 } },
   "cache": { "hits": 0, "misses": 0, "coalesced": 0, "peakInFlight": 0 },
   "process": {
@@ -41,6 +42,6 @@
       "afterGc": { "rss": 0, "heapUsed": 0, "external": 0, "arrayBuffers": 0 }
     }
   },
-  "correctness": { "completed": 0, "emptyResponses": 0, "wrongPresentation": 0 },
-  "counters": { "before": {}, "after": {}, "delta": {} }
+  "correctness": { "completed": 1000, "emptyResponses": 0, "wrongPresentation": 0 },
+  "counters": { "before": { "relaisRefuses.total": 0 }, "after": { "relaisRefuses.total": 0 }, "delta": { "relaisRefuses.total": 0 } }
 }

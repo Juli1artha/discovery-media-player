@@ -416,6 +416,38 @@ export const MUTANTS = [
     pourquoi: "un validateur qui saute les mots-clés qu'il ne lit pas rend vert un schéma qu'il ne vérifie pas — la vacuité en un mot",
     bancs: ["tools/__tests__/artefactDeCharge.test.js"],
   },
+  {
+    id: "artefact-vocabulaire-lu-seulement-en-validant",
+    fichier: "tools/artefact-de-charge.mjs",
+    avant: "    const inconnus = controlerVocabulaireSchema(schema);\n    if (inconnus.length) return inconclusif(",
+    apres: "    const inconnus = [];\n    if (inconnus.length) return inconclusif(",
+    pourquoi: "sans le parcours préalable, un mot-clé inconnu dans une branche optionnelle qu'aucun artefact du corpus ne matérialise n'est jamais visité : la garde rend conforme sur un schéma qu'elle n'a pas lu (audit, onzième passe)",
+    bancs: ["tools/__tests__/artefactDeCharge.test.js"],
+  },
+  {
+    id: "artefact-relay-exige-meme-incomplet",
+    fichier: "charge/artefact.schema-1.json",
+    avant: "\"if\": {\n        \"required\": [\n          \"complete\",\n          \"scenario\"\n        ],\n        \"properties\": {\n          \"complete\": {\n            \"const\": true\n          },",
+    apres: "\"if\": {\n        \"required\": [\n          \"scenario\"\n        ],\n        \"properties\": {",
+    pourquoi: "relay est un bloc de MESURE (octets, admis, refusés) : l'exiger d'un artefact complete: false contredit « aucun bloc de mesure n'est exigé » et refuse l'artefact d'une course relais qui a échoué",
+    bancs: ["tools/__tests__/artefactDeCharge.test.js"],
+  },
+  {
+    id: "artefact-quantiles-desordonnes-acceptes",
+    fichier: "tools/artefact-de-charge.mjs",
+    avant: "    if (o[a] > o[b]) constats.push(`${ou} : ${a} (${o[a]}) > ${b} (${o[b]}) — les quantiles ne sont pas ordonnés`);",
+    apres: "    if (false) constats.push(`${ou} : ${a} (${o[a]}) > ${b} (${o[b]}) — les quantiles ne sont pas ordonnés`);",
+    pourquoi: "min=100, p50=4, p95=3, p99=2, max=1 passait pour une mesure : un artefact contradictoire entrerait dans la série",
+    bancs: ["tools/__tests__/artefactDeCharge.test.js"],
+  },
+  {
+    id: "artefact-delta-non-confronte",
+    fichier: "tools/artefact-de-charge.mjs",
+    avant: "if (k.delta[cle] !== k.after[cle] - k.before[cle]) c.push(",
+    apres: "if (false) c.push(",
+    pourquoi: "les compteurs du processus se lisent en deltas parce que init ne les remet pas à zéro ; un delta qui n'est pas after − before est un chiffre inventé",
+    bancs: ["tools/__tests__/artefactDeCharge.test.js"],
+  },
 ];
 
 export const empreinte = (texte) => createHash("sha256").update(texte).digest("hex").slice(0, 16);

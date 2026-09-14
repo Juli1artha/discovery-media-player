@@ -1,20 +1,31 @@
 # Artefacts de charge
 
 Une course de charge laisse derrière elle **un JSON**, produit même en échec (`complete: false`,
-avec sa raison), validé contre `charge/artefact.schema.json` et attaché à la release qui l'a
-produite. Le schéma porte un numéro (`schemaVersion`) qui change quand la **sémantique** change ;
-une clé optionnelle s'ajoute sans changer de version, une clé obligatoire jamais.
+avec sa raison), validé contre `charge/artefact.schema-<N>.json` et attaché à la release qui l'a
+produite.
 
-`exemples/` ne contient **pas de mesures** : ce sont des formes. Chaque nombre y vaut zéro et le
-`runId` le dit. Ils servent à deux choses : le validateur (`node tools/artefact-de-charge.mjs`)
-les éprouve à chaque course de la forge, et ils sont le **corpus de compatibilité** du schéma 1 —
-un schéma qui les refuserait demain aurait cassé la série sans changer de numéro.
+**Doctrine de version.** Un schéma est **immuable** dès le premier artefact publié sous son numéro.
+Ses objets sont fermés : une clé émise en plus serait refusée par un ancien validateur, donc toute
+clé nouvelle fait un schéma suivant ; tout changement de sémantique aussi, même sans changement
+de forme. Le validateur (`tools/artefact-de-charge.mjs`) choisit le schéma par
+`artefact.schemaVersion` ; les anciens schémas et leurs corpus restent dans le dépôt. Un banc fige
+**toutes** les clés du schéma 1, pas seulement la racine.
+
+**Deux couches de validation.** Le schéma dit les formes ; le validateur tient les **invariants
+entre nombres** que JSON Schema ne sait pas dire : `complete: true` sans raison d'échec, avec une
+durée positive et au moins 1 000 observations ; `sequence[position − 1] === spectators` ;
+`scheduled ≥ started ≥ completed` et `completed === latencyMs.n` ; percentiles ordonnés,
+`min ≤ mean ≤ max` ; classes d'histogramme strictement croissantes, une de plus que les comptes,
+somme des comptes égale à `n` ; `delta = after − before` clé par clé ; plafond mémoire `null` si
+et seulement si sa source est `unknown` ; statuts **disjoints** (`429` hors `other4xx`, `503` hors
+`other5xx`, `other` pour 1xx et 3xx) dont la somme vaut `completedRequests`. Passés plusieurs
+fichiers (`--fichier=` répété), il confronte la **cohorte** : même `runId`, même séquence, même
+commit, positions uniques, jeux de données distincts.
+
+`exemples/` ne contient **pas de mesures** : ce sont des formes, et le `runId` le dit. L'exemple
+complet porte des nombres cohérents entre eux parce que le validateur l'exige — le même validateur
+jugera les vrais rapports, et une forme vide qui passerait dirait qu'un rapport vide passerait.
+Les exemples sont aussi le corpus de compatibilité de leur schéma.
 
 Les vrais artefacts ne vivent pas dans ce dépôt : ils sont attachés aux releases. La rétention des
 artefacts de la forge est temporaire ; une release ne l'est pas.
-
-Structure spécifiée par un audit externe (sixième et septième passes, 14/09/2026) ; aucune clé
-n'a été ajoutée avant le premier prototype, à trois exceptions près, dites dans le CHANGELOG :
-`scenario.position` et `scenario.sequence` (l'ordre d'exécution, que le protocole demande
-d'enregistrer) et `environment.memoryLimitSource` (les deux emplacements proposés pour le plafond
-mémoire sont réunis en un).

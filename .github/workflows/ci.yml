@@ -429,10 +429,12 @@ jobs:
       # ⚠️ Les bancs de charge de ce dépôt imprimaient leur relevé dans le journal de la forge, lu par
       # un humain, jamais comparé. Un audit externe : « la preuve runtime attendue pour la
       # performance n'existe pas ». Elle prend la forme d'un JSON au schéma versionné
-      # (`charge/artefact.schema.json`, `schemaVersion: 1`), produit même en échec, attaché aux
-      # releases. Cette étape éprouve le schéma sur son corpus (un artefact minimal, un artefact
-      # `complete: false`) et refuse toute clé qui n'y est pas écrite ; le validateur LÈVE sur un
-      # mot-clé qu'il ne lit pas, au lieu de l'ignorer. Non concluant sans corpus.
+      # (`charge/artefact.schema-<N>.json`, `schemaVersion: N`, immuable une fois publié), produit
+      # même en échec, attaché aux releases. Cette étape lit le vocabulaire de chaque schéma EN ENTIER
+      # avant tout artefact (non concluant sur un mot-clé inconnu, même dans une branche qu'aucun
+      # exemple ne matérialise), éprouve le corpus (un artefact minimal, un `complete: false`) en
+      # forme ET en invariants entre nombres, et refuse toute clé qui n'est pas écrite. Non
+      # concluant sans corpus.
       - name: Every load artefact validates against its schema, and the schema cannot widen in silence
         if: matrix.node == '22'
         run: node tools/artefact-de-charge.mjs
