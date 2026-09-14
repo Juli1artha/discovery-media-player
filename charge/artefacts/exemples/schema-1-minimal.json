@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "complete": true,
+  "failure": { "phase": null, "reason": null },
+  "identity": {
+    "commitSha": "0000000000000000000000000000000000000000",
+    "packageVersion": "0.0.0",
+    "timestamp": "2026-09-14T00:00:00Z",
+    "runId": "exemple-minimal — une FORME, pas une mesure : chaque nombre vaut zéro"
+  },
+  "environment": {
+    "node": "", "os": "", "arch": "", "cpuCount": 1,
+    "memoryLimitMiB": null, "memoryLimitSource": "unknown",
+    "postgresVersion": "", "postgrestVersion": ""
+  },
+  "scenario": {
+    "name": "state-hot", "spectators": 0, "presentations": 0, "requests": 0, "repetition": 1,
+    "position": 1, "sequence": [0], "warmupRequests": 0, "maxInFlight": 0, "egressIps": 0
+  },
+  "workload": {
+    "arrivalModel": "open-loop", "scheduledRequests": 0, "startedRequests": 0, "completedRequests": 0,
+    "generatorLagMs": { "p50": 0, "p95": 0, "p99": 0, "max": 0 }
+  },
+  "isolation": {
+    "processReused": true, "databaseReset": true, "cacheReset": true, "metricsReset": false,
+    "countersReportedAsDeltas": true, "datasetId": "exemple"
+  },
+  "measurementWindow": { "startedAt": "2026-09-14T00:00:00Z", "durationMs": 0, "processUptimeStartMs": 0, "processUptimeEndMs": 0 },
+  "latencyMs": { "n": 0, "min": 0, "mean": 0, "p50": 0, "p95": 0, "p99": 0, "max": 0 },
+  "throughputRps": 0,
+  "statuses": { "2xx": 0, "4xx": 0, "429": 0, "503": 0, "5xx": 0 },
+  "http": { "responseBytes": { "total": 0, "p50": 0, "p95": 0, "max": 0 } },
+  "database": { "calls": 0, "callsPerRequest": 0, "peakInFlight": 0, "timeouts": 0, "latencyMs": { "p50": 0, "p95": 0, "p99": 0 } },
+  "cache": { "hits": 0, "misses": 0, "coalesced": 0, "peakInFlight": 0 },
+  "process": {
+    "cpuUserMs": 0, "cpuSystemMs": 0, "eventLoopP99Ms": 0,
+    "memoryMiB": {
+      "baseline": { "rss": 0, "heapUsed": 0, "external": 0, "arrayBuffers": 0 },
+      "peak": { "rss": 0, "heapUsed": 0, "external": 0, "arrayBuffers": 0 },
+      "end": { "rss": 0, "heapUsed": 0, "external": 0, "arrayBuffers": 0 },
+      "afterGc": { "rss": 0, "heapUsed": 0, "external": 0, "arrayBuffers": 0 }
+    }
+  },
+  "correctness": { "completed": 0, "emptyResponses": 0, "wrongPresentation": 0 },
+  "counters": { "before": {}, "after": {}, "delta": {} }
+}

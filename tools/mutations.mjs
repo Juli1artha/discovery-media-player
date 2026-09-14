@@ -392,6 +392,30 @@ export const MUTANTS = [
     pourquoi: "la confirmation isolée verte d'un rouge recevait « aucune cause exploitable — rejouer en verbose » : un succès n'a pas de cause à donner (audit, dixième passe)",
     bancs: ["tools/__tests__/ordreDesBancs.test.js"],
   },
+  {
+    id: "artefact-champ-obligatoire-absent-accepte",
+    fichier: "tools/artefact-de-charge.mjs",
+    avant: "if (\"required\" in schema) for (const r of schema.required) if (!(r in valeur)) constats.push(`${chemin}.${r} : champ obligatoire absent`);",
+    apres: "if (false) for (const r of schema.required) if (!(r in valeur)) constats.push(`${chemin}.${r} : champ obligatoire absent`);",
+    pourquoi: "un artefact sans latence, sans mémoire ou sans raison d'échec passerait pour conforme : la série se remplirait de formes vides",
+    bancs: ["tools/__tests__/artefactDeCharge.test.js"],
+  },
+  {
+    id: "artefact-cle-hors-schema-acceptee",
+    fichier: "tools/artefact-de-charge.mjs",
+    avant: "if (schema.additionalProperties === false) constats.push(`${chemin}.${k} : clé non déclarée par le schéma — aucune clé ne s'ajoute sans y être écrite`);",
+    apres: "if (schema.additionalProperties === false) void 0;",
+    pourquoi: "une clé ajoutée à la main dans un artefact entrerait dans la série sans être écrite dans le schéma : le schéma cesserait de décrire ce qu'on compare",
+    bancs: ["tools/__tests__/artefactDeCharge.test.js"],
+  },
+  {
+    id: "artefact-mot-cle-inconnu-ignore",
+    fichier: "tools/artefact-de-charge.mjs",
+    avant: "for (const k of Object.keys(schema)) if (!MOTS_CLES.has(k)) throw new SchemaInconnu(",
+    apres: "for (const k of []) if (!MOTS_CLES.has(k)) throw new SchemaInconnu(",
+    pourquoi: "un validateur qui saute les mots-clés qu'il ne lit pas rend vert un schéma qu'il ne vérifie pas — la vacuité en un mot",
+    bancs: ["tools/__tests__/artefactDeCharge.test.js"],
+  },
 ];
 
 export const empreinte = (texte) => createHash("sha256").update(texte).digest("hex").slice(0, 16);

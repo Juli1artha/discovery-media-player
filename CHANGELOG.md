@@ -12,6 +12,27 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- **L'artefact de charge a un schéma, et la forge le tient.** Les bancs de charge imprimaient leur
+  relevé dans le journal de la forge, lu par un humain, jamais comparé ; un audit externe l'a dit :
+  la preuve runtime de la performance n'existe pas. Première pièce du lot : `charge/artefact.schema.json`
+  (`schemaVersion: 1`, JSON Schema 2020-12), la structure spécifiée par l'audit prise à la lettre —
+  identité, environnement, scénario, générateur mesuré (`workload`, contre l'omission coordonnée),
+  isolation, fenêtre de mesure, latences, statuts, base, cache, processus avec quatre relevés
+  mémoire (`baseline`, `peak`, `end`, `afterGc`), exactitude, compteurs du processus en
+  avant/après/delta, bloc `relay` exigé pour ce scénario ; `complete: false` avec sa raison quand
+  la course s'arrête, et alors aucun bloc de mesure n'est exigé. Trois écarts à sa lettre, dits :
+  `scenario.position` et `scenario.sequence` portent l'ordre d'exécution que son protocole demande
+  d'enregistrer, et ses deux emplacements pour le plafond mémoire sont réunis en
+  `environment.memoryLimitMiB` + `memoryLimitSource`. Un corpus de deux formes (minimal, incomplet),
+  chaque nombre à zéro et le `runId` le dit ; `tools/artefact-de-charge.mjs` les éprouve à chaque
+  course de la forge, refuse un champ obligatoire absent par son chemin et toute clé hors schéma, et
+  **lève** sur un mot-clé de schéma qu'il ne lit pas au lieu de l'ignorer. Les clés de la racine et
+  les champs obligatoires du schéma 1 sont figés dans un banc : une clé obligatoire de plus casse
+  la série sans changer de numéro, et le banc le dit avant la forge. Trois mutants. Les vrais
+  artefacts ne vivront pas dans le dépôt : ils seront attachés aux releases.
+
 ### Fixed
 
 - **La garde d'ordre réclamait une cause à une exécution verte.** La confirmation isolée d'un rouge

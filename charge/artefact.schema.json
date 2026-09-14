@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Juli1artha/discovery-media-player/charge/artefact.schema-1.json",
+  "title": "Artefact de charge, schéma 1",
+  "description": "Ce qu'une course de charge laisse derrière elle : un JSON, produit même en échec (complete: false), attaché à la release qui l'a produite. schemaVersion change quand la SÉMANTIQUE change ; une clé optionnelle s'ajoute sans changer de version, une clé obligatoire jamais. Structure spécifiée par un audit externe (sixième et septième passes, 14/09/2026) ; aucune clé n'est ajoutée avant le premier prototype.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "complete", "failure", "identity", "environment", "scenario", "workload", "isolation", "measurementWindow"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "complete": { "type": "boolean", "description": "false : la course n'est pas allée au bout ; l'artefact existe quand même, avec failure.reason. Une absence d'artefact ne doit jamais ressembler à un banc réussi." },
+    "failure": {
+      "type": "object", "additionalProperties": false, "required": ["phase", "reason"],
+      "properties": { "phase": { "type": ["string", "null"] }, "reason": { "type": ["string", "null"] } }
+    },
+    "identity": {
+      "type": "object", "additionalProperties": false, "required": ["commitSha", "packageVersion", "timestamp", "runId"],
+      "properties": {
+        "commitSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "packageVersion": { "type": "string", "minLength": 1 },
+        "timestamp": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$" },
+        "runId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "environment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["node", "os", "arch", "cpuCount", "memoryLimitMiB", "memoryLimitSource", "postgresVersion", "postgrestVersion"],
+      "properties": {
+        "node": { "type": "string" }, "os": { "type": "string" }, "arch": { "type": "string" },
+        "cpuCount": { "type": "integer", "minimum": 1 },
+        "memoryLimitMiB": { "type": ["integer", "null"], "minimum": 1, "description": "la moitié manquante de tout chiffre de mémoire : null quand aucune surface ne le sert" },
+        "memoryLimitSource": { "enum": ["lambda-env", "cgroup", "runner", "unknown"] },
+        "postgresVersion": { "type": "string" }, "postgrestVersion": { "type": "string" }
+      }
+    },
+    "scenario": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "spectators", "presentations", "requests", "repetition", "position", "sequence", "warmupRequests", "maxInFlight", "egressIps"],
+      "properties": {
+        "name": { "enum": ["state-cold", "state-hot", "realistic", "relay"] },
+        "spectators": { "type": "integer", "minimum": 0 },
+        "presentations": { "type": "integer", "minimum": 0 },
+        "requests": { "type": "integer", "minimum": 0 },
+        "repetition": { "type": "integer", "minimum": 1 },
+        "position": { "type": "integer", "minimum": 1, "description": "rang de ce scénario dans la course : le second bénéficie du JIT et des caches du premier, et l'ordre est enregistré pour qu'on le sache" },
+        "sequence": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 0 }, "description": "les effectifs de la course entière, dans l'ordre exécuté — 100 → 1 000 → 100 s'écrit [100, 1000, 100]" },
+        "warmupRequests": { "type": "integer", "minimum": 0 },
+        "maxInFlight": { "type": "integer", "minimum": 0 },
+        "egressIps": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "workload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["arrivalModel", "scheduledRequests", "startedRequests", "completedRequests", "generatorLagMs"],
+      "description": "le générateur, mesuré lui aussi : un générateur saturé envoie moins que prévu et fabrique de bons percentiles (omission coordonnée)",
+      "properties": {
+        "arrivalModel": { "enum": ["burst", "jittered", "open-loop"] },
+        "scheduledRequests": { "type": "integer", "minimum": 0 },
+        "startedRequests": { "type": "integer", "minimum": 0 },
+        "completedRequests": { "type": "integer", "minimum": 0 },
+        "generatorLagMs": { "$ref": "#/$defs/percentilesEtMax" }
+      }
+    },
+    "isolation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["processReused", "databaseReset", "cacheReset", "metricsReset", "countersReportedAsDeltas", "datasetId"],
+      "properties": {
+        "processReused": { "type": "boolean" }, "databaseReset": { "type": "boolean" }, "cacheReset": { "type": "boolean" },
+        "metricsReset": { "type": "boolean", "description": "false par construction : init ne remet pas les compteurs du processus à zéro, ils se lisent en deltas" },
+        "countersReportedAsDeltas": { "type": "boolean" },
+        "datasetId": { "type": "string", "minLength": 1, "description": "des données distinctes par scénario, nommées" }
+      }
+    },
+    "measurementWindow": {
+      "type": "object", "additionalProperties": false,
+      "required": ["startedAt", "durationMs", "processUptimeStartMs", "processUptimeEndMs"],
+      "properties": {
+        "startedAt": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$" },
+        "durationMs": { "type": "number", "minimum": 0 },
+        "processUptimeStartMs": { "type": "number", "minimum": 0 },
+        "processUptimeEndMs": { "type": "number", "minimum": 0 }
+      }
+    },
+    "latencyMs": {
+      "type": "object", "additionalProperties": false, "required": ["n", "min", "mean", "p50", "p95", "p99", "max"],
+      "properties": {
+        "n": { "type": "integer", "minimum": 0, "description": "au moins 1 000 observations par scénario pour un p99 crédible — 100 spectateurs ne veut pas dire 100 observations" },
+        "min": { "type": "number", "minimum": 0 }, "mean": { "type": "number", "minimum": 0 },
+        "p50": { "type": "number", "minimum": 0 }, "p95": { "type": "number", "minimum": 0 }, "p99": { "type": "number", "minimum": 0 },
+        "max": { "type": "number", "minimum": 0 }
+      }
+    },
+    "histogram": {
+      "type": "object", "additionalProperties": false, "required": ["unit", "edges", "counts"],
+      "description": "classes FIXES, pour réinterpréter les percentiles après coup ; optionnel",
+      "properties": {
+        "unit": { "const": "ms" },
+        "edges": { "type": "array", "minItems": 2, "items": { "type": "number", "minimum": 0 } },
+        "counts": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 0 } }
+      }
+    },
+    "throughputRps": { "type": "number", "minimum": 0 },
+    "statuses": {
+      "type": "object", "additionalProperties": false, "required": ["2xx", "4xx", "429", "503", "5xx"],
+      "properties": {
+        "2xx": { "type": "integer", "minimum": 0 }, "4xx": { "type": "integer", "minimum": 0 }, "429": { "type": "integer", "minimum": 0 },
+        "503": { "type": "integer", "minimum": 0 }, "5xx": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "http": {
+      "type": "object", "additionalProperties": false, "required": ["responseBytes"],
+      "properties": {
+        "responseBytes": {
+          "type": "object", "additionalProperties": false, "required": ["total", "p50", "p95", "max"],
+          "properties": {
+            "total": { "type": "integer", "minimum": 0 }, "p50": { "type": "number", "minimum": 0 },
+            "p95": { "type": "number", "minimum": 0 }, "max": { "type": "number", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "database": {
+      "type": "object", "additionalProperties": false, "required": ["calls", "callsPerRequest", "peakInFlight", "timeouts", "latencyMs"],
+      "properties": {
+        "calls": { "type": "integer", "minimum": 0 }, "callsPerRequest": { "type": "number", "minimum": 0 },
+        "peakInFlight": { "type": "integer", "minimum": 0 }, "timeouts": { "type": "integer", "minimum": 0 },
+        "latencyMs": { "$ref": "#/$defs/percentiles" }
+      }
+    },
+    "cache": {
+      "type": "object", "additionalProperties": false, "required": ["hits", "misses", "coalesced", "peakInFlight"],
+      "properties": {
+        "hits": { "type": "integer", "minimum": 0 }, "misses": { "type": "integer", "minimum": 0 },
+        "coalesced": { "type": "integer", "minimum": 0 }, "peakInFlight": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "process": {
+      "type": "object", "additionalProperties": false, "required": ["cpuUserMs", "cpuSystemMs", "eventLoopP99Ms", "memoryMiB"],
+      "properties": {
+        "cpuUserMs": { "type": "number", "minimum": 0 }, "cpuSystemMs": { "type": "number", "minimum": 0 },
+        "eventLoopP99Ms": { "type": "number", "minimum": 0 },
+        "memoryMiB": {
+          "type": "object", "additionalProperties": false, "required": ["baseline", "peak", "end", "afterGc"],
+          "description": "quatre relevés, pas seulement le pic : la RSS ne redescend pas après GC, et seul afterGc le montre",
+          "properties": {
+            "baseline": { "$ref": "#/$defs/memoire" }, "peak": { "$ref": "#/$defs/memoire" },
+            "end": { "$ref": "#/$defs/memoire" }, "afterGc": { "$ref": "#/$defs/memoire" }
+          }
+        }
+      }
+    },
+    "correctness": {
+      "type": "object", "additionalProperties": false, "required": ["completed", "emptyResponses", "wrongPresentation"],
+      "properties": {
+        "completed": { "type": "integer", "minimum": 0 }, "emptyResponses": { "type": "integer", "minimum": 0 },
+        "wrongPresentation": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "counters": {
+      "type": "object", "additionalProperties": false, "required": ["before", "after", "delta"],
+      "description": "les compteurs du processus (carte : lectureSaturee.total, relaisRefuses.total, statuts…) en avant / après / delta par scénario, puisque init ne les remet pas à zéro",
+      "properties": {
+        "before": { "$ref": "#/$defs/compteurs" }, "after": { "$ref": "#/$defs/compteurs" }, "delta": { "$ref": "#/$defs/compteurs" }
+      }
+    },
+    "relay": {
+      "type": "object", "additionalProperties": false,
+      "required": ["fileBytes", "chunkBytes", "highWaterMark", "consumerDelayMs", "bytesTransferred", "admitted", "refused", "descriptors"],
+      "properties": {
+        "fileBytes": { "type": "integer", "minimum": 0 }, "chunkBytes": { "type": "integer", "minimum": 0 },
+        "highWaterMark": { "type": "integer", "minimum": 0 }, "consumerDelayMs": { "type": "number", "minimum": 0 },
+        "bytesTransferred": { "type": "integer", "minimum": 0 },
+        "admitted": { "type": "integer", "minimum": 0 }, "refused": { "type": "integer", "minimum": 0 },
+        "descriptors": {
+          "type": "object", "additionalProperties": false, "required": ["idle", "peak"],
+          "properties": { "idle": { "type": "integer", "minimum": 0 }, "peak": { "type": "integer", "minimum": 0 } }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "complete": { "const": true } } },
+      "then": { "required": ["latencyMs", "throughputRps", "statuses", "http", "database", "cache", "process", "correctness", "counters"] },
+      "else": { "properties": { "failure": { "properties": { "reason": { "type": "string", "minLength": 1 } } } } }
+    },
+    {
+      "if": { "properties": { "scenario": { "properties": { "name": { "const": "relay" } } } } },
+      "then": { "required": ["relay"] }
+    }
+  ],
+  "$defs": {
+    "percentiles": {
+      "type": "object", "additionalProperties": false, "required": ["p50", "p95", "p99"],
+      "properties": { "p50": { "type": "number", "minimum": 0 }, "p95": { "type": "number", "minimum": 0 }, "p99": { "type": "number", "minimum": 0 } }
+    },
+    "percentilesEtMax": {
+      "type": "object", "additionalProperties": false, "required": ["p50", "p95", "p99", "max"],
+      "properties": { "p50": { "type": "number", "minimum": 0 }, "p95": { "type": "number", "minimum": 0 }, "p99": { "type": "number", "minimum": 0 }, "max": { "type": "number", "minimum": 0 } }
+    },
+    "memoire": {
+      "type": "object", "additionalProperties": false, "required": ["rss", "heapUsed", "external", "arrayBuffers"],
+      "properties": { "rss": { "type": "number", "minimum": 0 }, "heapUsed": { "type": "number", "minimum": 0 }, "external": { "type": "number", "minimum": 0 }, "arrayBuffers": { "type": "number", "minimum": 0 } }
+    },
+    "compteurs": { "type": "object", "additionalProperties": { "type": "integer" } }
+  }
+}

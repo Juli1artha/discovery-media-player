@@ -425,6 +425,18 @@ jobs:
         if: matrix.node == '22'
         run: node tools/ordre-des-bancs.mjs --graine=jour,42,20260912,20260913
 
+      # ── L'ARTEFACT DE CHARGE : UN DOCUMENT, PAS UNE LIGNE DE JOURNAL ─────────────────────────
+      # ⚠️ Les bancs de charge de ce dépôt imprimaient leur relevé dans le journal de la forge, lu par
+      # un humain, jamais comparé. Un audit externe : « la preuve runtime attendue pour la
+      # performance n'existe pas ». Elle prend la forme d'un JSON au schéma versionné
+      # (`charge/artefact.schema.json`, `schemaVersion: 1`), produit même en échec, attaché aux
+      # releases. Cette étape éprouve le schéma sur son corpus (un artefact minimal, un artefact
+      # `complete: false`) et refuse toute clé qui n'y est pas écrite ; le validateur LÈVE sur un
+      # mot-clé qu'il ne lit pas, au lieu de l'ignorer. Non concluant sans corpus.
+      - name: Every load artefact validates against its schema, and the schema cannot widen in silence
+        if: matrix.node == '22'
+        run: node tools/artefact-de-charge.mjs
+
       - name: Every changelog section has its exact comparison link
         if: matrix.node == '22'
         run: node tools/changelog.mjs
