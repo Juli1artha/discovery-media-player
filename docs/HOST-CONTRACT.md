@@ -648,12 +648,18 @@ context shipped in this package already implements it** — if you build your co
 to decide or write. This section is for a host that implements the `db` capability itself. A host
 asked which of the two it was, and the answer was missing from this page: *"the two look alike in
 your code and not at all alike at your hosts."* ⚠️ **The same line decides which zone of a release
-reaches you.** A host that runs `context/standalone` as is (ADV does, unchanged since August)
-executes every change to the `context` zone — the environment pass-through, the journal helper —
-and its `errors.capture` is the player's own; a host with its own context (STUDIO) is touched by
-`server/` only. That line was missing from what the player held about its hosts, and a release note
-told one of them a change to its own file was "without effect on your side" (14/09). Say your form
-once; it is the line the notes are written from. If your `db` capability
+reaches you, and it is read per capability, not per host.** Three forms. A host that runs
+`context/standalone` as is (ADV does, unchanged since August) executes every change to the `context`
+zone — the environment pass-through, the journal helper — and its `errors.capture` is the player's
+own. A host that **composes** its context from `createStandaloneContext` and replaces some
+capabilities (the Vercel example in this repository does: `identity` and `branding` are its own,
+everything else inherited) is reached by every change to a capability it inherits, and by none to a
+capability it replaced; `creerLimites` is exported for exactly that host. A host whose context
+imports nothing from `context/` (STUDIO) is touched by `server/` only. That line was missing from
+what the player held about its hosts, and a release note told one of them a change to its own file
+was "without effect on your side" (14/09); the first version of this paragraph was binary, and an
+audit pointed at the repository's own example as the third case. Say your form once; it is the
+line the notes are written from. If your `db` capability
 exposes it, the player asks it first and publishes an **exact** count — no bound, no `tronque`, and
 no rows transported at all. If it is absent, everything above still applies unchanged: the bounded
 read with its cursor probe. **That fallback is the whole design.** Third-party hosts implement this

@@ -26,10 +26,13 @@ the notes there are this file's section for that version.
 - **La zone `context` dit qui l'exécute.** Une note de version a écrit à un hôte que le contexte
   autonome était « sans effet chez vous : vous fournissez votre contexte », alors qu'il exécute
   `context/standalone.js` tel quel depuis août et l'avait dit trois fois (ADV, 14/09). Le libellé de
-  la zone et le contrat disent que la ligne de partage est la forme du câblage : un hôte qui exécute
-  le contexte autonome tel quel reçoit chaque changement de cette zone, et son `errors.capture` est
-  celui du lecteur ; un hôte avec son propre contexte n'est touché que par `server/`. La forme de
-  chaque hôte est la ligne dont les notes sont écrites.
+  la zone et le contrat disent que la ligne de partage est la forme du câblage, lue **par capacité**
+  et non par hôte : le contexte autonome tel quel reçoit toute la zone, et son `errors.capture` est
+  celui du lecteur ; un contexte composé depuis `createStandaloneContext` (l'exemple Vercel du dépôt)
+  reçoit chaque capacité héritée et aucune remplacée ; un contexte qui n'importe rien de `context/`
+  n'est touché que par `server/`. La première version de cette règle était binaire ; l'audit a
+  montré le troisième cas dans le dépôt lui-même. La forme de chaque hôte est la ligne dont les
+  notes sont écrites.
 - Le contrat dit que la borne de temps d'une capacité doit couvrir le **corps**, pas seulement les
   en-têtes : `fetch` se règle aux en-têtes et `response.text()` se fige sur un flux resté ouvert, un
   délai qui s'arrête aux en-têtes ne borne que la moitié du chemin ; le même `AbortSignal` passé au

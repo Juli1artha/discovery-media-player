@@ -52,8 +52,11 @@ export const ZONES = [
   // `context/standalone.js` tel quel depuis août, et l'avait dit trois fois (ADV, 14/09). Cette zone
   // est du code d'hôte pour un hôte et pas pour l'autre, et la ligne de partage est la forme de son
   // câblage, pas son type. Le libellé le dit, pour que personne ne relise « context : 1 » comme
-  // « pas moi » sans avoir vérifié quel contexte il exécute.
-  { nom: "context", quoi: "the injected-context implementations — the code a host executes when it runs `context/standalone` as is; a host with its own context is not touched here", est: (f) => f.startsWith("context/") },
+  // « pas moi » sans avoir vérifié quel contexte il exécute. ⚠️ ET LA LIGNE N'EST PAS BINAIRE : le
+  // propre exemple Vercel du dépôt COMPOSE son contexte depuis `createStandaloneContext` et ne
+  // remplace que `identity` et `branding` — chaque capacité héritée l'atteint, les remplacées non
+  // (audit, dixième passe). La règle se lit par capacité, pas par hôte.
+  { nom: "context", quoi: "the injected-context implementations — reaches a host per capability: all of it if `context/standalone` runs as is, each inherited capability if the host composes its context from it, none if the context imports nothing from `context/`", est: (f) => f.startsWith("context/") },
   // ⚠️ `dist/` PORTE DEUX ARTEFACTS QUI N'ONT PAS LE MÊME CONSOMMATEUR, et un seul suffixe les
   // sépare. `dist/bridge.js` est exécuté par la page des visiteurs ; `dist/bridge.d.ts` est lu par
   // le `tsc` de l'hôte. L'un casse à l'exécution, l'autre au build — deux incidents différents,
