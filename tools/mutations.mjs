@@ -472,6 +472,38 @@ export const MUTANTS = [
     pourquoi: "l'immuabilité d'un schéma publié se prouve contre le tag qui l'a publié, pas contre un littéral modifiable dans le même commit ; sans la confrontation, l'ancre ne tient rien (audit, onzième passe)",
     bancs: ["tools/__tests__/artefactDeCharge.test.js"],
   },
+  {
+    id: "rapport-borne-d-histogramme-inclusive-en-haut",
+    fichier: "charge/rapport.js",
+    avant: "    while (i > 0 && v < edges[i]) i -= 1;",
+    apres: "    while (i > 0 && v <= edges[i]) i -= 1;",
+    pourquoi: "une valeur égale à une borne tombait dans la classe d'en dessous : la sémantique écrite dans le schéma est [a, b), et deux producteurs qui ne la lisent pas pareil rendent des histogrammes incomparables sous le même binSetId",
+    bancs: ["charge/__tests__/rapport.test.js"],
+  },
+  {
+    id: "rapport-429-comptee-dans-other4xx",
+    fichier: "charge/rapport.js",
+    avant: "    else if (s === 429) c[\"429\"] += 1;\n    else if (s >= 400 && s < 500) c.other4xx += 1;",
+    apres: "    else if (s >= 400 && s < 500) c.other4xx += 1;",
+    pourquoi: "les catégories sont disjointes : une 429 comptée dans other4xx rend deux artefacts incompatibles tout en sommant juste — la somme ne trahit rien, seule la classification le peut",
+    bancs: ["charge/__tests__/rapport.test.js"],
+  },
+  {
+    id: "rapport-toute-2xx-jugee-correcte",
+    fichier: "charge/rapport.js",
+    avant: "  return corps.state.current_page === pageAttendue ? \"correct\" : \"autre\";",
+    apres: "  return \"correct\";",
+    pourquoi: "un état venu d'une AUTRE présentation (clé de cache confondue) passerait pour correct : wrongPresentation ne compterait jamais, et l'exactitude serait une phrase",
+    bancs: ["charge/__tests__/rapport.test.js"],
+  },
+  {
+    id: "cache-regroupee-comptee-comme-servie",
+    fichier: "server/cache.js",
+    avant: "        if (vue.enVol) nRegroupees += 1; else nServies += 1;",
+    apres: "        nServies += 1;",
+    pourquoi: "servie de la mémoire et regroupée sur une production en vol ne disent pas la même chose du cache : la première dit qu'il retient, la seconde qu'il mutualise — confondues, « le cache tient » redevient une phrase",
+    bancs: ["server/__tests__/cacheCompteurs.test.js"],
+  },
 ];
 
 export const empreinte = (texte) => createHash("sha256").update(texte).digest("hex").slice(0, 16);

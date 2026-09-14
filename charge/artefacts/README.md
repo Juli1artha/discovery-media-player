@@ -51,5 +51,13 @@ complet porte des nombres cohérents entre eux parce que le validateur l'exige �
 jugera les vrais rapports, et une forme vide qui passerait dirait qu'un rapport vide passerait.
 Les exemples sont aussi le corpus de compatibilité de leur schéma.
 
-Les vrais artefacts ne vivent pas dans ce dépôt : ils sont attachés aux releases. La rétention des
-artefacts de la forge est temporaire ; une release ne l'est pas.
+**Le producteur.** `node --expose-gc charge/rapport.js --sortie=<dossier>` joue la séquence
+(`--sequence=100,1000,100` par défaut, `--par-spectateur=10` lectures d'état par spectateur) dans un
+seul processus contre le PostgREST de `PLAYER_TEST_POSTGREST_URL` — le scénario `state-hot`, une
+présentation par position, un préchauffage hors mesure, un générateur en boucle ouverte avec gigue
+dont le retard est mesuré — et écrit un artefact par position, puis les juge en cohorte. Une
+position qui échoue laisse son artefact `complete: false` et arrête la course. La forge le lance
+après la campagne de charge, sur le même runner, et attache la sortie à son run.
+
+Les vrais artefacts ne vivent pas dans ce dépôt : ils sont attachés aux runs de la forge, puis aux
+releases. La rétention des artefacts de la forge est temporaire ; une release ne l'est pas.

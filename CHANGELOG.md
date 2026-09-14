@@ -64,6 +64,22 @@ the notes there are this file's section for that version.
   nombres cohérents, incomplet) est le test de compatibilité ; toutes les clés du schéma 1 sont
   figées dans un banc. Dix mutants sur l'artefact. Les vrais artefacts ne vivront pas dans le
   dépôt : ils seront attachés aux releases.
+- **Le producteur d'artefact, et le premier `100 → 1 000 → 100`.** `charge/rapport.js` est un
+  programme, pas un banc : il rend un document même quand la course échoue. Il joue la séquence
+  dans un seul processus, contre le vrai PostgREST de la forge, sur le scénario `state-hot`
+  (`GET ?present=&state=1`, la lecture que mille spectateurs font toutes les 25 secondes) — une
+  présentation par position, sa page égale à son rang pour qu'un état venu d'ailleurs soit
+  détectable, un préchauffage hors mesure, puis un générateur en **boucle ouverte** avec gigue dont
+  le retard est mesuré (un générateur saturé fabriquerait de bons percentiles) ; il relève latences
+  et histogramme à classes fixes, statuts disjoints, octets, appels et pic en vol de la base par une
+  sonde sur la couture, servies / regroupées / produites du cache de lecture (compteurs nouveaux de
+  `server/cache.js`, avec leur banc), CPU, retard de boucle p99, quatre relevés mémoire avec un vrai
+  GC (`--expose-gc` exigé, sinon la position échoue et le dit), et les compteurs de la carte en
+  avant / après / delta. Un artefact par position, jugés en cohorte par la garde avant d'être
+  attachés au run de la forge ; une position qui échoue laisse son `complete: false` et arrête la
+  course. Banc de bout en bout contre le double PostgREST en mémoire (deux positions, mille
+  observations chacune, cohorte acceptée ; une position cassée, artefact interrompu, code 1).
+  Quatre mutants.
 
 ### Fixed
 

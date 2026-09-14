@@ -1601,6 +1601,35 @@ jobs:
           PLAYER_CHARGE_SPECTATEURS: "1000"
         run: npm run test:campagne
 
+      # ── L'ARTEFACT DE CHARGE : LE PREMIER 100 → 1 000 → 100, UN PROCESSUS, JUGÉ EN COHORTE ──
+      # ⚠️ La campagne au-dessus IMPRIME son relevé ; personne ne l'a jamais comparé d'un train à
+      # l'autre, et un audit l'a dit : la preuve runtime de la performance n'existait pas. Ici, un
+      # PROGRAMME (pas un banc) joue la séquence demandée par l'audit — 100 spectateurs, puis 1 000
+      # (qui bénéficie du JIT et des caches du premier), puis 100 (le témoin) — dans un seul
+      # processus, sur ce runner, contre ce PostgREST, en boucle ouverte, et écrit un artefact par
+      # position au schéma `charge/artefact.schema-1.json`. Une position qui échoue laisse son
+      # `complete: false` et arrête la course : une absence d'artefact ne doit jamais ressembler à
+      # un banc réussi. Les trois sont jugés EN COHORTE par `tools/artefact-de-charge.mjs` avant
+      # d'être attachés à ce run — puis, au prochain train, à la release.
+      #
+      # ⚠️ LES VERSIONS VIENNENT DE CE QUI TOURNE, pas d'une copie du nom d'une image : psql demande
+      # la sienne à Postgres, le producteur demande la sienne à PostgREST (racine OpenAPI). Une
+      # copie du tag de l'image serait un fait en deux exemplaires non confrontés.
+      # `--expose-gc` : `afterGc` est un relevé après un VRAI GC ; sans lui, la position échoue et
+      # le dit, plutôt que d'écrire un chiffre qui n'a pas été mesuré.
+      - name: The first structured load artefact — 100 → 1 000 → 100, one process, judged as a cohort
+        env:
+          PLAYER_TEST_POSTGREST_URL: http://127.0.0.1:3002
+        run: |
+          PLAYER_RAPPORT_POSTGRES="$($PSQL -c 'show server_version')" \
+            node --expose-gc charge/rapport.js --sortie=/tmp/artefacts-de-charge
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: artefacts-de-charge
+          path: /tmp/artefacts-de-charge/
+          if-no-files-found: error
+
       # ── L'ENDURANCE : CE QU'UNE RAFALE NE PEUT PAS MONTRER ────────────────────────────────────
       # ⚠️ COURT ICI, ET C'EST LE POINT. Tous les bancs de charge de ce dépôt sont INSTANTANÉS : N
       # appels lancés ensemble, un relevé, fini. Une mémoire qui monte lentement, un cache qui ne
