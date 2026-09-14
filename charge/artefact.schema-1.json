@@ -1,0 +1,837 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Juli1artha/discovery-media-player/charge/artefact.schema-1.json",
+  "title": "Artefact de charge, schéma 1",
+  "description": "Ce qu'une course de charge laisse derrière elle : un JSON, produit même en échec (complete: false), attaché à la release qui l'a produite. DOCTRINE DE VERSION : ce fichier est immuable dès le premier artefact publié sous son numéro ; toute clé émise en plus (l'objet est fermé, un ancien validateur la refuserait) et tout changement de sémantique, même sans changement de forme, font un schéma 2 ; le validateur choisit le schéma par artefact.schemaVersion ; les anciens schémas et leurs corpus sont conservés. Structure spécifiée par un audit externe (sixième, septième et onzième passes, 14/09/2026) ; les invariants entre nombres sont tenus par tools/artefact-de-charge.mjs, pas par ce schéma, qui ne sait dire que les formes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "complete",
+    "failure",
+    "identity",
+    "environment",
+    "scenario",
+    "workload",
+    "isolation",
+    "measurementWindow"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "complete": {
+      "type": "boolean",
+      "description": "false : la course n'est pas allée au bout ; l'artefact existe quand même, avec failure.reason. Une absence d'artefact ne doit jamais ressembler à un banc réussi."
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "reason"
+      ],
+      "properties": {
+        "phase": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commitSha",
+        "packageVersion",
+        "timestamp",
+        "runId",
+        "schemaSha256"
+      ],
+      "properties": {
+        "commitSha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "packageVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timestamp": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+        },
+        "runId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "l'identité de la COURSE, commune aux artefacts d'une même séquence (100 → 1 000 → 100 en fait trois, même runId, positions 1, 2, 3)"
+        },
+        "schemaSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "sha256 du JSON canonique (sans blancs) du schéma sous lequel l'artefact a été produit ; le validateur exige qu'elle soit celle du schéma qu'il applique — un artefact dit lui-même contre quoi il a été jugé"
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node",
+        "os",
+        "arch",
+        "cpuCount",
+        "memoryLimitMiB",
+        "memoryLimitSource",
+        "postgresVersion",
+        "postgrestVersion"
+      ],
+      "properties": {
+        "node": {
+          "type": "string"
+        },
+        "os": {
+          "type": "string"
+        },
+        "arch": {
+          "type": "string"
+        },
+        "cpuCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "memoryLimitMiB": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "description": "la moitié manquante de tout chiffre de mémoire : null si et seulement si memoryLimitSource vaut unknown"
+        },
+        "memoryLimitSource": {
+          "enum": [
+            "lambda-env",
+            "cgroup",
+            "runner",
+            "unknown"
+          ]
+        },
+        "postgresVersion": {
+          "type": "string"
+        },
+        "postgrestVersion": {
+          "type": "string"
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "spectators",
+        "presentations",
+        "repetition",
+        "position",
+        "sequence",
+        "warmupRequests",
+        "maxInFlight",
+        "egressIps"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "state-cold",
+            "state-hot",
+            "realistic",
+            "relay"
+          ]
+        },
+        "spectators": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "presentations": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "repetition": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "position": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "rang de ce scénario dans la course, de 1 à sequence.length ; le validateur exige sequence[position - 1] === spectators"
+        },
+        "sequence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "les effectifs de la course entière, dans l'ordre exécuté — 100 → 1 000 → 100 s'écrit [100, 1000, 100]"
+        },
+        "warmupRequests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxInFlight": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "egressIps": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "workload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "arrivalModel",
+        "arrivalPattern",
+        "scheduledRequests",
+        "startedRequests",
+        "completedRequests",
+        "generatorLagMs"
+      ],
+      "description": "le générateur, mesuré lui aussi : un générateur saturé envoie moins que prévu et fabrique de bons percentiles (omission coordonnée). Invariant tenu par le validateur : scheduled ≥ started ≥ completed, et completedRequests === latencyMs.n (une observation par requête achevée, quel que soit son statut)",
+      "properties": {
+        "arrivalModel": {
+          "enum": [
+            "open-loop",
+            "closed-loop"
+          ],
+          "description": "le MODÈLE : open-loop, le générateur envoie à l'heure prévue quoi qu'il arrive ; closed-loop, il attend la réponse (les rafales « N appels lancés ensemble » sont closed-loop)"
+        },
+        "scheduledRequests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "startedRequests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completedRequests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "generatorLagMs": {
+          "$ref": "#/$defs/percentilesEtMax"
+        },
+        "arrivalPattern": {
+          "enum": [
+            "uniform",
+            "jittered",
+            "burst"
+          ],
+          "description": "la FORME du trafic, axe indépendant du modèle : une charge peut être open-loop ET jittered"
+        }
+      }
+    },
+    "isolation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "processReused",
+        "databaseReset",
+        "cacheReset",
+        "metricsReset",
+        "countersReportedAsDeltas",
+        "datasetId"
+      ],
+      "properties": {
+        "processReused": {
+          "type": "boolean"
+        },
+        "databaseReset": {
+          "type": "boolean"
+        },
+        "cacheReset": {
+          "type": "boolean"
+        },
+        "metricsReset": {
+          "type": "boolean",
+          "description": "false par construction : init ne remet pas les compteurs du processus à zéro, ils se lisent en deltas"
+        },
+        "countersReportedAsDeltas": {
+          "type": "boolean"
+        },
+        "datasetId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "des données distinctes par scénario, nommées : uniques au sein d'une course"
+        }
+      }
+    },
+    "measurementWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startedAt",
+        "durationMs",
+        "processUptimeStartMs",
+        "processUptimeEndMs"
+      ],
+      "properties": {
+        "startedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+        },
+        "durationMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "processUptimeStartMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "processUptimeEndMs": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "latencyMs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "n",
+        "min",
+        "mean",
+        "p50",
+        "p95",
+        "p99",
+        "max"
+      ],
+      "properties": {
+        "n": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "une observation par requête achevée (=== workload.completedRequests), quel que soit son statut ; au moins OBSERVATIONS_MIN (1 000) quand complete vaut true. Le débit se recalcule (n / measurementWindow.durationMs × 1000), il n'est pas stocké"
+        },
+        "min": {
+          "type": "number",
+          "minimum": 0
+        },
+        "mean": {
+          "type": "number",
+          "minimum": 0
+        },
+        "p50": {
+          "type": "number",
+          "minimum": 0
+        },
+        "p95": {
+          "type": "number",
+          "minimum": 0
+        },
+        "p99": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "histogram": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unit",
+        "binSetId",
+        "edges",
+        "counts",
+        "overflow"
+      ],
+      "description": "classes FIXES et nommées, pour réinterpréter les percentiles après coup ; optionnel",
+      "properties": {
+        "unit": {
+          "const": "ms"
+        },
+        "binSetId": {
+          "type": "string",
+          "pattern": "^edges-sha256-[0-9a-f]{16}$",
+          "description": "DÉRIVÉ des bornes : « edges-sha256- » puis les 16 premiers hexadécimaux du sha256 de JSON.stringify(edges) ; deux jeux de bornes différents ne peuvent pas porter le même identifiant, et le validateur recalcule"
+        },
+        "edges": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "number",
+            "minimum": 0
+          },
+          "description": "bornes finies, strictement croissantes, edges[0] === 0 ; la classe i est [edges[i], edges[i+1]) — borne basse incluse, borne haute exclue, une valeur égale à une borne tombe dans la classe qui commence à cette borne"
+        },
+        "counts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "une classe de moins que de bornes"
+        },
+        "overflow": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "les observations ≥ edges[edges.length − 1] : la classe ouverte, pour que des bornes FIXES ne perdent aucune observation et n'aient jamais à bouger ; counts + overflow sommés valent latencyMs.n"
+        }
+      }
+    },
+    "statuses": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "2xx",
+        "429",
+        "other4xx",
+        "503",
+        "other5xx",
+        "other"
+      ],
+      "properties": {
+        "2xx": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "429": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "other4xx": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "503": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "other5xx": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "other": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "description": "catégories DISJOINTES : 429 n'est pas dans other4xx, 503 n'est pas dans other5xx ; other reçoit 1xx et 3xx. Le validateur exige que la somme des six égale workload.completedRequests"
+    },
+    "http": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "responseBytes"
+      ],
+      "properties": {
+        "responseBytes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "total",
+            "p50",
+            "p95",
+            "max"
+          ],
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "p50": {
+              "type": "number",
+              "minimum": 0
+            },
+            "p95": {
+              "type": "number",
+              "minimum": 0
+            },
+            "max": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "calls",
+        "peakInFlight",
+        "timeouts",
+        "latencyMs"
+      ],
+      "properties": {
+        "calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "peakInFlight": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "timeouts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "latencyMs": {
+          "$ref": "#/$defs/percentiles"
+        }
+      },
+      "description": "calls : appels à la capacité db pendant la fenêtre ; timeouts ≤ calls. Le coût par requête se recalcule (calls / workload.completedRequests), il n'est pas stocké : une grandeur dérivée stockée peut diverger de ce qu'elle dérive"
+    },
+    "cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hits",
+        "misses",
+        "coalesced",
+        "peakInFlight"
+      ],
+      "properties": {
+        "hits": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "misses": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "coalesced": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "peakInFlight": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "process": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpuUserMs",
+        "cpuSystemMs",
+        "eventLoopP99Ms",
+        "memoryMiB"
+      ],
+      "properties": {
+        "cpuUserMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "cpuSystemMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "eventLoopP99Ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "memoryMiB": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "baseline",
+            "peak",
+            "end",
+            "afterGc"
+          ],
+          "description": "quatre relevés, pas seulement le pic : la RSS ne redescend pas après GC, et seul afterGc le montre. peak ≥ baseline et peak ≥ end pour chaque grandeur (peak couvre la fenêtre qu'il prétend couvrir) ; afterGc est postérieur à la fenêtre et n'est pas borné par peak",
+          "properties": {
+            "baseline": {
+              "$ref": "#/$defs/memoire"
+            },
+            "peak": {
+              "$ref": "#/$defs/memoire"
+            },
+            "end": {
+              "$ref": "#/$defs/memoire"
+            },
+            "afterGc": {
+              "$ref": "#/$defs/memoire"
+            }
+          }
+        }
+      }
+    },
+    "correctness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "correctResponses",
+        "emptyResponses",
+        "wrongPresentation"
+      ],
+      "properties": {
+        "correctResponses": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "emptyResponses": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "wrongPresentation": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "description": "le jugement de CHAQUE réponse 2xx : correctResponses (la bonne présentation, un corps), emptyResponses (2xx sans corps), wrongPresentation (2xx d'une autre présentation). Le validateur exige correctResponses + emptyResponses + wrongPresentation === statuses.2xx : aucune 2xx ne reste non inspectée. Ce n'est pas latencyMs.n, qui compte toute requête achevée quel que soit son statut"
+    },
+    "counters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "before",
+        "after",
+        "delta"
+      ],
+      "description": "les compteurs du processus (carte : lectureSaturee.total, relaisRefuses.total, statuts…) en avant / après / delta par scénario, puisque init ne les remet pas à zéro",
+      "properties": {
+        "before": {
+          "$ref": "#/$defs/compteurs"
+        },
+        "after": {
+          "$ref": "#/$defs/compteurs"
+        },
+        "delta": {
+          "$ref": "#/$defs/compteurs"
+        }
+      }
+    },
+    "relay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fileBytes",
+        "chunkBytes",
+        "highWaterMark",
+        "consumerDelayMs",
+        "bytesTransferred",
+        "admitted",
+        "refused",
+        "descriptors"
+      ],
+      "properties": {
+        "fileBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "chunkBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "highWaterMark": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "consumerDelayMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "bytesTransferred": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "admitted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "refused": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "descriptors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "idle",
+            "peak"
+          ],
+          "properties": {
+            "idle": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "peak": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      },
+      "description": "admitted : relais passés à l'admission (le flux a commencé) ; refused : refusés à l'admission (503, Retry-After: 2, plafond maxConcurrentRelays atteint) ; admitted + refused === workload.completedRequests pour ce scénario (une requête = une tentative de relais), et refused ≤ statuses.503 ; fileBytes : taille du fichier servi, la même pour tous ; bytesTransferred ≤ admitted × fileBytes ; descriptors.peak ≥ descriptors.idle"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "complete": {
+            "const": true
+          }
+        },
+        "type": "object"
+      },
+      "then": {
+        "required": [
+          "latencyMs",
+          "statuses",
+          "http",
+          "database",
+          "cache",
+          "process",
+          "correctness",
+          "counters"
+        ]
+      },
+      "else": {
+        "properties": {
+          "failure": {
+            "properties": {
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "complete",
+          "scenario"
+        ],
+        "properties": {
+          "complete": {
+            "const": true
+          },
+          "scenario": {
+            "properties": {
+              "name": {
+                "const": "relay"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "then": {
+        "required": [
+          "relay"
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "percentiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "p50",
+        "p95",
+        "p99"
+      ],
+      "properties": {
+        "p50": {
+          "type": "number",
+          "minimum": 0
+        },
+        "p95": {
+          "type": "number",
+          "minimum": 0
+        },
+        "p99": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "percentilesEtMax": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "p50",
+        "p95",
+        "p99",
+        "max"
+      ],
+      "properties": {
+        "p50": {
+          "type": "number",
+          "minimum": 0
+        },
+        "p95": {
+          "type": "number",
+          "minimum": 0
+        },
+        "p99": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "memoire": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rss",
+        "heapUsed",
+        "external",
+        "arrayBuffers"
+      ],
+      "properties": {
+        "rss": {
+          "type": "number",
+          "minimum": 0
+        },
+        "heapUsed": {
+          "type": "number",
+          "minimum": 0
+        },
+        "external": {
+          "type": "number",
+          "minimum": 0
+        },
+        "arrayBuffers": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "compteurs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer"
+      }
+    }
+  }
+}

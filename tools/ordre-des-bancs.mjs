@@ -188,12 +188,18 @@ export function piecesDe({ fichier, r, rapport, graine, mode, racine = RACINE })
     : [];
   const messageFichier = t && typeof t.message === "string" && t.message.trim() ? premiereLigneInformative(t.message) : "";
   const stderr = String((r && r.stderr) || "").trim().split("\n").slice(-5).join(" | ");
-  const rien = !messages.length && !messageFichier && !stderr;
+  // ⚠️ UNE EXÉCUTION VERTE N'A PAS DE CAUSE À DONNER. La confirmation isolée d'un rouge peut être
+  // verte (interférence de la suite complète, instable), et la pièce lui réclamait alors un rejeu
+  // verbose « pour trouver la cause » — d'un succès. Relevé par l'audit sur la 0.1.167 (dixième
+  // passe). « Aucune cause exploitable » ne se dit que d'une exécution non verte ou incohérente :
+  // code 0 sans signal ET rapport « passed » pour ce fichier, c'est un vert, et un vert se tait.
+  const executionVerte = !!r && r.status === 0 && !r.signal && !!t && t.status === "passed";
+  const manqueCause = !executionVerte && !messages.length && !messageFichier && !stderr;
   return `${fichier} [${mode}${graine != null ? `, graine ${graine}` : ""}] code ${r && r.status}, signal ${(r && r.signal) || "aucun"}`
     + (messages.length ? ` ; échecs : ${messages.join(" ; ")}` : "")
     + (messageFichier ? ` ; message du fichier : ${messageFichier}` : "")
     + (stderr ? ` ; stderr : ${stderr.slice(0, 300)}` : "")
-    + (rien ? ` ; aucune cause exploitable dans le rapport JSON — rejouer : npx vitest run ${fichier} --reporter=verbose` : "");
+    + (manqueCause ? ` ; aucune cause exploitable dans le rapport JSON — rejouer : npx vitest run ${fichier} --reporter=verbose` : "");
 }
 
 /**

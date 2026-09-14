@@ -204,6 +204,21 @@ describe("les pièces conservées pour un rouge", () => {
     const p = piecesDe({ fichier: "a.test.js", r: { status: 1, signal: null, stderr: "" }, rapport, mode: "seul, ordre normal", racine: "/r" });
     expect(p).toMatch(/aucune cause exploitable dans le rapport JSON — rejouer : npx vitest run a\.test\.js --reporter=verbose/);
   });
+  // ⚠️ Une confirmation isolée VERTE (code 0, rapport « passed », aucun message) recevait la même
+  // recommandation : rejouer en verbose pour trouver la cause… d'un succès (audit, dixième passe).
+  it("⚠️ une exécution VERTE ne réclame ni cause ni rejeu : un succès n'a rien à expliquer", () => {
+    const rapport = { testResults: [{ name: "/r/a.test.js", status: "passed", assertionResults: [{ fullName: "a > b", status: "passed", failureMessages: [] }] }] };
+    const p = piecesDe({ fichier: "a.test.js", r: { status: 0, signal: null, stderr: "" }, rapport, mode: "seul, ordre normal", racine: "/r" });
+    expect(p).toMatch(/a\.test\.js \[seul, ordre normal\] code 0, signal aucun/);
+    expect(p).not.toMatch(/aucune cause exploitable/);
+    expect(p).not.toMatch(/rejouer/);
+  });
+  it("mais un code 0 SANS rapport pour ce fichier n'est pas un vert : la pièce réclame encore", () => {
+    const p = piecesDe({ fichier: "a.test.js", r: { status: 0, signal: null, stderr: "" }, rapport: { testResults: [] }, mode: "seul, ordre normal", racine: "/r" });
+    expect(p).toMatch(/aucune cause exploitable/);
+    const q = piecesDe({ fichier: "a.test.js", r: { status: 0, signal: "SIGKILL", stderr: "" }, rapport: { testResults: [{ name: "/r/a.test.js", status: "passed", assertionResults: [] }] }, mode: "seul, ordre normal", racine: "/r" });
+    expect(q).toMatch(/aucune cause exploitable/);
+  });
 });
 
 describe("⚠️ le verdict : une violation confirmée PRIME sur un cas non concluant", () => {

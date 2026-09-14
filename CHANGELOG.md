@@ -12,6 +12,101 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- **L'artefact de charge a un schéma, et la forge le tient.** Les bancs de charge imprimaient leur
+  relevé dans le journal de la forge, lu par un humain, jamais comparé ; un audit externe l'a dit :
+  la preuve runtime de la performance n'existe pas. Première pièce du lot : `charge/artefact.schema-1.json`
+  (`schemaVersion: 1`, JSON Schema 2020-12), la structure spécifiée par l'audit prise à la lettre —
+  identité, environnement, scénario, générateur mesuré (`workload`, contre l'omission coordonnée),
+  isolation, fenêtre de mesure, latences, statuts, base, cache, processus avec quatre relevés
+  mémoire (`baseline`, `peak`, `end`, `afterGc`), exactitude, compteurs du processus en
+  avant/après/delta, bloc `relay` exigé pour ce scénario quand la course est allée au bout ;
+  `complete: false` avec sa raison quand elle s'arrête, et alors aucun bloc de mesure n'est exigé.
+  Écarts à sa lettre, dits : `scenario.position` et `scenario.sequence` portent l'ordre
+  d'exécution que son protocole demande d'enregistrer ; ses deux emplacements pour le plafond
+  mémoire sont réunis en `environment.memoryLimitMiB` + `memoryLimitSource` ; le modèle d'arrivée
+  (`open-loop|closed-loop`) et la forme du trafic (`uniform|jittered|burst`) sont deux axes, pas une
+  énumération ; les statuts sont **disjoints** (`2xx`, `429`, `other4xx`, `503`, `other5xx`,
+  `other`) ; `scenario.requests`, qui doublait `workload`, est retiré. **Doctrine de version** : un
+  schéma est immuable dès le premier artefact publié sous son numéro, toute clé ou sémantique
+  nouvelle fait un schéma suivant, le validateur choisit le schéma par `schemaVersion` — la
+  première rédaction promettait des ajouts optionnels sans changement de numéro sur des objets
+  fermés, deux promesses qu'on ne peut pas tenir ensemble (audit, onzième passe).
+- **Le validateur compile le schéma en entier et tient ce que le schéma ne sait pas dire.**
+  `tools/artefact-de-charge.mjs` compile chaque schéma avec `ajv` (2020-12, mode strict, dépendance
+  de développement épinglée) avant tout artefact : mot-clé inconnu, référence non résolue, motif
+  incompilable, `required` ou `enum` qui ne sont pas des listes, `type` inconnu rendent la garde
+  non concluante, même dans une branche qu'aucun exemple ne matérialise — un validateur maison d'un
+  sous-ensemble de JSON Schema avait été tenté d'abord, et un audit y a trouvé deux fois le même
+  jour une branche qu'il ne lisait pas (un mot-clé sauté, puis un `$ref` externe jamais résolu) ; un
+  parcours préalable ne subsiste que pour donner le chemin des trois défauts qu'`ajv` nomme sans
+  chemin. Puis la forme, chaque champ obligatoire absent nommé par son chemin, toute clé hors schéma
+  refusée ; puis les **invariants entre nombres** : `complete: true` sans raison d'échec, durée
+  positive, au moins 1 000 observations, `sequence[position − 1] === spectators`,
+  `scheduled ≥ started ≥ completed === latencyMs.n`, quantiles ordonnés, `min ≤ mean ≤ max`,
+  `timeouts ≤ calls`, pic mémoire ≥ départ et ≥ fin, classes d'histogramme fixes (`edges[0] = 0`,
+  strictement croissantes, `[a, b)`, une classe `overflow` ouverte, `counts + overflow = n`) sous un
+  `binSetId` **dérivé** des bornes et recalculé, `delta = after − before`, plafond mémoire `null` si
+  et seulement si sa source est `unknown`, statuts disjoints sommant à `completedRequests`, chaque
+  2xx jugée (`correctResponses + emptyResponses + wrongPresentation = 2xx`), relais
+  (`admitted + refused = completedRequests`, `refused ≤ 503`, `bytesTransferred ≤ admitted ×
+  fileBytes`, `descriptors.peak ≥ idle`). Les grandeurs dérivables (`throughputRps`,
+  `database.callsPerRequest`) ne sont **pas stockées** : elles se recalculent. Et la **cohorte** :
+  complète (positions exactement `1..n`, tous complets) ou interrompue (préfixe continu, dernier
+  `complete: false`, rien après), constantes nommées (`runId`, commit, version, empreinte du schéma,
+  environnement entier, scénario, modèle et forme d'arrivée, isolation), variables d'échelle
+  nommément exclues, même `binSetId` ⇒ mêmes bornes. Chaque artefact porte `identity.schemaSha256`,
+  l'empreinte canonique du schéma sous lequel il a été produit, exigée égale à celle du schéma
+  appliqué ; et `charge/artefacts/ancres.json` nommera, au premier artefact publié, le tag de cette
+  publication : la garde relit le schéma **à ce tag** et le confronte, empreinte contre empreinte —
+  l'immuabilité se prouve hors de la copie courante. Un corpus de deux formes (minimal complet aux
+  nombres cohérents, incomplet) est le test de compatibilité ; toutes les clés du schéma 1 sont
+  figées dans un banc. Dix mutants sur l'artefact. Les vrais artefacts ne vivront pas dans le
+  dépôt : ils seront attachés aux releases.
+- **Le producteur d'artefact, et le premier `100 → 1 000 → 100`.** `charge/rapport.js` est un
+  programme, pas un banc : il rend un document même quand la course échoue. Il joue la séquence
+  dans un seul processus, contre le vrai PostgREST de la forge, sur le scénario `state-hot`
+  (`GET ?present=&state=1`, la lecture que mille spectateurs font toutes les 25 secondes) — une
+  présentation par position, sa page égale à son rang pour qu'un état venu d'ailleurs soit
+  détectable, un préchauffage hors mesure, puis un générateur en **boucle ouverte** avec gigue dont
+  le retard est mesuré (un générateur saturé fabriquerait de bons percentiles) ; il relève latences
+  et histogramme à classes fixes, statuts disjoints, octets, appels et pic en vol de la base par une
+  sonde sur la couture, servies / regroupées / produites du cache de lecture (compteurs nouveaux de
+  `server/cache.js`, avec leur banc), CPU, retard de boucle p99, quatre relevés mémoire avec un vrai
+  GC (`--expose-gc` exigé, sinon la position échoue et le dit), et les compteurs de la carte en
+  avant / après / delta. Un artefact par position, jugés en cohorte par la garde avant d'être
+  attachés au run de la forge ; une position qui échoue laisse son `complete: false` et arrête la
+  course. Banc de bout en bout contre le double PostgREST en mémoire (deux positions, mille
+  observations chacune, cohorte acceptée ; une position cassée, artefact interrompu, code 1).
+  Quatre mutants.
+
+### Fixed
+
+- **La garde d'ordre réclamait une cause à une exécution verte.** La confirmation isolée d'un rouge
+  peut être verte (interférence de la suite complète, instable), et sa pièce disait « aucune cause
+  exploitable — rejouer en verbose » : un rejeu pour trouver la cause d'un succès (audit, dixième
+  passe, sur la 0.1.167). « Aucune cause exploitable » ne se dit plus que d'une exécution non verte
+  ou incohérente : code 0 sans signal et rapport « passed », c'est un vert, et un vert se tait. Banc
+  vert sans message, banc « code 0 sans rapport » qui réclame encore ; mutant.
+
+### Changed
+
+- **La zone `context` dit qui l'exécute.** Une note de version a écrit à un hôte que le contexte
+  autonome était « sans effet chez vous : vous fournissez votre contexte », alors qu'il exécute
+  `context/standalone.js` tel quel depuis août et l'avait dit trois fois (ADV, 14/09). Le libellé de
+  la zone et le contrat disent que la ligne de partage est la forme du câblage, lue **par capacité**
+  et non par hôte : le contexte autonome tel quel reçoit toute la zone, et son `errors.capture` est
+  celui du lecteur ; un contexte composé depuis `createStandaloneContext` (l'exemple Vercel du dépôt)
+  reçoit chaque capacité héritée et aucune remplacée ; un contexte qui n'importe rien de `context/`
+  n'est touché que par `server/`. La première version de cette règle était binaire ; l'audit a
+  montré le troisième cas dans le dépôt lui-même. La forme de chaque hôte est la ligne dont les
+  notes sont écrites.
+- Le contrat dit que la borne de temps d'une capacité doit couvrir le **corps**, pas seulement les
+  en-têtes : `fetch` se règle aux en-têtes et `response.text()` se fige sur un flux resté ouvert, un
+  délai qui s'arrête aux en-têtes ne borne que la moitié du chemin ; le même `AbortSignal` passé au
+  `fetch` couvre les deux. Règle d'un hôte (STUDIO, 13/09), qui l'avait trouvée chez lui.
+
 ## [0.1.167] — 2026-09-14
 
 ### Fixed

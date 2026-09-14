@@ -11,3 +11,7 @@ dist/
 
 # Tarball produit par `npm pack` (la preversion de la demo installe le commit, pas le registre).
 discovery-media-player-*.tgz
+
+# Artefacts de charge produits localement (`node --expose-gc charge/rapport.js`) : la forge les
+# attache à ses runs, jamais au dépôt.
+charge/artefacts/sortie/

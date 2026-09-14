@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "complete": false,
+  "failure": {
+    "phase": "load-1000",
+    "reason": "exemple — la course s'est arrêtée avant la mesure ; l'artefact existe quand même, pour qu'une absence ne ressemble jamais à un banc réussi"
+  },
+  "identity": {
+    "commitSha": "0000000000000000000000000000000000000000",
+    "packageVersion": "0.0.0",
+    "timestamp": "2026-09-14T00:00:00Z",
+    "runId": "exemple-incomplet — une FORME, pas une mesure",
+    "schemaSha256": "ef61e9e95b5f158faf0de41e088efddcca2519bed0f19b6830fbf15bb4d02a8b"
+  },
+  "environment": {
+    "node": "",
+    "os": "",
+    "arch": "",
+    "cpuCount": 1,
+    "memoryLimitMiB": null,
+    "memoryLimitSource": "unknown",
+    "postgresVersion": "",
+    "postgrestVersion": ""
+  },
+  "scenario": {
+    "name": "state-cold",
+    "spectators": 1000,
+    "presentations": 0,
+    "repetition": 1,
+    "position": 2,
+    "sequence": [
+      100,
+      1000,
+      100
+    ],
+    "warmupRequests": 0,
+    "maxInFlight": 0,
+    "egressIps": 0
+  },
+  "workload": {
+    "arrivalModel": "open-loop",
+    "scheduledRequests": 0,
+    "startedRequests": 0,
+    "completedRequests": 0,
+    "generatorLagMs": {
+      "p50": 0,
+      "p95": 0,
+      "p99": 0,
+      "max": 0
+    },
+    "arrivalPattern": "jittered"
+  },
+  "isolation": {
+    "processReused": true,
+    "databaseReset": true,
+    "cacheReset": true,
+    "metricsReset": false,
+    "countersReportedAsDeltas": true,
+    "datasetId": "exemple-2"
+  },
+  "measurementWindow": {
+    "startedAt": "2026-09-14T00:00:00Z",
+    "durationMs": 0,
+    "processUptimeStartMs": 0,
+    "processUptimeEndMs": 0
+  }
+}
