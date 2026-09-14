@@ -12,6 +12,36 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Fixed
+
+- ⚠️ **Une boucle de réessai sortait par épuisement exactement comme par succès, et ça a coûté une
+  publication.** Le 14/09, la 0.1.168 est partie sur le registre sans sa Release, son SBOM ni
+  l'attestation de son archive. Le test de fumée attendait que le registre serve la version fraîche
+  — vingt tentatives de six secondes — et la version est devenue installable **vingt-cinq secondes
+  après** l'abandon de la boucle ; celle-ci est sortie sans rien dire, le `npm i` qui suivait portait
+  `--silent` et a échoué sans un mot, et la course est morte après cent vingt-cinq secondes de
+  silence complet, sautant `attester` et `annoncer`. Un hôte (ADV) a nommé la forme : « ce n'est pas
+  un défaut d'attente, c'est une garde qui échoue **ouvert** — épuiser les tentatives est traité
+  comme un succès ; une boucle de réessai a trois sorties, pas deux : réussi, refusé, et j'ai
+  renoncé, et la troisième est un échec ». Trois correctifs et une garde : l'attente passe à quatre
+  minutes **et** avoue son abandon, l'installation cesse d'être muette, et `tools/boucles-de-reessai.mjs`
+  tient la règle pour les sept boucles de réessai des workflows — après le `done`, un `::error::` qui
+  nomme ce qui n'est jamais venu, ou le rejeu du test. Les deux autres boucles qui sortaient muettes
+  (image en CI, player sous scan ZAP) sont corrigées avec. Non concluant quand la sonde ne voit
+  aucune boucle : zéro n'est pas une conformité. Deux mutants — dont celui qui cherche l'aveu
+  n'importe où dans le bloc, la première version de cette sonde, verte sur le défaut qu'elle
+  cherchait parce que le bloc fautif portait deux `::error::` plus bas, à propos d'autre chose.
+- ⚠️ **Les preuves d'un paquet publié ne dépendent plus d'un test postérieur à sa publication.**
+  `attester` — SBOM, attestation de l'archive — dépendait de `eprouver`, le test de fumée. Un échec
+  de propagation du registre a donc emporté des preuves qui portent sur des octets déjà partis :
+  pendant trois minutes et demie, le paquet était installable sans que la Release, le SBOM ni le
+  bundle Sigstore existent. Retenir ces preuves ne protège personne et prive de moyens de
+  vérification exactement ceux qui installent pendant ce créneau. `attester` dépend désormais de
+  `publier` ; `eprouver` reste une garde dont le rouge rougit la course. ⚠️ La provenance SLSA de
+  npm, elle, est atomique avec la publication — horodatée deux secondes avant que `npm publish`
+  rende la main — et n'a jamais manqué : c'est l'essentiel, et la distinction compte pour qui évalue
+  le risque de ce créneau. Défaut d'ordonnancement nommé par un hôte (ADV, 14/09).
+
 ## [0.1.168] — 2026-09-14
 
 ### Added

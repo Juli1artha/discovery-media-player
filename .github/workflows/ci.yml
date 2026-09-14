@@ -435,6 +435,18 @@ jobs:
       # matérialise), relit au tag l'ancre de tout schéma déjà publié, éprouve le corpus (un artefact
       # minimal, un `complete: false`) en forme ET en invariants entre nombres, et refuse toute clé
       # qui n'est pas écrite. Non concluant sans corpus.
+      # ── UNE BOUCLE DE RÉESSAI A TROIS SORTIES, PAS DEUX ──────────────────────────────────────
+      # ⚠️ Écrite après un incident daté : la publication de la 0.1.168 a laissé le paquet parti et
+      # la Release absente, parce qu'une boucle attendant le registre est sortie par ÉPUISEMENT
+      # exactement comme par succès — vingt-cinq secondes avant que la version devienne installable.
+      # « Ce n'est pas un défaut d'attente, c'est une garde qui échoue ouvert » (un hôte, 14/09).
+      # Cette garde tient la règle pour toute boucle de réessai des workflows : après son `done`, un
+      # `::error::` qui nomme ce qui n'est jamais venu, ou le rejeu du test. Non concluant si elle
+      # n'en voit aucune — zéro boucle relevée n'est pas une conformité.
+      - name: Every retry loop says when it gave up
+        if: matrix.node == '22'
+        run: node tools/boucles-de-reessai.mjs
+
       - name: Every load artefact validates against its schema, and the schema cannot widen in silence
         if: matrix.node == '22'
         run: node tools/artefact-de-charge.mjs
@@ -1903,6 +1915,8 @@ jobs:
         run: |
           docker run -d --name player-ci -p 3000:3000 player:ci
           for i in $(seq 1 30); do curl -fsS localhost:3000/healthz && break || sleep 1; done
+          curl -fsS localhost:3000/healthz >/dev/null \
+            || { echo "::error::l'image n'a jamais répondu sur /healthz en 30 s — sans cet aveu, l'abandon de la boucle se lirait comme un démarrage réussi"; docker logs player-ci; exit 1; }
           curl -fsS "localhost:3000/api/doc?contract=1" | grep -q '"contract":1'
           docker rm -f player-ci
 

@@ -370,15 +370,28 @@ jobs:
       - name: The published package renders and its scripts compile
         run: |
           V=$(node -p 'require("./package.json").version')
-          # Le registre met quelques instants à servir une version fraîche.
-          for i in $(seq 1 20); do npm view "discovery-media-player@$V" version >/dev/null 2>&1 && break || sleep 6; done
+          # ⚠️ LE REGISTRE MET DU TEMPS, ET LA BOUCLE DOIT DIRE QU'ELLE A RENONCÉ. Le 14/09, la
+          # 0.1.168 est devenue installable à 21:39:33 — deux minutes trente-huit après que
+          # `npm publish` eut rendu la main, et VINGT-CINQ SECONDES après que cette boucle, alors
+          # bornée à 120 s, eut abandonné. Elle sortait par épuisement exactement comme par succès,
+          # le `npm i` qui suivait échouait sans un mot (il portait `--silent`), et la course mourait
+          # après cent vingt-cinq secondes de silence complet, sautant `attester` et `annoncer`.
+          # Quatre minutes plutôt que deux ; et surtout, l'épuisement est désormais un ÉCHEC NOMMÉ.
+          # « Une boucle de réessai a trois sorties, pas deux : réussi, refusé, et j'ai renoncé ; la
+          # troisième doit être un échec » — la formulation est d'un hôte (ADV), la règle est tenue
+          # pour tous les workflows par `tools/boucles-de-reessai.mjs`.
+          for i in $(seq 1 40); do npm view "discovery-media-player@$V" version >/dev/null 2>&1 && break || sleep 6; done
+          npm view "discovery-media-player@$V" version >/dev/null 2>&1 \
+            || { echo "::error::le registre ne sert toujours pas discovery-media-player@$V après 240 s — le paquet EST publié ; ce test ne peut pas l'éprouver, et ce silence ne doit pas se lire comme un succès"; exit 1; }
           mkdir -p /tmp/fume && cd /tmp/fume && npm init -y >/dev/null
           # ⚠️ CE `npm i` DEPUIS LE REGISTRE RESTE NON ÉPINGLÉ EN CONNAISSANCE DE CAUSE (Scorecard
           # le signale) : ce test de fumée éprouve précisément CE QUE LE REGISTRE SERT aux vrais
           # consommateurs, minutes après la publication. L'épingler par un lockfile local
           # reviendrait à éprouver notre copie plutôt que la leur — et l'empreinte, elle, est déjà
           # confrontée ailleurs : le job attester refuse si le sha512 du registre diffère du build.
-          npm i "discovery-media-player@$V" --silent
+          # ⚠️ PAS `--silent` : il avale AUSSI les erreurs. Le 14/09, c'est ce drapeau qui a fait
+          # qu'un 404 du registre n'a laissé aucune trace. `--loglevel=error` se tait quand tout va.
+          npm i "discovery-media-player@$V" --loglevel=error
           node -e '
             const vm = require("node:vm");
             const P = "/tmp/fume/node_modules/discovery-media-player";
@@ -442,8 +455,17 @@ jobs:
   # écriture, et c'est ce qui l'empêche d'exécuter les scripts d'installation des dépendances.
   # Vérifié aussi : la reproduction tient sans eux. Reste la construction elle-même, qui est le
   # code du dépôt — la même chose que `publier` fait déjà sous un droit de même classe.
+  # ⚠️ DÉPEND DE `publier`, PLUS DE `eprouver`, ET C'EST UNE CORRECTION D'ORDONNANCEMENT, PAS UN
+  # RELÂCHEMENT. Le 14/09, le test de fumée a échoué pour une raison de PROPAGATION DU REGISTRE —
+  # sans rapport avec les octets — et il a emporté avec lui le SBOM, l'attestation de l'archive et la
+  # Release. Or ces preuves portent sur un paquet DÉJÀ PUBLIÉ : les retenir ne protège personne, et
+  # prive de moyens de vérification exactement ceux qui installent pendant ce créneau. La provenance
+  # SLSA de npm, elle, est atomique avec la publication (horodatée 21:36:53, deux secondes avant que
+  # `npm publish` rende la main) : c'est l'essentiel, et il n'a jamais manqué. Le reste ne doit pas
+  # être otage d'un contrôle postérieur. `eprouver` reste une vraie garde : son rouge rougit la
+  # course, il ne retient plus les preuves. Défaut d'ordonnancement nommé par un hôte (ADV, 14/09).
   attester:
-    needs: eprouver
+    needs: publier
     runs-on: ubuntu-latest
     permissions:
       contents: read
