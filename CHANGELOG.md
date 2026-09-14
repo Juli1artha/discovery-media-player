@@ -38,6 +38,12 @@ the notes there are this file's section for that version.
   ne la sauve : un processus au repos depuis une semaine pèse autant qu'un processus né il y a une
   minute, seule une lecture sous charge dit quelque chose) et échantillon (`boucleMs`, qui rend
   `null` tant qu'il n'a rien vu et se sauve tout seul). C'est l'hôte qui a dressé le tableau.
+- Le contrat dit aussi que l'échantillonnage externe d'un compteur de processus **hérite** de la
+  fenêtre au lieu de la rattraper — calcul de l'hôte : un cron quotidien sur des fenêtres de 15 s
+  observe 0,017 % de l'année, un cron horaire 0,42 % — et que la seule forme qui marcherait sur du
+  serverless est une poussée à la fin du processus, que le lecteur ne fait pas et qu'aucune
+  plate-forme ne garantit. La limite est écrite avec son issue, pour que personne ne construise
+  l'échantillonneur d'abord.
 - Deux textes contredisaient la mesure : « une chaîne est refusée » (alors que `"45000"` passe) devient
   « une chaîne qui n'est pas un entier dans la plage » ; « la RSS passe de 130 à 194 Mio » (dans les
   types et un nom de banc) redevient ce qui a été mesuré — de 63 à 193–257 Mio, une croissance de 130

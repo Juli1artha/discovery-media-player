@@ -246,7 +246,15 @@ the last quarter of a minute*, which is almost no information, and these counter
 never accumulate more than a cold start's lifetime. This is not a defect of the field — on a
 long-lived process it says what it should — it is a limit of applicability, and `fenetreS` is the
 key that reveals it. So the reading order is: `fenetreS`, then `total`; and a fleet of short windows
-is a fact about your hosting to aggregate on your side (or to sample over time), never a reassurance.
+is a fact about your hosting, never a reassurance. ⚠️ **And sampling from outside does not repair a
+short window — it inherits it.** A host did the arithmetic (14/09): a daily cron reading a counter
+whose window is ~15 s observes 15 × 365 = 5 475 seconds a year out of 31 536 000, 0.017 % of the
+time; an hourly one, 0.42 %. A `total: 0` collected 365 times a year says exactly what it says once,
+with the added look of a time series — the credibility of a surveillance without the surveillance.
+The only form that would work on serverless is a **push at the end of the process**, because the
+process is the one entity that knows its own total and it dies without saying it. The player does
+not do that today, and no serverless platform guarantees a hook to do it in; this paragraph states
+the limit with its way out, so that nobody builds the sampler first.
 The same applies to `relaisRefuses` below and to the **counters** under `mesures` (`statuts`,
 `routes`, `base`).
 
