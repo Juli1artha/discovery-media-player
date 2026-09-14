@@ -61,3 +61,25 @@ après la campagne de charge, sur le même runner, et attache la sortie à son r
 
 Les vrais artefacts ne vivent pas dans ce dépôt : ils sont attachés aux runs de la forge, puis aux
 releases. La rétention des artefacts de la forge est temporaire ; une release ne l'est pas.
+
+**Comment ils arrivent sur une release — et pourquoi ils n'y sont pas refaits.** Le job `attester`
+retrouve la course CI **verte du commit taggué** (`gh run list --commit $(git rev-parse HEAD)
+--workflow CI`), en télécharge l'artefact `artefacts-de-charge`, **rejuge la cohorte entière** avec
+`tools/artefact-de-charge.mjs`, et ne recopie les fichiers dans le paquet qu'ensuite, sous
+`discovery-media-player-<version>-charge-<position>-<spectateurs>.json`. Rejouer la mesure dans le
+workflow de sortie aurait été plus simple et aurait été **faux** : autre runner, autre instant,
+autre base de données — deux séries pour un même point, et rien pour départager. Un banc l'interdit
+(`tools/__tests__/releaseFichiersAttaches.test.js`), et un mutant le tient.
+
+**La mesure est *dite*, pas *exigée*, et c'est le seul actif de la release dans ce cas.** Les quatre
+autres — l'archive, son condensat, sa signature, son SBOM — arrêtent la sortie s'ils manquent. La
+mesure, non : elle n'existe que pour les commits dont la CI l'a produite, et un rejeu par
+`workflow_dispatch` sur un tag antérieur au producteur — c'est-à-dire exactement la sortie que le
+dispatch existe pour rattraper — n'en a aucune. L'exiger bloquerait ces rattrapages. Mais son
+absence n'est **jamais silencieuse** : un avertissement dans la course, et un paragraphe dans le
+corps de la Release qui dit laquelle des deux raisons s'applique — tag antérieur au producteur, ou
+artefact de course expiré. Le silence était le défaut du 22/08, pas l'absence.
+
+⚠️ **Un artefact récupéré mais non jugeable arrête la sortie.** Si la course a bien livré des
+artefacts et que le tag ne porte pas leur validateur, le job échoue : on n'attache pas une mesure
+qu'on ne peut pas juger. C'est le cas où l'absence serait *moins* grave que la présence.
