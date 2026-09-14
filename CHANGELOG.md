@@ -12,6 +12,18 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Changed
+
+- Le contrat dit de lire `fenetreS` **avant** `total`, et pourquoi : sur du serverless, le
+  processus est l'unité qui meurt, et les compteurs de processus (`lectureSaturee`,
+  `relaisRefuses`, `mesures`) ne peuvent jamais accumuler plus que la vie d'un démarrage à froid.
+  Un hôte (ADV) a lu ses deux domaines à quelques minutes d'écart : fenêtres de 15 et 19 s, puis 4
+  et 7 s — `total: 0` y dit « rien depuis un quart de minute », presque aucune information. Limite
+  d'applicabilité, pas défaut du champ ; écrite à côté du champ.
+- `server/bornes.js` dit que la coercition qui fabrique une valeur plausible n'est pas propre aux
+  booléens (`Number(null)` et `Number("")` valent 0) et que l'ordre des opérations est le remède :
+  l'absence est écartée avant toute conversion. Remarque d'un hôte qui l'avait payée six fois.
+
 ## [0.1.166] — 2026-09-14
 
 ### Added

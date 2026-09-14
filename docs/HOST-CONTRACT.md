@@ -238,6 +238,17 @@ saturate*; on a process that started four seconds ago it says *nobody has looked
 same trap as `inconnu` in the two rows above, and the reason the three keys are returned as one
 object rather than as separate fields you could read apart.
 
+⚠️ **Read `fenetreS` first — and on serverless, expect it to stay short.** Every counter on this
+card belongs to the process, and on a serverless platform the process is the unit that dies: a host
+read its two domains a few minutes apart and got windows of 15 s and 19 s, then 4 s and 7 s — the
+processes had been recycled in between (14/09). There, `total: 0` over 15 seconds means *nothing in
+the last quarter of a minute*, which is almost no information, and these counters can structurally
+never accumulate more than a cold start's lifetime. This is not a defect of the field — on a
+long-lived process it says what it should — it is a limit of applicability, and `fenetreS` is the
+key that reveals it. So the reading order is: `fenetreS`, then `total`; and a fleet of short windows
+is a fact about your hosting to aggregate on your side (or to sample over time), never a reassurance.
+The same applies to `relaisRefuses` below and to everything under `mesures`.
+
 ⚠️ **It is process-local.** Behind a load balancer this is the count of the instance that answered,
 not of your deployment. Aggregating is your job — and letting you believe otherwise would be worse
 than returning nothing.
