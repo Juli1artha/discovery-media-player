@@ -86,6 +86,8 @@ jobs:
           for i in $(seq 1 30); do
             curl -fsS localhost:3000/healthz >/dev/null 2>&1 && break; sleep 2
           done
+          curl -fsS localhost:3000/healthz >/dev/null 2>&1 \
+            || { echo "::error::le player sous scan n'a jamais répondu sur /healthz en 60 s — un scan qui commence sur un service mort mesure le vide"; docker logs player; exit 1; }
           # ⚠️ UN SCAN D'UN 404 EST VERT ET VIDE — le pire cas, celui que toutes les gardes d'ici
           # refusent. Chaque surface doit répondre 200 AVANT d'être scannée ; et c'est aussi la
           # confrontation des slugs : écrits ici ET dans la graine, deux exemplaires d'un fait,

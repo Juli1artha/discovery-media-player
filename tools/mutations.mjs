@@ -473,6 +473,22 @@ export const MUTANTS = [
     bancs: ["tools/__tests__/artefactDeCharge.test.js"],
   },
   {
+    id: "boucle-de-reessai-aveu-cherche-partout-dans-le-bloc",
+    fichier: "tools/boucles-de-reessai.mjs",
+    avant: "      aveu: suivante.includes(\"::error::\") || rejoue,",
+    apres: "      aveu: lignes.some((l) => l.includes(\"::error::\")) || rejoue,",
+    pourquoi: "le bloc fautif du 14/09 portait deux `::error::` plus bas, dans le script qu'il lance, à propos d'autre chose : chercher la chaîne n'importe où rend vert sur le défaut même que cette garde existe pour trouver",
+    bancs: ["tools/__tests__/bouclesDeReessai.test.js"],
+  },
+  {
+    id: "boucle-de-reessai-sur-une-ligne-non-vue",
+    fichier: "tools/boucles-de-reessai.mjs",
+    avant: "      if (vuDo && ferme && profondeur <= 0) { fin = j; break; }",
+    apres: "      if (vuDo && ferme && profondeur <= 0 && j > i) { fin = j; break; }",
+    pourquoi: "`for … ; do … done` sur UNE ligne est la forme exacte de l'incident ; exiger que le `done` soit sur une ligne ultérieure fait rater quatre boucles sur sept, dont celle qui a coûté la publication",
+    bancs: ["tools/__tests__/bouclesDeReessai.test.js"],
+  },
+  {
     id: "rapport-borne-d-histogramme-inclusive-en-haut",
     fichier: "charge/rapport.js",
     avant: "    while (i > 0 && v < edges[i]) i -= 1;",

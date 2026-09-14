@@ -33,6 +33,24 @@ function job(nom) {
   return suite === -1 ? texte.slice(debut) : texte.slice(debut, debut + 1 + suite);
 }
 
+/** Les `needs` déclarés d'un job, en liste — que la forme soit `needs: x` ou `needs: [x, y]`. */
+function needsDe(nom) {
+  const m = /^\s*needs:\s*(.+)$/m.exec(job(nom));
+  if (!m) return [];
+  return m[1].replace(/[[\]]/g, "").split(",").map((x) => x.trim()).filter(Boolean);
+}
+
+/** `nom` est-il ACCESSIBLE depuis `racine` en remontant les `needs` ? La propriété, pas la forme. */
+function derriere(nom, racine, vus = new Set()) {
+  for (const parent of needsDe(nom)) {
+    if (parent === racine) return true;
+    if (vus.has(parent)) continue;
+    vus.add(parent);
+    if (derriere(parent, racine, vus)) return true;
+  }
+  return false;
+}
+
 describe("le run qui attesterait un autre commit que le tag est refusé avant tout artefact", () => {
   it("verifier confronte le commit du run au commit du tag, et sort en 1 sur divergence", () => {
     const verifier = job("verifier");
@@ -44,12 +62,28 @@ describe("le run qui attesterait un autre commit que le tag est refusé avant to
     expect(verifier).toMatch(/if \[ "\$sha_du_tag" != "\$GITHUB_SHA" \][\s\S]{0,400}exit 1/);
   });
 
-  it("la chaîne needs donne autorité au refus : publier → eprouver → attester derrière verifier", () => {
-    // Détacher un maillon (attester sans eprouver, eprouver sans publier…) laisserait le garde
-    // vert et l'attestation libre — la mutation exacte que ce test rend rouge.
-    expect(job("publier")).toMatch(/needs:\s*verifier/);
-    expect(job("eprouver")).toMatch(/needs:\s*publier/);
-    expect(job("attester")).toMatch(/needs:\s*eprouver/);
+  it("la chaîne needs donne autorité au refus : tout job qui produit passe DERRIÈRE verifier", () => {
+    // Détacher un maillon laisserait le garde vert et l'attestation libre — la mutation exacte que
+    // ce test rend rouge. ⚠️ Ce qui compte est l'ACCESSIBILITÉ depuis `verifier`, pas une chaîne
+    // littérale : ce banc figeait « publier → eprouver → attester » et il a rougi le jour où
+    // `attester` a été rebranché sur `publier` — un changement qui RENFORCE la propriété visée
+    // (attester reste derrière verifier) tout en cessant de faire dépendre les preuves d'un test
+    // postérieur à la publication. Un banc qui fige une forme au lieu de sa propriété refuse aussi
+    // les corrections. Il vérifie donc la propriété, et le maillon retiré a son propre essai.
+    for (const nom of ["publier", "eprouver", "attester", "annoncer"]) {
+      expect(derriere(nom, "verifier"), `${nom} n'est plus derrière verifier`).toBe(true);
+    }
+  });
+
+  it("⚠️ attester ne dépend PAS de eprouver : une preuve d'octets publiés n'est pas otage d'un test qui court APRÈS la publication", () => {
+    // Le 14/09, `eprouver` a échoué sur une propagation de registre — sans rapport avec les octets —
+    // et a emporté le SBOM, l'attestation et la Release. Pendant trois minutes et demie, le paquet
+    // était installable sans qu'aucun de ces moyens de vérification n'existe. Les retenir ne protège
+    // personne : ceux qui installent alors sont précisément ceux à qui on les refuse. (Un hôte, ADV.)
+    expect(needsDe("attester")).not.toContain("eprouver");
+    expect(needsDe("attester")).toContain("publier");
+    // Et `eprouver` reste une garde : son rouge rougit la course, il ne retient plus les preuves.
+    expect(needsDe("eprouver")).toContain("publier");
   });
 
   it("l'attestation vit dans attester, et nulle part ailleurs", () => {
