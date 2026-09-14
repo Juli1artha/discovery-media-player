@@ -52,6 +52,10 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- Le contrat dit qu'un dépôt d'hôte ne doit pas vivre dans un dossier synchronisé, et que sortir
+  seulement `node_modules` par un lien symbolique est un cul-de-sac (`npm` le remplace par un vrai
+  dossier, à `install` comme à `ci`). Rapporté par un hôte (STUDIO, quatre casses en six jours dans
+  iCloud Drive), non reproduit ici — écrit pour que personne n'ait à le retrouver.
 - ⚠️ **Le tableau des zones a une zone `pages`** : `server/page-*.js`, `server/gabarit-*.js` et les
   deux bundles générés — le HTML et le JavaScript de la page des spectateurs. « `browser` : 0 » a été
   lu six trains de suite par un hôte comme « rien ne change pour nos visiteurs » ; c'était vrai de
