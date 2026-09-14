@@ -33,14 +33,21 @@ the notes there are this file's section for that version.
   la borne et cite ce qu'il a reçu ; les types disent qu'une chaîne est acceptée. Banc sur le chemin
   autonome complet, pas seulement sur `entierBorne`. Mutant.
 
-- ⚠️ **La garde d'ordre des bancs concluait le rejeu individuel sur le code de sortie seul.** Le
-  rapport JSON servait au mélange, mais « passe-t-il seul ? » se décidait par `r.status === 0` : un
-  harnais qui sort en non-zéro après avoir écrit un rapport vert devenait un « rouge préalable », et
-  la garde rendait non concluant sur du code sain — six fichiers chez l'audit, 6/6 verts à la main
-  (septième passe). `classerRejeu` confronte le rapport au processus : vert + 0 passe seul, rouge +
-  non-zéro est un rouge préalable, tout désaccord (vert + non-zéro, rouge + 0, rapport absent ou sans
-  le fichier) est dit avec ses pièces — fichier, code, signal, statuts du rapport, fin de stderr — et
-  ne classe jamais. Banc : un rapport vert avec un processus en 1 n'alimente jamais `dejaRouges`.
+- ⚠️ **La garde d'ordre des bancs concluait sur le code de sortie seul, et son contrôle était
+  contaminé par le stimulus.** Trois défauts, trouvés par l'audit sur deux passes. Le rejeu individuel
+  se décidait par `r.status === 0` (septième passe) ; la première correction ne confrontait que les
+  rejeux, et l'exécution mélangée initiale rendait encore « conforme » sur un rapport vert écrit puis
+  un processus en 1, tandis que `status: null` (tué par signal) passait pour un code non nul
+  concordant (huitième passe). `confronterExecution` est la seule confrontation, pour toute exécution
+  de vitest : tout vert + 0 + aucun signal → vert ; un rouge + code entier non nul + aucun signal →
+  rouge ; tout le reste — `null`, signal, vert + non-zéro, rouge + 0, rapport absent, vide ou
+  incomplet — non concluant, avec ses pièces. Et un contrôle exécuté juste après la suite lourde
+  rougissait d'épuisement, pas d'ordre : six fichiers « déjà rouges » chez l'audit, 6/6 verts
+  quelques instants plus tard. Chaque rouge reçoit désormais **deux confirmations isolées** — seul en
+  ordre normal, seul mélangé sous la même graine — et une table ne conclut « dépendance » que sur
+  vert/rouge ; vert/vert est une interférence de la suite complète (non concluant, pas une accusation),
+  rouge/vert est instable. Les pièces de chaque rouge sont conservées : messages d'échec du rapport,
+  code, signal, fin de stderr, graine, mode. Quatre mutants.
 
 ### Changed
 

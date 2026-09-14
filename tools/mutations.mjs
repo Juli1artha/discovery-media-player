@@ -341,9 +341,30 @@ export const MUTANTS = [
   {
     id: "ordre-rejeu-classe-par-le-code-de-sortie-seul",
     fichier: "tools/ordre-des-bancs.mjs",
-    avant: "  if (vert && code === 0) return { classe: \"passe-seul\" };",
-    apres: "  if (code === 0) return { classe: \"passe-seul\" }; if (code !== 0) return { classe: \"rouge-prealable\" };",
+    // ⚠️ Recible : depuis `confronterExecution`, la dernière ligne de `classerRejeu` ne voit plus que des
+    // exécutions concordantes — muter là était ÉQUIVALENT (survivant à la huitième passe, à raison).
+    // La propriété vit dans le renvoi du non-concluant : l'ignorer fait retomber un rapport vert + code 1
+    // dans « rouge préalable », exactement le cas de l'audit.
+    avant: "  if (e.etat === \"non-concluant\") return { classe: \"non-concluant\", raison: `${fichier} : ${e.raison}` };",
+    apres: "  if (e.etat === \"non-concluant\" && !rapport) return { classe: \"non-concluant\", raison: `${fichier} : ${e.raison}` };",
     pourquoi: "le rejeu individuel concluait sur le code de sortie seul : un harnais qui sort en non-zéro après un rapport vert devenait un rouge préalable, et la garde rendait non concluant sur du code sain",
+    bancs: ["tools/__tests__/ordreDesBancs.test.js"],
+  },
+  // ── 14/09 — huitième passe de l'audit externe ────────────────────────────────────────────────
+  {
+    id: "ordre-suite-melangee-non-confrontee",
+    fichier: "tools/ordre-des-bancs.mjs",
+    avant: "  if (!rouges.length && code === 0) return { etat: \"vert\", rouges: [] };",
+    apres: "  if (!rouges.length) return { etat: \"vert\", rouges: [] };",
+    pourquoi: "la suite mélangée initiale ne confrontait pas le processus au rapport : un rapport vert écrit puis un processus en 1 rendait « conforme »",
+    bancs: ["tools/__tests__/ordreDesBancs.test.js"],
+  },
+  {
+    id: "ordre-signal-assimile-a-un-code",
+    fichier: "tools/ordre-des-bancs.mjs",
+    avant: "  if (rouges.length && Number.isInteger(code) && code !== 0) return { etat: \"rouge\", rouges };",
+    apres: "  if (rouges.length && code !== 0) return { etat: \"rouge\", rouges };",
+    pourquoi: "status: null (processus tué) passait pour un code non nul concordant, parce que null !== 0",
     bancs: ["tools/__tests__/ordreDesBancs.test.js"],
   },
 ];

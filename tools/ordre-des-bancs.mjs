@@ -112,28 +112,76 @@ function relatif(chemin, racine) {
 // mélange, mais « passe-t-il seul ? » se décidait par `r.status === 0` — c'est-à-dire « le processus
 // a-t-il échoué ? » pour répondre à « qu'a rendu le banc ? », la classe qu'AGENTS.md documente. Un
 // audit externe a vu la garde déclarer six fichiers « déjà rouges » que 6/6 rejouaient verts à la
-// main (septième passe, 14/09) : un harnais qui sort en non-zéro APRÈS avoir écrit un rapport vert
-// devenait un rouge préalable, et rendait la garde non concluante sur du code sain. Le rapport et le
-// processus sont confrontés ; un désaccord est dit, avec ses pièces, et ne classe jamais.
+// main (septième passe, 14/09). ⚠️ ET LA PREMIÈRE CORRECTION NE CONFRONTAIT QUE LES REJEUX : l'exécution
+// mélangée initiale lisait le rapport sans regarder le processus — un rapport vert écrit PUIS un
+// processus qui sort en 1 rendait « conforme » —, et `status: null` (tué par signal) passait pour un
+// code non nul concordant (huitième passe). Une seule confrontation, pour TOUTE exécution de vitest.
+/**
+ * Confronte le rapport JSON d'une exécution de vitest au processus qui l'a produit.
+ *   rapport entièrement vert + code 0 + aucun signal            → `vert`
+ *   rapport avec au moins un rouge + code ENTIER non nul, aucun signal → `rouge` (avec les fichiers)
+ *   toute autre combinaison                                     → `non-concluant`, avec la raison
+ */
+export function confronterExecution({ r, rapport, racine = RACINE }) {
+  const code = r ? r.status : undefined, signal = r ? r.signal : undefined;
+  const resultats = rapport && Array.isArray(rapport.testResults) ? rapport.testResults : null;
+  const pieces = () => {
+    const statuts = resultats ? resultats.map((x) => `${relatif(String(x && x.name || ""), racine)}=${x && x.status}`).join(", ") : "aucun";
+    const stderr = String((r && r.stderr) || "").trim().split("\n").slice(-8).join("\n");
+    return `code ${code}, signal ${signal || "aucun"} — statuts du rapport : ${statuts}${stderr ? `\n  stderr (fin) : ${stderr.replace(/\n/g, "\n  ")}` : ""}`;
+  };
+  if (!resultats || !resultats.length) return { etat: "non-concluant", rouges: [], raison: `rapport JSON absent ou vide (${pieces()})` };
+  const inattendus = resultats.filter((x) => !x || (x.status !== "passed" && x.status !== "failed"));
+  if (inattendus.length) return { etat: "non-concluant", rouges: [], raison: `statut(s) inattendu(s) dans le rapport (${pieces()})` };
+  const rouges = fichiersEnEchec(rapport, racine);
+  if (signal) return { etat: "non-concluant", rouges, raison: `processus tué par un signal, pas un verdict (${pieces()})` };
+  if (!rouges.length && code === 0) return { etat: "vert", rouges: [] };
+  if (rouges.length && Number.isInteger(code) && code !== 0) return { etat: "rouge", rouges };
+  return { etat: "non-concluant", rouges, raison: `désaccord instrument/processus : le rapport dit ${rouges.length ? `${rouges.length} rouge(s)` : "tout vert"}, le processus rend ${code === null ? "null" : `le code ${code}`} (${pieces()})` };
+}
+
 /**
  * Classe le rejeu SEUL d'un fichier : `passe-seul`, `rouge-prealable`, ou `non-concluant` (avec la
  * raison) quand le rapport et le processus ne disent pas la même chose, ou que le rapport manque.
  */
 export function classerRejeu({ fichier, r, rapport, racine = RACINE }) {
-  const code = r && r.status, signal = r && r.signal;
-  const resultats = rapport && Array.isArray(rapport.testResults) ? rapport.testResults : null;
-  if (!resultats || !resultats.length) return { classe: "non-concluant", raison: `rapport JSON absent ou vide (code ${code}, signal ${signal || "aucun"})` };
-  const t = resultats.find((x) => x && relatif(String(x.name || ""), racine) === fichier);
-  if (!t) return { classe: "non-concluant", raison: `le rapport ne contient pas ${fichier} (il contient : ${resultats.map((x) => relatif(String(x.name || ""), racine)).join(", ")})` };
-  const vert = t.status === "passed", rouge = t.status === "failed";
-  if (!vert && !rouge) return { classe: "non-concluant", raison: `statut inattendu « ${t.status} » pour ${fichier}` };
-  if (vert && code === 0) return { classe: "passe-seul" };
-  if (rouge && code !== 0) return { classe: "rouge-prealable" };
-  const stderr = String((r && r.stderr) || "").trim().split("\n").slice(-8).join("\n");
-  return {
-    classe: "non-concluant",
-    raison: `désaccord instrument/processus sur ${fichier} : le rapport dit ${t.status}, le processus rend le code ${code}${signal ? ` (signal ${signal})` : ""} — statuts du rapport : ${resultats.map((x) => `${relatif(String(x.name || ""), racine)}=${x.status}`).join(", ")}${stderr ? `\n  stderr (fin) : ${stderr.replace(/\n/g, "\n  ")}` : ""}`,
-  };
+  const e = confronterExecution({ r, rapport, racine });
+  if (e.etat === "non-concluant") return { classe: "non-concluant", raison: `${fichier} : ${e.raison}` };
+  const present = rapport.testResults.some((x) => relatif(String(x.name || ""), racine) === fichier);
+  if (!present) return { classe: "non-concluant", raison: `le rapport ne contient pas ${fichier} (il contient : ${rapport.testResults.map((x) => relatif(String(x.name || ""), racine)).join(", ")})` };
+  return e.etat === "vert" ? { classe: "passe-seul" } : { classe: "rouge-prealable" };
+}
+
+// ⚠️ LE CONTRÔLE ÉTAIT EXÉCUTÉ APRÈS LE STIMULUS QUI LE CONTAMINE. Rejoué immédiatement après une
+// suite mélangée lourde, un fichier pouvait rougir d'épuisement (sockets, processus, disque) et
+// passer pour un « rouge préalable » ; quelques instants plus tard, 6/6 verts (audit, huitième passe).
+// Un contrôle exécuté après le stimulus ne prouve pas que le défaut lui préexistait. Deux
+// confirmations ISOLÉES par rouge — seul en ordre normal, seul mélangé sous la même graine — et une
+// table qui ne conclut « dépendance » que sur vert/rouge :
+//   normal vert  + mélangé rouge → dépendance intra-fichier confirmée
+//   normal vert  + mélangé vert  → interférence de la suite complète, PAS une dépendance d'ordre
+//   normal rouge + mélangé rouge → rouge indépendant de l'ordre
+//   normal rouge + mélangé vert  → instable, non concluant
+//   toute discordance rapport/processus → non concluant
+/** Classe un fichier rouge sous la suite mélangée d'après ses deux confirmations isolées. */
+export function classerRouge({ normal, melange }) {
+  const n = normal.classe, m = melange.classe;
+  if (n === "non-concluant" || m === "non-concluant") return { classe: "non-concluant", raison: [normal.raison, melange.raison].filter(Boolean).join(" ; ") };
+  if (n === "passe-seul" && m === "rouge-prealable") return { classe: "dependance" };
+  if (n === "passe-seul" && m === "passe-seul") return { classe: "interference" };
+  if (n === "rouge-prealable" && m === "rouge-prealable") return { classe: "rouge-independant" };
+  return { classe: "instable" };
+}
+
+/** Les pièces conservées pour un rouge : messages d'échec du rapport, code, signal, fin de stderr, graine, mode. */
+export function piecesDe({ fichier, r, rapport, graine, mode, racine = RACINE }) {
+  const t = rapport && Array.isArray(rapport.testResults) ? rapport.testResults.find((x) => relatif(String(x && x.name || ""), racine) === fichier) : null;
+  const messages = t && Array.isArray(t.assertionResults)
+    ? t.assertionResults.filter((a) => a && a.status === "failed").flatMap((a) => (a.failureMessages || []).map((m) => `${a.fullName || a.title} — ${String(m).split("\n")[0].slice(0, 200)}`))
+    : [];
+  const stderr = String((r && r.stderr) || "").trim().split("\n").slice(-5).join(" | ");
+  return `${fichier} [${mode}${graine != null ? `, graine ${graine}` : ""}] code ${r && r.status}, signal ${(r && r.signal) || "aucun"}`
+    + (messages.length ? ` ; échecs : ${messages.join(" ; ")}` : "") + (stderr ? ` ; stderr : ${stderr.slice(0, 300)}` : "");
 }
 
 /**
@@ -191,33 +239,48 @@ if (estExecuteDirectement(import.meta.url)) {
 
     let vus = null;
     const rougesParGraine = new Map();   // fichier → graines sous lesquelles il a rougi
+    const pieces = [];                   // ce qu'on conserve de chaque rouge : messages, code, signal, stderr, graine, mode
     for (const graine of graines) {
       const { r, rapport } = rapportDe(["--sequence.shuffle.tests", `--sequence.seed=${graine}`]);
       if (r.error) return inconclusif([`vitest n'a pas pu être lancé : ${r.error.message}`]);
-      const n = fichiersVus(rapport);
-      if (!n) return inconclusif([
-        `aucun rapport JSON lisible de vitest (code ${r.status}, graine ${graine}) — la sonde n'a rien lu, donc rien n'est prouvé`,
-      ]);
-      vus = n;
-      for (const f of fichiersEnEchec(rapport)) rougesParGraine.set(f, [...(rougesParGraine.get(f) || []), graine]);
+      // ⚠️ Le rapport ET le processus — un rapport vert écrit puis un processus en 1 rendait « conforme ».
+      const e = confronterExecution({ r, rapport });
+      if (e.etat === "non-concluant") return inconclusif([`suite mélangée (graine ${graine}) : ${e.raison}`]);
+      vus = fichiersVus(rapport);
+      for (const f of e.rouges) {
+        rougesParGraine.set(f, [...(rougesParGraine.get(f) || []), graine]);
+        pieces.push(piecesDe({ fichier: f, r, rapport, graine, mode: "suite complète mélangée" }));
+      }
     }
 
-    // ⚠️ Contrôle de stimulus : chaque rouge est rejoué SEUL, sans mélange. S'il échoue aussi, l'échec
-    // préexiste et n'accuse pas l'ordre ; s'il passe, le mélange est bien la cause.
-    const dependants = [], dejaRouges = [], desaccords = [];
-    for (const f of rougesParGraine.keys()) {
-      const seul = rapportDe([f]);
-      if (seul.r.error) return inconclusif([`rejeu de ${f} impossible : ${seul.r.error.message}`]);
-      const c = classerRejeu({ fichier: f, r: seul.r, rapport: seul.rapport });
-      if (c.classe === "passe-seul") dependants.push(f);
-      else if (c.classe === "rouge-prealable") dejaRouges.push(f);
-      else desaccords.push(c.raison);
+    // ⚠️ Deux confirmations ISOLÉES par rouge — seul en ordre normal, seul mélangé sous la même graine —
+    // parce qu'un contrôle exécuté juste après la suite lourde peut rougir d'épuisement, pas d'ordre.
+    const dependants = [], dejaRouges = [], nonConcluants = [], avertissementsRouges = [];
+    for (const [f, sesGraines] of rougesParGraine) {
+      const graine = sesGraines[0];
+      const normal = rapportDe([f]);
+      if (normal.r.error) return inconclusif([`rejeu de ${f} impossible : ${normal.r.error.message}`]);
+      const melange = rapportDe([f, "--sequence.shuffle.tests", `--sequence.seed=${graine}`]);
+      if (melange.r.error) return inconclusif([`rejeu mélangé de ${f} impossible : ${melange.r.error.message}`]);
+      pieces.push(piecesDe({ fichier: f, r: normal.r, rapport: normal.rapport, mode: "seul, ordre normal" }));
+      pieces.push(piecesDe({ fichier: f, r: melange.r, rapport: melange.rapport, graine, mode: "seul, mélangé" }));
+      const c = classerRouge({
+        normal: classerRejeu({ fichier: f, r: normal.r, rapport: normal.rapport }),
+        melange: classerRejeu({ fichier: f, r: melange.r, rapport: melange.rapport }),
+      });
+      if (c.classe === "dependance") dependants.push(f);
+      else if (c.classe === "rouge-independant") dejaRouges.push(f);
+      else if (c.classe === "interference") nonConcluants.push(`${f} : rouge sous la suite complète mélangée, vert seul en ordre normal ET seul mélangé (graine ${graine}) — interférence de la suite complète (un autre fichier, ou l'environnement), pas une dépendance d'ordre intra-fichier : cette garde ne peut pas trancher`);
+      else if (c.classe === "instable") nonConcluants.push(`${f} : rouge seul en ordre normal mais vert seul mélangé (graine ${graine}) — résultat instable`);
+      else nonConcluants.push(c.raison);
     }
-    // Un désaccord ne classe pas — mais une violation confirmée à côté prime toujours (voir `verdict`).
-    if (desaccords.length && !dependants.length) return inconclusif(desaccords);
+    if (pieces.length) avertissementsRouges.push(`pièces conservées :\n  ${pieces.join("\n  ")}`);
+    // Un non-concluant ne classe pas — mais une violation confirmée à côté prime toujours (voir `verdict`).
+    if (nonConcluants.length && !dependants.length) return inconclusif([...nonConcluants, ...avertissementsRouges]);
 
     const { constats, avertissements, raisonsNonConcluance } = confronter(dependants, dejaRouges);
-    raisonsNonConcluance.push(...desaccords);
+    raisonsNonConcluance.push(...nonConcluants);
+    avertissements.push(...avertissementsRouges);
     const entete = `graine(s) ${graines.join(", ")} — rejouable par \`node tools/ordre-des-bancs.mjs --graine=${graines.join(",")}\``
       + (dependants.length ? ` ; rouges sous : ${dependants.map((f) => `${f} (${rougesParGraine.get(f).join(", ")})`).join(" ; ")}` : "");
     return verdict({ constats, avertissements, raisonsNonConcluance, entete, vus });
