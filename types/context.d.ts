@@ -129,17 +129,19 @@ export interface Reglages {
   mapsKey: string;
   extraFrameAncestors: string[];
   /** Transferts de fichiers relayés simultanément par processus (défaut 64 ; entier de 1 à 1024,
-   *  sinon le défaut, dit une fois à `init`). Au-delà, le relais répond 503 + Retry-After AVANT
-   *  l'appel amont ; la place est rendue en `finally`. 64 n'est pas sûr partout : 64 × 8 Mio avec
-   *  des clients lents font monter la RSS de 130 à 194 Mio — 16 à 32 sur un processus à 256 Mio. */
-  maxConcurrentRelays?: number;
+   *  sinon le défaut, dit une fois à `init`). Une chaîne — celle de l'environnement — est acceptée
+   *  telle quelle et bornée par le cœur, qui cite ce qu'il a reçu s'il la refuse. Au-delà, le relais
+   *  répond 503 + Retry-After AVANT l'appel amont ; la place est rendue en `finally`. 64 n'est pas sûr
+   *  partout : 64 × 8 Mio avec des clients lents ont fait monter la RSS de 63 à 193–257 Mio (une
+   *  croissance de 130 à 194) — 16 à 32 sur un processus à 256 Mio. */
+  maxConcurrentRelays?: number | string;
   /** Un relais sans progression pendant ce délai est abandonné — source et réponse détruites, place
    *  rendue (défaut 30 000 ms ; entier de 1 à 86 400 000 ms, sinon le défaut, dit une fois à `init` :
    *  `setTimeout` ramène à 1 ms tout délai au-delà de 2 147 483 647 ms). `requestTimeout` ne borne
    *  pas l'émission d'une réponse. */
-  relayStallMs?: number;
+  relayStallMs?: number | string;
   /** Durée totale maximale d'un relais (défaut 900 000 ms ; même plage que `relayStallMs`). */
-  relayMaxMs?: number;
+  relayMaxMs?: number | string;
   /** Ce qui est POSÉ, à côté de ce que le code SAIT faire : la carte d'identité publie les deux,
    *  parce qu'une capacité disponible mais non configurée se comporte comme une absence. */
   separateIssuer?: boolean;

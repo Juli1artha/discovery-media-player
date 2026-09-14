@@ -67,9 +67,14 @@ set `config.maxConcurrentRelays`.
 consumers: back-pressure holds (512 MiB went through, memory did not follow), but the process RSS
 rose from ~63 MiB to a peak of **193–257 MiB**, with ~85 MiB more in `arrayBuffers`. On a process
 capped at 256 MiB, set **16–32**; 64 from 512 MiB upwards, after measuring on your own sockets and
-memory profile. The accepted range is an **integer from 1 to 1024**; anything else (a decimal, a
-string, above the range) falls back to 64 and is reported **once at `init`** through `errors.capture`
-(`benin: true`) with the range — never silently. ⚠️ The card's `mesures.memoireMio.rss` is half of
+memory profile. A second run by the same audit on 0.1.166 (64 × 8 MiB, consumers slowed to 50 ms)
+peaked at 181 MiB of RSS, a growth of 118 MiB — and the RSS **did not come back after GC**, only
+`external` and `arrayBuffers` did: the allocator keeps what it grew. The accepted range is an
+**integer from 1 to 1024**; anything else (a decimal, a string that is not an integer in that range,
+a number above it) falls back to 64 and is reported **once at `init`** through `errors.capture`
+(`benin: true`) with the range — never silently. ⚠️ 1024 is a **syntactic** bound on the setting,
+not a guarantee against memory exhaustion: nothing in the player knows how much memory your process
+may use. ⚠️ The card's `mesures.memoireMio.rss` is half of
 the decision: the other half is the ceiling of your process, which the player cannot see — on
 Lambda-based functions it is `AWS_LAMBDA_FUNCTION_MEMORY_SIZE`, in a container the cgroup limit.
 Read both before touching this number; an RSS on a fresh process says nothing about 64 slow relays.
@@ -95,10 +100,11 @@ released. Hosts wiring their own context set `config.relayStallMs` / `config.rel
 2 147 483 647 ms and silently clamps anything above to **1 ms**: a stall delay of 2 147 483 648 —
 "about 24.8 days" — aborted a transfer after 6 ms, with 65 `TimeoutOverflowWarning` (audit, fifth
 pass). The first bound accepted "any finite positive number"; it now accepts an integer in the range
-above, and a value outside it (a decimal, a string, `Infinity`, above 24 h) falls back to the default
-and is reported once at `init`. The standalone context passes the environment value through
-**unparsed** so that this single check sees it and says so — normalising it there would hide the
-mistake from the operator.
+above, and a value outside it (a decimal, a string that is not an integer in the range, `Infinity`,
+above 24 h) falls back to the default and is reported once at `init`. The standalone context passes
+the environment value through **as the string it received** — `"abc"` reaches the core as `"abc"`,
+and the report says `relayStallMs=abc` — so that this single check sees what the operator typed;
+converting it there turned it into `NaN` before anyone could read it (audit, sixth pass).
 
 ## The minimum
 

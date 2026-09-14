@@ -123,7 +123,11 @@ describe("aucune écriture de mesure n'est rattrapée en silence", () => {
         // la garde accusait donc un rattrapage qui trie (« ce cas-ci je le connais, tout le reste
         // remonte ») — c'est-à-dire le contraire d'un silence. Cinquième correction de cette
         // sonde, et toujours la même : elle vaut ce que vaut sa lecture.
-        const DIT = /capture\s*\(|console\.(warn|error)|statusCode\s*=\s*5|\b\w+\(5\d\d\s*,|\bthrow\b/;
+        // ⚠️ `capturerSansBloquer(` PARLE AUSSI — depuis le 14/09 les appels « jamais bloquant »
+        // passent par ce helper (un capture qui REJETTE arrêtait le processus). Sixième correction de
+        // cette sonde : `capture\s*\(` ne voyait pas « capturer », et accusait sept rattrapages qui
+        // journalisent. Toujours la même leçon : elle vaut ce que vaut sa lecture.
+        const DIT = /capture(?:rSansBloquer)?\s*\(|console\.(warn|error)|statusCode\s*=\s*5|\b\w+\(5\d\d\s*,|\bthrow\b/;
         const appeles = [...corps.matchAll(/(?:await\s+)?([A-Za-z_$][\w$]*)\s*\(/g)].map((m) => m[1]);
         const parle = DIT.test(corps) || appeles.some((nom) => DIT.test(corpsDe(nom)));
         if (!parle) muets.push(`${path.basename(f)}:${i + 1}  ${ligne.trim().slice(0, 70)}`);

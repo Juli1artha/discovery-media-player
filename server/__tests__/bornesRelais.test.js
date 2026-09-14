@@ -45,7 +45,7 @@ describe("bornesRelais : les trois réglages, et la liste de ce qui a été refu
       "relayMaxMs=1.5 (entier de 1 à 86400000 ms, défaut 900000)",
     ]);
   });
-  it("⚠️ le plafond de relais a une borne HAUTE de configuration : 1024 — 64 × 8 Mio ont fait monter la RSS de 130 à 194 Mio", () => {
+  it("⚠️ le plafond de relais a une borne HAUTE de configuration : 1024 — une borne syntaxique, pas une garantie mémoire (64 × 8 Mio : RSS de 63 à 193–257 Mio)", () => {
     expect(B.bornesRelais({ maxConcurrentRelays: 1024 }).plafond).toBe(1024);
     expect(B.bornesRelais({ maxConcurrentRelays: 1025 }).plafond).toBe(64);
     expect(B.bornesRelais({ maxConcurrentRelays: 0 }).plafond).toBe(64);

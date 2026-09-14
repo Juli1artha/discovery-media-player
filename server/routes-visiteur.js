@@ -4,6 +4,7 @@
 // Reste à PLAT dans server/ (les gardes de forge ciblent server/*.js).
 
 const { adresseAppelant } = require("./appelant");
+const { capturerSansBloquer } = require("./capture");
 const { repondreJson } = require("./reponses.js");
 
 const { getShareBySlug } = require("./shares");
@@ -54,7 +55,7 @@ function direLeRepli(pourquoi) {
   if (repliDit) return;
   repliDit = true;
   try {
-    PLAYER.errors.capture(new Error(`mur visiteur : ${pourquoi} — les compteurs par identité utilisent une EMPREINTE de l'email (SHA-256 tronqué), pseudonyme mais renversable par dictionnaire. Fournissez rateLimitKey (HMAC, secret côté hôte, séparation de domaine).`), { route: "visitor", benin: true });
+    capturerSansBloquer(PLAYER.errors, new Error(`mur visiteur : ${pourquoi} — les compteurs par identité utilisent une EMPREINTE de l'email (SHA-256 tronqué), pseudonyme mais renversable par dictionnaire. Fournissez rateLimitKey (HMAC, secret côté hôte, séparation de domaine).`), { route: "visitor", benin: true });
   } catch { /* jamais bloquant */ }
 }
 const init = (ctx) => { PLAYER = ctx; repliDit = false; };
@@ -95,7 +96,7 @@ async function traiter(req, res, body, _slug) {
       // noms. Une liste ne voit que ce qu'on y a mis ; une forme voit aussi le prochain.
       try {
         if (await PLAYER.limits.allow("unlock:echec", 1, 3600)) {
-          PLAYER.errors.capture(new Error(`déverrouillage visiteur non journalisé : ${e && e.message ? e.message : "cause inconnue"}`), { route: "visitor-unlock" });
+          capturerSansBloquer(PLAYER.errors, new Error(`déverrouillage visiteur non journalisé : ${e && e.message ? e.message : "cause inconnue"}`), { route: "visitor-unlock" });
         }
       } catch { /* un journal ne doit jamais empêcher une lecture */ }
     }

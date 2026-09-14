@@ -6,6 +6,7 @@
 //  - GET  /doc/:slug?file=1     → stream le PDF depuis le Storage (MÊME ORIGINE → pas de souci CORS pour pdf.js)
 //  - POST /api/doc {slug,event…}→ journalise un événement (open / page / heartbeat) — best-effort
 const crypto = require("crypto");
+const { capturerSansBloquer } = require("./capture");
 const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const { getShareBySlug } = require("./shares");
@@ -54,7 +55,7 @@ function init(ctx) {
   if (bornes.invalides.length) {
     // Une fois, ici — pas à chaque relais : un réglage hors plage est une erreur de déploiement, dite
     // à l'exploitant avec la plage, plutôt qu'un défaut appliqué en silence.
-    try { PLAYER.errors.capture(new Error(`réglages de relais hors plage, défauts appliqués : ${bornes.invalides.join(" ; ")}`), { route: "relais", benin: true }); } catch { /* jamais bloquant */ }
+    try { capturerSansBloquer(PLAYER.errors, new Error(`réglages de relais hors plage, défauts appliqués : ${bornes.invalides.join(" ; ")}`), { route: "relais", benin: true }); } catch { /* jamais bloquant */ }
   }
   // Le domaine reçoit le même contexte : une seule construction pour tout le player.
   require("./shares").init(ctx);
@@ -106,7 +107,7 @@ async function relayerSousAdmission(res, travail) {
     // Une fois par heure, l'exploitant l'apprend : un 503 muet ressemble à une panne d'amont.
     try {
       if (await PLAYER.limits.allow("relais:sature-avert", 1, 3600)) {
-        PLAYER.errors.capture(new Error(`relais refusés : ${plafondRelais} transferts simultanés atteints dans ce processus (config.maxConcurrentRelays)`), { route: "relais", benin: true });
+        capturerSansBloquer(PLAYER.errors, new Error(`relais refusés : ${plafondRelais} transferts simultanés atteints dans ce processus (config.maxConcurrentRelays)`), { route: "relais", benin: true });
       }
     } catch { /* jamais bloquant */ }
     res.setHeader("Retry-After", "2");
@@ -310,7 +311,7 @@ async function relayerFichier(res, r, disposition, bornes = { stallMs: relaisSta
   const brute = r.headers.get("content-length");
   const annoncee = Number(brute || 0);
   if (annoncee > PLAFOND_RELAIS) {
-    try { PLAYER.errors.capture(new Error(`relais refusé : ${annoncee} octets au-dessus du plafond de ${PLAFOND_RELAIS}`), { route: "relais" }); } catch { /* jamais bloquant */ }
+    try { capturerSansBloquer(PLAYER.errors, new Error(`relais refusé : ${annoncee} octets au-dessus du plafond de ${PLAFOND_RELAIS}`), { route: "relais" }); } catch { /* jamais bloquant */ }
     refuserEnTexte(res, 413, "Fichier trop volumineux");
     // ⚠️ Renoncer ne suffit pas : un corps jamais tiré laisse la connexion amont OUVERTE, et le
     // pool de sockets s'épuise sur les gros fichiers — exactement la ressource qu'on protège.
@@ -387,7 +388,7 @@ async function relayerFichier(res, r, disposition, bornes = { stallMs: relaisSta
     // reste que la coupure. Une coupure fréquente ici est un plafond mal réglé ou un amont
     // défaillant : l'avaler ferait passer un défaut d'exploitation pour un caprice du réseau.
     const cause = abandon.signal.aborted && abandon.signal.reason instanceof Error ? abandon.signal.reason : erreur;
-    try { PLAYER.errors.capture(cause instanceof Error ? cause : new Error(String(cause)), { route: "relais" }); } catch { /* jamais bloquant */ }
+    try { capturerSansBloquer(PLAYER.errors, cause instanceof Error ? cause : new Error(String(cause)), { route: "relais" }); } catch { /* jamais bloquant */ }
     try { res.destroy(); } catch { /* le socket est peut-être déjà parti */ }
   } finally {
     clearTimeout(stall); clearTimeout(budget);
@@ -1219,7 +1220,7 @@ async function handlerMesure(req, res) {
     // exactement comme sans PLAYER_HOST_AUTHZ_URL personne ne peut DIFFUSER.
     if (share.embed && !(PLAYER.config.extraFrameAncestors || []).length) {
       try {
-        PLAYER.errors.capture(
+        capturerSansBloquer(PLAYER.errors, 
           new Error("?embed=1 demandé mais DOC_FRAME_ANCESTORS est vide : seuls une page de même origine et *.vercel.app peuvent encadrer cette instance"),
           { route: "doc", indice: "le navigateur bloquera l'iframe avant le chargement — aucun embed-denied ne partira" },
         );

@@ -52,6 +52,8 @@
 // — il balaie le dossier et refuse un nom qui déclencherait la garde, au moment où on l'écrit.
 // (La forme de la règle vient du STUDIO : une règle tenue par habitude a un taux de couverture que
 // personne ne mesure.)
+const { capturerSansBloquer } = require("./capture");
+
 const RACINE_MIGRATIONS = "supabase/migrations/";
 
 const ATTENDUES = {
@@ -460,7 +462,7 @@ const PORTEE_FUSION =
 // plus rien.
 async function journaliser(cle, message) {
   try {
-    if (await PLAYER.limits.allow(cle, 1, 3600)) PLAYER.errors.capture(new Error(message), { route: "schema" });
+    if (await PLAYER.limits.allow(cle, 1, 3600)) capturerSansBloquer(PLAYER.errors, new Error(message), { route: "schema" });
   } catch { /* jamais bloquant */ }
 }
 
@@ -529,7 +531,7 @@ async function ajouterMigrationsDePresence(etat) {
     // boucle, et un journal sans frein deviendrait une arme.
     try {
       if (await PLAYER.limits.allow("schema:durcissement-absent", 1, 3600)) {
-        PLAYER.errors.capture(new Error(
+        capturerSansBloquer(PLAYER.errors, new Error(
           absente
             ? "migration 0018-bootstrap-non-usurpable.sql ABSENTE : les bootstraps de présence ne "
               + "sont pas contrôlés. N'armez pas PLAYER_PRESENCE_STRICT avant de l'appliquer — il "

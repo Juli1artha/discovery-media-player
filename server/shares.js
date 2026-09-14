@@ -3,6 +3,7 @@
 // GED commerciale : liens de partage tracés (un par destinataire) + agrégation des consultations.
 // Tables service-role only (cf. migration v12321) → tout passe par le service role ici.
 const crypto = require("crypto");
+const { capturerSansBloquer } = require("./capture");
 const { signatureAbsente } = require("./erreurs-base.js");
 // Tout ce qui vient de l'hôte passe par le contexte injecté — base, email, marque. C'est ce qui
 // permettra à ce fichier de partir dans le dépôt du player sans emporter le studio avec lui.
@@ -434,7 +435,7 @@ async function overviewEnBase(since) {
       lastAt: r.last_at || null,
     }])) || [];
   } catch (erreur) {
-    try { PLAYER.errors.capture(erreur, { route: "overview", indice: "consultations internes indisponibles — la vue d'ensemble ne montrera que les ouvertures client" }); } catch { /* jamais bloquant */ }
+    try { capturerSansBloquer(PLAYER.errors, erreur, { route: "overview", indice: "consultations internes indisponibles — la vue d'ensemble ne montrera que les ouvertures client" }); } catch { /* jamais bloquant */ }
   }
   return { byDoc: new Map(vues), intByDoc: new Map(internes) };
 }
@@ -935,7 +936,7 @@ async function upsertInternalSession(p, { ip: _ip, ua }) {
     try {
       if (await PLAYER.limits.allow("intsess:jetee", 1, 3600)) {
         const manque = !sessionId ? "sessionId" : "docId";
-        PLAYER.errors.capture(new Error(`session interne jetée : ${manque} absent — rien ne sera mesuré tant qu'il manque`), { route: "internal-session" });
+        capturerSansBloquer(PLAYER.errors, new Error(`session interne jetée : ${manque} absent — rien ne sera mesuré tant qu'il manque`), { route: "internal-session" });
       }
     } catch { /* un journal ne doit jamais empêcher une lecture */ }
     return;

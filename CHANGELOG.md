@@ -12,7 +12,29 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Fixed
+
+- ⚠️ **Une promesse rejetée par `errors.capture` arrêtait le processus.** Trente-cinq appels
+  portaient « jamais bloquant » sous un `try/catch` — qui n'attrape qu'une exception synchrone. Le
+  contrat autorise `capture` à rendre une promesse ; un `capture` qui rejette, à `init`, avec une
+  configuration hors plage : `unhandledRejection`, sortie 1 avant le premier octet servi (reproduit
+  par un audit externe sur le tag v0.1.166, sixième passe). `server/capture.js` porte la règle une
+  fois pour tous : exception ET promesse neutralisées, jamais attendue. Banc dans un vrai
+  sous-processus : `capture` rejette, configuration invalide, le témoin est atteint, sortie 0. Le
+  contexte autonome applique la même règle à son propre journal. Mutant.
+- ⚠️ **Le contexte autonome disait « transmis tel quel » et convertissait encore.** `Number("abc")`
+  arrivait au cœur en `NaN`, et le diagnostic disait `relayStallMs=NaN` : l'exploitant ne retrouvait
+  pas ce qu'il avait saisi (audit, sixième passe). La chaîne d'environnement passe intacte, le cœur
+  la borne et cite ce qu'il a reçu ; les types disent qu'une chaîne est acceptée. Banc sur le chemin
+  autonome complet, pas seulement sur `entierBorne`. Mutant.
+
 ### Changed
+
+- Deux textes contredisaient la mesure : « une chaîne est refusée » (alors que `"45000"` passe) devient
+  « une chaîne qui n'est pas un entier dans la plage » ; « la RSS passe de 130 à 194 Mio » (dans les
+  types et un nom de banc) redevient ce qui a été mesuré — de 63 à 193–257 Mio, une croissance de 130
+  à 194. `CONFIGURATION.md` porte la seconde mesure de l'audit (pic 181 Mio, la RSS ne redescend pas
+  après GC) et dit que 1024 est une borne syntaxique, pas une garantie mémoire.
 
 - Le contrat dit de lire `fenetreS` **avant** `total`, et pourquoi : sur du serverless, le
   processus est l'unité qui meurt, et les compteurs de processus (`lectureSaturee`,
