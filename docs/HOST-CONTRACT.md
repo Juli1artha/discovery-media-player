@@ -647,7 +647,13 @@ context shipped in this package already implements it** — if you build your co
 `discovery-media-player/context/standalone`, you get it on your next upgrade and there is nothing
 to decide or write. This section is for a host that implements the `db` capability itself. A host
 asked which of the two it was, and the answer was missing from this page: *"the two look alike in
-your code and not at all alike at your hosts."* If your `db` capability
+your code and not at all alike at your hosts."* ⚠️ **The same line decides which zone of a release
+reaches you.** A host that runs `context/standalone` as is (ADV does, unchanged since August)
+executes every change to the `context` zone — the environment pass-through, the journal helper —
+and its `errors.capture` is the player's own; a host with its own context (STUDIO) is touched by
+`server/` only. That line was missing from what the player held about its hosts, and a release note
+told one of them a change to its own file was "without effect on your side" (14/09). Say your form
+once; it is the line the notes are written from. If your `db` capability
 exposes it, the player asks it first and publishes an **exact** count — no bound, no `tronque`, and
 no rows transported at all. If it is absent, everything above still applies unchanged: the bounded
 read with its cursor probe. **That fallback is the whole design.** Third-party hosts implement this
@@ -888,7 +894,12 @@ per process before answering **503 busy** to everyone. A database call that hang
 "slow", it is an availability incident for the whole instance — the exact mechanism an audit
 reproduced inside the test suite with a never-settling promise (13/09). Time out your own calls
 (the standalone context bounds its own with `AbortSignal`), and never return a promise you cannot
-guarantee will settle.
+guarantee will settle. ⚠️ **The bound must cover the body, not only the headers.** `fetch` resolves
+as soon as the headers arrive; `response.text()` then hangs on a stream left open, so a timeout
+that stops at the headers bounds half the path. Pass the same `AbortSignal` to the fetch, which
+aborts the body read too (the standalone context does), and if you retry an abandoned call, retry a
+read only, never a write. A host (STUDIO, 13/09) found its own `db.request` bounded that way — at
+the headers — and rewrote it; the rule is theirs.
 
 **Your document-opening doors reappear.** A host has more than one place that opens a file, and new
 ones get written. Keep the list and hunt it periodically — and note that **your search criteria

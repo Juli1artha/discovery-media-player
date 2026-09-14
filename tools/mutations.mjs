@@ -384,6 +384,14 @@ export const MUTANTS = [
     pourquoi: "« Error: STACK_TRACE_ERROR » n'est pas une cause : la première ligne d'un failureMessages de vitest est parfois ce libellé, la cause étant plus bas",
     bancs: ["tools/__tests__/ordreDesBancs.test.js"],
   },
+  {
+    id: "ordre-cause-reclamee-a-une-execution-verte",
+    fichier: "tools/ordre-des-bancs.mjs",
+    avant: "const manqueCause = !executionVerte && !messages.length && !messageFichier && !stderr;",
+    apres: "const manqueCause = !messages.length && !messageFichier && !stderr;",
+    pourquoi: "la confirmation isolée verte d'un rouge recevait « aucune cause exploitable — rejouer en verbose » : un succès n'a pas de cause à donner (audit, dixième passe)",
+    bancs: ["tools/__tests__/ordreDesBancs.test.js"],
+  },
 ];
 
 export const empreinte = (texte) => createHash("sha256").update(texte).digest("hex").slice(0, 16);

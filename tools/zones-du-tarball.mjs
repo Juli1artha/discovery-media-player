@@ -48,7 +48,12 @@ export const ZONES = [
   // sinon tout tomberait dans « the code the host executes », qui est vrai et insuffisant.
   { nom: "pages", quoi: "the visitors' page — HTML and inline JavaScript the host renders and the browser executes", est: (f) => /^server\/(?:page-[^/]+\.js|gabarit-[^/]+\.js|browser\.generated\.js|shared\.generated\.js)$/.test(f) },
   { nom: "server", quoi: "the code the host executes", est: (f) => f.startsWith("server/") },
-  { nom: "context", quoi: "the injected-context implementations", est: (f) => f.startsWith("context/") },
+  // ⚠️ « SANS EFFET CHEZ VOUS : VOUS FOURNISSEZ VOTRE CONTEXTE » — écrit à un hôte qui exécute
+  // `context/standalone.js` tel quel depuis août, et l'avait dit trois fois (ADV, 14/09). Cette zone
+  // est du code d'hôte pour un hôte et pas pour l'autre, et la ligne de partage est la forme de son
+  // câblage, pas son type. Le libellé le dit, pour que personne ne relise « context : 1 » comme
+  // « pas moi » sans avoir vérifié quel contexte il exécute.
+  { nom: "context", quoi: "the injected-context implementations — the code a host executes when it runs `context/standalone` as is; a host with its own context is not touched here", est: (f) => f.startsWith("context/") },
   // ⚠️ `dist/` PORTE DEUX ARTEFACTS QUI N'ONT PAS LE MÊME CONSOMMATEUR, et un seul suffixe les
   // sépare. `dist/bridge.js` est exécuté par la page des visiteurs ; `dist/bridge.d.ts` est lu par
   // le `tsc` de l'hôte. L'un casse à l'exécution, l'autre au build — deux incidents différents,
