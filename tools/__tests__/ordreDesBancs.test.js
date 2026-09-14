@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, it, expect } from "vitest";
 
-import { ORDRE_DECLARE, confronter, fichiersEnEchec, fichiersVus, grainePourJour, grainesDemandees, verdict } from "../ordre-des-bancs.mjs";
+import { ORDRE_DECLARE, classerRejeu, confronter, fichiersEnEchec, fichiersVus, grainePourJour, grainesDemandees, verdict } from "../ordre-des-bancs.mjs";
 
 // ⚠️ UN RAPPORT STRUCTURÉ, JAMAIS LA SORTIE TEXTE. La première écriture cherchait « FAIL <chemin> »
 // dans tout ce que vitest imprimait — y compris ce que les bancs impriment eux-mêmes en lançant des
@@ -53,6 +53,55 @@ describe("lire le rapport JSON de vitest", () => {
     expect(fichiersVus(null)).toBe(null);
     expect(fichiersVus({ testResults: [] })).toBe(null);
     expect(fichiersVus("vitest a explosé")).toBe(null);
+  });
+});
+
+// ⚠️ LE REJEU INDIVIDUEL CONCLUAIT SUR LE CODE DE SORTIE SEUL — « le processus a-t-il échoué ? » pour
+// répondre à « qu'a rendu le banc ? ». Un audit externe a vu six fichiers déclarés « déjà rouges »
+// que 6/6 rejouaient verts à la main (septième passe, 14/09). Le rapport et le processus sont
+// confrontés ; tout désaccord est dit avec ses pièces et ne classe jamais.
+describe("⚠️ classerRejeu : le rapport ET le processus, jamais l'un sans l'autre", () => {
+  const racine = "/r";
+  const rapport = (statut, nom = "a.test.js") => ({ testResults: [{ name: `/r/${nom}`, status: statut }] });
+  const proc = (status, extra = {}) => ({ status, signal: null, stderr: "", ...extra });
+
+  it("rapport vert + code 0 → passe seul", () => {
+    expect(classerRejeu({ fichier: "a.test.js", r: proc(0), rapport: rapport("passed"), racine })).toEqual({ classe: "passe-seul" });
+  });
+  it("rapport rouge + code non nul → rouge préalable", () => {
+    expect(classerRejeu({ fichier: "a.test.js", r: proc(1), rapport: rapport("failed"), racine })).toEqual({ classe: "rouge-prealable" });
+  });
+  it("⚠️ rapport VERT + code non nul → NON CONCLUANT, jamais « rouge préalable » — c'est le cas de l'audit", () => {
+    const c = classerRejeu({ fichier: "a.test.js", r: proc(1, { signal: null, stderr: "ligne 1\nharnais : sortie forcée" }), rapport: rapport("passed"), racine });
+    expect(c.classe).toBe("non-concluant");
+    expect(c.raison).toMatch(/désaccord instrument\/processus sur a\.test\.js : le rapport dit passed, le processus rend le code 1/);
+    expect(c.raison, "les statuts du rapport sont imprimés").toMatch(/a\.test\.js=passed/);
+    expect(c.raison, "et la fin de stderr").toMatch(/harnais : sortie forcée/);
+  });
+  it("rapport rouge + code 0 → NON CONCLUANT (désaccord dans l'autre sens)", () => {
+    const c = classerRejeu({ fichier: "a.test.js", r: proc(0), rapport: rapport("failed"), racine });
+    expect(c.classe).toBe("non-concluant");
+    expect(c.raison).toMatch(/le rapport dit failed, le processus rend le code 0/);
+  });
+  it("un signal est dit quand il y en a un", () => {
+    const c = classerRejeu({ fichier: "a.test.js", r: proc(null, { signal: "SIGKILL" }), rapport: rapport("passed"), racine });
+    expect(c.classe).toBe("non-concluant");
+    expect(c.raison).toMatch(/signal SIGKILL/);
+  });
+  it("rapport absent, vide ou illisible → NON CONCLUANT", () => {
+    for (const rapportNul of [null, {}, { testResults: [] }]) {
+      const c = classerRejeu({ fichier: "a.test.js", r: proc(1), rapport: rapportNul, racine });
+      expect(c.classe).toBe("non-concluant");
+      expect(c.raison).toMatch(/rapport JSON absent ou vide/);
+    }
+  });
+  it("un rapport qui ne contient PAS le fichier demandé → NON CONCLUANT, et dit ce qu'il contient", () => {
+    const c = classerRejeu({ fichier: "b.test.js", r: proc(0), rapport: rapport("passed", "a.test.js"), racine });
+    expect(c.classe).toBe("non-concluant");
+    expect(c.raison).toMatch(/ne contient pas b\.test\.js \(il contient : a\.test\.js\)/);
+  });
+  it("un statut inattendu (ni passed ni failed) → NON CONCLUANT", () => {
+    expect(classerRejeu({ fichier: "a.test.js", r: proc(0), rapport: rapport("skipped"), racine }).classe).toBe("non-concluant");
   });
 });
 

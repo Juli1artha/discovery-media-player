@@ -96,6 +96,50 @@ describe("⚠️ dans un vrai processus : capture() rejette, la configuration es
   });
 });
 
+// ⚠️ LE CONTEXTE AUTONOME AVAIT LA MÊME PANNE SUR CINQ CHEMINS. `ctx.errors` et le journal capturé
+// par ses capacités sont LE MÊME objet : un hôte qui pose un `capture` qui rejette tuait le processus
+// à `mail.send` sans secret, avant tout réseau (audit, septième passe). Reproduction de l'audit.
+describe("⚠️ dans un vrai processus, le contexte autonome : le journal rejette, mail.send sans secret, sortie 0", () => {
+  it("le témoin est atteint après mail.send", () => {
+    const r = sousProcessus(`
+      const { createStandaloneContext } = require("./context/standalone.js");
+      const c = createStandaloneContext({ PLAYER_HOST_MAIL_URL: "https://hote.test/mail", PLAYER_HOST_MAIL_SECRET: "" });
+      let appels = 0;
+      c.errors.capture = () => { appels += 1; return Promise.reject(new Error("capture-reject")); };
+      c.mail.send({}).then((res) => setTimeout(() => console.log("TEMOIN " + appels + " " + JSON.stringify(res)), 30));
+    `);
+    expect(r.sortie, r.sortie).toMatch(/TEMOIN 1 /);
+    expect(r.code, "sortie zéro : le rejet du journal n'a tué personne").toBe(0);
+  });
+});
+
+// ⚠️ UNE SEULE FORME, TENUE PAR UNE SONDE. Ajouter un appel direct « jamais bloquant » de plus est le
+// geste le plus naturel du monde ; cette sonde le refuse : hors des deux helpers, un appel au journal
+// est soit attendu (`await`, sous un try qui le couvre), soit passé par le helper.
+describe("⚠️ aucun appel direct non attendu au journal hors des deux helpers", () => {
+  const { readdirSync, readFileSync } = require("node:fs");
+  it("server/*.js et context/standalone.js", () => {
+    const fichiers = [
+      ...readdirSync(join(RACINE, "server")).filter((f) => f.endsWith(".js")).map((f) => join("server", f)),
+      "context/standalone.js",
+    ];
+    const nus = [], helpers = [];
+    let attendus = 0;
+    for (const f of fichiers) {
+      readFileSync(join(RACINE, f), "utf8").split("\n").forEach((ligne, i) => {
+        if (/^\s*(\/\/|\*|\/\*)/.test(ligne)) return;
+        if (!/\.capture\s*\(/.test(ligne)) return;
+        if (/\.capture\(erreur, meta\)/.test(ligne)) { helpers.push(f); return; }      // le corps d'un helper
+        if (/await\s+[\w.]+\.capture\s*\(/.test(ligne)) { attendus += 1; return; }
+        nus.push(`${f}:${i + 1}  ${ligne.trim().slice(0, 90)}`);
+      });
+    }
+    expect(helpers.sort(), "les deux helpers existent — sinon la sonde ne garde rien").toEqual(["context/standalone.js", "server/capture.js"]);
+    expect(attendus, "contrôle positif : la sonde voit les appels attendus").toBeGreaterThanOrEqual(5);
+    expect(nus, "appel(s) direct(s) non attendu(s) au journal :\n" + nus.join("\n")).toEqual([]);
+  });
+});
+
 describe("⚠️ le chemin autonome COMPLET : la chaîne d'environnement arrive intacte au cœur", () => {
   it("« abc » est transmis « abc », pas NaN — et le diagnostic cite ce que l'exploitant a saisi", async () => {
     const { createStandaloneContext } = require("../../context/standalone.js");

@@ -108,6 +108,34 @@ function relatif(chemin, racine) {
   return chemin.startsWith(r) ? chemin.slice(r.length) : chemin;
 }
 
+// ⚠️ LE REJEU INDIVIDUEL CONCLUAIT SUR LE CODE DE SORTIE SEUL. Le rapport JSON était lu pour le
+// mélange, mais « passe-t-il seul ? » se décidait par `r.status === 0` — c'est-à-dire « le processus
+// a-t-il échoué ? » pour répondre à « qu'a rendu le banc ? », la classe qu'AGENTS.md documente. Un
+// audit externe a vu la garde déclarer six fichiers « déjà rouges » que 6/6 rejouaient verts à la
+// main (septième passe, 14/09) : un harnais qui sort en non-zéro APRÈS avoir écrit un rapport vert
+// devenait un rouge préalable, et rendait la garde non concluante sur du code sain. Le rapport et le
+// processus sont confrontés ; un désaccord est dit, avec ses pièces, et ne classe jamais.
+/**
+ * Classe le rejeu SEUL d'un fichier : `passe-seul`, `rouge-prealable`, ou `non-concluant` (avec la
+ * raison) quand le rapport et le processus ne disent pas la même chose, ou que le rapport manque.
+ */
+export function classerRejeu({ fichier, r, rapport, racine = RACINE }) {
+  const code = r && r.status, signal = r && r.signal;
+  const resultats = rapport && Array.isArray(rapport.testResults) ? rapport.testResults : null;
+  if (!resultats || !resultats.length) return { classe: "non-concluant", raison: `rapport JSON absent ou vide (code ${code}, signal ${signal || "aucun"})` };
+  const t = resultats.find((x) => x && relatif(String(x.name || ""), racine) === fichier);
+  if (!t) return { classe: "non-concluant", raison: `le rapport ne contient pas ${fichier} (il contient : ${resultats.map((x) => relatif(String(x.name || ""), racine)).join(", ")})` };
+  const vert = t.status === "passed", rouge = t.status === "failed";
+  if (!vert && !rouge) return { classe: "non-concluant", raison: `statut inattendu « ${t.status} » pour ${fichier}` };
+  if (vert && code === 0) return { classe: "passe-seul" };
+  if (rouge && code !== 0) return { classe: "rouge-prealable" };
+  const stderr = String((r && r.stderr) || "").trim().split("\n").slice(-8).join("\n");
+  return {
+    classe: "non-concluant",
+    raison: `désaccord instrument/processus sur ${fichier} : le rapport dit ${t.status}, le processus rend le code ${code}${signal ? ` (signal ${signal})` : ""} — statuts du rapport : ${resultats.map((x) => `${relatif(String(x.name || ""), racine)}=${x.status}`).join(", ")}${stderr ? `\n  stderr (fin) : ${stderr.replace(/\n/g, "\n  ")}` : ""}`,
+  };
+}
+
 /**
  * Le verdict, dans le bon ordre : une VIOLATION confirmée prime sur un cas non concluant. Rendre non
  * concluant dès qu'un rouge préexiste masquait la dépendance d'ordre prouvée à côté — le non-concluant
@@ -176,14 +204,20 @@ if (estExecuteDirectement(import.meta.url)) {
 
     // ⚠️ Contrôle de stimulus : chaque rouge est rejoué SEUL, sans mélange. S'il échoue aussi, l'échec
     // préexiste et n'accuse pas l'ordre ; s'il passe, le mélange est bien la cause.
-    const dependants = [], dejaRouges = [];
+    const dependants = [], dejaRouges = [], desaccords = [];
     for (const f of rougesParGraine.keys()) {
       const seul = rapportDe([f]);
       if (seul.r.error) return inconclusif([`rejeu de ${f} impossible : ${seul.r.error.message}`]);
-      (seul.r.status === 0 ? dependants : dejaRouges).push(f);
+      const c = classerRejeu({ fichier: f, r: seul.r, rapport: seul.rapport });
+      if (c.classe === "passe-seul") dependants.push(f);
+      else if (c.classe === "rouge-prealable") dejaRouges.push(f);
+      else desaccords.push(c.raison);
     }
+    // Un désaccord ne classe pas — mais une violation confirmée à côté prime toujours (voir `verdict`).
+    if (desaccords.length && !dependants.length) return inconclusif(desaccords);
 
     const { constats, avertissements, raisonsNonConcluance } = confronter(dependants, dejaRouges);
+    raisonsNonConcluance.push(...desaccords);
     const entete = `graine(s) ${graines.join(", ")} — rejouable par \`node tools/ordre-des-bancs.mjs --graine=${graines.join(",")}\``
       + (dependants.length ? ` ; rouges sous : ${dependants.map((f) => `${f} (${rougesParGraine.get(f).join(", ")})`).join(" ; ")}` : "");
     return verdict({ constats, avertissements, raisonsNonConcluance, entete, vus });

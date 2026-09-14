@@ -20,13 +20,27 @@ the notes there are this file's section for that version.
   configuration hors plage : `unhandledRejection`, sortie 1 avant le premier octet servi (reproduit
   par un audit externe sur le tag v0.1.166, sixième passe). `server/capture.js` porte la règle une
   fois pour tous : exception ET promesse neutralisées, jamais attendue. Banc dans un vrai
-  sous-processus : `capture` rejette, configuration invalide, le témoin est atteint, sortie 0. Le
-  contexte autonome applique la même règle à son propre journal. Mutant.
+  sous-processus : `capture` rejette, configuration invalide, le témoin est atteint, sortie 0. ⚠️ Le
+  contexte autonome ne l'appliquait d'abord qu'à `appelHote` : cinq appels directs à `journal.capture`
+  restaient sous un `try/catch`, et `ctx.errors` est le même objet — un hôte qui pose un `capture` qui
+  rejette tuait le processus à `mail.send` sans secret, avant tout réseau (audit, septième passe).
+  Un seul helper local, `capturerJournalSansBloquer`, pour les six emplacements ; banc en vrai
+  sous-processus sur `mail.send`, sortie 0 ; un banc structurel refuse tout appel direct non attendu
+  au journal hors des deux helpers. Deux mutants.
 - ⚠️ **Le contexte autonome disait « transmis tel quel » et convertissait encore.** `Number("abc")`
   arrivait au cœur en `NaN`, et le diagnostic disait `relayStallMs=NaN` : l'exploitant ne retrouvait
   pas ce qu'il avait saisi (audit, sixième passe). La chaîne d'environnement passe intacte, le cœur
   la borne et cite ce qu'il a reçu ; les types disent qu'une chaîne est acceptée. Banc sur le chemin
   autonome complet, pas seulement sur `entierBorne`. Mutant.
+
+- ⚠️ **La garde d'ordre des bancs concluait le rejeu individuel sur le code de sortie seul.** Le
+  rapport JSON servait au mélange, mais « passe-t-il seul ? » se décidait par `r.status === 0` : un
+  harnais qui sort en non-zéro après avoir écrit un rapport vert devenait un « rouge préalable », et
+  la garde rendait non concluant sur du code sain — six fichiers chez l'audit, 6/6 verts à la main
+  (septième passe). `classerRejeu` confronte le rapport au processus : vert + 0 passe seul, rouge +
+  non-zéro est un rouge préalable, tout désaccord (vert + non-zéro, rouge + 0, rapport absent ou sans
+  le fichier) est dit avec ses pièces — fichier, code, signal, statuts du rapport, fin de stderr — et
+  ne classe jamais. Banc : un rapport vert avec un processus en 1 n'alimente jamais `dejaRouges`.
 
 ### Changed
 

@@ -329,6 +329,23 @@ export const MUTANTS = [
     pourquoi: "« transmis tel quel » convertissait encore : abc arrivait en NaN et l'exploitant ne retrouvait pas ce qu'il avait saisi",
     bancs: ["server/__tests__/captureSansBloquer.test.js"],
   },
+  // ── 14/09 — septième passe de l'audit externe ────────────────────────────────────────────────
+  {
+    id: "autonome-journal-rejet-non-attrape",
+    fichier: "context/standalone.js",
+    avant: "    if (resultat && typeof resultat.then === \"function\") resultat.then(undefined, () => { /* un journal ne doit jamais interrompre le traitement */ });",
+    apres: "    void resultat;",
+    pourquoi: "ctx.errors et le journal des capacités autonomes sont le même objet : un capture qui rejette tuait le processus à mail.send sans secret, avant tout réseau",
+    bancs: ["server/__tests__/captureSansBloquer.test.js"],
+  },
+  {
+    id: "ordre-rejeu-classe-par-le-code-de-sortie-seul",
+    fichier: "tools/ordre-des-bancs.mjs",
+    avant: "  if (vert && code === 0) return { classe: \"passe-seul\" };",
+    apres: "  if (code === 0) return { classe: \"passe-seul\" }; if (code !== 0) return { classe: \"rouge-prealable\" };",
+    pourquoi: "le rejeu individuel concluait sur le code de sortie seul : un harnais qui sort en non-zéro après un rapport vert devenait un rouge préalable, et la garde rendait non concluant sur du code sain",
+    bancs: ["tools/__tests__/ordreDesBancs.test.js"],
+  },
 ];
 
 export const empreinte = (texte) => createHash("sha256").update(texte).digest("hex").slice(0, 16);
