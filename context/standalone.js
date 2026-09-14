@@ -18,6 +18,20 @@
 const crypto = require("node:crypto");
 const storage = require("./storage");
 
+// ⚠️ « JAMAIS BLOQUANT » NE TENAIT QUE POUR UNE EXCEPTION SYNCHRONE, ICI AUSSI. Le cœur a reçu
+// `server/capture.js` à la sixième passe de l'audit ; ce contexte gardait cinq appels directs à
+// `journal.capture` sous un `try/catch`, et un helper en ligne dans `appelHote`. Or `ctx.errors` et le
+// journal capturé par ces capacités sont LE MÊME objet : un hôte qui pose un `capture` qui rejette
+// tuait le processus à `mail.send` sans secret, avant tout réseau (reproduit par l'audit, septième
+// passe, 14/09). Même règle que le cœur, reprise ici sans l'importer — le contexte ne dépend pas du
+// serveur — et UNE seule forme : tout appel au journal passe par ici, un banc structurel le tient.
+function capturerJournalSansBloquer(journal, erreur, meta) {
+  try {
+    const resultat = journal && typeof journal.capture === "function" ? journal.capture(erreur, meta) : undefined;
+    if (resultat && typeof resultat.then === "function") resultat.then(undefined, () => { /* un journal ne doit jamais interrompre le traitement */ });
+  } catch { /* exception synchrone : même règle */ }
+}
+
 /**
  * Retire les barres finales d'une base d'URL.
  *
@@ -228,9 +242,7 @@ async function appelHote(url, secret, corps, errors) {
   // indiscernable de « le droit est refusé », et on cherche pendant une demi-journée du côté des
   // rôles. Un hôte qui a écrit sa route sur la description du contrat plutôt que sur le code a
   // perdu exactement ce temps-là.
-  // Un journal qui échoue — exception OU promesse rejetée — ne doit rien arrêter (même règle que
-  // `server/capture.js`, reprise ici sans importer le cœur depuis le contexte).
-  const signaler = (quoi) => { try { const r = errors && errors.capture(new Error(`route hôte : ${quoi}`), { url }); if (r && typeof r.then === "function") r.then(undefined, () => {}); } catch { /* jamais bloquant */ } };
+  const signaler = (quoi) => capturerJournalSansBloquer(errors, new Error(`route hôte : ${quoi}`), { url });
   try {
     const r = await fetchBorne(url, {
       method: "POST",
@@ -335,7 +347,7 @@ function creerLimites(db, journal, horloge = () => Date.now()) {
   function prevenirUneFois(message) {
     if (deja === message) return;
     deja = message;
-    try { journal.capture(new Error(message), { route: "limits" }); } catch { /* jamais bloquant */ }
+    try { capturerJournalSansBloquer(journal, new Error(message), { route: "limits" }); } catch { /* jamais bloquant */ }
   }
 
   async function tablePresente() {
@@ -348,7 +360,7 @@ function creerLimites(db, journal, horloge = () => Date.now()) {
       if (!signale) {
         signale = true;
         try {
-          journal.capture(new Error(
+          capturerJournalSansBloquer(journal, new Error(
             "compteurs de débit non partagés : appliquez supabase/migrations/0003-limites-partagees.sql. "
             + "Sans elle, chaque instance compte pour elle seule et les limites sont plus lâches qu'annoncé.",
           ), { route: "limits" });
@@ -548,7 +560,7 @@ function createStandaloneContext(env = process.env) {
         const secret = String(env.PLAYER_HOST_MAIL_SECRET || "");
         if (!url) return null;
         if (!secret) {
-          try { journal.capture(new Error("PLAYER_HOST_MAIL_URL est configurée sans PLAYER_HOST_MAIL_SECRET : aucun envoi ne partira"), {}); } catch { /* ignore */ }
+          try { capturerJournalSansBloquer(journal, new Error("PLAYER_HOST_MAIL_URL est configurée sans PLAYER_HOST_MAIL_SECRET : aucun envoi ne partira"), {}); } catch { /* ignore */ }
           return null;
         }
         const reponse = await appelHote(url, secret, message, journal);
@@ -593,7 +605,7 @@ function createStandaloneContext(env = process.env) {
         if (emetteur && !cle) {
           // Le refus silencieux est le piège de cette configuration : sans clé, chaque membre est
           // simplement « non authentifié », ce qui ressemble à un droit manquant. On le dit.
-          try { journal.capture(new Error("PLAYER_AUTH_URL est configurée sans PLAYER_AUTH_KEY : aucun jeton ne peut être vérifié"), {}); } catch { /* ignore */ }
+          try { capturerJournalSansBloquer(journal, new Error("PLAYER_AUTH_URL est configurée sans PLAYER_AUTH_KEY : aucun jeton ne peut être vérifié"), {}); } catch { /* ignore */ }
         }
         if (!jeton || !url || !cle) return null;
         try {
@@ -759,7 +771,7 @@ function createStandaloneContext(env = process.env) {
         // parfaitement intentionnée — vaut refus, et le dit. C'est le cas le plus courant au
         // branchement d'un nouvel hôte.
         if (reponse && typeof reponse.allowed !== "boolean") {
-          try { journal.capture(new Error("route d'autorisation : champ `allowed` booléen attendu"), { recu: Object.keys(reponse).join(",") }); } catch { /* ignore */ }
+          try { capturerJournalSansBloquer(journal, new Error("route d'autorisation : champ `allowed` booléen attendu"), { recu: Object.keys(reponse).join(",") }); } catch { /* ignore */ }
         }
         return reponse ? reponse.allowed === true : false;
       },

@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, it, expect } from "vitest";
 
-import { ORDRE_DECLARE, confronter, fichiersEnEchec, fichiersVus, grainePourJour, grainesDemandees, verdict } from "../ordre-des-bancs.mjs";
+import { ORDRE_DECLARE, classerRejeu, classerRouge, confronter, confronterExecution, fichiersEnEchec, fichiersVus, grainePourJour, grainesDemandees, piecesDe, verdict } from "../ordre-des-bancs.mjs";
 
 // ⚠️ UN RAPPORT STRUCTURÉ, JAMAIS LA SORTIE TEXTE. La première écriture cherchait « FAIL <chemin> »
 // dans tout ce que vitest imprimait — y compris ce que les bancs impriment eux-mêmes en lançant des
@@ -53,6 +53,134 @@ describe("lire le rapport JSON de vitest", () => {
     expect(fichiersVus(null)).toBe(null);
     expect(fichiersVus({ testResults: [] })).toBe(null);
     expect(fichiersVus("vitest a explosé")).toBe(null);
+  });
+});
+
+// ⚠️ LE REJEU INDIVIDUEL CONCLUAIT SUR LE CODE DE SORTIE SEUL — « le processus a-t-il échoué ? » pour
+// répondre à « qu'a rendu le banc ? ». Un audit externe a vu six fichiers déclarés « déjà rouges »
+// que 6/6 rejouaient verts à la main (septième passe, 14/09). Le rapport et le processus sont
+// confrontés ; tout désaccord est dit avec ses pièces et ne classe jamais.
+describe("⚠️ classerRejeu : le rapport ET le processus, jamais l'un sans l'autre", () => {
+  const racine = "/r";
+  const rapport = (statut, nom = "a.test.js") => ({ testResults: [{ name: `/r/${nom}`, status: statut }] });
+  const proc = (status, extra = {}) => ({ status, signal: null, stderr: "", ...extra });
+
+  it("rapport vert + code 0 → passe seul", () => {
+    expect(classerRejeu({ fichier: "a.test.js", r: proc(0), rapport: rapport("passed"), racine })).toEqual({ classe: "passe-seul" });
+  });
+  it("rapport rouge + code non nul → rouge préalable", () => {
+    expect(classerRejeu({ fichier: "a.test.js", r: proc(1), rapport: rapport("failed"), racine })).toEqual({ classe: "rouge-prealable" });
+  });
+  it("⚠️ rapport VERT + code non nul → NON CONCLUANT, jamais « rouge préalable » — c'est le cas de l'audit", () => {
+    const c = classerRejeu({ fichier: "a.test.js", r: proc(1, { signal: null, stderr: "ligne 1\nharnais : sortie forcée" }), rapport: rapport("passed"), racine });
+    expect(c.classe).toBe("non-concluant");
+    expect(c.raison).toMatch(/a\.test\.js : désaccord instrument\/processus : le rapport dit tout vert, le processus rend le code 1/);
+    expect(c.raison, "les statuts du rapport sont imprimés").toMatch(/a\.test\.js=passed/);
+    expect(c.raison, "et la fin de stderr").toMatch(/harnais : sortie forcée/);
+  });
+  it("rapport rouge + code 0 → NON CONCLUANT (désaccord dans l'autre sens)", () => {
+    const c = classerRejeu({ fichier: "a.test.js", r: proc(0), rapport: rapport("failed"), racine });
+    expect(c.classe).toBe("non-concluant");
+    expect(c.raison).toMatch(/le rapport dit 1 rouge\(s\), le processus rend le code 0/);
+  });
+  it("un signal est dit quand il y en a un", () => {
+    const c = classerRejeu({ fichier: "a.test.js", r: proc(null, { signal: "SIGKILL" }), rapport: rapport("passed"), racine });
+    expect(c.classe).toBe("non-concluant");
+    expect(c.raison).toMatch(/signal SIGKILL/);
+  });
+  it("rapport absent, vide ou illisible → NON CONCLUANT", () => {
+    for (const rapportNul of [null, {}, { testResults: [] }]) {
+      const c = classerRejeu({ fichier: "a.test.js", r: proc(1), rapport: rapportNul, racine });
+      expect(c.classe).toBe("non-concluant");
+      expect(c.raison).toMatch(/rapport JSON absent ou vide/);
+    }
+  });
+  it("un rapport qui ne contient PAS le fichier demandé → NON CONCLUANT, et dit ce qu'il contient", () => {
+    const c = classerRejeu({ fichier: "b.test.js", r: proc(0), rapport: rapport("passed", "a.test.js"), racine });
+    expect(c.classe).toBe("non-concluant");
+    expect(c.raison).toMatch(/ne contient pas b\.test\.js \(il contient : a\.test\.js\)/);
+  });
+  it("un statut inattendu (ni passed ni failed) → NON CONCLUANT", () => {
+    expect(classerRejeu({ fichier: "a.test.js", r: proc(0), rapport: rapport("skipped"), racine }).classe).toBe("non-concluant");
+  });
+  it("⚠️ status: null + SIGKILL + rapport rouge → NON CONCLUANT, pas « rouge préalable » — null !== 0 n'est pas un code concordant", () => {
+    const c = classerRejeu({ fichier: "a.test.js", r: { status: null, signal: "SIGKILL", stderr: "" }, rapport: rapport("failed"), racine });
+    expect(c.classe).toBe("non-concluant");
+    expect(c.raison).toMatch(/tué par un signal/);
+  });
+});
+
+// ⚠️ UNE SEULE CONFRONTATION POUR TOUTE EXÉCUTION DE VITEST — la suite mélangée initiale comprise. La
+// première correction ne confrontait que les rejeux : un rapport vert écrit PUIS un processus qui
+// sort en 1 rendait « conforme » (audit, huitième passe).
+describe("⚠️ confronterExecution : le rapport ET le processus, pour la suite mélangée aussi", () => {
+  const racine = "/r";
+  const R = (...statuts) => ({ testResults: statuts.map((st, i) => ({ name: `/r/f${i}.test.js`, status: st })) });
+  const P = (status, signal = null) => ({ status, signal, stderr: "" });
+  it("tout vert + code 0 + aucun signal → vert", () => {
+    expect(confronterExecution({ r: P(0), rapport: R("passed", "passed"), racine })).toEqual({ etat: "vert", rouges: [] });
+  });
+  it("un rouge + code entier non nul + aucun signal → rouge, avec les fichiers", () => {
+    expect(confronterExecution({ r: P(1), rapport: R("passed", "failed"), racine })).toEqual({ etat: "rouge", rouges: ["f1.test.js"] });
+  });
+  it("⚠️ tout vert + code 1 → NON CONCLUANT — le contre-exemple de l'audit, qui rendait « conforme »", () => {
+    const e = confronterExecution({ r: P(1), rapport: R("passed"), racine });
+    expect(e.etat).toBe("non-concluant");
+    expect(e.raison).toMatch(/le rapport dit tout vert, le processus rend le code 1/);
+  });
+  it("un rouge + code 0 → NON CONCLUANT", () => {
+    expect(confronterExecution({ r: P(0), rapport: R("failed"), racine }).etat).toBe("non-concluant");
+  });
+  it("⚠️ status null → NON CONCLUANT, même avec un rouge dans le rapport", () => {
+    const e = confronterExecution({ r: P(null), rapport: R("failed"), racine });
+    expect(e.etat).toBe("non-concluant");
+    expect(e.raison).toMatch(/le processus rend null/);
+  });
+  it("⚠️ un signal → NON CONCLUANT, même avec code null et rapport rouge", () => {
+    const e = confronterExecution({ r: P(null, "SIGKILL"), rapport: R("failed"), racine });
+    expect(e.etat).toBe("non-concluant");
+    expect(e.raison).toMatch(/tué par un signal/);
+  });
+  it("rapport absent, vide, ou avec un statut inattendu → NON CONCLUANT", () => {
+    expect(confronterExecution({ r: P(0), rapport: null, racine }).etat).toBe("non-concluant");
+    expect(confronterExecution({ r: P(0), rapport: { testResults: [] }, racine }).etat).toBe("non-concluant");
+    expect(confronterExecution({ r: P(0), rapport: R("passed", "skipped"), racine }).etat).toBe("non-concluant");
+  });
+});
+
+// ⚠️ LE CONTRÔLE ÉTAIT EXÉCUTÉ APRÈS LE STIMULUS QUI LE CONTAMINE : six fichiers rouges juste après la
+// suite lourde, 6/6 verts quelques instants plus tard (audit, huitième passe). Deux confirmations
+// isolées, et une table qui ne conclut « dépendance » que sur vert/rouge.
+describe("⚠️ classerRouge : deux confirmations isolées, jamais un seul contrôle après le stimulus", () => {
+  const V = { classe: "passe-seul" }, X = { classe: "rouge-prealable" }, NC = { classe: "non-concluant", raison: "r" };
+  it("normal vert + mélangé rouge → dépendance intra-fichier confirmée", () => {
+    expect(classerRouge({ normal: V, melange: X })).toEqual({ classe: "dependance" });
+  });
+  it("⚠️ normal vert + mélangé vert → interférence de la suite complète, PAS une dépendance d'ordre", () => {
+    expect(classerRouge({ normal: V, melange: V })).toEqual({ classe: "interference" });
+  });
+  it("normal rouge + mélangé rouge → rouge indépendant de l'ordre", () => {
+    expect(classerRouge({ normal: X, melange: X })).toEqual({ classe: "rouge-independant" });
+  });
+  it("normal rouge + mélangé vert → instable", () => {
+    expect(classerRouge({ normal: X, melange: V })).toEqual({ classe: "instable" });
+  });
+  it("toute discordance rapport/processus → non concluant, avec les raisons", () => {
+    expect(classerRouge({ normal: NC, melange: X }).classe).toBe("non-concluant");
+    expect(classerRouge({ normal: V, melange: NC }).raison).toBe("r");
+  });
+});
+
+describe("les pièces conservées pour un rouge", () => {
+  it("messages d'échec du rapport, code, signal, fin de stderr, graine et mode", () => {
+    const rapport = { testResults: [{ name: "/r/a.test.js", status: "failed", assertionResults: [
+      { fullName: "a > b", status: "failed", failureMessages: ["AssertionError: expected 1 to be 2\n    at x"] },
+      { fullName: "a > c", status: "passed", failureMessages: [] },
+    ] }] };
+    const p = piecesDe({ fichier: "a.test.js", r: { status: 1, signal: null, stderr: "l1\nl2" }, rapport, graine: 42, mode: "seul, mélangé", racine: "/r" });
+    expect(p).toMatch(/a\.test\.js \[seul, mélangé, graine 42\] code 1, signal aucun/);
+    expect(p).toMatch(/échecs : a > b — AssertionError: expected 1 to be 2/);
+    expect(p).toMatch(/stderr : l1 \| l2/);
   });
 });
 

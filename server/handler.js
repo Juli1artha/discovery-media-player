@@ -1220,7 +1220,7 @@ async function handlerMesure(req, res) {
     // exactement comme sans PLAYER_HOST_AUTHZ_URL personne ne peut DIFFUSER.
     if (share.embed && !(PLAYER.config.extraFrameAncestors || []).length) {
       try {
-        capturerSansBloquer(PLAYER.errors, 
+        capturerSansBloquer(PLAYER.errors,
           new Error("?embed=1 demandé mais DOC_FRAME_ANCESTORS est vide : seuls une page de même origine et *.vercel.app peuvent encadrer cette instance"),
           { route: "doc", indice: "le navigateur bloquera l'iframe avant le chargement — aucun embed-denied ne partira" },
         );

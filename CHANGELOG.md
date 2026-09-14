@@ -20,16 +20,51 @@ the notes there are this file's section for that version.
   configuration hors plage : `unhandledRejection`, sortie 1 avant le premier octet servi (reproduit
   par un audit externe sur le tag v0.1.166, sixième passe). `server/capture.js` porte la règle une
   fois pour tous : exception ET promesse neutralisées, jamais attendue. Banc dans un vrai
-  sous-processus : `capture` rejette, configuration invalide, le témoin est atteint, sortie 0. Le
-  contexte autonome applique la même règle à son propre journal. Mutant.
+  sous-processus : `capture` rejette, configuration invalide, le témoin est atteint, sortie 0. ⚠️ Le
+  contexte autonome ne l'appliquait d'abord qu'à `appelHote` : cinq appels directs à `journal.capture`
+  restaient sous un `try/catch`, et `ctx.errors` est le même objet — un hôte qui pose un `capture` qui
+  rejette tuait le processus à `mail.send` sans secret, avant tout réseau (audit, septième passe).
+  Un seul helper local, `capturerJournalSansBloquer`, pour les six emplacements ; banc en vrai
+  sous-processus sur `mail.send`, sortie 0 ; un banc structurel refuse tout appel direct non attendu
+  au journal hors des deux helpers. Deux mutants.
 - ⚠️ **Le contexte autonome disait « transmis tel quel » et convertissait encore.** `Number("abc")`
   arrivait au cœur en `NaN`, et le diagnostic disait `relayStallMs=NaN` : l'exploitant ne retrouvait
   pas ce qu'il avait saisi (audit, sixième passe). La chaîne d'environnement passe intacte, le cœur
   la borne et cite ce qu'il a reçu ; les types disent qu'une chaîne est acceptée. Banc sur le chemin
   autonome complet, pas seulement sur `entierBorne`. Mutant.
 
+- ⚠️ **La garde d'ordre des bancs concluait sur le code de sortie seul, et son contrôle était
+  contaminé par le stimulus.** Trois défauts, trouvés par l'audit sur deux passes. Le rejeu individuel
+  se décidait par `r.status === 0` (septième passe) ; la première correction ne confrontait que les
+  rejeux, et l'exécution mélangée initiale rendait encore « conforme » sur un rapport vert écrit puis
+  un processus en 1, tandis que `status: null` (tué par signal) passait pour un code non nul
+  concordant (huitième passe). `confronterExecution` est la seule confrontation, pour toute exécution
+  de vitest : tout vert + 0 + aucun signal → vert ; un rouge + code entier non nul + aucun signal →
+  rouge ; tout le reste — `null`, signal, vert + non-zéro, rouge + 0, rapport absent, vide ou
+  incomplet — non concluant, avec ses pièces. Et un contrôle exécuté juste après la suite lourde
+  rougissait d'épuisement, pas d'ordre : six fichiers « déjà rouges » chez l'audit, 6/6 verts
+  quelques instants plus tard. Chaque rouge reçoit désormais **deux confirmations isolées** — seul en
+  ordre normal, seul mélangé sous la même graine — et une table ne conclut « dépendance » que sur
+  vert/rouge ; vert/vert est une interférence de la suite complète (non concluant, pas une accusation),
+  rouge/vert est instable. Les pièces de chaque rouge sont conservées : messages d'échec du rapport,
+  code, signal, fin de stderr, graine, mode. Quatre mutants.
+
 ### Changed
 
+- ⚠️ **La carte porte trois natures, et la règle « lire `fenetreS` avant `total` » n'en couvrait
+  qu'une.** Le paragraphe de la veille l'étendait à « tout `mesures` » ; un hôte (ADV) a appliqué la
+  règle des compteurs à `memoireMio`, qui est une **jauge** (`process.memoryUsage()` à l'instant de
+  la lecture, aucune fenêtre n'entre dans sa production) — et rien sur la carte ne lui disait qu'elle
+  n'était pas couverte. Le contrat distingue désormais compteur (sauvé par `fenetreS`), jauge (rien
+  ne la sauve : un processus au repos depuis une semaine pèse autant qu'un processus né il y a une
+  minute, seule une lecture sous charge dit quelque chose) et échantillon (`boucleMs`, qui rend
+  `null` tant qu'il n'a rien vu et se sauve tout seul). C'est l'hôte qui a dressé le tableau.
+- Le contrat dit aussi que l'échantillonnage externe d'un compteur de processus **hérite** de la
+  fenêtre au lieu de la rattraper — calcul de l'hôte : un cron quotidien sur des fenêtres de 15 s
+  observe 0,017 % de l'année, un cron horaire 0,42 % — et que la seule forme qui marcherait sur du
+  serverless est une poussée à la fin du processus, que le lecteur ne fait pas et qu'aucune
+  plate-forme ne garantit. La limite est écrite avec son issue, pour que personne ne construise
+  l'échantillonneur d'abord.
 - Deux textes contredisaient la mesure : « une chaîne est refusée » (alors que `"45000"` passe) devient
   « une chaîne qui n'est pas un entier dans la plage » ; « la RSS passe de 130 à 194 Mio » (dans les
   types et un nom de banc) redevient ce qui a été mesuré — de 63 à 193–257 Mio, une croissance de 130
