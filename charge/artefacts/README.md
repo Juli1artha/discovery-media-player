@@ -37,7 +37,7 @@ exige une cohorte **complète** (positions exactement `1..sequence.length`, tous
 **interrompue** (préfixe continu `1..k`, le dernier `complete: false`, rien après) ; tout ce qui
 doit être constant l'est nommément (`runId`, commit, version, empreinte du schéma, environnement
 entier, nom et paramètres du scénario, modèle et forme d'arrivée, règles d'isolation) et ce qui
-varie avec l'échelle est nommément exclu (`spectators`, `position`, `maxInFlight`, `datasetId`) ;
+varie avec l'échelle est nommément exclu (`spectators`, `position`, `maxInFlight`, `egressIps`, `datasetId`) ;
 un même `binSetId` porte les mêmes bornes.
 
 **L'ancre.** Chaque artefact porte `identity.schemaSha256`, l'empreinte canonique du schéma sous

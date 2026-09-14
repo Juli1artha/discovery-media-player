@@ -59,7 +59,10 @@ export const SCHEMA_DE = (version) => `${DOSSIER_SCHEMAS}/artefact.schema-${vers
 /** Le plancher d'observations d'un artefact complet : un p99 sur moins n'en est pas un (audit). */
 export const OBSERVATIONS_MIN = 1000;
 /** Ce qui VARIE avec l'échelle dans une cohorte, nommément — tout le reste du scénario et du protocole est constant. */
-export const VARIABLES_D_ECHELLE = ["scenario.spectators", "scenario.position", "scenario.maxInFlight", "isolation.datasetId"];
+// ⚠️ `egressIps` EN FAIT PARTIE, ET LA PREMIÈRE COURSE RÉELLE L'A DIT : le producteur répartit les
+// spectateurs sur min(spectators, 250) adresses, donc 100 à la position 1 et 250 à la position 2 — la
+// cohorte a été refusée pour « pas les mêmes conditions » alors que c'était l'échelle (forge, 14/09).
+export const VARIABLES_D_ECHELLE = ["scenario.spectators", "scenario.position", "scenario.maxInFlight", "scenario.egressIps", "isolation.datasetId"];
 
 /** Les mots-clés que le parcours préalable connaît — ceux du sous-ensemble 2020-12 que le schéma emploie. */
 export const MOTS_CLES = new Set([
@@ -254,7 +257,7 @@ const lireChemin = (a, chemin) => chemin.split(".").reduce((o, k) => (estObjet(o
 /** Ce qui doit être IDENTIQUE dans une cohorte, nommément ; `VARIABLES_D_ECHELLE` dit ce qui ne l'est pas. */
 export const CONSTANTES_DE_COHORTE = [
   "schemaVersion", "identity.runId", "identity.commitSha", "identity.packageVersion", "identity.schemaSha256", "environment",
-  "scenario.name", "scenario.presentations", "scenario.repetition", "scenario.sequence", "scenario.warmupRequests", "scenario.egressIps",
+  "scenario.name", "scenario.presentations", "scenario.repetition", "scenario.sequence", "scenario.warmupRequests",
   "workload.arrivalModel", "workload.arrivalPattern",
   "isolation.processReused", "isolation.databaseReset", "isolation.cacheReset", "isolation.metricsReset", "isolation.countersReportedAsDeltas",
 ];

@@ -258,8 +258,9 @@ describe("⚠️ la cohorte est une campagne, pas un tas de fichiers", () => {
     expect(texte).toMatch(/p3\.json : workload\.arrivalPattern "burst" diffère de p1\.json \("uniform"\)/);
     expect(texte).toMatch(/p3\.json : isolation\.cacheReset false diffère de p1\.json \(true\)/);
     expect(texte).toMatch(/p2\.json : identity\.schemaSha256 "f{64}" diffère/);
-    // Ce qui varie : les effectifs, les rangs, le plafond en vol, le jeu de données — jamais comparés.
-    const v = trio(); v[1].artefact.scenario.maxInFlight = 1000;
+    // Ce qui varie : les effectifs, les rangs, le plafond en vol, les adresses de sortie (min(spectators,
+    // 250) : 100 puis 250 — la première course réelle l'a dit), le jeu de données — jamais comparés.
+    const v = trio(); v[1].artefact.scenario.maxInFlight = 1000; v[1].artefact.scenario.egressIps = 250;
     expect(controlerCohorte(v)).toEqual([]);
     for (const chemin of VARIABLES_D_ECHELLE) expect(CONSTANTES_DE_COHORTE, chemin).not.toContain(chemin);
   });

@@ -115,7 +115,10 @@ async function versionPostgrest(base, fetchFn = globalThis.fetch) {
     const r = await fetchFn(`${String(base).replace(/\/+$/, "")}/rest/v1/`, { headers: { accept: "application/openapi+json" }, signal: AbortSignal.timeout(3000) });
     if (!r.ok) return "";
     const d = await r.json();
-    return typeof d?.info?.version === "string" ? d.info.version : "";
+    // ⚠️ BORNÉE ET FILTRÉE : cette chaîne vient du réseau et finit dans un fichier. Une version est
+    // faite de chiffres, de lettres, de points, de tirets et de plus — rien d'autre, et pas plus de 40.
+    const v = d && d.info && typeof d.info.version === "string" ? d.info.version : "";
+    return /^[0-9A-Za-z.+-]{1,40}$/.test(v) ? v : "";
   } catch { return ""; }
 }
 
@@ -246,6 +249,9 @@ async function executerPosition({ player, presentations, base, appeler, position
       docId: `rapport-${position}-${crypto.randomBytes(4).toString("hex")}`, fileUrl: fichierUrl, fileName: "rapport.pdf",
       docTitle: `Rapport ${position}`, presenterName: "Rapport", owner: { email: "rapport@exemple.test", name: "Rapport" },
     });
+    // ⚠️ LE SLUG VIENT DE LA BASE, ET IL FINIT DANS L'ARTEFACT : filtré par liste blanche et borné, ou la
+    // position échoue — un artefact ne porte pas de chaîne qu'on n'a pas regardée.
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(String(p.slug))) throw new Error(`slug inattendu rendu par la base : ${JSON.stringify(String(p.slug).slice(0, 80))}`);
     await presentations.setPage(p.slug, p.control, pageAttendue);
     const iso = { ...isolation, datasetId: p.slug };
     const lireEtat = (i) => appeler({ method: "GET", headers: {}, socket: { remoteAddress: `10.0.1.${i % 250}` }, query: { present: p.slug, state: "1" } });
