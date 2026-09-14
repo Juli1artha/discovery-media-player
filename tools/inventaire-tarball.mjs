@@ -24,12 +24,23 @@
 
 import { execFileSync } from "node:child_process";
 
-const PACK = () =>
-  execFileSync("npm", ["pack", "--dry-run", "--json"], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-    timeout: 120000,
-  });
+// ⚠️ LE STDERR DE `npm pack` ÉTAIT JETÉ (`stdio: [..., "ignore"]`). Sur une forge dont le cache npm
+// n'est pas inscriptible, `npm pack` sort en 255 avec `EPERM` — et la seule pièce conservée par la
+// garde d'ordre était « code 255 », sans la cause. Un audit externe a passé une passe à attribuer six
+// rouges avant de trouver l'`EPERM` (neuvième passe, 14/09). Le code, le signal et la fin du stderr
+// traversent désormais l'erreur, bornés ; la sonde d'ordre les recopie dans ses pièces.
+/** Lance `npm pack --dry-run --json` (ou la commande donnée) ; en cas d'échec, lève en NOMMANT la cause. */
+export function lancerPack(commande = "npm", args = ["pack", "--dry-run", "--json"]) {
+  try {
+    return execFileSync(commande, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 120000 });
+  } catch (e) {
+    const stderr = String((e && e.stderr) || "").trim().split("\n").slice(-6).join(" | ").slice(0, 600);
+    const err = new Error(`${commande} ${args.join(" ")} a échoué : code ${e && e.status}, signal ${(e && e.signal) || "aucun"}${stderr ? ` — stderr (fin) : ${stderr}` : " — stderr vide"}`);
+    err.cause = e;
+    throw err;
+  }
+}
+const PACK = () => lancerPack();
 
 /**
  * Tous les chemins que le tarball portera, tels que npm les annonce.

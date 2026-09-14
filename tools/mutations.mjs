@@ -367,6 +367,23 @@ export const MUTANTS = [
     pourquoi: "status: null (processus tué) passait pour un code non nul concordant, parce que null !== 0",
     bancs: ["tools/__tests__/ordreDesBancs.test.js"],
   },
+  // ── 14/09 — neuvième passe de l'audit externe : les pièces de diagnostic ────────────────────
+  {
+    id: "inventaire-stderr-de-npm-pack-jete",
+    fichier: "tools/inventaire-tarball.mjs",
+    avant: "    return execFileSync(commande, args, { encoding: \"utf8\", stdio: [\"ignore\", \"pipe\", \"pipe\"], timeout: 120000 });",
+    apres: "    return execFileSync(commande, args, { encoding: \"utf8\", stdio: [\"ignore\", \"pipe\", \"ignore\"], timeout: 120000 });",
+    pourquoi: "le stderr de npm pack était jeté : sur une forge au cache non inscriptible, la seule pièce était « code 255 », sans l'EPERM",
+    bancs: ["tools/__tests__/inventaireTarball.test.js"],
+  },
+  {
+    id: "ordre-premiere-ligne-au-lieu-de-la-premiere-informative",
+    fichier: "tools/ordre-des-bancs.mjs",
+    avant: "export const premiereLigneInformative = (texte) => (String(texte || \"\").split(\"\\n\").map((l) => l.trim()).find((l) => l && !LIGNE_VIDE_DE_SENS.test(l) && !/^at /.test(l)) || \"\").slice(0, 200);",
+    apres: "export const premiereLigneInformative = (texte) => (String(texte || \"\").split(\"\\n\").map((l) => l.trim()).find((l) => l) || \"\").slice(0, 200);",
+    pourquoi: "« Error: STACK_TRACE_ERROR » n'est pas une cause : la première ligne d'un failureMessages de vitest est parfois ce libellé, la cause étant plus bas",
+    bancs: ["tools/__tests__/ordreDesBancs.test.js"],
+  },
 ];
 
 export const empreinte = (texte) => createHash("sha256").update(texte).digest("hex").slice(0, 16);

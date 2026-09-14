@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, it, expect } from "vitest";
 
-import { ORDRE_DECLARE, classerRejeu, classerRouge, confronter, confronterExecution, fichiersEnEchec, fichiersVus, grainePourJour, grainesDemandees, piecesDe, verdict } from "../ordre-des-bancs.mjs";
+import { ORDRE_DECLARE, classerRejeu, classerRouge, confronter, confronterExecution, fichiersEnEchec, fichiersVus, grainePourJour, grainesDemandees, piecesDe, premiereLigneInformative, verdict } from "../ordre-des-bancs.mjs";
 
 // ⚠️ UN RAPPORT STRUCTURÉ, JAMAIS LA SORTIE TEXTE. La première écriture cherchait « FAIL <chemin> »
 // dans tout ce que vitest imprimait — y compris ce que les bancs impriment eux-mêmes en lançant des
@@ -181,6 +181,28 @@ describe("les pièces conservées pour un rouge", () => {
     expect(p).toMatch(/a\.test\.js \[seul, mélangé, graine 42\] code 1, signal aucun/);
     expect(p).toMatch(/échecs : a > b — AssertionError: expected 1 to be 2/);
     expect(p).toMatch(/stderr : l1 \| l2/);
+  });
+
+  // ⚠️ « Error: STACK_TRACE_ERROR » n'est pas une cause (audit, neuvième passe).
+  it("⚠️ la première ligne INFORMATIVE, pas la première ligne : STACK_TRACE_ERROR est sauté", () => {
+    expect(premiereLigneInformative("Error: STACK_TRACE_ERROR\nlisten EPERM: operation not permitted 127.0.0.1\n    at Server.listen")).toBe("listen EPERM: operation not permitted 127.0.0.1");
+    expect(premiereLigneInformative("Error:\n\n    at x")).toBe("");
+    const rapport = { testResults: [{ name: "/r/a.test.js", status: "failed", assertionResults: [
+      { fullName: "a > b", status: "failed", failureMessages: ["Error: STACK_TRACE_ERROR\nlisten EPERM: operation not permitted\n    at x"] },
+    ] }] };
+    const p = piecesDe({ fichier: "a.test.js", r: { status: 1, signal: null, stderr: "" }, rapport, mode: "seul, ordre normal", racine: "/r" });
+    expect(p).toMatch(/échecs : a > b — listen EPERM: operation not permitted/);
+    expect(p).not.toMatch(/STACK_TRACE_ERROR/);
+  });
+  it("le `message` du fichier (échec de hook) est repris quand il existe", () => {
+    const rapport = { testResults: [{ name: "/r/a.test.js", status: "failed", message: "Error: STACK_TRACE_ERROR\nbeforeAll: npm pack a échoué : code 255 — EPERM", assertionResults: [] }] };
+    const p = piecesDe({ fichier: "a.test.js", r: { status: 1, signal: null, stderr: "" }, rapport, mode: "seul, ordre normal", racine: "/r" });
+    expect(p).toMatch(/message du fichier : beforeAll: npm pack a échoué : code 255 — EPERM/);
+  });
+  it("⚠️ quand rien n'est exploitable, la pièce LE DIT et donne la commande qui en produira", () => {
+    const rapport = { testResults: [{ name: "/r/a.test.js", status: "failed", assertionResults: [{ fullName: "a > b", status: "failed", failureMessages: ["Error: STACK_TRACE_ERROR"] }] }] };
+    const p = piecesDe({ fichier: "a.test.js", r: { status: 1, signal: null, stderr: "" }, rapport, mode: "seul, ordre normal", racine: "/r" });
+    expect(p).toMatch(/aucune cause exploitable dans le rapport JSON — rejouer : npx vitest run a\.test\.js --reporter=verbose/);
   });
 });
 
