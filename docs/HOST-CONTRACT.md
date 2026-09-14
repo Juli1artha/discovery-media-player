@@ -843,6 +843,14 @@ back on an inability to *reach*.** And "do not fall back" applies to what you **
 
 ## What will bite
 
+⚠️ **`node_modules` cannot be a symlink, and a repository inside a syncing folder will break under
+you.** Reported by a host (13/09), not reproduced here: a checkout living in iCloud Drive had files
+duplicated and emptied *while being worked on* — four breakages in six days, four different
+signatures, one of which blocked a delivery. Their escape route, a symbolic link from `node_modules`
+to a folder outside the sync, is a dead end: `npm` replaces the link with a real directory, whether
+the target is empty or populated, on `install` as on `ci`. Keep the clone itself outside any
+synchronised folder; there is no way to keep only its dependencies out.
+
 ⚠️ **Every capability you provide must settle in bounded time — `db.request` first of all.** The
 player awaits your `db.request`, `storage.fetchFile`, `mail.send` and the visitor plugin; a promise
 that never settles keeps a request in flight, and the read cache admits at most 128 in-flight reads

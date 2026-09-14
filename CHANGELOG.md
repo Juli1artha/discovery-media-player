@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.166] — 2026-09-14
+
 ### Added
 
 - **`relaisRefuses` sur la carte de contrat** — `{ total, fenetreS, derniereIlYaS }`, même forme que
@@ -52,6 +54,10 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- Le contrat dit qu'un dépôt d'hôte ne doit pas vivre dans un dossier synchronisé, et que sortir
+  seulement `node_modules` par un lien symbolique est un cul-de-sac (`npm` le remplace par un vrai
+  dossier, à `install` comme à `ci`). Rapporté par un hôte (STUDIO, quatre casses en six jours dans
+  iCloud Drive), non reproduit ici — écrit pour que personne n'ait à le retrouver.
 - ⚠️ **Le tableau des zones a une zone `pages`** : `server/page-*.js`, `server/gabarit-*.js` et les
   deux bundles générés — le HTML et le JavaScript de la page des spectateurs. « `browser` : 0 » a été
   lu six trains de suite par un hôte comme « rien ne change pour nos visiteurs » ; c'était vrai de
@@ -7258,7 +7264,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.165...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.166...HEAD
+[0.1.166]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.165...v0.1.166
 [0.1.165]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.164...v0.1.165
 [0.1.164]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.163...v0.1.164
 [0.1.163]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.162...v0.1.163
