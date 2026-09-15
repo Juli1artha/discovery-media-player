@@ -49,7 +49,7 @@
 // `--graine=<n>` rejoue exactement.
 
 import { spawnSync } from "node:child_process";
-import { readFileSync, unlinkSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -247,11 +247,21 @@ if (estExecuteDirectement(import.meta.url)) {
     if (!graines.length || graines.some((g) => !Number.isFinite(g))) return inconclusif([`graine illisible : ${process.argv.find((a) => a.startsWith("--graine="))}`]);
 
     // Le rapport JSON va dans un fichier : la sortie texte reste lisible, et n'est jamais analysée.
+    //
+    // ⚠️ LE DOSSIER EST CRÉÉ PAR `mkdtempSync`, PAS COMPOSÉ À LA MAIN. Cette ligne fabriquait un
+    // chemin dans le dossier temporaire — `pid` + `Math.random()` — et écrivait dedans. Le dossier
+    // temporaire est PARTAGÉ et inscriptible par tous : un chemin qu'on compose peut déjà exister,
+    // et qui l'a créé avant nous en décide les droits — ou y pose un lien qui renvoie ailleurs.
+    // `Math.random()` n'est pas une source imprévisible, et `pid` se devine. `mkdtempSync` crée le
+    // dossier de façon ATOMIQUE, en 0700, avec un suffixe que personne ne compose. Relevé par
+    // CodeQL sur du code neuf de la PR 547 — celui-ci était déjà là, hors du diff, donc muet : la
+    // même faute, corrigée au même endroit qu'elle aurait été redécouverte un jour.
     const rapportDe = (args) => {
-      const fichier = join(tmpdir(), `ordre-des-bancs-${process.pid}-${Math.random().toString(36).slice(2)}.json`);
+      const dossier = mkdtempSync(join(tmpdir(), "ordre-des-bancs-"));
+      const fichier = join(dossier, "rapport.json");
       const r = spawnSync("npx", ["vitest", "run", ...args, "--reporter=json", `--outputFile=${fichier}`], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
       const rapport = (() => { try { return JSON.parse(readFileSync(fichier, "utf8")); } catch { return null; } })();
-      try { unlinkSync(fichier); } catch { /* déjà absent */ }
+      try { rmSync(dossier, { recursive: true, force: true }); } catch { /* déjà absent */ }
       return { r, rapport };
     };
 

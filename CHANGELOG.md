@@ -14,6 +14,16 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- **Deux fichiers temporaires composés à la main, remplacés par `mkdtempSync`.** Le dossier
+  temporaire est **partagé et inscriptible par tous** : un chemin qu'on compose soi-même peut déjà
+  exister, et qui l'a créé avant nous en décide les droits — ou y pose un lien qui renvoie ailleurs.
+  `Math.random()` n'est pas une source imprévisible et un `pid` se devine. CodeQL l'a relevé sur du
+  code neuf de cette branche ; la même faute vivait déjà dans `tools/ordre-des-bancs.mjs`, **hors du
+  diff, donc muette** — corrigée ici plutôt que laissée à redécouvrir. Au passage, un motif
+  d'expression régulière bâti en n'échappant que les points : un échappement *partiel* change de
+  sens dès qu'une contre-oblique apparaît, et la question posée se répondait par une recherche
+  littérale.
+
 - ⚠️ **`identity.prHeadSha` était un champ MORT : il a valu `null` dans toutes les courses de PR
   depuis sa création.** Le producteur lisait `GITHUB_HEAD_SHA` — un nom que la forge **ne définit
   pas**. Elle définit `GITHUB_HEAD_REF`, qui porte le *nom* de la branche ; la tête, elle, n'est

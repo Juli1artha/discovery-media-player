@@ -22,7 +22,7 @@
 // fois. La règle vit donc maintenant dans `tools/configuration-des-bancs.mjs`, qui tourne aussi sur
 // la forge — et que `mutations.mjs` interroge plutôt que de redeviner le périmètre de son côté.
 
-import { readdirSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { readdirSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
@@ -93,9 +93,19 @@ describe("⚠️ LE DÉPÔT LUI-MÊME : chaque banc est joué une fois, et une s
 
 describe("⚠️ LA GARDE REFUSE, PLUTÔT QUE DE CONCLURE AU VERT", () => {
   const arbres = [];
-  const arbre = (fichiers) => {
-    const d = join(tmpdir(), `config-bancs-${Math.random().toString(36).slice(2)}`);
+  // ⚠️ `mkdtempSync`, ET PAS UN NOM QU'ON COMPOSE SOI-MÊME. Un chemin fabriqué dans le dossier
+  // temporaire — partagé, inscriptible par tous — est prévisible et surtout PRÉEXISTANT possible :
+  // qui l'a créé avant nous décide de ses droits, et nos écritures atterrissent dans son arbre.
+  // `mkdtempSync` crée le dossier de façon atomique, en 0700, avec un suffixe que personne ne
+  // devine. Relevé par CodeQL sur la PR 547 ; la faute était à moi, et le reste du dépôt le fait
+  // déjà correctement (`resumeDeCharge.test.js`).
+  const creerArbre = () => {
+    const d = mkdtempSync(join(tmpdir(), "config-bancs-"));
     arbres.push(d);
+    return d;
+  };
+  const arbre = (fichiers) => {
+    const d = creerArbre();
     for (const [chemin, contenu] of Object.entries(fichiers)) {
       const complet = join(d, chemin);
       mkdirSync(join(complet, ".."), { recursive: true });
@@ -173,7 +183,11 @@ describe("⚠️ LA GARDE REFUSE, PLUTÔT QUE DE CONCLURE AU VERT", () => {
     expect(r.code).toBe(1);
     expect(r.constats.join("\n")).toMatch(/vitest\.coin\.config\.mjs n'est lancée par aucune commande npm/);
     // Et la générale échappe à cette exigence : `vitest` la prend sans qu'on la nomme.
-    expect(r.constats.join("\n")).not.toMatch(new RegExp(`${GENERALE.replace(/\./g, "\\.")} n'est lancée`));
+    // ⚠️ UNE RECHERCHE LITTÉRALE, PAS UNE EXPRESSION FABRIQUÉE. La première rédaction bâtissait une
+    // RegExp en échappant les points d'un nom de fichier — un échappement PARTIEL, qui laisse
+    // passer la contre-oblique et change le sens du motif dès qu'elle apparaît. Une sous-chaîne
+    // répond exactement à la question posée et ne peut pas se tromper. Relevé par CodeQL (PR 547).
+    expect(r.constats.join("\n")).not.toContain(`${GENERALE} n'est lancée`);
   });
 
   it("`couvre` lit include ET exclude — un exclude ignoré rendrait tout le monde coupable", () => {
@@ -186,8 +200,7 @@ describe("⚠️ LA GARDE REFUSE, PLUTÔT QUE DE CONCLURE AU VERT", () => {
   it("la sonde de bancs ignore node_modules et les dépôts d'exemple", () => {
     // Sans quoi elle ramasserait les bancs de nos dépendances, et accuserait le dépôt de milliers
     // d'orphelins — une garde qui crie tout le temps est une garde qu'on désactive.
-    const d = join(tmpdir(), `config-bancs-${Math.random().toString(36).slice(2)}`);
-    arbres.push(d);
+    const d = creerArbre();
     for (const p of ["a.test.js", "node_modules/paquet/x.test.js", "examples/site/y.test.js"]) {
       mkdirSync(join(d, p, ".."), { recursive: true });
       writeFileSync(join(d, p), "");
