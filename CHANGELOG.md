@@ -51,6 +51,13 @@ the notes there are this file's section for that version.
   cohorte tronquée, pouvait réussir sans produire d'artefact et se bloquer sans le documenter : ce
   veto est ce qui a laissé le schéma 1 amendable assez longtemps pour recevoir la topologie, la
   provenance explicite et les deux renommages. Dernier point de sa liste en neuf étapes.
+  ⚠️ **L'ancre a fait rougir la PR qui la posait, et la garde avait raison** : prouver l'immuabilité
+  suppose de relire le schéma *au tag*, ce qu'un `checkout` sans tags rend impossible — la garde a
+  répondu NON CONCLUANT, « rien n'a été vérifié, donc rien n'est prouvé », et le job `schema` est
+  tombé. Le job `check` avait déjà `fetch-tags: true` ; `schema`, qui joue `charge/rapport.js` et
+  juge sa cohorte au passage, ne l'avait pas. Une garde qui a besoin d'un objet git doit tourner là
+  où cet objet existe : un banc lie désormais les deux — tout job de CI qui lance le validateur ou le
+  producteur sort le dépôt avec ses tags — et un mutant le tient.
 
 ## [0.1.169] — 2026-09-15
 

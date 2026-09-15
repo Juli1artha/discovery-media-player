@@ -1028,6 +1028,15 @@ jobs:
       PSQL: psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d player -qtA
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # ⚠️ SANS LES TAGS, L'ANCRE DU SCHÉMA NE PEUT PAS ÊTRE RELUE. `charge/rapport.js` juge sa
+          # cohorte par `tools/artefact-de-charge.mjs`, qui prouve l'immuabilité du schéma en le
+          # relisant AU TAG qui a publié son premier artefact (`git show v0.1.169:…`). Un checkout
+          # sans tags rend cette lecture impossible : la garde répond NON CONCLUANT — ce qui est son
+          # comportement juste, « rien n'a été vérifié, donc rien n'est prouvé » — et le job rougit.
+          # C'est arrivé à la PR qui a posé l'ancre : le job `check`, lui, avait déjà `fetch-tags`.
+          # Une garde qui a besoin d'un objet git doit tourner là où cet objet existe.
+          fetch-tags: true
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "22"

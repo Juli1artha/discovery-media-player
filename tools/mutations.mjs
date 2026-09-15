@@ -696,6 +696,14 @@ export const MUTANTS = [
     pourquoi: "un rejeu par workflow_dispatch exécute le workflow de main CONTRE LE CONTENU DU TAG : un outil de `tools/` n'existe sur aucun tag publié, et le rattrapage d'une sortie ratée — la raison d'être du dispatch — deviendrait impossible ; c'est l'erreur que ma première rédaction de ce correctif a commise",
     bancs: ["tools/__tests__/notesDeVersion.test.js"],
   },
+  {
+    id: "ancre-jugee-sans-les-tags-du-depot",
+    fichier: ".github/workflows/ci.yml",
+    avant: "          # Une garde qui a besoin d'un objet git doit tourner là où cet objet existe.\n          fetch-tags: true",
+    apres: "          # Une garde qui a besoin d'un objet git doit tourner là où cet objet existe.",
+    pourquoi: "prouver l'immuabilité suppose de relire le schéma AU TAG : sans les tags, la garde répond NON CONCLUANT et le job tombe — c'est exactement ce qui est arrivé à la PR qui a posé l'ancre, le job `schema` n'ayant pas le `fetch-tags` que `check` avait déjà",
+    bancs: ["tools/__tests__/artefactDeCharge.test.js"],
+  },
 ];
 
 export const empreinte = (texte) => createHash("sha256").update(texte).digest("hex").slice(0, 16);

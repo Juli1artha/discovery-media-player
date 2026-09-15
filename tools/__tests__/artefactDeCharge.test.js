@@ -12,6 +12,7 @@ import { readFileSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, rmSyn
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
+import { parse } from "yaml";
 
 import { RACINE } from "./aide/arbre-outils.mjs";
 import {
@@ -335,6 +336,28 @@ describe("⚠️ l'ancre : l'immuabilité se prouve contre le tag qui a publié,
     // est volontairement équivalent à zéro ancre, mais ne se dit pas pareil.
     const r = controlerAncres(schemas, { racine: mkdtempSync(join(tmpdir(), "sans-ancre-")), lireAuTag: () => { throw new Error("ne doit pas être appelé"); } });
     expect(r).toEqual({ constats: [], raisons: [], ancres: 0 });
+  });
+
+  it("⚠️ TOUT JOB DE CI QUI JUGE L'ANCRE SORT LE DÉPÔT AVEC SES TAGS", () => {
+    // ⚠️ L'ANCRE A ROUGI LA PR QUI L'A POSÉE, ET LA GARDE AVAIT RAISON. Prouver l'immuabilité
+    // suppose de relire le schéma AU TAG (`git show v0.1.169:…`) : un checkout sans tags rend cette
+    // lecture impossible, la garde répond NON CONCLUANT — « rien n'a été vérifié, donc rien n'est
+    // prouvé » — et le job tombe. Le job `check` avait déjà `fetch-tags: true` ; `schema`, qui joue
+    // `charge/rapport.js` et juge sa cohorte au passage, ne l'avait pas.
+    //
+    // Une garde qui a besoin d'un objet git doit tourner là où cet objet existe. Ce banc lie les
+    // deux : quel que soit le job qui lance l'un de ces outils, son checkout emporte les tags.
+    const ci = parse(readFileSync(join(RACINE, ".github/workflows/ci.yml"), "utf8"));
+    const juge = (job) => (job.steps || []).some((e) => typeof e.run === "string"
+      && (e.run.includes("tools/artefact-de-charge.mjs") || e.run.includes("charge/rapport.js")));
+    const jugeurs = Object.entries(ci.jobs).filter(([, job]) => juge(job));
+    expect(jugeurs.length, "aucun job de CI ne juge la cohorte — la sonde vise à côté").toBeGreaterThan(0);
+    for (const [nom, job] of jugeurs) {
+      const sorties = (job.steps || []).filter((e) => String(e.uses || "").startsWith("actions/checkout@"));
+      expect(sorties.length, `le job ${nom} juge l'ancre sans sortir le dépôt`).toBeGreaterThan(0);
+      expect(sorties.some((e) => e.with && e.with["fetch-tags"] === true),
+        `le job ${nom} juge l'ancre mais sort le dépôt SANS ses tags : « git show <tag>:… » y est impossible`).toBe(true);
+    }
   });
 
   it("⚠️ LE SCHÉMA 1 EST ANCRÉ À v0.1.169, ET SON EMPREINTE EST CELLE DU TAG", () => {
