@@ -14,6 +14,34 @@ the notes there are this file's section for that version.
 
 ### Added
 
+- **Le tableau d'une campagne se dérive de ses octets — `tools/resume-de-charge.mjs`.** Le 14/09 j'ai
+  relayé aux hôtes le relevé d'une course de PR (0.1.167, commit `8e9e37c`) en le présentant comme
+  celui du tag 0.1.168 (commit `f5f0ae7`). Les deux campagnes étaient vraies ; une seule mesurait le
+  tag ; personne ne pouvait le voir, parce que le tableau ne portait ni course, ni version, ni
+  commit, et que les percentiles avaient voyagé à la main d'un journal vers un message. « Faire plus
+  attention » ne corrige pas cela : ce qui corrige, c'est de retirer l'occasion. Le résumé est
+  engendré depuis les fichiers attachés, porte la provenance en tête et le **sha256 de chaque
+  fichier**, et il est **refusé quand la cohorte l'est** — une belle présentation fait passer ses
+  chiffres pour vérifiés. Il apparaît dans le corps de la Release, sous les notes. Il dit aussi ce
+  que la cadence vaut : 2 500 requêtes/s à mille spectateurs, contre ~40/s pour une relecture d'état
+  toutes les 25 s, soit **62,5×** la cadence nominale — une contrainte délibérée, pas une charge
+  réaliste, et le facteur n'était écrit nulle part.
+- **Le schéma 1 dit enfin les conditions de sa propre lecture.** `topology` (obligatoire) : le
+  générateur appelle `player.handler()` dans le processus, sans socket, sans parseur HTTP et sans
+  `bin/serve.js`, contre un PostgREST réel en loopback — sans quoi des latences de quelques
+  microsecondes se lisent comme du réseau. `environment` gagne le modèle de processeur, le
+  fournisseur et l'image du runner, la **période d'échantillonnage mémoire** (le pic n'est pas « le
+  maximum » mais « le maximum vu à cette cadence ») et la résolution du moniteur de boucle.
+  `identity` gagne dépôt, évènement, référence, numéro et tentative de course, et `prHeadSha` —
+  `GITHUB_SHA` sur une PR désigne un commit de fusion éphémère qui n'existera plus. `workload` gagne
+  la durée cible, les lectures par spectateur, l'algorithme et la graine. ⚠️ Deux renommages :
+  `scenario.maxInFlight` devient `workload.peakInFlight` (c'est un **résultat**, il figurait parmi
+  les entrées et laissait croire à un plafond imposé au générateur, alors que la boucle est ouverte),
+  et `isolation.processReused` devient `sameProcessAcrossCohort` (il valait `true` partout, y compris
+  à la position 1 où aucun processus n'avait servi : il ne disait pas ce qu'il énonçait). Ces
+  changements sont possibles **parce que le schéma 1 n'a encore ancré aucune publication** — c'est
+  exactement ce que le veto de l'audit sur l'ancre préserve. Demandé par un auditeur externe
+  (CODEX, 15/09).
 - **Une release porte désormais la mesure de charge de son propre commit.** Les artefacts produits
   par `charge/rapport.js` vivaient sur le run de la forge, dont la rétention expire ; une release,
   non. `attester` retrouve la course CI verte du commit taggué, en télécharge l'artefact
@@ -35,6 +63,122 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- ⚠️ **Les compteurs s'observaient eux-mêmes : 1 000 requêtes de charge donnaient un delta de
+  1 001.** La lecture des compteurs passait par `GET ?contract=1` — donc par une requête qui traverse
+  le handler et incrémente `mesures.statuts.ok` au passage. Mesuré sur les trois artefacts du tag
+  0.1.168 : 1 001 pour 1 000, 10 001 pour 10 000, 1 001 pour 1 000. `delta = after − before` restait
+  vrai : un invariant qui ne regarde que la cohérence *interne* d'un relevé ne voit pas l'observateur
+  s'y ajouter. Corrigé par une couture interne (`__compteursSansObserver`) qui rend l'état sans le
+  modifier — ⚠️ **pas par une soustraction cachée** : un instrument qui se retranche discrètement est
+  plus difficile à auditer qu'un instrument faux. Ce que la fenêtre contient d'autre que la charge se
+  **dit** désormais, dans `counters.observerOverheadRequests`, et un nouvel invariant confronte la
+  somme des statuts internes au travail annoncé. Relevé par un auditeur externe (CODEX, 15/09).
+- ⚠️ **`measurementWindow` portait trois bornes de trois périodes différentes.** `startedAt` et
+  `processUptimeStartMs` dataient du début de la position — avant la création de la présentation et
+  le préchauffage — pendant que `durationMs` partait d'après le GC et que `processUptimeEndMs` était
+  relevé après les sondes, le GC final et la lecture des compteurs. Sur la course du tag : 4 057 ms
+  d'uptime pour 4 002,231 ms annoncés, aux trois positions. Les bornes sont maintenant prises deux à
+  deux, à l'ouverture et à la fermeture, sans rien entre elles ; `afterGc` reste hors fenêtre.
+  ⚠️ **Et le banc le prouve à l'horloge pilotée, pas sous une tolérance** — ma première version
+  comparait des millisecondes sous un seuil, et la campagne de mutations l'a refusée en laissant
+  survivre le mutant : sur un double en mémoire, ce qu'il s'agit d'exclure ne coûte que quelques
+  millisecondes et passe sous n'importe quel seuil défendable. L'audit l'avait écrit en toutes
+  lettres ; je ne l'avais pas fait. Relevé par un auditeur externe (CODEX, 15/09).
+- ⚠️ **`cache.peakInFlight` était le pic du processus, pas celui de la fenêtre.** `hits`, `misses` et
+  `coalesced` étaient convertis en deltas ; le pic, lui, était recopié du maximum depuis le
+  démarrage. Après une position chargée, une position calme héritait de l'ancien pic et affirmait une
+  concurrence qu'elle n'avait jamais vue. Le cache expose désormais une **fenêtre d'observation**
+  (`observerEnVol`) — l'état du cache n'est ni remis à zéro ni ralenti, seul un compteur parallèle
+  suit les productions simultanées — et le pic historique reste, séparé, sous
+  `processLifetimePeakInFlight`. Relevé par un auditeur externe (CODEX, 15/09).
+- ⚠️ **La gigue était tirée de `Math.random` et perdue.** Deux courses du même protocole n'étaient
+  donc pas la même expérience, et aucune ne se rejouait : on ne pouvait ni reproduire un pic ni
+  démontrer qu'un écart venait du code plutôt que du tirage. L'ordonnancement utilise un générateur
+  déterministe, et l'artefact porte `scheduleSeed` **avec** `scheduleAlgorithm` — une graine ne
+  rejoue rien si l'algorithme qui la consomme a changé, et n'enregistrer que l'une donnerait
+  l'illusion de la reproductibilité. Relevé par un auditeur externe (CODEX, 15/09).
+- ⚠️ **Un artefact d'échec part sur une Release publique, et son message n'était pas assaini.**
+  `failure.reason` recopiait `error.message` tel quel : une erreur PostgREST peut incorporer plusieurs
+  centaines de caractères de réponse réseau, une erreur de `fetch` porte l'URL appelée avec ses
+  paramètres. Les caractères de contrôle, URL, adresses, jetons et en-têtes d'autorisation sont
+  désormais remplacés par une marque **visible** — un lecteur doit voir qu'il manque quelque chose — et
+  un `failure.code` stable et énuméré accompagne le texte, parce qu'un code s'agrège là où un message
+  ne s'agrège pas. ⚠️ Ma première caviarderie **laissait passer le secret qu'elle visait** : le motif
+  prenait le mot-clé puis un seul mot, si bien que « Authorization: Bearer sk-live-4242 » perdait
+  « Bearer » et publiait le jeton juste derrière. Gardé comme mutant. Relevé par un auditeur externe
+  (CODEX, 15/09).
+- ⚠️ **Une cohorte d'un SEUL fichier passait, quand deux fichiers tronqués étaient refusés.**
+  `controlerCohorte` sortait sur `membres.length < 2` avant d'atteindre les règles de **couverture**
+  — la séquence annonce *n* rangs, la cohorte les tient tous ou s'arrête sur un échec — qui n'ont
+  pourtant besoin d'aucun second membre. Le comportement exact : un artefact de position 1 déclarant
+  `[100, 1000, 100]` passait sans un mot, les deux mêmes rangs sur trois étaient refusés. **La garde
+  était strictement plus faible sur moins de preuve** — une vacuité au cœur de l'outil écrit pour les
+  traquer, et la forme la plus tentante de la fraude involontaire : n'attacher qu'un fichier. Les
+  comparaisons entre membres bouclent déjà sur `slice(1)`, vide pour un seul : seule une cohorte à
+  zéro membre sort maintenant par avance. Défaut relevé par un auditeur externe (CODEX, 15/09).
+- ⚠️ **Le producteur sortait en succès sans avoir produit un seul artefact.** Avec une séquence vide,
+  la boucle ne tournait pas, rien n'était écrit, et `auditer` — appelé sans fichier — jugeait **le
+  corpus d'exemples** puis rendait « 2 artefact(s) conformes », code 0. Le programme confondait la
+  conformité de ses propres fixtures avec une campagne. Le refus est désormais la **première
+  instruction** de `courir`, avant le moindre `mkdir` : une configuration qu'on refuse de jouer ne
+  laisse pas de trace. Avec lui, une validation stricte de toute la configuration — plus de
+  `Number()` qui rend `NaN` en silence, plus de filtre qui ampute : `100,bad,1000` devenait
+  `[100, 1000]`, une séquence que personne n'avait demandée et que l'artefact portait ensuite comme
+  s'il s'agissait du protocole. Séquence non vide, effectifs entiers sûrs et strictement positifs,
+  lectures par spectateur idem, durée bornée, produit total sous un plafond explicite ; un refus
+  sort en **code 2** — ni un succès, ni une campagne qui a échoué en produisant son artefact.
+  Défaut relevé par un auditeur externe (CODEX, 15/09).
+- ⚠️ **Un handler qui ne résolvait jamais bloquait la course sans laisser d'échec.** `Promise.all`
+  attendait une promesse suspendue indéfiniment : la course ne finissait pas, n'échouait pas, et
+  n'écrivait **aucun** artefact — alors que le producteur promet un document même en échec. Le pire
+  des trois états : ni succès, ni échec documenté, rien. Désormais une échéance par requête (30 s,
+  avec un `AbortSignal` porté par la requête synthétique et la réponse détruite à l'expiration), un
+  budget global par position, et le nettoyage — échantillonneur mémoire, moniteur de boucle, sonde
+  posée sur `db.request` — dans un `finally` : une exception laissait jusqu'ici `base.request`
+  détourné, donc la position suivante mesurée à travers l'instrument de la précédente. Une requête
+  expirée **invalide la position** au lieu de se ranger dans les statuts : à ces latences, une
+  échéance qui tire ne dit pas « c'est lent » mais « quelque chose ne répond plus », et la ranger
+  dans `other5xx` produirait un artefact d'allure normale au milieu d'une panne. ⚠️ Deux défauts
+  trouvés en écrivant ce correctif, gardés comme mutants : `res.destroy(erreur)` sur un `Writable`
+  sans écouteur `error` **tuait le processus** — le producteur mourait au lieu d'écrire l'artefact
+  d'échec que l'échéance devait garantir ; et les lectures de carte n'honoraient pas l'échéance
+  injectée, si bien que l'échec accusait `JSON.parse` au lieu de nommer le délai. Défaut relevé par
+  un auditeur externe (CODEX, 15/09).
+- ⚠️ **Mon correctif du 14/09 avait détaché la Release publique du test de fumée, et déplacé un
+  risque sans le dire.** Rattacher `attester` à `publier` était juste — les preuves d'octets déjà
+  partis ne doivent pas être otages d'un test postérieur. Mais `annoncer` suivait `attester` par
+  simple transitivité et a **perdu sa dépendance à `eprouver`** : le graphe autorisait désormais une
+  Release publique créée pendant que le test du paquet installé était rouge, ou avant qu'il ait
+  fini, alors que le workflow promet « publié ÉPROUVÉ ». Le banc de provenance n'exigeait que
+  « `annoncer` atteignable depuis `verifier` », propriété restée vraie : trop faible pour voir la
+  perte. Et le même correctif avait retiré un abri sans le remplacer — `attester` lisait
+  `dist.integrity` **une seule fois**, ce qui était sans risque tant qu'il héritait des quatre
+  minutes d'attente de `eprouver` ; le vide de propagation qui a coûté la sortie 0.1.168 était
+  **réarmé un job plus loin**, frappant cette fois l'attestation elle-même. Les deux exigences ne
+  s'opposent pas, elles portent sur des objets différents : l'**attestation** porte sur des octets
+  déjà partis et n'attend personne ; la **Release publique** est une recommandation d'installer, et
+  elle attend le test de ce qui s'installe. Graphe corrigé (`annoncer: needs: [verifier, attester,
+  eprouver]`), attente bornée à trois sorties dans `attester`, deux bancs et deux mutants. Défauts
+  nommés par un auditeur externe (CODEX, 15/09).
+- ⚠️ **Une Release pouvait porter la mesure d'un autre commit, et ça m'est arrivé.** J'ai relayé aux
+  hôtes le relevé d'une course de PR — `0.1.167`, commit `8e9e37c` — en le présentant comme celui du
+  tag `0.1.168` (commit `f5f0ae7`). Les deux campagnes étaient vraies ; une seule mesurait le tag ;
+  **rien dans l'outillage ne pouvait les distinguer**, parce que le validateur ne juge que la
+  cohérence *interne* d'une campagne. L'attachement contrôle désormais la provenance de chaque
+  artefact — `identity.packageVersion` contre la version du tag, `identity.commitSha` contre son
+  commit, `identity.runId` contre la course retenue (par préfixe : la tentative fait partie du nom)
+  — et refuse la sortie sinon. ⚠️ Le banc **exécute le script tel qu'il est écrit dans le workflow**,
+  pas une copie : sa première version découpait `process.argv` comme pour `node fichier.js` alors que
+  `node -e` décale d'un cran, et **refusait toute cohorte, la bonne comprise** — verte sur rien,
+  rouge sur tout, invisible jusqu'au jour d'une sortie. C'est ce banc qui l'a trouvée. Défaut relevé
+  par un auditeur externe (CODEX, 15/09).
+- ⚠️ **La garde des boucles de réessai refusait une forme conforme.** `premiereInstruction` lisait
+  une *ligne* là où le shell lit une *instruction* : `cmd \` suivi de `|| { echo "::error::…";
+  exit 1; }` — la forme la plus répandue de ces fichiers, imposée par leur largeur — n'était vue que
+  par sa première ligne, sans aveu, et la boucle était refusée. Un refus faux n'est pas un défaut de
+  confort : il pousse à écrire la forme que l'outil accepte plutôt que la forme juste, et à ce régime
+  plus personne ne croit ses refus. Les lignes continuées sont recollées avant lecture ; la garde
+  relève maintenant huit boucles.
 - ⚠️ **Une boucle de réessai sortait par épuisement exactement comme par succès, et ça a coûté une
   publication.** Le 14/09, la 0.1.168 est partie sur le registre sans sa Release, son SBOM ni
   l'attestation de son archive. Le test de fumée attendait que le registre serve la version fraîche

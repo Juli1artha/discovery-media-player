@@ -1249,6 +1249,19 @@ module.exports = { __contexte: () => PLAYER, handler, init, TIERS, POLITIQUE_PER
   // ⚠️ COUTURE DE BANC, PAS D'API : le cache de lecture est global au module, et un banc qui laisse des
   // lectures en vol contamine le suivant (128 promesses éternelles, 503 partout — trouvé par un audit
   // externe sous mélange, graine 20260913). Un banc doit pouvoir VÉRIFIER qu'il rend le cache vide.
-  __cacheLecture: cacheLecture };
+  __cacheLecture: cacheLecture,
+  // ⚠️ COUTURE DE MESURE : LIRE LES COMPTEURS SANS LES INCRÉMENTER. Le rapport de charge relevait
+  // ces grandeurs par un `GET ?contract=1` — c'est-à-dire par une requête qui TRAVERSE le handler et
+  // incrémente `mesures.statuts.ok` au passage. Le delta d'une fenêtre de 1 000 requêtes valait donc
+  // 1 001, systématiquement, et pour chaque position : l'observateur se comptait lui-même. Une
+  // soustraction cachée aurait corrigé le chiffre en aggravant le problème — un instrument qui se
+  // retranche discrètement est plus difficile à auditer qu'un instrument faux. La couture rend l'état
+  // tel qu'il est, sans le modifier ; ce que la fenêtre contient d'autre que la charge se DIT, dans
+  // `counters.observerOverheadRequests`. Défaut relevé par un audit externe (CODEX, 15/09).
+  __compteursSansObserver: () => ({
+    lectureSaturee: { total: cacheLecture.satures().total },
+    relaisRefuses: { total: relaisRefusesTotal },
+    mesures: mesures.relever(),
+  }) };
 
 // redeploy: forcer le build production (Vercel a sauté la prod du merge #463 — wording re-partage).
