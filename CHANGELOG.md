@@ -35,6 +35,43 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- ⚠️ **Une cohorte d'un SEUL fichier passait, quand deux fichiers tronqués étaient refusés.**
+  `controlerCohorte` sortait sur `membres.length < 2` avant d'atteindre les règles de **couverture**
+  — la séquence annonce *n* rangs, la cohorte les tient tous ou s'arrête sur un échec — qui n'ont
+  pourtant besoin d'aucun second membre. Le comportement exact : un artefact de position 1 déclarant
+  `[100, 1000, 100]` passait sans un mot, les deux mêmes rangs sur trois étaient refusés. **La garde
+  était strictement plus faible sur moins de preuve** — une vacuité au cœur de l'outil écrit pour les
+  traquer, et la forme la plus tentante de la fraude involontaire : n'attacher qu'un fichier. Les
+  comparaisons entre membres bouclent déjà sur `slice(1)`, vide pour un seul : seule une cohorte à
+  zéro membre sort maintenant par avance. Défaut relevé par un auditeur externe (CODEX, 15/09).
+- ⚠️ **Le producteur sortait en succès sans avoir produit un seul artefact.** Avec une séquence vide,
+  la boucle ne tournait pas, rien n'était écrit, et `auditer` — appelé sans fichier — jugeait **le
+  corpus d'exemples** puis rendait « 2 artefact(s) conformes », code 0. Le programme confondait la
+  conformité de ses propres fixtures avec une campagne. Le refus est désormais la **première
+  instruction** de `courir`, avant le moindre `mkdir` : une configuration qu'on refuse de jouer ne
+  laisse pas de trace. Avec lui, une validation stricte de toute la configuration — plus de
+  `Number()` qui rend `NaN` en silence, plus de filtre qui ampute : `100,bad,1000` devenait
+  `[100, 1000]`, une séquence que personne n'avait demandée et que l'artefact portait ensuite comme
+  s'il s'agissait du protocole. Séquence non vide, effectifs entiers sûrs et strictement positifs,
+  lectures par spectateur idem, durée bornée, produit total sous un plafond explicite ; un refus
+  sort en **code 2** — ni un succès, ni une campagne qui a échoué en produisant son artefact.
+  Défaut relevé par un auditeur externe (CODEX, 15/09).
+- ⚠️ **Un handler qui ne résolvait jamais bloquait la course sans laisser d'échec.** `Promise.all`
+  attendait une promesse suspendue indéfiniment : la course ne finissait pas, n'échouait pas, et
+  n'écrivait **aucun** artefact — alors que le producteur promet un document même en échec. Le pire
+  des trois états : ni succès, ni échec documenté, rien. Désormais une échéance par requête (30 s,
+  avec un `AbortSignal` porté par la requête synthétique et la réponse détruite à l'expiration), un
+  budget global par position, et le nettoyage — échantillonneur mémoire, moniteur de boucle, sonde
+  posée sur `db.request` — dans un `finally` : une exception laissait jusqu'ici `base.request`
+  détourné, donc la position suivante mesurée à travers l'instrument de la précédente. Une requête
+  expirée **invalide la position** au lieu de se ranger dans les statuts : à ces latences, une
+  échéance qui tire ne dit pas « c'est lent » mais « quelque chose ne répond plus », et la ranger
+  dans `other5xx` produirait un artefact d'allure normale au milieu d'une panne. ⚠️ Deux défauts
+  trouvés en écrivant ce correctif, gardés comme mutants : `res.destroy(erreur)` sur un `Writable`
+  sans écouteur `error` **tuait le processus** — le producteur mourait au lieu d'écrire l'artefact
+  d'échec que l'échéance devait garantir ; et les lectures de carte n'honoraient pas l'échéance
+  injectée, si bien que l'échec accusait `JSON.parse` au lieu de nommer le délai. Défaut relevé par
+  un auditeur externe (CODEX, 15/09).
 - ⚠️ **Mon correctif du 14/09 avait détaché la Release publique du test de fumée, et déplacé un
   risque sans le dire.** Rattacher `attester` à `publier` était juste — les preuves d'octets déjà
   partis ne doivent pas être otages d'un test postérieur. Mais `annoncer` suivait `attester` par

@@ -576,6 +576,38 @@ export const MUTANTS = [
     pourquoi: "c'est la confusion du 14/09 rendue indétectable : deux campagnes vraies, une seule mesure le tag, et le validateur les juge toutes deux conformes puisqu'il n'examine que la cohérence interne",
     bancs: ["tools/__tests__/provenanceDeLaCohorteAttachee.test.js"],
   },
+  {
+    id: "cohorte-d-un-seul-fichier-non-couverte",
+    fichier: "tools/artefact-de-charge.mjs",
+    avant: "  if (!membres.length) return c;",
+    apres: "  if (membres.length < 2) return c;",
+    pourquoi: "les règles de couverture n'ont besoin d'aucun second membre : sortir à `< 2` rendait la garde STRICTEMENT PLUS FAIBLE SUR MOINS DE PREUVE — deux fichiers sur trois refusés, un seul accepté sans un mot",
+    bancs: ["tools/__tests__/artefactDeCharge.test.js"],
+  },
+  {
+    id: "rapport-sequence-vide-rend-vert",
+    fichier: "charge/rapport.js",
+    avant: "  if (!Array.isArray(sequence) || !sequence.length) {",
+    apres: "  if (false) {",
+    pourquoi: "sans ce refus, la boucle ne tourne pas, `auditer` sans fichier juge LE CORPUS D'EXEMPLES et rend code 0 : le producteur annonce un succès en confondant la conformité de ses fixtures avec une campagne",
+    bancs: ["charge/__tests__/rapport.test.js"],
+  },
+  {
+    id: "rapport-sequence-rabotee-en-silence",
+    fichier: "charge/rapport.js",
+    avant: "  const sequence = morceaux.map((x, i) => entierStrict(x, `séquence, rang ${i + 1}`));",
+    apres: "  const sequence = morceaux.map((x) => Number(x)).filter((x) => Number.isInteger(x) && x >= 0);",
+    pourquoi: "`100,bad,1000` devenait `[100, 1000]` : la campagne tournait sur une séquence que personne n'avait demandée et l'artefact la portait comme si elle était le protocole — un filtre silencieux sur une entrée de mesure falsifie l'expérience sans le dire",
+    bancs: ["charge/__tests__/rapport.test.js"],
+  },
+  {
+    id: "rapport-requete-sans-echeance-bloque-la-course",
+    fichier: "charge/rapport.js",
+    avant: "    return Promise.race([course, echeance]).finally(() => clearTimeout(minuterie));",
+    apres: "    clearTimeout(minuterie);\n    return course;",
+    pourquoi: "un handler qui ne résout jamais suspendait `Promise.all` POUR TOUJOURS : la course ne finissait pas, n'échouait pas, et n'écrivait aucun artefact — alors que le producteur promet un document même en échec",
+    bancs: ["charge/__tests__/rapport.test.js"],
+  },
 ];
 
 export const empreinte = (texte) => createHash("sha256").update(texte).digest("hex").slice(0, 16);

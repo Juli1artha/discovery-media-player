@@ -184,4 +184,67 @@ describe("de bout en bout : la course contre le double PostgREST en mémoire, ju
     expect(juger(a)).toEqual([]);
     expect(lignes.join("\n")).toMatch(/position 1 — ÉCHEC en phase presentation/);
   }, 30_000);
+
+  it("⚠️ UNE SÉQUENCE VIDE N'EST PAS UNE COURSE RÉUSSIE — le producteur jugeait ses propres fixtures et rendait vert", async () => {
+    // ⚠️ LE DÉFAUT EXACT. La boucle ne tournait pas, aucun artefact n'était écrit, et `auditer`
+    // appelé SANS FICHIER jugeait le corpus d'exemples : « 2 artefact(s) conformes », code 0.
+    // Le programme confondait la conformité de ses fixtures avec une campagne, et sortait en
+    // succès sans avoir rien mesuré. Relevé par un auditeur externe (CODEX, 15/09).
+    //
+    // Le refus est la PREMIÈRE instruction de `courir`, avant le moindre `mkdir` : une configuration
+    // qu'on refuse de jouer ne doit pas laisser de trace sur le disque.
+    await expect(rapport.courir({ sortie: path.join(racine, "jamais"), sequence: [] }))
+      .rejects.toThrow(/séquence vide/);
+    expect(fs.existsSync(path.join(racine, "jamais")), "un refus a tout de même créé le dossier de sortie").toBe(false);
+  });
+
+  it("⚠️ la configuration se REFUSE, elle ne se rabote pas : une séquence invalide était silencieusement amputée", () => {
+    // `"100,bad,1000".split(",").map(Number).filter(Number.isInteger)` rendait `[100, 1000]` : la
+    // campagne tournait sur une séquence que PERSONNE n'avait demandée, l'artefact la portait comme
+    // si elle était le protocole, et rien nulle part ne le disait. Un filtre silencieux sur une
+    // entrée de mesure est une falsification discrète de l'expérience.
+    const refus = (seq, pps = 10) => {
+      try { rapport.sequenceStricte(seq, { requetesParSpectateur: pps }); return null; } catch (e) { return e; }
+    };
+    expect(refus("100,bad,1000").message).toMatch(/rang 2 : "bad" n'est pas un entier sûr/);
+    expect(refus("100,,1000").message).toMatch(/un rang vide/);
+    expect(refus("NaN").message).toMatch(/n'est pas un entier sûr/);
+    expect(refus("-5").message, "un effectif négatif").toMatch(/hors des bornes/);
+    expect(refus("0").message, "⚠️ zéro spectateur passait : une position qui ne mesure rien").toMatch(/hors des bornes/);
+    expect(refus("100", 0).message, "zéro lecture par spectateur ne mesure rien non plus").toMatch(/hors des bornes/);
+    expect(refus("1e308").message, "hors des entiers sûrs").toMatch(/n'est pas un entier sûr/);
+    expect(refus("100000", 100).message, "au-delà du plafond, ce n'est plus une mesure").toMatch(/au-delà de 2000000/);
+    // Et ce qui est légitime passe — un refus qui refuse tout ne prouverait rien.
+    expect(rapport.sequenceStricte("100,1000,100", { requetesParSpectateur: 10 })).toEqual([100, 1000, 100]);
+    for (const e of [refus("100,bad,1000"), refus("0")]) expect(e).toBeInstanceOf(rapport.ConfigurationNonMesurable);
+  });
+
+  it("⚠️ un handler qui NE RÉSOUT JAMAIS ne bloque plus : la position expire, et elle laisse son artefact d'échec", async () => {
+    // ⚠️ SANS ÉCHÉANCE, `Promise.all` attendait une promesse suspendue POUR TOUJOURS : la course ne
+    // finissait pas, n'échouait pas, et n'écrivait AUCUN artefact — alors que le producteur promet
+    // un document même en échec. Le pire des trois états : ni succès, ni échec documenté, rien.
+    // Relevé par un auditeur externe (CODEX, 15/09).
+    // Le handler répond à la carte des compteurs et se TAIT sur les lectures d'état : c'est le
+    // chemin exact du défaut — la course atteint `Promise.all` et n'en ressort jamais.
+    const muetSurLesLectures = {
+      ...player,
+      handler: (req, res) => (req.query && req.query.present ? new Promise(() => {}) : player.handler(req, res)),
+    };
+    const r = await rapport.courir({
+      sortie: path.join(racine, "sortie-suspendue"), sequence: [2], requetesParSpectateur: 1,
+      dureeCibleMs: 20, warmupRequests: 0, contexte, player: muetSurLesLectures, presentations,
+      echeanceRequeteMs: 300, budgetPositionMs: 2000,
+      fichierUrl: pathToFileURL(path.join(racine, "rapport.pdf")).href, gc: () => {},
+      journal: () => {}, env: { ...process.env, GITHUB_SHA: "d".repeat(40) },
+    });
+    expect(r.code, "une course qui expire n'est pas un succès").toBe(1);
+    expect(r.fichiers, "la course a expiré SANS laisser d'artefact — le défaut exact").toHaveLength(1);
+    const a = JSON.parse(fs.readFileSync(r.fichiers[0], "utf8"));
+    expect(a.complete).toBe(false);
+    expect(a.failure.phase, "l'échéance est tombée pendant la mesure").toBe("mesure");
+    expect(a.failure.reason, "l'échec doit NOMMER l'échéance, pas accuser le parseur JSON")
+      .toMatch(/2 requête\(s\) sur 2 n'ont pas répondu avant leur échéance de 300 ms/);
+    // Et l'artefact d'échec reste un artefact valide : c'est tout l'intérêt d'en produire un.
+    expect(juger(a)).toEqual([]);
+  }, 120_000);
 });

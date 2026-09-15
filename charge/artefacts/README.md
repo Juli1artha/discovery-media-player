@@ -32,13 +32,34 @@ completedRequests`, `refused ≤ 503`, `bytesTransferred ≤ admitted × fileByt
 dérivables (débit, appels par requête) ne sont **pas stockées** : elles se recalculent, sans
 divergence possible.
 
-**Une cohorte est une campagne.** Passés plusieurs fichiers (`--fichier=` répété), le validateur
+**Une cohorte est une campagne**, y compris à un seul fichier. Passés plusieurs fichiers (`--fichier=` répété), le validateur
 exige une cohorte **complète** (positions exactement `1..sequence.length`, tous complets) ou
 **interrompue** (préfixe continu `1..k`, le dernier `complete: false`, rien après) ; tout ce qui
 doit être constant l'est nommément (`runId`, commit, version, empreinte du schéma, environnement
 entier, nom et paramètres du scénario, modèle et forme d'arrivée, règles d'isolation) et ce qui
 varie avec l'échelle est nommément exclu (`spectators`, `position`, `maxInFlight`, `egressIps`, `datasetId`) ;
 un même `binSetId` porte les mêmes bornes.
+
+⚠️ **Les règles de couverture s'appliquent dès UN fichier.** Elles n'ont besoin d'aucun second membre :
+la séquence annonce *n* rangs, et la cohorte les tient tous ou s'arrête sur un échec. Le validateur
+sortait autrefois avant elles quand il ne recevait qu'un fichier — deux rangs sur trois étaient
+refusés, un seul passait sans un mot, et la garde était donc *plus faible sur moins de preuve*. Ce
+qui exige réellement deux membres, ce sont les comparaisons entre membres ; elles bouclent sur les
+suivants, ensemble vide pour un seul.
+
+**Le producteur refuse avant de mesurer.** Séquence non vide (une séquence vide n'est pas une course
+réussie : elle ne produit aucun artefact, et le validateur appelé sans fichier jugerait le corpus
+d'exemples), effectifs et lectures par spectateur entiers sûrs et strictement positifs, durée bornée,
+produit total sous plafond. Rien n'est raboté en silence — `100,bad,1000` est refusé, pas réduit à
+`[100, 1000]`. Un refus sort en **code 2** : ni un succès, ni une campagne qui a échoué en produisant
+son artefact, mais une configuration qu'on n'a pas voulu jouer.
+
+**Et il ne peut plus se suspendre sans le dire.** Chaque requête porte une échéance et un
+`AbortSignal` ; chaque position porte un budget global ; les instruments — échantillonneur mémoire,
+moniteur de boucle, sonde sur `db.request` — se retirent dans un `finally`, sans quoi une position
+suivante mesurerait à travers l'instrument de la précédente. Une requête expirée **invalide la
+position** plutôt que de se ranger dans les statuts : à ces latences, une échéance qui tire ne dit
+pas « c'est lent », elle dit « quelque chose ne répond plus ».
 
 **L'ancre.** Chaque artefact porte `identity.schemaSha256`, l'empreinte canonique du schéma sous
 lequel il a été produit ; le validateur exige que ce soit celle du schéma qu'il applique. Et

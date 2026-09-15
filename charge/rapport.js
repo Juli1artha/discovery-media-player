@@ -132,6 +132,48 @@ function identite({ env = process.env, empreinte, version = require("../package.
   return { commitSha: commitCourant(env), packageVersion: version, timestamp: quand.toISOString(), runId, schemaSha256: empreinte };
 }
 
+/**
+ * Ce qui n'est pas mesurable se refuse AVANT de mesurer, et se nomme. Sort en code 2 : ni un succès
+ * (0), ni une campagne qui a échoué en produisant son artefact (1) — une configuration qu'on a
+ * refusé de jouer, et dont il n'y a donc rien à publier.
+ */
+class ConfigurationNonMesurable extends Error {
+  constructor(message) { super(message); this.name = "ConfigurationNonMesurable"; }
+}
+
+/** Le plafond d'un produit `spectateurs × requêtes` : au-delà, on ne mesure plus, on épuise le runner. */
+const REQUETES_MAX = 2_000_000;
+
+/**
+ * Un entier de configuration, ou un refus NOMMÉ. Jamais de repli silencieux.
+ *
+ * ⚠️ LE PARSEUR AVALAIT CE QU'IL NE COMPRENAIT PAS. `--sequence=100,bad,1000` était filtré en
+ * `[100, 1000]` : la campagne tournait, l'artefact portait une séquence que personne n'avait
+ * demandée, et rien ne le disait. `0` passait aussi — une position à zéro spectateur. Un filtre
+ * silencieux sur une entrée de mesure est une falsification discrète de l'expérience.
+ */
+function entierStrict(valeur, nom, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
+  const n = typeof valeur === "number" ? valeur : Number(String(valeur).trim());
+  if (!Number.isSafeInteger(n)) throw new ConfigurationNonMesurable(`${nom} : ${JSON.stringify(String(valeur))} n'est pas un entier sûr`);
+  if (n < min || n > max) throw new ConfigurationNonMesurable(`${nom} : ${n} hors des bornes [${min}, ${max}]`);
+  return n;
+}
+
+/** La séquence demandée, entièrement contrôlée — ou un refus qui dit lequel des rangs est fautif. */
+function sequenceStricte(brut, { requetesParSpectateur }) {
+  const morceaux = String(brut).split(",").map((x) => x.trim());
+  if (!morceaux.length || morceaux.some((x) => x === "")) throw new ConfigurationNonMesurable(`séquence ${JSON.stringify(String(brut))} : un rang vide`);
+  const sequence = morceaux.map((x, i) => entierStrict(x, `séquence, rang ${i + 1}`));
+  // Le multiplicateur est jugé ici AUSSI, et pas seulement par l'appelant : une fonction exportée se
+  // fait appeler ailleurs qu'à l'endroit où on l'a écrite, et `× 0` ne mesure rien.
+  const parSpectateur = entierStrict(requetesParSpectateur, "lectures par spectateur");
+  const total = sequence.reduce((a, b) => a + b, 0) * parSpectateur;
+  if (!Number.isSafeInteger(total) || total > REQUETES_MAX) {
+    throw new ConfigurationNonMesurable(`séquence ${JSON.stringify(sequence)} × ${parSpectateur} lectures = ${total} requêtes — au-delà de ${REQUETES_MAX}, ce n'est plus une mesure`);
+  }
+  return sequence;
+}
+
 /** Les instants de départ d'une boucle ouverte : `n` requêtes réparties sur `dureeMs`, avec ou sans gigue. */
 function planifier(n, dureeMs, motif, alea = Math.random) {
   const pas = n > 1 ? dureeMs / (n - 1) : 0;
@@ -189,21 +231,59 @@ function compteursDeLaCarte(carte) {
 }
 const deltas = (avant, apres) => Object.fromEntries(Object.keys(avant).map((k) => [k, (apres[k] || 0) - (avant[k] || 0)]));
 
-/** Un appel HTTP réel à travers le handler, chronométré ; la réponse est un vrai flux inscriptible, dont on COMPTE les octets. */
+/** L'échéance d'une requête : au-delà, elle ne répondra pas, et l'attendre encore n'apprend rien. */
+const ECHEANCE_REQUETE_MS = 30_000;
+
+/**
+ * Un appel à travers le handler, chronométré ; la réponse est un vrai flux inscriptible, dont on
+ * COMPTE les octets.
+ *
+ * ⚠️ CE N'EST PAS UN APPEL HTTP DE BOUT EN BOUT, et ce commentaire disait le contraire. Le trajet
+ * lecteur → socket → parseur HTTP → `bin/serve.js` n'est PAS exercé : `player.handler` est appelé
+ * directement. PostgREST, lui, est réel, et la réponse est un vrai `Writable`. La distinction
+ * compte pour qui relit les chiffres seuls : des latences de quelques microsecondes sont cohérentes
+ * sous cette topologie, et se liraient comme des latences réseau sans elle. Formulation corrigée
+ * après un audit externe (CODEX, 15/09) ; la topologie est désormais ÉCRITE dans l'artefact plutôt
+ * que déductible d'un commentaire.
+ *
+ * ⚠️ ET IL A UNE ÉCHÉANCE, parce qu'un handler qui ne résout jamais bloquait tout. `Promise.all`
+ * attendait une promesse suspendue indéfiniment : la course ne finissait pas, n'échouait pas, et
+ * n'écrivait AUCUN artefact — le producteur promet pourtant un document même en échec. Défaut
+ * relevé par un auditeur externe (CODEX, 15/09).
+ */
 function appelant(player) {
-  return function appeler(requete, { corpsEntier = false } = {}) {
+  return function appeler(requete, { corpsEntier = false, echeanceMs = ECHEANCE_REQUETE_MS } = {}) {
     const TETE_MAX = corpsEntier ? Infinity : 4096;
     const tete = [];
     let octets = 0, gardes = 0;
     const res = new Writable({ write(m, _e, cb) { octets += m.length; if (gardes < TETE_MAX) { tete.push(Buffer.from(m)); gardes += m.length; } cb(); } });
     res.statusCode = 0; res.headers = {};
+    // ⚠️ `destroy(erreur)` ÉMET `error`, et un `error` sans écouteur est une exception NON CAPTURÉE
+    // qui tue le processus — le producteur mourrait au lieu d'écrire l'artefact d'échec qu'il
+    // promet, c'est-à-dire exactement le défaut que l'échéance était censée corriger.
+    res.on("error", () => {});
     res.setHeader = function (k, v) { this.headers[String(k).toLowerCase()] = v; };
     res.getHeader = function (k) { return this.headers[String(k).toLowerCase()]; };
+    // Le signal voyage DANS la requête synthétique : un handler qui l'observe peut renoncer de
+    // lui-même, et celui qui l'ignore se fait couper sa réponse — ce qui le fait renoncer aussi.
+    const controleur = new AbortController();
+    const requeteSignalee = Object.assign(Object.create(Object.getPrototypeOf(requete) || Object.prototype), requete, { signal: controleur.signal });
     const t0 = process.hrtime.bigint();
-    return player.handler(requete, res).then(
-      () => ({ ms: Number(process.hrtime.bigint() - t0) / 1e6, statut: res.statusCode, corps: Buffer.concat(tete).toString("utf8"), octets }),
-      (e) => ({ ms: Number(process.hrtime.bigint() - t0) / 1e6, statut: 599, corps: "", octets: 0, erreur: String((e && e.message) || e) }),
+    const ms = () => Number(process.hrtime.bigint() - t0) / 1e6;
+    let minuterie;
+    const echeance = new Promise((resolve) => {
+      minuterie = setTimeout(() => {
+        controleur.abort();
+        res.destroy(new Error("échéance"));
+        resolve({ ms: ms(), statut: 598, corps: "", octets, expire: true });
+      }, echeanceMs);
+      if (typeof minuterie.unref === "function") minuterie.unref();
+    });
+    const course = player.handler(requeteSignalee, res).then(
+      () => ({ ms: ms(), statut: res.statusCode, corps: Buffer.concat(tete).toString("utf8"), octets }),
+      (e) => ({ ms: ms(), statut: 599, corps: "", octets: 0, erreur: String((e && e.message) || e) }),
     );
+    return Promise.race([course, echeance]).finally(() => clearTimeout(minuterie));
   };
 }
 
@@ -236,13 +316,20 @@ function sonderBase(base) {
  * Une position de la séquence : sa présentation, son préchauffage, sa fenêtre en boucle ouverte, ses relevés.
  * Rend `{ artefact }` ; lève avec `{ phase }` attaché sur ce qui a échoué.
  */
-async function executerPosition({ player, presentations, base, appeler, position, sequence, spectators, requetesParSpectateur, dureeCibleMs, warmupRequests, identity, environment, isolation, motif, binSetIdDe, fichierUrl, gc = global.gc, journal = () => {} }) {
+async function executerPosition({ player, presentations, base, appeler, position, sequence, spectators, requetesParSpectateur, dureeCibleMs, warmupRequests, identity, environment, isolation, motif, binSetIdDe, fichierUrl, gc = global.gc, journal = () => {}, echeanceRequeteMs = ECHEANCE_REQUETE_MS, budgetPositionMs }) {
   const pageAttendue = position;
   const scenario = { name: "state-hot", spectators, presentations: 1, repetition: 1, position, sequence, warmupRequests, maxInFlight: 0, egressIps: Math.min(spectators, 250) };
   const workload = { arrivalModel: "open-loop", arrivalPattern: motif };
   const debut = new Date();
   const fenetre = { startedAt: debut.toISOString(), durationMs: 0, processUptimeStartMs: Math.round(process.uptime() * 1000), processUptimeEndMs: Math.round(process.uptime() * 1000) };
   let phase = "presentation";
+  // ⚠️ LES INSTRUMENTS SE DÉCLARENT HORS DU `try` POUR SE RETIRER DANS LE `finally`. L'échantillonneur
+  // mémoire, le moniteur de boucle et la sonde posée sur `db.request` étaient tous trois installés
+  // DANS le bloc et retirés à la fin du chemin heureux : une exception — et il y en a désormais, les
+  // échéances en produisent — laissait un `setInterval` vivant, un moniteur actif et surtout
+  // `base.request` toujours détourné, donc la position suivante mesurée à travers l'instrument de la
+  // précédente. Relevé par un auditeur externe (CODEX, 15/09).
+  let sonde, boucle, echantillonneur;
   const echec = (e) => { const err = e instanceof Error ? e : new Error(String(e)); err.phase = phase; err.artefact = assemblerEchec({ identity, environment, scenario, workload, isolation: { ...isolation, datasetId: isolation.datasetId || "aucun" }, fenetre, phase, reason: err.message }); return err; };
   try {
     const p = await presentations.createPresentation({
@@ -254,23 +341,35 @@ async function executerPosition({ player, presentations, base, appeler, position
     if (!/^[A-Za-z0-9_-]{1,80}$/.test(String(p.slug))) throw new Error(`slug inattendu rendu par la base : ${JSON.stringify(String(p.slug).slice(0, 80))}`);
     await presentations.setPage(p.slug, p.control, pageAttendue);
     const iso = { ...isolation, datasetId: p.slug };
-    const lireEtat = (i) => appeler({ method: "GET", headers: {}, socket: { remoteAddress: `10.0.1.${i % 250}` }, query: { present: p.slug, state: "1" } });
+    const lireEtat = (i) => appeler({ method: "GET", headers: {}, socket: { remoteAddress: `10.0.1.${i % 250}` }, query: { present: p.slug, state: "1" } }, { echeanceMs: echeanceRequeteMs });
 
     phase = "warmup";
     for (let i = 0; i < warmupRequests; i += 1) await lireEtat(i);
 
     phase = "mesure";
-    const carteAvant = compteursDeLaCarte(JSON.parse((await appeler({ method: "GET", headers: {}, socket: {}, query: { contract: "1" } }, { corpsEntier: true })).corps));
+    // ⚠️ LA LECTURE DE CARTE PORTE LA MÊME ÉCHÉANCE, et dit ce qui a manqué. Sans elle, un handler
+    // muet faisait expirer cet appel au délai PAR DÉFAUT, rendait un corps vide, et le `JSON.parse`
+    // levait « Unexpected end of JSON input » : l'artefact d'échec était bien écrit, mais il
+    // accusait le parseur au lieu de nommer l'échéance. Un échec mal nommé se diagnostique deux
+    // fois.
+    const lireCarte = async (quand) => {
+      const r = await appeler({ method: "GET", headers: {}, socket: {}, query: { contract: "1" } }, { corpsEntier: true, echeanceMs: echeanceRequeteMs });
+      if (r.expire) throw new Error(`la carte des compteurs (${quand}) n'a pas répondu avant son échéance de ${echeanceRequeteMs} ms`);
+      try { return compteursDeLaCarte(JSON.parse(r.corps)); } catch (e) {
+        throw new Error(`la carte des compteurs (${quand}) a rendu ${r.statut} et un corps illisible : ${e.message}`, { cause: e });
+      }
+    };
+    const carteAvant = await lireCarte("avant");
     const cacheAvant = player.__cacheLecture.compteurs();
-    const sonde = sonderBase(base);
-    const boucle = monitorEventLoopDelay({ resolution: 10 }); boucle.enable();
+    sonde = sonderBase(base);
+    boucle = monitorEventLoopDelay({ resolution: 10 }); boucle.enable();
     const cpu0 = process.cpuUsage();
     // ⚠️ `afterGc` EXIGE UN VRAI GC : sans `--expose-gc`, la position échoue AVANT de mesurer, et le dit.
     if (typeof gc !== "function") throw new Error("node --expose-gc requis : afterGc ne peut pas être relevé sans lui");
     gc();
     const m0 = process.memoryUsage();
     const pic = { rss: m0.rss, heapUsed: m0.heapUsed, external: m0.external, arrayBuffers: m0.arrayBuffers };
-    const echantillonneur = setInterval(() => { const m = process.memoryUsage(); for (const k of Object.keys(pic)) if (m[k] > pic[k]) pic[k] = m[k]; }, 50);
+    echantillonneur = setInterval(() => { const m = process.memoryUsage(); for (const k of Object.keys(pic)) if (m[k] > pic[k]) pic[k] = m[k]; }, 50);
 
     const total = spectators * requetesParSpectateur;
     const instants = planifier(total, dureeCibleMs, motif);
@@ -294,8 +393,29 @@ async function executerPosition({ player, presentations, base, appeler, position
         }, Math.max(0, instants[i]));
       }));
     }
-    await Promise.all(finies);
+    // ⚠️ UN BUDGET GLOBAL EN PLUS DES ÉCHÉANCES PAR REQUÊTE. Les unes bornent chaque appel, celui-ci
+    // borne la POSITION : un ordonnanceur qui ne lâche jamais la main, une base qui accepte les
+    // connexions sans répondre, un `setTimeout` qui ne tire pas — autant de façons de ne jamais
+    // atteindre `Promise.all` sans qu'aucune requête n'ait individuellement expiré.
+    const budget = budgetPositionMs || Math.max(60_000, dureeCibleMs * 10);
+    let minuterieBudget;
+    const depassement = new Promise((_, rejeter) => {
+      minuterieBudget = setTimeout(() => rejeter(new Error(`budget de position dépassé : ${budget} ms pour ${total} requêtes, ${latences.length} achevée(s) — la course ne progresse plus`)), budget);
+      if (typeof minuterieBudget.unref === "function") minuterieBudget.unref();
+    });
+    try {
+      await Promise.race([Promise.all(finies), depassement]);
+    } finally {
+      clearTimeout(minuterieBudget);
+    }
     const dureeMs = maintenant();
+
+    // ⚠️ UNE REQUÊTE EXPIRÉE INVALIDE LA POSITION, elle ne se range pas dans les statuts. À ces
+    // latences, une échéance de trente secondes qui tire ne dit pas « le système est lent » mais
+    // « quelque chose ne répond plus » : la ranger dans `other5xx` produirait un artefact d'allure
+    // normale au milieu d'une panne.
+    const expirees = statuts.filter((x) => x === 598).length;
+    if (expirees) throw new Error(`${expirees} requête(s) sur ${total} n'ont pas répondu avant leur échéance de ${echeanceRequeteMs} ms`);
 
     clearInterval(echantillonneur);
     const m1 = process.memoryUsage();
@@ -306,7 +426,7 @@ async function executerPosition({ player, presentations, base, appeler, position
     gc();
     const m2 = process.memoryUsage();
     const cacheApres = player.__cacheLecture.compteurs();
-    const carteApres = compteursDeLaCarte(JSON.parse((await appeler({ method: "GET", headers: {}, socket: {}, query: { contract: "1" } }, { corpsEntier: true })).corps));
+    const carteApres = await lireCarte("après");
 
     const mem = (m) => ({ rss: versMio(m.rss), heapUsed: versMio(m.heapUsed), external: versMio(m.external), arrayBuffers: versMio(m.arrayBuffers) });
     const artefact = assembler({
@@ -321,11 +441,26 @@ async function executerPosition({ player, presentations, base, appeler, position
     });
     journal(`  position ${position} — ${spectators} spectateurs × ${requetesParSpectateur} : ${latences.length}/${total} achevées, p50/p95/p99 ${artefact.latencyMs.p50}/${artefact.latencyMs.p95}/${artefact.latencyMs.p99} ms, retard générateur p99 ${artefact.workload.generatorLagMs.p99} ms, 2xx ${artefact.statuses["2xx"]}, cache ${artefact.cache.hits}/${artefact.cache.coalesced}/${artefact.cache.misses} (servies/regroupées/produites), base ${artefact.database.calls} appel(s)`);
     return { artefact };
-  } catch (e) { throw echec(e); }
+  } catch (e) {
+    throw echec(e);
+  } finally {
+    if (echantillonneur) clearInterval(echantillonneur);
+    if (boucle) boucle.disable();
+    if (sonde) sonde.rendre();
+  }
 }
 
 /** La course entière : la séquence, un artefact par position, l'arrêt au premier échec, la cohorte jugée. */
-async function courir({ sortie, sequence = [100, 1000, 100], requetesParSpectateur = 10, dureeCibleMs = 4000, warmupRequests = 20, motif = "jittered", env = process.env, journal = console.log, contexte, player, presentations, fichierUrl, gc = global.gc }) {
+async function courir({ sortie, sequence = [100, 1000, 100], requetesParSpectateur = 10, dureeCibleMs = 4000, warmupRequests = 20, motif = "jittered", env = process.env, journal = console.log, contexte, player, presentations, fichierUrl, gc = global.gc, echeanceRequeteMs = ECHEANCE_REQUETE_MS, budgetPositionMs }) {
+  // ⚠️ PREMIÈRE INSTRUCTION, ET C'EST VOULU : rien avant elle, pas même un `mkdir`. Une séquence VIDE N'EST PAS UNE COURSE RÉUSSIE. Sans ce refus, la boucle ne tourne pas, aucun
+  // artefact n'est écrit, et `auditer` — appelé sans fichier — juge LE CORPUS D'EXEMPLES puis rend
+  // vert : « 2 artefact(s) conformes », code 0, zéro mesure produite. Le programme annonçait donc
+  // un succès en confondant la conformité de ses propres fixtures avec une campagne. Défaut relevé
+  // par un auditeur externe (CODEX, 15/09). Ce qui n'est pas mesurable se refuse ici, avant de
+  // demander un verdict à quoi que ce soit.
+  if (!Array.isArray(sequence) || !sequence.length) {
+    throw new ConfigurationNonMesurable("séquence vide : il n'y a aucune position à jouer, et une course sans position n'est pas une course réussie");
+  }
   const outils = await import(pathToFileURL(path.join(RACINE, "tools", "artefact-de-charge.mjs")).href);
   const schemas = outils.schemasPresents(RACINE);
   const { empreinte } = schemas.get(1);
@@ -342,7 +477,7 @@ async function courir({ sortie, sequence = [100, 1000, 100], requetesParSpectate
     const fichier = path.join(sortie, `artefact-${position}-${sequence[i]}.json`);
     let artefact;
     try {
-      ({ artefact } = await executerPosition({ player, presentations, base: contexte.db, appeler, position, sequence, spectators: sequence[i], requetesParSpectateur, dureeCibleMs, warmupRequests, identity, environment, isolation, motif, binSetIdDe: outils.binSetIdDe, fichierUrl, gc, journal }));
+      ({ artefact } = await executerPosition({ player, presentations, base: contexte.db, appeler, position, sequence, spectators: sequence[i], requetesParSpectateur, dureeCibleMs, warmupRequests, identity, environment, isolation, motif, binSetIdDe: outils.binSetIdDe, fichierUrl, gc, journal, echeanceRequeteMs, budgetPositionMs }));
     } catch (e) {
       artefact = e.artefact || assemblerEchec({ identity, environment, scenario: { name: "state-hot", spectators: sequence[i], presentations: 1, repetition: 1, position, sequence, warmupRequests, maxInFlight: 0, egressIps: Math.min(sequence[i], 250) }, workload: { arrivalModel: "open-loop", arrivalPattern: motif }, isolation: { ...isolation, datasetId: "aucun" }, fenetre: { startedAt: new Date().toISOString(), durationMs: 0, processUptimeStartMs: 0, processUptimeEndMs: 0 }, phase: "inconnue", reason: e && e.message });
       journal(`  position ${position} — ÉCHEC en phase ${artefact.failure.phase} : ${artefact.failure.reason}`);
@@ -376,18 +511,40 @@ async function main() {
   player.init(contexte);
   const presentations = require("../server/presentations.js");
   const env = { ...process.env, PLAYER_RAPPORT_POSTGREST: process.env.PLAYER_RAPPORT_POSTGREST || await versionPostgrest(BASE) };
-  const { code } = await courir({
-    env,
-    fichierUrl: pathToFileURL(fichier).href,
-    sortie: option("sortie", path.join(RACINE, "charge", "artefacts", "sortie")),
-    sequence: option("sequence", "100,1000,100").split(",").map((x) => Number(x.trim())).filter((x) => Number.isInteger(x) && x >= 0),
-    requetesParSpectateur: Number(option("par-spectateur", 10)),
-    dureeCibleMs: Number(option("duree-ms", 4000)),
-    contexte, player, presentations,
-  });
+  // ⚠️ LA CONFIGURATION SE CONTRÔLE AVANT DE MESURER, ET UN REFUS SORT EN 2. `Number(option(...))`
+  // rendait NaN sans un mot, et le filtre de la séquence amputait ce qu'il ne comprenait pas.
+  let demande;
+  try {
+    const requetesParSpectateur = entierStrict(option("par-spectateur", 10), "--par-spectateur");
+    demande = {
+      requetesParSpectateur,
+      sequence: sequenceStricte(option("sequence", "100,1000,100"), { requetesParSpectateur }),
+      dureeCibleMs: entierStrict(option("duree-ms", 4000), "--duree-ms", { min: 1, max: 3_600_000 }),
+    };
+  } catch (e) {
+    if (!(e instanceof ConfigurationNonMesurable)) throw e;
+    console.error(`rapport de charge : ${e.message} — rien n'a été mesuré, et s'en accommoder produirait un artefact qui ment sur son protocole`);
+    process.exitCode = 2;
+    return;
+  }
+  let code;
+  try {
+    ({ code } = await courir({
+      env,
+      fichierUrl: pathToFileURL(fichier).href,
+      sortie: option("sortie", path.join(RACINE, "charge", "artefacts", "sortie")),
+      ...demande,
+      contexte, player, presentations,
+    }));
+  } catch (e) {
+    if (!(e instanceof ConfigurationNonMesurable)) throw e;
+    console.error(`rapport de charge : ${e.message}`);
+    process.exitCode = 2;
+    return;
+  }
   process.exitCode = code;
 }
 
-module.exports = { EDGES_MS, quantile, centiles, histogramme, classerStatuts, plafondMemoire, environnement, versionPostgrest, identite, planifier, assembler, assemblerEchec, compteursDeLaCarte, deltas, juger, appelant, sonderBase, executerPosition, courir };
+module.exports = { EDGES_MS, REQUETES_MAX, ConfigurationNonMesurable, entierStrict, sequenceStricte, quantile, centiles, histogramme, classerStatuts, plafondMemoire, environnement, versionPostgrest, identite, planifier, assembler, assemblerEchec, compteursDeLaCarte, deltas, juger, appelant, sonderBase, executerPosition, courir };
 
 if (require.main === module) main().catch((e) => { console.error(e); process.exitCode = 1; });

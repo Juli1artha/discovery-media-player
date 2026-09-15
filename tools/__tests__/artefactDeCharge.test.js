@@ -244,6 +244,29 @@ describe("⚠️ la cohorte est une campagne, pas un tas de fichiers", () => {
   it("⚠️ deux artefacts complets sur une séquence de trois → refusé : une campagne complète tient toutes ses positions", () => {
     expect(controlerCohorte(trio().slice(0, 2)).join("\n")).toMatch(/cohorte : 2 artefact\(s\) tous complets pour une séquence de 3/);
   });
+
+  it("⚠️ UN SEUL artefact complet sur une séquence de trois → refusé AUSSI : la garde ne doit pas s'affaiblir quand la preuve diminue", () => {
+    // ⚠️ ELLE S'AFFAIBLISSAIT. `controlerCohorte` sortait sur `membres.length < 2`, avant d'atteindre
+    // les règles de COUVERTURE — qui n'ont pourtant besoin d'aucun second membre. Résultat exact :
+    //
+    //     2 fichiers sur 3 → REFUSÉ          1 fichier sur 3 → RIEN À DIRE
+    //
+    // Une vacuité au cœur de l'outil écrit pour les traquer, et la forme la plus tentante de la
+    // fraude involontaire : n'attacher qu'un fichier. Défaut relevé par un auditeur externe
+    // (CODEX, 15/09). Ce qui exige deux membres, ce sont les comparaisons ENTRE membres ; elles
+    // bouclent sur `slice(1)`, vide pour un seul, sans qu'il faille sortir avant.
+    expect(controlerCohorte([membre(1, 100)]).join("\n"))
+      .toMatch(/cohorte : 1 artefact\(s\) tous complets pour une séquence de 3/);
+  });
+
+  it("un seul artefact dont la séquence n'annonce qu'un rang est une cohorte complète, et un seul en échec est un préfixe interrompu", () => {
+    // Le pendant du banc ci-dessus : durcir ne doit pas rendre impossible ce qui est légitime.
+    // Une campagne d'une position EST une campagne ; une campagne qui échoue d'emblée aussi.
+    const seul = membre(1, 100); seul.artefact.scenario.sequence = [100];
+    expect(controlerCohorte([seul])).toEqual([]);
+    expect(controlerCohorte([interrompu(1)])).toEqual([]);
+    expect(controlerCohorte([]), "zéro membre n'est pas un constat, c'est l'absence de cohorte").toEqual([]);
+  });
   it("un préfixe interrompu 1..2 dont le dernier est complete: false → recevable ; un trou, un incomplet suivi d'un complet, deux incomplets → refusés", () => {
     expect(controlerCohorte([membre(1, 100), interrompu(2)])).toEqual([]);
     expect(controlerCohorte([membre(1, 100), membre(3, 100)]).join("\n")).toMatch(/cohorte : positions \[1,3\] — une cohorte est un préfixe continu 1\.\.k/);

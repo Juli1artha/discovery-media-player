@@ -269,7 +269,15 @@ export const CONSTANTES_DE_COHORTE = [
  */
 export function controlerCohorte(membres) {
   const c = [];
-  if (membres.length < 2) return c;
+  // ⚠️ ZÉRO MEMBRE SEULEMENT. Cette sortie disait `< 2`, et c'était une vacuité au cœur de l'outil
+  // écrit pour les traquer : les règles de COUVERTURE — la séquence annonce n rangs, la cohorte les
+  // tient tous ou s'arrête sur un échec — n'ont besoin d'aucun second membre, et n'étaient jamais
+  // exécutées pour un fichier seul. Un artefact de position 1 déclarant une séquence [100,1000,100]
+  // passait donc SANS UN MOT, quand les deux mêmes rangs sur trois étaient refusés : la garde était
+  // STRICTEMENT PLUS FAIBLE SUR MOINS DE PREUVE. Défaut relevé par un auditeur externe (CODEX,
+  // 15/09). Ce qui exige deux membres, ce sont les comparaisons entre membres, et elles bouclent
+  // déjà sur `slice(1)` — vide pour un seul, sans qu'il faille sortir avant.
+  if (!membres.length) return c;
   const premier = membres[0];
   for (const m of membres.slice(1)) {
     for (const chemin of CONSTANTES_DE_COHORTE) {
