@@ -29,6 +29,10 @@ import { spawnSync } from "node:child_process";
 
 import { conclure, conforme, violation, inconclusif, tenterAsync } from "./resultat-garde.mjs";
 import { estExecuteDirectement } from "./execute-directement.mjs";
+import { chargerConfigurations, configurationDe } from "./configuration-des-bancs.mjs";
+
+/** Les configurations vitest, chargées une fois au démarrage de la campagne. */
+let CONFIGURATIONS = new Map();
 
 /**
  * Le manifeste. Chaque entrée : une cible SYNTAXIQUE EXACTE, UNE seule modification, les bancs qui
@@ -704,6 +708,62 @@ export const MUTANTS = [
     pourquoi: "prouver l'immuabilité suppose de relire le schéma AU TAG : sans les tags, la garde répond NON CONCLUANT et le job tombe — c'est exactement ce qui est arrivé à la PR qui a posé l'ancre, le job `schema` n'ayant pas le `fetch-tags` que `check` avait déjà",
     bancs: ["tools/__tests__/artefactDeCharge.test.js"],
   },
+  {
+    id: "tete-de-pr-non-cablee-dans-la-ci",
+    fichier: ".github/workflows/ci.yml",
+    avant: "          PLAYER_RAPPORT_PR_HEAD: ${{ github.event.pull_request.head.sha || '' }}",
+    apres: "          # câblage retiré",
+    pourquoi: "la tête d'une PR n'est lisible que dans `github.event.pull_request.head.sha` : sans ce câblage, `identity.prHeadSha` vaut null dans toutes les courses de PR, et la mesure ne se relie plus à aucun objet durable puisque `commitSha` y désigne un commit de fusion éphémère",
+    bancs: ["tools/__tests__/cablageDuProducteurDeCharge.test.js"],
+  },
+  {
+    id: "producteur-lisant-un-nom-que-la-forge-n-a-jamais-defini",
+    fichier: "charge/rapport.js",
+    avant: "String(env.PLAYER_RAPPORT_PR_HEAD || \"\")",
+    apres: "String(env.GITHUB_HEAD_SHA || \"\")",
+    pourquoi: "c'est l'état exact publié trois fois : `GITHUB_HEAD_SHA` n'existe pas — la forge définit `GITHUB_HEAD_REF`, qui porte le NOM de la branche — et un champ nourri par une variable que personne ne fournit vaut null pour toujours, en silence, pendant que sa description promet le contraire",
+    bancs: ["tools/__tests__/cablageDuProducteurDeCharge.test.js"],
+  },
+  {
+    id: "validateur-tolerant-une-pr-sans-tete",
+    fichier: "tools/artefact-de-charge.mjs",
+    avant: "id.event.startsWith(\"pull_request\") && id.prHeadSha === null",
+    apres: "false",
+    pourquoi: "le schéma autorise `null` partout, faute de pouvoir dire « sauf sur une PR » : sans cet invariant, le câblage peut disparaître des deux côtés sans qu'aucun artefact ne soit refusé — c'est ce silence qui a laissé passer trois sorties",
+    bancs: ["tools/__tests__/artefactDeCharge.test.js"],
+  },
+  {
+    id: "cadence-atteinte-qui-ne-mesure-rien",
+    fichier: "tools/resume-de-charge.mjs",
+    avant: "  const atteinte = parSeconde(w.completedRequests, (a.measurementWindow || {}).durationMs);",
+    apres: "  const atteinte = parSeconde(w.scheduledRequests, w.targetDurationMs);",
+    pourquoi: "c'est la rédaction d'origine : elle annonçait un DÉBIT en divisant les requêtes PLANIFIÉES par la durée VISÉE — deux quantités qui existent avant la moindre mesure. Le chiffre reste identique le jour où la moitié des requêtes n'est jamais partie, c'est-à-dire le jour où un lecteur avait besoin de le voir bouger",
+    bancs: ["tools/__tests__/resumeDeCharge.test.js"],
+  },
+  {
+    id: "banc-de-base-rejouant-les-bancs-specialises",
+    fichier: "vitest.base.config.mjs",
+    avant: "    exclude: [\"base/chargeReelle.test.js\", \"base/endurance.test.js\", \"base/statistiquesAgregees.test.js\"],",
+    apres: "    exclude: [\"base/chargeReelle.test.js\"],",
+    pourquoi: "c'est l'état exact du dépôt jusqu'au 15/09 : l'endurance et les statistiques agrégées tournaient DEUX fois — une fois ici, une fois à leur étape dédiée — dans la même base d'essai, et les deux passages étaient verts, donc personne ne pouvait le voir",
+    bancs: ["tools/__tests__/configurationDesBancs.test.js"],
+  },
+  {
+    id: "banc-general-rejouant-la-charge",
+    fichier: "vitest.config.mjs",
+    avant: "    exclude: [\"node_modules/**\", \"examples/**\", \"e2e/**\", \"base/**\", \"charge/**\"],",
+    apres: "    exclude: [\"node_modules/**\", \"examples/**\", \"e2e/**\", \"base/**\"],",
+    pourquoi: "troisième occurrence du même défaut : tout `charge/**` tournait aussi sous `npm test`, et ce passage-là est MUET — seule la configuration dédiée pose `disableConsoleIntercept`, sans quoi le relevé, unique produit de ce banc, est avalé par Vitest",
+    bancs: ["tools/__tests__/configurationDesBancs.test.js"],
+  },
+  {
+    id: "affirmations-retirees-aveugles-au-yaml",
+    fichier: "tools/affirmations-retirees.mjs",
+    avant: "export const EXTENSIONS = [\".md\", \".js\", \".mjs\", \".ts\", \".sql\", \".yml\"];",
+    apres: "export const EXTENSIONS = [\".md\", \".js\", \".mjs\", \".ts\", \".sql\"];",
+    pourquoi: "les workflows de ce dépôt portent autant de prose que ses documents, et cette prose vieillit pareil : c'est dans cet angle mort qu'un paragraphe de `release.yml` a continué de décrire un transport de notes supprimé le jour même, en contredisant le fichier qui le portait",
+    bancs: ["tools/__tests__/affirmationsRetirees.test.js"],
+  },
 ];
 
 export const empreinte = (texte) => createHash("sha256").update(texte).digest("hex").slice(0, 16);
@@ -728,7 +788,29 @@ export function bornes(r) {
   return fautes;
 }
 
-const lancerBancs = (bancs) => spawnSync("npx", ["vitest", "run", ...bancs], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+/**
+ * ⚠️ CHAQUE BANC AVEC LA CONFIGURATION QUI LE JOUE, ET CETTE RÉPONSE VIENT D'UN SEUL ENDROIT.
+ * `npx vitest run <fichier>` prend la configuration GÉNÉRALE : le jour où `charge/**` en est sorti
+ * — il y tournait deux fois, dont une en avalant son propre relevé — Vitest n'a plus trouvé aucun
+ * banc pour onze mutants, et la campagne les a déclarés « base ROUGE » plutôt que de rougir
+ * franchement. Un lanceur qui devine le périmètre finit par deviner faux, et un NON CONCLUANT
+ * ressemble de loin à un incident passager. `tools/configuration-des-bancs.mjs` est désormais le
+ * seul à répondre, pour la campagne comme pour la garde.
+ */
+const lancerBancs = (bancs) => {
+  const paquets = new Map();
+  for (const b of bancs) {
+    const cfg = configurationDe(CONFIGURATIONS, b);
+    if (!paquets.has(cfg)) paquets.set(cfg, []);
+    paquets.get(cfg).push(b);
+  }
+  for (const [cfg, fichiers] of paquets) {
+    const args = ["vitest", "run", ...(cfg ? ["--config", cfg] : []), ...fichiers];
+    const r = spawnSync("npx", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    if (r.status !== 0) return r;
+  }
+  return { status: 0, stdout: "", stderr: "" };
+};
 const estVert = (r) => r.status === 0;
 
 if (estExecuteDirectement(import.meta.url)) {
@@ -740,6 +822,7 @@ if (estExecuteDirectement(import.meta.url)) {
       "lancée DEPUIS une exécution de bancs : cette campagne lance des bancs, elle s'imbriquerait dans elle-même.",
     ]);
     if (!MUTANTS.length) return inconclusif(["manifeste vide : rien n'a été posé, donc rien n'est prouvé"]);
+    CONFIGURATIONS = await chargerConfigurations(".");
 
     const seul = process.argv.find((a) => a.startsWith("--mutant="))?.slice("--mutant=".length);
     const choisis = seul ? MUTANTS.filter((m) => m.id === seul) : MUTANTS;

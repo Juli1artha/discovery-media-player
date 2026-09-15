@@ -7,6 +7,18 @@ on:
   # GitHub Release, image, SBOM et provenance sautés, TROIS FOIS SANS QUE PERSONNE NE LE VOIE
   # (celui qui publiait surveillait `npm view`, un artefact sur cinq — septième audit). Le
   # dispatch rejoue la sortie d'un tag existant : npm est sauté (déjà publié), le reste se refait.
+  #
+  # ⚠️ CE QU'UN REJEU NE PEUT PAS RÉPARER, et la 0.1.169 s'y est cognée. Un dispatch exécute le
+  # workflow de la RÉF SUR LAQUELLE ON LE LANCE, pendant que chaque job extrait le TAG. Le rejeu
+  # honnête se lance donc sur la réf du tag (« Use workflow from » → vX.Y.Z), sans quoi la garde de
+  # provenance ci-dessous refuse — mais cela fait tourner le `release.yml` DU TAG, défauts compris.
+  # La 0.1.169 est partie sans une ligne de ses notes parce que celles-ci voyageaient par une sortie
+  # de job que la forge a supprimée en chemin ; le correctif est sur `main`, le tag porte encore le
+  # transport cassé. Les deux rejeux possibles étaient donc inutiles : depuis `main`, refusé ;
+  # depuis le tag, on rejoue le code qui a perdu les notes. Un rejeu répare une COURSE qui a échoué
+  # — une étape tombée, un actif jamais téléversé — jamais un DÉFAUT DU WORKFLOW DU TAG. Ce cas-là
+  # se répare à la main, et seulement sous forme DÉRIVÉE : la section extraite du CHANGELOG du tag
+  # par le code d'extraction du tag. Consigné dans docs/VERIFYING-RELEASES.md.
   workflow_dispatch:
     inputs:
       tag:
@@ -775,10 +787,19 @@ jobs:
   # une annonce qui précède la preuve est exactement la sortie « à moitié faite qui s'annonçait
   # faite » que ce workflow a déjà connue trois fois (0.1.67 → 0.1.69).
   #
-  # Les notes ne sont pas relues ici : `verifier` les a extraites AVANT toute publication, et les
-  # passe en sortie de job. C'est ce qui garantit qu'une section de CHANGELOG manquante arrête la
-  # sortie au lieu de la laisser à moitié faite — le contrôle qui conditionne une publication se
+  # Les notes ne sont pas relues ici : `verifier` les a extraites AVANT toute publication, et ce job
+  # les RÉCUPÈRE COMME ARTEFACT. C'est ce qui garantit qu'une section de CHANGELOG manquante arrête
+  # la sortie au lieu de la laisser à moitié faite — le contrôle qui conditionne une publication se
   # place avant elle, sinon il ne conditionne rien.
+  #
+  # ⚠️ CE PARAGRAPHE DISAIT « et les passe en sortie de job », et il l'a dit après que ce transport
+  # eut été supprimé. Il avait été supprimé parce qu'il AVAIT ÉCHOUÉ : la forge confronte chaque
+  # sortie de job aux valeurs masquées et jette la sortie ENTIÈRE au moindre soupçon — « Skip output
+  # 'notes' since it may contain secret » — et la Release 0.1.169 est partie sans une ligne de ses
+  # seize entrées, cinq jobs au vert. Un lecteur venu comprendre d'où arrivent les notes lisait donc
+  # ici le contraire du fichier qu'il avait sous les yeux. `tools/affirmations-retirees.mjs` lit le
+  # YAML depuis ce jour-là : la prose des workflows vieillit comme celle des documents, et rien ne
+  # la confrontait. Relevé par un audit externe (CODEX, 15/09).
   #
   # ⚠️ LE `checkout` EST GARDÉ, ET C'EST UN CHOIX DE PRUDENCE ASSUMÉ. Ce job n'a besoin que du tag
   # et des notes, donc un clone serait en principe superflu. Mais le comportement de

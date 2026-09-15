@@ -23,7 +23,16 @@ export default defineConfig({
     // Ce n'est pas qu'une question de temps de forge — les deux passages écrivent dans la MÊME base
     // d'essai, et c'est exactement le genre d'interaction qui a déjà fait échouer une graine non
     // idempotente sur une clé dupliquée (le défaut symétrique, dans l'autre configuration).
-    exclude: ["base/chargeReelle.test.js"],
+    //
+    // ⚠️ ET LA LIGNE NE DISAIT QU'UN TIERS DE LA VÉRITÉ. Elle n'écartait que la campagne, alors que
+    // `endurance` et `statistiquesAgregees` ont eux aussi acquis leur propre configuration et leur
+    // propre étape — pour exactement la même raison — sans que personne ne revienne les écarter
+    // ici. Les deux tournaient donc DEUX FOIS, comme la campagne avant elle : le correctif d'un cas
+    // particulier n'avait pas été transformé en règle, et rien ne pouvait le dire, puisqu'un double
+    // passage est vert. C'est `tools/__tests__/configurationDesBancs.test.js` qui tient la règle
+    // désormais : cette liste est confrontée aux `include` des configurations spécialisées, et
+    // aucune ne peut plus naître sans être écartée d'ici. Relevé par un audit externe (CODEX, 15/09).
+    exclude: ["base/chargeReelle.test.js", "base/endurance.test.js", "base/statistiquesAgregees.test.js"],
     // Un seul processus : les essais se partagent une base.
     fileParallelism: false,
     testTimeout: 30_000,

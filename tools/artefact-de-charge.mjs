@@ -183,6 +183,18 @@ export function controlerSemantiqueArtefact(a, { empreinte } = {}) {
   const { complete, failure, identity: id, scenario: s, workload: w, latencyMs: l, measurementWindow: f, histogram: h, counters: k, statuses: st, correctness: co, environment: e, http, database: db, process: pr, relay: r } = a;
 
   if (empreinte && estObjet(id) && id.schemaSha256 !== empreinte) c.push(`artefact.identity.schemaSha256 : ${JSON.stringify(id.schemaSha256)} n'est pas l'empreinte du schéma appliqué (${empreinte}) — cet artefact a été produit sous un autre schéma, ou n'en nomme aucun`);
+  // ⚠️ UN CHAMP NOURRI PAR UNE VARIABLE QUE PERSONNE NE FOURNIT EST UN CHAMP MORT. `prHeadSha` est
+  // le seul lien entre une mesure de PR et un objet durable : `commitSha` y désigne un commit de
+  // FUSION ÉPHÉMÈRE que la forge jette ensuite. Le producteur lisait `GITHUB_HEAD_SHA`, qui n'existe
+  // pas — le champ valait donc `null` dans TOUTES les vraies courses de PR pendant que sa
+  // description promettait la tête de branche, et rien ne le disait, puisque le schéma autorise
+  // `null` partout. Cet invariant retire l'autorisation LÀ OÙ ELLE EST FAUSSE : sur un évènement de
+  // PR, `null` n'est plus un « hors PR », c'est un câblage absent. Hors PR il reste licite, et doit
+  // le rester — l'exiger sur un tag inventerait une tête qui n'existe pas. Relevé par un audit
+  // externe (CODEX, 15/09) sur la course réelle de la PR 546.
+  if (estObjet(id) && typeof id.event === "string" && id.event.startsWith("pull_request") && id.prHeadSha === null) {
+    c.push(`artefact.identity.prHeadSha : null alors que event vaut ${JSON.stringify(id.event)} — sur une PR, commitSha désigne un commit de fusion éphémère, et la tête de branche est le seul lien durable ; elle n'est lisible que dans github.event.pull_request.head.sha, qu'un workflow doit passer explicitement au producteur`);
+  }
   if (complete === true && estObjet(failure) && (failure.phase !== null || failure.reason !== null)) c.push("artefact.failure : un artefact complete: true ne porte ni phase ni reason d'échec");
   if (estObjet(e)) {
     const inconnu = e.memoryLimitSource === "unknown";
