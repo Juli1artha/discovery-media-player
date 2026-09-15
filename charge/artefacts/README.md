@@ -72,6 +72,51 @@ complet porte des nombres cohérents entre eux parce que le validateur l'exige �
 jugera les vrais rapports, et une forme vide qui passerait dirait qu'un rapport vide passerait.
 Les exemples sont aussi le corpus de compatibilité de leur schéma.
 
+**La topologie est une condition de la mesure.** `topology` est obligatoire, et il dit le trajet
+réellement exercé : le générateur appelle `player.handler()` **dans le processus** — ni socket, ni
+parseur HTTP, ni `bin/serve.js` — contre un PostgREST **réel** en loopback, la réponse étant un vrai
+flux inscriptible dont les octets sont comptés. Sans ce bloc, des latences de quelques microsecondes
+se lisent comme des latences réseau. Deux artefacts de topologies différentes ne se comparent pas,
+et c'est pour cela que `topology` est une constante de cohorte *en entier*.
+
+**Et l'artefact dit les conditions de lecture de ses propres chiffres.** `environment` porte le
+modèle de processeur, le fournisseur et l'image du runner, la **période d'échantillonnage mémoire**
+— `process.memoryMiB.peak` n'est pas « le maximum » mais « le maximum vu à cette cadence », et un pic
+plus court passe entre deux relevés — et la résolution du moniteur de boucle, sous laquelle un p99
+ne descend jamais. `workload` porte la durée **cible** (celle obtenue est dans `measurementWindow`),
+l'algorithme d'ordonnancement **et** sa graine : une graine seule ne rejoue rien si l'algorithme qui
+la consomme a changé. `identity` porte dépôt, évènement, référence, numéro et tentative de course, et
+`prHeadSha` — sur une PR, `GITHUB_SHA` désigne un commit de fusion éphémère qui n'existera plus.
+
+⚠️ **`measurementWindow` désigne UNE période.** Ses trois bornes sont prises deux à deux, à
+l'ouverture et à la fermeture, sans rien entre elles : elles englobaient autrefois la création de la
+présentation et le préchauffage d'un côté, les sondes et le GC final de l'autre. `afterGc` reste
+explicitement hors fenêtre.
+
+⚠️ **Les compteurs ne s'observent pas eux-mêmes.** Ils se lisent par une couture interne qui ne
+traverse pas le handler ; la lecture passait autrefois par une requête, qui incrémentait le compteur
+qu'elle mesurait (1 001 pour 1 000 requêtes). Ce que la fenêtre contient d'autre que la charge se
+**dit**, dans `counters.observerOverheadRequests`, et jamais ne se soustrait en silence : un
+instrument qui se retranche discrètement est plus difficile à auditer qu'un instrument faux.
+
+⚠️ **`cache.peakInFlight` est le pic de LA FENÊTRE**, relevé par un observateur parallèle qui ne
+modifie ni ne ralentit le cache ; le maximum depuis le démarrage vit à part, sous
+`processLifetimePeakInFlight`. Les recopier l'un pour l'autre faisait hériter une position calme du
+pic d'une position chargée.
+
+**Un échec est public.** `failure.reason` est assaini et borné — caractères de contrôle, URL,
+adresses, jetons et en-têtes remplacés par une marque *visible*, parce qu'un lecteur doit voir qu'il
+manque quelque chose — et `failure.code` porte la cause sous une forme stable et énumérée, qui
+s'agrège là où un message ne s'agrège pas. Le détail brut reste dans le journal privé de la course.
+
+**Le résumé.** `node tools/resume-de-charge.mjs --fichier=… [--run-url=…]` engendre le tableau
+Markdown **depuis les octets** : provenance en tête (course, version, commit, dépôt, évènement,
+référence), topologie, positions dans l'ordre, cadence rapportée à la cadence nominale du contrat
+hôte, et le **sha256 de chaque fichier** pour que le lecteur confronte au lieu de nous croire. Il
+refuse quand la cohorte est refusée : une présentation soignée fait passer ses chiffres pour
+vérifiés. La Release l'inclut dans ses notes. Ce qui a rendu cet outil nécessaire : un tableau
+recopié à la main, sans course ni version ni commit, donc impossible à contredire.
+
 **Le producteur.** `node --expose-gc charge/rapport.js --sortie=<dossier>` joue la séquence
 (`--sequence=100,1000,100` par défaut, `--par-spectateur=10` lectures d'état par spectateur) dans un
 seul processus contre le PostgREST de `PLAYER_TEST_POSTGREST_URL` — le scénario `state-hot`, une

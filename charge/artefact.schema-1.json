@@ -14,7 +14,8 @@
     "scenario",
     "workload",
     "isolation",
-    "measurementWindow"
+    "measurementWindow",
+    "topology"
   ],
   "properties": {
     "schemaVersion": {
@@ -29,7 +30,8 @@
       "additionalProperties": false,
       "required": [
         "phase",
-        "reason"
+        "reason",
+        "code"
       ],
       "properties": {
         "phase": {
@@ -42,7 +44,21 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "description": "message public, assaini et borné : sans caractères de contrôle, sans jeton, en-tête, adresse ni paramètre de requête. Le détail brut reste dans le journal privé de la course."
+        },
+        "code": {
+          "enum": [
+            null,
+            "presentation",
+            "warmup",
+            "deadline",
+            "budget",
+            "database",
+            "schema",
+            "unknown"
+          ],
+          "description": "la CAUSE, stable et énumérée — null quand la course est allée au bout, comme phase et reason. `reason` est un texte humain dérivé d'une erreur : il peut porter ce qu'un service distant a renvoyé, et un artefact part sur une Release publique. Un code se compare et s'agrège ; un message, non."
         }
       }
     },
@@ -54,12 +70,19 @@
         "packageVersion",
         "timestamp",
         "runId",
-        "schemaSha256"
+        "schemaSha256",
+        "repository",
+        "event",
+        "ref",
+        "runNumber",
+        "runAttempt",
+        "prHeadSha"
       ],
       "properties": {
         "commitSha": {
           "type": "string",
-          "pattern": "^[0-9a-f]{40}$"
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "le commit MESURÉ. Sur un évènement de PR, GITHUB_SHA est un commit de FUSION ÉPHÉMÈRE qui n'existera plus : prHeadSha porte alors la tête réelle de la branche, et c'est elle qui relie la mesure à un objet durable."
         },
         "packageVersion": {
           "type": "string",
@@ -78,6 +101,41 @@
           "type": "string",
           "pattern": "^[0-9a-f]{64}$",
           "description": "sha256 du JSON canonique (sans blancs) du schéma sous lequel l'artefact a été produit ; le validateur exige qu'elle soit celle du schéma qu'il applique — un artefact dit lui-même contre quoi il a été jugé"
+        },
+        "repository": {
+          "type": "string",
+          "minLength": 1,
+          "description": "« propriétaire/dépôt » — deux dépôts peuvent produire le même runId chez des forges différentes"
+        },
+        "event": {
+          "type": "string",
+          "minLength": 1,
+          "description": "l'évènement qui a déclenché la course (push, pull_request, workflow_dispatch…) : il décide de ce que commitSha désigne"
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runNumber": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "description": "numéro lisible de la course ; null hors forge"
+        },
+        "runAttempt": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "la tentative — un rejeu est une AUTRE course sur le même commit, et ses chiffres ne se mélangent pas aux précédents"
+        },
+        "prHeadSha": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "la tête de la branche d'une PR, ou null hors PR"
         }
       }
     },
@@ -92,7 +150,12 @@
         "memoryLimitMiB",
         "memoryLimitSource",
         "postgresVersion",
-        "postgrestVersion"
+        "postgrestVersion",
+        "cpuModel",
+        "runnerProvider",
+        "runnerImage",
+        "memorySampleIntervalMs",
+        "eventLoopResolutionMs"
       ],
       "properties": {
         "node": {
@@ -129,6 +192,30 @@
         },
         "postgrestVersion": {
           "type": "string"
+        },
+        "cpuModel": {
+          "type": "string",
+          "minLength": 1,
+          "description": "deux runners du même fournisseur n'ont pas le même processeur, et les latences en dépendent plus que du nombre de cœurs"
+        },
+        "runnerProvider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runnerImage": {
+          "type": "string",
+          "minLength": 1,
+          "description": "image et version du runner : la version de PostgreSQL, les réglages du noyau et la pile TLS en viennent"
+        },
+        "memorySampleIntervalMs": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "⚠️ LE PIC MÉMOIRE N'EST PAS LE MAXIMUM, c'est le maximum VU à cette cadence : un pic plus court passe entre deux échantillons. Sans cette période, process.memoryMiB.peak n'est pas interprétable."
+        },
+        "eventLoopResolutionMs": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "la résolution de monitorEventLoopDelay : un p99 de boucle ne descend pas en dessous, et le lire plus fin serait une illusion"
         }
       }
     },
@@ -143,7 +230,6 @@
         "position",
         "sequence",
         "warmupRequests",
-        "maxInFlight",
         "egressIps"
       ],
       "properties": {
@@ -185,10 +271,6 @@
           "type": "integer",
           "minimum": 0
         },
-        "maxInFlight": {
-          "type": "integer",
-          "minimum": 0
-        },
         "egressIps": {
           "type": "integer",
           "minimum": 0
@@ -204,7 +286,13 @@
         "scheduledRequests",
         "startedRequests",
         "completedRequests",
-        "generatorLagMs"
+        "generatorLagMs",
+        "targetDurationMs",
+        "requestsPerSpectator",
+        "scheduleAlgorithm",
+        "scheduleSeed",
+        "egressPattern",
+        "peakInFlight"
       ],
       "description": "le générateur, mesuré lui aussi : un générateur saturé envoie moins que prévu et fabrique de bons percentiles (omission coordonnée). Invariant tenu par le validateur : scheduled ≥ started ≥ completed, et completedRequests === latencyMs.n (une observation par requête achevée, quel que soit son statut)",
       "properties": {
@@ -237,6 +325,37 @@
             "burst"
           ],
           "description": "la FORME du trafic, axe indépendant du modèle : une charge peut être open-loop ET jittered"
+        },
+        "targetDurationMs": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "la durée VISÉE. measurementWindow.durationMs dit celle qu'on a obtenue ; sans la cible, on ne peut pas savoir si le générateur a tenu la cadence. La cadence elle-même reste dérivable (scheduledRequests / targetDurationMs) et n'est donc pas stockée."
+        },
+        "requestsPerSpectator": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scheduleAlgorithm": {
+          "type": "string",
+          "minLength": 1,
+          "description": "l'identifiant de l'algorithme d'ordonnancement : une graine ne rejoue rien si l'algorithme qui la consomme a changé"
+        },
+        "scheduleSeed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "⚠️ LA GIGUE ÉTAIT TIRÉE DE Math.random ET PERDUE. Deux courses du même protocole n'étaient donc pas la même expérience, et aucune ne se rejouait. La graine et l'algorithme rendent l'ordonnancement reproductible."
+        },
+        "egressPattern": {
+          "enum": [
+            "round-robin",
+            "random",
+            "single"
+          ]
+        },
+        "peakInFlight": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "le pic de requêtes en vol OBSERVÉ — un résultat de la course, pas un paramètre : il vivait dans scenario, parmi les entrées, ce qui laissait croire à un plafond imposé au générateur alors qu'aucun ne l'est (boucle ouverte)"
         }
       }
     },
@@ -244,7 +363,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "processReused",
+        "sameProcessAcrossCohort",
         "databaseReset",
         "cacheReset",
         "metricsReset",
@@ -252,9 +371,6 @@
         "datasetId"
       ],
       "properties": {
-        "processReused": {
-          "type": "boolean"
-        },
         "databaseReset": {
           "type": "boolean"
         },
@@ -272,6 +388,10 @@
           "type": "string",
           "minLength": 1,
           "description": "des données distinctes par scénario, nommées : uniques au sein d'une course"
+        },
+        "sameProcessAcrossCohort": {
+          "type": "boolean",
+          "description": "toutes les positions de la cohorte tournent dans LE MÊME processus. Le nom précédent — processReused — était vrai pour les positions 2 et 3 et faux pour la 1, mais valait true partout : il ne disait donc pas ce qu'il énonçait."
         }
       }
     },
@@ -503,7 +623,8 @@
         "hits",
         "misses",
         "coalesced",
-        "peakInFlight"
+        "peakInFlight",
+        "processLifetimePeakInFlight"
       ],
       "properties": {
         "hits": {
@@ -520,7 +641,13 @@
         },
         "peakInFlight": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "le pic en vol PENDANT CETTE FENÊTRE. Il était recopié du maximum historique du cache alors que hits/misses/coalesced étaient des deltas : après une position chargée, une position calme héritait de l'ancien pic et disait une concurrence qu'elle n'avait pas vue."
+        },
+        "processLifetimePeakInFlight": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "le maximum depuis le démarrage du processus — conservé parce qu'il a son utilité, et SÉPARÉ parce que ce n'est pas la même grandeur"
         }
       }
     },
@@ -603,7 +730,8 @@
       "required": [
         "before",
         "after",
-        "delta"
+        "delta",
+        "observerOverheadRequests"
       ],
       "description": "les compteurs du processus (carte : lectureSaturee.total, relaisRefuses.total, statuts…) en avant / après / delta par scénario, puisque init ne les remet pas à zéro",
       "properties": {
@@ -615,6 +743,11 @@
         },
         "delta": {
           "$ref": "#/$defs/compteurs"
+        },
+        "observerOverheadRequests": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "⚠️ LES REQUÊTES DE L'OBSERVATEUR ELLE-MÊME. La lecture de la carte des compteurs passait par le handler et incrémentait le compteur qu'elle mesurait : delta valait systématiquement charge + 1. Corrigé par une couture interne non comptabilisée ; ce champ reste pour dire ce que la fenêtre contient d'autre que la charge, et vaut 0 quand elle n'en contient rien."
         }
       }
     },
@@ -680,6 +813,37 @@
         }
       },
       "description": "admitted : relais passés à l'admission (le flux a commencé) ; refused : refusés à l'admission (503, Retry-After: 2, plafond maxConcurrentRelays atteint) ; admitted + refused === workload.completedRequests pour ce scénario (une requête = une tentative de relais), et refused ≤ statuses.503 ; fileBytes : taille du fichier servi, la même pour tous ; bytesTransferred ≤ admitted × fileBytes ; descriptors.peak ≥ descriptors.idle"
+    },
+    "topology": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "⚠️ SANS CE BLOC, DES LATENCES DE QUELQUES MICROSECONDES SE LISENT COMME DU RÉSEAU. Elles sont cohérentes lorsque le client appelle le handler en direct, dans le même processus, contre une base en loopback — et invraisemblables autrement. La topologie est une CONDITION de la mesure, pas un détail d'implémentation : deux artefacts de topologies différentes ne se comparent pas.",
+      "required": [
+        "clientToPlayer",
+        "playerToDatabase",
+        "playerProcesses"
+      ],
+      "properties": {
+        "clientToPlayer": {
+          "enum": [
+            "handler-direct",
+            "loopback-http",
+            "remote-http"
+          ],
+          "description": "handler-direct : ni socket, ni parseur HTTP, ni bin/serve.js — le générateur appelle player.handler() dans le processus"
+        },
+        "playerToDatabase": {
+          "enum": [
+            "loopback-http",
+            "remote-http",
+            "in-memory"
+          ]
+        },
+        "playerProcesses": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
     }
   },
   "allOf": [

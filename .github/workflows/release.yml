@@ -728,6 +728,17 @@ jobs:
               || { echo "::error::la cohorte récupérée ne mesure pas ce tag — on n'attache pas la mesure d'un autre commit"; exit 1; }
           done
 
+          # ⚠️ LE TABLEAU SE DÉRIVE DES OCTETS ATTACHÉS, IL NE SE RECOPIE PAS. Le 14/09 j'ai relayé
+          # aux hôtes le relevé d'une AUTRE course en le présentant comme celui du tag : les
+          # percentiles avaient voyagé à la main d'un journal vers un message, et le tableau ne
+          # portait ni course, ni version, ni commit, donc ne pouvait pas être contredit. Ce résumé
+          # est engendré depuis les fichiers que cette Release attache, avec leur sha256 : un
+          # lecteur confronte au lieu de nous croire. Il refuse si la cohorte est refusée.
+          node tools/resume-de-charge.mjs $args \
+            --run-url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$RUN" > /tmp/sortie/resume-de-charge.md \
+            || { echo "::error::le résumé de charge a été refusé alors que la cohorte venait d'être acceptée — les deux outils ne disent pas la même chose"; exit 1; }
+          cat /tmp/sortie/resume-de-charge.md
+
           for f in /tmp/charge/*.json; do
             cp "$f" "/tmp/sortie/discovery-media-player-$V-charge-$(basename "$f" .json | sed 's/^artefact-//').json"
           done
@@ -857,6 +868,20 @@ jobs:
               printf 'Either the tag predates the producer (`charge/rapport.js`), or the run artefact\n'
               printf 'expired. The series has a gap at this version, and this note is the gap.\n'
             } >> corps.md
+          # ⚠️ ET QUAND ELLE EST LÀ, ON LA LIT DANS LES NOTES — engendrée depuis les octets attachés
+          # par `tools/resume-de-charge.mjs` dans `attester`, jamais recopiée. Un tableau de charge
+          # que personne ne peut relier à une course, une version et un commit ne peut pas être
+          # contredit : c'est ce qui m'a permis, le 14/09, de publier le relevé d'une autre course
+          # sans que rien ne s'y oppose. Le sha256 de chaque fichier y figure, pour confronter.
+          elif [ -s paquet/resume-de-charge.md ]; then
+            {
+              printf '\n---\n\n'
+              printf '### Load measured by this commit'"'"'s own CI run\n\n'
+              cat paquet/resume-de-charge.md
+              printf '\n'
+            } >> corps.md
+          else
+            echo "::warning::la mesure de charge est attachée mais son résumé manque — les notes ne porteront pas le tableau"
           fi
 
           TAG_SHA=$(git rev-parse HEAD)

@@ -243,6 +243,24 @@ export function controlerSemantiqueArtefact(a, { empreinte } = {}) {
     if (estObjet(st) && nombre(st["503"]) && nombre(r.refused) && r.refused > st["503"]) c.push(`artefact.relay.refused : ${r.refused} > statuses.503 (${st["503"]}) — un refus d'admission est une 503`);
     if (nombre(r.bytesTransferred) && nombre(r.admitted) && nombre(r.fileBytes) && r.bytesTransferred > r.admitted * r.fileBytes) c.push(`artefact.relay.bytesTransferred : ${r.bytesTransferred} > admitted × fileBytes (${r.admitted * r.fileBytes})`);
   }
+  // ⚠️ LA FENÊTRE NE CONTIENT QUE LA CHARGE, OU ELLE LE DIT. Les compteurs de statut du processus
+  // comptent TOUT ce qui traverse le handler pendant la fenêtre. Ils étaient relevés par une requête
+  // qui le traversait elle aussi : le delta valait systématiquement charge + 1, et rien ne s'en
+  // apercevait puisque `delta = after − before` restait vrai. Un invariant qui ne regarde que la
+  // cohérence interne d'un relevé ne voit pas l'observateur s'y ajouter. Celui-ci confronte la somme
+  // des statuts INTERNES au travail annoncé : tout écart doit être porté par
+  // `observerOverheadRequests`, c'est-à-dire ÉCRIT, jamais soustrait en silence. Demandé par un
+  // audit externe (CODEX, 15/09).
+  if (complete === true && estObjet(k) && estObjet(k.delta) && estObjet(w)) {
+    const CLES_STATUTS = ["mesures.statuts.ok", "mesures.statuts.refus4xx", "mesures.statuts.debit429", "mesures.statuts.occupe503", "mesures.statuts.erreur5xx"];
+    if (CLES_STATUTS.every((x) => nombre(k.delta[x])) && nombre(w.completedRequests) && nombre(k.observerOverheadRequests)) {
+      const vus = CLES_STATUTS.reduce((t, x) => t + k.delta[x], 0);
+      const attendu = w.completedRequests + k.observerOverheadRequests;
+      if (vus !== attendu) {
+        c.push(`artefact.counters : les statuts internes de la fenêtre somment à ${vus} pour ${w.completedRequests} requête(s) de charge et ${k.observerOverheadRequests} requête(s) d'observation déclarée(s) (attendu ${attendu}) — la fenêtre contient ${vus - attendu} requête(s) que personne ne déclare`);
+      }
+    }
+  }
   if (estObjet(k) && estObjet(k.before) && estObjet(k.after) && estObjet(k.delta)) {
     const cles = new Set([...Object.keys(k.before), ...Object.keys(k.after), ...Object.keys(k.delta)]);
     for (const cle of cles) {
@@ -256,10 +274,17 @@ export function controlerSemantiqueArtefact(a, { empreinte } = {}) {
 const lireChemin = (a, chemin) => chemin.split(".").reduce((o, k) => (estObjet(o) ? o[k] : undefined), a);
 /** Ce qui doit être IDENTIQUE dans une cohorte, nommément ; `VARIABLES_D_ECHELLE` dit ce qui ne l'est pas. */
 export const CONSTANTES_DE_COHORTE = [
-  "schemaVersion", "identity.runId", "identity.commitSha", "identity.packageVersion", "identity.schemaSha256", "environment",
+  "schemaVersion", "identity.runId", "identity.commitSha", "identity.packageVersion", "identity.schemaSha256",
+  "identity.repository", "identity.event", "identity.ref", "identity.runNumber", "identity.runAttempt", "identity.prHeadSha",
+  "environment",
+  // ⚠️ LA TOPOLOGIE EN ENTIER. Deux positions mesurées à travers des trajets différents ne forment
+  // pas une campagne : l'une dirait le handler direct, l'autre le réseau, et leur comparaison — tout
+  // l'objet d'une séquence 100 → 1 000 → 100 — n'aurait plus de sens.
+  "topology",
   "scenario.name", "scenario.presentations", "scenario.repetition", "scenario.sequence", "scenario.warmupRequests",
-  "workload.arrivalModel", "workload.arrivalPattern",
-  "isolation.processReused", "isolation.databaseReset", "isolation.cacheReset", "isolation.metricsReset", "isolation.countersReportedAsDeltas",
+  "workload.arrivalModel", "workload.arrivalPattern", "workload.targetDurationMs", "workload.requestsPerSpectator",
+  "workload.scheduleAlgorithm", "workload.egressPattern",
+  "isolation.sameProcessAcrossCohort", "isolation.databaseReset", "isolation.cacheReset", "isolation.metricsReset", "isolation.countersReportedAsDeltas",
 ];
 
 /**

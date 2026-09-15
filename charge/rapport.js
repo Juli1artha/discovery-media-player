@@ -92,6 +92,27 @@ function classerStatuts(statuts) {
   return c;
 }
 
+// ⚠️ CES DEUX PÉRIODES SONT DES CONDITIONS DE LECTURE, PAS DES RÉGLAGES. Le pic mémoire est le
+// maximum VU tous les 50 ms — un pic plus court passe entre deux échantillons — et le p99 de boucle
+// ne descend jamais sous la résolution du moniteur. Elles sont donc écrites DANS l'artefact, et
+// définies ici pour que l'instrument et ce qu'il déclare ne puissent pas diverger.
+const PERIODE_MEMOIRE_MS = 50;
+
+/**
+ * L'horloge des bornes de fenêtre, INJECTABLE — et ce n'est pas un confort de banc.
+ *
+ * ⚠️ « LES TROIS BORNES DÉSIGNENT LA MÊME PÉRIODE » NE SE PROUVE PAS À LA MONTRE. Un banc qui
+ * compare `processUptimeEnd − processUptimeStart` à `durationMs` sous une tolérance ne décide rien :
+ * sur un double en mémoire, la présentation et le préchauffage qu'il s'agit justement d'EXCLURE
+ * prennent quelques millisecondes, et le défaut passe sous n'importe quel seuil qu'on ose écrire.
+ * Trop serré, le banc devient instable sous charge ; trop large, il ne voit plus rien. Avec une
+ * horloge pilotée, la propriété redevient exacte. La consigne vient de l'audit (CODEX, 15/09), et
+ * ma première version l'avait ignorée : c'est la campagne de mutations qui l'a rappelée, en laissant
+ * survivre le mutant qui rouvre la fenêtre trop tôt.
+ */
+const HORLOGE = { uptimeMs: () => Math.round(process.uptime() * 1000), instant: () => new Date().toISOString() };
+const RESOLUTION_BOUCLE_MS = 10;
+
 /** Le plafond mémoire du processus, de la source qui le sert — ou null et `unknown`, jamais un chiffre deviné. */
 function plafondMemoire(env = process.env, lire = (f) => fs.readFileSync(f, "utf8")) {
   try { const v = lire("/sys/fs/cgroup/memory.max").trim(); if (/^\d+$/.test(v)) return { memoryLimitMiB: Math.max(1, Math.round(Number(v) / MIO)), memoryLimitSource: "cgroup" }; } catch { /* pas de cgroup v2 lisible */ }
@@ -100,9 +121,29 @@ function plafondMemoire(env = process.env, lire = (f) => fs.readFileSync(f, "utf
   return { memoryLimitMiB: null, memoryLimitSource: "unknown" };
 }
 
-function environnement(env = process.env) {
+/** Une chaîne venue de l'environnement qui finira dans un fichier publié : bornée, filtrée, jamais vide. */
+const texteBorne = (v, defaut, max = 120) => {
+  const t = String(v == null ? "" : v).replace(/[^\x20-\x7E\u00A0-\u024F]/g, "").trim().slice(0, max);
+  return t || defaut;
+};
+
+/**
+ * L'environnement, à la précision qui rend deux relevés comparables.
+ *
+ * ⚠️ `cpuCount` NE SUFFIT PAS. Deux runners du même fournisseur, à nombre de cœurs égal, n'ont pas
+ * le même processeur — et les latences en dépendent bien plus. De même, `process.memoryMiB.peak`
+ * n'est pas « le maximum » mais « le maximum VU à la cadence d'échantillonnage » : sans cette
+ * période, le chiffre n'est pas interprétable, et un pic plus court passe entre deux relevés.
+ * Ajouts demandés par un audit externe (CODEX, 15/09).
+ */
+function environnement(env = process.env, { memorySampleIntervalMs = PERIODE_MEMOIRE_MS, eventLoopResolutionMs = RESOLUTION_BOUCLE_MS } = {}) {
+  const cpus = os.cpus();
   return {
-    node: process.version, os: `${os.platform()} ${os.release()}`, arch: os.arch(), cpuCount: Math.max(1, os.cpus().length),
+    node: process.version, os: `${os.platform()} ${os.release()}`, arch: os.arch(), cpuCount: Math.max(1, cpus.length),
+    cpuModel: texteBorne(cpus[0] && cpus[0].model, "inconnu"),
+    runnerProvider: texteBorne(env.RUNNER_ENVIRONMENT || (env.GITHUB_ACTIONS ? "github-hosted" : ""), "local"),
+    runnerImage: texteBorne(env.ImageOS || env.RUNNER_IMAGE || "", "inconnue"),
+    memorySampleIntervalMs, eventLoopResolutionMs,
     ...plafondMemoire(env),
     postgresVersion: String(env.PLAYER_RAPPORT_POSTGRES || ""), postgrestVersion: String(env.PLAYER_RAPPORT_POSTGREST || ""),
   };
@@ -127,9 +168,29 @@ function commitCourant(env = process.env) {
   try { return execFileSync("git", ["rev-parse", "HEAD"], { cwd: RACINE, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return "0".repeat(40); }
 }
 
+/**
+ * L'identité de la course.
+ *
+ * ⚠️ `commitSha` SEUL EST AMBIGU SUR UNE PR. `GITHUB_SHA` y désigne un commit de FUSION ÉPHÉMÈRE,
+ * fabriqué par la forge pour l'occasion et qui n'existera plus ensuite : un artefact qui ne porte que
+ * lui ne se relie à aucun objet durable. `prHeadSha` porte alors la tête réelle de la branche, et
+ * `event` dit laquelle des deux lectures s'applique. Le dépôt, la référence, le numéro et la
+ * tentative complètent : un rejeu est une AUTRE course sur le même commit, et ses chiffres ne se
+ * mélangent pas aux précédents. Ajouts demandés par un audit externe (CODEX, 15/09).
+ */
 function identite({ env = process.env, empreinte, version = require("../package.json").version, quand = new Date() }) {
-  const runId = env.GITHUB_RUN_ID ? `gha-${env.GITHUB_RUN_ID}-${env.GITHUB_RUN_ATTEMPT || 1}` : `local-${quand.toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}-${crypto.randomBytes(3).toString("hex")}`;
-  return { commitSha: commitCourant(env), packageVersion: version, timestamp: quand.toISOString(), runId, schemaSha256: empreinte };
+  const tentative = Number(env.GITHUB_RUN_ATTEMPT) >= 1 ? Math.trunc(Number(env.GITHUB_RUN_ATTEMPT)) : 1;
+  const runId = env.GITHUB_RUN_ID ? `gha-${env.GITHUB_RUN_ID}-${tentative}` : `local-${quand.toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}-${crypto.randomBytes(3).toString("hex")}`;
+  const tete = String(env.GITHUB_EVENT_NAME || "").startsWith("pull_request") ? String(env.GITHUB_HEAD_SHA || env.PLAYER_RAPPORT_PR_HEAD || "") : "";
+  return {
+    commitSha: commitCourant(env), packageVersion: version, timestamp: quand.toISOString(), runId, schemaSha256: empreinte,
+    repository: texteBorne(env.GITHUB_REPOSITORY, "local/local"),
+    event: texteBorne(env.GITHUB_EVENT_NAME, "local"),
+    ref: texteBorne(env.GITHUB_REF, "local"),
+    runNumber: Number.isSafeInteger(Number(env.GITHUB_RUN_NUMBER)) && Number(env.GITHUB_RUN_NUMBER) >= 1 ? Number(env.GITHUB_RUN_NUMBER) : null,
+    runAttempt: tentative,
+    prHeadSha: /^[0-9a-f]{40}$/.test(tete) ? tete : null,
+  };
 }
 
 /**
@@ -174,8 +235,38 @@ function sequenceStricte(brut, { requetesParSpectateur }) {
   return sequence;
 }
 
+/**
+ * L'identifiant de l'algorithme d'ordonnancement, ÉCRIT DANS L'ARTEFACT avec la graine.
+ *
+ * ⚠️ UNE GRAINE NE REJOUE RIEN SI L'ALGORITHME QUI LA CONSOMME A CHANGÉ. Enregistrer l'une sans
+ * l'autre donne l'illusion de la reproductibilité : le jour où cette fonction change, les anciens
+ * artefacts ne se rejouent plus et rien ne le dit. Le nom porte donc sa version, et il change avec
+ * elle — c'est un contrat de lecture, pas une étiquette.
+ */
+const ALGORITHME_ORDONNANCEMENT = "uniforme-gigue-uniforme-v1";
+
+/**
+ * Un générateur pseudo-aléatoire DÉTERMINISTE (mulberry32) : même graine, même suite, partout.
+ *
+ * ⚠️ LA GIGUE ÉTAIT TIRÉE DE `Math.random` ET PERDUE. Deux courses du même protocole n'étaient donc
+ * pas la même expérience, et aucune des deux ne se rejouait — on ne pouvait ni reproduire un pic ni
+ * démontrer qu'un écart venait du code plutôt que du tirage. Défaut relevé par un auditeur externe
+ * (CODEX, 15/09).
+ */
+function alea32(graine) {
+  let a = graine >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 /** Les instants de départ d'une boucle ouverte : `n` requêtes réparties sur `dureeMs`, avec ou sans gigue. */
-function planifier(n, dureeMs, motif, alea = Math.random) {
+function planifier(n, dureeMs, motif, graine = 0) {
+  const alea = typeof graine === "function" ? graine : alea32(graine);
   const pas = n > 1 ? dureeMs / (n - 1) : 0;
   const instants = [];
   for (let i = 0; i < n; i += 1) {
@@ -189,13 +280,13 @@ function planifier(n, dureeMs, motif, alea = Math.random) {
  * L'artefact d'une position ACHEVÉE, assemblé depuis ce qui a été observé. `observations` :
  * `{ latences, statuts, octets, jugements: { correct, vide, autre }, planifiees, parties, retards, enVolPic }`.
  */
-function assembler({ identity, environment, scenario, workload, isolation, fenetre, observations, db, cache, processus, compteurs, binSetIdDe }) {
+function assembler({ identity, environment, topology, scenario, workload, isolation, fenetre, observations, db, cache, processus, compteurs, binSetIdDe }) {
   const lat = centiles(observations.latences);
   const statuses = classerStatuts(observations.statuts);
   const octets = [...observations.octets].sort((a, b) => a - b);
   return {
-    schemaVersion: 1, complete: true, failure: { phase: null, reason: null },
-    identity, environment, scenario,
+    schemaVersion: 1, complete: true, failure: { phase: null, code: null, reason: null },
+    identity, environment, topology, scenario,
     workload: { ...workload, scheduledRequests: observations.planifiees, startedRequests: observations.parties, completedRequests: observations.latences.length, generatorLagMs: (() => { const c = centiles(observations.retards); return { p50: c.p50, p95: c.p95, p99: c.p99, max: c.max }; })() },
     isolation, measurementWindow: fenetre,
     latencyMs: lat,
@@ -208,11 +299,53 @@ function assembler({ identity, environment, scenario, workload, isolation, fenet
   };
 }
 
+/**
+ * Le message public d'un échec : assaini et borné.
+ *
+ * ⚠️ UN ARTEFACT D'ÉCHEC PART SUR UNE RELEASE PUBLIQUE, et `reason` dérive d'une `Error`. Une erreur
+ * PostgREST peut incorporer plusieurs centaines de caractères de réponse réseau ; une erreur de
+ * `fetch` porte l'URL appelée, avec ses paramètres. Recopier tel quel, c'est publier ce qu'on n'a pas
+ * regardé — exactement la règle que ce producteur applique déjà au slug rendu par la base. Les
+ * caractères de contrôle partent, les URL, en-têtes d'autorisation, adresses et paramètres qui
+ * ressemblent à des secrets sont remplacés par une marque VISIBLE plutôt que supprimés : un lecteur
+ * doit voir qu'il manque quelque chose. Le détail brut reste dans le journal privé de la course.
+ * Demandé par un audit externe (CODEX, 15/09).
+ */
+function messagePublic(brut) {
+  let t = String(brut == null ? "" : brut);
+  // Les caractères de contrôle se retirent par code, pas par classe d'expression régulière : une
+  // classe qui les contient est elle-même illisible, et `no-control-regex` a raison de la refuser.
+  t = Array.from(t, (c) => { const n = c.codePointAt(0); return n < 0x20 || n === 0x7F ? " " : c; }).join("");
+  t = t.replace(/\b[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s"']+/g, "«url retirée»");
+  t = t.replace(/\b[\w.+-]+@[\w-]+\.[\w.-]+\b/g, "«adresse retirée»");
+  // ⚠️ ON RETIRE JUSQU'AU BOUT DU SEGMENT, PAS UN SEUL MOT. Une première version prenait le
+  // mot-clé puis `\S+` : sur « Authorization: Bearer sk-live-4242 refusé » elle mangeait « Bearer »
+  // et PUBLIAIT le jeton juste derrière. Une caviarderie qui laisse passer ce qu'elle vise est pire
+  // qu'absente — elle donne l'assurance sans la protection. En cas de doute on en retire trop : un
+  // mot de contexte perdu se remplace par le journal privé, un secret publié ne se reprend pas.
+  t = t.replace(/\b(authorization|apikey|api[-_]?key|token|secret|password|bearer|jwt)\b[^,;\n]*/gi, "$1 «retiré»");
+  t = t.replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "«jeton retiré»");
+  t = t.replace(/\s{2,}/g, " ").trim();
+  return t.slice(0, 600) || "raison absente";
+}
+
+/** La cause STABLE d'un échec, déduite de la phase et du message — `reason` est un texte, ceci est une clé. */
+function codeEchec(phase, message) {
+  const m = String(message || "");
+  if (/budget de position dépassé/.test(m)) return "budget";
+  if (/échéance/.test(m)) return "deadline";
+  if (phase === "presentation") return "presentation";
+  if (phase === "warmup") return "warmup";
+  if (/postgrest|postgres|base|database/i.test(m)) return "database";
+  if (/schéma|schema/i.test(m)) return "schema";
+  return "unknown";
+}
+
 /** L'artefact d'une position INTERROMPUE : la forme, la raison, rien de mesuré. */
-function assemblerEchec({ identity, environment, scenario, workload, isolation, fenetre, phase, reason }) {
+function assemblerEchec({ identity, environment, topology, scenario, workload, isolation, fenetre, phase, reason }) {
   return {
-    schemaVersion: 1, complete: false, failure: { phase, reason: String(reason || "raison absente").slice(0, 600) },
-    identity, environment, scenario,
+    schemaVersion: 1, complete: false, failure: { phase, code: codeEchec(phase, reason), reason: messagePublic(reason) },
+    identity, environment, topology, scenario,
     workload: { ...workload, scheduledRequests: workload.scheduledRequests || 0, startedRequests: workload.startedRequests || 0, completedRequests: workload.completedRequests || 0, generatorLagMs: workload.generatorLagMs || { p50: 0, p95: 0, p99: 0, max: 0 } },
     isolation, measurementWindow: fenetre,
   };
@@ -316,12 +449,22 @@ function sonderBase(base) {
  * Une position de la séquence : sa présentation, son préchauffage, sa fenêtre en boucle ouverte, ses relevés.
  * Rend `{ artefact }` ; lève avec `{ phase }` attaché sur ce qui a échoué.
  */
-async function executerPosition({ player, presentations, base, appeler, position, sequence, spectators, requetesParSpectateur, dureeCibleMs, warmupRequests, identity, environment, isolation, motif, binSetIdDe, fichierUrl, gc = global.gc, journal = () => {}, echeanceRequeteMs = ECHEANCE_REQUETE_MS, budgetPositionMs }) {
+async function executerPosition({ player, presentations, base, appeler, position, sequence, spectators, requetesParSpectateur, dureeCibleMs, warmupRequests, identity, environment, isolation, motif, binSetIdDe, fichierUrl, gc = global.gc, journal = () => {}, echeanceRequeteMs = ECHEANCE_REQUETE_MS, budgetPositionMs, graine = 0, topology, horloge = HORLOGE }) {
   const pageAttendue = position;
-  const scenario = { name: "state-hot", spectators, presentations: 1, repetition: 1, position, sequence, warmupRequests, maxInFlight: 0, egressIps: Math.min(spectators, 250) };
-  const workload = { arrivalModel: "open-loop", arrivalPattern: motif };
-  const debut = new Date();
-  const fenetre = { startedAt: debut.toISOString(), durationMs: 0, processUptimeStartMs: Math.round(process.uptime() * 1000), processUptimeEndMs: Math.round(process.uptime() * 1000) };
+  // ⚠️ `maxInFlight` A QUITTÉ `scenario`, ET CE N'EST PAS COSMÉTIQUE. Il y figurait parmi les
+  // ENTRÉES — nom, effectifs, rang, préchauffage — alors qu'il est un RÉSULTAT, rempli après la
+  // mesure avec le pic observé. Un lecteur y voyait donc un plafond imposé au générateur, quand
+  // aucun ne l'est : la boucle est ouverte, c'est tout son intérêt. Il vit maintenant dans
+  // `workload.peakInFlight`, avec ce qu'on a observé du générateur. Relevé par un audit externe
+  // (CODEX, 15/09).
+  const scenario = { name: "state-hot", spectators, presentations: 1, repetition: 1, position, sequence, warmupRequests, egressIps: Math.min(spectators, 250) };
+  const workload = {
+    arrivalModel: "open-loop", arrivalPattern: motif,
+    targetDurationMs: dureeCibleMs, requestsPerSpectator: requetesParSpectateur,
+    scheduleAlgorithm: ALGORITHME_ORDONNANCEMENT, scheduleSeed: graine, egressPattern: "round-robin",
+    peakInFlight: 0,
+  };
+  const fenetre = { startedAt: horloge.instant(), durationMs: 0, processUptimeStartMs: horloge.uptimeMs(), processUptimeEndMs: horloge.uptimeMs() };
   let phase = "presentation";
   // ⚠️ LES INSTRUMENTS SE DÉCLARENT HORS DU `try` POUR SE RETIRER DANS LE `finally`. L'échantillonneur
   // mémoire, le moniteur de boucle et la sonde posée sur `db.request` étaient tous trois installés
@@ -329,8 +472,8 @@ async function executerPosition({ player, presentations, base, appeler, position
   // échéances en produisent — laissait un `setInterval` vivant, un moniteur actif et surtout
   // `base.request` toujours détourné, donc la position suivante mesurée à travers l'instrument de la
   // précédente. Relevé par un auditeur externe (CODEX, 15/09).
-  let sonde, boucle, echantillonneur;
-  const echec = (e) => { const err = e instanceof Error ? e : new Error(String(e)); err.phase = phase; err.artefact = assemblerEchec({ identity, environment, scenario, workload, isolation: { ...isolation, datasetId: isolation.datasetId || "aucun" }, fenetre, phase, reason: err.message }); return err; };
+  let sonde, boucle, echantillonneur, vueCache;
+  const echec = (e) => { const err = e instanceof Error ? e : new Error(String(e)); err.phase = phase; err.artefact = assemblerEchec({ identity, environment, topology, scenario, workload, isolation: { ...isolation, datasetId: isolation.datasetId || "aucun" }, fenetre, phase, reason: err.message }); return err; };
   try {
     const p = await presentations.createPresentation({
       docId: `rapport-${position}-${crypto.randomBytes(4).toString("hex")}`, fileUrl: fichierUrl, fileName: "rapport.pdf",
@@ -347,36 +490,47 @@ async function executerPosition({ player, presentations, base, appeler, position
     for (let i = 0; i < warmupRequests; i += 1) await lireEtat(i);
 
     phase = "mesure";
-    // ⚠️ LA LECTURE DE CARTE PORTE LA MÊME ÉCHÉANCE, et dit ce qui a manqué. Sans elle, un handler
-    // muet faisait expirer cet appel au délai PAR DÉFAUT, rendait un corps vide, et le `JSON.parse`
-    // levait « Unexpected end of JSON input » : l'artefact d'échec était bien écrit, mais il
-    // accusait le parseur au lieu de nommer l'échéance. Un échec mal nommé se diagnostique deux
-    // fois.
-    const lireCarte = async (quand) => {
-      const r = await appeler({ method: "GET", headers: {}, socket: {}, query: { contract: "1" } }, { corpsEntier: true, echeanceMs: echeanceRequeteMs });
-      if (r.expire) throw new Error(`la carte des compteurs (${quand}) n'a pas répondu avant son échéance de ${echeanceRequeteMs} ms`);
-      try { return compteursDeLaCarte(JSON.parse(r.corps)); } catch (e) {
-        throw new Error(`la carte des compteurs (${quand}) a rendu ${r.statut} et un corps illisible : ${e.message}`, { cause: e });
-      }
-    };
-    const carteAvant = await lireCarte("avant");
+    // ⚠️ LES COMPTEURS SE LISENT PAR UNE COUTURE INTERNE, PAS PAR UNE REQUÊTE. Cette lecture passait
+    // par `GET ?contract=1` — donc TRAVERSAIT le handler et incrémentait `mesures.statuts.ok` au
+    // passage : le delta d'une fenêtre de 1 000 requêtes valait 1 001, à chaque position, et
+    // l'observateur se comptait lui-même. `__compteursSansObserver()` rend l'état sans le modifier.
+    // ⚠️ ET SURTOUT PAS PAR UNE SOUSTRACTION CACHÉE : retrancher « la requête d'observation » aurait
+    // corrigé le chiffre en rendant l'instrument moins auditable que lorsqu'il était faux. Ce que la
+    // fenêtre contient d'autre que la charge se DIT — voir `counters.observerOverheadRequests`.
+    // Défaut relevé par un audit externe (CODEX, 15/09).
+    const lireCompteurs = () => compteursDeLaCarte(player.__compteursSansObserver());
+    const carteAvant = lireCompteurs();
     const cacheAvant = player.__cacheLecture.compteurs();
+    // Le pic en vol du cache doit être celui de CETTE fenêtre : `compteurs().peakInFlight` est un
+    // maximum depuis le démarrage, et le recopier faisait hériter une position calme du pic de la
+    // précédente, à côté de hits/misses/coalesced qui étaient, eux, des deltas.
+    vueCache = player.__cacheLecture.observerEnVol();
     sonde = sonderBase(base);
-    boucle = monitorEventLoopDelay({ resolution: 10 }); boucle.enable();
+    boucle = monitorEventLoopDelay({ resolution: RESOLUTION_BOUCLE_MS }); boucle.enable();
     const cpu0 = process.cpuUsage();
     // ⚠️ `afterGc` EXIGE UN VRAI GC : sans `--expose-gc`, la position échoue AVANT de mesurer, et le dit.
     if (typeof gc !== "function") throw new Error("node --expose-gc requis : afterGc ne peut pas être relevé sans lui");
     gc();
     const m0 = process.memoryUsage();
     const pic = { rss: m0.rss, heapUsed: m0.heapUsed, external: m0.external, arrayBuffers: m0.arrayBuffers };
-    echantillonneur = setInterval(() => { const m = process.memoryUsage(); for (const k of Object.keys(pic)) if (m[k] > pic[k]) pic[k] = m[k]; }, 50);
+    echantillonneur = setInterval(() => { const m = process.memoryUsage(); for (const k of Object.keys(pic)) if (m[k] > pic[k]) pic[k] = m[k]; }, PERIODE_MEMOIRE_MS);
 
     const total = spectators * requetesParSpectateur;
-    const instants = planifier(total, dureeCibleMs, motif);
+    const instants = planifier(total, dureeCibleMs, motif, graine);
     const latences = [], statuts = [], octets = [], retards = [];
     const jugements = { correct: 0, vide: 0, autre: 0 };
     let parties = 0, enVol = 0, picEnVol = 0;
+    // ⚠️ LES TROIS BORNES DE LA FENÊTRE SONT PRISES ICI, AU MÊME INSTANT. Elles ne l'étaient pas :
+    // `startedAt` et `processUptimeStartMs` dataient du DÉBUT DE LA POSITION — avant la création de
+    // la présentation et avant le préchauffage — tandis que `durationMs` partait d'après le GC, et
+    // `processUptimeEndMs` était relevé après les sondes, le GC final et la lecture des compteurs.
+    // Trois périodes différentes sous un seul nom : sur la course du tag, l'écart atteignait 55 ms
+    // pour une fenêtre annoncée de 4 002 ms. Un champ qui s'appelle « fenêtre de mesure » doit
+    // désigner UNE fenêtre. `afterGc` reste explicitement hors d'elle, comme avant. Relevé par un
+    // audit externe (CODEX, 15/09).
     const origine = process.hrtime.bigint();
+    fenetre.startedAt = horloge.instant();
+    fenetre.processUptimeStartMs = horloge.uptimeMs();
     const maintenant = () => Number(process.hrtime.bigint() - origine) / 1e6;
     const finies = [];
     for (let i = 0; i < total; i += 1) {
@@ -408,7 +562,9 @@ async function executerPosition({ player, presentations, base, appeler, position
     } finally {
       clearTimeout(minuterieBudget);
     }
+    // Fermée immédiatement après la dernière réponse, avec sa jumelle : rien entre les deux.
     const dureeMs = maintenant();
+    fenetre.processUptimeEndMs = horloge.uptimeMs();
 
     // ⚠️ UNE REQUÊTE EXPIRÉE INVALIDE LA POSITION, elle ne se range pas dans les statuts. À ces
     // latences, une échéance de trente secondes qui tire ne dit pas « le système est lent » mais
@@ -426,17 +582,24 @@ async function executerPosition({ player, presentations, base, appeler, position
     gc();
     const m2 = process.memoryUsage();
     const cacheApres = player.__cacheLecture.compteurs();
-    const carteApres = await lireCarte("après");
+    const carteApres = lireCompteurs();
 
     const mem = (m) => ({ rss: versMio(m.rss), heapUsed: versMio(m.heapUsed), external: versMio(m.external), arrayBuffers: versMio(m.arrayBuffers) });
     const artefact = assembler({
-      identity, environment, scenario: { ...scenario, maxInFlight: picEnVol }, workload, isolation: iso,
-      fenetre: { ...fenetre, durationMs: arrondi(dureeMs), processUptimeEndMs: Math.round(process.uptime() * 1000) },
+      identity, environment, topology, scenario, workload: { ...workload, peakInFlight: picEnVol }, isolation: iso,
+      fenetre: { ...fenetre, durationMs: arrondi(dureeMs) },
       observations: { latences, statuts, octets, jugements, planifiees: total, parties, retards },
       db: sonde.relever(),
-      cache: { hits: cacheApres.hits - cacheAvant.hits, misses: cacheApres.misses - cacheAvant.misses, coalesced: cacheApres.coalesced - cacheAvant.coalesced, peakInFlight: cacheApres.peakInFlight },
+      cache: {
+        hits: cacheApres.hits - cacheAvant.hits, misses: cacheApres.misses - cacheAvant.misses, coalesced: cacheApres.coalesced - cacheAvant.coalesced,
+        peakInFlight: vueCache.pic(), processLifetimePeakInFlight: cacheApres.peakInFlight,
+      },
       processus: { cpuUserMs: arrondi(cpu1.user / 1000), cpuSystemMs: arrondi(cpu1.system / 1000), eventLoopP99Ms: arrondi(boucle.percentile(99) / 1e6), memoryMiB: { baseline: mem(m0), peak: mem(pic), end: mem(m1), afterGc: mem(m2) } },
-      compteurs: { before: carteAvant, after: carteApres, delta: deltas(carteAvant, carteApres) },
+      // `observerOverheadRequests: 0` — et c'est un fait, pas une convention : les compteurs sont
+      // désormais lus par une couture interne qui ne traverse pas le handler, donc la fenêtre ne
+      // contient rien d'autre que la charge. Le champ existe pour que le jour où elle contiendrait
+      // autre chose, ce soit ÉCRIT plutôt que soustrait en silence.
+      compteurs: { before: carteAvant, after: carteApres, delta: deltas(carteAvant, carteApres), observerOverheadRequests: 0 },
       binSetIdDe,
     });
     journal(`  position ${position} — ${spectators} spectateurs × ${requetesParSpectateur} : ${latences.length}/${total} achevées, p50/p95/p99 ${artefact.latencyMs.p50}/${artefact.latencyMs.p95}/${artefact.latencyMs.p99} ms, retard générateur p99 ${artefact.workload.generatorLagMs.p99} ms, 2xx ${artefact.statuses["2xx"]}, cache ${artefact.cache.hits}/${artefact.cache.coalesced}/${artefact.cache.misses} (servies/regroupées/produites), base ${artefact.database.calls} appel(s)`);
@@ -447,11 +610,12 @@ async function executerPosition({ player, presentations, base, appeler, position
     if (echantillonneur) clearInterval(echantillonneur);
     if (boucle) boucle.disable();
     if (sonde) sonde.rendre();
+    if (vueCache) vueCache.fermer();
   }
 }
 
 /** La course entière : la séquence, un artefact par position, l'arrêt au premier échec, la cohorte jugée. */
-async function courir({ sortie, sequence = [100, 1000, 100], requetesParSpectateur = 10, dureeCibleMs = 4000, warmupRequests = 20, motif = "jittered", env = process.env, journal = console.log, contexte, player, presentations, fichierUrl, gc = global.gc, echeanceRequeteMs = ECHEANCE_REQUETE_MS, budgetPositionMs }) {
+async function courir({ sortie, sequence = [100, 1000, 100], requetesParSpectateur = 10, dureeCibleMs = 4000, warmupRequests = 20, motif = "jittered", env = process.env, journal = console.log, contexte, player, presentations, fichierUrl, gc = global.gc, echeanceRequeteMs = ECHEANCE_REQUETE_MS, budgetPositionMs, graine = 20260915, horloge = HORLOGE }) {
   // ⚠️ PREMIÈRE INSTRUCTION, ET C'EST VOULU : rien avant elle, pas même un `mkdir`. Une séquence VIDE N'EST PAS UNE COURSE RÉUSSIE. Sans ce refus, la boucle ne tourne pas, aucun
   // artefact n'est écrit, et `auditer` — appelé sans fichier — juge LE CORPUS D'EXEMPLES puis rend
   // vert : « 2 artefact(s) conformes », code 0, zéro mesure produite. Le programme annonçait donc
@@ -467,7 +631,20 @@ async function courir({ sortie, sequence = [100, 1000, 100], requetesParSpectate
   fs.mkdirSync(sortie, { recursive: true });
   const identity = identite({ env, empreinte });
   const environment = environnement(env);
-  const isolation = { processReused: true, databaseReset: false, cacheReset: false, metricsReset: false, countersReportedAsDeltas: true, datasetId: "" };
+  // ⚠️ LA TOPOLOGIE EST UNE CONDITION DE LA MESURE, PAS UN DÉTAIL D'IMPLÉMENTATION. Écrite dans
+  // l'artefact parce que des latences de quelques microsecondes sont cohérentes SOUS CELLE-CI et
+  // invraisemblables autrement : le générateur appelle `player.handler()` dans le processus, sans
+  // socket, sans parseur HTTP et sans `bin/serve.js`, contre un PostgREST réel en loopback. Deux
+  // artefacts de topologies différentes ne se comparent pas, et le lecteur doit pouvoir le voir sans
+  // relire le code du producteur. Demandé par un audit externe (CODEX, 15/09).
+  const topology = { clientToPlayer: "handler-direct", playerToDatabase: "loopback-http", playerProcesses: 1 };
+  // ⚠️ `processReused` DISAIT LE CONTRAIRE DE CE QU'IL VALAIT : à `true` partout, y compris à la
+  // position 1 où aucun processus n'avait encore servi. Ce qu'il énonçait vraiment — toutes les
+  // positions partagent UN processus — a maintenant son nom.
+  const isolation = { sameProcessAcrossCohort: true, databaseReset: false, cacheReset: false, metricsReset: false, countersReportedAsDeltas: true, datasetId: "" };
+  // Une graine PAR POSITION, dérivée de celle de la course : deux positions ne doivent pas rejouer
+  // la même suite de gigue, et la course entière doit rester reproductible d'un seul nombre.
+  const graineDe = (i) => (graine + i * 0x9E3779B1) >>> 0;
   const appeler = appelant(player);
   const fichiers = [];
   let code = 0;
@@ -477,9 +654,16 @@ async function courir({ sortie, sequence = [100, 1000, 100], requetesParSpectate
     const fichier = path.join(sortie, `artefact-${position}-${sequence[i]}.json`);
     let artefact;
     try {
-      ({ artefact } = await executerPosition({ player, presentations, base: contexte.db, appeler, position, sequence, spectators: sequence[i], requetesParSpectateur, dureeCibleMs, warmupRequests, identity, environment, isolation, motif, binSetIdDe: outils.binSetIdDe, fichierUrl, gc, journal, echeanceRequeteMs, budgetPositionMs }));
+      ({ artefact } = await executerPosition({ player, presentations, base: contexte.db, appeler, position, sequence, spectators: sequence[i], requetesParSpectateur, dureeCibleMs, warmupRequests, identity, environment, isolation, motif, binSetIdDe: outils.binSetIdDe, fichierUrl, gc, journal, echeanceRequeteMs, budgetPositionMs, graine: graineDe(i), topology, horloge }));
     } catch (e) {
-      artefact = e.artefact || assemblerEchec({ identity, environment, scenario: { name: "state-hot", spectators: sequence[i], presentations: 1, repetition: 1, position, sequence, warmupRequests, maxInFlight: 0, egressIps: Math.min(sequence[i], 250) }, workload: { arrivalModel: "open-loop", arrivalPattern: motif }, isolation: { ...isolation, datasetId: "aucun" }, fenetre: { startedAt: new Date().toISOString(), durationMs: 0, processUptimeStartMs: 0, processUptimeEndMs: 0 }, phase: "inconnue", reason: e && e.message });
+      artefact = e.artefact || assemblerEchec({
+        identity, environment, topology,
+        scenario: { name: "state-hot", spectators: sequence[i], presentations: 1, repetition: 1, position, sequence, warmupRequests, egressIps: Math.min(sequence[i], 250) },
+        workload: { arrivalModel: "open-loop", arrivalPattern: motif, targetDurationMs: dureeCibleMs, requestsPerSpectator: requetesParSpectateur, scheduleAlgorithm: ALGORITHME_ORDONNANCEMENT, scheduleSeed: graineDe(i), egressPattern: "round-robin", peakInFlight: 0 },
+        isolation: { ...isolation, datasetId: "aucun" },
+        fenetre: { startedAt: new Date().toISOString(), durationMs: 0, processUptimeStartMs: 0, processUptimeEndMs: 0 },
+        phase: "inconnue", reason: e && e.message,
+      });
       journal(`  position ${position} — ÉCHEC en phase ${artefact.failure.phase} : ${artefact.failure.reason}`);
       code = 1;
     }
@@ -545,6 +729,6 @@ async function main() {
   process.exitCode = code;
 }
 
-module.exports = { EDGES_MS, REQUETES_MAX, ConfigurationNonMesurable, entierStrict, sequenceStricte, quantile, centiles, histogramme, classerStatuts, plafondMemoire, environnement, versionPostgrest, identite, planifier, assembler, assemblerEchec, compteursDeLaCarte, deltas, juger, appelant, sonderBase, executerPosition, courir };
+module.exports = { EDGES_MS, REQUETES_MAX, HORLOGE, ALGORITHME_ORDONNANCEMENT, PERIODE_MEMOIRE_MS, RESOLUTION_BOUCLE_MS, ConfigurationNonMesurable, entierStrict, sequenceStricte, alea32, messagePublic, codeEchec, quantile, centiles, histogramme, classerStatuts, plafondMemoire, environnement, versionPostgrest, identite, planifier, assembler, assemblerEchec, compteursDeLaCarte, deltas, juger, appelant, sonderBase, executerPosition, courir };
 
 if (require.main === module) main().catch((e) => { console.error(e); process.exitCode = 1; });

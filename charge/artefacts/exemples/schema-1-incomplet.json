@@ -3,14 +3,21 @@
   "complete": false,
   "failure": {
     "phase": "load-1000",
-    "reason": "exemple — la course s'est arrêtée avant la mesure ; l'artefact existe quand même, pour qu'une absence ne ressemble jamais à un banc réussi"
+    "reason": "exemple — la course s'est arrêtée avant la mesure ; l'artefact existe quand même, pour qu'une absence ne ressemble jamais à un banc réussi",
+    "code": "unknown"
   },
   "identity": {
     "commitSha": "0000000000000000000000000000000000000000",
     "packageVersion": "0.0.0",
     "timestamp": "2026-09-14T00:00:00Z",
     "runId": "exemple-incomplet — une FORME, pas une mesure",
-    "schemaSha256": "ef61e9e95b5f158faf0de41e088efddcca2519bed0f19b6830fbf15bb4d02a8b"
+    "schemaSha256": "ae81dab76fa9d94614d4a40380660d820cff001415b9a49a54e71509f758f78b",
+    "repository": "exemple/exemple",
+    "event": "push",
+    "ref": "refs/heads/main",
+    "runNumber": 1,
+    "runAttempt": 1,
+    "prHeadSha": null
   },
   "environment": {
     "node": "",
@@ -20,7 +27,17 @@
     "memoryLimitMiB": null,
     "memoryLimitSource": "unknown",
     "postgresVersion": "",
-    "postgrestVersion": ""
+    "postgrestVersion": "",
+    "cpuModel": "processeur d'exemple",
+    "runnerProvider": "exemple",
+    "runnerImage": "exemple",
+    "memorySampleIntervalMs": 50,
+    "eventLoopResolutionMs": 10
+  },
+  "topology": {
+    "clientToPlayer": "handler-direct",
+    "playerToDatabase": "loopback-http",
+    "playerProcesses": 1
   },
   "scenario": {
     "name": "state-cold",
@@ -34,7 +51,6 @@
       100
     ],
     "warmupRequests": 0,
-    "maxInFlight": 0,
     "egressIps": 0
   },
   "workload": {
@@ -48,10 +64,16 @@
       "p99": 0,
       "max": 0
     },
-    "arrivalPattern": "jittered"
+    "arrivalPattern": "jittered",
+    "targetDurationMs": 4000,
+    "requestsPerSpectator": 10,
+    "scheduleAlgorithm": "uniforme-gigue-uniforme-v1",
+    "scheduleSeed": 20260915,
+    "egressPattern": "round-robin",
+    "peakInFlight": 0
   },
   "isolation": {
-    "processReused": true,
+    "sameProcessAcrossCohort": true,
     "databaseReset": true,
     "cacheReset": true,
     "metricsReset": false,

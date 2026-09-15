@@ -91,6 +91,15 @@ function creerCache(options) {
   // sans eux, « le cache tient » est une phrase, pas une mesure. Compteurs de processus, comme tout
   // ici : jamais remis à zéro, à lire en deltas.
   let nServies = 0, nRegroupees = 0, nProduites = 0, picEnVol = 0;
+  // ⚠️ LES OBSERVATEURS DE FENÊTRE, ET POURQUOI ILS NE TOUCHENT PAS À L'ÉTAT DU CACHE. `picEnVol`
+  // est un maximum DEPUIS LE DÉMARRAGE : quand le rapport de charge le recopiait tel quel à côté de
+  // hits/misses/coalesced convertis en DELTAS, une position calme héritait du pic d'une position
+  // chargée et affirmait une concurrence qu'elle n'avait jamais vue. Remettre `picEnVol` à zéro
+  // entre deux positions serait pire : on modifierait le SYSTÈME MESURÉ pour arranger l'instrument,
+  // et le pic historique — qui a son utilité — disparaîtrait. Un observateur est donc un compteur
+  // SÉPARÉ, ouvert et refermé par qui mesure, sans que le cache change de comportement.
+  // Relevé par un audit externe (CODEX, 15/09).
+  const observateurs = new Set();
 
   const oublier = (k) => {
     const e = entrees.get(k);
@@ -154,6 +163,7 @@ function creerCache(options) {
       nEnVol += 1;
       nProduites += 1;
       if (nEnVol > picEnVol) picEnVol = nEnVol;
+      for (const o of observateurs) if (nEnVol > o.pic) o.pic = nEnVol;
       // ⚠️ L'ÉCHÉANCE PART DE LA RÉSOLUTION, PAS DE LA DEMANDE. Posée à la demande, elle expirait
       // AVANT que la production ne réponde dès que celle-ci dépassait le TTL — et le regroupement ne
       // servait alors plus à rien pour exactement les producteurs lents, les seuls qu'il valait la
@@ -210,6 +220,17 @@ function creerCache(options) {
      * plus grand nombre de productions simultanées. Les refus sont dans `satures()`.
      */
     compteurs: () => ({ hits: nServies, coalesced: nRegroupees, misses: nProduites, peakInFlight: picEnVol }),
+    /**
+     * Ouvre une fenêtre d'observation du pic en vol : `{ pic(), fermer() }`. Le cache n'est pas
+     * modifié — ni remis à zéro, ni ralenti ; seul un compteur parallèle suit les productions
+     * simultanées TANT QUE la fenêtre est ouverte. `fermer()` est impératif : un observateur oublié
+     * survit au relevé qui l'a demandé.
+     */
+    observerEnVol: () => {
+      const o = { pic: nEnVol };
+      observateurs.add(o);
+      return { pic: () => o.pic, fermer: () => observateurs.delete(o) };
+    },
     /**
      * Ce que le plafond a refusé depuis le démarrage de ce processus.
      *

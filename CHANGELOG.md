@@ -14,6 +14,34 @@ the notes there are this file's section for that version.
 
 ### Added
 
+- **Le tableau d'une campagne se dérive de ses octets — `tools/resume-de-charge.mjs`.** Le 14/09 j'ai
+  relayé aux hôtes le relevé d'une course de PR (0.1.167, commit `8e9e37c`) en le présentant comme
+  celui du tag 0.1.168 (commit `f5f0ae7`). Les deux campagnes étaient vraies ; une seule mesurait le
+  tag ; personne ne pouvait le voir, parce que le tableau ne portait ni course, ni version, ni
+  commit, et que les percentiles avaient voyagé à la main d'un journal vers un message. « Faire plus
+  attention » ne corrige pas cela : ce qui corrige, c'est de retirer l'occasion. Le résumé est
+  engendré depuis les fichiers attachés, porte la provenance en tête et le **sha256 de chaque
+  fichier**, et il est **refusé quand la cohorte l'est** — une belle présentation fait passer ses
+  chiffres pour vérifiés. Il apparaît dans le corps de la Release, sous les notes. Il dit aussi ce
+  que la cadence vaut : 2 500 requêtes/s à mille spectateurs, contre ~40/s pour une relecture d'état
+  toutes les 25 s, soit **62,5×** la cadence nominale — une contrainte délibérée, pas une charge
+  réaliste, et le facteur n'était écrit nulle part.
+- **Le schéma 1 dit enfin les conditions de sa propre lecture.** `topology` (obligatoire) : le
+  générateur appelle `player.handler()` dans le processus, sans socket, sans parseur HTTP et sans
+  `bin/serve.js`, contre un PostgREST réel en loopback — sans quoi des latences de quelques
+  microsecondes se lisent comme du réseau. `environment` gagne le modèle de processeur, le
+  fournisseur et l'image du runner, la **période d'échantillonnage mémoire** (le pic n'est pas « le
+  maximum » mais « le maximum vu à cette cadence ») et la résolution du moniteur de boucle.
+  `identity` gagne dépôt, évènement, référence, numéro et tentative de course, et `prHeadSha` —
+  `GITHUB_SHA` sur une PR désigne un commit de fusion éphémère qui n'existera plus. `workload` gagne
+  la durée cible, les lectures par spectateur, l'algorithme et la graine. ⚠️ Deux renommages :
+  `scenario.maxInFlight` devient `workload.peakInFlight` (c'est un **résultat**, il figurait parmi
+  les entrées et laissait croire à un plafond imposé au générateur, alors que la boucle est ouverte),
+  et `isolation.processReused` devient `sameProcessAcrossCohort` (il valait `true` partout, y compris
+  à la position 1 où aucun processus n'avait servi : il ne disait pas ce qu'il énonçait). Ces
+  changements sont possibles **parce que le schéma 1 n'a encore ancré aucune publication** — c'est
+  exactement ce que le veto de l'audit sur l'ancre préserve. Demandé par un auditeur externe
+  (CODEX, 15/09).
 - **Une release porte désormais la mesure de charge de son propre commit.** Les artefacts produits
   par `charge/rapport.js` vivaient sur le run de la forge, dont la rétention expire ; une release,
   non. `attester` retrouve la course CI verte du commit taggué, en télécharge l'artefact
@@ -35,6 +63,50 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- ⚠️ **Les compteurs s'observaient eux-mêmes : 1 000 requêtes de charge donnaient un delta de
+  1 001.** La lecture des compteurs passait par `GET ?contract=1` — donc par une requête qui traverse
+  le handler et incrémente `mesures.statuts.ok` au passage. Mesuré sur les trois artefacts du tag
+  0.1.168 : 1 001 pour 1 000, 10 001 pour 10 000, 1 001 pour 1 000. `delta = after − before` restait
+  vrai : un invariant qui ne regarde que la cohérence *interne* d'un relevé ne voit pas l'observateur
+  s'y ajouter. Corrigé par une couture interne (`__compteursSansObserver`) qui rend l'état sans le
+  modifier — ⚠️ **pas par une soustraction cachée** : un instrument qui se retranche discrètement est
+  plus difficile à auditer qu'un instrument faux. Ce que la fenêtre contient d'autre que la charge se
+  **dit** désormais, dans `counters.observerOverheadRequests`, et un nouvel invariant confronte la
+  somme des statuts internes au travail annoncé. Relevé par un auditeur externe (CODEX, 15/09).
+- ⚠️ **`measurementWindow` portait trois bornes de trois périodes différentes.** `startedAt` et
+  `processUptimeStartMs` dataient du début de la position — avant la création de la présentation et
+  le préchauffage — pendant que `durationMs` partait d'après le GC et que `processUptimeEndMs` était
+  relevé après les sondes, le GC final et la lecture des compteurs. Sur la course du tag : 4 057 ms
+  d'uptime pour 4 002,231 ms annoncés, aux trois positions. Les bornes sont maintenant prises deux à
+  deux, à l'ouverture et à la fermeture, sans rien entre elles ; `afterGc` reste hors fenêtre.
+  ⚠️ **Et le banc le prouve à l'horloge pilotée, pas sous une tolérance** — ma première version
+  comparait des millisecondes sous un seuil, et la campagne de mutations l'a refusée en laissant
+  survivre le mutant : sur un double en mémoire, ce qu'il s'agit d'exclure ne coûte que quelques
+  millisecondes et passe sous n'importe quel seuil défendable. L'audit l'avait écrit en toutes
+  lettres ; je ne l'avais pas fait. Relevé par un auditeur externe (CODEX, 15/09).
+- ⚠️ **`cache.peakInFlight` était le pic du processus, pas celui de la fenêtre.** `hits`, `misses` et
+  `coalesced` étaient convertis en deltas ; le pic, lui, était recopié du maximum depuis le
+  démarrage. Après une position chargée, une position calme héritait de l'ancien pic et affirmait une
+  concurrence qu'elle n'avait jamais vue. Le cache expose désormais une **fenêtre d'observation**
+  (`observerEnVol`) — l'état du cache n'est ni remis à zéro ni ralenti, seul un compteur parallèle
+  suit les productions simultanées — et le pic historique reste, séparé, sous
+  `processLifetimePeakInFlight`. Relevé par un auditeur externe (CODEX, 15/09).
+- ⚠️ **La gigue était tirée de `Math.random` et perdue.** Deux courses du même protocole n'étaient
+  donc pas la même expérience, et aucune ne se rejouait : on ne pouvait ni reproduire un pic ni
+  démontrer qu'un écart venait du code plutôt que du tirage. L'ordonnancement utilise un générateur
+  déterministe, et l'artefact porte `scheduleSeed` **avec** `scheduleAlgorithm` — une graine ne
+  rejoue rien si l'algorithme qui la consomme a changé, et n'enregistrer que l'une donnerait
+  l'illusion de la reproductibilité. Relevé par un auditeur externe (CODEX, 15/09).
+- ⚠️ **Un artefact d'échec part sur une Release publique, et son message n'était pas assaini.**
+  `failure.reason` recopiait `error.message` tel quel : une erreur PostgREST peut incorporer plusieurs
+  centaines de caractères de réponse réseau, une erreur de `fetch` porte l'URL appelée avec ses
+  paramètres. Les caractères de contrôle, URL, adresses, jetons et en-têtes d'autorisation sont
+  désormais remplacés par une marque **visible** — un lecteur doit voir qu'il manque quelque chose — et
+  un `failure.code` stable et énuméré accompagne le texte, parce qu'un code s'agrège là où un message
+  ne s'agrège pas. ⚠️ Ma première caviarderie **laissait passer le secret qu'elle visait** : le motif
+  prenait le mot-clé puis un seul mot, si bien que « Authorization: Bearer sk-live-4242 » perdait
+  « Bearer » et publiait le jeton juste derrière. Gardé comme mutant. Relevé par un auditeur externe
+  (CODEX, 15/09).
 - ⚠️ **Une cohorte d'un SEUL fichier passait, quand deux fichiers tronqués étaient refusés.**
   `controlerCohorte` sortait sur `membres.length < 2` avant d'atteindre les règles de **couverture**
   — la séquence annonce *n* rangs, la cohorte les tient tous ou s'arrête sur un échec — qui n'ont
