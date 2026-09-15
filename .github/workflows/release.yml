@@ -197,19 +197,45 @@ jobs:
       # se place avant elle, sinon il ne conditionne rien.
       # Récupération (dispatch sur un vieux tag) : la section peut être née APRÈS le tag — on la
       # reprend alors depuis main, en le disant.
-      # ⚠️ CETTE ÉTAPE NE TRANSPORTE PLUS RIEN, ELLE REFUSE. Les notes voyageaient d'ici jusqu'à
-      # `annoncer` par une SORTIE DE JOB, et la forge les a supprimées en chemin le 15/09 :
-      # « Skip output 'notes' since it may contain secret ». La section 0.1.169 décrivait le
-      # correctif de caviardage des messages d'échec et citait une chaîne en forme de clé d'API —
-      # un texte qui PARLE d'un secret a été traité COMME un secret, et la Release publique est
-      # partie sans une ligne de ses notes, cinq jobs au vert.
+      # ⚠️ L'EXTRACTION RESTE ICI, EN LIGNE, ET C'EST DÉLIBÉRÉ. Un rejeu par `workflow_dispatch`
+      # exécute le workflow de `main` CONTRE LE CONTENU DU TAG : ce qui vit dans ce fichier est
+      # toujours disponible, ce qui vit dans `tools/` ne l'est que sur les tags qui le portent
+      # déjà. Ma première rédaction de ce correctif déplaçait l'extraction dans un outil — plus
+      # propre, et elle aurait rendu IMPOSSIBLE tout rattrapage des tags existants, c'est-à-dire
+      # exactement ce que le dispatch existe pour faire. Le dépôt le dit ailleurs, à propos du
+      # validateur de charge ; je l'avais lu et j'allais quand même l'enfreindre.
       #
-      # Le transport est désormais un FICHIER dans le paquet (voir `attester`), qu'aucun masqueur
-      # ne regarde. Ce qui reste ici est la seule chose qui doit s'y trouver : le REFUS, avant la
-      # publication npm, quand la section n'existe pas. Publier sans dire ce qui a changé n'est pas
-      # une sortie.
-      - name: The changelog has a section for this version (gates the publication)
-        run: node tools/notes-de-version.mjs --version="${TAG#v}"
+      # ⚠️ CE QUI CHANGE EST LE TRANSPORT, PAS L'EXTRACTION — parce que c'est le transport qui a
+      # échoué. Les notes partaient d'ici vers `annoncer` par une SORTIE DE JOB, que la forge a
+      # supprimée en chemin le 15/09 : « Skip output 'notes' since it may contain secret ». Le
+      # runner confronte chaque sortie aux valeurs masquées et jette la sortie ENTIÈRE au moindre
+      # soupçon ; la Release 0.1.169 est partie sans une ligne de ses notes, cinq jobs au vert. Un
+      # ARTEFACT n'est confronté à rien : le transport cesse d'être fragile au CONTENU de ce qu'il
+      # transporte, ce qu'aucune consigne de prudence n'aurait garanti.
+      - name: Extract the changelog section (gates the publication)
+        run: |
+          V="${TAG#v}"
+          extraire() { awk -v v="$V" '
+            $0 ~ "^## \\[" v "\\]" { on = 1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' "$1"; }
+          extraire CHANGELOG.md > /tmp/notes.md
+          if ! test -s /tmp/notes.md; then
+            git fetch --quiet origin main
+            git show origin/main:CHANGELOG.md > /tmp/chl-main.md 2>/dev/null || true
+            [ -f /tmp/chl-main.md ] && extraire /tmp/chl-main.md > /tmp/notes.md
+            test -s /tmp/notes.md && echo "::notice::section $V absente du tag — reprise depuis main (récupération)"
+          fi
+          test -s /tmp/notes.md || { echo "::error::no CHANGELOG section for $V — pas de notes, pas de sortie"; exit 1; }
+          wc -c /tmp/notes.md
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v5
+        with:
+          name: notes-de-version
+          path: /tmp/notes.md
+          if-no-files-found: error
+          retention-days: 1
 
   # ── 2. PUBLIER — le SEUL job capable de frapper l'identité npm ───────────────────────────────
   #
@@ -591,18 +617,6 @@ jobs:
           fi
           cat "$BLOC"
 
-      # ⚠️ LES NOTES DESCENDENT DANS LE PAQUET, COMME LA TABLE DES ZONES — et pour la même raison,
-      # apprise deux fois. La table des zones voyage par fichier depuis toujours, avec sa garde `-s`
-      # dans `annoncer` ; les notes, elles, passaient par une SORTIE DE JOB, que la forge a
-      # supprimée le 15/09 au motif qu'elle « pouvait contenir un secret ». Un fichier d'artefact
-      # n'est pas confronté aux valeurs masquées : le transport cesse d'être fragile au CONTENU de
-      # ce qu'il transporte, ce qu'aucune consigne de prudence n'aurait pu garantir.
-      #
-      # L'extraction est celle de `verifier`, au mot près, parce que c'est le MÊME outil : un fait
-      # qui existe en deux exemplaires non confrontés dérive.
-      - name: The changelog section travels as a file, where no masker touches it
-        run: node tools/notes-de-version.mjs --version="${TAG#v}" --sortie=/tmp/sortie/notes.md
-
       # ⚠️ LE NOM DU BUNDLE EST DEVENU UNE PROPRIÉTÉ, ET VOICI CE QU'IL COÛTAIT. L'artefact
       # gardait le nom du fichier temporaire de l'action : `attestation.json`. Or l'OpenSSF
       # Scorecard — la v5.5.0, celle qu'embarque l'action épinglée par scorecard.yml — ne
@@ -796,6 +810,15 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: paquet-atteste
+          path: paquet
+
+      # ⚠️ LES NOTES ARRIVENT PAR UN ARTEFACT, PAS PAR UNE SORTIE DE JOB. C'est le correctif du
+      # 15/09 : la sortie de job qui les portait a été supprimée par la forge en chemin — « Skip
+      # output 'notes' since it may contain secret » — et la Release 0.1.169 est partie sans une
+      # ligne de ses notes, cinq jobs au vert. Un artefact n'est confronté à aucune valeur masquée.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: notes-de-version
           path: paquet
 
       # ⚠️ UN MOTIF QUI NE CORRESPOND À RIEN NE FAIT PAS ÉCHOUER `action-gh-release` : IL SE TAIT.

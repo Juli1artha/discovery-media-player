@@ -26,10 +26,15 @@ the notes there are this file's section for that version.
   le défaut du 22/08 — un motif promis, aucun fichier, pas un mot — dans une autre matière. Le
   correctif est de **forme**, pas de vigilance : les notes descendent dans le paquet comme
   `zones.md`, où aucun masqueur ne les regarde, avec une garde `-s` chez le consommateur ; le
-  transport cesse d'être fragile au *contenu* de ce qu'il transporte. L'extraction devient un outil
-  unique (`tools/notes-de-version.mjs`) parce que deux jobs en ont besoin — `verifier` pour refuser
-  avant la publication npm, `attester` pour déposer le fichier — et qu'« un fait qui existe en deux
-  exemplaires non confrontés dérive ». Trois mutants. ⚠️ **Ce qui a déclenché le masqueur n'est pas
+  transport cesse d'être fragile au *contenu* de ce qu'il transporte, ce qu'aucune consigne de
+  prudence n'aurait garanti. ⚠️ **L'extraction, elle, RESTE dans le workflow, et c'est une contrainte
+  du dépôt que j'ai failli enfreindre** : ma première rédaction de ce correctif la déplaçait dans un
+  outil de `tools/` — plus propre, testable, une seule implémentation — or un rejeu par
+  `workflow_dispatch` exécute le workflow de `main` **contre le contenu du tag**, et cet outil
+  n'existe sur aucun tag publié. Le rattrapage d'une sortie ratée, raison d'être du dispatch, serait
+  devenu impossible. Ce qui vit dans le fichier de workflow vient toujours de `main` ; ce qui vit
+  dans `tools/` vient du tag. Le dépôt l'écrit déjà à propos du validateur de charge, et je l'avais
+  lu. Un mutant fige désormais la contrainte. Quatre mutants en tout. ⚠️ **Ce qui a déclenché le masqueur n'est pas
   établi de l'extérieur** : la section 0.1.169 est la plus longue jamais écrite (18,5 Ko) et cite,
   pour documenter le correctif de caviardage, une chaîne en forme de clé d'API — la coïncidence est
   frappante mais reste une hypothèse, et le correctif ne repose pas sur elle.
