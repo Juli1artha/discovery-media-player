@@ -7,6 +7,18 @@ on:
   # GitHub Release, image, SBOM et provenance sautés, TROIS FOIS SANS QUE PERSONNE NE LE VOIE
   # (celui qui publiait surveillait `npm view`, un artefact sur cinq — septième audit). Le
   # dispatch rejoue la sortie d'un tag existant : npm est sauté (déjà publié), le reste se refait.
+  #
+  # ⚠️ CE QU'UN REJEU NE PEUT PAS RÉPARER, et la 0.1.169 s'y est cognée. Un dispatch exécute le
+  # workflow de la RÉF SUR LAQUELLE ON LE LANCE, pendant que chaque job extrait le TAG. Le rejeu
+  # honnête se lance donc sur la réf du tag (« Use workflow from » → vX.Y.Z), sans quoi la garde de
+  # provenance ci-dessous refuse — mais cela fait tourner le `release.yml` DU TAG, défauts compris.
+  # La 0.1.169 est partie sans une ligne de ses notes parce que celles-ci voyageaient par une sortie
+  # de job que la forge a supprimée en chemin ; le correctif est sur `main`, le tag porte encore le
+  # transport cassé. Les deux rejeux possibles étaient donc inutiles : depuis `main`, refusé ;
+  # depuis le tag, on rejoue le code qui a perdu les notes. Un rejeu répare une COURSE qui a échoué
+  # — une étape tombée, un actif jamais téléversé — jamais un DÉFAUT DU WORKFLOW DU TAG. Ce cas-là
+  # se répare à la main, et seulement sous forme DÉRIVÉE : la section extraite du CHANGELOG du tag
+  # par le code d'extraction du tag. Consigné dans docs/VERIFYING-RELEASES.md.
   workflow_dispatch:
     inputs:
       tag:

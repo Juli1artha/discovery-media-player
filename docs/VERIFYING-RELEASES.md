@@ -190,6 +190,24 @@ Since this was found, two layers exist, added in this order:
 0.1.136 keeps its divergence, documented here — its bytes are the tag's, its attested commit is
 not, and no later mechanism can rewrite that honestly.
 
+⚠️ **And the honest replay has a limit that 0.1.169 ran into: it cannot repair a defect that lives
+in the workflow file of the tag.** The two halves above cut both ways. Dispatching on the tag ref
+makes `github.sha` the tag commit — which is what provenance needs — but it also runs **the tag's
+own `release.yml`**, bugs included. 0.1.169 was published without a line of its release notes
+because the notes travelled from `verifier` to `annoncer` as a *job output*, and the forge dropped
+it in transit (`Skip output 'notes' since it may contain secret`). The fix landed on `main` right
+after; the tag still carries the broken transport. So a replay had exactly two outcomes, both
+useless: dispatched from `main` it is refused by the provenance guard above, and dispatched from the
+tag it re-runs the code that lost the notes in the first place.
+
+The consequence is worth stating plainly, because it decides what a replay is *for*: a replay
+repairs a run that failed — a step that crashed, an asset never uploaded, a network timeout. It
+cannot repair a **defect of the tag's own workflow**. Restoring that is a manual edit of the Release
+body, and the only honest form is a *derived* one: extract the section with the tag's own extraction
+code from the tag's own `CHANGELOG.md`, and compose the body the way the tag's `annoncer` would
+have. That is what was done for 0.1.169 — the notes below the zone table are the tag's bytes, not a
+retyping — and it is written here rather than left to be noticed.
+
 ⚠️ The rows are not all the same kind of statement, and the column says so. The first is a
 measurement made in this repository; the second is a report we received and could not re-run. The
 second is nonetheless the **stronger** of the two for the property this section is about: an

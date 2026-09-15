@@ -92,6 +92,16 @@ the notes there are this file's section for that version.
 
 ### Added
 
+- ⚠️ **Ce qu'un rejeu de sortie ne peut PAS réparer, écrit là où on le cherchera.** Un
+  `workflow_dispatch` exécute le workflow de la **réf sur laquelle on le lance**, pendant que chaque
+  job extrait le **tag**. Le rejeu honnête se lance donc sur la réf du tag — sinon la garde de
+  provenance refuse, depuis l'incident 0.1.136 — mais cela fait tourner le `release.yml` **du tag**,
+  défauts compris. La 0.1.169 s'y est cognée : ses notes ont été perdues par un transport que le tag
+  porte encore, si bien que les deux rejeux possibles étaient inutiles — depuis `main`, refusé ;
+  depuis le tag, on rejoue le code qui a perdu les notes. Un rejeu répare une **course** qui a
+  échoué, jamais un **défaut du workflow du tag** ; ce cas-là se répare à la main, et seulement sous
+  forme *dérivée*. Consigné dans `docs/VERIFYING-RELEASES.md` et dans le workflow.
+
 - **`tools/configuration-des-bancs.mjs` : quelle configuration joue ce banc ? Une seule, et la
   question se pose à un seul endroit.** La règle — un fichier de banc appartient à exactement une
   configuration Vitest — tourne sur la forge, refuse aussi bien le **double** que l'**orphelin**,
