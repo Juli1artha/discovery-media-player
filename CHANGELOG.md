@@ -14,6 +14,18 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- ⚠️ **Le banc du producteur héritait de l'environnement de la forge, et son verdict dépendait donc
+  de l'endroit où il tournait.** Les courses de bout en bout étalaient `process.env` puis y
+  écrasaient le commit : elles héritaient de l'**évènement** du runner tout en **inventant** le
+  commit, si bien que sur une PR l'artefact produit se déclarait `event: pull_request` en portant un
+  commit fabriqué et aucune tête de branche. L'incohérence était sans conséquence tant que personne
+  ne la jugeait ; elle a rougi à la minute où le validateur a cessé d'accepter une PR sans tête —
+  dans la **même livraison**, et **sur la forge seulement**. ⚠️ C'est exactement la faute que cette
+  livraison reproche par ailleurs : un banc vert en local et rouge en PR n'éprouve pas ce qu'il
+  croit éprouver. Le correctif n'est pas de poser un évènement neutre à sept endroits — le banc
+  **compose** désormais son environnement, l'identité de la forge n'y entrant que si un essai la
+  demande, et deux essais épinglent la propriété.
+
 - **Deux fichiers temporaires composés à la main, remplacés par `mkdtempSync`.** Le dossier
   temporaire est **partagé et inscriptible par tous** : un chemin qu'on compose soi-même peut déjà
   exister, et qui l'a créé avant nous en décide les droits — ou y pose un lien qui renvoie ailleurs.

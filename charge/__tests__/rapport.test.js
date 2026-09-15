@@ -18,6 +18,30 @@ const rapport = requireCjs("../rapport.js");
 const { creerPostgrestEnMemoire } = requireCjs("../../tools/postgrest-en-memoire.cjs");
 const RACINE = path.join(__dirname, "..", "..");
 
+/**
+ * ⚠️ L'ENVIRONNEMENT DE CE BANC NE VIENT PAS DE LA FORGE QUI LE JOUE, ET C'EST UN CORRECTIF.
+ *
+ * Les courses de bout en bout ci-dessous étalaient `process.env` puis y écrasaient `GITHUB_SHA`.
+ * Elles héritaient donc de l'ÉVÈNEMENT du runner tout en INVENTANT le commit : sur une PR,
+ * l'artefact produit se déclarait `event: pull_request` en portant un commit fabriqué et aucune
+ * tête de branche. L'incohérence était sans conséquence tant que personne ne la jugeait ; elle a
+ * rougi à la minute où le validateur a cessé d'accepter une PR sans tête — c'est-à-dire dans la
+ * MÊME livraison, et sur la forge seulement.
+ *
+ * ⚠️ ET C'EST LA FAUTE QUE CETTE LIVRAISON REPROCHE AILLEURS : un banc dont le verdict dépend de
+ * l'endroit où il tourne. Vert en local, où l'évènement vaut « local » ; rouge en PR. Il
+ * n'éprouvait pas le producteur, il éprouvait le runner. La réponse n'est pas de poser un
+ * évènement neutre à sept endroits : c'est que ce banc COMPOSE son environnement, et que l'identité
+ * de la forge n'y entre que si un essai la demande explicitement.
+ *
+ * Ce qui n'est pas `GITHUB_*` est conservé : `PLAYER_TEST_*` et le reste servent vraiment la course.
+ */
+const envDeBanc = (extra = {}, base = process.env) => {
+  const e = {};
+  for (const [cle, valeur] of Object.entries(base)) if (!cle.startsWith("GITHUB_")) e[cle] = valeur;
+  return { ...e, ...extra };
+};
+
 let outils, schemas, EMPREINTE;
 beforeAll(async () => {
   outils = await import(pathToFileURL(path.join(RACINE, "tools", "artefact-de-charge.mjs")).href);
@@ -81,6 +105,32 @@ describe("les pièces du producteur", () => {
     const apres = { ...avant, "mesures.statuts.ok": 25, "mesures.base.n": 9 };
     expect(rapport.deltas(avant, apres)).toMatchObject({ "mesures.statuts.ok": 15, "mesures.base.n": 2, "lectureSaturee.total": 0 });
     expect(Object.keys(avant)).toEqual(["lectureSaturee.total", "relaisRefuses.total", "mesures.statuts.ok", "mesures.statuts.refus4xx", "mesures.statuts.debit429", "mesures.statuts.occupe503", "mesures.statuts.erreur5xx", "mesures.base.n"]);
+  });
+});
+
+describe("⚠️ CE BANC NE DÉPEND PAS DE LA FORGE QUI LE JOUE", () => {
+  it("l'identité de la forge est retirée de l'environnement, sauf ce qu'un essai pose lui-même", () => {
+    // ⚠️ LE CAS RÉEL. Sur une PR, `GITHUB_EVENT_NAME` vaut « pull_request » ; les courses d'en
+    // dessous inventent leur commit. Hériter de l'un sans l'autre produisait un artefact qui se
+    // déclarait mesure de PR en portant un commit fabriqué et aucune tête — refusé par le
+    // validateur, et seulement sur la forge. Un banc vert ici et rouge là-bas n'éprouve pas ce
+    // qu'il croit éprouver.
+    const forge = { GITHUB_EVENT_NAME: "pull_request", GITHUB_SHA: "0".repeat(40), GITHUB_RUN_ID: "1", PLAYER_TEST_POSTGREST_URL: "http://x" };
+    const e = envDeBanc({ GITHUB_SHA: "a".repeat(40) }, forge);
+    expect(Object.keys(e).filter((k) => k.startsWith("GITHUB_")), "seul ce que l'essai pose subsiste").toEqual(["GITHUB_SHA"]);
+    expect(e.GITHUB_SHA).toBe("a".repeat(40));
+    expect(e.PLAYER_TEST_POSTGREST_URL, "ce qui sert vraiment la course est conservé").toBe("http://x");
+  });
+
+  it("⚠️ et l'artefact qui en sort ne se déclare JAMAIS mesure de PR — il n'en est pas une", () => {
+    // Le lien entre la propriété et ce qui la rend nécessaire, écrit sur le producteur lui-même.
+    const forge = { GITHUB_EVENT_NAME: "pull_request", GITHUB_RUN_ID: "1" };
+    const id = (env) => rapport.identite({ env, empreinte: EMPREINTE, version: "0.0.0", quand: new Date("2026-09-15T00:00:00Z") });
+    expect(id({ ...forge, GITHUB_SHA: "a".repeat(40) }), "témoin : c'est bien ce que la forge produisait")
+      .toMatchObject({ event: "pull_request", prHeadSha: null });
+    const propre = id(envDeBanc({ GITHUB_SHA: "a".repeat(40) }, forge));
+    expect(propre.event, "l'évènement du runner a fui dans l'artefact").toBe("local");
+    expect(outils.controlerSemantiqueArtefact({ identity: propre }).join("\n")).not.toMatch(/prHeadSha/);
   });
 });
 
@@ -155,7 +205,7 @@ describe("de bout en bout : la course contre le double PostgREST en mémoire, ju
     const lignes = [];
     // ⚠️ `gc` injecté : ce banc tourne sans --expose-gc et n'affirme rien sur la mémoire ; il éprouve la
     // CHAÎNE — génération, relevés, assemblage, écriture, jugement en cohorte. La forge, elle, l'expose.
-    const r = await rapport.courir({ sortie, sequence: [100, 100], requetesParSpectateur: 10, dureeCibleMs: 800, warmupRequests: 5, contexte, player, presentations, fichierUrl: pathToFileURL(path.join(racine, "rapport.pdf")).href, gc: () => {}, journal: (l) => lignes.push(l), env: { ...process.env, GITHUB_SHA: "b".repeat(40), GITHUB_RUN_ID: "77" } });
+    const r = await rapport.courir({ sortie, sequence: [100, 100], requetesParSpectateur: 10, dureeCibleMs: 800, warmupRequests: 5, contexte, player, presentations, fichierUrl: pathToFileURL(path.join(racine, "rapport.pdf")).href, gc: () => {}, journal: (l) => lignes.push(l), env: envDeBanc({ GITHUB_SHA: "b".repeat(40), GITHUB_RUN_ID: "77" }) });
     expect(r.code, lignes.join("\n")).toBe(0);
     expect(r.fichiers.map((f) => path.basename(f))).toEqual(["artefact-1-100.json", "artefact-2-100.json"]);
     const [a, b] = r.fichiers.map((f) => JSON.parse(fs.readFileSync(f, "utf8")));
@@ -177,7 +227,7 @@ describe("de bout en bout : la course contre le double PostgREST en mémoire, ju
   it("⚠️ une position qui échoue laisse un artefact `complete: false` avec sa phase, la course s'arrête, le code est 1 — et la cohorte interrompue reste recevable", async () => {
     const lignes = [];
     const cassees = { ...presentations, setPage: async () => { throw new Error("base injoignable pendant la mise en page"); } };
-    const r = await rapport.courir({ sortie: path.join(racine, "sortie-echec"), sequence: [100, 100, 100], requetesParSpectateur: 10, dureeCibleMs: 200, warmupRequests: 0, contexte, player, presentations: cassees, fichierUrl: pathToFileURL(path.join(racine, "rapport.pdf")).href, gc: () => {}, journal: (l) => lignes.push(l), env: { ...process.env, GITHUB_SHA: "c".repeat(40) } });
+    const r = await rapport.courir({ sortie: path.join(racine, "sortie-echec"), sequence: [100, 100, 100], requetesParSpectateur: 10, dureeCibleMs: 200, warmupRequests: 0, contexte, player, presentations: cassees, fichierUrl: pathToFileURL(path.join(racine, "rapport.pdf")).href, gc: () => {}, journal: (l) => lignes.push(l), env: envDeBanc({ GITHUB_SHA: "c".repeat(40) }) });
     expect(r.code).toBe(1);
     expect(r.fichiers).toHaveLength(1);
     const a = JSON.parse(fs.readFileSync(r.fichiers[0], "utf8"));
@@ -236,7 +286,7 @@ describe("de bout en bout : la course contre le double PostgREST en mémoire, ju
       sortie: path.join(racine, "sortie-observateur"), sequence: [100], requetesParSpectateur: 10,
       dureeCibleMs: 200, warmupRequests: 0, contexte, player, presentations,
       fichierUrl: pathToFileURL(path.join(racine, "rapport.pdf")).href, gc: () => {},
-      journal: () => {}, env: { ...process.env, GITHUB_SHA: "e".repeat(40), GITHUB_RUN_ID: "88" },
+      journal: () => {}, env: envDeBanc({ GITHUB_SHA: "e".repeat(40), GITHUB_RUN_ID: "88" }),
     });
     expect(r.code).toBe(0);
     const a = JSON.parse(fs.readFileSync(r.fichiers[0], "utf8"));
@@ -306,7 +356,7 @@ describe("de bout en bout : la course contre le double PostgREST en mémoire, ju
       sortie: path.join(racine, "sortie-pic-truque"), sequence: [100], requetesParSpectateur: 10,
       dureeCibleMs: 200, warmupRequests: 0, contexte, player: truque, presentations,
       fichierUrl: pathToFileURL(path.join(racine, "rapport.pdf")).href, gc: () => {},
-      journal: () => {}, env: { ...process.env, GITHUB_SHA: "1".repeat(40), GITHUB_RUN_ID: "90" },
+      journal: () => {}, env: envDeBanc({ GITHUB_SHA: "1".repeat(40), GITHUB_RUN_ID: "90" }),
     });
     const a = JSON.parse(fs.readFileSync(r.fichiers[0], "utf8"));
     expect(a.cache.peakInFlight, "le pic historique a été pris pour celui de la fenêtre").toBe(1);
@@ -327,7 +377,7 @@ describe("de bout en bout : la course contre le double PostgREST en mémoire, ju
       sortie: path.join(racine, "sortie-pic"), sequence: [100], requetesParSpectateur: 10,
       dureeCibleMs: 200, warmupRequests: 0, contexte, player, presentations,
       fichierUrl: pathToFileURL(path.join(racine, "rapport.pdf")).href, gc: () => {},
-      journal: () => {}, env: { ...process.env, GITHUB_SHA: "f".repeat(40), GITHUB_RUN_ID: "89" },
+      journal: () => {}, env: envDeBanc({ GITHUB_SHA: "f".repeat(40), GITHUB_RUN_ID: "89" }),
     });
     const a = JSON.parse(fs.readFileSync(r.fichiers[0], "utf8"));
     expect(a.cache.peakInFlight).toBeLessThanOrEqual(a.cache.processLifetimePeakInFlight);
@@ -359,7 +409,7 @@ describe("de bout en bout : la course contre le double PostgREST en mémoire, ju
       sortie: path.join(racine, "sortie-fenetre"), sequence: [100], requetesParSpectateur: 10,
       dureeCibleMs: 200, warmupRequests: 200, contexte, player, presentations, horloge,
       fichierUrl: pathToFileURL(path.join(racine, "rapport.pdf")).href, gc: () => {},
-      journal: () => {}, env: { ...process.env, GITHUB_SHA: "2".repeat(40), GITHUB_RUN_ID: "91" },
+      journal: () => {}, env: envDeBanc({ GITHUB_SHA: "2".repeat(40), GITHUB_RUN_ID: "91" }),
     });
     expect(r.code).toBe(0);
     const f = JSON.parse(fs.readFileSync(r.fichiers[0], "utf8")).measurementWindow;
@@ -402,7 +452,7 @@ describe("de bout en bout : la course contre le double PostgREST en mémoire, ju
       dureeCibleMs: 20, warmupRequests: 0, contexte, player: muetSurLesLectures, presentations,
       echeanceRequeteMs: 300, budgetPositionMs: 2000,
       fichierUrl: pathToFileURL(path.join(racine, "rapport.pdf")).href, gc: () => {},
-      journal: () => {}, env: { ...process.env, GITHUB_SHA: "d".repeat(40) },
+      journal: () => {}, env: envDeBanc({ GITHUB_SHA: "d".repeat(40) }),
     });
     expect(r.code, "une course qui expire n'est pas un succès").toBe(1);
     expect(r.fichiers, "la course a expiré SANS laisser d'artefact — le défaut exact").toHaveLength(1);
