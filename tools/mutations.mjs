@@ -520,6 +520,22 @@ export const MUTANTS = [
     pourquoi: "servie de la mémoire et regroupée sur une production en vol ne disent pas la même chose du cache : la première dit qu'il retient, la seconde qu'il mutualise — confondues, « le cache tient » redevient une phrase",
     bancs: ["server/__tests__/cacheCompteurs.test.js"],
   },
+  {
+    id: "release-motif-promis-hors-des-deux-boucles",
+    fichier: ".github/workflows/release.yml",
+    avant: 'for motif in "paquet/"*-charge-*.json; do',
+    apres: 'for motif in "paquet/"*-mesure-*.json; do',
+    pourquoi: "c'est le défaut du 22/08 à l'identique : un motif promis dans `files:` qu'aucune boucle de la garde ne contrôle redevient ignoré en silence — `action-gh-release` n'a jamais dit qu'il n'attachait rien",
+    bancs: ["tools/__tests__/releaseFichiersAttaches.test.js"],
+  },
+  {
+    id: "release-mesure-refaite-au-lieu-d-etre-reprise",
+    fichier: ".github/workflows/release.yml",
+    avant: "          node tools/artefact-de-charge.mjs $args",
+    apres: "          node --expose-gc charge/rapport.js --sortie=/tmp/charge",
+    pourquoi: "produire la mesure dans le workflow de sortie donne une AUTRE mesure pour le même commit — autre runner, autre instant, autre base — et rien ne départage les deux séries attachées au même point",
+    bancs: ["tools/__tests__/releaseFichiersAttaches.test.js"],
+  },
 ];
 
 export const empreinte = (texte) => createHash("sha256").update(texte).digest("hex").slice(0, 16);

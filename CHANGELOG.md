@@ -12,6 +12,27 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- **Une release porte désormais la mesure de charge de son propre commit.** Les artefacts produits
+  par `charge/rapport.js` vivaient sur le run de la forge, dont la rétention expire ; une release,
+  non. `attester` retrouve la course CI verte du commit taggué, en télécharge l'artefact
+  `artefacts-de-charge`, **rejuge la cohorte entière** avec `tools/artefact-de-charge.mjs` — on
+  n'attache pas une mesure qu'on n'a pas jugée — et l'attache sous
+  `discovery-media-player-<version>-charge-<position>-<spectateurs>.json`. ⚠️ **La mesure n'est pas
+  refaite ici, et c'est le point.** Rejouer la course dans le workflow de sortie aurait donné une
+  AUTRE mesure pour le même commit — autre runner, autre instant, autre base — soit deux séries pour
+  un même point sans rien pour les départager ; un banc interdit tout lancement du producteur dans
+  ce workflow, et un mutant le tient. ⚠️ **Elle est *dite*, pas *exigée* — seule des cinq.** Les
+  quatre autres actifs arrêtent la sortie s'ils manquent ; la mesure n'existe que pour les commits
+  dont la CI l'a produite, et l'exiger bloquerait exactement les rejeux par `workflow_dispatch` sur
+  un tag antérieur au producteur que le dispatch existe pour rattraper. Son absence n'est pour
+  autant jamais muette : un avertissement dans la course, et un paragraphe dans le corps de la
+  Release nommant laquelle des deux raisons s'applique — le défaut du 22/08 était le silence, pas
+  l'absence. Un artefact récupéré mais non jugeable, lui, arrête la sortie. `attester` gagne
+  `actions: read` ; le banc des fichiers attachés distingue les deux degrés et compte cinq promis
+  pour quatre exigés ; deux mutants sur le workflow.
+
 ### Fixed
 
 - ⚠️ **Une boucle de réessai sortait par épuisement exactement comme par succès, et ça a coûté une

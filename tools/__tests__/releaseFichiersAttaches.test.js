@@ -26,12 +26,26 @@ const etapes = workflow.jobs.annoncer.steps;
 const indexGarde = etapes.findIndex((e) => typeof e.run === "string" && e.run.includes("for motif in"));
 const indexRelease = etapes.findIndex((e) => String(e.uses || "").startsWith("softprops/action-gh-release@"));
 
-/** Les motifs de la boucle shell, tels que le shell les verra : sans les guillemets de collage. */
-const motifsDeLaGarde = (run) => {
-  const m = /for motif in (.+?); do/.exec(run);
-  if (!m) throw new Error("la boucle de la garde n'a pas la forme attendue");
-  return m[1].split(/\s+/).map((x) => x.replace(/["']/g, ""));
+/**
+ * Les motifs de CHAQUE boucle de la garde, tels que le shell les verra : sans les guillemets de
+ * collage. La garde en a deux, et la différence entre elles est la règle :
+ *
+ *   • la première EXIGE — un motif sans correspondance arrête la sortie ;
+ *   • la seconde DIT — un motif sans correspondance écrit un avertissement et une ligne dans le
+ *     corps de la Release, sans l'arrêter.
+ *
+ * ⚠️ POURQUOI DEUX DEGRÉS PLUTÔT QU'UN. La mesure de charge n'existe que pour les commits dont la
+ * CI l'a produite. L'exiger bloquerait tout rejeu par dispatch sur un tag antérieur au producteur —
+ * c'est-à-dire exactement les sorties que le dispatch existe pour rattraper. Ce qui reste interdit,
+ * et que ce banc tient : qu'un motif promis n'appartienne à AUCUNE des deux boucles, car il
+ * redeviendrait alors ce qu'il était le 22/08 — ignoré en silence.
+ */
+const motifsDesBoucles = (run) => {
+  const boucles = [...run.matchAll(/for motif in (.+?); do/g)].map((m) => m[1].split(/\s+/).map((x) => x.replace(/["']/g, "")));
+  if (!boucles.length) throw new Error("la boucle de la garde n'a pas la forme attendue");
+  return boucles;
 };
+const motifsDeLaGarde = (run) => motifsDesBoucles(run).flat();
 
 const motifsPromis = (files) => String(files).split("\n").map((x) => x.trim()).filter(Boolean);
 
@@ -43,15 +57,54 @@ describe("⚠️ LA RELEASE NE PEUT PAS PROMETTRE UN FICHIER QU'ELLE NE CONTRÔL
     expect(indexRelease).toBeGreaterThan(indexGarde);
   });
 
-  it("⚠️ les deux listes sont exactement la même", () => {
-    expect(motifsDeLaGarde(etapes[indexGarde].run)).toEqual(motifsPromis(etapes[indexRelease].with.files));
+  it("⚠️ aucun motif promis n'échappe aux deux boucles, et aucune boucle ne contrôle un motif qui n'est pas promis", () => {
+    expect([...motifsDeLaGarde(etapes[indexGarde].run)].sort())
+      .toEqual([...motifsPromis(etapes[indexRelease].with.files)].sort());
   });
 
-  it("elle en promet quatre : le tarball, son condensat, sa signature, son SBOM", () => {
+  it("elle en EXIGE quatre — le tarball, son condensat, sa signature, son SBOM — et en DIT un cinquième", () => {
     // Le compte est le fait qui a été rompu en silence. Ce banc avait prévu le cas : « un jour on
-    // en attachera un quatrième — il faudra alors le dire ici ». C'est fait, et le quatrième est
-    // le SBOM CycloneDX du paquet, produit par `attester` à côté du tarball qu'il décrit.
-    expect(motifsPromis(etapes[indexRelease].with.files)).toHaveLength(4);
+    // en attachera un quatrième — il faudra alors le dire ici ». Le quatrième est le SBOM
+    // CycloneDX ; le cinquième est la mesure de charge du commit publié, reprise de sa propre
+    // course CI par `attester`, et c'est le seul qui soit dit plutôt qu'exigé.
+    const [exiges, dits] = motifsDesBoucles(etapes[indexGarde].run);
+    expect(exiges).toHaveLength(4);
+    expect(dits).toEqual(["paquet/*-charge-*.json"]);
+    expect(motifsPromis(etapes[indexRelease].with.files)).toHaveLength(5);
+  });
+
+  it("⚠️ la boucle qui EXIGE arrête la sortie, celle qui DIT ne l'arrête pas — sinon les deux degrés n'en font qu'un", () => {
+    const run = etapes[indexGarde].run;
+    const [avant, apres] = run.split('for motif in "paquet/"*-charge-*.json; do');
+    expect(avant, "la boucle des exigés ne lève pas de drapeau d'échec").toMatch(/::error::[\s\S]*manquants=1/);
+    expect(run, "rien n'arrête la sortie quand un fichier exigé manque").toMatch(/\[ "\$manquants" = 0 \] \|\| exit 1/);
+    expect(apres, "la boucle qui DIT écrit un avertissement").toMatch(/::warning::/);
+    expect(apres.split("ls -l")[0], "la boucle qui DIT ne doit ni poser manquants=1 ni sortir en 1").not.toMatch(/manquants=1|exit 1/);
+  });
+
+  it("la mesure attachée est celle du commit, reprise de sa course CI — jamais une mesure refaite ici", () => {
+    // Refaire la mesure dans le workflow de sortie donnerait une AUTRE mesure pour le même commit :
+    // autre runner, autre instant, autre base. Deux séries pour un point, et rien pour départager.
+    const attester = workflow.jobs.attester.steps;
+    const reprise = attester.find((e) => typeof e.run === "string" && e.run.includes("gh run download"));
+    expect(reprise, "aucune étape ne reprend l'artefact de charge de la course du commit").toBeTruthy();
+    expect(reprise.run).toMatch(/--workflow CI/);
+    expect(reprise.run).toMatch(/git rev-parse HEAD/);
+    // Et elle ne l'attache qu'après l'avoir jugée, en cohorte.
+    expect(reprise.run).toMatch(/node tools\/artefact-de-charge\.mjs \$args/);
+    expect(workflow.jobs.attester.permissions).toMatchObject({ "actions": "read" });
+
+    // ⚠️ AUCUNE PRODUCTION DE MESURE ICI — et c'est un APPEL qui est interdit, pas un mot. Le corps
+    // de la Release NOMME `charge/rapport.js` en prose, pour dire au lecteur d'une sortie sans
+    // mesure pourquoi elle n'en a pas ; interdire la chaîne de caractères condamnerait cette phrase
+    // et pousserait à la retirer — on perdrait l'explication sans rien gagner sur le fond.
+    // Ce qui doit rester vrai est plus étroit : qu'aucune étape ne LANCE le producteur.
+    const lancements = Object.values(workflow.jobs)
+      .flatMap((job) => job.steps || [])
+      .map((e) => e.run)
+      .filter((run) => typeof run === "string" && /(^|\s)node\s[^\n]*charge\/rapport\.js/.test(run));
+    expect(lancements, "une étape de la sortie produit une mesure au lieu de reprendre celle du commit")
+      .toHaveLength(0);
   });
 
   it("⚠️ au moins un actif promis porte un suffixe que Scorecard reconnaît comme signature", () => {

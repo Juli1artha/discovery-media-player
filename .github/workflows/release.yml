@@ -469,6 +469,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read          # lire l'artefact de charge produit par la course CI de ce commit
       id-token: write        # OIDC : signer l'attestation sans jeton stocké
       attestations: write    # la déposer dans le magasin de la forge
     steps:
@@ -634,6 +635,57 @@ jobs:
           esac
           cp "$BUNDLE" "/tmp/sortie/discovery-media-player-$V.sigstore.json"
 
+      # ── LA MESURE DE CE COMMIT REJOINT LA RELEASE, ET C'EST LA SIENNE ────────────────────────
+      #
+      # ⚠️ ON NE REFAIT PAS LA MESURE ICI, ON VA CHERCHER CELLE DU COMMIT. Produire un artefact de
+      # charge dans ce job donnerait une AUTRE mesure — autre runner, autre instant, autre base —
+      # pour le même commit, donc deux séries pour un seul point, et rien pour départager. Celle qui
+      # vaut est celle qu'a produite la course CI qui a validé ce commit ; `verifier` a déjà exigé
+      # qu'elle soit verte. Les artefacts d'une course expirent, une Release non : c'est tout
+      # l'objet de ce transfert.
+      #
+      # ⚠️ CONDITIONNEL ET DIT, JAMAIS SILENCIEUX. Un rejeu par `workflow_dispatch` exécute le
+      # workflow de `main` contre le CONTENU DU TAG (voir le contrôle du bundle plus haut) : sur un
+      # tag antérieur au producteur, il n'y a ni artefact ni validateur, et cette étape doit laisser
+      # passer la sortie plutôt que de la bloquer. Elle écrit alors ce qui manque — un
+      # `::warning::` ici, une ligne dans le corps de la Release là-bas. Ce qui n'est PAS toléré :
+      # attacher une mesure sans l'avoir jugée.
+      - name: Carry the load artefacts this commit's own CI run measured
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA=$(git rev-parse HEAD)
+          V=$(node -p 'require("./package.json").version')
+          RUN=$(gh run list --repo "$GITHUB_REPOSITORY" --commit "$SHA" --workflow CI \
+                  --json databaseId,conclusion --limit 20 \
+                  -q '[.[] | select(.conclusion == "success")] | .[0].databaseId // empty')
+          if [ -z "$RUN" ]; then
+            echo "::warning::aucune course CI verte trouvée pour $SHA — la Release ne portera pas de mesure de charge"
+            exit 0
+          fi
+          mkdir -p /tmp/charge
+          if ! gh run download "$RUN" --repo "$GITHUB_REPOSITORY" --name artefacts-de-charge --dir /tmp/charge 2>/tmp/charge.err; then
+            echo "::warning::la course CI $RUN ne porte pas d'artefact « artefacts-de-charge » ($(tail -1 /tmp/charge.err)) — tag antérieur au producteur, ou artefact expiré ; la Release ne portera pas de mesure de charge"
+            exit 0
+          fi
+          ls -l /tmp/charge
+          # ⚠️ ON N'ATTACHE PAS UNE MESURE QU'ON N'A PAS JUGÉE. Si des artefacts existent mais que ce
+          # tag ne porte pas leur validateur, c'est un état qu'on ne sait pas interpréter : refus.
+          [ -f tools/artefact-de-charge.mjs ] \
+            || { echo "::error::des artefacts de charge ont été récupérés, mais ce tag ne porte pas leur validateur — on n'attache pas une mesure qu'on ne peut pas juger"; exit 1; }
+          args=""
+          for f in /tmp/charge/*.json; do args="$args --fichier=$f"; done
+          [ -n "$args" ] \
+            || { echo "::error::l'artefact « artefacts-de-charge » de la course $RUN ne contient aucun JSON"; exit 1; }
+          # La cohorte entière, pas chaque fichier isolément : même course, positions continues,
+          # conditions constantes. Un rouge ici arrête la sortie — une mesure fausse attachée à une
+          # Release est pire qu'une Release sans mesure.
+          node tools/artefact-de-charge.mjs $args
+          for f in /tmp/charge/*.json; do
+            cp "$f" "/tmp/sortie/discovery-media-player-$V-charge-$(basename "$f" .json | sed 's/^artefact-//').json"
+          done
+          ls -l /tmp/sortie
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: paquet-atteste
@@ -684,13 +736,26 @@ jobs:
       # `.sigstore.json`, le suffixe que Scorecard reconnaît comme signature), après vérification
       # de son mediaType. Cette étape reste ce qui transforme un nom qui dériverait — retour au
       # nom de l'action, action qui change son fichier — en refus plutôt qu'en fichier manquant.
-      - name: The four files the Release must carry are actually there
+      - name: The files the Release promises are actually there — four required, the measure said
+        id: presents
         run: |
           manquants=0
           for motif in "paquet/"*.tgz "paquet/"*.tgz.sha256 "paquet/"*.sigstore.json "paquet/"*.cdx.json; do
             if [ ! -e "$motif" ]; then
               echo "::error::aucun fichier pour « $motif » — la Release en porterait un de moins, en silence"
               manquants=1
+            fi
+          done
+          # ⚠️ LE CINQUIÈME EST DIT, PAS EXIGÉ — et c'est la seule différence entre les deux boucles.
+          # La mesure de charge n'existe que pour les commits dont la CI l'a produite : l'exiger
+          # bloquerait tout rejeu sur un tag antérieur au producteur, c'est-à-dire exactement les
+          # sorties que le dispatch existe pour rattraper. Son absence n'est pas silencieuse pour
+          # autant : elle s'écrit ici ET dans le corps de la Release. Aucun motif promis n'échappe
+          # aux deux boucles — le banc `releaseFichiersAttaches` en est la confrontation.
+          for motif in "paquet/"*-charge-*.json; do
+            if [ ! -e "$motif" ]; then
+              echo "::warning::aucun fichier pour « $motif » — cette Release ne portera pas la mesure de charge de son commit"
+              echo "charge=absente" >> "$GITHUB_OUTPUT"
             fi
           done
           ls -l paquet/
@@ -703,6 +768,7 @@ jobs:
       - name: Compose the Release body — the notes, what changed by zone, and any provenance gap
         env:
           NOTES: ${{ needs.verifier.outputs.notes }}
+          CHARGE: ${{ steps.presents.outputs.charge }}
           DECLENCHEUR: ${{ github.event_name }}
           SHA_DU_DECLENCHEMENT: ${{ github.sha }}
         run: |
@@ -724,6 +790,18 @@ jobs:
           #
           # On ne peut pas le corriger ici — l'attestation est déjà signée quand ce job tourne — donc
           # ON LE DIT, dans le corps que le lecteur a sous les yeux au moment de vérifier.
+          # ⚠️ UNE RELEASE SANS SA MESURE LE DIT. Sinon le lecteur d'une série y verrait un trou
+          # sans savoir s'il manque une mesure ou si personne n'en a fait.
+          if [ "$CHARGE" = "absente" ]; then
+            {
+              printf '\n---\n\n'
+              printf '### No load artefact for this release\n\n'
+              printf "This commit's CI run produced no load artefact, so none is attached here.\n"
+              printf 'Either the tag predates the producer (`charge/rapport.js`), or the run artefact\n'
+              printf 'expired. The series has a gap at this version, and this note is the gap.\n'
+            } >> corps.md
+          fi
+
           TAG_SHA=$(git rev-parse HEAD)
           if [ "$DECLENCHEUR" = "workflow_dispatch" ] && [ "$TAG_SHA" != "$SHA_DU_DECLENCHEMENT" ]; then
             {
@@ -759,3 +837,4 @@ jobs:
             paquet/*.tgz.sha256
             paquet/*.sigstore.json
             paquet/*.cdx.json
+            paquet/*-charge-*.json
