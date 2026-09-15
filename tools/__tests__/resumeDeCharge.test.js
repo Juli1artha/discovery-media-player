@@ -75,17 +75,53 @@ describe("le résumé porte sa provenance, et il vient des fichiers", () => {
     expect(tableau([a])).toMatch(/\*\*interrompue\*\* — deadline : 3 requêtes n'ont pas répondu/);
   });
 
-  it("⚠️ la cadence est DITE : 2 500 req/s contre ~40 nominales, soit 62,5× — un lecteur croyait lire une charge réaliste", () => {
+  it("⚠️ la cadence est DITE : 2 500 planifiées/s contre ~40 nominales, soit 62,5× — un lecteur croyait lire une charge réaliste", () => {
     // Le contrat hôte décrit un spectateur qui relit son état toutes les 25 s. Mille spectateurs
-    // donnent donc ~40 requêtes/s ; cette campagne en envoie 2 500. C'est une contrainte délibérée
-    // et c'est bien — mais l'artefact ne le disait nulle part, et le tableau non plus.
+    // donnent donc ~40 requêtes/s ; cette campagne en planifie 2 500. C'est une contrainte
+    // délibérée et c'est bien — mais l'artefact ne le disait nulle part, et le tableau non plus.
     const a = minimal();
     a.scenario = { ...a.scenario, spectators: 1000 };
-    a.workload = { ...a.workload, scheduledRequests: 10000, targetDurationMs: 4000 };
+    a.workload = { ...a.workload, scheduledRequests: 10000, startedRequests: 10000, completedRequests: 10000, targetDurationMs: 4000 };
+    a.measurementWindow = { ...a.measurementWindow, durationMs: 4000 };
     const c = cadence(a);
-    expect(c.parSeconde).toBe(2500);
+    expect(c.planifiee).toBe(2500);
     expect(c.nominale).toBe(40);
     expect(c.facteur).toBeCloseTo(62.5, 5);
+  });
+
+  it("⚠️ TROIS CADENCES, PARCE QU'ELLES DIVERGENT — et la première rédaction n'en disait qu'une, la seule qui ne mesure rien", () => {
+    // ⚠️ LE CAS QUI DÉMASQUE LE DÉFAUT. Le générateur planifie 10 000 requêtes en 4 s ; il n'en met
+    // que 5 000 en vol — il a pris du retard — et la fenêtre mesurée a duré 8 s, le double du visé.
+    // L'ancienne formule écrivait « 2 500 requêtes/s » sous le nom de DÉBIT : un chiffre inchangé
+    // alors que le débit réellement atteint est cinq fois plus bas. C'est le genre de nombre qui
+    // reste juste le jour où tout va bien et faux le jour où il servirait.
+    const a = minimal();
+    a.scenario = { ...a.scenario, spectators: 1000 };
+    a.workload = { ...a.workload, scheduledRequests: 10000, startedRequests: 5000, completedRequests: 4000, targetDurationMs: 4000 };
+    a.measurementWindow = { ...a.measurementWindow, durationMs: 8000 };
+    const c = cadence(a);
+    expect(c.planifiee, "la planifiée est une intention : scheduled ÷ durée VISÉE").toBe(2500);
+    expect(c.lancee, "la lancée dit si le générateur a tenu : started ÷ durée visée").toBe(1250);
+    expect(c.atteinte, "la seule mesurée : completed ÷ durée de la fenêtre MESURÉE").toBe(500);
+    // Et le facteur reste celui de la PLANIFIÉE — une propriété du scénario, pas un résultat.
+    expect(c.facteur).toBeCloseTo(62.5, 5);
+
+    // Le texte rendu nomme les trois, et n'appelle « atteinte » que celle qui l'est.
+    const t = resume([poser("divergent.json", a)]);
+    expect(t).toMatch(/\*\*2500 planifiées\/s\*\*/);
+    expect(t).toMatch(/\*\*1250 lancées\/s\*\*/);
+    expect(t).toMatch(/\*\*500 atteintes\/s\*\*/);
+    expect(t, "le tableau annonce encore un débit qu'il n'a pas mesuré").not.toMatch(/2500 requêtes\/s/);
+  });
+
+  it("une cadence qu'on ne peut pas calculer s'écrit « — », jamais zéro", () => {
+    // Zéro se lit comme une mesure. Un tiret se lit comme une absence, et c'en est une.
+    const a = minimal();
+    a.workload = { ...a.workload, targetDurationMs: 0 };
+    a.measurementWindow = { ...a.measurementWindow, durationMs: 0 };
+    const c = cadence(a);
+    expect([c.planifiee, c.lancee, c.atteinte]).toEqual([null, null, null]);
+    expect(c.facteur).toBe(null);
   });
 
   it("les nombres portent la virgule décimale, et ce qui n'est pas un nombre ne devient pas zéro", () => {

@@ -409,6 +409,16 @@ jobs:
         if: matrix.node == '22'
         run: node tools/affirmations-retirees.mjs
 
+      # ⚠️ TROIS FOIS LE MÊME DÉFAUT, ET AUCUN DES TROIS N'A JAMAIS ROUGI. Un banc qui reçoit sa
+      # propre configuration et sa propre étape continue de tourner dans le banc général si personne
+      # ne l'en écarte — deux passages, verts tous les deux, dans la MÊME base d'essai. C'est arrivé
+      # à la campagne de charge, à l'endurance, aux statistiques agrégées, puis à tout `charge/**`
+      # (dont le second passage AVALE son propre relevé, faute de `disableConsoleIntercept`). Les
+      # deux premiers correctifs nommaient un fichier ; la règle manquait, et la faute a repoussé.
+      - name: Every bench file belongs to exactly one vitest configuration
+        if: matrix.node == '22'
+        run: node tools/configuration-des-bancs.mjs
+
       # ⚠️ UNE MIGRATION LIVRÉE NE CHANGE PLUS — PAS MÊME UN COMMENTAIRE. Entre 0.1.163 et 0.1.164 la
       # 0004 a bougé (prose corrigée en place) ; les migrations voyagent dans le tarball, des hôtes
       # les ont exécutées et empreintées, et l'un d'eux a dû faire un `diff -u` pour savoir qu'il
@@ -1641,6 +1651,16 @@ jobs:
       - name: The first structured load artefact — 100 → 1 000 → 100, one process, judged as a cohort
         env:
           PLAYER_TEST_POSTGREST_URL: http://127.0.0.1:3002
+          # ⚠️ SUR UNE PR, `GITHUB_SHA` DÉSIGNE UN COMMIT DE FUSION ÉPHÉMÈRE, fabriqué par la forge
+          # pour l'occasion et qui n'existera plus ensuite. La tête réelle de la branche n'est
+          # lisible que dans `github.event.pull_request.head.sha` — il n'existe AUCUNE variable
+          # d'environnement qui la porte. Le producteur cherchait `GITHUB_HEAD_SHA`, qui n'existe
+          # pas : `identity.prHeadSha` valait donc `null` dans TOUTES les vraies courses de PR,
+          # pendant que le banc, lui, passait — il éprouvait `identite()` sur un environnement
+          # fabriqué, jamais le câblage. Un champ nourri par une variable que personne ne fournit
+          # est un champ mort, et sa description promettait le contraire. Relevé par un auditeur
+          # externe (CODEX, 15/09), sur la course réelle de la PR 546.
+          PLAYER_RAPPORT_PR_HEAD: ${{ github.event.pull_request.head.sha || '' }}
         run: |
           PLAYER_RAPPORT_POSTGRES="$($PSQL -c 'show server_version')" \
             node --expose-gc charge/rapport.js --sortie=/tmp/artefacts-de-charge

@@ -65,6 +65,12 @@ export const RETIREES = [
     pourquoi: "trop absolu (le contexte autonome porte déjà ipHashSecret) et hors sujet : la clé d'identité visiteur vient du greffon (rateLimitKey, HMAC chez l'hôte), l'empreinte n'est qu'un repli dit une fois — annoncée retirée dans 0.1.165 pendant que cette liste l'ignorait (audit, cinquième passe)",
     retiree: "2026-09-13",
   },
+  {
+    nom: "les notes de version « passent en sortie de job » de verifier à annoncer",
+    motif: /(?:(?:les\s+)?(?:passe|transmet|porte)(?:nt)?\s+en\s+sortie\s+de\s+job|notes\s+(?:travel|are\s+passed)\s+as\s+a\s+job\s+output)/i,
+    pourquoi: "c'est faux depuis le 15/09, et ça l'est devenu parce que ce transport avait ÉCHOUÉ : la forge confronte chaque sortie de job aux valeurs masquées et jette la sortie entière au moindre soupçon (« Skip output 'notes' since it may contain secret »), si bien que la Release 0.1.169 est partie sans une ligne de ses notes, cinq jobs au vert. Les notes voyagent désormais comme ARTEFACT, et `annoncer` refuse un corps sans elles",
+    retiree: "2026-09-15",
+  },
 ];
 
 /**
@@ -80,8 +86,18 @@ export const MARQUEURS = [
   /\bnommait\b/i, /\bannonçait\b/i, /\baffirmait\b/i, /\bit said\b/i, /\bwas false\b/i,
 ];
 
-/** Les fichiers où une affirmation retirée serait lue comme vraie. */
-export const EXTENSIONS = [".md", ".js", ".mjs", ".ts", ".sql"];
+/**
+ * Les fichiers où une affirmation retirée serait lue comme vraie.
+ *
+ * ⚠️ `.yml` EST ARRIVÉ TARD, ET UNE PHRASE FAUSSE A VÉCU LÀ ENTRE-TEMPS. Les workflows de ce dépôt
+ * portent autant de prose que ses documents — c'est délibéré, un contrôle qu'on ne comprend pas se
+ * supprime — et cette prose vieillit comme l'autre. Le 15/09, le transport des notes de version a
+ * cessé d'être une sortie de job ; le paragraphe qui l'expliquait dans `release.yml` a continué de
+ * décrire l'ancien mécanisme, et aucune garde ne pouvait le voir puisque aucune ne lisait de YAML.
+ * Un lecteur qui cherche pourquoi les notes arrivent lirait donc le contraire du fichier qu'il a
+ * sous les yeux. Suggéré par un audit externe (CODEX, 15/09).
+ */
+export const EXTENSIONS = [".md", ".js", ".mjs", ".ts", ".sql", ".yml"];
 
 /**
  * ⚠️ LES ARCHIVES SONT EXCLUES, ET C'EST LA SEULE EXCLUSION. Un CHANGELOG et un rapport d'audit
@@ -158,7 +174,7 @@ export function nonMarquees(texte, retirees = RETIREES, marqueurs = MARQUEURS) {
   return fautes;
 }
 
-export const DOSSIERS = ["server", "context", "src", "docs", "tools", "supabase", "base", "charge", "bin", "build"];
+export const DOSSIERS = [".github", "server", "context", "src", "docs", "tools", "supabase", "base", "charge", "bin", "build"];
 
 if (estExecuteDirectement(import.meta.url)) {
   conclure(tenter(() => {

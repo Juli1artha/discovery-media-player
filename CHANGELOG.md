@@ -14,6 +14,57 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- ⚠️ **`identity.prHeadSha` était un champ MORT : il a valu `null` dans toutes les courses de PR
+  depuis sa création.** Le producteur lisait `GITHUB_HEAD_SHA` — un nom que la forge **ne définit
+  pas**. Elle définit `GITHUB_HEAD_REF`, qui porte le *nom* de la branche ; la tête, elle, n'est
+  lisible que dans `github.event.pull_request.head.sha`, depuis le YAML, et aucune variable
+  d'environnement ne la transporte. Sur une PR, c'est le pire endroit où perdre ce champ :
+  `commitSha` y désigne un **commit de fusion éphémère** que la forge jette ensuite, si bien
+  qu'aucune de ces mesures ne se reliait plus à un objet durable — alors que la description du
+  schéma promettait le contraire. ⚠️ **Et le banc était vert** : il appelait `identite()` avec un
+  environnement *fabriqué*, où il posait lui-même le nom que le code lisait. Un tel banc prouve que
+  la fonction sait lire la variable qu'on lui donne, jamais que quelqu'un la donne — même faute que
+  le transport des notes, un contrôle chez le producteur qui ne dit rien du transport. Le correctif
+  tient les deux moitiés du câblage : la CI passe `PLAYER_RAPPORT_PR_HEAD` depuis l'évènement, le
+  validateur **refuse sémantiquement** `event: pull_request` avec `prHeadSha: null` (et l'accepte
+  hors PR — l'exiger sur un tag inventerait une tête qui n'existe pas), et un banc neuf **résout le
+  YAML réel** contre une charge utile de PR jusqu'à l'artefact, avec son témoin négatif. Une garde
+  générale interdit désormais qu'une source du dépôt lise un `GITHUB_*` absent de la documentation
+  du runner. Trois mutants. Relevé par un audit externe (CODEX, 15/09), sur la course réelle de la
+  PR 546.
+
+- ⚠️ **Le résumé de charge annonçait « 2 500 requêtes/s » comme un DÉBIT, alors qu'il divisait les
+  requêtes *planifiées* par la durée *visée*** — deux quantités qui existent avant la moindre
+  mesure. Un tel chiffre reste juste tant que rien ne rate, et **reste identique** le jour où la
+  moitié des requêtes n'est jamais partie : exactement le jour où un lecteur avait besoin de le voir
+  bouger. Le tableau en donne maintenant trois, nommées séparément — **planifiée** (l'intention),
+  **lancée** (le générateur a-t-il tenu ?), **atteinte** (requêtes achevées ÷ durée de la fenêtre
+  *mesurée*, le seul débit observé) — et le facteur de 62,5× est dit « de cadence **planifiée** »,
+  parce que c'est une propriété du scénario, pas un résultat. Un banc où les trois divergent, un
+  mutant qui rétablit l'ancienne formule. Relevé par un audit externe (CODEX, 15/09).
+
+- ⚠️ **Trois bancs tournaient DEUX FOIS sur la forge, et aucun des trois passages n'a jamais
+  rougi.** `base/endurance.test.js` et `base/statistiquesAgregees.test.js` ont chacun leur
+  configuration et leur étape dédiées — comme la campagne de charge avant eux — sans avoir jamais
+  été écartés du banc `base/`. L'exclusion qui avait corrigé le premier cas **nommait un fichier** :
+  la règle restait inécrite, et la faute a repoussé. Ce n'est pas qu'une question de temps de forge,
+  les deux passages écrivent dans la **même base d'essai** — l'interaction qui a déjà fait échouer
+  la graine non idempotente de `retention.test.js` sur une clé dupliquée. ⚠️ **La garde née de ce
+  correctif en a trouvé un troisième en naissant** : tout `charge/**` tournait sous `npm test` en
+  plus de `npm run test:charge`, et ce passage-là est **muet** — seule la configuration dédiée pose
+  `disableConsoleIntercept`, sans quoi le relevé, unique produit de ce banc, est avalé par Vitest.
+  Relevé par un audit externe (CODEX, 15/09).
+
+- ⚠️ **Un paragraphe de `release.yml` décrivait encore un transport de notes supprimé le jour
+  même.** Il disait que `verifier` « les passe en sortie de job » — précisément le mécanisme qui
+  avait *échoué* et qu'on venait de retirer. Un lecteur venu comprendre d'où arrivent les notes y
+  lisait le contraire du fichier qu'il avait sous les yeux. La prose des workflows de ce dépôt est
+  volumineuse **par choix** — un contrôle qu'on ne comprend pas se supprime — et elle vieillit comme
+  celle des documents ; aucune garde ne la lisait, faute de connaître le YAML.
+  `tools/affirmations-retirees.mjs` lit désormais `.yml` et descend dans `.github/`, l'affirmation
+  retirée est inscrite dans sa liste, et un mutant tient l'extension. Suggéré par un audit externe
+  (CODEX, 15/09).
+
 - ⚠️ **La Release 0.1.169 est partie sans une ligne de ses notes, et les cinq jobs étaient verts.**
   Les notes voyageaient de `verifier` à `annoncer` par une **sortie de job**. La forge l'a supprimée
   en chemin et l'a écrit dans son journal : `Skip output 'notes' since it may contain secret`. Le
@@ -40,6 +91,18 @@ the notes there are this file's section for that version.
   frappante mais reste une hypothèse, et le correctif ne repose pas sur elle.
 
 ### Added
+
+- **`tools/configuration-des-bancs.mjs` : quelle configuration joue ce banc ? Une seule, et la
+  question se pose à un seul endroit.** La règle — un fichier de banc appartient à exactement une
+  configuration Vitest — tourne sur la forge, refuse aussi bien le **double** que l'**orphelin**,
+  nomme les exclusions **mortes** (une ligne qui n'écarte plus rien a l'air de protéger) et les
+  configurations qu'aucune commande npm ne lance, et rend NON CONCLUANT sur un arbre sans
+  configuration ou sans banc. ⚠️ **Elle existe parce que la réponse était écrite trois fois** : les
+  configurations la disent, le banc structurel la redisait, et `mutations.mjs` la redevinait en
+  lançant `npx vitest run <fichier>` **sans configuration** — ce qui l'a rendu NON CONCLUANT sur
+  onze mutants à la minute où `charge/**` est sorti de la configuration générale, sous le libellé
+  trompeur « base ROUGE ». La campagne interroge maintenant la même source que la garde ; 87 mutants
+  posés, 87 tués, zéro non concluant.
 
 - **Le schéma 1 est ANCRÉ à `v0.1.169`, et donc figé.** `charge/artefacts/ancres.json` nomme le tag
   qui a publié le premier artefact ; la garde relit le schéma **à ce tag** (`git show`) et confronte

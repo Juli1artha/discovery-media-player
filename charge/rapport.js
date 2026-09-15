@@ -25,7 +25,10 @@
 //
 // `node --expose-gc charge/rapport.js --sortie=<dossier> [--sequence=100,1000,100] [--par-spectateur=10]`
 // Variables : PLAYER_TEST_POSTGREST_URL, PLAYER_TEST_JWT_SECRET (comme la campagne),
-// PLAYER_RAPPORT_POSTGRES / PLAYER_RAPPORT_POSTGREST (les versions, que la forge connaît et pas nous).
+// PLAYER_RAPPORT_POSTGRES / PLAYER_RAPPORT_POSTGREST (les versions, que la forge connaît et pas
+// nous ; la seconde se demande à PostgREST lui-même quand elle n'est pas fournie), et
+// PLAYER_RAPPORT_PR_HEAD — la tête de la branche d'une PR, que SEUL le YAML peut lire
+// (`github.event.pull_request.head.sha`) : aucune variable d'environnement ne la porte.
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -181,7 +184,12 @@ function commitCourant(env = process.env) {
 function identite({ env = process.env, empreinte, version = require("../package.json").version, quand = new Date() }) {
   const tentative = Number(env.GITHUB_RUN_ATTEMPT) >= 1 ? Math.trunc(Number(env.GITHUB_RUN_ATTEMPT)) : 1;
   const runId = env.GITHUB_RUN_ID ? `gha-${env.GITHUB_RUN_ID}-${tentative}` : `local-${quand.toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}-${crypto.randomBytes(3).toString("hex")}`;
-  const tete = String(env.GITHUB_EVENT_NAME || "").startsWith("pull_request") ? String(env.GITHUB_HEAD_SHA || env.PLAYER_RAPPORT_PR_HEAD || "") : "";
+  // ⚠️ `GITHUB_HEAD_SHA` N'EXISTE PAS, et le chercher a rendu ce champ MORT. La forge n'expose la
+  // tête d'une PR que dans `github.event.pull_request.head.sha`, qu'un workflow doit passer
+  // explicitement : `PLAYER_RAPPORT_PR_HEAD` est ce câblage. Tant que le producteur interrogeait un
+  // nom inventé, `prHeadSha` valait `null` dans toutes les vraies courses de PR — et le banc restait
+  // vert, puisqu'il éprouvait cette fonction sur un environnement fabriqué plutôt que le câblage.
+  const tete = String(env.GITHUB_EVENT_NAME || "").startsWith("pull_request") ? String(env.PLAYER_RAPPORT_PR_HEAD || "") : "";
   return {
     commitSha: commitCourant(env), packageVersion: version, timestamp: quand.toISOString(), runId, schemaSha256: empreinte,
     repository: texteBorne(env.GITHUB_REPOSITORY, "local/local"),

@@ -69,17 +69,39 @@ export function entete(artefacts, { runUrl = "" } = {}) {
   return lignes.join("\n");
 }
 
+const nombre = (v) => typeof v === "number" && Number.isFinite(v);
+const parSeconde = (quantite, ms) => (nombre(quantite) && nombre(ms) && ms > 0 ? (quantite / ms) * 1000 : null);
+
 /**
  * ⚠️ CE QUE LA CADENCE VAUT VRAIMENT, DIT PLUTÔT QUE SOUS-ENTENDU. Le contrat hôte décrit un
  * spectateur qui relit son état toutes les 25 secondes — soit environ 40 requêtes par seconde pour
- * mille spectateurs. Cette campagne en envoie 2 500. C'est un test de contrainte délibéré, à peu
+ * mille spectateurs. Cette campagne en PLANIFIE 2 500. C'est un test de contrainte délibéré, à peu
  * près 62 fois la cadence nominale, et c'est une bonne chose — mais un lecteur qui l'ignore croit
  * lire une charge réaliste. Le facteur était absent du JSON comme du tableau : il se calcule ici.
+ *
+ * ⚠️ ET TROIS CADENCES, PAS UNE — PARCE QUE LA PREMIÈRE RÉDACTION EN ANNONÇAIT UNE POUR UNE AUTRE.
+ * Elle écrivait « 2 500 requêtes/s » sous le nom de DÉBIT, alors qu'elle divisait les requêtes
+ * PLANIFIÉES par la durée VISÉE : deux quantités qui existent avant la moindre mesure. Un tel
+ * chiffre est vrai tant que rien ne rate, et il reste identique le jour où la moitié des requêtes
+ * n'est jamais partie — exactement le jour où un lecteur avait besoin de le voir bouger. Le débit
+ * RÉELLEMENT atteint se lit ailleurs : requêtes ACHEVÉES ÷ durée de la fenêtre MESURÉE. Les trois
+ * sont donc nommées séparément, et leur écart est un fait, pas une approximation. Relevé par un
+ * audit externe (CODEX, 15/09).
+ *
+ *   • `planifiee` — ce que le générateur devait envoyer (intention) ;
+ *   • `lancee`    — ce qu'il a effectivement mis en vol (le générateur a-t-il tenu ?) ;
+ *   • `atteinte`  — ce qui est revenu, rapporté à la fenêtre mesurée (le seul débit observé).
+ *
+ * `facteur` porte sur la PLANIFIÉE, et son nom le dit dans le texte : c'est une propriété du
+ * scénario — « quelle contrainte ai-je demandée » — et non un résultat de la campagne.
  */
 export function cadence(a, { secondesEntreLectures = 25 } = {}) {
-  const parSeconde = (a.workload.scheduledRequests / a.workload.targetDurationMs) * 1000;
+  const w = a.workload || {};
+  const planifiee = parSeconde(w.scheduledRequests, w.targetDurationMs);
+  const lancee = parSeconde(w.startedRequests, w.targetDurationMs);
+  const atteinte = parSeconde(w.completedRequests, (a.measurementWindow || {}).durationMs);
   const nominale = a.scenario.spectators / secondesEntreLectures;
-  return { parSeconde, nominale, facteur: nominale > 0 ? parSeconde / nominale : null };
+  return { planifiee, lancee, atteinte, nominale, facteur: nominale > 0 && planifiee !== null ? planifiee / nominale : null };
 }
 
 /** Le résumé complet : provenance, tableau, cadence, et l'empreinte de chaque fichier attaché. */
@@ -90,7 +112,8 @@ export function resume(fichiers, { runUrl = "" } = {}) {
   const complets = artefacts.filter((a) => a.complete);
   if (complets.length) {
     const c = cadence(complets[complets.length - 1]);
-    parties.push("", `⚠️ **Cadence** : ${Math.round(c.parSeconde)} requêtes/s à la dernière position complète, contre ~${Math.round(c.nominale)}/s pour une relecture d'état toutes les 25 s — soit environ **${c.facteur.toFixed(1)}×** la cadence nominale. C'est une contrainte délibérée, pas une charge réaliste.`);
+    const req = (v) => (v === null ? "—" : `${Math.round(v)}`);
+    parties.push("", `⚠️ **Cadence**, à la dernière position complète : **${req(c.planifiee)} planifiées/s**, **${req(c.lancee)} lancées/s**, **${req(c.atteinte)} atteintes/s** (requêtes achevées ÷ durée de la fenêtre mesurée — le seul débit observé des trois). La cadence nominale du contrat hôte est d'environ **${Math.round(c.nominale)}/s** pour une relecture d'état toutes les 25 s : le facteur de cadence **planifiée** vaut donc environ **${c.facteur === null ? "—" : c.facteur.toFixed(1)}×**. C'est une contrainte délibérée, pas une charge réaliste.`);
   }
 
   parties.push("", "**Fichiers attachés**, à confronter avec ce qui précède :", "");

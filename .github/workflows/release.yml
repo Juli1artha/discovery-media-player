@@ -775,10 +775,19 @@ jobs:
   # une annonce qui précède la preuve est exactement la sortie « à moitié faite qui s'annonçait
   # faite » que ce workflow a déjà connue trois fois (0.1.67 → 0.1.69).
   #
-  # Les notes ne sont pas relues ici : `verifier` les a extraites AVANT toute publication, et les
-  # passe en sortie de job. C'est ce qui garantit qu'une section de CHANGELOG manquante arrête la
-  # sortie au lieu de la laisser à moitié faite — le contrôle qui conditionne une publication se
+  # Les notes ne sont pas relues ici : `verifier` les a extraites AVANT toute publication, et ce job
+  # les RÉCUPÈRE COMME ARTEFACT. C'est ce qui garantit qu'une section de CHANGELOG manquante arrête
+  # la sortie au lieu de la laisser à moitié faite — le contrôle qui conditionne une publication se
   # place avant elle, sinon il ne conditionne rien.
+  #
+  # ⚠️ CE PARAGRAPHE DISAIT « et les passe en sortie de job », et il l'a dit après que ce transport
+  # eut été supprimé. Il avait été supprimé parce qu'il AVAIT ÉCHOUÉ : la forge confronte chaque
+  # sortie de job aux valeurs masquées et jette la sortie ENTIÈRE au moindre soupçon — « Skip output
+  # 'notes' since it may contain secret » — et la Release 0.1.169 est partie sans une ligne de ses
+  # seize entrées, cinq jobs au vert. Un lecteur venu comprendre d'où arrivent les notes lisait donc
+  # ici le contraire du fichier qu'il avait sous les yeux. `tools/affirmations-retirees.mjs` lit le
+  # YAML depuis ce jour-là : la prose des workflows vieillit comme celle des documents, et rien ne
+  # la confrontait. Relevé par un audit externe (CODEX, 15/09).
   #
   # ⚠️ LE `checkout` EST GARDÉ, ET C'EST UN CHOIX DE PRUDENCE ASSUMÉ. Ce job n'a besoin que du tag
   # et des notes, donc un clone serait en principe superflu. Mais le comportement de

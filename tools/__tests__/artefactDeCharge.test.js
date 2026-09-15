@@ -185,6 +185,8 @@ describe("⚠️ les invariants entre nombres : un artefact aux bonnes clés peu
     ["pic mémoire sous la fin", (a) => { a.process.memoryMiB.end.external = 99; }, /artefact\.process\.memoryMiB\.peak\.external : 9 < end 99/],
     ["delta ≠ after − before", (a) => { a.counters = { before: { x: 1 }, after: { x: 3 }, delta: { x: 1 }, observerOverheadRequests: 0 }; }, /artefact\.counters\.delta\.x : 1 alors que after − before vaut 2/],
     ["un compteur absent d'un des trois relevés", (a) => { a.counters = { before: { x: 1 }, after: { x: 3 }, delta: {}, observerOverheadRequests: 0 }; }, /artefact\.counters : « x » n'est pas dans les trois relevés/],
+    ["⚠️ event: pull_request avec prHeadSha null — le champ mort de la PR 546", (a) => { a.identity.event = "pull_request"; a.identity.prHeadSha = null; }, /artefact\.identity\.prHeadSha : null alors que event vaut "pull_request"/],
+    ["et la variante pull_request_target, que la même absence de câblage touche", (a) => { a.identity.event = "pull_request_target"; a.identity.prHeadSha = null; }, /artefact\.identity\.prHeadSha : null alors que event vaut "pull_request_target"/],
     ["plafond mémoire inconnu mais chiffré", (a) => { a.environment.memoryLimitMiB = 256; }, /artefact\.environment\.memoryLimitMiB : 256 avec memoryLimitSource unknown/],
     ["plafond mémoire nommé mais null", (a) => { a.environment.memoryLimitSource = "cgroup"; }, /source "cgroup" nommée mais plafond null/],
   ];
@@ -194,6 +196,20 @@ describe("⚠️ les invariants entre nombres : un artefact aux bonnes clés peu
       expect(constatsDe(a)).toMatch(attendu);
     });
   }
+  it("⚠️ hors PR, prHeadSha null reste licite — l'exiger partout inventerait une tête de branche sur un tag", () => {
+    // ⚠️ LES DEUX MOITIÉS DE LA RÈGLE, ET LA SECONDE COMPTE AUTANT. Une garde qui refuserait `null`
+    // partout rendrait `push` inéprouvable et pousserait le producteur à écrire quelque chose —
+    // c'est-à-dire à inventer. Sur un tag, il n'y a PAS de tête de PR : `null` y est la vérité.
+    const surPush = minimal(); surPush.identity.event = "push"; surPush.identity.prHeadSha = null;
+    expect(constatsDe(surPush)).toBe("");
+    const surDispatch = minimal(); surDispatch.identity.event = "workflow_dispatch"; surDispatch.identity.prHeadSha = null;
+    expect(constatsDe(surDispatch)).toBe("");
+    // Et une PR qui porte sa tête passe : sans ce témoin, une garde qui refuserait TOUTE PR
+    // satisferait les deux refus d'à côté tout en étant cassée.
+    const surPr = minimal(); surPr.identity.event = "pull_request"; surPr.identity.prHeadSha = "a".repeat(40);
+    expect(constatsDe(surPr)).toBe("");
+  });
+
   it("l'histogramme de l'exemple porte un identifiant DÉRIVÉ de ses bornes, et le dérivé est stable", () => {
     expect(minimal().histogram.binSetId).toBe(binSetIdDe(edges()));
     expect(binSetIdDe([0, 1])).toMatch(/^edges-sha256-[0-9a-f]{16}$/);

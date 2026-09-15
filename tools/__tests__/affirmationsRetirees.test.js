@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import { RETIREES, MARQUEURS, REGARD_ARRIERE, nonMarquees, estArchive, estLaGardeElleMeme, fichiersDe } from "../affirmations-retirees.mjs";
+import { RETIREES, MARQUEURS, REGARD_ARRIERE, DOSSIERS, EXTENSIONS, nonMarquees, estArchive, estLaGardeElleMeme, fichiersDe } from "../affirmations-retirees.mjs";
 
 const UNE = [{ nom: "essai", motif: /le ciel est vert/i, pourquoi: "x".repeat(40), retiree: "2026-01-01" }];
 
@@ -74,6 +74,19 @@ describe("le périmètre", () => {
     expect(f.length, "une sonde qui ne lit rien conclurait vert sur rien").toBeGreaterThan(50);
     expect(f.some((x) => x.startsWith("docs/"))).toBe(true);
     expect(f.includes("CHANGELOG.md")).toBe(false);
+  });
+
+  it("⚠️ la prose des WORKFLOWS est lue elle aussi — elle vieillit comme celle des documents", () => {
+    // ⚠️ CE QUI A VÉCU DANS L'ANGLE MORT. Le 15/09, le transport des notes de version a cessé
+    // d'être une sortie de job ; le paragraphe qui l'expliquait dans `release.yml` a continué de
+    // décrire l'ancien mécanisme, et aucune garde ne pouvait le voir puisque aucune ne lisait de
+    // YAML. Les workflows de ce dépôt portent délibérément beaucoup de prose — un contrôle qu'on
+    // ne comprend pas se supprime — et cette prose-là ment aussi bien qu'une autre.
+    expect(EXTENSIONS, "sans .yml, la prose des workflows n'est confrontée à rien").toContain(".yml");
+    expect(DOSSIERS, "sans .github, l'extension .yml ne rencontrerait aucun workflow").toContain(".github");
+    const f = fichiersDe(".", DOSSIERS);
+    expect(f, "les workflows ne sont pas atteints par la sonde").toContain(".github/workflows/release.yml");
+    expect(f.filter((x) => x.endsWith(".yml")).length).toBeGreaterThan(3);
   });
 });
 
@@ -140,7 +153,10 @@ describe("⚠️ le dépôt lui-même", () => {
   it("aucune affirmation retirée n'est écrite comme vraie", async () => {
     const { readFileSync } = await import("node:fs");
     const fautes = [];
-    for (const f of fichiersDe(".", ["server", "context", "src", "docs", "tools", "supabase", "base", "charge", "bin", "build"])) {
+    // ⚠️ LE PÉRIMÈTRE VIENT DE LA GARDE, IL N'EST PAS RECOPIÉ ICI. Il l'était, et les deux listes
+    // ont divergé le jour où `.github` est entré dans l'une : ce banc a continué de conclure « rien
+    // d'écrit comme vrai » sur un dépôt dont il ne lisait plus la même part que la garde de forge.
+    for (const f of fichiersDe(".", DOSSIERS)) {
       let t;
       try { t = readFileSync(f, "utf8"); } catch { continue; }
       for (const x of nonMarquees(t)) fautes.push(`${f}:${x.ligne} — ${x.nom}`);
