@@ -664,6 +664,30 @@ export const MUTANTS = [
     pourquoi: "c'est le tableau du 14/09 : sans course, sans version et sans commit, il ne peut pas être confronté, donc pas contredit — c'est ce qui m'a permis de publier le relevé d'une autre course sans que rien ne s'y oppose",
     bancs: ["tools/__tests__/resumeDeCharge.test.js"],
   },
+  {
+    id: "release-sans-garde-sur-les-notes-arrivees",
+    fichier: ".github/workflows/release.yml",
+    avant: "          [ -s paquet/notes.md ] || { echo \"::error::paquet/notes.md manquant ou vide — la Release partirait sans dire ce qui a changé, et c'est arrivé le 15/09\"; exit 1; }",
+    apres: "          true",
+    pourquoi: "c'est l'état exact du 15/09 : la garde vivait chez le PRODUCTEUR — la section avait bien été extraite — et personne ne demandait si elle était ARRIVÉE ; la Release 0.1.169 est partie sans une ligne de ses notes, cinq jobs au vert",
+    bancs: ["tools/__tests__/notesDeVersion.test.js"],
+  },
+  {
+    id: "notes-section-emportant-la-version-suivante",
+    fichier: "tools/notes-de-version.mjs",
+    avant: "  const fin = reste.findIndex((l) => l.startsWith(\"## [\"));",
+    apres: "  const fin = -1;",
+    pourquoi: "une section qui ne s'arrête pas au titre suivant publie les notes de deux sorties sous le nom d'une seule, et le texte reste parfaitement plausible — personne ne le verrait",
+    bancs: ["tools/__tests__/notesDeVersion.test.js"],
+  },
+  {
+    id: "notes-section-vide-acceptee",
+    fichier: "tools/notes-de-version.mjs",
+    avant: "    if (!section) return violation(",
+    apres: "    if (false) return violation(",
+    pourquoi: "publier sans dire ce qui a changé n'est pas une sortie : sans ce refus, une version dont la section a été oubliée part avec un corps vide, ce qui est précisément ce qu'on vient de corriger",
+    bancs: ["tools/__tests__/notesDeVersion.test.js"],
+  },
 ];
 
 export const empreinte = (texte) => createHash("sha256").update(texte).digest("hex").slice(0, 16);

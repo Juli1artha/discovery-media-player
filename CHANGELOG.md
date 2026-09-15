@@ -12,6 +12,41 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Fixed
+
+- ⚠️ **La Release 0.1.169 est partie sans une ligne de ses notes, et les cinq jobs étaient verts.**
+  Les notes voyageaient de `verifier` à `annoncer` par une **sortie de job**. La forge l'a supprimée
+  en chemin et l'a écrit dans son journal : `Skip output 'notes' since it may contain secret`. Le
+  runner confronte chaque sortie aux valeurs masquées et jette la sortie **entière** au moindre
+  soupçon ; `NOTES` est arrivé vide à la composition du corps, et la page publique a reçu son
+  tarball, son condensat, sa signature, son SBOM et ses trois mesures de charge — **sans les seize
+  entrées qui disent ce qui a changé**. Les cinq sorties précédentes portaient les leurs, ce qui
+  rendait la perte invisible. ⚠️ **La garde vivait du mauvais côté** : `test -s /tmp/notes.md`
+  prouvait que la section avait été *extraite* ; personne ne demandait si elle était *arrivée*. C'est
+  le défaut du 22/08 — un motif promis, aucun fichier, pas un mot — dans une autre matière. Le
+  correctif est de **forme**, pas de vigilance : les notes descendent dans le paquet comme
+  `zones.md`, où aucun masqueur ne les regarde, avec une garde `-s` chez le consommateur ; le
+  transport cesse d'être fragile au *contenu* de ce qu'il transporte. L'extraction devient un outil
+  unique (`tools/notes-de-version.mjs`) parce que deux jobs en ont besoin — `verifier` pour refuser
+  avant la publication npm, `attester` pour déposer le fichier — et qu'« un fait qui existe en deux
+  exemplaires non confrontés dérive ». Trois mutants. ⚠️ **Ce qui a déclenché le masqueur n'est pas
+  établi de l'extérieur** : la section 0.1.169 est la plus longue jamais écrite (18,5 Ko) et cite,
+  pour documenter le correctif de caviardage, une chaîne en forme de clé d'API — la coïncidence est
+  frappante mais reste une hypothèse, et le correctif ne repose pas sur elle.
+
+### Added
+
+- **Le schéma 1 est ANCRÉ à `v0.1.169`, et donc figé.** `charge/artefacts/ancres.json` nomme le tag
+  qui a publié le premier artefact ; la garde relit le schéma **à ce tag** (`git show`) et confronte
+  les empreintes — l'immuabilité se prouve hors de la copie courante, jamais contre un littéral
+  qu'un même commit pourrait modifier. Les trois empreintes coïncident : le schéma au tag, la copie
+  courante, et celle que portent les trois artefacts publiés — `ae81dab76fa9d946…`. À partir d'ici,
+  toute clé nouvelle ou sémantique nouvelle fait un **schéma 2** avec son corpus de compatibilité.
+  Un audit externe (CODEX) avait maintenu un veto sur ce gel tant que l'instrument acceptait une
+  cohorte tronquée, pouvait réussir sans produire d'artefact et se bloquer sans le documenter : ce
+  veto est ce qui a laissé le schéma 1 amendable assez longtemps pour recevoir la topologie, la
+  provenance explicite et les deux renommages. Dernier point de sa liste en neuf étapes.
+
 ## [0.1.169] — 2026-09-15
 
 ### Added
