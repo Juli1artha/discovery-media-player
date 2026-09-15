@@ -64,9 +64,30 @@ export function testeDe(tete, corps) {
   return { programme, cible: cible ? nu(cible) : "" };
 }
 
-/** La première instruction après le `done` : ni vide, ni commentaire. */
-export const premiereInstruction = (lignes, fin) =>
-  lignes.slice(fin + 1).map((l) => l.trim()).find((l) => l && !l.startsWith("#")) || "";
+/**
+ * La première instruction après le `done` : ni vide, ni commentaire.
+ *
+ * ⚠️ UNE INSTRUCTION N'EST PAS UNE LIGNE, et cette sonde l'a cru. Une première version prenait la
+ * première ligne non vide ; or `cmd \` suivi de `|| { echo "::error::…"; exit 1; }` est UNE
+ * instruction écrite sur deux lignes — la forme la plus courante ici, puisque c'est celle que la
+ * largeur de ces fichiers impose. Elle ne voyait alors que `cmd \`, n'y trouvait pas l'aveu, et
+ * REFUSAIT une boucle conforme. Le faux positif n'est pas un détail de confort : une garde qui
+ * refuse la forme juste pousse à écrire la forme qu'elle accepte, et on se met à contorsionner le
+ * code pour l'outil plutôt que l'inverse — après quoi plus personne ne croit ses refus. Les lignes
+ * continuées sont donc recollées avant lecture.
+ */
+export const premiereInstruction = (lignes, fin) => {
+  const suite = lignes.slice(fin + 1).map((l) => l.trim());
+  let i = suite.findIndex((l) => l && !l.startsWith("#"));
+  if (i < 0) return "";
+  const morceaux = [];
+  for (; i < suite.length; i += 1) {
+    const continuee = suite[i].endsWith("\\");
+    morceaux.push(continuee ? suite[i].slice(0, -1).trim() : suite[i]);
+    if (!continuee) break;
+  }
+  return morceaux.join(" ");
+};
 
 /**
  * Les boucles de réessai d'un script, avec ce qui les suit. Rend

@@ -47,6 +47,25 @@ describe("reconnaître une boucle de réessai, et ce qui la suit", () => {
     expect(premiereInstruction(["done", "", "# un commentaire", "   ", "vrai-code"], 0)).toBe("vrai-code");
     expect(premiereInstruction(["done"], 0)).toBe("");
   });
+
+  it("⚠️ une instruction CONTINUÉE par `\\` est UNE instruction, pas sa première ligne", () => {
+    // La sonde lisait une LIGNE là où le shell lit une INSTRUCTION. `cmd \` puis
+    // `|| { echo "::error::…"; exit 1; }` est la forme la plus répandue de ce dépôt — la largeur
+    // de ces fichiers l'impose — et la sonde y voyait `cmd \`, sans aveu : elle REFUSAIT une
+    // boucle conforme. Un refus faux n'est pas anodin : il pousse à écrire la forme que l'outil
+    // accepte plutôt que la forme juste, et à ce régime plus personne ne croit ses refus.
+    expect(premiereInstruction(["done", '[ -n "$X" ] \\', '|| { echo "::error::rien"; exit 1; }'], 0))
+      .toBe('[ -n "$X" ] || { echo "::error::rien"; exit 1; }');
+    // Trois lignes aussi, et la continuation s'arrête à la première ligne qui ne la porte pas.
+    expect(premiereInstruction(["done", "a \\", "b \\", "c", "d"], 0)).toBe("a b c");
+  });
+
+  it("⚠️ l'aveu porté par la SECONDE ligne d'une instruction continuée compte", () => {
+    // Le banc d'à côté vérifie le recollage ; celui-ci vérifie qu'il sert à quelque chose.
+    const [b] = bouclesDe(['for i in $(seq 1 3); do curl -sf x && break || sleep 1; done', '[ -n "$X" ] \\', '|| { echo "::error::jamais venu"; exit 1; }'].join("\n"));
+    expect(b, "la boucle n'est même pas relevée").toBeTruthy();
+    expect(b.aveu, "l'aveu est sur la seconde ligne de l'instruction, et il compte").toBe(true);
+  });
 });
 
 describe("l'aveu : un `::error::` qui suit, ou le rejeu du test — et rien d'autre", () => {

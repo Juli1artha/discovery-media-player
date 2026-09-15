@@ -536,6 +536,46 @@ export const MUTANTS = [
     pourquoi: "produire la mesure dans le workflow de sortie donne une AUTRE mesure pour le même commit — autre runner, autre instant, autre base — et rien ne départage les deux séries attachées au même point",
     bancs: ["tools/__tests__/releaseFichiersAttaches.test.js"],
   },
+  {
+    id: "release-publique-sans-le-test-de-fumee",
+    fichier: ".github/workflows/release.yml",
+    avant: "    needs: [verifier, attester, eprouver]",
+    apres: "    needs: [verifier, attester]",
+    pourquoi: "c'est l'état exact qu'a laissé mon correctif du 14/09 : `annoncer` suivait `attester` par transitivité et la Release publique pouvait naître pendant que le test du paquet installé était rouge, alors que le workflow promet « publié ÉPROUVÉ »",
+    bancs: ["tools/__tests__/provenanceDuTag.test.js"],
+  },
+  {
+    id: "attester-demande-dist-integrity-une-seule-fois",
+    fichier: ".github/workflows/release.yml",
+    avant: "          for i in $(seq 1 40); do\n            PUBLIE=$(npm view \"discovery-media-player@$V\" dist.integrity 2>/dev/null || echo \"\")\n            [ -n \"$PUBLIE\" ] && break\n            sleep 6\n          done",
+    apres: "          PUBLIE=$(npm view \"discovery-media-player@$V\" dist.integrity 2>/dev/null || echo \"\")",
+    pourquoi: "sans attente, l'attestation retombe dans le vide de propagation du registre qui a coûté la sortie 0.1.168 — l'abri venait de `eprouver`, et rattacher `attester` à `publier` l'a retiré sans le remplacer",
+    bancs: ["tools/__tests__/provenanceDuTag.test.js"],
+  },
+  {
+    id: "instruction-continuee-lue-comme-une-ligne",
+    fichier: "tools/boucles-de-reessai.mjs",
+    avant: "  const morceaux = [];",
+    apres: "  return suite[i];\n  const morceaux = [];",
+    pourquoi: "`cmd \\` puis `|| { echo \"::error::…\"; exit 1; }` est UNE instruction sur deux lignes, la forme la plus courante ici : lue à la ligne, la sonde n'y voit pas l'aveu et REFUSE une boucle conforme — un refus faux pousse à écrire la forme que l'outil accepte plutôt que la forme juste",
+    bancs: ["tools/__tests__/bouclesDeReessai.test.js"],
+  },
+  {
+    id: "provenance-argv-decale-refuse-tout",
+    fichier: ".github/workflows/release.yml",
+    avant: "              const [, fichier, version, sha, run] = process.argv;",
+    apres: "              const [, , , fichier, version, sha, run] = process.argv;",
+    pourquoi: "`node -e` décale argv d'un cran : découpé comme pour `node fichier.js`, ce contrôle compare les mauvaises valeurs et refuse TOUTE cohorte, la bonne comprise — verte sur rien, rouge sur tout, et invisible jusqu'au jour d'une sortie",
+    bancs: ["tools/__tests__/provenanceDeLaCohorteAttachee.test.js"],
+  },
+  {
+    id: "provenance-cohorte-d-un-autre-commit-acceptee",
+    fichier: ".github/workflows/release.yml",
+    avant: "[\"commitSha\", id.commitSha, sha]",
+    apres: "[\"commitSha\", id.commitSha, id.commitSha]",
+    pourquoi: "c'est la confusion du 14/09 rendue indétectable : deux campagnes vraies, une seule mesure le tag, et le validateur les juge toutes deux conformes puisqu'il n'examine que la cohérence interne",
+    bancs: ["tools/__tests__/provenanceDeLaCohorteAttachee.test.js"],
+  },
 ];
 
 export const empreinte = (texte) => createHash("sha256").update(texte).digest("hex").slice(0, 16);

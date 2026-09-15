@@ -35,6 +35,41 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- ⚠️ **Mon correctif du 14/09 avait détaché la Release publique du test de fumée, et déplacé un
+  risque sans le dire.** Rattacher `attester` à `publier` était juste — les preuves d'octets déjà
+  partis ne doivent pas être otages d'un test postérieur. Mais `annoncer` suivait `attester` par
+  simple transitivité et a **perdu sa dépendance à `eprouver`** : le graphe autorisait désormais une
+  Release publique créée pendant que le test du paquet installé était rouge, ou avant qu'il ait
+  fini, alors que le workflow promet « publié ÉPROUVÉ ». Le banc de provenance n'exigeait que
+  « `annoncer` atteignable depuis `verifier` », propriété restée vraie : trop faible pour voir la
+  perte. Et le même correctif avait retiré un abri sans le remplacer — `attester` lisait
+  `dist.integrity` **une seule fois**, ce qui était sans risque tant qu'il héritait des quatre
+  minutes d'attente de `eprouver` ; le vide de propagation qui a coûté la sortie 0.1.168 était
+  **réarmé un job plus loin**, frappant cette fois l'attestation elle-même. Les deux exigences ne
+  s'opposent pas, elles portent sur des objets différents : l'**attestation** porte sur des octets
+  déjà partis et n'attend personne ; la **Release publique** est une recommandation d'installer, et
+  elle attend le test de ce qui s'installe. Graphe corrigé (`annoncer: needs: [verifier, attester,
+  eprouver]`), attente bornée à trois sorties dans `attester`, deux bancs et deux mutants. Défauts
+  nommés par un auditeur externe (CODEX, 15/09).
+- ⚠️ **Une Release pouvait porter la mesure d'un autre commit, et ça m'est arrivé.** J'ai relayé aux
+  hôtes le relevé d'une course de PR — `0.1.167`, commit `8e9e37c` — en le présentant comme celui du
+  tag `0.1.168` (commit `f5f0ae7`). Les deux campagnes étaient vraies ; une seule mesurait le tag ;
+  **rien dans l'outillage ne pouvait les distinguer**, parce que le validateur ne juge que la
+  cohérence *interne* d'une campagne. L'attachement contrôle désormais la provenance de chaque
+  artefact — `identity.packageVersion` contre la version du tag, `identity.commitSha` contre son
+  commit, `identity.runId` contre la course retenue (par préfixe : la tentative fait partie du nom)
+  — et refuse la sortie sinon. ⚠️ Le banc **exécute le script tel qu'il est écrit dans le workflow**,
+  pas une copie : sa première version découpait `process.argv` comme pour `node fichier.js` alors que
+  `node -e` décale d'un cran, et **refusait toute cohorte, la bonne comprise** — verte sur rien,
+  rouge sur tout, invisible jusqu'au jour d'une sortie. C'est ce banc qui l'a trouvée. Défaut relevé
+  par un auditeur externe (CODEX, 15/09).
+- ⚠️ **La garde des boucles de réessai refusait une forme conforme.** `premiereInstruction` lisait
+  une *ligne* là où le shell lit une *instruction* : `cmd \` suivi de `|| { echo "::error::…";
+  exit 1; }` — la forme la plus répandue de ces fichiers, imposée par leur largeur — n'était vue que
+  par sa première ligne, sans aveu, et la boucle était refusée. Un refus faux n'est pas un défaut de
+  confort : il pousse à écrire la forme que l'outil accepte plutôt que la forme juste, et à ce régime
+  plus personne ne croit ses refus. Les lignes continuées sont recollées avant lecture ; la garde
+  relève maintenant huit boucles.
 - ⚠️ **Une boucle de réessai sortait par épuisement exactement comme par succès, et ça a coûté une
   publication.** Le 14/09, la 0.1.168 est partie sur le registre sans sa Release, son SBOM ni
   l'attestation de son archive. Le test de fumée attendait que le registre serve la version fraîche

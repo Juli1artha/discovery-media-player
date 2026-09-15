@@ -86,6 +86,41 @@ describe("le run qui attesterait un autre commit que le tag est refusé avant to
     expect(needsDe("eprouver")).toContain("publier");
   });
 
+  it("⚠️ mais la RELEASE PUBLIQUE, elle, attend le test de fumée — la preuve et la recommandation ne sont pas le même objet", () => {
+    // ⚠️ CE BANC EXISTE PARCE QUE LE BANC D'AU-DESSUS NE SUFFISAIT PAS. En rattachant `attester` à
+    // `publier`, `annoncer` a suivi par simple transitivité et a PERDU sa dépendance à `eprouver` :
+    // le graphe autorisait dès lors une Release publique créée pendant que le test du paquet
+    // installé était rouge, ou avant qu'il ait fini. Le commentaire en tête de release.yml
+    // promettait « publié ÉPROUVÉ » et plus rien ne le tenait. Le banc de l'époque ne demandait que
+    // « atteignable depuis verifier », ce qui restait vrai — une propriété trop faible pour voir la
+    // perte. Défaut nommé par un auditeur externe (CODEX, 15/09).
+    //
+    // La distinction qui tient les deux bancs ensemble : l'ATTESTATION porte sur des octets DÉJÀ
+    // PARTIS et ne doit attendre personne ; la RELEASE est une recommandation d'installer, et elle
+    // attend le test de ce qui s'installe.
+    expect(derriere("annoncer", "eprouver"), "annoncer n'attend plus le test de fumée").toBe(true);
+    expect(derriere("annoncer", "attester"), "annoncer n'attend plus l'attestation").toBe(true);
+  });
+
+  it("⚠️ attester ATTEND dist.integrity au lieu de le demander une fois — l'abri qu'il tenait de eprouver, il le porte lui-même", () => {
+    // ⚠️ CE `npm view` ÉTAIT SANS RISQUE, ET LE CORRECTIF DU 14/09 L'A RENDU DANGEREUX. Tant que
+    // `attester` dépendait de `eprouver`, celui-ci avait déjà attendu jusqu'à 240 s que le registre
+    // serve la version : `dist.integrity` était forcément là. En rattachant `attester` à `publier`
+    // — pour une bonne raison — cet abri a disparu sans être remplacé, et le vide de propagation
+    // qui a coûté la sortie 0.1.168 se retrouvait RÉARMÉ un job plus loin, frappant cette fois
+    // l'attestation. Un correctif qui déplace un risque sans le dire est un correctif à moitié.
+    // Défaut nommé par un auditeur externe (CODEX, 15/09).
+    //
+    // La règle des trois sorties (« réussi, refusé, j'ai renoncé ») est tenue pour toutes les
+    // boucles des workflows par `tools/boucles-de-reessai.mjs` ; ce banc-ci tient l'autre moitié,
+    // que la garde ne peut pas voir : qu'il y ait une boucle DU TOUT autour de cette lecture.
+    const a = job("attester");
+    const [, avant] = a.split("dist.integrity");
+    expect(avant, "dist.integrity n'est pas lu dans attester").toBeTruthy();
+    expect(a, "dist.integrity est demandé sans attente — une seule lecture, juste après publier")
+      .toMatch(/for [^\n]*seq 1 \d+[\s\S]*?dist\.integrity[\s\S]*?done/);
+  });
+
   it("l'attestation vit dans attester, et nulle part ailleurs", () => {
     const usages = texte.match(/uses:\s*actions\/attest-build-provenance@/g) || [];
     expect(usages, "attest-build-provenance dupliqué : une copie hors de la chaîne échapperait au refus").toHaveLength(1);

@@ -497,8 +497,23 @@ jobs:
           # être le même octet pour octet. S'ils diffèrent, on ne sait pas lequel des deux les gens
           # installent — et attacher le mauvais serait pire que ne rien attacher.
           LOCAL="sha512-$(openssl dgst -sha512 -binary "$F" | base64 -w0)"
-          PUBLIE=$(npm view "discovery-media-player@$V" dist.integrity 2>/dev/null || echo "")
-          [ -n "$PUBLIE" ] || { echo "::error::le registre n'a pas rendu dist.integrity pour $V — on n'attache pas un tarball qu'on n'a pas pu confronter"; exit 1; }
+
+          # ⚠️ CETTE ATTENTE EXISTE PARCE QUE MON CORRECTIF DU 14/09 L'AVAIT SUPPRIMÉE SANS LE DIRE.
+          # Ce `npm view` était fait UNE SEULE FOIS, et c'était sans risque tant que `attester`
+          # dépendait de `eprouver` : celui-ci avait déjà attendu jusqu'à quatre minutes que le
+          # registre serve la version, donc `dist.integrity` était forcément là. En rattachant
+          # `attester` à `publier` — pour la bonne raison — j'ai retiré cet abri sans le remplacer :
+          # le vide de propagation qui a coûté la sortie 0.1.168 était RÉARMÉ un job plus loin, et
+          # frapperait cette fois l'attestation elle-même. Défaut nommé par un auditeur externe
+          # (CODEX, 15/09). Même discipline qu'ailleurs, et pour la même raison : trois sorties, pas
+          # deux — servi, différent, et j'ai renoncé ; la troisième est un échec qui se nomme.
+          for i in $(seq 1 40); do
+            PUBLIE=$(npm view "discovery-media-player@$V" dist.integrity 2>/dev/null || echo "")
+            [ -n "$PUBLIE" ] && break
+            sleep 6
+          done
+          [ -n "$PUBLIE" ] \
+            || { echo "::error::le registre n'a pas rendu dist.integrity pour $V après 240 s — le paquet EST publié ; on n'attache pas un tarball qu'on n'a pas pu confronter, et cette attente épuisée est un échec, pas un silence"; exit 1; }
           if [ "$LOCAL" != "$PUBLIE" ]; then
             echo "::error::le tarball reconstruit DIFFÈRE de celui que npm sert pour $V"
             echo "::error::  local  : $LOCAL"
@@ -681,6 +696,38 @@ jobs:
           # conditions constantes. Un rouge ici arrête la sortie — une mesure fausse attachée à une
           # Release est pire qu'une Release sans mesure.
           node tools/artefact-de-charge.mjs $args
+
+          # ⚠️ ET LA COHORTE DOIT ÊTRE CELLE DE CE TAG, pas une cohorte valide quelconque. Le
+          # validateur juge la COHÉRENCE INTERNE d'une campagne — même course, positions continues,
+          # conditions constantes — et il la jugerait tout aussi conforme si elle venait d'un autre
+          # commit ou d'une autre version. Le 14/09 j'ai moi-même relayé aux hôtes le relevé d'une
+          # course de PR (0.1.167, commit 8e9e37c) en le présentant comme celui du tag 0.1.168
+          # (commit f5f0ae7) : les deux campagnes étaient vraies, une seule mesurait le tag, et rien
+          # dans l'outillage ne pouvait les distinguer. Erreur relevée par un auditeur externe
+          # (CODEX, 15/09). La provenance se contrôle, elle ne se relit pas.
+          for f in /tmp/charge/*.json; do
+            node -e '
+              // ⚠️ `node -e` DÉCALE argv : argv[1] est le PREMIER argument, pas le chemin du
+              // script. Une première version découpait comme pour `node fichier.js` et lisait
+              // argv[3..5] : chaque comparaison portait sur la mauvaise valeur, la garde refusait
+              // TOUTE cohorte, la bonne comprise. Un tel defaut ne se decouvre que le jour de la
+              // sortie suivante — raison pour laquelle un banc joue ce script, et non une copie.
+              const [, fichier, version, sha, run] = process.argv;
+              const a = JSON.parse(require("node:fs").readFileSync(fichier, "utf8"));
+              const id = a.identity || {};
+              let faute = 0;
+              for (const [cle, vu, attendu] of [["packageVersion", id.packageVersion, version], ["commitSha", id.commitSha, sha]]) {
+                if (vu !== attendu) { console.log(`::error::${fichier} : identity.${cle} vaut ${JSON.stringify(vu)}, le tag porte ${JSON.stringify(attendu)}`); faute = 1; }
+              }
+              if (typeof id.runId !== "string" || !id.runId.startsWith(`gha-${run}-`)) {
+                console.log(`::error::${fichier} : identity.runId vaut ${JSON.stringify(id.runId)}, la course retenue est ${run}`);
+                faute = 1;
+              }
+              process.exitCode = faute;
+            ' "$f" "$V" "$SHA" "$RUN" \
+              || { echo "::error::la cohorte récupérée ne mesure pas ce tag — on n'attache pas la mesure d'un autre commit"; exit 1; }
+          done
+
           for f in /tmp/charge/*.json; do
             cp "$f" "/tmp/sortie/discovery-media-player-$V-charge-$(basename "$f" .json | sed 's/^artefact-//').json"
           done
@@ -710,8 +757,18 @@ jobs:
   # Un clone n'EXÉCUTE rien — c'était l'exécution de code téléchargé, pas la présence des sources,
   # que le découpage visait. `persist-credentials: false` évite au passage de laisser un jeton
   # capable d'écrire dans le `.git/config` du seul job qui peut écrire.
+  #
+  # ⚠️ ET IL DÉPEND DE `eprouver`, QUE MON PROPRE CORRECTIF AVAIT DÉTACHÉ. Le 14/09 j'ai rattaché
+  # `attester` à `publier` pour que les preuves cessent d'être otages d'un test postérieur — c'était
+  # juste, et `annoncer` a suivi `attester` par simple transitivité, perdant sa dépendance au test de
+  # fumée. Le graphe disait alors : la Release publique peut naître pendant que le test du paquet
+  # installé est ROUGE, ou avant qu'il ait fini. Le commentaire en tête de ce fichier promettait
+  # l'inverse — « publié ÉPROUVÉ » — et rien ne le tenait plus. Défaut nommé par un auditeur externe
+  # (CODEX, 15/09). Les deux exigences ne s'opposent pas, elles portent sur des objets différents :
+  # l'ATTESTATION porte sur des octets déjà partis et ne doit rien attendre ; la RELEASE PUBLIQUE est
+  # une recommandation d'installer, et elle attend le test de ce qui s'installe.
   annoncer:
-    needs: [verifier, attester]
+    needs: [verifier, attester, eprouver]
     runs-on: ubuntu-latest
     permissions:
       contents: write        # créer la Release GitHub
