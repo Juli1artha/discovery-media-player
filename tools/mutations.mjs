@@ -664,6 +664,46 @@ export const MUTANTS = [
     pourquoi: "c'est le tableau du 14/09 : sans course, sans version et sans commit, il ne peut pas être confronté, donc pas contredit — c'est ce qui m'a permis de publier le relevé d'une autre course sans que rien ne s'y oppose",
     bancs: ["tools/__tests__/resumeDeCharge.test.js"],
   },
+  {
+    id: "release-sans-garde-sur-les-notes-arrivees",
+    fichier: ".github/workflows/release.yml",
+    avant: "          [ -s paquet/notes.md ] || { echo \"::error::paquet/notes.md manquant ou vide — la Release partirait sans dire ce qui a changé, et c'est arrivé le 15/09\"; exit 1; }",
+    apres: "          true",
+    pourquoi: "c'est l'état exact du 15/09 : la garde vivait chez le PRODUCTEUR — la section avait bien été extraite — et personne ne demandait si elle était ARRIVÉE ; la Release 0.1.169 est partie sans une ligne de ses notes, cinq jobs au vert",
+    bancs: ["tools/__tests__/notesDeVersion.test.js"],
+  },
+  {
+    id: "notes-televersees-sans-refus-sur-le-vide",
+    fichier: ".github/workflows/release.yml",
+    avant: "          if-no-files-found: error\n          retention-days: 1",
+    apres: "          retention-days: 1",
+    pourquoi: "un artefact vide se téléverse en silence : on retomberait exactement sur ce qu'on corrige — un transport qui ne dit pas qu'il n'a rien porté",
+    bancs: ["tools/__tests__/notesDeVersion.test.js"],
+  },
+  {
+    id: "notes-section-emportant-la-version-suivante",
+    fichier: ".github/workflows/release.yml",
+    avant: "            on && /^## \\[/ { exit }",
+    apres: "            on && /^## NEVER\\[/ { exit }",
+    pourquoi: "une section qui ne s'arrête pas au titre suivant publie les notes de deux sorties sous le nom d'une seule, et le texte reste parfaitement plausible — personne ne le verrait",
+    bancs: ["tools/__tests__/notesDeVersion.test.js"],
+  },
+  {
+    id: "notes-extraites-par-un-outil-absent-des-tags",
+    fichier: ".github/workflows/release.yml",
+    avant: "          extraire CHANGELOG.md > /tmp/notes.md",
+    apres: "          node tools/notes-de-version.mjs --version=\"$V\" --sortie=/tmp/notes.md",
+    pourquoi: "un rejeu par workflow_dispatch exécute le workflow de main CONTRE LE CONTENU DU TAG : un outil de `tools/` n'existe sur aucun tag publié, et le rattrapage d'une sortie ratée — la raison d'être du dispatch — deviendrait impossible ; c'est l'erreur que ma première rédaction de ce correctif a commise",
+    bancs: ["tools/__tests__/notesDeVersion.test.js"],
+  },
+  {
+    id: "ancre-jugee-sans-les-tags-du-depot",
+    fichier: ".github/workflows/ci.yml",
+    avant: "          # Une garde qui a besoin d'un objet git doit tourner là où cet objet existe.\n          fetch-tags: true",
+    apres: "          # Une garde qui a besoin d'un objet git doit tourner là où cet objet existe.",
+    pourquoi: "prouver l'immuabilité suppose de relire le schéma AU TAG : sans les tags, la garde répond NON CONCLUANT et le job tombe — c'est exactement ce qui est arrivé à la PR qui a posé l'ancre, le job `schema` n'ayant pas le `fetch-tags` que `check` avait déjà",
+    bancs: ["tools/__tests__/artefactDeCharge.test.js"],
+  },
 ];
 
 export const empreinte = (texte) => createHash("sha256").update(texte).digest("hex").slice(0, 16);

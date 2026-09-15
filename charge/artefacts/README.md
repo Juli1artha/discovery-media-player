@@ -61,11 +61,24 @@ suivante mesurerait à travers l'instrument de la précédente. Une requête exp
 position** plutôt que de se ranger dans les statuts : à ces latences, une échéance qui tire ne dit
 pas « c'est lent », elle dit « quelque chose ne répond plus ».
 
-**L'ancre.** Chaque artefact porte `identity.schemaSha256`, l'empreinte canonique du schéma sous
-lequel il a été produit ; le validateur exige que ce soit celle du schéma qu'il applique. Et
-`ancres.json` nommera, pour chaque numéro, le tag qui a publié le premier artefact : la garde relit
-le schéma à ce tag et le confronte, empreinte contre empreinte — l'immuabilité se prouve hors de la
-copie courante, jamais contre un littéral modifiable dans le même commit.
+**L'ancre, et elle existe depuis le 15/09.** Chaque artefact porte `identity.schemaSha256`,
+l'empreinte canonique du schéma sous lequel il a été produit ; le validateur exige que ce soit celle
+du schéma qu'il applique. Et `ancres.json` nomme, pour chaque numéro, le tag qui a publié le premier
+artefact : la garde relit le schéma **à ce tag** (`git show`) et le confronte, empreinte contre
+empreinte — l'immuabilité se prouve hors de la copie courante, jamais contre un littéral modifiable
+dans le même commit.
+
+⚠️ **Le schéma 1 est ancré à `v0.1.169`, et il est donc FIGÉ.** Cette sortie a publié trois artefacts
+conformes, repris de la course CI de son propre commit, provenance contrôlée et cohorte rejugée. Les
+trois empreintes coïncident : celle du schéma **au tag**, celle de la copie courante, et celle que
+portent les artefacts publiés — `ae81dab76fa9d946…`. À partir d'ici, toute clé nouvelle et tout
+changement de sémantique font un **schéma 2**, avec son corpus de compatibilité ; modifier le
+schéma 1 en place fait rougir la garde, qui nomme les deux empreintes et le remède.
+
+L'ancre n'a pas pu être écrite plus tôt, et ce n'est pas un retard : elle nomme un tag, et un tag
+n'existe qu'après la fusion. Un audit externe (CODEX) a d'ailleurs maintenu un veto sur ce gel
+jusqu'à ce que l'instrument soit réparé — veto qui a rendu possibles les amendements du 15/09, tous
+faits pendant que le schéma était encore amendable.
 
 `exemples/` ne contient **pas de mesures** : ce sont des formes, et le `runId` le dit. L'exemple
 complet porte des nombres cohérents entre eux parce que le validateur l'exige — le même validateur

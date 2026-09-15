@@ -53,8 +53,6 @@ jobs:
       # sans que le droit soit déclaré — elle cesserait le jour où il deviendrait privé, et
       # l'échec serait imputé à la CI plutôt qu'aux permissions. On le déclare.
       actions: read
-    outputs:
-      notes: ${{ steps.notes.outputs.body }}
     steps:
       # ⚠️ LA SEULE ENTRÉE DE CE DÉPÔT QUE PERSONNE NE RELIT. Tout le reste arrive par une PR, donc
       # sous des yeux ; `workflow_dispatch` non — un collaborateur tape une chaîne dans un champ et
@@ -199,8 +197,22 @@ jobs:
       # se place avant elle, sinon il ne conditionne rien.
       # Récupération (dispatch sur un vieux tag) : la section peut être née APRÈS le tag — on la
       # reprend alors depuis main, en le disant.
+      # ⚠️ L'EXTRACTION RESTE ICI, EN LIGNE, ET C'EST DÉLIBÉRÉ. Un rejeu par `workflow_dispatch`
+      # exécute le workflow de `main` CONTRE LE CONTENU DU TAG : ce qui vit dans ce fichier est
+      # toujours disponible, ce qui vit dans `tools/` ne l'est que sur les tags qui le portent
+      # déjà. Ma première rédaction de ce correctif déplaçait l'extraction dans un outil — plus
+      # propre, et elle aurait rendu IMPOSSIBLE tout rattrapage des tags existants, c'est-à-dire
+      # exactement ce que le dispatch existe pour faire. Le dépôt le dit ailleurs, à propos du
+      # validateur de charge ; je l'avais lu et j'allais quand même l'enfreindre.
+      #
+      # ⚠️ CE QUI CHANGE EST LE TRANSPORT, PAS L'EXTRACTION — parce que c'est le transport qui a
+      # échoué. Les notes partaient d'ici vers `annoncer` par une SORTIE DE JOB, que la forge a
+      # supprimée en chemin le 15/09 : « Skip output 'notes' since it may contain secret ». Le
+      # runner confronte chaque sortie aux valeurs masquées et jette la sortie ENTIÈRE au moindre
+      # soupçon ; la Release 0.1.169 est partie sans une ligne de ses notes, cinq jobs au vert. Un
+      # ARTEFACT n'est confronté à rien : le transport cesse d'être fragile au CONTENU de ce qu'il
+      # transporte, ce qu'aucune consigne de prudence n'aurait garanti.
       - name: Extract the changelog section (gates the publication)
-        id: notes
         run: |
           V="${TAG#v}"
           extraire() { awk -v v="$V" '
@@ -216,7 +228,14 @@ jobs:
             test -s /tmp/notes.md && echo "::notice::section $V absente du tag — reprise depuis main (récupération)"
           fi
           test -s /tmp/notes.md || { echo "::error::no CHANGELOG section for $V — pas de notes, pas de sortie"; exit 1; }
-          { echo "body<<EOFNOTES"; cat /tmp/notes.md; echo "EOFNOTES"; } >> "$GITHUB_OUTPUT"
+          wc -c /tmp/notes.md
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: notes-de-version
+          path: /tmp/notes.md
+          if-no-files-found: error
+          retention-days: 1
 
   # ── 2. PUBLIER — le SEUL job capable de frapper l'identité npm ───────────────────────────────
   #
@@ -793,6 +812,15 @@ jobs:
           name: paquet-atteste
           path: paquet
 
+      # ⚠️ LES NOTES ARRIVENT PAR UN ARTEFACT, PAS PAR UNE SORTIE DE JOB. C'est le correctif du
+      # 15/09 : la sortie de job qui les portait a été supprimée par la forge en chemin — « Skip
+      # output 'notes' since it may contain secret » — et la Release 0.1.169 est partie sans une
+      # ligne de ses notes, cinq jobs au vert. Un artefact n'est confronté à aucune valeur masquée.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: notes-de-version
+          path: paquet
+
       # ⚠️ UN MOTIF QUI NE CORRESPOND À RIEN NE FAIT PAS ÉCHOUER `action-gh-release` : IL SE TAIT.
       #
       # Constaté sur le rejeu du 22/08. Le motif disait `*.jsonl` ; le bundle produit s'appelait
@@ -835,13 +863,20 @@ jobs:
       # précisément ce que cette Release a déjà vécu avec un motif qui ne correspondait à rien.
       - name: Compose the Release body — the notes, what changed by zone, and any provenance gap
         env:
-          NOTES: ${{ needs.verifier.outputs.notes }}
           CHARGE: ${{ steps.presents.outputs.charge }}
           DECLENCHEUR: ${{ github.event_name }}
           SHA_DU_DECLENCHEMENT: ${{ github.sha }}
         run: |
+          # ⚠️ LES DEUX MORCEAUX SONT DES FICHIERS, ET CHACUN A SA GARDE. La table des zones l'avait
+          # depuis toujours ; les notes ne l'avaient pas, parce qu'elles arrivaient par une sortie de
+          # job — et le 15/09 la forge a supprimé cette sortie en chemin (« may contain secret »),
+          # laissant partir la Release 0.1.169 sans une ligne de ses notes, cinq jobs au vert. La
+          # garde d'alors vivait chez le PRODUCTEUR, qui avait bien extrait la section ; personne ne
+          # posait la seule question qui compte : est-ce ARRIVÉ ? Elle se pose ici.
+          [ -s paquet/notes.md ] || { echo "::error::paquet/notes.md manquant ou vide — la Release partirait sans dire ce qui a changé, et c'est arrivé le 15/09"; exit 1; }
           [ -s paquet/zones.md ] || { echo "::error::paquet/zones.md manquant ou vide — le corps de la Release perdrait la table des zones en silence"; exit 1; }
-          printf '%s\n\n' "$NOTES" > corps.md
+          cat paquet/notes.md > corps.md
+          printf '\n' >> corps.md
           cat paquet/zones.md >> corps.md
 
           # ⚠️ UN REJEU DÉCLENCHÉ AILLEURS QUE SUR LE TAG ATTESTE LE MAUVAIS COMMIT, EN SILENCE.

@@ -12,6 +12,7 @@ import { readFileSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, rmSyn
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
+import { parse } from "yaml";
 
 import { RACINE } from "./aide/arbre-outils.mjs";
 import {
@@ -329,10 +330,54 @@ describe("6. la compatibilité du schéma 1, et sa doctrine", () => {
 
 describe("⚠️ l'ancre : l'immuabilité se prouve contre le tag qui a publié, pas contre la copie courante", () => {
   const fichiers = (s) => ({ [SCHEMA]: JSON.stringify(s), [join(EXEMPLES, "schema-1-minimal.json")]: JSON.stringify(minimal()), [join(EXEMPLES, "schema-1-incomplet.json")]: JSON.stringify(incomplet()) });
-  it("sans ancres.json : rien n'est ancré, la garde le dit dans son résumé, et aucun git n'est appelé", () => {
+  it("sans ancres.json : rien n'est ancré, et aucun git n'est appelé", () => {
+    // ⚠️ « ABSENT » ET « VIDE » NE SONT PAS LA MÊME CHOSE, et l'auditeur externe avait raison d'y
+    // insister : tant qu'aucun tag n'avait publié d'artefact, le fichier n'existait pas — ce qui
+    // est volontairement équivalent à zéro ancre, mais ne se dit pas pareil.
     const r = controlerAncres(schemas, { racine: mkdtempSync(join(tmpdir(), "sans-ancre-")), lireAuTag: () => { throw new Error("ne doit pas être appelé"); } });
     expect(r).toEqual({ constats: [], raisons: [], ancres: 0 });
-    expect(auditer().resume).toMatch(/aucun schéma encore ancré à une publication/);
+  });
+
+  it("⚠️ TOUT JOB DE CI QUI JUGE L'ANCRE SORT LE DÉPÔT AVEC SES TAGS", () => {
+    // ⚠️ L'ANCRE A ROUGI LA PR QUI L'A POSÉE, ET LA GARDE AVAIT RAISON. Prouver l'immuabilité
+    // suppose de relire le schéma AU TAG (`git show v0.1.169:…`) : un checkout sans tags rend cette
+    // lecture impossible, la garde répond NON CONCLUANT — « rien n'a été vérifié, donc rien n'est
+    // prouvé » — et le job tombe. Le job `check` avait déjà `fetch-tags: true` ; `schema`, qui joue
+    // `charge/rapport.js` et juge sa cohorte au passage, ne l'avait pas.
+    //
+    // Une garde qui a besoin d'un objet git doit tourner là où cet objet existe. Ce banc lie les
+    // deux : quel que soit le job qui lance l'un de ces outils, son checkout emporte les tags.
+    const ci = parse(readFileSync(join(RACINE, ".github/workflows/ci.yml"), "utf8"));
+    const juge = (job) => (job.steps || []).some((e) => typeof e.run === "string"
+      && (e.run.includes("tools/artefact-de-charge.mjs") || e.run.includes("charge/rapport.js")));
+    const jugeurs = Object.entries(ci.jobs).filter(([, job]) => juge(job));
+    expect(jugeurs.length, "aucun job de CI ne juge la cohorte — la sonde vise à côté").toBeGreaterThan(0);
+    for (const [nom, job] of jugeurs) {
+      const sorties = (job.steps || []).filter((e) => String(e.uses || "").startsWith("actions/checkout@"));
+      expect(sorties.length, `le job ${nom} juge l'ancre sans sortir le dépôt`).toBeGreaterThan(0);
+      expect(sorties.some((e) => e.with && e.with["fetch-tags"] === true),
+        `le job ${nom} juge l'ancre mais sort le dépôt SANS ses tags : « git show <tag>:… » y est impossible`).toBe(true);
+    }
+  });
+
+  it("⚠️ LE SCHÉMA 1 EST ANCRÉ À v0.1.169, ET SON EMPREINTE EST CELLE DU TAG", () => {
+    // ⚠️ CE BANC EST LE GEL LUI-MÊME. Le 15/09, la sortie 0.1.169 a publié trois artefacts conformes
+    // — repris de la course CI de son propre commit, provenance contrôlée, cohorte rejugée. À partir
+    // de là, le schéma 1 ne bouge plus : toute clé ou sémantique nouvelle fait un schéma 2. La
+    // preuve ne se lit pas dans la copie courante — qu'un même commit pourrait modifier — mais au
+    // TAG, relu par `git show`, ce que `controlerAncres` fait sur le vrai dépôt.
+    //
+    // Un audit externe (CODEX) avait maintenu un veto sur ce gel tant que l'instrument acceptait une
+    // cohorte tronquée, pouvait réussir sans produire d'artefact et se bloquer sans le documenter.
+    // C'est ce veto qui a laissé le schéma 1 amendable assez longtemps pour recevoir la topologie,
+    // la provenance et les renommages du 15/09.
+    const ancres = JSON.parse(readFileSync(join(RACINE, ANCRES), "utf8"));
+    expect(ancres["1"]).toEqual({ tag: "v0.1.169" });
+    const r = controlerAncres(schemas, { racine: RACINE });
+    expect(r.constats, "le schéma 1 diffère de ce que porte le tag qui l'a publié").toEqual([]);
+    expect(r.raisons, "l'ancre n'a pas pu être relue au tag").toEqual([]);
+    expect(r.ancres).toBe(1);
+    expect(auditer().resume).toMatch(/1 ancre\(s\) de publication relue\(s\) au tag/);
   });
   it("⚠️ schéma modifié après le tag qui l'a publié → VIOLATION, empreintes nommées, remède : un schéma 2", () => {
     const modifie = clone(schema); modifie.properties.environment.properties.cpuCount.minimum = 2;
@@ -422,7 +467,7 @@ describe("4. la garde de la forge : trois issues", () => {
   it("sur le dépôt : conforme, en nommant les artefacts, la compilation en entier et l'état des ancres", () => {
     const r = auditer();
     expect(r.code, JSON.stringify(r)).toBe(0);
-    expect(r.resume).toMatch(/2 artefact\(s\) conformes — forme et invariants — aux schémas 1 compilés en entier \(ajv 2020-12 strict\) ; 2 exemple\(s\) du corpus ; aucun schéma encore ancré/);
+    expect(r.resume).toMatch(/2 artefact\(s\) conformes — forme et invariants — aux schémas 1 compilés en entier \(ajv 2020-12 strict\) ; 2 exemple\(s\) du corpus ; 1 ancre\(s\) de publication relue\(s\) au tag/);
   });
   it("des artefacts fournis par --fichier= sont jugés avec le corpus ET confrontés en cohorte, chaque défaut nommé avec son fichier", () => {
     const d = mkdtempSync(join(tmpdir(), "artefact-"));
