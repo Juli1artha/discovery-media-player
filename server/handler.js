@@ -1179,8 +1179,31 @@ async function handlerMesure(req, res) {
     if (share.require_auth === true && !visitors) return sendRefusal(res, "auth-unavailable", embed);
     const gated = share.require_auth === true && !visitor;
 
+    // L'ACCÈS PAR DOCUMENT (0.1.172) — greffon facultatif `documentAccess`. Le mur ne savait dire qu'une chose :
+    // « cette personne a prouvé son adresse ». Un hôte qui réserve un document à SON équipe, ou à une organisation,
+    // ne pouvait pas l'exprimer : toute adresse prouvée l'ouvrait. Le greffon répond, pour un document réservé et un
+    // visiteur identifié, « oui » ou « non » — c'est l'HÔTE qui sait qui a droit à quoi.
+    //   · absent : l'ancien comportement (une adresse prouvée suffit) — rien ne change pour un hôte qui ne l'a pas ;
+    //   · « non » : le mur revient, en disant que CETTE adresse n'a pas accès, et propose d'en utiliser une autre ;
+    //   · une panne (exception, réponse illisible, `reason: "unavailable"`) : REFUS — jamais d'ouverture par défaut.
+    let refusAcces = null;
+    if (share.require_auth === true && visitor && PLAYER.plugins.documentAccess) {
+      let d = null;
+      try { d = await PLAYER.plugins.documentAccess.decide({ share, visitor }); } catch (e) {
+        try { await PLAYER.errors.capture(e, { route: "doc", etape: "documentAccess" }); } catch { /* la capture ne décide rien */ }
+      }
+      if (!d || d.ok !== true) refusAcces = d && d.ok === false && d.reason !== "unavailable" ? "denied" : "auth-unavailable";
+    }
+    if (refusAcces === "auth-unavailable") {
+      if (String(q.file || "") === "1") { repondreJson(res, 503, { ok: false, error: "auth-unavailable" }); return; }
+      return sendRefusal(res, "auth-unavailable", embed);
+    }
+
     if (String(q.file || "") === "1") {
       if (gated) { repondreJson(res, 401, { ok: false, error: "auth" }); return; }
+      // Le FICHIER reste derrière un refus d'accès, comme derrière le mur : une page qui dit non en laissant ?file=1
+      // streamer le PDF serait une porte de décor.
+      if (refusAcces === "denied") { repondreJson(res, 403, { ok: false, error: "denied" }); return; }
       // Stream depuis le Storage en RELAYANT les requêtes Range → pdf.js charge progressivement (les 1res
       // pages s'affichent sans télécharger tout le PDF) → affichage bien plus rapide.
       const range = req.headers["range"];
@@ -1193,15 +1216,16 @@ async function handlerMesure(req, res) {
 
     // Soft wall : contenu réservé → on sert la page de connexion visiteur (email + code)
     // AVANT de charger le lecteur. À la vérification, le cookie est posé → un reload lève le mur.
-    if (gated) {
+    if (gated || refusAcces === "denied") {
       let wlogo = ""; try { wlogo = await PLAYER.branding.logo(); } catch { /* sans logo */ }
       const wnonce = crypto.randomBytes(16).toString("base64");
       const gcid = visitors.googleClientId();
       // Intégré : le mur reste affiché (le visiteur peut s'y connecter sur place) mais il DIT à
       // l'hôte que le document est retenu — sinon l'hôte croit à une panne et replie sur son
-      // lecteur, qui lui ouvrirait le document que ce mur protège.
-      const wall = softWallHtml(share, wnonce, wlogo, gcid)
-        + (embed ? `<script nonce="${wnonce}">try{parent.postMessage({type:"3dd-doc-embed-denied",reason:"auth-required"},"*")}catch(e){}</script>` : "");
+      // lecteur, qui lui ouvrirait le document que ce mur protège. Refusé à CETTE adresse : `denied`.
+      const raison = refusAcces === "denied" ? "denied" : "auth-required";
+      const wall = softWallHtml(share, wnonce, wlogo, gcid, refusAcces === "denied" ? { refuse: String(visitor.email || "") } : null)
+        + (embed ? `<script nonce="${wnonce}">try{parent.postMessage({type:"3dd-doc-embed-denied",reason:${jsonPourScript(raison)}},"*")}catch(e){}</script>` : "");
       return sendSoftWallHtml(res, wall, wnonce, [originOf(wlogo), originOf(share.brand_logo)].filter(Boolean).join(" "), embed ? embedFrameAncestors() : null);
     }
 

@@ -12,6 +12,18 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- **Un document réservé peut l'être à QUELQU'UN, pas seulement à « toute adresse prouvée ».** Le mur ne savait dire
+  qu'une chose : cette personne a prouvé son adresse. Un hôte qui réserve un document à son équipe, ou à une
+  organisation partenaire, ne pouvait pas l'exprimer — n'importe quelle adresse prouvée l'ouvrait. Nouveau greffon
+  facultatif `plugins.documentAccess.decide({ share, visitor })`, appelé pour un document `require_auth` une fois le
+  visiteur identifié : « oui » ouvre ; « non » remet le mur en disant que cette adresse n'a pas accès (avec la
+  possibilité d'en utiliser une autre), `?file=1` rend `403 denied` sans rien streamer, et le pont signale `denied` à
+  l'hôte ; une panne (exception, réponse illisible, `unavailable`) REFUSE (`auth-unavailable`, `503` pour le fichier),
+  jamais n'ouvre. Sans le greffon, rien ne change. Contrat : `docs/HOST-CONTRACT.md`. Banc : `murDocument.test.js`
+  (six cas, deux mutations rejouées).
+
 ## [0.1.171] — 2026-10-01
 
 ### Fixed

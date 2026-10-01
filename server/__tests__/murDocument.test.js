@@ -43,10 +43,12 @@ const PARTAGE = {
 };
 
 let lecturesFichier = [];
-function initialiser({ visitors = null, bot = null, forKey = async () => null } = {}) {
+let captures = [];
+function initialiser({ visitors = null, bot = null, documentAccess = null, forKey = async () => null } = {}) {
   lecturesFichier = [];
+  captures = [];
   player.init({
-    plugins: { ...(visitors ? { visitors } : {}), ...(bot ? { bot } : {}) }, has: () => false,
+    plugins: { ...(visitors ? { visitors } : {}), ...(bot ? { bot } : {}), ...(documentAccess ? { documentAccess } : {}) }, has: () => false,
     storage: {
       isAllowedUrl: (u) => String(u || "").startsWith("https://exemple.supabase.co/"),
       async fetchFile(url) { lecturesFichier.push(url); return { ok: true, status: 200, headers: { get: () => "application/pdf" }, arrayBuffer: async () => Buffer.from("pdf") }; },
@@ -57,7 +59,7 @@ function initialiser({ visitors = null, bot = null, forKey = async () => null } 
     identity: { async verifyToken() { return null; }, roleOf: () => "", isAdmin: () => false, async canManageShares() { return false; } },
     limits: { async allow() { return true; } },
     branding: { async logo() { return ""; }, name: "Studio", poweredBy: "", loaderName: "", forKey, title: (b) => b },
-    errors: { async capture() {} },
+    errors: { async capture(e, ctx) { captures.push({ message: e && e.message, ctx }); } },
     legal: { sourceUrl: "", legalUrl: "", privacyUrl: "", trackingNotice: "" },
     config: { supabaseUrl: "https://exemple.supabase.co", supabasePublishableKey: "k", mapsKey: "", extraFrameAncestors: [] },
   });
@@ -137,5 +139,73 @@ describe("l'habillage est best-effort : rien de décoratif n'empêche de lire", 
     const res = await ouvrir({ slug: "lien-1" });
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain("proposition.pdf");
+  });
+});
+
+// L'ACCÈS PAR DOCUMENT (0.1.172) — greffon `documentAccess`. Le mur ne savait dire que « adresse prouvée » ; un hôte qui
+// réserve un document à son équipe ne pouvait pas l'exprimer. Ce bloc tient les issues : oui, non (le mur le DIT et le
+// fichier reste derrière), panne (REFUS, jamais d'ouverture), absent (rien ne change), et quand il n'est PAS consulté.
+describe("l'accès par document (greffon documentAccess)", () => {
+  const visiteur = { currentVisitor: () => ({ email: "paul@exemple.fr" }), googleClientId: () => "" };
+  const appels = [];
+  const greffon = (reponse) => ({ decide: async (arg) => { appels.push(arg); if (reponse instanceof Error) throw reponse; return reponse; } });
+  beforeEach(() => { appels.length = 0; });
+
+  it("« oui » : le lecteur s'ouvre ; le greffon a reçu le lien et le visiteur", async () => {
+    initialiser({ visitors: visiteur, documentAccess: greffon({ ok: true }) });
+    const res = await ouvrir({ slug: "lien-1" });
+    expect(res.body).toContain("proposition.pdf");
+    expect(appels).toEqual([{ share: expect.objectContaining({ slug: "lien-1" }), visitor: { email: "paul@exemple.fr" } }]);
+  });
+
+  it("« non » : le mur revient et DIT que cette adresse n'a pas accès — le fichier reste derrière (403, rien de streamé)", async () => {
+    initialiser({ visitors: visiteur, documentAccess: greffon({ ok: false }) });
+    const page = await ouvrir({ slug: "lien-1" });
+    expect(page.body).toContain("Ce document vous est réservé");
+    expect(page.body).toContain("L'adresse paul@exemple.fr n'y a pas accès.");
+    expect(page.body).not.toContain("proposition.pdf");
+    const fichier = await ouvrir({ slug: "lien-1", file: "1" });
+    expect(fichier.statusCode).toBe(403);
+    expect(JSON.parse(fichier.body)).toEqual({ ok: false, error: "denied" });
+    expect(lecturesFichier).toHaveLength(0);
+  });
+
+  it("« non », intégré : l'hôte est prévenu par `denied` (il ne doit PAS replier sur son lecteur)", async () => {
+    initialiser({ visitors: visiteur, documentAccess: greffon({ ok: false }) });
+    const res = await ouvrir({ slug: "lien-1", embed: "1" });
+    expect(res.body).toContain("3dd-doc-embed-denied");
+    expect(res.body).toContain('reason:"denied"');
+  });
+
+  it("⚠️ une panne du greffon REFUSE : exception, réponse illisible ou `unavailable` — jamais d'ouverture, et l'exception est capturée", async () => {
+    for (const r of [new Error("registre en panne"), null, { ok: "oui" }, { ok: false, reason: "unavailable" }]) {
+      initialiser({ visitors: visiteur, documentAccess: greffon(r) });
+      const page = await ouvrir({ slug: "lien-1" });
+      expect(page.body).not.toContain("proposition.pdf");
+      expect(page.body).toMatch(/indisponible/i);
+      const fichier = await ouvrir({ slug: "lien-1", file: "1" });
+      expect(fichier.statusCode).toBe(503);
+      expect(lecturesFichier).toHaveLength(0);
+    }
+    initialiser({ visitors: visiteur, documentAccess: greffon(new Error("registre en panne")) });
+    await ouvrir({ slug: "lien-1" });
+    expect(captures).toEqual([{ message: "registre en panne", ctx: { route: "doc", etape: "documentAccess" } }]);
+  });
+
+  it("il n'est consulté que pour un document RÉSERVÉ et un visiteur IDENTIFIÉ", async () => {
+    partageRendu = { ...PARTAGE, require_auth: false };
+    initialiser({ visitors: visiteur, documentAccess: greffon({ ok: false }) });
+    expect((await ouvrir({ slug: "lien-1" })).body).toContain("proposition.pdf");
+    partageRendu = { ...PARTAGE };
+    initialiser({ visitors: { currentVisitor: () => null, googleClientId: () => "" }, documentAccess: greffon({ ok: false }) });
+    expect((await ouvrir({ slug: "lien-1" })).body).toContain("Accédez à votre document");
+    expect(appels).toEqual([]);
+  });
+
+  it("l'adresse refusée est échappée dans la page", async () => {
+    initialiser({ visitors: { currentVisitor: () => ({ email: "<b>x</b>@e.fr" }), googleClientId: () => "" }, documentAccess: greffon({ ok: false }) });
+    const res = await ouvrir({ slug: "lien-1" });
+    expect(res.body).not.toContain("<b>x</b>");
+    expect(res.body).toContain("&lt;b&gt;x&lt;/b&gt;@e.fr");
   });
 });
