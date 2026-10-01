@@ -512,6 +512,30 @@ said the player holds no server secret at all — too absolute: the standalone c
 The player's counters bound the *rate*; your plugin bounds the *code*. Both are needed, and neither
 replaces the other.
 
+## Who may open a restricted document (`plugins.documentAccess`, the next release)
+
+The visitor wall answers one question: *has this person proven an address?* A host that restricts a document to
+**its own team**, or to one partner organisation, could not express it — any proven address opened it. Provide
+`plugins.documentAccess` with:
+
+```js
+decide({ share, visitor }) → Promise<{ ok: true } | { ok: false, reason?: "denied" | "unavailable" }>
+```
+
+It is called for a document whose link carries `require_auth`, once the visitor is signed in (`visitor` is what
+`plugins.visitors.currentVisitor(req)` returned). It is **not** called for an open document, nor before the visitor
+signs in — the wall handles that.
+
+| your answer | what the reader gets |
+|---|---|
+| `{ ok: true }` | the document |
+| `{ ok: false }` | the wall again, saying *this address* has no access, so they can sign in with the one the document was sent to; `?file=1` answers `403 { error: "denied" }` without streaming; embedded, the bridge reports `denied` |
+| an exception, anything unreadable, or `{ ok: false, reason: "unavailable" }` | a **refusal** (`auth-unavailable`; `?file=1` → `503`) — never an opening. The exception goes to `errors.capture` |
+
+Without the plugin, nothing changes: a proven address opens the document, as before. ⚠️ **That is also why its
+absence is silent** — a host that upgrades the player without wiring the plugin keeps the old behaviour and sees no
+error. Test that your host actually provides it.
+
 ## ⚠️ What `limits.allow` promises changed
 
 It used to promise *best effort, per process*. The standalone context now counts in a **shared
@@ -919,7 +943,8 @@ closed.
 |---|---|---|
 | `revoked` | unknown or revoked link | do not open |
 | `auth-required` | restricted document, visitor not signed in | do not open — the wall stays up |
-| `auth-unavailable` | restricted document, access wall missing from this instance | do not open |
+| `auth-unavailable` | restricted document, access wall missing from this instance — or the host's `documentAccess` plugin failed | do not open |
+| `denied` | restricted document, visitor signed in but the host's `documentAccess` plugin says this address has no access (the next release) | do not open — the wall stays up and offers another address |
 | `expired` | the link's expiry date has passed (migration `0028`) | do not open — the page tells the reader to ask for a new link |
 | `password-required` | the link is password-protected and this browser has not entered it (migration `0028`) | do not open — the password page stays up in the frame |
 | `ended` | presentation over or unknown | do not open |

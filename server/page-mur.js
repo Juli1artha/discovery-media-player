@@ -14,7 +14,10 @@ function notFoundHtml() {
 // Page « soft wall » : accès à un document réservé (require_auth). On ne demande PAS un compte,
 // on propose de RECEVOIR le document — l'email est l'action pour débloquer, pas un péage.
 // Email → code à 6 chiffres → cookie posé → reload → le lecteur s'ouvre. (Google = Lot B.)
-function softWallHtml(share, nonce, logoUrl, googleClientId) {
+function softWallHtml(share, nonce, logoUrl, googleClientId, opts) {
+  // Refusé à CETTE adresse (greffon `documentAccess`, 0.1.172) : on le dit, et on garde le formulaire — l'issue est
+  // de s'identifier avec l'adresse à laquelle le document a été envoyé.
+  const refuse = opts && typeof opts.refuse === "string" ? opts.refuse : null;
   const title = esc(share.doc_title || share.file_name || "ce document");
   const brandLogo = esc(share.brand_logo || "");
   const dark = !!share.brand_dark;
@@ -56,8 +59,11 @@ function softWallHtml(share, nonce, logoUrl, googleClientId) {
 <body>
   <div class=card>
     ${logo ? `<img class=logo src="${logo}" alt="${logoAlt}">` : ""}
-    <h1>Accédez à votre document</h1>
-    <p class=sub><span class=doc>${title}</span><br>Débloquez-le en un instant.</p>
+    ${refuse !== null
+      ? `<h1>Ce document vous est réservé</h1>
+    <p class=sub><span class=doc>${title}</span><br>${refuse ? `L'adresse ${esc(refuse)} n'y a pas accès.` : "Cette adresse n'y a pas accès."} Identifiez-vous avec l'adresse à laquelle il vous a été envoyé.</p>`
+      : `<h1>Accédez à votre document</h1>
+    <p class=sub><span class=doc>${title}</span><br>Débloquez-le en un instant.</p>`}
 
     ${gcid ? `<div id=gbtn class=gbtn></div><div class=orsep><span>ou par email</span></div>` : ""}
     <div id=s1>
