@@ -41,6 +41,12 @@ require.cache[require.resolve("../shares.js")] = {
       const t = Object.values(SHARES).find((x) => x.slug === slug);
       return t ? { ...t } : null;
     },
+    // ⚠️ DEPUIS 0.1.171, LA PAGE LIT LE LIEN PAR `resoudreLien` (une lecture, la raison du refus comprise). Le double
+    // la dérive de `getShareBySlug` ci-dessus : une seule vérité par banc, et un inconnu reste « révoqué ».
+    resoudreLien: async (slug) => {
+      const t = Object.values(SHARES).find((x) => x.slug === slug);
+      return t ? { share: { ...t }, refus: null, ligne: { ...t } } : { share: null, refus: "revoked", ligne: null };
+    },
     logShareEvent: async () => {},
   },
 };
