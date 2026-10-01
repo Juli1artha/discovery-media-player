@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.172] — 2026-10-01
+
 ### Added
 
 - **Un document réservé peut l'être à QUELQU'UN, pas seulement à « toute adresse prouvée ».** Le mur ne savait dire
@@ -7844,7 +7846,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.171...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.172...HEAD
+[0.1.172]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.171...v0.1.172
 [0.1.171]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.170...v0.1.171
 [0.1.170]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.169...v0.1.170
 [0.1.169]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.168...v0.1.169
