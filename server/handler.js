@@ -9,7 +9,7 @@ const crypto = require("crypto");
 const { capturerSansBloquer } = require("./capture");
 const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
-const { getShareBySlug, resoudreLien } = require("./shares");
+const { resoudreLien } = require("./shares");
 const { PRESENT_QUOTA_PER_HOUR, PRESENT_CACHE_MS, estSlug } = require("./shared.generated.js");
 const { creerCache, CODE_SATURATION } = require("./cache.js");
 const mesures = require("./mesures.js");
@@ -1145,13 +1145,17 @@ async function handlerMesure(req, res) {
         embed ? embedFrameAncestors() : "'self'");
     }
 
-    const share = slug ? await getShareBySlug(slug, req) : null;
+    // ⚠️ UNE LECTURE, PAS DEUX. 0.1.170 demandait le lien à `getShareBySlug`, puis, quand il ne s'ouvrait pas,
+    // le RELISAIT par `resoudreLien` pour dire pourquoi — la même ligne, deux allers-retours, et sur le chemin le plus
+    // fréquent des refus (un lien révoqué qui circule encore). `resoudreLien` rend les deux à la fois.
+    const lu = slug ? await resoudreLien(slug, req) : { share: null, refus: "revoked", ligne: null };
+    const share = lu.share;
     if (!share) {
       // ⚠️ UN LIEN PROTÉGÉ (0028) NE SE CONFOND PAS AVEC UN LIEN RÉVOQUÉ. Expiré, il le DIT — la
       // personne peut en demander un autre ; fermé par un mot de passe, il le DEMANDE. Et dans les
       // deux cas le FICHIER reste derrière : servir la page du mot de passe en laissant `?file=1`
       // streamer le PDF serait une porte de décor (la leçon de `murDocument.test.js`).
-      const { refus, ligne } = slug ? await resoudreLien(slug, req) : { refus: "revoked", ligne: null };
+      const { refus, ligne } = lu;
       if (refus === "expired") {
         if (String(q.file || "") === "1") { repondreJson(res, 410, { ok: false, error: "expired" }); return; }
         if (!embed) return sendHtml(res, 410, lienExpireHtml(ligne));

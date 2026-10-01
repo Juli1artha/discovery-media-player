@@ -33,6 +33,7 @@ const LIEN = (surcharge = {}) => ({
 
 // ── La base simulée : les liens, la colonne de la 0028 (présente ou non), et ce qu'on y écrit. ──
 let liens = [];
+let lecturesDeLiens = 0;
 let colonnePresente = true;
 let ecrites = [];
 let fichiersLus = [];
@@ -46,6 +47,7 @@ const db = {
     }
     if (chemin.startsWith("commercial_doc_shares")) {
       const slug = decodeURIComponent((/slug=eq\.([^&]+)/.exec(chemin) || [])[1] || "");
+      if (methode === "GET") lecturesDeLiens += 1;
       if (methode === "GET") return liens.filter((l) => (!slug || l.slug === slug) && !l.revoked).map((l) => ({ ...l }));
       if (methode === "POST") { ecrites.push(...options.body); return []; }
       if (methode === "PATCH") {
@@ -284,6 +286,23 @@ describe("la création et la modification, côté hôte", () => {
     const { shares: liste } = await shares.listSharesForDoc("doc-42", null);
     expect(liste[0]).toMatchObject({ expiresAt: DEMAIN, protege: true });
     expect(JSON.stringify(liste)).not.toContain(EMPREINTE.split(":")[1]);
+  });
+});
+
+describe("⚠️ UNE LECTURE PAR PAGE (0.1.171) — un refus ne relit pas le lien pour dire pourquoi", () => {
+  // 0.1.170 lisait le lien par `getShareBySlug`, puis le RELISAIT par `resoudreLien` quand il ne s'ouvrait pas — deux
+  // allers-retours pour la même ligne, sur le chemin le plus fréquent des refus : un lien révoqué qui circule encore.
+  it.each([
+    ["révoqué", () => [], 404],
+    ["expiré", () => [LIEN({ expires_at: HIER })], 410],
+    ["protégé", () => [LIEN({ password_hash: EMPREINTE })], 200],
+    ["ouvert", () => [LIEN()], 200],
+  ])("lien %s : une seule lecture du lien", async (_n, jeu, statut) => {
+    liens = jeu();
+    lecturesDeLiens = 0;
+    const r = await ouvrir({ slug: "Lien-_Protege1" });
+    expect(r.statusCode).toBe(statut);
+    expect(lecturesDeLiens).toBe(1);
   });
 });
 

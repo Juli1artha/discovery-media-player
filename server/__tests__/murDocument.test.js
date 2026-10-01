@@ -23,7 +23,12 @@ const vraisShares = require("../shares.js");
 let partageRendu = null;
 require.cache[ID_SHARES] = {
   id: ID_SHARES, filename: ID_SHARES, loaded: true,
-  exports: { ...vraisShares, getShareBySlug: async () => partageRendu, logView: async () => {}, upsertSession: async () => ({}) },
+  exports: {
+    ...vraisShares, getShareBySlug: async () => partageRendu, logView: async () => {}, upsertSession: async () => ({}),
+    // ⚠️ DEPUIS 0.1.171, LA PAGE LIT LE LIEN PAR `resoudreLien` (une lecture, la raison du refus comprise). Le double
+    // la dérive de `getShareBySlug` ci-dessus : une seule vérité par banc, et un inconnu reste « révoqué ».
+    resoudreLien: async () => (partageRendu ? { share: partageRendu, refus: null, ligne: partageRendu } : { share: null, refus: "revoked", ligne: null }),
+  },
 };
 const ID_PRES = require.resolve("../presentations.js");
 const vraiesPres = require("../presentations.js");

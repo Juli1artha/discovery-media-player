@@ -29,7 +29,12 @@ const SHARE = {
 const vraisShares = require("../shares.js");
 require.cache[require.resolve("../shares.js")] = {
   id: require.resolve("../shares.js"), filename: require.resolve("../shares.js"), loaded: true,
-  exports: { ...vraisShares, getShareBySlug: async () => ({ ...SHARE }), logView: async () => {}, logShareEvent: async () => {} },
+  exports: {
+    ...vraisShares, getShareBySlug: async () => ({ ...SHARE }), logView: async () => {}, logShareEvent: async () => {},
+    // ⚠️ DEPUIS 0.1.171, LA PAGE LIT LE LIEN PAR `resoudreLien` (une lecture, la raison du refus comprise). Le double
+    // la dérive de `getShareBySlug` ci-dessus : une seule vérité par banc, et un inconnu reste « révoqué ».
+    resoudreLien: async () => ({ share: { ...SHARE }, refus: null, ligne: { ...SHARE } }),
+  },
 };
 
 const player = require("../handler.js");
