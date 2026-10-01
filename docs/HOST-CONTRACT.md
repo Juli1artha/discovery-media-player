@@ -583,7 +583,7 @@ POST  →  { "email": "…", "role": "…", "action": "<one of the names below>"
 | `list.all` | list everyone's links **and everyone's reading sessions** |
 | `revoke` | revoke a link |
 | `setauth` | change a link's access wall |
-| `protect` | set, change or remove a link's **expiry date and password** (since `0.1.170`) |
+| `protect` | set, change or remove a link's **expiry date and password** (migration `0028`) |
 | `overview` | read a document's aggregate figures |
 | `sessions` | read individual reading sessions — of one document, or of one recipient across all of them |
 | `test` | create a rehearsal link |
@@ -864,7 +864,7 @@ Four requirements, in order of what they cost when missed:
    decide. **Corollary:** when the reference itself carries a capability, signing is not enough —
    it must be encrypted. *Signed* means nobody can forge it; it has never meant nobody can read it.
 
-## Protected links and the start page (`0.1.170`)
+## Protected links and the start page (migration `0028`)
 
 **Capabilities `link-protection` and `start-page`.** Test them by presence before offering the feature.
 
@@ -920,8 +920,8 @@ closed.
 | `revoked` | unknown or revoked link | do not open |
 | `auth-required` | restricted document, visitor not signed in | do not open — the wall stays up |
 | `auth-unavailable` | restricted document, access wall missing from this instance | do not open |
-| `expired` | the link's expiry date has passed (`0.1.170`) | do not open — the page tells the reader to ask for a new link |
-| `password-required` | the link is password-protected and this browser has not entered it (`0.1.170`) | do not open — the password page stays up in the frame |
+| `expired` | the link's expiry date has passed (migration `0028`) | do not open — the page tells the reader to ask for a new link |
+| `password-required` | the link is password-protected and this browser has not entered it (migration `0028`) | do not open — the password page stays up in the frame |
 | `ended` | presentation over or unknown | do not open |
 | `url-not-allowed` | the file URL is not covered by the guard | **open**, and report the configuration |
 
