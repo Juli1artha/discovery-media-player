@@ -14,6 +14,12 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- **Une page de lien refusée lisait le lien deux fois.** 0.1.170 le demandait à `getShareBySlug`, puis,
+  quand il ne s'ouvrait pas, le relisait par `resoudreLien` pour dire pourquoi — la même ligne, deux
+  allers-retours, sur le refus le plus fréquent (un lien révoqué qui circule encore). La page interroge
+  désormais `resoudreLien` une fois : il rend le lien et la raison ensemble. Un banc compte les lectures
+  du lien dans quatre cas (révoqué, expiré, protégé, ouvert) : une chacun.
+
 - ⚠️ **0.1.170 est partie sur npm SANS Release, sans attestation et sans SBOM.** `attester` emporte les
   artefacts de charge de la course CI de son commit et les juge par `tools/artefact-de-charge.mjs`, qui
   relit le schéma **au tag** qui l'a ancré (`git show v0.1.169:…`). Son checkout n'avait pas les tags :
