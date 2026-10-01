@@ -68,6 +68,12 @@ purge stays silent (schema probe); the others still run.
 | `commercial_doc_shares.recipient_name` | recipient's name | same |
 | `commercial_doc_shares.created_by` | email of the salesperson who created it | same |
 | `commercial_doc_shares.file_name` | file name (may carry a person's name) | business data, purged with the row |
+| `commercial_doc_shares.password_hash` | scrypt hash of the link's password (`salt:hash`, migration 0028) — never served, never the password itself | kept while the link lives (it *is* the lock); removed by `docshare.protect` with `password: null`; purged with the row |
+
+⚠️ **An expired link is not a revoked one** (0028). Its expiry date closes it to readers, but does not
+start the 13-month clock: the purge reads `revoked_at`, and only revocation sets it. A host that wants
+expired links purged revokes them — expiry is an access rule, not a retention rule, and folding one into
+the other would make "extend this link" silently lose a year of statistics.
 
 ## Live presentations
 
