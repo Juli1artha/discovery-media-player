@@ -512,7 +512,7 @@ said the player holds no server secret at all — too absolute: the standalone c
 The player's counters bound the *rate*; your plugin bounds the *code*. Both are needed, and neither
 replaces the other.
 
-## Who may open a restricted document (`plugins.documentAccess`, 0.1.172)
+## Who may open a restricted document (`plugins.documentAccess`, the next release)
 
 The visitor wall answers one question: *has this person proven an address?* A host that restricts a document to
 **its own team**, or to one partner organisation, could not express it — any proven address opened it. Provide
@@ -944,7 +944,7 @@ closed.
 | `revoked` | unknown or revoked link | do not open |
 | `auth-required` | restricted document, visitor not signed in | do not open — the wall stays up |
 | `auth-unavailable` | restricted document, access wall missing from this instance — or the host's `documentAccess` plugin failed | do not open |
-| `denied` | restricted document, visitor signed in but the host's `documentAccess` plugin says this address has no access (0.1.172) | do not open — the wall stays up and offers another address |
+| `denied` | restricted document, visitor signed in but the host's `documentAccess` plugin says this address has no access (the next release) | do not open — the wall stays up and offers another address |
 | `expired` | the link's expiry date has passed (migration `0028`) | do not open — the page tells the reader to ask for a new link |
 | `password-required` | the link is password-protected and this browser has not entered it (migration `0028`) | do not open — the password page stays up in the frame |
 | `ended` | presentation over or unknown | do not open |
