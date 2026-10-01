@@ -29,6 +29,9 @@ const NON_SONDEES = new Set([
   // Voyage avec `last_token_at` dans la MÊME migration (0017) : sonder l'une suffit à savoir que 0017
   // est appliquée, l'autre est écrite au même endroit et n'a pas de dégradation distincte à signaler.
   "last_no_token_at",
+  // Voyage avec `expires_at` dans la MÊME migration (0028) : la sonde de `lienProtege` suffit, et la
+  // dégradation est commune aux deux — la création d'un lien protégé est REFUSÉE, jamais dégradée.
+  "password_hash",
 ]);
 
 const colonnesATTENDUES = new Set([...SCHEMA.matchAll(/colonne:\s*"([a-z_]+)"/g)].map((m) => m[1]));

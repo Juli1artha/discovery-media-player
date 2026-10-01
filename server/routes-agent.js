@@ -175,7 +175,7 @@ async function traiter(req, res, body, _slug) {
         try {
           const apiKey = process.env.ELEVENLABS_API_KEY;
           if (!apiKey) return jp(200, { ok: false, disabled: true });
-          const share = await getShareBySlug(String(body.slug || ""));
+          const share = await getShareBySlug(String(body.slug || ""), req);
           if (!share || !share.bot_enabled) return jp(404, { ok: false, error: "bot" });
           const text = normaliserTexte(body.text);
           if (!text) return jp(400, { ok: false, error: "empty" });
@@ -365,7 +365,7 @@ async function traiter(req, res, body, _slug) {
           const ip = adresseAppelant(req) || "anon";
           const allowed = await PLAYER.limits.allow(`docbot:${ip}`, 120, 3600);
           if (!allowed) return jp(429, { ok: false, error: "rate" });
-          const share = await getShareBySlug(String(body.slug || ""));
+          const share = await getShareBySlug(String(body.slug || ""), req);
           if (!share || !share.bot_enabled) return jp(404, { ok: false, error: "bot" });
           // ⚠️ UNE SESSION EST LIÉE À SON DOCUMENT — VÉRIFIÉ ICI, POUR TOUTES LES ACTIONS À LA FOIS.
           //

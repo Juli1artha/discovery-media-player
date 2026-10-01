@@ -7,7 +7,8 @@ const { adresseAppelant } = require("./appelant");
 const { capturerSansBloquer } = require("./capture");
 const { repondreJson } = require("./reponses.js");
 
-const { getShareBySlug } = require("./shares");
+const { getShareBySlug, resoudreLien } = require("./shares");
+const protection = require("./lien-protege.js");
 let PLAYER = null;
 
 // ⚠️ LA VÉRIFICATION N'AVAIT AUCUN PLAFOND — seule la DEMANDE de code en avait un (20/h par adresse).
@@ -27,6 +28,11 @@ let PLAYER = null;
 // pas de secret de serveur, donc une empreinte, pas un HMAC » — retiré (cinquième passe de l'audit,
 // 13/09) : trop absolu, et surtout la clé n'a pas besoin d'un secret du cœur, elle vient de l'hôte.
 const VERIF_PAR_ADRESSE = 100, VERIF_PAR_IDENTITE = 10, VERIF_FENETRE_IDENTITE_S = 900;
+// ⚠️ LE MOT DE PASSE D'UN LIEN SE FORCE COMME UN CODE (0028). Deux dimensions, pour la même raison :
+// par ADRESSE (un poste ne recommence pas à zéro en changeant de lien) et par LIEN (cent adresses ne
+// forcent pas un même lien). Pris À L'ADMISSION : réussite et échec consomment pareil. Le lien de
+// proposition de l'hôte d'origine n'avait AUCUN plafond — ce n'est pas le mécanisme qu'on reprend ici.
+const MDP_PAR_ADRESSE = 20, MDP_FENETRE_ADRESSE_S = 900, MDP_PAR_LIEN = 60, MDP_FENETRE_LIEN_S = 3600;
 const GOOGLE_PAR_ADRESSE = 100, DEMANDE_PAR_IDENTITE = 5;
 // ⚠️ UN SHA-256 D'EMAIL N'EST PAS UNE ANONYMISATION : il se renverse par dictionnaire — qui lit la
 // table des compteurs, une sauvegarde ou un outil d'administration précalcule les empreintes des
@@ -66,6 +72,21 @@ const init = (ctx) => { PLAYER = ctx; repliDit = false; };
 // entre ici et handler (un correctif à deux exemplaires finit par diverger) — et aucun appui
 // sur res.writableEnded, absent des `res` postiches des bancs comme de certains hôtes.
 async function traiter(req, res, body, _slug) {
+      // ── LIEN PROTÉGÉ PAR MOT DE PASSE (0028) : le bon mot pose le cookie, et la page se recharge. ──
+      // La règle (empreinte, cookie, comparaison à temps constant) vit dans lien-protege.js.
+      if (body.action === "link-unlock") {
+        const jl = (statut, obj, cookie) => repondreJson(res, statut, obj, cookie ? { "Set-Cookie": cookie } : null);
+        const ip = adresseAppelant(req) || "ip";
+        const slug = String(body.slug || "").slice(0, 64);
+        if (!(await PLAYER.limits.allow(`lienmdp:${ip}`, MDP_PAR_ADRESSE, MDP_FENETRE_ADRESSE_S))) return jl(429, { ok: false, error: "rate" });
+        if (!(await PLAYER.limits.allow(`lienmdp:lien:${slug}`, MDP_PAR_LIEN, MDP_FENETRE_LIEN_S))) return jl(429, { ok: false, error: "rate" });
+        // `resoudreLien` SANS requête : on veut la ligne d'un lien VIVANT (ni révoqué, ni expiré) que le
+        // mot de passe ferme — c'est exactement le refus `password`. Tout autre refus : rien à déverrouiller.
+        const { refus, ligne } = await resoudreLien(slug, null);
+        if (refus !== "password" || !ligne) return jl(404, { ok: false, error: refus === "expired" ? "expired" : "revoked" });
+        if (!protection.motValide(body.password, ligne.password_hash)) return jl(400, { ok: false, error: "password" });
+        return jl(200, { ok: true }, protection.cookieDeverrouillage(ligne));
+      }
       // ── Connexion VISITEUR (soft wall) : demande d'un code par email, puis vérification. ──
       // Émet un jeton signé posé en cookie qui débloque les contenus gatés (require_auth).
       if (body.action === "visitor-request" || body.action === "visitor-verify" || body.action === "visitor-google") {
@@ -77,7 +98,7 @@ async function traiter(req, res, body, _slug) {
           if (!(await PLAYER.limits.allow(`vcode:${ip}`, 20, 3600))) return jv(429, { ok: false, error: "rate" });
           // Une boîte ne se fait pas inonder depuis cent adresses : cinq codes par heure et par email.
           if (!(await PLAYER.limits.allow(`vcode:id:${await cleIdentite(V, body.email)}`, DEMANDE_PAR_IDENTITE, 3600))) return jv(429, { ok: false, error: "rate" });
-          const sh = await getShareBySlug(String(body.slug || ""));
+          const sh = await getShareBySlug(String(body.slug || ""), req);
           return jv(200, await V.requestCode(body.email, { title: sh && sh.doc_title }));
         }
         const recordUnlock = async (visitor, method) => {
