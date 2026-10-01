@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.170] — 2026-10-01
+
 ### Fixed
 
 - ⚠️ **Le banc du producteur héritait de l'environnement de la forge, et son verdict dépendait donc
@@ -7810,7 +7812,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.169...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.170...HEAD
+[0.1.170]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.169...v0.1.170
 [0.1.169]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.168...v0.1.169
 [0.1.168]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.167...v0.1.168
 [0.1.167]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.166...v0.1.167
