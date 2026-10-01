@@ -12,6 +12,34 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- **Liens protégés : une échéance et un mot de passe sur un lien tracé** (migration
+  `0028-liens-proteges.sql`, capacité `link-protection`). Demandé par le premier hôte, dont la
+  fenêtre de partage disait « sans expiration ». `docshare.create` accepte `expiresAt` et
+  `password` ; `docshare.protect` les change ou les retire — **une action neuve de
+  `canManageShares`**, qu'une table d'hôte fermée refusera tant qu'elle ne la connaît pas. La règle
+  vit dans `server/lien-protege.js` et s'applique au seul endroit où un lien se résout
+  (`getShareBySlug`) : la page, le fichier (`?file=1`), l'assistant, la mesure et le re-partage se
+  ferment ensemble.
+  - **Lien expiré** : il le dit (`410`, `embed-denied` motif `expired`).
+  - **Lien protégé** : il demande son mot de passe, et le fichier rend `401` tant qu'il n'est pas
+    saisi.
+    - Le cookie de déverrouillage est `HttpOnly` et dure 8 h.
+    - Il est signé avec l'**empreinte** du mot de passe : aucune variable de plus à poser, et
+      changer le mot de passe referme les navigateurs déjà entrés.
+    - Les essais sont plafonnés par adresse ET par lien.
+  - ⚠️ **Sans requête, verrouillé** : un appel interne qui oublie de la passer obtient
+    « introuvable », jamais « ouvert ».
+  - ⚠️ **Sans la migration, créer un lien protégé est REFUSÉ** (503, qui nomme le fichier) au lieu
+    de se dégrader en lien ouvert que l'hôte afficherait comme protégé.
+  - L'empreinte n'est **jamais servie** : `docshare.list` rend `expiresAt` et un booléen.
+  - Un re-partage hérite des deux.
+  - 28 essais, dix mutations rejouées.
+- **`?page=N` ouvre un PDF à la page N** (capacité `start-page`), sur un lien tracé comme sur
+  l'aperçu interne : un entier, borné à 10 000 par le serveur et au nombre réel de pages par la
+  visionneuse. Demandé pour qu'une réponse qui cite « page 12 » ouvre la page 12.
+
 ### Fixed
 
 - ⚠️ **Le banc du producteur héritait de l'environnement de la forge, et son verdict dépendait donc
