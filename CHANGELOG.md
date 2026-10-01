@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.171] — 2026-10-01
+
 ### Fixed
 
 - **Une page de lien refusée lisait le lien deux fois.** 0.1.170 le demandait à `getShareBySlug`, puis,
@@ -7830,7 +7832,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.170...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.171...HEAD
+[0.1.171]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.170...v0.1.171
 [0.1.170]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.169...v0.1.170
 [0.1.169]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.168...v0.1.169
 [0.1.168]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.167...v0.1.168
