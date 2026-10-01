@@ -21,7 +21,7 @@ the notes there are this file's section for that version.
   corrigé dans le job `schema` de `ci.yml` — et le banc qui devait l'empêcher de revenir **ne lisait
   que `ci.yml`**. Il lit désormais tous les workflows, dérivés du dossier. Élargi, il a rougi sur
   `attester` ET sur `annoncer`, qui aurait échoué juste après. 0.1.170 ne se rejoue pas sur son tag
-  (le workflow de ce tag est celui qui a cassé) : c'est 0.1.171 qui porte la Release, l'attestation et
+  (le workflow de ce tag est celui qui a cassé) : c'est la prochaine version qui porte la Release, l'attestation et
   la SBOM.
 
 ## [0.1.170] — 2026-10-01
