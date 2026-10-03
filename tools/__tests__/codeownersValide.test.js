@@ -14,7 +14,11 @@ import { regles, designeQuelqueChose, ecarts } from "../codeowners-valide.mjs";
 const REEL = readFileSync("CODEOWNERS", "utf8");
 const SUIVIS = execFileSync("git", ["ls-files"], { encoding: "utf8" }).split("\n").filter(Boolean);
 
-describe("le vrai CODEOWNERS", () => {
+// ⚠️ CE BLOC S'APPELAIT « le vrai CODEOWNERS », ET IL APPLIQUAIT DÉJÀ LA RÈGLE AU DÉPÔT. Son titre
+// n'était pas celui de la convention, si bien que `gardes-appliquees.mjs` ne pouvait pas le
+// reconnaître — et qu'une analyse l'avait, avant elle, déclarée appliquée à RIEN. Le contenu n'a pas
+// bougé : seul le titre dit maintenant ce qu'il faisait déjà.
+describe("le dépôt lui-même : le vrai CODEOWNERS", () => {
   it("porte assez de règles pour que la sonde ait quelque chose à lire", () => {
     expect(regles(REEL).length, "zéro règle lue n'est pas un succès : l'analyse ne reconnaît plus une ligne").toBeGreaterThanOrEqual(5);
   });

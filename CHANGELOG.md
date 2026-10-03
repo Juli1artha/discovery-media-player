@@ -12,6 +12,25 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- **`tools/gardes-appliquees.mjs` : chaque garde est appliquée à ce dépôt par quelque chose qui peut
+  échouer.** Deux gardes justes, couvertes par leurs bancs, n'avaient longtemps été lancées nulle
+  part, et `AGENTS.md` écrivait qu'exiger leur application était « une garde que nous n'avons pas
+  écrite ». Elle l'exige sous les deux formes que le dépôt pratique déjà : une étape de workflow qui
+  la lance sans pouvoir avaler son échec (`continue-on-error`, `|| true` et un lancement en
+  arrière-plan ne comptent pas), ou un bloc `describe("le dépôt lui-même")` dont le corps **utilise**
+  ce que le banc a chargé depuis la garde. Les exemptions sont re-vérifiées à chaque passage, et une
+  exemption qui ne dispense plus rien est refusée. Mesuré à sa fusion : 47 gardes, 40 lancées par un
+  workflow, 6 appliquées par un banc seulement, 1 exemptée (`orphelins-tts`, outil d'exploitation).
+  Sept mutants, sept tués. ⚠️ **L'analyse qui l'a demandée se trompait sur les six cas qu'elle
+  nommait** : elle déclarait six gardes « jamais lancées », et les six étaient appliquées — cinq par
+  un `garde.auditer()` sans argument que sa sonde, qui cherchait un vocabulaire, n'a pas vu ; la
+  sixième, `codeowners-valide`, sous un titre hors convention, seul changement qui en a découlé. Et
+  **le premier banc de la garde l'a prise en défaut** : elle créditait comme « chemin suivi » un nom de
+  fichier écrit dans une assertion, ce qui rendait « appliqué » l'outil qu'elle exempte. C'est la
+  règle symétrique — une exemption appliquée est refusée — qui l'a montré au premier passage.
+
 ## [0.1.172] — 2026-10-01
 
 ### Added

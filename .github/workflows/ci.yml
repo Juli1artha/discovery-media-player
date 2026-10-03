@@ -419,6 +419,15 @@ jobs:
         if: matrix.node == '22'
         run: node tools/configuration-des-bancs.mjs
 
+      # ⚠️ UNE GARDE APPLIQUÉE À RIEN ET UNE GARDE JAMAIS APPLIQUÉE VALENT LA MÊME CHOSE. Deux gardes
+      # justes, couvertes par leurs bancs, n'ont longtemps été lancées nulle part ; `AGENTS.md` a
+      # écrit qu'exiger leur application était « une garde que nous n'avons pas écrite ». Celle-ci
+      # l'exige : chaque garde est lancée par une étape qui peut échouer, ou appliquée au dépôt dans
+      # un bloc « le dépôt lui-même » — et elle se l'applique à elle-même par cette étape.
+      - name: Every guard is applied to this repository by something that can fail
+        if: matrix.node == '22'
+        run: node tools/gardes-appliquees.mjs
+
       # ⚠️ UNE MIGRATION LIVRÉE NE CHANGE PLUS — PAS MÊME UN COMMENTAIRE. Entre 0.1.163 et 0.1.164 la
       # 0004 a bougé (prose corrigée en place) ; les migrations voyagent dans le tarball, des hôtes
       # les ont exécutées et empreintées, et l'un d'eux a dû faire un `diff -u` pour savoir qu'il
