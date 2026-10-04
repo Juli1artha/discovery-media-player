@@ -87,7 +87,6 @@ decrire("campagne de charge contre une vraie base", () => {
     // ⚠️ LE VOLUME CONFIGURÉ SE DIT UNE FOIS, EN TÊTE — c'est un réglage de campagne, pas une
     // propriété de chaque bloc. Il était répété dans CHAQUE en-tête de relevé, où il devenait faux
     // dès que le bloc n'appelait pas autant : « relais de fichiers — 20 appels, 1000 appelants ».
-    // eslint-disable-next-line no-console
     console.log(`\n  CAMPAGNE DE CHARGE — volume configuré : ${SPECTATEURS} spectateurs `
       + "(PLAYER_CHARGE_SPECTATEURS). Chaque bloc ci-dessous dit le nombre d'appels QU'IL a émis.");
     process.env.SUPABASE_URL = BASE;
@@ -172,7 +171,6 @@ decrire("campagne de charge contre une vraie base", () => {
     const tries = ok.map((r) => r.ms).sort((a, b) => a - b);
     const erreurs = resultats.filter((r) => r.statut >= 500);
     const ligne = (n, v) => `    ${String(n).padEnd(28)}${v}`;
-    // eslint-disable-next-line no-console
     console.log([
       // ⚠️ CE LIBELLÉ ANNONÇAIT `SPECTATEURS` APPELANTS POUR CHAQUE BLOC, Y COMPRIS CEUX QUI N'EN
       // ONT PAS TANT. « relais de fichiers — 20 appels, 1000 appelants » : le second nombre était
@@ -226,7 +224,6 @@ decrire("campagne de charge contre une vraie base", () => {
     const retard = horloge.arreter();
     const apres = process.memoryUsage();
     const { ok, tries } = relever("lectures d'état", resultats, retard);
-    // eslint-disable-next-line no-console
     console.log(`    ${"croissance mémoire (Mo)".padEnd(28)}${Math.round((apres.arrayBuffers - avant.arrayBuffers + apres.heapUsed - avant.heapUsed) / 1048576)}`);
 
     expect(tries.length, "aucune lecture aboutie").toBeGreaterThan(0);
@@ -289,7 +286,6 @@ decrire("campagne de charge contre une vraie base", () => {
     const retard = horloge.arreter();
     const croissance = process.memoryUsage().arrayBuffers - avant.arrayBuffers;
     relever("relais de fichiers", resultats, retard);
-    // eslint-disable-next-line no-console
     console.log(`    ${"réservé (Mo)".padEnd(28)}${Math.round(croissance / 1048576)}`);
 
     const ok = resultats.filter((r) => r.statut >= 200 && r.statut < 400);
@@ -405,7 +401,6 @@ decrire("campagne de charge contre une vraie base", () => {
     };
     const petits = await compter(10, 1000);
     const grands = await compter(20, 2000);
-    // eslint-disable-next-line no-console
     console.log(`\n  ── croissance ──\n    ${"10 appelants → lignes".padEnd(28)}${petits}\n    ${"20 appelants → lignes".padEnd(28)}${grands}`);
     expect(petits, "aucune ligne créée : la mesure de croissance ne mesure rien").toBeGreaterThan(0);
     expect(grands / Math.max(1, petits),

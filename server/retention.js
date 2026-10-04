@@ -17,7 +17,15 @@
 // confronte les colonnes du schéma vivant à docs/RETENTION.md.
 
 let PLAYER = null;
-const init = (ctx) => { PLAYER = ctx; };
+// ⚠️ TROISIÈME ÉTAT : `storage.remove` ABSENT. Un hôte qui fournit `put` sans `remove` fabrique des
+// objets, et le balayage effaçait leur ligne « comme avant » — le seul chemin vers l'objet, puisque
+// la capacité expose `put` et `remove` mais jamais `list`. Trouvé par un hôte (STUDIO, 13/09) en
+// lisant les lignes 141 et 248 de ce fichier, pas la prose du contrat, qui supposait qu'on fournit
+// un `remove`. Le correctif de 0.1.164 distinguait « a échoué » de « a réussi » ; il ne voyait pas
+// « n'a pas été tenté ». Désormais : ligne RETENUE, comptée, et la capacité manquante est dite une
+// fois par processus — ici, pas à chaque ligne, sinon un balayage de mille lignes crie mille fois.
+let sansRemove = false, sansRemoveDit = false;
+const init = (ctx) => { PLAYER = ctx; sansRemove = false; sansRemoveDit = false; };
 const enc = encodeURIComponent;
 
 // Fenêtres par défaut de docs/RETENTION.md — l'hôte ajuste via `config.retention`.
@@ -29,6 +37,14 @@ const MIN_MOIS = 1, MAX_MOIS = 120;
 // négative calculerait une borne FUTURE (perte massive), zéro purgerait tout, une chaîne/NaN/
 // Infinity produirait une date invalide. On refuse AVANT le premier DELETE, en NOMMANT la clé.
 // Zéro n'est PAS une purge immédiate : ce serait un geste trop dangereux pour un défaut de config.
+//
+// ⚠️ ET LE FRÈRE DE CETTE FONCTION FAIT DÉLIBÉRÉMENT L'INVERSE — c'est dit ici parce qu'il est à
+// quatre cent cinquante lignes d'ici et qu'un lecteur n'arrive jamais aux deux. `delaiLecture()`
+// RETOMBE sur son défaut au lieu de lever. La sévérité se règle sur la CONSÉQUENCE DE L'ERREUR, pas
+// sur la nature du réglage : une fenêtre fausse supprime des lignes, un délai faux fait au pire
+// attendre. Un hôte a prédit le défaut de ne l'écrire qu'à un seul bout — « sans la phrase, le
+// prochain lecteur harmonisera, dans un sens ou dans l'autre, et croira corriger une incohérence ».
+// Uniformiser les deux serait donc une régression, quel que soit le sens choisi.
 function fenetresValidees() {
   const brut = { ...FENETRES, ...((PLAYER.config && PLAYER.config.retention) || {}) };
   const out = Object.create(null);   // nu : la garde de forme reconnaît cet accumulateur
@@ -102,9 +118,26 @@ const guill = (v) => encodeURIComponent('"' + String(v).replace(/\\/g, "\\\\").r
 // exige qu'il n'y en ait qu'une (server/__tests__/retentionUnePorte.test.js). Un troisième chemin
 // d'écriture DEVRA passer par ces portes, ou il rougira le compte. C'est « retirer la seconde
 // source de vérité » appliqué à la suppression : un seul endroit peut détruire.
-async function effacerParIds(table, colId, ids, opts) {
+/**
+ * ⚠️ LE PRÉDICAT DE PURGE VOYAGE AVEC LE DELETE, ET C'EST TOUT LE SUJET. On SÉLECTIONNE par date,
+ * puis on supprimait par IDENTIFIANT SEUL — deux requêtes, et entre les deux une ligne peut
+ * redevenir active. Un battement qui rafraîchit `last_at` juste après le SELECT laissait une ligne
+ * VIVANTE se faire supprimer, sur la foi d'une date qui n'était plus la sienne. Reproduit le 12/09
+ * (audit externe) : le DELETE émis était `session_id=in.("vivante")` et rien d'autre.
+ *
+ * ⚠️ CE N'EST PAS UN VERROU, ET ÇA N'A PAS À L'ÊTRE. PostgREST applique TOUS les prédicats de l'URL
+ * au moment du DELETE : rejouer le filtre d'origine fait juger la ligne sur son état À CET
+ * INSTANT-LÀ. Une ligne redevenue récente ne satisfait plus `last_at=lt.<borne>` et survit. La
+ * fenêtre de course ne disparaît pas, elle cesse d'être DESTRUCTRICE.
+ *
+ * ⚠️ ET LE FILTRE EST UN PARAMÈTRE OBLIGATOIRE, PAS OPTIONNEL. Optionnel, il s'oublie : un
+ * quatrième périmètre de purge écrit dans six mois recréerait le défaut en silence, et tout
+ * resterait vert. `select=` ne rend que ce qui a RÉELLEMENT été supprimé, donc le compte reste
+ * honnête quand la base refuse une ligne au dernier moment.
+ */
+async function effacerParIds(table, filtre, colId, ids, opts) {
   if (opts.dryRun || !ids || !ids.length) return 0;
-  const del = await PLAYER.db.request(`${table}?${colId}=in.(${ids.map(guill).join(",")})&select=${colId}`, { method: "DELETE", headers: { Prefer: "return=representation" } });
+  const del = await PLAYER.db.request(`${table}?${filtre}&${colId}=in.(${ids.map(guill).join(",")})&select=${colId}`, { method: "DELETE", headers: { Prefer: "return=representation" } });
   return Array.isArray(del) ? del.length : 0;   // lignes RENDUES, pas ids présélectionnés
 }
 // ⚠️ LE BUCKET EST UN PARAMÈTRE, PAS UNE CONSTANTE — ET LA PORTE RESTE UNIQUE. Deux périmètres
@@ -112,9 +145,23 @@ async function effacerParIds(table, colId, ids, opts) {
 // retrait donnerait deux chemins de destruction, dont un seul serait gardé. C'est exactement ce que
 // `retentionUnePorte.test.js` refuse de laisser arriver.
 async function retirerFichier(bucket, chemin, opts) {
-  if (opts.dryRun || !chemin) return null;   // null = rien tenté ; true = retiré ; false = échec
+  if (!chemin) return null;   // null = rien à retirer (ou dry-run) ; true = retiré ; false = pas retiré
   const retirer = PLAYER.storage && typeof PLAYER.storage.remove === "function" ? PLAYER.storage.remove.bind(PLAYER.storage) : null;
-  if (!retirer) return null;
+  if (!retirer) {
+    // Pas de capacité : l'objet ne peut PAS être retiré, donc la ligne ne doit pas partir. Même en
+    // dry-run on le note, pour qu'un hôte le lise AVANT d'armer le balayage.
+    sansRemove = true;
+    if (!sansRemoveDit) {
+      sansRemoveDit = true;
+      try {
+        capturerSansBloquer(PLAYER.errors, new Error("rétention : `storage.remove` n'est pas fourni — les lignes porteuses de fichiers"
+          + " sont RETENUES (leur objet resterait sinon inatteignable, la capacité n'exposant jamais `list`)."
+          + " Fournissez `storage.remove` pour qu'elles partent."), { route: "retention", benin: true });
+      } catch { /* jamais bloquant */ }
+    }
+    return opts.dryRun ? null : false;
+  }
+  if (opts.dryRun) return null;
   try { return !!(await retirer(bucket, chemin)); } catch { return false; }
 }
 
@@ -166,7 +213,7 @@ async function purgerParLots(table, filtre, colId, { dryRun = false, taille = LO
     if (!Array.isArray(lot) || !lot.length) break;
     examinees += lot.length;
     curseur = lot[lot.length - 1][colId];
-    supprimees += await effacerParIds(table, colId, lot.map((r) => r[colId]).filter((v) => v != null), { dryRun });
+    supprimees += await effacerParIds(table, filtre, colId, lot.map((r) => r[colId]).filter((v) => v != null), { dryRun });
     if (lot.length < limite) break;   // dernier lot (moins que demandé → plus rien après)
   }
   return { examinees, supprimees, tronque };
@@ -185,13 +232,14 @@ async function resteEncore(table, filtre, colId, curseur, dryRun) {
 // avec le slug de la présentation purgée. Une validation d'écriture n'est jamais la seule barrière
 // d'un delete : les lignes déjà en base d'avant le correctif peuvent porter une URL piégée.
 const { cheminPieceJointe: cheminSurSlug } = require("./presentations");
+const { capturerSansBloquer } = require("./capture");
 
 // Purge des messages d'une présentation morte, par lots bornés qui lisent id+attachment ENSEMBLE :
 // on retire les fichiers du bucket du lot (si l'hôte sait), puis on supprime le lot. Rend `tronque`
 // pour que l'appelant décide de garder ou non la présentation. Compte les lignes RENDUES.
 async function purgerMessagesPresentation(slug, opts, base, plafond) {
   const { dryRun, taille } = opts;
-  let supprimees = 0, fichiers = 0, fichiersErreur = 0, fichiersCandidats = 0, examinees = 0, tronque = false, curseur = null;
+  let supprimees = 0, retenues = 0, fichiers = 0, fichiersErreur = 0, fichiersCandidats = 0, examinees = 0, tronque = false, curseur = null;
   for (;;) {
     const reste = plafond - examinees;
     if (reste <= 0) { tronque = await resteEncore("doc_presentation_messages", `slug=eq.${enc(slug)}`, "id", curseur, dryRun); break; }
@@ -201,17 +249,34 @@ async function purgerMessagesPresentation(slug, opts, base, plafond) {
     if (!Array.isArray(lot) || !lot.length) break;
     examinees += lot.length;
     curseur = lot[lot.length - 1].id;
+    // ⚠️ LA LIGNE NE PART QUE SI SON FICHIER EST PARTI — ET LE CONTRAIRE ÉTAIT UN DÉFAUT DE
+    // RÉTENTION, PAS UNE IMPRÉCISION DE COMPTAGE. La suppression était INCONDITIONNELLE : un retrait
+    // qui échoue laissait la ligne partir, donc le CHEMIN du fichier disparaissait avec elle. Or la
+    // capacité `storage` du contrat expose `put` et `remove`, JAMAIS `list` — c'est l'argument que
+    // ce fichier écrit lui-même vingt lignes plus bas pour justifier la migration 0021. Sans ligne,
+    // il n'y a « littéralement rien à parcourir » : l'objet devient inatteignable POUR TOUJOURS,
+    // dans un bucket, et aucun balayage ne peut le rattraper. Reproduit le 12/09 (audit externe).
+    //
+    // ⚠️ ET UNE LIGNE RETENUE EST RÉCUPÉRABLE, UN FICHIER PERDU NE L'EST PAS. Le passage suivant la
+    // reverra et réessaiera ; une perte irréversible ne se rattrape par rien. Entre un retard visible
+    // et une perte silencieuse, on garde le retard — et `retenues` le NOMME dans le rapport, sans
+    // quoi on aurait remplacé un défaut muet par un autre.
+    const aEffacer = [];
     for (const j of lot) {
       const url = j.attachment && (typeof j.attachment === "object" ? j.attachment.url : j.attachment);
       const chemin = cheminSurSlug(url, slug, base);   // hors du dossier du slug → null → jamais retiré (barrière 2)
       if (chemin) fichiersCandidats += 1;              // compté même en dry-run (ce que la vraie purge tenterait)
       const issue = await retirerFichier("present-attachments", chemin, { dryRun });
       if (issue === true) fichiers += 1; else if (issue === false) fichiersErreur += 1;   // false = échec compté
+      // `null` = rien tenté (pas de capacité `storage`, dry-run, ou aucun fichier) : la ligne part,
+      // comme avant, et le rapport ne prétend pas avoir retiré quoi que ce soit.
+      if (issue === false) { retenues += 1; continue; }
+      if (j.id != null) aEffacer.push(j.id);
     }
-    supprimees += await effacerParIds("doc_presentation_messages", "id", lot.map((r) => r.id).filter((v) => v != null), { dryRun });
+    supprimees += await effacerParIds("doc_presentation_messages", `slug=eq.${enc(slug)}`, "id", aEffacer, { dryRun });
     if (lot.length < limite) break;
   }
-  return { supprimees, fichiers, fichiersErreur, fichiersCandidats, examinees, tronque };
+  return { supprimees, retenues, fichiers, fichiersErreur, fichiersCandidats, examinees, tronque };
 }
 
 /**
@@ -223,14 +288,17 @@ async function purgerMessagesPresentation(slug, opts, base, plafond) {
  * `list` : il n'y avait littéralement rien à parcourir. `doc_tts_objects` (migration 0021) est la
  * trace, et c'est elle qui rend cette purge possible.
  *
- * ⚠️ ET C'EST UN VISITEUR QUI DÉCIDE DE CE QUI Y ENTRE. `bot-tts` accepte le texte de l'appelant :
- * un texte unique laisse un MP3 et un JSON dans un bucket PUBLIC. Les plafonds de la 0.1.140
+ * ⚠️ CE COMMENTAIRE DISAIT « C'EST UN VISITEUR QUI DÉCIDE DE CE QUI Y ENTRE ». CE N'EST PLUS VRAI
+ * depuis que `bot-tts` confronte le texte à ce que l'assistant a réellement dit dans cette session :
+ * l'appelant PROPOSE, il ne choisit pas. Trouvé par un audit externe le 11/09, en même temps que la
+ * phrase jumelle de `docs/RETENTION.md`. Ce qui reste vrai est la conséquence : chaque texte DISTINCT
+ * ACCEPTÉ laisse un MP3 et un JSON dans un bucket PUBLIC. Les plafonds de la 0.1.140
  * bornent le coût par heure ; seule cette fenêtre borne la DURÉE.
  */
 async function purgerCacheDeVoix(opts, borneDate) {
   const { dryRun, taille, plafond } = opts;
   const filtre = `created_at=lt.${enc(borneDate)}`;
-  let supprimees = 0, fichiers = 0, fichiersErreur = 0, fichiersCandidats = 0, examinees = 0, tronque = false, curseur = null;
+  let supprimees = 0, retenues = 0, fichiers = 0, fichiersErreur = 0, fichiersCandidats = 0, examinees = 0, tronque = false, curseur = null;
   for (;;) {
     const reste = plafond - examinees;
     if (reste <= 0) { tronque = await resteEncore("doc_tts_objects", filtre, "hash", curseur, dryRun); break; }
@@ -240,6 +308,7 @@ async function purgerCacheDeVoix(opts, borneDate) {
     if (!Array.isArray(lot) || !lot.length) break;
     examinees += lot.length;
     curseur = lot[lot.length - 1].hash;
+    const aEffacer = [];
     for (const o of lot) {
       const h = o && o.hash;
       if (!h) continue;
@@ -258,26 +327,41 @@ async function purgerCacheDeVoix(opts, borneDate) {
       // ait échoué — un tiers des empreintes n'a légitimement pas de compagnon à retirer. Le compte
       // reste non masqué, mais sa lecture demande ce paragraphe : un exploitant qui découvrirait
       // deux cents « erreurs » à sa première purge chercherait une panne qui n'existe pas.
+      // ⚠️ C'EST L'AUDIO QUI COMMANDE LA LIGNE, PAS SON COMPAGNON — ET LA RAISON EST DÉJÀ ÉCRITE
+      // CI-DESSUS. Un tiers des empreintes n'a légitimement PAS de `.json` : faire dépendre la ligne
+      // des deux retiendrait un tiers du cache pour toujours, en croyant protéger des fichiers qui
+      // n'existent pas. Le `.mp3`, lui, existe toujours — c'est lui, et lui seul, dont la survie
+      // rendrait la ligne indispensable.
+      let audioPerdu = false;
       for (const suffixe of [".mp3", ".json"]) {
         fichiersCandidats += 1;   // compté même en dry-run : ce que la vraie purge tenterait
         const issue = await retirerFichier("tts-cache", h + suffixe, { dryRun });
         if (issue === true) fichiers += 1; else if (issue === false) fichiersErreur += 1;
+        if (suffixe === ".mp3" && issue === false) audioPerdu = true;
       }
+      // ⚠️ SANS LA LIGNE, L'OBJET EST INATTEIGNABLE — c'est l'argument exact qui justifie l'existence
+      // de `doc_tts_objects` (migration 0021), écrit dans l'en-tête de cette fonction : la capacité
+      // `storage` expose `put` et `remove`, jamais `list`, donc « il n'y a littéralement rien à
+      // parcourir ». Effacer la trace d'un audio qui a résisté, c'est purger le seul moyen de le
+      // purger. Un audit externe l'a reproduit le 12/09 : deux objets restés, la ligne partie.
+      if (audioPerdu) { retenues += 1; continue; }
+      aEffacer.push(h);
     }
     // ⚠️ LA LIGNE PART APRÈS LES OBJETS, JAMAIS AVANT. Effacer la trace d'abord rendrait les deux
     // objets définitivement inatteignables — on aurait purgé le seul moyen de les purger.
-    supprimees += await effacerParIds("doc_tts_objects", "hash", lot.map((r) => r.hash).filter((v) => v != null), { dryRun });
+    supprimees += await effacerParIds("doc_tts_objects", filtre, "hash", aEffacer, { dryRun });
     if (lot.length < limite) break;
   }
-  return { supprimees, fichiers, fichiersErreur, fichiersCandidats, examinees, tronque };
+  return { supprimees, retenues, fichiers, fichiersErreur, fichiersCandidats, examinees, tronque };
 }
 
 async function purgerRetention(now, optsBrutes = {}) {
+  sansRemove = false;   // le rapport dit ce qui a manqué pendant CE passage, pas pendant la vie du processus
   let f, opts;
   try { f = fenetresValidees(); opts = optionsValidees(optsBrutes); }
   catch (e) {
     if (!e.retentionInvalide) throw e;
-    try { PLAYER.errors.capture(e, { route: "retention" }); } catch { /* jamais bloquant */ }
+    try { capturerSansBloquer(PLAYER.errors, e, { route: "retention" }); } catch { /* jamais bloquant */ }
     return { ok: false, error: e.message };   // config OU option douteuse → zéro DELETE
   }
   const base = String((PLAYER.config && PLAYER.config.supabaseUrl) || "");
@@ -323,7 +407,7 @@ async function purgerRetention(now, optsBrutes = {}) {
   // des présentations ; la boucle s'arrête quand ils sont épuisés (tronque), sans supprimer les
   // parents restants. En dry-run, on parcourt quand même pour REMONTER ce que la vraie purge
   // ferait (examinés), sans jamais détruire.
-  const presRapport = { examinees: 0, supprimees: 0, messages: 0, presences: 0, messagesExaminees: 0, presencesExaminees: 0, fichiers: 0, fichiersErreur: 0, fichiersCandidats: 0, tronque: troncPres };
+  const presRapport = { examinees: 0, supprimees: 0, retenues: 0, messages: 0, presences: 0, messagesExaminees: 0, presencesExaminees: 0, fichiers: 0, fichiersErreur: 0, fichiersCandidats: 0, tronque: troncPres };
   let budgetMessages = opts.plafond, budgetPresences = opts.plafond;
   for (const p of (Array.isArray(mortes) ? mortes : [])) {
     const slug = p && p.slug; if (!slug) continue;
@@ -335,6 +419,7 @@ async function purgerRetention(now, optsBrutes = {}) {
     presRapport.fichiers += msgs.fichiers;
     presRapport.fichiersErreur += msgs.fichiersErreur;
     presRapport.fichiersCandidats += msgs.fichiersCandidats;
+    presRapport.retenues += msgs.retenues;
     budgetMessages -= opts.dryRun ? msgs.examinees : msgs.supprimees;
     // Présences : interrogées AUSSI en dry-run (pour remonter presencesExaminees), suppression
     // no-op via effacerParIds. Budget global partagé.
@@ -346,7 +431,14 @@ async function purgerRetention(now, optsBrutes = {}) {
     // (P2 onzième audit — sinon la supervision croit la purge complète alors qu'un reste subsiste).
     presRapport.tronque = presRapport.tronque || msgs.tronque || pres.tronque;
     // La présentation n'est supprimée que si TOUS ses enfants sont partis (9e audit).
-    if (!opts.dryRun && !msgs.tronque && !pres.tronque) {
+    //
+    // ⚠️ ET « RETENU » EST UNE FAÇON DE NE PAS ÊTRE PARTI QUE CETTE CONDITION NE CONNAISSAIT PAS.
+    // Elle ne regardait que `tronque` — « il en reste pour le prochain passage ». Le correctif du
+    // 12/09 introduit une SECONDE façon : un message dont le fichier a résisté est gardé exprès.
+    // Sans cette ligne, le parent serait supprimé au-dessus d'un enfant retenu — exactement
+    // l'orphelin que le neuvième audit avait fermé, rouvert par le correctif d'un autre défaut.
+    // Une réparation qui recrée ailleurs ce qu'elle ferme ici ne répare rien.
+    if (!opts.dryRun && !msgs.tronque && !pres.tronque && !msgs.retenues) {
       presRapport.supprimees += (await purgerParLots("doc_presentations", `slug=eq.${enc(slug)}`, "slug", opts)).supprimees;
     }
   }
@@ -368,7 +460,8 @@ async function purgerRetention(now, optsBrutes = {}) {
     doc_presentation_attendees: presRapport.presences,
     pieces_jointes: presRapport.fichiers,
   };
-  return { ok: true, dryRun: !!opts.dryRun, efface, rapport };
+  // `sansRemove` : la capacité manquait pendant CE passage, et `retenues` en porte la trace.
+  return { ok: true, dryRun: !!opts.dryRun, sansRemove, efface, rapport };
 }
 
 // Balayage opportuniste : au plus UN par fenêtre de 24 h (le verrou est le compteur de débit
@@ -388,7 +481,317 @@ function tick() {
   Promise.resolve()
     .then(() => PLAYER.limits.allow("retention:sweep", 1, 86400))
     .then((permis) => { if (permis) return purgerRetention(Date.now()); })
-    .catch((e) => { try { PLAYER.errors.capture(e, { route: "retention", benin: true }); } catch { /* jamais bloquant */ } });
+    .catch((e) => { try { capturerSansBloquer(PLAYER.errors, e, { route: "retention", benin: true }); } catch { /* jamais bloquant */ } });
 }
 
-module.exports = { init, purgerRetention, tick, borne };
+/**
+ * CE QUI RESTE DE L'HÉRITAGE, CHEZ CET HÔTE — les lignes qui portent encore une adresse IP ou un
+ * User-Agent brut.
+ *
+ * ⚠️ POURQUOI CE COMPTEUR EXISTE, ET C'EST UN HÔTE QUI L'A DIT. Nos tables vivent dans la base de
+ * nos hôtes, et l'audit d'un hôte énumère SES tables : le schéma d'une dépendance occupe une zone
+ * que les inventaires de personne ne visitent. Deux hôtes ont découvert 2361 lignes portant ces
+ * colonnes — non pas en surveillant, mais parce qu'un TIERS avait posé une question sur SA base.
+ * `retentionSweep` dit « je PEUX purger » ; il ne dit pas CE QUI S'ACCUMULE. Ce compteur le dit,
+ * chez chacun, sans que personne ait à y penser.
+ *
+ * ⚠️ ET IL RÉPOND À LA QUESTION QUI DÉCIDE DU RETRAIT DES COLONNES. `0026` et `0027` VIDENT sans
+ * supprimer, parce qu'une migration doit rester sûre pendant que la version précédente du code
+ * tourne. Le retrait attend que plus aucune version supportée ne les écrive — une condition qu'on
+ * ne peut aujourd'hui que SUPPOSER, en croyant savoir quelle version tourne chez qui. `vide` la
+ * rend LISIBLE.
+ *
+ * ⚠️ ON COMPTE DES LIGNES, PAS UN `count=exact`. La capacité `db` de l'hôte rend le corps de la
+ * réponse, pas ses en-têtes : le compte de PostgREST voyage dans `Content-Range`, donc il serait
+ * illisible sans élargir le contrat d'hôte — que des hôtes tiers implémentent eux-mêmes.
+ * D'où un comptage BORNÉ : au plus `BORNE_RESTE` identifiants, une seule petite colonne.
+ *
+ * ⚠️ CE CHOIX A UN COÛT, ET IL EST NOMMÉ ICI PLUTÔT QUE SUBI : lire des LIGNES, c'est dépendre des
+ * plafonds de qui les rend, et un hôte a mesuré que ce plafond peut être SOUS notre borne. Le
+ * compte d'en-tête n'a pas de plafond à deviner et ne transporte rien ; il est strictement
+ * supérieur, et le seul obstacle est le contrat. Tant que le contrat ne le rend pas, `resteApres`
+ * rattrape la seule chose qui rendait le nombre MENSONGER — l'affirmation d'exactitude.
+ *
+ * ⚠️ ET LA SATURATION SE DIT, ELLE NE SE DEVINE PAS — deux hôtes ont trouvé ce défaut dans la
+ * première version, le même jour, indépendamment. Elle demandait `limit=BORNE` et publiait
+ * `lignes.length` : sur une base portant cinq mille adresses, elle rendait `1000`, que rien ne
+ * distinguait d'un compte exact de mille. Un nombre faux qui se lit comme juste — pire qu'un
+ * nombre absent, parce que l'absence fait chercher et que le nombre fait conclure.
+ *
+ * Le remède vivait à trois cents lignes d'ici : `purgerRetention` rend `tronque` depuis toujours,
+ * pour exactement cette raison. On demande donc `BORNE + 1` : en recevoir autant prouve qu'il en
+ * reste, sans coûter une ligne de plus. `n` reste plafonné à la borne, et `tronque` dit qu'il faut
+ * le lire « au moins ».
+ *
+ * ⚠️ ET CE CORRECTIF ÉTAIT LUI-MÊME FAUX, D'UN CRAN PLUS LOIN — trouvé par un hôte réel QUATRE
+ * HEURES après sa publication. Il comparait le nombre de lignes reçues à NOTRE borne, donc il
+ * supposait que le seul plafond fût le nôtre. PostgREST en a un autre, `db-max-rows`, réglé à 1000
+ * par défaut chez Supabase : le serveur tronque EN AMONT, et la comparaison porte alors sur le
+ * mauvais nombre. Une table de 1651 lignes se lisait `1000` avec `tronque: false` — pire que la
+ * version d'avant, qui ne prétendait rien là où celle-ci AFFIRMAIT l'exactitude. `resteApres`
+ * ci-dessous pose désormais la seule question dont la réponse ne dépend d'aucun plafond.
+ *
+ * ⚠️ ET LE COÛT EST INVERSE DE L'INTUITION, donc il est dit plutôt que caché : quand il reste
+ * beaucoup de lignes, la base s'arrête à la borne et c'est rapide ; quand il n'en reste AUCUNE,
+ * elle parcourt la table pour ne rien trouver. Le cas cher est le cas terminal — celui où ce
+ * compteur a fini son office et disparaîtra avec les colonnes qu'il surveille. Il ne s'exécute
+ * d'ailleurs que sur `?contract=1&schema=1`, le seul mode où l'appelant demande la base.
+ *
+ * ⚠️ UN ÉCHEC REND `null`, JAMAIS ZÉRO. Zéro est la réponse qui autorise à supprimer une colonne :
+ * la fabriquer à partir d'une sonde en panne serait le pire mensonge que cette carte puisse faire.
+ */
+// ⚠️ CINQ MILLE, ET LE NOMBRE VIENT D'UNE MESURE. Il valait mille, et le banc écrit avec les
+// volumes RÉELS d'un hôte l'a fait rougir : sa table de vues en portait 1651. La borne saturait
+// donc dès le premier jour chez lui, et un compteur qui plafonne sous les volumes qu'il est censé
+// décrire ne décrit rien. Cinq mille couvre les deux hôtes connus avec de la marge, reste une
+// seule petite colonne à transférer, et `tronque` dit le reste. La borne est un plafond de COÛT,
+// pas une opinion sur ce qu'un hôte peut avoir.
+const BORNE_RESTE = 5000;
+
+// ⚠️ DOUZE SECONDES PAR DÉFAUT, ET LE NOMBRE VIENT D'ÉVITER UNE ÉGALITÉ, PAS D'UN GOÛT. Il valait
+// 8000 — très exactement le `statement_timeout` que DEUX hôtes ont mesuré sur leur rôle
+// `authenticator`, où il est le réglage par défaut de la plateforme et non une particularité. Deux
+// minuteries réglées sur la même valeur ne rendent pas un résultat faux ici (les deux voies
+// retombent sur `null`, un banc l'éprouve), mais elles rendent la CAUSE indécidable : quand notre
+// abandon gagne la course, le `57014` du serveur ne nous parvient jamais, et « la requête était trop
+// lente » devient indistinguable de « le réseau est tombé ».
+//
+// ⚠️ ET C'EST RÉGLABLE PARCE QU'UNE CONSTANTE CHOISIE CONTRE UN CAS CONNU PORTE LA DATE DE CE CAS.
+// Un hôte l'a formulé mieux que nous ne l'avions vu : « le jour où un hôte annonce 15 s, ce n'est pas
+// votre minuterie qu'il faudra ajuster — c'est le fait qu'elle soit une constante ». Corriger le
+// nombre aurait reproduit le défaut avec une mèche plus longue, exactement comme corriger un nombre
+// nu dans de la prose en produit un autre. `config.retention.delaiLectureMs` laisse l'hôte qui
+// CONNAÎT son plafond le dire ; son absence rend le comportement d'aujourd'hui, à l'octet près.
+const DELAI_LECTURE = 12000;
+const DELAI_MIN = 1000, DELAI_MAX = 120000;
+
+/**
+ * ⚠️ UNE VALEUR INVALIDE RETOMBE SUR LE DÉFAUT — elle ne lève PAS, à la différence des fenêtres de
+ * rétention juste au-dessus, et la différence est de conséquence : une fenêtre fausse SUPPRIME des
+ * lignes, un délai faux fait au pire attendre. Refuser de rendre la carte parce qu'un délai est mal
+ * tapé punirait le lecteur pour un réglage sans danger.
+ */
+function delaiLecture() {
+  const r = PLAYER.config && PLAYER.config.retention;
+  const v = r && Number(r.delaiLectureMs);
+  return Number.isFinite(v) && v >= DELAI_MIN && v <= DELAI_MAX ? Math.trunc(v) : DELAI_LECTURE;
+}
+
+const SONDES_RESTE = [
+  ["sessionsIp", "commercial_doc_sessions", "session_id", "ip"],
+  ["sessionsUa", "commercial_doc_sessions", "session_id", "ua"],
+  ["vuesUa", "commercial_doc_views", "id", "ua"],
+];
+
+/** Les tables regardées, pour le dénominateur — une par table, pas une par sonde. */
+const TABLES_RESTE = [["sessions", "commercial_doc_sessions", "session_id"],
+  ["vues", "commercial_doc_views", "id"]];
+
+/**
+ * ⚠️ ET LA COLONNE DISPARUE EST UN ÉTAT CONNU, PAS UNE PANNE. Le jour où un exploitant supprime ces
+ * colonnes — le geste que ce compteur sert à autoriser — la requête échoue avec le
+ * `42703` de PostgreSQL, « colonne inexistante ». Rendre `null` ferait alors lire « on ne sait
+ * pas » au moment EXACT où l'on sait le mieux : plus rien ne peut porter une colonne qui n'existe
+ * plus. Le compteur deviendrait aveugle précisément quand son sujet est réglé.
+ *
+ * Toute autre erreur reste `null`. Et un hôte dont la capacité `db` ne rend pas le corps analysé
+ * retombe sur `null` : ne pas savoir est le côté sûr, puisque zéro est ce qui autorise à supprimer.
+ */
+const COLONNE_ABSENTE = "42703";
+
+/**
+ * `{ n, tronque, voie }` — `n` nul veut dire indéterminé, jamais zéro.
+ *
+ * ⚠️ ET `voie` NOMME LE MÉCANISME QUI A PRODUIT LE NOMBRE, parce que le nombre seul ne le dit pas.
+ * Un compte exact et un compte borné NON tronqué rendent le même JSON : deux hôtes l'ont relevé le
+ * même jour, l'un en constatant qu'il ne pouvait pas vérifier sa propre couture, l'autre en
+ * écrivant un contrôle qui n'a marché que par chance de volume — sa table dépassait mille, donc la
+ * voie par lignes était structurellement incapable de rendre son chiffre. Sous mille, personne ne
+ * peut trancher, et un `db.count` qui rend une chaîne retombe SILENCIEUSEMENT sur la voie bornée :
+ * l'hôte croit sa couture branchée alors qu'elle ne sert pas.
+ */
+const compte = (n, tronque, voie) => ({ n, tronque, voie });
+
+const VOIE_EXACTE = "exact";
+const VOIE_BORNEE = "bornee";
+
+/**
+ * ⚠️ « MOINS QUE DEMANDÉ » NE PROUVE PAS LA FIN — ET C'EST UN HÔTE RÉEL QUI L'A MONTRÉ.
+ *
+ * La version précédente comparait le nombre de lignes reçues à NOTRE borne, et concluait « pas
+ * tronqué » dès qu'il était plus petit. Elle supposait que le seul plafond fût le nôtre. PostgREST
+ * en a un autre, `db-max-rows`, que Supabase règle à 1000 : le serveur rend 1000 lignes quoi qu'on
+ * demande. Sur une table de 1651 lignes, la carte a donc publié `1000` AVEC `tronque: false` —
+ * c'est-à-dire le défaut qu'on venait de corriger, déplacé d'un cran et AGGRAVÉ : la version d'avant
+ * ne prétendait rien, celle-là AFFIRMAIT que le nombre était exact.
+ *
+ * Le contrôle honnête ne porte donc pas sur une borne connue, mais sur la seule question dont la
+ * réponse ne dépend d'aucun plafond : « y a-t-il quelque chose APRÈS ce que j'ai reçu ? » On la
+ * pose en demandant UNE ligne au-delà de la dernière reçue. Une ligne rendue prouve qu'il en
+ * reste ; aucune prouve que le lot reçu était le tout — quel que soit le plafond qui l'a produit,
+ * et sans avoir à le connaître.
+ *
+ * ⚠️ PAR CURSEUR KEYSET (`cle=gt.<dernier>`), PAS PAR `offset` — et cette phrase est déjà écrite
+ * trois cent quatre-vingts lignes plus haut, au-dessus de `purgerParLots`, où elle dit la même
+ * chose depuis toujours : la garde de portabilité de la forge interdit `offset=`, et un curseur
+ * est de toute façon stable sous écriture concurrente. Première rédaction de cette sonde : par
+ * `offset`. La forge l'a refusée. C'est la SECONDE fois dans ce fichier qu'un remède déjà présent
+ * n'a pas été vu — après le drapeau `tronque` de `purgerParLots`. Un fichier dont on vient
+ * d'écrire la partie difficile se relit mal, et c'est un fait à traiter, pas une excuse.
+ *
+ * ⚠️ ET CE QU'ELLE NE COUVRE PAS EST DIT, PARCE QU'UNE GARDE MUETTE VAUT MOINS QUE PAS DE GARDE :
+ * un plafond serveur à ZÉRO reste indiscernable d'une table vide par le corps seul — les deux
+ * requêtes rendent zéro ligne. C'est la limite de la lecture par lignes, et la raison pour laquelle
+ * le compte d'en-tête (`Content-Range` sous `Prefer: count=exact`) lui est strictement supérieur :
+ * il ne dépend d'aucun plafond. Il demanderait d'élargir la capacité `db` du contrat d'hôte, qui ne
+ * rend aujourd'hui que le corps analysé.
+ *
+ * ⚠️ LES DEUX AUTRES VOIES ONT ÉTÉ MESURÉES CHEZ UN HÔTE, PAS SUPPOSÉES ICI. On les note pour que
+ * personne ne les repropose dans six mois en croyant qu'elles n'ont jamais été essayées :
+ *
+ *   `?select=count()` — MORT. `db-aggregates-enabled` vaut `false` par défaut, vérifié sur DEUX
+ *   projets Supabase distincts. Et la mesure est solide pour une raison qui vaut d'être dite :
+ *   l'erreur `PGRST123` arrive AVANT le contrôle de droits — la même table, interrogée sans
+ *   agrégat, rend `42501 permission denied`. La réponse ne dépend donc ni des droits ni d'un
+ *   `revoke` : c'est une propriété de la CONFIGURATION, pas de l'autorisation. C'était la voie
+ *   qu'on aurait préférée, puisqu'elle n'engageait aucun contrat.
+ *
+ *   `Prefer: count=exact` + `Range: 0-0` — MARCHE. Le compte exact voyage dans l'en-tête, le corps
+ *   ne transporte rien. C'est donc la SEULE des deux qui existe, et son seul obstacle est le
+ *   contrat d'hôte.
+ */
+async function resteApres(chemin, cle, dernier) {
+  // Sans curseur lisible, la fin ne se prouve pas : « au moins » est le seul côté sûr.
+  if (dernier == null) return true;
+  try {
+    const suite = await PLAYER.db.request(
+      `${chemin}&${cle}=gt.${enc(String(dernier))}&order=${cle}.asc&limit=1`, { timeoutMs: delaiLecture() });
+    // Pas de réponse analysable ⇒ on ne sait pas ⇒ « au moins ». Se tromper vers le minorant ne
+    // fait que sous-estimer ; se tromper vers l'exactitude fait conclure.
+    return !Array.isArray(suite) || suite.length > 0;
+  } catch { return true; }
+}
+
+/**
+ * ⚠️ LA VOIE EXACTE, QUAND L'HÔTE LA FOURNIT — ET LE CONTRAT DEMANDE LA QUESTION, PAS LE MÉCANISME.
+ * `db.count(chemin)` rend « combien de lignes ce chemin sélectionne-t-il ». Un hôte PostgREST y
+ * répond par `Prefer: count=exact` ; un hôte sur une autre base par un `count(*)`. Nommer l'en-tête
+ * dans le contrat l'aurait rendu PostgREST-seulement, ce que la règle de portabilité refuse.
+ *
+ * ⚠️ ELLE EST OPTIONNELLE, ET SON ABSENCE N'EST PAS UNE PANNE. Des hôtes tiers implémentent la
+ * capacité `db` eux-mêmes ; exiger une méthode nouvelle les casserait tous. Absente, on retombe sur
+ * le comptage borné ci-dessous, qui reste juste — seulement moins précis. C'est la seule forme
+ * d'ajout au contrat que ce dépôt s'autorise : celle dont le repli est le comportement d'avant.
+ *
+ * ⚠️ ET TOUT CE QUI N'EST PAS UN ENTIER POSITIF RETOMBE, plutôt que d'être cru. Un hôte qui rend
+ * `undefined`, une chaîne, ou un négatif n'a pas répondu à la question — le lire comme un compte
+ * fabriquerait le chiffre que ce fichier existe pour ne pas fabriquer.
+ */
+async function compteExact(chemin) {
+  // ⚠️ SORTIE ANTICIPÉE, PAS GARDE — ET LA DISTINCTION EST MESURÉE. Le `catch` ci-dessous suffirait
+  // à la correction : appeler une méthode absente lève, on retombe, le résultat est le même. Muté
+  // en `if (!PLAYER.db)`, AUCUN banc ne rougit — c'est dit ici plutôt que laissé croire à une
+  // protection. Ce que cette ligne achète est un COÛT : sans elle, tout hôte qui n'implémente pas
+  // `count` construirait cinq exceptions à chaque lecture de carte, pour rien.
+  if (!PLAYER.db || typeof PLAYER.db.count !== "function") return null;
+  try {
+    const n = await PLAYER.db.count(chemin);
+    return Number.isInteger(n) && n >= 0 ? n : null;
+  } catch {
+    // ⚠️ ON NE RECOPIE PAS ICI LA RÈGLE DE LA COLONNE ABSENTE. Une première rédaction traitait le
+    // `42703` sur cette voie aussi, pour rendre zéro « comme l'autre ». Muté, ce branchement n'a
+    // fait rougir aucun banc — et pour une raison de fond, pas par manque de cas : une colonne
+    // supprimée fait échouer LES DEUX voies de la même façon, donc le repli rend déjà ce zéro. Le
+    // branchement n'ajoutait rien d'observable et créait un SECOND endroit où tenir la même règle.
+    return null;   // on ne sait pas ⇒ on essaie l'autre voie, qui elle sait lire le 42703
+  }
+}
+
+async function compterBorne(chemin, cle) {
+  // ⚠️ UN COMPTE EXACT N'EST NI BORNÉ NI TRONQUÉ, quelle que soit sa taille : `borne` décrit la
+  // méthode par lignes, pas celle-ci. `tronque: false` garde donc le sens qu'il a partout —
+  // « lisez ce nombre comme exact » — au lieu d'en prendre un second selon la voie employée.
+  const exact = await compteExact(chemin);
+  if (exact !== null) return compte(exact, false, VOIE_EXACTE);
+  try {
+    // ⚠️ BORNE + 1 : la ligne excédentaire ne sert qu'à PROUVER qu'il en reste. On ne la publie pas.
+    // ⚠️ ET L'ORDRE N'EST PAS DÉCORATIF : sans lui, « la dernière ligne reçue » ne désigne aucune
+    // frontière, et le curseur de la sonde ne voudrait rien dire.
+    const lignes = await PLAYER.db.request(
+      `${chemin}&order=${cle}.asc&limit=${BORNE_RESTE + 1}`, { timeoutMs: delaiLecture() });
+    if (!Array.isArray(lignes)) return compte(null, false, VOIE_BORNEE);
+    // Notre propre borne atteinte : la preuve est dans la ligne excédentaire, rien à demander.
+    if (lignes.length > BORNE_RESTE) return compte(BORNE_RESTE, true, VOIE_BORNEE);
+    // Zéro ligne : la sonde au-delà rendrait zéro elle aussi et n'apprendrait rien — y compris sous
+    // un plafond à zéro, que ni l'une ni l'autre ne distingue d'une table vide.
+    if (!lignes.length) return compte(0, false, VOIE_BORNEE);
+    return compte(lignes.length, await resteApres(chemin, cle, lignes[lignes.length - 1][cle]),
+      VOIE_BORNEE);
+  } catch (e) {
+    if (e && e.details && e.details.code === COLONNE_ABSENTE) return compte(0, false, VOIE_BORNEE);
+    return compte(null, false, VOIE_BORNEE);   // indéterminé — surtout pas zéro
+  }
+}
+
+const compterReste = (table, cle, colonne) =>
+  compterBorne(`${table}?select=${cle}&${colonne}=not.is.null`, cle);
+
+/**
+ * ⚠️ ET LE COMPTEUR PORTE CE QU'IL A REGARDÉ — un hôte nous l'a demandé, et il avait raison.
+ *
+ * `sessionsIp: 0` ne distingue pas trois choses : « purgé », « jamais écrit », et « la sonde vise à
+ * côté ». Les deux premières se valent pour qui veut supprimer une colonne ; la troisième est un
+ * mensonge. Le dénominateur les sépare : « 0 sur 1908 lignes examinées » dit qu'il y avait quelque
+ * chose à regarder, « 0 sur 0 » dit que la table est vide ou hors d'atteinte et que le zéro ne
+ * prouve rien.
+ *
+ * C'est notre propre règle anti-vacuité — un plancher compte la FORME RECONNUE, pas les choses
+ * comptées — appliquée partout dans `tools/` et absente d'ici jusqu'à ce qu'un lecteur la réclame.
+ *
+ * ⚠️ ET IL NE COÛTE PRESQUE RIEN, à l'inverse du compte filtré : sans filtre, la base s'arrête à la
+ * borne dès les premières lignes. Une par TABLE, pas une par sonde — deux des trois colonnes vivent
+ * dans la même.
+ */
+const compterLignes = (table, cle) => compterBorne(`${table}?select=${cle}`, cle);
+
+async function resteDeLaPurge() {
+  const [comptes, totaux] = await Promise.all([
+    Promise.all(SONDES_RESTE.map(([, t, c, col]) => compterReste(t, c, col))),
+    Promise.all(TABLES_RESTE.map(([, t, c]) => compterLignes(t, c))),
+  ]);
+  // ⚠️ ACCUMULATEURS NUS, comme celui de `fenetresValidees` plus haut et pour la même raison : la
+  // garde de forme reconnaît `Object.create(null)`, et une écriture indexée par autre chose qu'un
+  // littéral n'a alors aucun prototype à polluer. Les clés viennent ici de constantes du fichier,
+  // mais un objet nu ne coûte rien et la propriété se lit sans avoir à remonter leur provenance.
+  const parTable = Object.create(null);
+  TABLES_RESTE.forEach(([nom], i) => { parTable[nom] = totaux[i].n; });
+  const out = Object.create(null);
+  out.borne = BORNE_RESTE;
+  // ⚠️ UN SEUL DRAPEAU POUR TOUT LE BLOC, parce qu'il ne sert qu'à une chose : dire au lecteur que
+  // les nombres qu'il voit sont des minorants. Un drapeau par compte suggérerait qu'on peut faire
+  // confiance aux autres, alors que la borne est commune et que la question ne l'est pas.
+  out.tronque = [...comptes, ...totaux].some((c) => c.tronque);
+  out.lignes = parTable;
+  // ⚠️ UNE SEULE RÉPONSE POUR LES CINQ COMPTES, ET TROIS ÉTATS PLUTÔT QUE DEUX. La question qu'un
+  // hôte se pose est « ma couture sert-elle ? », pas « laquelle des cinq ». `"mixte"` n'est pas une
+  // commodité : il arrive vraiment — un `count` qui lève sur le chemin d'une colonne supprimée et
+  // répond sur le total de la même table — et c'est précisément le cas qu'un drapeau binaire
+  // aurait dû arrondir dans un sens ou dans l'autre, donc mentir.
+  //
+  // ⚠️ CE CHAMP NE DIT RIEN SUR LA JUSTESSE DES NOMBRES, seulement sur leur provenance. Il ne
+  // double aucun autre : `tronque` vaut `false` sur les DEUX voies, c'est même toute la raison
+  // d'être de cette ligne.
+  const voies = [...comptes, ...totaux].map((c) => c.voie);
+  out.voie = voies.every((v) => v === VOIE_EXACTE) ? VOIE_EXACTE
+    : voies.every((v) => v === VOIE_BORNEE) ? VOIE_BORNEE : "mixte";
+  SONDES_RESTE.forEach(([nom], i) => { out[nom] = comptes[i].n; });
+  // ⚠️ TROIS ÉTATS, PAS DEUX. `true` : plus rien, le retrait des colonnes est permis ICI. `false` :
+  // il reste des lignes. `null` : au moins une sonde n'a pas répondu — on ne sait pas, et « on ne
+  // sait pas » ne doit jamais se lire comme « c'est bon ».
+  // ⚠️ `vide` RESTE JUSTE MÊME SATURÉ, et c'est ce qui compte : c'est le champ qui autorise le
+  // retrait d'une colonne, et la saturation ne peut le rendre que FAUX — jamais vrai à tort.
+  out.vide = comptes.some((c) => c.n === null) ? null : comptes.every((c) => c.n === 0);
+  return out;
+}
+
+module.exports = { init, purgerRetention, tick, borne, resteDeLaPurge, BORNE_RESTE };

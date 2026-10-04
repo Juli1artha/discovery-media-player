@@ -273,3 +273,127 @@ export function ancrageApresZoom(input: AncrageInput): { x: number; y: number } 
     ),
   };
 }
+
+// ─── Fenêtre virtuelle : ce qui existe dans le DOM, et ce qui n'est qu'une hauteur ───────────────
+//
+// ⚠️ LE PRÉSENTATEUR CRÉAIT UN ÉLÉMENT PAR PAGE ET UN BOUTON PAR VIGNETTE, POUR TOUT LE DOCUMENT.
+// Le rendu des canvas était déjà paresseux et borné (fenêtre glissante, budget de pixels) ; les
+// GABARITS, eux, étaient tous là. Mesuré par un audit externe dans un Chrome réel : 10 000 pages →
+// ~70 000 nœuds, 50 000 pages → ~450 000 nœuds, et une reconstruction au zoom de 2,4 s. Un document
+// hostile n'a même pas besoin d'être lourd : il lui suffit d'être long.
+//
+// ⚠️ LE CALCUL EST PUR ET VIT ICI, PAS DANS LE GABARIT. C'est lui qui décide ce qui existe ; s'il
+// se trompe, un lecteur voit un trou ou une page en double. Il s'éprouve donc seul, avec des
+// nombres, et la campagne de mutations peut le retirer pour vérifier que le banc du gabarit le voit.
+//
+// Le modèle : tous les éléments ont la MÊME hauteur estimée (celle de la première page, tournée) et
+// le même écart, comme les gabarits d'avant. Ceux dans la fenêtre sont matérialisés, dans le flux ;
+// avant et après, un espaceur porte la hauteur des absents. Une page rendue peut différer un peu de
+// l'estimation — c'était déjà vrai avant, et le flux l'absorbe de la même façon.
+
+export interface FenetreInput {
+  /** Position de défilement du conteneur (px). */
+  debutVisible: number;
+  /** Hauteur visible du conteneur (px). */
+  hauteurVisible: number;
+  /** Hauteur estimée d'un élément (px). */
+  hauteurElement: number;
+  /** Écart entre deux éléments (px). */
+  ecart: number;
+  /** Ce qui précède le premier élément dans le conteneur (px) — le padding. */
+  decalageHaut: number;
+  /** Nombre total d'éléments. */
+  total: number;
+  /** Éléments matérialisés en plus, de chaque côté du visible. */
+  marge: number;
+}
+
+export interface Fenetre {
+  /** Premier élément matérialisé (1-indexé), 0 si rien. */
+  debut: number;
+  /** Dernier élément matérialisé (1-indexé), 0 si rien. */
+  fin: number;
+  /** Hauteur de l'espaceur qui remplace les éléments avant `debut` (px). */
+  avant: number;
+  /** Hauteur de l'espaceur qui remplace les éléments après `fin` (px). */
+  apres: number;
+}
+
+const entier = (v: unknown, defaut = 0): number => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : defaut;
+};
+
+/** Le pas vertical d'un élément : sa hauteur et l'écart qui le suit. Jamais nul, sinon tout se superpose. */
+export function pasVertical(hauteurElement: unknown, ecart: unknown): number {
+  return Math.max(1, entier(hauteurElement, 1)) + Math.max(0, entier(ecart));
+}
+
+/** Position du haut de l'élément `n` (1-indexé) dans le conteneur, en px. */
+export function positionDe(n: number, i: Pick<FenetreInput, "hauteurElement" | "ecart" | "decalageHaut">): number {
+  return Math.max(0, entier(i.decalageHaut)) + (Math.max(1, Math.trunc(entier(n, 1))) - 1) * pasVertical(i.hauteurElement, i.ecart);
+}
+
+export function fenetreVirtuelle(i: FenetreInput): Fenetre {
+  const total = Math.max(0, Math.trunc(entier(i.total)));
+  if (total === 0) return { debut: 0, fin: 0, avant: 0, apres: 0 };
+  const pas = pasVertical(i.hauteurElement, i.ecart);
+  const marge = Math.max(0, Math.trunc(entier(i.marge)));
+  const haut = Math.max(0, entier(i.decalageHaut));
+  const y0 = Math.max(0, entier(i.debutVisible)) - haut;
+  const y1 = y0 + Math.max(0, entier(i.hauteurVisible));
+  // ⚠️ `floor` DES DEUX CÔTÉS, ET UN +1 POUR L'INDEX. Le premier élément dont le haut est sous
+  // y0 est floor(y0/pas)+1 ; celui qui contient y1 est floor(y1/pas)+1. Un `ceil` d'un côté
+  // laisserait un trou d'une page exactement sur une frontière — la classe de défaut que ce
+  // calcul existe pour rendre visible.
+  const premier = Math.floor(y0 / pas) + 1;
+  const dernier = Math.floor(y1 / pas) + 1;
+  const debut = Math.min(total, Math.max(1, premier - marge));
+  const fin = Math.max(debut, Math.min(total, dernier + marge));
+  return { debut, fin, avant: (debut - 1) * pas, apres: (total - fin) * pas };
+}
+
+/**
+ * Combien d'éléments une fenêtre peut matérialiser au plus — la BORNE que le banc du gabarit
+ * assert. Visible + marge des deux côtés, et deux frontières : un élément entamé en haut, un en bas.
+ */
+export function plafondFenetre(i: Pick<FenetreInput, "hauteurVisible" | "hauteurElement" | "ecart" | "marge">): number {
+  const pas = pasVertical(i.hauteurElement, i.ecart);
+  return Math.ceil(Math.max(0, entier(i.hauteurVisible)) / pas) + 2 + 2 * Math.max(0, Math.trunc(entier(i.marge)));
+}
+
+// ── Ce que le navigateur peut faire défiler ──────────────────────────────────────────────────
+//
+// ⚠️ LA VIRTUALISATION BORNE LE DOM, PAS LA GÉOMÉTRIE. Les espaceurs portent la hauteur de TOUTES
+// les pages absentes, et Chrome plafonne la hauteur de défilement autour de 33 554 430 px
+// (mesuré : 34 M, 40 M et 100 M demandés rendent 33 554 428 ou 33 554 432 selon la mise en page —
+// on retient le plus BAS, une page comptée atteignable doit l'être). Au-delà, un `scrollTop` posé ne
+// mène nulle part : à 200 % sur 1 440 px, une page fait ~3 900 px et la 8 615ᵉ est la dernière
+// atteignable — la moitié d'un document de 10 000 pages est injoignable, et le nombre de nœuds,
+// lui, reste parfaitement borné. Reproduit par un audit externe le 13/09 dans Chrome réel :
+// « même nombre de nœuds à 50 000 pages » était vrai et incomplet.
+//
+// Le remède durable est un défilement segmenté (position logique en pages, segment physique de
+// quelques milliers de pages, hauteur CSS tenue sous le plafond). En attendant, la visionneuse
+// CALCULE la dernière page atteignable à la géométrie courante et le DIT au lecteur, plutôt que de
+// le laisser défiler vers une page qui n'arrive jamais. Réduire le zoom rend des pages.
+/** Hauteur de défilement maximale d'un conteneur dans Chrome (LayoutUnit), en px. */
+export const PLAFOND_DEFILEMENT_PX = 33_554_428;
+
+/**
+ * La dernière page dont le HAUT ET LE BAS tiennent sous le plafond de défilement, à la géométrie
+ * donnée — donc la dernière qu'un `scrollTop` peut présenter entière. Au plus `total`.
+ */
+export function pagesAtteignables(
+  i: Pick<FenetreInput, "hauteurElement" | "ecart" | "decalageHaut" | "total">,
+  plafond: number = PLAFOND_DEFILEMENT_PX,
+): number {
+  const total = Math.max(0, Math.trunc(entier(i.total)));
+  if (total === 0) return 0;
+  const pas = pasVertical(i.hauteurElement, i.ecart);
+  const h = Math.max(1, entier(i.hauteurElement, 1));
+  const haut = Math.max(0, entier(i.decalageHaut));
+  const place = Math.max(0, entier(plafond, PLAFOND_DEFILEMENT_PX)) - haut - h;
+  if (place < 0) return 1;                                   // même la première déborde : elle reste la seule
+  return Math.max(1, Math.min(total, Math.floor(place / pas) + 1));
+}

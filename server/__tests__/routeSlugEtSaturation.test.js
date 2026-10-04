@@ -16,11 +16,18 @@ const vraies = require("../presentations.js");
 
 let lectures = 0;
 let bloquer = false;
+// ⚠️ DES DEFERREDS, PAS DES PROMESSES ÉTERNELLES. Une promesse qui ne se règle jamais laissait 128
+// lectures en vol dans le cache GLOBAL du gestionnaire ; sous mélange (graine 20260913), les essais
+// suivants de ce fichier recevaient 503 au lieu de 200 — et la garde d'ordre, qui lisait la sortie
+// texte, classait le fichier « déjà rouge » et se taisait. Trouvé par un audit externe le 13/09. On
+// garde les fonctions de résolution, on règle tout dans afterEach, et on VÉRIFIE que le cache est vide.
+const enAttente = [];
+const enVol = [];
 require.cache[ID] = { id: ID, filename: ID, loaded: true, exports: {
   ...vraies,
   getPresentation: async (slug) => {
     lectures++;
-    if (bloquer) return new Promise(() => {});          // base lente : la demande reste en vol
+    if (bloquer) return new Promise((resoudre) => enAttente.push(resoudre));   // base lente : la demande reste en vol, jusqu'à afterEach
     return { slug: String(slug), active: true, current_page: 1, chat_locked: false, presenter_name: "" };
   },
   listMessages: async () => [],
@@ -51,6 +58,11 @@ function lire(slug, query) {
 }
 
 beforeEach(() => { lectures = 0; bloquer = false; });
+afterEach(async () => {
+  for (const resoudre of enAttente.splice(0)) resoudre({ slug: "liberee", active: true, current_page: 1, chat_locked: false, presenter_name: "" });
+  await Promise.allSettled(enVol.splice(0));
+  expect(player.__cacheLecture.enVol(), "un banc rend le cache de lecture SANS lecture en vol, sinon le suivant hérite de ses 503").toBe(0);
+});
 
 // Des formes qu'un lecteur peut poster et que le contrat refuse. Chacune était, avant, une clé de
 // cache valide et une requête base de plus.
@@ -89,7 +101,6 @@ describe("saturation du cache : 503 réessayable, pas 500", () => {
   it("au-delà du plafond d'admission, la route rend 503 avec Retry-After", async () => {
     bloquer = true;
     // On sature avec des clés distinctes valides ; la base ne répond jamais.
-    const enVol = [];
     for (let i = 0; i < 200; i++) enVol.push(lire("sat" + String(i).padStart(6, "0")).catch(() => null));
     await new Promise((r) => setImmediate(r));
     const resultats = await Promise.all(enVol.map((p) => Promise.race([p, Promise.resolve(null)])));

@@ -407,10 +407,50 @@ describe("état OBSERVÉ du chemin fusionné", () => {
   // ⚠️ MODULE NEUF, ET C'EST NÉCESSAIRE : l'état vit dans le module. Le lire après d'autres essais
   // mesurerait leur héritage, pas la valeur initiale — un essai qui dépend de son rang dans le
   // fichier ne prouve pas ce qu'il annonce.
+  //
+  // ⚠️ ET LE MÉCANISME D'AVANT NE LE FAISAIT PAS. Cet essai appelait `vi.resetModules()` puis
+  // `require` — MESURÉ ICI, les deux rendent le MÊME objet d'exports en CommonJS : `resetModules`
+  // vide le registre des modules transformés par vite, pas le cache `require` de Node. Donc `neuf`
+  // n'était pas neuf, et cet essai lisait depuis toujours l'héritage de ses voisins. Il ne passait
+  // dans l'ordre du fichier que parce qu'il s'y trouve en tête de bloc. Le commentaire ci-dessus
+  // énonçait la bonne règle au-dessus d'un mécanisme qui ne l'appliquait pas.
+  //
+  // Ce qui rend VRAIMENT une instance neuve : retirer l'entrée du cache `require` (vérifié : objet
+  // différent). On REPOSE ensuite l'ancienne, sinon deux instances du module coexisteraient dans ce
+  // fichier — celle que `joueurFusion` initialise et celle que les `require` suivants trouveraient.
   it("inconnu sur un processus qui n'a servi aucun battement — l'absence d'observation n'est pas un feu vert", async () => {
-    vi.resetModules();
-    const neuf = require("../presentations.js");
-    expect(neuf.etatFusionBattement()).toBe("inconnu");
+    const chemin = require.resolve("../presentations.js");
+    const ancien = require.cache[chemin];
+    delete require.cache[chemin];
+    try {
+      const neuf = require("../presentations.js");
+      expect(neuf, "sans instance neuve, cet essai mesurerait ses voisins").not.toBe(presentations);
+      expect(neuf.etatFusionBattement()).toBe("inconnu");
+    } finally {
+      require.cache[chemin] = ancien;
+    }
+  });
+
+  // ⚠️ CE QUE `init` JETTE, ET POURQUOI CE N'EST PAS UNE COMMODITÉ DE BANC. Un mémo d'exécution dit
+  // ce que CE processus a constaté de CETTE base. `init` reçoit un contexte neuf, qui peut porter
+  // une AUTRE base : garder l'observation d'avant, c'est rapporter une propriété de la base
+  // précédente sous le nom de la nouvelle. Le mémo du durcissement était jeté depuis toujours ;
+  // celui de la fusion, ajouté plus tard sous la consigne « même patron que 0018 », ne l'était pas.
+  // Les deux jumeaux étaient identiques sur le chemin de LECTURE — le seul que les bancs
+  // regardaient — et divergeaient sur la remise à zéro.
+  it("⚠️ `init` jette l'observation de la fusion, comme celle du durcissement — sinon elle parle de la base d'avant", async () => {
+    joueurFusion(pgrst202Details);
+    await battre();
+    expect(presentations.etatFusionBattement(), "l'observation est bien posée avant qu'on la jette").toBe("degrade");
+
+    // Un contexte NEUF : une autre base, qui n'a rien à voir avec celle qu'on vient d'observer.
+    presentations.init({ errors: { capture() {} }, db: { async request() { return []; } } });
+    expect(presentations.etatFusionBattement(),
+      "ce processus n'a rien constaté de CETTE base — « inconnu », jamais l'héritage")
+      .toBe("inconnu");
+    expect(presentations.etatDurcissementBootstrap(),
+      "le jumeau se comporte pareil, c'est la consigne écrite trois fois dans presentations.js")
+      .toBe("inconnu");
   });
 
   it("actif après un battement fusionné qui a abouti", async () => {

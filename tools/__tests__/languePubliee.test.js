@@ -138,3 +138,64 @@ describe("⚠️ sur le tarball réel, le compteur lit encore de la prose", () =
     expect(parlants, `3 sur 3 le 31/08 — ${fichiers.join(", ")}`).toBeGreaterThanOrEqual(PLANCHER_PARLANTS);
   });
 });
+
+// ⚠️ LE RETRAIT DES BARRIÈRES N'ÉTAIT VU PAR PERSONNE, ET LA RAISON N'EST PAS CELLE QU'ON CROIT.
+// Mesuré le 01/09 : aveuglé, ni la garde ni ce banc ne bougent. Le premier banc écrit pour l'exercer
+// ne les voyait pas davantage, et c'est instructif — un bloc clôturé porte SIX accents graves, un
+// nombre PAIR, et `/`[^`]*`/g` les apparie deux à deux jusqu'à tout avoir mangé. Le second
+// dépouillage efface le bloc à lui seul. Les deux sondes se recouvrent sur presque tout.
+//
+// ⚠️ CE QUI LES SÉPARE : un contenu qui porte un nombre IMPAIR d'accents graves. L'appariement deux
+// à deux se décale alors d'un cran et rend au texte des morceaux du bloc. Mesuré sur les 31
+// markdown du dépôt le 01/09 : `compte()` donne le MÊME résultat avec et sans le retrait des
+// barrières — aucun document d'aujourd'hui ne porte cette forme. La sonde ne sert donc rien
+// aujourd'hui ; elle sert le jour où un document montre un accent grave dans un bloc, et ce jour-là
+// elle décide seule. C'est ce jour-là qu'on éprouve ici, faute de pouvoir l'éprouver sur le dépôt.
+describe("⚠️ la prose s'arrête aux blocs de code — les identifiants ne sont pas de la langue", () => {
+  const BARRIERE = "`".repeat(3);
+  const enLigneSeul = (txt) => txt.replace(/`[^`]*`/g, " ");
+
+  it("un bloc clôturé est retiré, pas seulement les accents graves d'une ligne", () => {
+    const md = `Une phrase.\n\n${BARRIERE}js\nconst fichiersCandidats = leur.pour(une);\n${BARRIERE}\n\nUne autre.\n`;
+    expect(prose(md), "le contenu du bloc ne doit plus être là").not.toContain("fichiersCandidats");
+    expect(prose(md)).toContain("Une phrase.");
+    expect(prose(md)).toContain("Une autre.");
+  });
+
+  // ⚠️ CE CAS NE PROUVE RIEN SUR LA BARRIÈRE, et il est écrit pour qu'on cesse de le croire. Il
+  // passe à l'identique quand le retrait des barrières est aveuglé : c'est le dépouillage EN LIGNE
+  // qui fait tout le travail. Le pin ici pour que le prochain banc ne se contente pas de cette
+  // forme-là en pensant avoir couvert la première sonde.
+  it("⚠️ et sur un bloc à nombre PAIR d'accents graves, le retrait en ligne y suffisait seul", () => {
+    const md = `A\n${BARRIERE}\nle la les des qui pour dans\n${BARRIERE}\nB`;
+    expect(enLigneSeul(md), "l'appariement deux à deux a déjà tout mangé").not.toContain("les des");
+    expect(compte(enLigneSeul(md))).toEqual(compte(md));
+  });
+
+  it("⚠️ mais sur un nombre IMPAIR, la barrière décide seule — et le verdict bascule", () => {
+    const md = `This document is written in English.\n\n${BARRIERE}sh\nsed "s/\`/x/" les des qui pour dans une par sur\n${BARRIERE}\n\nAnd it ends in English.\n`;
+    expect(compte(md), "le bloc est du shell, pas de la prose").toEqual({ fr: 0, en: 2 });
+    expect(compte(enLigneSeul(md)).fr, "sans la barrière, six identifiants deviennent du français")
+      .toBe(6);
+    expect(ecartLangue("docs/X.md", md), "français < anglais : rien à dire").toBe(null);
+    expect(ecartLangue("docs/X.md", enLigneSeul(md)), "aveuglée, la garde accuserait un document anglais")
+      .toMatch(/n'est pas en anglais/);
+  });
+
+  it("⚠️ et c'est ce qui empêche du code d'être compté comme du français", () => {
+    // `pour`, `une`, `leur` sont des mots-outils français ; ici ce sont des identifiants.
+    const md = `The document is written in English.\n\n${BARRIERE}js\nconst pour = une(leur, dans, avec);\n${BARRIERE}\n`;
+    expect(compte(md).fr, "aucun mot français : tout le « français » était du code").toBe(0);
+    expect(compte(md).en, "l'anglais de la prose est bien compté").toBeGreaterThan(0);
+  });
+
+  it("les portions entre accents graves simples sont retirées aussi", () => {
+    expect(prose("Voir `pour une leur` ici.")).not.toContain("pour une leur");
+  });
+
+  it("un bloc non fermé ne mange pas le reste — la garde ne doit pas devenir aveugle sur une faute de frappe", () => {
+    const md = `Une phrase.\n\n${BARRIERE}js\nconst x = 1;\n`;
+    expect(prose(md), "sans fermeture, le retrait ne s'applique pas et la prose reste lisible")
+      .toContain("Une phrase.");
+  });
+});

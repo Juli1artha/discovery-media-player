@@ -45,7 +45,11 @@ export function blocsDe(fichier, texte) {
     (def.steps || []).forEach((etape, i) => {
       if (typeof etape.run !== "string") return;
       const shell = etape.shell || def.defaults?.run?.shell || w.defaults?.run?.shell || "bash";
-      blocs.push({ fichier, job, indice: i + 1, nom: etape.name || `étape ${i + 1}`, shell, run: etape.run });
+      // `continue-on-error`, de l'étape ou du job : un bloc qui ne peut pas faire échouer son étape ne
+      // garde rien, quoi qu'il lance — `gardes-appliquees.mjs` le lit ici plutôt que de reparser le YAML.
+      // Toute valeur autre que `false` compte, y compris une expression : « peut ne pas échouer » suffit.
+      const continueOnError = [etape["continue-on-error"], def["continue-on-error"]].some((v) => v !== undefined && v !== false);
+      blocs.push({ fichier, job, indice: i + 1, nom: etape.name || `étape ${i + 1}`, shell, run: etape.run, continueOnError });
     });
   }
   return blocs;
@@ -117,13 +121,23 @@ export function temoinNonVu(analyser = analyserAvecBash) {
     : "bash n'a pas refusé un script qu'on sait cassé — il n'est pas lancé, ou son refus n'arrive plus jusqu'ici ; les blocs de ce dépôt n'ont donc été analysés par personne";
 }
 
+/**
+ * Quel binaire juge ce bloc. ⚠️ EXTRAIT POUR ÊTRE ÉPROUVÉ SANS DÉPENDRE DU SYSTÈME. La règle
+ * « un bloc déclaré `sh` est jugé par sh » n'était vérifiable qu'en trouvant une forme que les deux
+ * analyseurs ne lisent PAS pareil — ce qui suppose un `/bin/sh` distinct de bash. C'est vrai sur les
+ * distributions où `sh` est dash ; c'est FAUX sur macOS, où `sh` EST bash : le banc y rougissait, sur
+ * une propriété du système et non du dépôt. Le choix du binaire, lui, est une fonction pure : il
+ * s'éprouve partout, et c'est ce qu'on voulait garder.
+ */
+export const binaireDe = (shell) => (/^sh\b/.test(shell) ? "sh" : "bash");
+
 export function analyserAvecBash(script, shell) {
   const dir = mkdtempSync(join(tmpdir(), "shellwf-"));
   try {
     const f = join(dir, "bloc.sh");
     writeFileSync(f, script);
     try {
-      execFileSync(/^sh\b/.test(shell) ? "sh" : "bash", ["-n", f], { stdio: ["ignore", "pipe", "pipe"] });
+      execFileSync(binaireDe(shell), ["-n", f], { stdio: ["ignore", "pipe", "pipe"] });
       return null;
     } catch (erreur) {
       const sortie = String(erreur.stderr || erreur.stdout || erreur.message);

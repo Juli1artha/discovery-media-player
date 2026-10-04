@@ -7,7 +7,8 @@ const NODE = {
   require: "readonly", module: "writable", exports: "writable", process: "readonly",
   console: "readonly", Buffer: "readonly", __dirname: "readonly", __filename: "readonly",
   globalThis: "readonly", URL: "readonly", URLSearchParams: "readonly", fetch: "readonly",
-  TextEncoder: "readonly", TextDecoder: "readonly", crypto: "readonly", AbortSignal: "readonly",
+  TextEncoder: "readonly", TextDecoder: "readonly", crypto: "readonly",
+  AbortSignal: "readonly", AbortController: "readonly",
   setTimeout: "readonly", clearTimeout: "readonly", setInterval: "readonly", clearInterval: "readonly",
   setImmediate: "readonly", ReadableStream: "readonly", Headers: "readonly", Response: "readonly",
 };

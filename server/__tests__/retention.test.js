@@ -117,14 +117,51 @@ describe("rétention au double", () => {
     expect(retires).toEqual([{ bucket: "present-attachments", chemin: "morte/photo.png" }]);
   });
 
-  it("sans storage.remove, les lignes partent quand même — la limite est dite, pas simulée", async () => {
-    const { appels } = harnais({ lignes: {
+  // ⚠️ TROISIÈME ÉTAT — trouvé par un hôte (STUDIO, 13/09) en lisant le code, pas le contrat. Ce banc
+  // disait « sans storage.remove, les lignes partent quand même — la limite est dite, pas simulée » :
+  // une décision prise avant que la 0.1.164 pose la règle « une ligne ne part jamais au-dessus d'un
+  // fichier resté ». Un hôte qui fournit `put` sans `remove` fabriquait donc des objets
+  // définitivement inatteignables à chaque passage, sans qu'aucun compteur ne bouge. Le correctif
+  // de 0.1.164 distinguait « a échoué » de « a réussi » ; il ne voyait pas « n'a pas été tenté ».
+  it("⚠️ sans storage.remove, une ligne SANS fichier part, une ligne AVEC fichier est RETENUE — et la capacité manquante est dite", async () => {
+    const dits = [];
+    const { ctx, appels } = harnais({ lignes: {
       "doc_presentations?active=eq.false": [{ slug: "morte" }],
-      "doc_presentation_messages?slug=eq.morte": [{ id: 1 }],   // un message ancien à supprimer par lot
+      "doc_presentation_messages?slug=eq.morte": [
+        { id: 1 },
+        { id: 2, attachment: "https://x.supabase.co/storage/v1/object/public/present-attachments/morte/photo.png" },
+      ],
     } });
+    ctx.errors = { capture(e, meta) { dits.push({ message: e.message, meta }); } };
     const r = await retention.purgerRetention(Date.now());
+    const del = appels.find((a) => a.methode === "DELETE" && a.chemin.startsWith("doc_presentation_messages"));
+    expect(del, "la ligne sans fichier part : rien à retenir").toBeTruthy();
+    expect(decodeURIComponent(del.chemin), "la ligne AVEC fichier ne part pas — son objet resterait inatteignable").toContain('id=in.("1")');
+    expect(decodeURIComponent(del.chemin)).not.toContain('"2"');
+    expect(r.rapport.presentations.retenues).toBe(1);
+    expect(r.sansRemove, "le rapport nomme la capacité manquante").toBe(true);
     expect(r.efface.pieces_jointes).toBe(0);
-    expect(appels.some((a) => a.methode === "DELETE" && a.chemin.startsWith("doc_presentation_messages")), "les messages partent même sans retrait de fichiers").toBe(true);
+    expect(dits.length, "dit UNE fois par processus, pas une fois par ligne").toBe(1);
+    expect(dits[0].message).toMatch(/storage\.remove/);
+    expect(dits[0].meta.benin).toBe(true);
+    // Un second passage ne le redit pas ; `init` (nouveau contexte, donc possiblement `remove` fourni) réarme.
+    await retention.purgerRetention(Date.now());
+    expect(dits.length).toBe(1);
+    retention.init(ctx);
+    await retention.purgerRetention(Date.now());
+    expect(dits.length).toBe(2);
+  });
+
+  it("en dry-run, la capacité manquante est nommée SANS compter un échec — pour la lire avant d'armer", async () => {
+    const { ctx } = harnais({ lignes: {
+      "doc_presentations?active=eq.false": [{ slug: "morte" }],
+      "doc_presentation_messages?slug=eq.morte": [{ id: 2, attachment: "https://x.supabase.co/storage/v1/object/public/present-attachments/morte/photo.png" }],
+    } });
+    ctx.errors = { capture() {} };
+    const r = await retention.purgerRetention(Date.now(), { dryRun: true });
+    expect(r.sansRemove).toBe(true);
+    expect(r.rapport.presentations.fichiersErreur).toBe(0);
+    expect(r.rapport.presentations.fichiersCandidats).toBe(1);
   });
 
   it("le tick est OPT-IN STRICT : sans balayage:true écrit par l'hôte, il ne demande MÊME PAS le verrou", async () => {

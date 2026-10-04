@@ -62,6 +62,35 @@ describe("« pas mesuré » n'est pas « zéro »", () => {
     expect(routes.presentation, "aucune présentation servie : rien à en dire").toBeUndefined();
   });
 
+  // ⚠️ ET L'OMISSION EST JUSTE — CE QUI MANQUAIT, C'EST DE QUOI LA LIRE. Le banc ci-dessus prouve
+  // qu'une famille sans échantillon est absente, à raison. Mais depuis la carte, un lecteur ne
+  // voyait alors pas la différence entre « aucun trafic » et « la mesure ne tourne pas » : les
+  // deux rendent `routes: {}`. Un hôte chargé ne rencontre jamais la question, ses entrées étant
+  // toujours là ; un hôte à 99 sessions n'a aucun témoin. Le dénominateur les sépare.
+  it("⚠️ `familles` dit ce qui EST mesuré, sans quoi `routes: {}` est indiscernable d'une panne", () => {
+    const vierge = mesures.relever();
+    expect(vierge.routes, "instance neuve : aucune famille exercée").toEqual({});
+    expect(vierge.familles, "mais on sait lesquelles auraient pu l'être")
+      .toEqual(["document", "presentation", "action", "fichier", "carte", "autre"]);
+
+    mesures.chrono("document")(200);
+    const apres = mesures.relever();
+    expect(Object.keys(apres.routes)).toEqual(["document"]);
+    expect(apres.familles, "le dénominateur ne bouge pas avec le trafic — c'est ce qui en fait un")
+      .toEqual(vierge.familles);
+  });
+
+  // ⚠️ LES DEUX CHAMPS VOISINS PORTAIENT DÉJÀ LEUR DÉNOMINATEUR, et c'est ce qui rend l'omission
+  // de `routes` mesurable plutôt qu'opinable : sur une instance neuve, `statuts` publie ses cinq
+  // clés à zéro et `boucleMs` publie `n: 0` avec des `null` explicites. Trois champs frères, deux
+  // qui savaient et un qui avait oublié.
+  it("⚠️ ses deux voisins le portaient déjà — l'incohérence était interne, pas théorique", () => {
+    const r = mesures.relever();
+    expect(Object.keys(r.statuts).length, "statuts : les cinq clés, à zéro").toBe(5);
+    expect(r.boucleMs.n, "boucleMs : un compte explicite").toBe(0);
+    expect(r.boucleMs.moyen, "et `null` plutôt qu'un zéro qui se lirait « saine »").toBeNull();
+  });
+
   it("la base non sollicitée rend `{ n: 0 }` et rien d'autre", () => {
     const base = mesures.relever().base;
     expect(base.n).toBe(0);
@@ -211,9 +240,19 @@ describe("ce que le relevé ne contient pas", () => {
     parcourir(r, "mesures");
 
     const nonNumeriques = feuilles.filter(([, v]) => v !== null && typeof v !== "number");
-    expect(nonNumeriques,
+    // ⚠️ UNE SEULE EXCEPTION, ET ELLE EST NOMMÉE PAR SON CHEMIN AUTANT QUE PAR SA VALEUR. Le
+    // dénominateur `familles` est la seule chaîne publiée, et un vocabulaire CLOS : une valeur
+    // hors `FAMILLES`, ou une chaîne apparaissant ailleurs qu'à cet endroit, reste refusée. Écrire
+    // « les chaînes sont tolérées » aurait rendu la garde muette au premier slug ; ici le slug
+    // échoue deux fois, sur son chemin et sur son vocabulaire.
+    const tolerees = nonNumeriques.filter(([chemin, v]) =>
+      /^mesures\.familles\[\d+\]$/.test(chemin) && mesures.FAMILLES.includes(v));
+    const interdites = nonNumeriques.filter((f) => !tolerees.includes(f));
+    expect(interdites,
       "c'est ce qui permet de publier ce relevé sur une carte qu'un hôte lit sans cérémonie :\n"
-      + JSON.stringify(nonNumeriques)).toEqual([]);
+      + JSON.stringify(interdites)).toEqual([]);
+    expect(tolerees.length, "le dénominateur est publié en entier, sinon il n'en est pas un")
+      .toBe(mesures.FAMILLES.length);
     // Et les CLÉS de `routes` ne peuvent être que des familles déclarées, jamais un slug.
     for (const cle of Object.keys(r.routes)) expect(mesures.FAMILLES).toContain(cle);
   });
@@ -264,5 +303,46 @@ describe("mesurer la base ne doit RIEN changer à ce qui s'exécute", () => {
     contexte.config = { supabaseUrl: "https://pose-apres.example" };
     // La carte lit `PLAYER.config` : si `init` en avait pris une copie, elle lirait l'ancienne.
     expect(player.__contexte().config.supabaseUrl).toBe("https://pose-apres.example");
+  });
+});
+
+// ⚠️ `vider()` PROMETTAIT PLUS QUE CE QU'ELLE FAISAIT, ET C'EST UN INSTRUMENT QUI MENTAIT. Elle
+// annonçait « repartir d'une instance vierge » et laissait `histoBase` et le retard de boucle
+// intacts. Les bancs d'endurance l'appellent entre l'échauffement et la mesure : ils attribuaient
+// donc au scénario courant les appels base de l'échauffement et les ralentissements du scénario
+// précédent. Trouvé par un audit externe le 11/09, REPRODUIT avant d'être corrigé.
+describe("⚠️ vider() remet à zéro les TROIS relevés, pas seulement les routes", () => {
+  it("les appels base repartent de zéro", async () => {
+    const vu = mesures.observerBase({ request: async () => [] });
+    await vu.request("x");
+    await vu.request("y");
+    expect(mesures.__histoBase.compte()).toBeGreaterThan(0);
+    mesures.vider();
+    expect(mesures.__histoBase.compte(), "histoBase survivait à vider()").toBe(0);
+  });
+
+  it("⚠️ le retard de boucle repart à `null`, jamais à zéro", async () => {
+    // La distinction que ce module défend ailleurs : « pas encore mesuré » n'est pas « sain ».
+    const t = Date.now();
+    while (Date.now() - t < 60) { /* on occupe la boucle pour produire des échantillons */ }
+    await new Promise((r) => setTimeout(r, 120));
+    expect(mesures.relever().boucleMs.n, "aucun échantillon : le banc ne mesure rien").toBeGreaterThan(0);
+
+    mesures.vider();
+    const apres = mesures.relever().boucleMs;
+    expect(apres.n, "le retard de boucle survivait à vider()").toBe(0);
+    expect(apres.moyen, "un zéro se lirait « la boucle est saine »").toBeNull();
+    expect(apres.p99).toBeNull();
+  });
+
+  it("les routes continuent d'être remises à zéro — et la famille DISPARAÎT du relevé", () => {
+    // ⚠️ La première rédaction de ce banc affirmait `routes.document.n === 0`. Faux : `relever()`
+    // n'émet que les familles qui ont des échantillons, donc après `vider()` la clé n'existe plus.
+    // Une famille absente et une famille à zéro ne sont pas la même affirmation — c'est la même
+    // distinction que ce module tient déjà sur le retard de boucle.
+    mesures.chrono("document")(200);
+    expect(mesures.relever().routes.document.n).toBeGreaterThan(0);
+    mesures.vider();
+    expect(mesures.relever().routes).toEqual({});
   });
 });

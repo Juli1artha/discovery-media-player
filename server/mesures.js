@@ -58,6 +58,16 @@ function creerHistogramme() {
     },
     compte: () => n,
     max: () => Math.round(maxMs),
+    /**
+     * ⚠️ REMET À ZÉRO SANS CHANGER D'IDENTITÉ, ET C'EST LA RAISON DE CETTE MÉTHODE. `histoBase` est
+     * un `const` exporté par identité (`__histoBase`) : le réassigner périmerait l'export et les
+     * bancs mesureraient un objet que le module n'utilise plus. On vide l'état en place.
+     */
+    reset() {
+      seaux.fill(0);
+      n = 0;
+      maxMs = 0;
+    },
   };
 }
 
@@ -130,6 +140,12 @@ function observerBase(db) {
   vu.__mesuree = true;
   vu.request = mesurer("request");
   if (typeof db.selectAll === "function") vu.selectAll = mesurer("selectAll");
+  // ⚠️ CHAQUE MÉTHODE AJOUTÉE À LA CAPACITÉ DOIT ÊTRE AJOUTÉE ICI, et l'héritage rend cet oubli
+  // SILENCIEUX : `Object.create` laisse passer une méthode nouvelle, vivante et non mesurée — donc
+  // le paragraphe ci-dessus, qui promet de couvrir « y compris ce que personne n'a encore écrit »,
+  // deviendrait faux sans que rien ne rougisse. `count` est optionnelle chez l'hôte ; quand elle
+  // existe, elle interroge la base et son temps compte comme le reste.
+  if (typeof db.count === "function") vu.count = mesurer("count");
   return vu;
 }
 
@@ -174,6 +190,22 @@ function relever() {
     // ⚠️ L'ÉCHELLE EST PUBLIÉE AVEC LES CHIFFRES. Sans elle, `p95sousMs: 250` ne dit pas si la
     // mesure suivante aurait pu être 251 ou 999 — un lecteur ne peut pas juger de sa précision.
     seauxMs: SEAUX_MS,
+    // ⚠️ LE DÉNOMINATEUR DE `routes`, ET IL MANQUAIT DEPUIS LE DÉBUT. Une famille sans échantillon
+    // est OMISE de `routes` — donc `routes: {}` ne distingue pas « aucun trafic sur la fenêtre »
+    // de « la mesure ne tourne pas ». Chez un hôte chargé la question ne se pose jamais : il y a
+    // toujours des entrées, et leur présence témoigne d'elle-même. Chez un hôte à 99 sessions,
+    // rien ne témoigne de rien.
+    //
+    // La règle vient d'un hôte, sur ses propres volumes : « les champs dont la valeur est son
+    // propre témoin à grande échelle ont besoin d'un témoin explicite à petite échelle ». Une
+    // petite installation n'est pas seulement privée d'occasions — elle perd du POUVOIR
+    // DISCRIMINANT, et un hôte plus chargé se trouve mieux instrumenté sans avoir rien instrumenté.
+    //
+    // ⚠️ ET LES DEUX CHAMPS VOISINS AVAIENT DÉJÀ RAISON, ce qui rend l'omission mesurable plutôt
+    // qu'opinable : `statuts` publie ses cinq clés à zéro, `boucleMs` publie `n: 0` avec des
+    // `null` explicites « plutôt que de publier un zéro qui se lirait la boucle est saine ». Trois
+    // champs frères du même objet, deux qui portent leur dénominateur et un qui l'oubliait.
+    familles: [...FAMILLES],
     routes,
     base: centiles(histoBase),
     statuts: { ...statuts },
@@ -196,8 +228,24 @@ function relever() {
 }
 
 /** Pour les bancs : repartir d'une instance vierge sans recharger le module. */
+/**
+ * ⚠️ CETTE FONCTION PROMETTAIT PLUS QUE CE QU'ELLE FAISAIT, ET C'EST UN INSTRUMENT QUI MENTAIT.
+ *
+ * Elle annonçait « repartir d'une instance vierge sans recharger le module » et ne remettait à zéro
+ * que les histogrammes de routes et les compteurs de statut. `histoBase` et le retard de boucle
+ * survivaient. La télémétrie de production n'en souffrait pas — `vider()` n'y est jamais appelée —
+ * mais les BANCS D'ENDURANCE l'appellent entre l'échauffement et la mesure, puis entre scénarios.
+ * Ils pouvaient donc attribuer au scénario courant les appels base de l'échauffement et les
+ * ralentissements de boucle du scénario précédent.
+ *
+ * ⚠️ CE N'EST PAS UN DÉFAUT DE PRODUIT, C'EST PIRE POUR CE DÉPÔT : un instrument affaibli mesure
+ * moins bien le code qu'il surveille, et rien ne le dit. Trouvé par un audit externe le 11/09, qui
+ * l'a REPRODUIT plutôt que lu — `avant base n=1 boucle n=0` puis `apresVider base n=1 boucle n=2`.
+ */
 function vider() {
   for (const nom of FAMILLES) histos.set(nom, creerHistogramme());
+  histoBase.reset();
+  boucle.reset();
   // Écrits un par un, pour la même raison que les deux enveloppes de `observerBase` : une clé
   // calculée sur un objet ordinaire est la forme que `proprieteEcrite.test.js` refuse.
   statuts.ok = 0; statuts.refus4xx = 0; statuts.debit429 = 0; statuts.occupe503 = 0; statuts.erreur5xx = 0;

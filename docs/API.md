@@ -186,15 +186,15 @@ more remains. The cursor carries the position of the last row **examined**, whic
 skipped or served twice; a caller that stops on a short page loses the rest.
 
 ⚠️ **A session's payload is an allow-list, and two columns are deliberately off it.** Until
-`0.1.146` both session readings returned the row as stored. What ships now is: identifiers
+`0.1.147` both session readings returned the row as stored. What ships now is: identifiers
 (`session_id`, `slug`, `doc_id`, `recipient_email` and the filiation), reading behaviour
 (`num_pages`, `max_page`, `total_seconds`, `pages_time`), the client as read by a human (`device`,
 `os`, `browser`), and the timestamps.
 
 | withheld | why |
 |---|---|
-| `ip` | the datum [`docs/RETENTION.md`](RETENTION.md) calls *the most sensitive in the schema*, which nothing in the player reads back. A presentation attendee's address is kept as a salted HMAC; a reader's was served in the clear |
-| `ua` | the raw User-Agent — a fingerprinting vector, and **redundant**: `device`, `os` and `browser` are derived from it at write time and are served. The full string carries nothing more that a reader of the record reads, only enough to recognise one device across sessions |
+| `ip` | the datum [`docs/RETENTION.md`](RETENTION.md) calls *the most sensitive in the schema*, which nothing in the player reads back. A presentation attendee's address is kept as a salted HMAC; a reader's was served in the clear. ⚠️ Since `0.1.147` it is also **never written**, and migration 0026 erases what was there: the column is then always `NULL`, and is removed in a later release — see [*Purging the reader IP*](RETENTION.md) |
+| `ua` | the raw User-Agent — a fingerprinting vector, and **redundant**: `device`, `os` and `browser` are derived from it at write time and are served. The full string carries nothing more that a reader of the record reads, only enough to recognise one device across sessions. ⚠️ Since `0.1.147` it is also **never written**, and migration 0027 erases what was there, on this table and on `commercial_doc_views` — see [*Purging the reader IP and User-Agent*](RETENTION.md) |
 
 Both are still **recorded** (purged at thirteen months): not serving a column and not keeping it are
 two different decisions. **A column added to the table later does not leave by default** — it has to
@@ -262,6 +262,7 @@ player.init(context)
 | `storage.isAllowedUrl(url)` · `fetchFile(url, {range})` · `put(...)` | where files may be read from — see [ARCHITECTURE](ARCHITECTURE.md#where-files-may-come-from) |
 | `storage.signUpload(bucket, path)` → `{token, publicUrl}` | signs a chat-attachment upload. **Optional**: absent ⇒ attachments are refused, and the player says so. The core must not hold the key that signs. |
 | `db.request(path, opts)` · `selectAll(path)` | PostgREST-shaped — see [what is portable](#what-is-portable-and-what-is-not) |
+| `db.count(path)` → `number` \| `null` | **Optional**: *how many rows does this path select?* Absent ⇒ the player counts rows instead, bounded, and says so. Answer `null` when you cannot say — never `0` |
 | `identity.verifyToken(header)` · `roleOf` · `isAdmin` · `canManageShares(user, action)` | your permission model |
 | `identity.isTrustedHostCall(headers)` → `boolean` | **Optional**: lets *your server* create links in its own name. Absent ⇒ that path does not exist. The core never sees the secret; it asks, you answer. |
 | `branding.name` · `poweredBy` · `loaderName` · `logo()` · `forKey(key)` · `title(base, qualifier)` | three identities, see below |
@@ -325,12 +326,14 @@ estimated:
 
 | | |
 |---|---|
-| Call sites | **70**†, in **7**† files |
-| Tables | **11**†, plus **6**† call sites that build their path at run time — their tables are named literally by the caller, and are counted above |
+| Call sites | **74**†, in **7**† files |
+| Tables | **11**†, plus **8**† call sites that build their path at run time — their tables are named literally by the caller, and are counted above |
 | Verbs | `GET`, `POST`, `PATCH`, one `HEAD`, and `DELETE` only in `server/retention.js` — every one bounded by an age filter (`docs/RETENTION.md`) |
 | Embedded selects (`select=*,other(*)`) | **0** |
 | `or=()` | **0**† — and it is a *rule*, not an observation: `ci.yml` refuses `or=(` and `and=(` in `server/*.js`, because nested joins and boolean trees are what turn a port from a translation into a rewrite. The cursor of `docshare.sessionsByRecipient` needs two coordinates and expresses them as two flat filters — `last_at=lte.T` plus `session_id=not.in.(…)` — which reads `WHERE last_at <= T AND session_id NOT IN (…)` |
-| `and=()`, `offset=` | **0** — hand-counted; the row above is measured because a rule nobody counts is a rule that erodes |
+| `and=()` | **0**† |
+| `offset=` | **0**† — pagination is by **keyset cursor** (`col=gt.<last>`), never by offset: a cursor is stable under concurrent writes, and `ci.yml` refuses `offset=` outright. ⚠️ Both this row and the one above were *hand-counted prose sitting in a measured table* until a probe written here reached for `offset=` and only the forge caught it — the rule lived in a workflow `grep` and nowhere a contributor could run. A table whose rows are half-guarded reads as a guarded table |
+| `offset=` | **1** — hand-counted. `server/retention.js` asks for one row past the lot it received, to learn whether anything follows it. ⚠️ It was **0** until a host measured why it could not stay so: comparing a received length against *our own* bound assumes ours is the only ceiling, and PostgREST's `db-max-rows` (1000 on Supabase) truncates upstream of it. A single row at the next offset answers *is there more* without needing to know whose ceiling stopped the first read |
 | `in.(…)` | **5**† — translates to `WHERE column IN (…)`, so it costs a port nothing |
 | Used beyond plain filters | `order=`, `Prefer: return=…`, `Range` for pagination |
 

@@ -4,11 +4,67 @@
 // Reste à PLAT dans server/ (les gardes de forge ciblent server/*.js).
 
 const { adresseAppelant } = require("./appelant");
+const { capturerSansBloquer } = require("./capture");
 const { repondreJson } = require("./reponses.js");
 
-const { getShareBySlug } = require("./shares");
+const { getShareBySlug, resoudreLien } = require("./shares");
+const protection = require("./lien-protege.js");
 let PLAYER = null;
-const init = (ctx) => { PLAYER = ctx; };
+
+// ⚠️ LA VÉRIFICATION N'AVAIT AUCUN PLAFOND — seule la DEMANDE de code en avait un (20/h par adresse).
+// `visitor-verify` et `visitor-google` appelaient le greffon directement : mille tentatives depuis
+// une adresse, zéro appel au limiteur (reproduit par un audit externe le 13/09). Un code court sans
+// compteur dans le greffon se force ; une vérification Google par requête anonyme est une
+// amplification réseau. Le player ne peut pas supposer que le greffon compte — c'est la même règle
+// que la liaison session ↔ document de l'assistant : une propriété de sécurité ne dépend pas d'un
+// code que le player ne contient pas.
+//
+// Deux dimensions pour le code, parce qu'une seule se contourne : par ADRESSE (une adresse ne
+// recommence pas à zéro en changeant d'email) et par IDENTITÉ (plusieurs adresses ne forcent pas un
+// même email). Les compteurs sont pris À L'ADMISSION, donc réussite, échec et exception les
+// consomment pareil. L'identité n'est jamais l'email : la table des compteurs n'a pas à porter
+// d'adresses en clair. La clé vient du GREFFON (un HMAC avec un secret chez l'hôte, ci-dessous) ;
+// l'empreinte SHA-256 n'est que le repli, et il est dit. ⚠️ Ce paragraphe affirmait « le cœur n'a
+// pas de secret de serveur, donc une empreinte, pas un HMAC » — retiré (cinquième passe de l'audit,
+// 13/09) : trop absolu, et surtout la clé n'a pas besoin d'un secret du cœur, elle vient de l'hôte.
+const VERIF_PAR_ADRESSE = 100, VERIF_PAR_IDENTITE = 10, VERIF_FENETRE_IDENTITE_S = 900;
+// ⚠️ LE MOT DE PASSE D'UN LIEN SE FORCE COMME UN CODE (0028). Deux dimensions, pour la même raison :
+// par ADRESSE (un poste ne recommence pas à zéro en changeant de lien) et par LIEN (cent adresses ne
+// forcent pas un même lien). Pris À L'ADMISSION : réussite et échec consomment pareil. Le lien de
+// proposition de l'hôte d'origine n'avait AUCUN plafond — ce n'est pas le mécanisme qu'on reprend ici.
+const MDP_PAR_ADRESSE = 20, MDP_FENETRE_ADRESSE_S = 900, MDP_PAR_LIEN = 60, MDP_FENETRE_LIEN_S = 3600;
+const GOOGLE_PAR_ADRESSE = 100, DEMANDE_PAR_IDENTITE = 5;
+// ⚠️ UN SHA-256 D'EMAIL N'EST PAS UNE ANONYMISATION : il se renverse par dictionnaire — qui lit la
+// table des compteurs, une sauvegarde ou un outil d'administration précalcule les empreintes des
+// adresses probables (relevé par un audit externe le 13/09 ; `alice@example.com` → une valeur connue).
+// La clé vient donc du GREFFON quand il sait la produire : `visitors.rateLimitKey(email)` rend un HMAC
+// stable et opaque, avec un secret que le player ne voit jamais et une séparation de domaine
+// (`"visitor-email\0" + email normalisé`). Sans cette capacité, ou si elle échoue, on retombe sur
+// l'empreinte — pseudonyme, pas secrète — et on le DIT une fois : refuser la limite serait pire que la
+// limiter sous un pseudonyme faible, et la taire serait pire que les deux.
+const normaliserEmail = (email) => String(email || "").trim().toLowerCase();
+const empreinteIdentite = (email) =>
+  require("crypto").createHash("sha256").update(normaliserEmail(email)).digest("hex").slice(0, 32);
+let repliDit = false;
+async function cleIdentite(V, email) {
+  const norm = normaliserEmail(email);
+  if (V && typeof V.rateLimitKey === "function") {
+    try {
+      const k = await V.rateLimitKey(norm);
+      if (typeof k === "string" && k.trim()) return "h:" + k.trim().slice(0, 64);
+      throw new Error("rateLimitKey a rendu autre chose qu'une chaîne non vide");
+    } catch (e) { direLeRepli(`visitors.rateLimitKey a échoué (${e && e.message ? e.message : "cause inconnue"})`); }
+  } else direLeRepli("visitors.rateLimitKey n'est pas fourni");
+  return "e:" + empreinteIdentite(norm);
+}
+function direLeRepli(pourquoi) {
+  if (repliDit) return;
+  repliDit = true;
+  try {
+    capturerSansBloquer(PLAYER.errors, new Error(`mur visiteur : ${pourquoi} — les compteurs par identité utilisent une EMPREINTE de l'email (SHA-256 tronqué), pseudonyme mais renversable par dictionnaire. Fournissez rateLimitKey (HMAC, secret côté hôte, séparation de domaine).`), { route: "visitor", benin: true });
+  } catch { /* jamais bloquant */ }
+}
+const init = (ctx) => { PLAYER = ctx; repliDit = false; };
 
 // Traite les actions de cette famille. Le MARQUEUR est le retour : les blocs répondent puis
 // sortent par leurs `return` d'origine (valeur ≠ false) ; si aucune action ne correspond, la
@@ -16,6 +72,21 @@ const init = (ctx) => { PLAYER = ctx; };
 // entre ici et handler (un correctif à deux exemplaires finit par diverger) — et aucun appui
 // sur res.writableEnded, absent des `res` postiches des bancs comme de certains hôtes.
 async function traiter(req, res, body, _slug) {
+      // ── LIEN PROTÉGÉ PAR MOT DE PASSE (0028) : le bon mot pose le cookie, et la page se recharge. ──
+      // La règle (empreinte, cookie, comparaison à temps constant) vit dans lien-protege.js.
+      if (body.action === "link-unlock") {
+        const jl = (statut, obj, cookie) => repondreJson(res, statut, obj, cookie ? { "Set-Cookie": cookie } : null);
+        const ip = adresseAppelant(req) || "ip";
+        const slug = String(body.slug || "").slice(0, 64);
+        if (!(await PLAYER.limits.allow(`lienmdp:${ip}`, MDP_PAR_ADRESSE, MDP_FENETRE_ADRESSE_S))) return jl(429, { ok: false, error: "rate" });
+        if (!(await PLAYER.limits.allow(`lienmdp:lien:${slug}`, MDP_PAR_LIEN, MDP_FENETRE_LIEN_S))) return jl(429, { ok: false, error: "rate" });
+        // `resoudreLien` SANS requête : on veut la ligne d'un lien VIVANT (ni révoqué, ni expiré) que le
+        // mot de passe ferme — c'est exactement le refus `password`. Tout autre refus : rien à déverrouiller.
+        const { refus, ligne } = await resoudreLien(slug, null);
+        if (refus !== "password" || !ligne) return jl(404, { ok: false, error: refus === "expired" ? "expired" : "revoked" });
+        if (!protection.motValide(body.password, ligne.password_hash)) return jl(400, { ok: false, error: "password" });
+        return jl(200, { ok: true }, protection.cookieDeverrouillage(ligne));
+      }
       // ── Connexion VISITEUR (soft wall) : demande d'un code par email, puis vérification. ──
       // Émet un jeton signé posé en cookie qui débloque les contenus gatés (require_auth).
       if (body.action === "visitor-request" || body.action === "visitor-verify" || body.action === "visitor-google") {
@@ -25,7 +96,9 @@ async function traiter(req, res, body, _slug) {
         const ip = adresseAppelant(req) || "ip";
         if (body.action === "visitor-request") {
           if (!(await PLAYER.limits.allow(`vcode:${ip}`, 20, 3600))) return jv(429, { ok: false, error: "rate" });
-          const sh = await getShareBySlug(String(body.slug || ""));
+          // Une boîte ne se fait pas inonder depuis cent adresses : cinq codes par heure et par email.
+          if (!(await PLAYER.limits.allow(`vcode:id:${await cleIdentite(V, body.email)}`, DEMANDE_PAR_IDENTITE, 3600))) return jv(429, { ok: false, error: "rate" });
+          const sh = await getShareBySlug(String(body.slug || ""), req);
           return jv(200, await V.requestCode(body.email, { title: sh && sh.doc_title }));
         }
         const recordUnlock = async (visitor, method) => {
@@ -44,16 +117,19 @@ async function traiter(req, res, body, _slug) {
       // noms. Une liste ne voit que ce qu'on y a mis ; une forme voit aussi le prochain.
       try {
         if (await PLAYER.limits.allow("unlock:echec", 1, 3600)) {
-          PLAYER.errors.capture(new Error(`déverrouillage visiteur non journalisé : ${e && e.message ? e.message : "cause inconnue"}`), { route: "visitor-unlock" });
+          capturerSansBloquer(PLAYER.errors, new Error(`déverrouillage visiteur non journalisé : ${e && e.message ? e.message : "cause inconnue"}`), { route: "visitor-unlock" });
         }
       } catch { /* un journal ne doit jamais empêcher une lecture */ }
     }
         };
         if (body.action === "visitor-google") {
+          if (!(await PLAYER.limits.allow(`vgoogle:${ip}`, GOOGLE_PAR_ADRESSE, 3600))) return jv(429, { ok: false, error: "rate" });
           const r = await V.verifyGoogle(body.credential);
           if (r.ok) await recordUnlock(r.visitor, "google");
           return r.ok ? jv(200, { ok: true }, r.setCookie) : jv(400, r);
         }
+        if (!(await PLAYER.limits.allow(`vverif:${ip}`, VERIF_PAR_ADRESSE, 3600))) return jv(429, { ok: false, error: "rate" });
+        if (!(await PLAYER.limits.allow(`vverif:id:${await cleIdentite(V, body.email)}`, VERIF_PAR_IDENTITE, VERIF_FENETRE_IDENTITE_S))) return jv(429, { ok: false, error: "rate" });
         const r = await V.verifyCode(body.email, body.code, body.name);
         if (r.ok) await recordUnlock(r.visitor, "email");
         return r.ok ? jv(200, { ok: true }, r.setCookie) : jv(400, r);

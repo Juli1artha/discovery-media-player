@@ -33,6 +33,24 @@ function job(nom) {
   return suite === -1 ? texte.slice(debut) : texte.slice(debut, debut + 1 + suite);
 }
 
+/** Les `needs` déclarés d'un job, en liste — que la forme soit `needs: x` ou `needs: [x, y]`. */
+function needsDe(nom) {
+  const m = /^\s*needs:\s*(.+)$/m.exec(job(nom));
+  if (!m) return [];
+  return m[1].replace(/[[\]]/g, "").split(",").map((x) => x.trim()).filter(Boolean);
+}
+
+/** `nom` est-il ACCESSIBLE depuis `racine` en remontant les `needs` ? La propriété, pas la forme. */
+function derriere(nom, racine, vus = new Set()) {
+  for (const parent of needsDe(nom)) {
+    if (parent === racine) return true;
+    if (vus.has(parent)) continue;
+    vus.add(parent);
+    if (derriere(parent, racine, vus)) return true;
+  }
+  return false;
+}
+
 describe("le run qui attesterait un autre commit que le tag est refusé avant tout artefact", () => {
   it("verifier confronte le commit du run au commit du tag, et sort en 1 sur divergence", () => {
     const verifier = job("verifier");
@@ -44,12 +62,63 @@ describe("le run qui attesterait un autre commit que le tag est refusé avant to
     expect(verifier).toMatch(/if \[ "\$sha_du_tag" != "\$GITHUB_SHA" \][\s\S]{0,400}exit 1/);
   });
 
-  it("la chaîne needs donne autorité au refus : publier → eprouver → attester derrière verifier", () => {
-    // Détacher un maillon (attester sans eprouver, eprouver sans publier…) laisserait le garde
-    // vert et l'attestation libre — la mutation exacte que ce test rend rouge.
-    expect(job("publier")).toMatch(/needs:\s*verifier/);
-    expect(job("eprouver")).toMatch(/needs:\s*publier/);
-    expect(job("attester")).toMatch(/needs:\s*eprouver/);
+  it("la chaîne needs donne autorité au refus : tout job qui produit passe DERRIÈRE verifier", () => {
+    // Détacher un maillon laisserait le garde vert et l'attestation libre — la mutation exacte que
+    // ce test rend rouge. ⚠️ Ce qui compte est l'ACCESSIBILITÉ depuis `verifier`, pas une chaîne
+    // littérale : ce banc figeait « publier → eprouver → attester » et il a rougi le jour où
+    // `attester` a été rebranché sur `publier` — un changement qui RENFORCE la propriété visée
+    // (attester reste derrière verifier) tout en cessant de faire dépendre les preuves d'un test
+    // postérieur à la publication. Un banc qui fige une forme au lieu de sa propriété refuse aussi
+    // les corrections. Il vérifie donc la propriété, et le maillon retiré a son propre essai.
+    for (const nom of ["publier", "eprouver", "attester", "annoncer"]) {
+      expect(derriere(nom, "verifier"), `${nom} n'est plus derrière verifier`).toBe(true);
+    }
+  });
+
+  it("⚠️ attester ne dépend PAS de eprouver : une preuve d'octets publiés n'est pas otage d'un test qui court APRÈS la publication", () => {
+    // Le 14/09, `eprouver` a échoué sur une propagation de registre — sans rapport avec les octets —
+    // et a emporté le SBOM, l'attestation et la Release. Pendant trois minutes et demie, le paquet
+    // était installable sans qu'aucun de ces moyens de vérification n'existe. Les retenir ne protège
+    // personne : ceux qui installent alors sont précisément ceux à qui on les refuse. (Un hôte, ADV.)
+    expect(needsDe("attester")).not.toContain("eprouver");
+    expect(needsDe("attester")).toContain("publier");
+    // Et `eprouver` reste une garde : son rouge rougit la course, il ne retient plus les preuves.
+    expect(needsDe("eprouver")).toContain("publier");
+  });
+
+  it("⚠️ mais la RELEASE PUBLIQUE, elle, attend le test de fumée — la preuve et la recommandation ne sont pas le même objet", () => {
+    // ⚠️ CE BANC EXISTE PARCE QUE LE BANC D'AU-DESSUS NE SUFFISAIT PAS. En rattachant `attester` à
+    // `publier`, `annoncer` a suivi par simple transitivité et a PERDU sa dépendance à `eprouver` :
+    // le graphe autorisait dès lors une Release publique créée pendant que le test du paquet
+    // installé était rouge, ou avant qu'il ait fini. Le commentaire en tête de release.yml
+    // promettait « publié ÉPROUVÉ » et plus rien ne le tenait. Le banc de l'époque ne demandait que
+    // « atteignable depuis verifier », ce qui restait vrai — une propriété trop faible pour voir la
+    // perte. Défaut nommé par un auditeur externe (CODEX, 15/09).
+    //
+    // La distinction qui tient les deux bancs ensemble : l'ATTESTATION porte sur des octets DÉJÀ
+    // PARTIS et ne doit attendre personne ; la RELEASE est une recommandation d'installer, et elle
+    // attend le test de ce qui s'installe.
+    expect(derriere("annoncer", "eprouver"), "annoncer n'attend plus le test de fumée").toBe(true);
+    expect(derriere("annoncer", "attester"), "annoncer n'attend plus l'attestation").toBe(true);
+  });
+
+  it("⚠️ attester ATTEND dist.integrity au lieu de le demander une fois — l'abri qu'il tenait de eprouver, il le porte lui-même", () => {
+    // ⚠️ CE `npm view` ÉTAIT SANS RISQUE, ET LE CORRECTIF DU 14/09 L'A RENDU DANGEREUX. Tant que
+    // `attester` dépendait de `eprouver`, celui-ci avait déjà attendu jusqu'à 240 s que le registre
+    // serve la version : `dist.integrity` était forcément là. En rattachant `attester` à `publier`
+    // — pour une bonne raison — cet abri a disparu sans être remplacé, et le vide de propagation
+    // qui a coûté la sortie 0.1.168 se retrouvait RÉARMÉ un job plus loin, frappant cette fois
+    // l'attestation. Un correctif qui déplace un risque sans le dire est un correctif à moitié.
+    // Défaut nommé par un auditeur externe (CODEX, 15/09).
+    //
+    // La règle des trois sorties (« réussi, refusé, j'ai renoncé ») est tenue pour toutes les
+    // boucles des workflows par `tools/boucles-de-reessai.mjs` ; ce banc-ci tient l'autre moitié,
+    // que la garde ne peut pas voir : qu'il y ait une boucle DU TOUT autour de cette lecture.
+    const a = job("attester");
+    const [, avant] = a.split("dist.integrity");
+    expect(avant, "dist.integrity n'est pas lu dans attester").toBeTruthy();
+    expect(a, "dist.integrity est demandé sans attente — une seule lecture, juste après publier")
+      .toMatch(/for [^\n]*seq 1 \d+[\s\S]*?dist\.integrity[\s\S]*?done/);
   });
 
   it("l'attestation vit dans attester, et nulle part ailleurs", () => {

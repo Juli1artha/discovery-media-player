@@ -131,10 +131,39 @@ branch protection. See [`../MAINTAINERS.md`](../MAINTAINERS.md#bus-factor).
 
 ### T8 — Denial of service
 
-Out of scope for reports, and the reason is honest rather than dismissive: rate limiting in the
-standalone context is **per-process by design**, and says so. A shared counter belongs in the host's
-wiring, where the host already knows its own topology. Volume against your own instance is your
-capacity problem, not a defect.
+Volume against your own instance is your capacity problem, not a defect — that part stands.
+
+⚠️ **The rest of this section was false, and falsely reassuring.** It said rate limiting in the
+standalone context is *"per-process by design"* and that *"a shared counter belongs in the host's
+wiring"*. That described the world before migration `0004`. The standalone context runs a **two-stage
+limiter**: a fast local refusal that costs the database nothing, then a **shared atomic counter**
+(`player_rate_limit_bump`, one server-side statement — not a read followed by a write).
+
+The distinction matters for what you report to us:
+
+| | what actually limits | in scope for a report |
+|---|---|---|
+| `0003` **and** `0004` applied | local refusal **+ shared atomic counter** | **yes** — a flaw in either stage |
+| `0004` missing | **local only.** The shared stage does not count less well; it does not count at all, and the player warns once, by filename | yes — but apply `0004` first |
+| keys prefixed `pread:` | local only, **deliberately** — these reads are served from a per-slug memory cache, so a shared counter would cost the database exactly what the cache saves it | the choice itself, if you can show it wrong |
+
+A section that declares something out of scope is not neutral: it tells a researcher not to look.
+This one told them not to look at a stage that exists. Found by an external audit on 2026-09-12.
+
+Three more bounds exist since 2026-09-13, each because an audit reproduced their absence:
+
+- **file relays are admitted per process** (`config.maxConcurrentRelays`, default 64): above it,
+  503 + `Retry-After` before any upstream call, no queue, slot released on error, on client
+  disconnect, and when a relay **stops progressing** (`relayStallMs`) or outlives its budget
+  (`relayMaxMs`) — a client that stops reading used to keep its slot forever. Bytes were bounded;
+  the number of open streams was not (200 slow requests → 200 upstream connections);
+- **the visitor wall counts verifications**, not only code requests — per address and per identity
+  fingerprint — and the plugin is not called beyond the limit (1 000 attempts from one address had
+  reached it with zero limiter calls);
+- **the standalone server** answers 413/400 to oversize/unreadable bodies instead of an empty body,
+  and runs with `requestTimeout` 30 s / `headersTimeout` 15 s rather than Node's 300 s / 60 s.
+  The polling quota is also **per endpoint** (`pread:state:`, `pread:chat:`): one shared key let a
+  saturated chat cut the state, and halved the announced capacity.
 
 ## What this model does not cover
 

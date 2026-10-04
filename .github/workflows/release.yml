@@ -7,6 +7,18 @@ on:
   # GitHub Release, image, SBOM et provenance sautés, TROIS FOIS SANS QUE PERSONNE NE LE VOIE
   # (celui qui publiait surveillait `npm view`, un artefact sur cinq — septième audit). Le
   # dispatch rejoue la sortie d'un tag existant : npm est sauté (déjà publié), le reste se refait.
+  #
+  # ⚠️ CE QU'UN REJEU NE PEUT PAS RÉPARER, et la 0.1.169 s'y est cognée. Un dispatch exécute le
+  # workflow de la RÉF SUR LAQUELLE ON LE LANCE, pendant que chaque job extrait le TAG. Le rejeu
+  # honnête se lance donc sur la réf du tag (« Use workflow from » → vX.Y.Z), sans quoi la garde de
+  # provenance ci-dessous refuse — mais cela fait tourner le `release.yml` DU TAG, défauts compris.
+  # La 0.1.169 est partie sans une ligne de ses notes parce que celles-ci voyageaient par une sortie
+  # de job que la forge a supprimée en chemin ; le correctif est sur `main`, le tag porte encore le
+  # transport cassé. Les deux rejeux possibles étaient donc inutiles : depuis `main`, refusé ;
+  # depuis le tag, on rejoue le code qui a perdu les notes. Un rejeu répare une COURSE qui a échoué
+  # — une étape tombée, un actif jamais téléversé — jamais un DÉFAUT DU WORKFLOW DU TAG. Ce cas-là
+  # se répare à la main, et seulement sous forme DÉRIVÉE : la section extraite du CHANGELOG du tag
+  # par le code d'extraction du tag. Consigné dans docs/VERIFYING-RELEASES.md.
   workflow_dispatch:
     inputs:
       tag:
@@ -53,8 +65,6 @@ jobs:
       # sans que le droit soit déclaré — elle cesserait le jour où il deviendrait privé, et
       # l'échec serait imputé à la CI plutôt qu'aux permissions. On le déclare.
       actions: read
-    outputs:
-      notes: ${{ steps.notes.outputs.body }}
     steps:
       # ⚠️ LA SEULE ENTRÉE DE CE DÉPÔT QUE PERSONNE NE RELIT. Tout le reste arrive par une PR, donc
       # sous des yeux ; `workflow_dispatch` non — un collaborateur tape une chaîne dans un champ et
@@ -199,8 +209,22 @@ jobs:
       # se place avant elle, sinon il ne conditionne rien.
       # Récupération (dispatch sur un vieux tag) : la section peut être née APRÈS le tag — on la
       # reprend alors depuis main, en le disant.
+      # ⚠️ L'EXTRACTION RESTE ICI, EN LIGNE, ET C'EST DÉLIBÉRÉ. Un rejeu par `workflow_dispatch`
+      # exécute le workflow de `main` CONTRE LE CONTENU DU TAG : ce qui vit dans ce fichier est
+      # toujours disponible, ce qui vit dans `tools/` ne l'est que sur les tags qui le portent
+      # déjà. Ma première rédaction de ce correctif déplaçait l'extraction dans un outil — plus
+      # propre, et elle aurait rendu IMPOSSIBLE tout rattrapage des tags existants, c'est-à-dire
+      # exactement ce que le dispatch existe pour faire. Le dépôt le dit ailleurs, à propos du
+      # validateur de charge ; je l'avais lu et j'allais quand même l'enfreindre.
+      #
+      # ⚠️ CE QUI CHANGE EST LE TRANSPORT, PAS L'EXTRACTION — parce que c'est le transport qui a
+      # échoué. Les notes partaient d'ici vers `annoncer` par une SORTIE DE JOB, que la forge a
+      # supprimée en chemin le 15/09 : « Skip output 'notes' since it may contain secret ». Le
+      # runner confronte chaque sortie aux valeurs masquées et jette la sortie ENTIÈRE au moindre
+      # soupçon ; la Release 0.1.169 est partie sans une ligne de ses notes, cinq jobs au vert. Un
+      # ARTEFACT n'est confronté à rien : le transport cesse d'être fragile au CONTENU de ce qu'il
+      # transporte, ce qu'aucune consigne de prudence n'aurait garanti.
       - name: Extract the changelog section (gates the publication)
-        id: notes
         run: |
           V="${TAG#v}"
           extraire() { awk -v v="$V" '
@@ -216,7 +240,14 @@ jobs:
             test -s /tmp/notes.md && echo "::notice::section $V absente du tag — reprise depuis main (récupération)"
           fi
           test -s /tmp/notes.md || { echo "::error::no CHANGELOG section for $V — pas de notes, pas de sortie"; exit 1; }
-          { echo "body<<EOFNOTES"; cat /tmp/notes.md; echo "EOFNOTES"; } >> "$GITHUB_OUTPUT"
+          wc -c /tmp/notes.md
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: notes-de-version
+          path: /tmp/notes.md
+          if-no-files-found: error
+          retention-days: 1
 
   # ── 2. PUBLIER — le SEUL job capable de frapper l'identité npm ───────────────────────────────
   #
@@ -237,9 +268,20 @@ jobs:
       contents: read
       id-token: write        # OIDC : publication npm sans jeton stocké
     steps:
+      # ⚠️ LES TAGS SONT NÉCESSAIRES ICI AUSSI, ET LA 0.1.161 L'A PAYÉ D'UNE PUBLICATION MANQUÉE.
+      # `npm publish` déclenche `prepublishOnly` (« npm run build && npm test ») — c'est écrit vingt
+      # lignes plus haut — donc la SUITE tourne dans ce job, sans qu'aucun `- run: npm test`
+      # n'apparaisse. `checkout` ne rapporte pas les tags par défaut : `sections-et-tags.mjs`
+      # confronte les sections du CHANGELOG aux tags, ne trouvait aucun tag, rendait NON CONCLUANT,
+      # et `npm test` échouait APRÈS que `verifier` eut tout validé. Le tag v0.1.161 est mort ainsi.
+      #
+      # ⚠️ ET LA LEÇON DE MÉTHODE : chercher « npm test » dans les workflows rate cette exécution,
+      # parce que c'est `npm` qui la déclenche et non le workflow. Un grep sur les appelants ne voit
+      # pas un appel posé dans un cycle de vie.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
+          fetch-tags: true
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           # ⚠️ npm ≥ 11.5 est la version minimale qui sait s'authentifier auprès de npm par OIDC.
@@ -359,15 +401,28 @@ jobs:
       - name: The published package renders and its scripts compile
         run: |
           V=$(node -p 'require("./package.json").version')
-          # Le registre met quelques instants à servir une version fraîche.
-          for i in $(seq 1 20); do npm view "discovery-media-player@$V" version >/dev/null 2>&1 && break || sleep 6; done
+          # ⚠️ LE REGISTRE MET DU TEMPS, ET LA BOUCLE DOIT DIRE QU'ELLE A RENONCÉ. Le 14/09, la
+          # 0.1.168 est devenue installable à 21:39:33 — deux minutes trente-huit après que
+          # `npm publish` eut rendu la main, et VINGT-CINQ SECONDES après que cette boucle, alors
+          # bornée à 120 s, eut abandonné. Elle sortait par épuisement exactement comme par succès,
+          # le `npm i` qui suivait échouait sans un mot (il portait `--silent`), et la course mourait
+          # après cent vingt-cinq secondes de silence complet, sautant `attester` et `annoncer`.
+          # Quatre minutes plutôt que deux ; et surtout, l'épuisement est désormais un ÉCHEC NOMMÉ.
+          # « Une boucle de réessai a trois sorties, pas deux : réussi, refusé, et j'ai renoncé ; la
+          # troisième doit être un échec » — la formulation est d'un hôte (ADV), la règle est tenue
+          # pour tous les workflows par `tools/boucles-de-reessai.mjs`.
+          for i in $(seq 1 40); do npm view "discovery-media-player@$V" version >/dev/null 2>&1 && break || sleep 6; done
+          npm view "discovery-media-player@$V" version >/dev/null 2>&1 \
+            || { echo "::error::le registre ne sert toujours pas discovery-media-player@$V après 240 s — le paquet EST publié ; ce test ne peut pas l'éprouver, et ce silence ne doit pas se lire comme un succès"; exit 1; }
           mkdir -p /tmp/fume && cd /tmp/fume && npm init -y >/dev/null
           # ⚠️ CE `npm i` DEPUIS LE REGISTRE RESTE NON ÉPINGLÉ EN CONNAISSANCE DE CAUSE (Scorecard
           # le signale) : ce test de fumée éprouve précisément CE QUE LE REGISTRE SERT aux vrais
           # consommateurs, minutes après la publication. L'épingler par un lockfile local
           # reviendrait à éprouver notre copie plutôt que la leur — et l'empreinte, elle, est déjà
           # confrontée ailleurs : le job attester refuse si le sha512 du registre diffère du build.
-          npm i "discovery-media-player@$V" --silent
+          # ⚠️ PAS `--silent` : il avale AUSSI les erreurs. Le 14/09, c'est ce drapeau qui a fait
+          # qu'un 404 du registre n'a laissé aucune trace. `--loglevel=error` se tait quand tout va.
+          npm i "discovery-media-player@$V" --loglevel=error
           node -e '
             const vm = require("node:vm");
             const P = "/tmp/fume/node_modules/discovery-media-player";
@@ -431,17 +486,33 @@ jobs:
   # écriture, et c'est ce qui l'empêche d'exécuter les scripts d'installation des dépendances.
   # Vérifié aussi : la reproduction tient sans eux. Reste la construction elle-même, qui est le
   # code du dépôt — la même chose que `publier` fait déjà sous un droit de même classe.
+  # ⚠️ DÉPEND DE `publier`, PLUS DE `eprouver`, ET C'EST UNE CORRECTION D'ORDONNANCEMENT, PAS UN
+  # RELÂCHEMENT. Le 14/09, le test de fumée a échoué pour une raison de PROPAGATION DU REGISTRE —
+  # sans rapport avec les octets — et il a emporté avec lui le SBOM, l'attestation de l'archive et la
+  # Release. Or ces preuves portent sur un paquet DÉJÀ PUBLIÉ : les retenir ne protège personne, et
+  # prive de moyens de vérification exactement ceux qui installent pendant ce créneau. La provenance
+  # SLSA de npm, elle, est atomique avec la publication (horodatée 21:36:53, deux secondes avant que
+  # `npm publish` rende la main) : c'est l'essentiel, et il n'a jamais manqué. Le reste ne doit pas
+  # être otage d'un contrôle postérieur. `eprouver` reste une vraie garde : son rouge rougit la
+  # course, il ne retient plus les preuves. Défaut d'ordonnancement nommé par un hôte (ADV, 14/09).
   attester:
-    needs: eprouver
+    needs: publier
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read          # lire l'artefact de charge produit par la course CI de ce commit
       id-token: write        # OIDC : signer l'attestation sans jeton stocké
       attestations: write    # la déposer dans le magasin de la forge
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
+          # ⚠️ SANS LES TAGS, LA COHORTE NE PEUT PAS ÊTRE JUGÉE — et c'est ce qui a coûté à 0.1.170 sa Release,
+          # son attestation et sa SBOM. L'étape qui emporte les artefacts de charge les juge par
+          # `tools/artefact-de-charge.mjs`, qui relit le schéma AU TAG qui l'a ancré (`git show v0.1.169:…`) :
+          # sur ce checkout sans tags, la garde a répondu NON CONCLUANT, à raison, et `annoncer` a été sauté.
+          # Même défaut que le job `schema` de ci.yml, déjà corrigé — le banc qui le gardait ne lisait que ci.yml.
+          fetch-tags: true
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "24"
@@ -463,8 +534,23 @@ jobs:
           # être le même octet pour octet. S'ils diffèrent, on ne sait pas lequel des deux les gens
           # installent — et attacher le mauvais serait pire que ne rien attacher.
           LOCAL="sha512-$(openssl dgst -sha512 -binary "$F" | base64 -w0)"
-          PUBLIE=$(npm view "discovery-media-player@$V" dist.integrity 2>/dev/null || echo "")
-          [ -n "$PUBLIE" ] || { echo "::error::le registre n'a pas rendu dist.integrity pour $V — on n'attache pas un tarball qu'on n'a pas pu confronter"; exit 1; }
+
+          # ⚠️ CETTE ATTENTE EXISTE PARCE QUE MON CORRECTIF DU 14/09 L'AVAIT SUPPRIMÉE SANS LE DIRE.
+          # Ce `npm view` était fait UNE SEULE FOIS, et c'était sans risque tant que `attester`
+          # dépendait de `eprouver` : celui-ci avait déjà attendu jusqu'à quatre minutes que le
+          # registre serve la version, donc `dist.integrity` était forcément là. En rattachant
+          # `attester` à `publier` — pour la bonne raison — j'ai retiré cet abri sans le remplacer :
+          # le vide de propagation qui a coûté la sortie 0.1.168 était RÉARMÉ un job plus loin, et
+          # frapperait cette fois l'attestation elle-même. Défaut nommé par un auditeur externe
+          # (CODEX, 15/09). Même discipline qu'ailleurs, et pour la même raison : trois sorties, pas
+          # deux — servi, différent, et j'ai renoncé ; la troisième est un échec qui se nomme.
+          for i in $(seq 1 40); do
+            PUBLIE=$(npm view "discovery-media-player@$V" dist.integrity 2>/dev/null || echo "")
+            [ -n "$PUBLIE" ] && break
+            sleep 6
+          done
+          [ -n "$PUBLIE" ] \
+            || { echo "::error::le registre n'a pas rendu dist.integrity pour $V après 240 s — le paquet EST publié ; on n'attache pas un tarball qu'on n'a pas pu confronter, et cette attente épuisée est un échec, pas un silence"; exit 1; }
           if [ "$LOCAL" != "$PUBLIE" ]; then
             echo "::error::le tarball reconstruit DIFFÈRE de celui que npm sert pour $V"
             echo "::error::  local  : $LOCAL"
@@ -507,7 +593,7 @@ jobs:
           ' "$CIBLE"
 
       # La provenance SLSA de CE fichier exact, vérifiable par `gh attestation verify <tarball>`.
-      - uses: actions/attest-build-provenance@8beda2b7ed98355c0e97c0a63bec38ae472e66c4 # v4
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         id: attestation
         with:
           subject-path: ${{ steps.paquet.outputs.chemin }}
@@ -601,6 +687,100 @@ jobs:
           esac
           cp "$BUNDLE" "/tmp/sortie/discovery-media-player-$V.sigstore.json"
 
+      # ── LA MESURE DE CE COMMIT REJOINT LA RELEASE, ET C'EST LA SIENNE ────────────────────────
+      #
+      # ⚠️ ON NE REFAIT PAS LA MESURE ICI, ON VA CHERCHER CELLE DU COMMIT. Produire un artefact de
+      # charge dans ce job donnerait une AUTRE mesure — autre runner, autre instant, autre base —
+      # pour le même commit, donc deux séries pour un seul point, et rien pour départager. Celle qui
+      # vaut est celle qu'a produite la course CI qui a validé ce commit ; `verifier` a déjà exigé
+      # qu'elle soit verte. Les artefacts d'une course expirent, une Release non : c'est tout
+      # l'objet de ce transfert.
+      #
+      # ⚠️ CONDITIONNEL ET DIT, JAMAIS SILENCIEUX. Un rejeu par `workflow_dispatch` exécute le
+      # workflow de `main` contre le CONTENU DU TAG (voir le contrôle du bundle plus haut) : sur un
+      # tag antérieur au producteur, il n'y a ni artefact ni validateur, et cette étape doit laisser
+      # passer la sortie plutôt que de la bloquer. Elle écrit alors ce qui manque — un
+      # `::warning::` ici, une ligne dans le corps de la Release là-bas. Ce qui n'est PAS toléré :
+      # attacher une mesure sans l'avoir jugée.
+      - name: Carry the load artefacts this commit's own CI run measured
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA=$(git rev-parse HEAD)
+          V=$(node -p 'require("./package.json").version')
+          RUN=$(gh run list --repo "$GITHUB_REPOSITORY" --commit "$SHA" --workflow CI \
+                  --json databaseId,conclusion --limit 20 \
+                  -q '[.[] | select(.conclusion == "success")] | .[0].databaseId // empty')
+          if [ -z "$RUN" ]; then
+            echo "::warning::aucune course CI verte trouvée pour $SHA — la Release ne portera pas de mesure de charge"
+            exit 0
+          fi
+          mkdir -p /tmp/charge
+          if ! gh run download "$RUN" --repo "$GITHUB_REPOSITORY" --name artefacts-de-charge --dir /tmp/charge 2>/tmp/charge.err; then
+            echo "::warning::la course CI $RUN ne porte pas d'artefact « artefacts-de-charge » ($(tail -1 /tmp/charge.err)) — tag antérieur au producteur, ou artefact expiré ; la Release ne portera pas de mesure de charge"
+            exit 0
+          fi
+          ls -l /tmp/charge
+          # ⚠️ ON N'ATTACHE PAS UNE MESURE QU'ON N'A PAS JUGÉE. Si des artefacts existent mais que ce
+          # tag ne porte pas leur validateur, c'est un état qu'on ne sait pas interpréter : refus.
+          [ -f tools/artefact-de-charge.mjs ] \
+            || { echo "::error::des artefacts de charge ont été récupérés, mais ce tag ne porte pas leur validateur — on n'attache pas une mesure qu'on ne peut pas juger"; exit 1; }
+          args=""
+          for f in /tmp/charge/*.json; do args="$args --fichier=$f"; done
+          [ -n "$args" ] \
+            || { echo "::error::l'artefact « artefacts-de-charge » de la course $RUN ne contient aucun JSON"; exit 1; }
+          # La cohorte entière, pas chaque fichier isolément : même course, positions continues,
+          # conditions constantes. Un rouge ici arrête la sortie — une mesure fausse attachée à une
+          # Release est pire qu'une Release sans mesure.
+          node tools/artefact-de-charge.mjs $args
+
+          # ⚠️ ET LA COHORTE DOIT ÊTRE CELLE DE CE TAG, pas une cohorte valide quelconque. Le
+          # validateur juge la COHÉRENCE INTERNE d'une campagne — même course, positions continues,
+          # conditions constantes — et il la jugerait tout aussi conforme si elle venait d'un autre
+          # commit ou d'une autre version. Le 14/09 j'ai moi-même relayé aux hôtes le relevé d'une
+          # course de PR (0.1.167, commit 8e9e37c) en le présentant comme celui du tag 0.1.168
+          # (commit f5f0ae7) : les deux campagnes étaient vraies, une seule mesurait le tag, et rien
+          # dans l'outillage ne pouvait les distinguer. Erreur relevée par un auditeur externe
+          # (CODEX, 15/09). La provenance se contrôle, elle ne se relit pas.
+          for f in /tmp/charge/*.json; do
+            node -e '
+              // ⚠️ `node -e` DÉCALE argv : argv[1] est le PREMIER argument, pas le chemin du
+              // script. Une première version découpait comme pour `node fichier.js` et lisait
+              // argv[3..5] : chaque comparaison portait sur la mauvaise valeur, la garde refusait
+              // TOUTE cohorte, la bonne comprise. Un tel defaut ne se decouvre que le jour de la
+              // sortie suivante — raison pour laquelle un banc joue ce script, et non une copie.
+              const [, fichier, version, sha, run] = process.argv;
+              const a = JSON.parse(require("node:fs").readFileSync(fichier, "utf8"));
+              const id = a.identity || {};
+              let faute = 0;
+              for (const [cle, vu, attendu] of [["packageVersion", id.packageVersion, version], ["commitSha", id.commitSha, sha]]) {
+                if (vu !== attendu) { console.log(`::error::${fichier} : identity.${cle} vaut ${JSON.stringify(vu)}, le tag porte ${JSON.stringify(attendu)}`); faute = 1; }
+              }
+              if (typeof id.runId !== "string" || !id.runId.startsWith(`gha-${run}-`)) {
+                console.log(`::error::${fichier} : identity.runId vaut ${JSON.stringify(id.runId)}, la course retenue est ${run}`);
+                faute = 1;
+              }
+              process.exitCode = faute;
+            ' "$f" "$V" "$SHA" "$RUN" \
+              || { echo "::error::la cohorte récupérée ne mesure pas ce tag — on n'attache pas la mesure d'un autre commit"; exit 1; }
+          done
+
+          # ⚠️ LE TABLEAU SE DÉRIVE DES OCTETS ATTACHÉS, IL NE SE RECOPIE PAS. Le 14/09 j'ai relayé
+          # aux hôtes le relevé d'une AUTRE course en le présentant comme celui du tag : les
+          # percentiles avaient voyagé à la main d'un journal vers un message, et le tableau ne
+          # portait ni course, ni version, ni commit, donc ne pouvait pas être contredit. Ce résumé
+          # est engendré depuis les fichiers que cette Release attache, avec leur sha256 : un
+          # lecteur confronte au lieu de nous croire. Il refuse si la cohorte est refusée.
+          node tools/resume-de-charge.mjs $args \
+            --run-url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$RUN" > /tmp/sortie/resume-de-charge.md \
+            || { echo "::error::le résumé de charge a été refusé alors que la cohorte venait d'être acceptée — les deux outils ne disent pas la même chose"; exit 1; }
+          cat /tmp/sortie/resume-de-charge.md
+
+          for f in /tmp/charge/*.json; do
+            cp "$f" "/tmp/sortie/discovery-media-player-$V-charge-$(basename "$f" .json | sed 's/^artefact-//').json"
+          done
+          ls -l /tmp/sortie
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: paquet-atteste
@@ -613,10 +793,19 @@ jobs:
   # une annonce qui précède la preuve est exactement la sortie « à moitié faite qui s'annonçait
   # faite » que ce workflow a déjà connue trois fois (0.1.67 → 0.1.69).
   #
-  # Les notes ne sont pas relues ici : `verifier` les a extraites AVANT toute publication, et les
-  # passe en sortie de job. C'est ce qui garantit qu'une section de CHANGELOG manquante arrête la
-  # sortie au lieu de la laisser à moitié faite — le contrôle qui conditionne une publication se
+  # Les notes ne sont pas relues ici : `verifier` les a extraites AVANT toute publication, et ce job
+  # les RÉCUPÈRE COMME ARTEFACT. C'est ce qui garantit qu'une section de CHANGELOG manquante arrête
+  # la sortie au lieu de la laisser à moitié faite — le contrôle qui conditionne une publication se
   # place avant elle, sinon il ne conditionne rien.
+  #
+  # ⚠️ CE PARAGRAPHE DISAIT « et les passe en sortie de job », et il l'a dit après que ce transport
+  # eut été supprimé. Il avait été supprimé parce qu'il AVAIT ÉCHOUÉ : la forge confronte chaque
+  # sortie de job aux valeurs masquées et jette la sortie ENTIÈRE au moindre soupçon — « Skip output
+  # 'notes' since it may contain secret » — et la Release 0.1.169 est partie sans une ligne de ses
+  # seize entrées, cinq jobs au vert. Un lecteur venu comprendre d'où arrivent les notes lisait donc
+  # ici le contraire du fichier qu'il avait sous les yeux. `tools/affirmations-retirees.mjs` lit le
+  # YAML depuis ce jour-là : la prose des workflows vieillit comme celle des documents, et rien ne
+  # la confrontait. Relevé par un audit externe (CODEX, 15/09).
   #
   # ⚠️ LE `checkout` EST GARDÉ, ET C'EST UN CHOIX DE PRUDENCE ASSUMÉ. Ce job n'a besoin que du tag
   # et des notes, donc un clone serait en principe superflu. Mais le comportement de
@@ -625,8 +814,18 @@ jobs:
   # Un clone n'EXÉCUTE rien — c'était l'exécution de code téléchargé, pas la présence des sources,
   # que le découpage visait. `persist-credentials: false` évite au passage de laisser un jeton
   # capable d'écrire dans le `.git/config` du seul job qui peut écrire.
+  #
+  # ⚠️ ET IL DÉPEND DE `eprouver`, QUE MON PROPRE CORRECTIF AVAIT DÉTACHÉ. Le 14/09 j'ai rattaché
+  # `attester` à `publier` pour que les preuves cessent d'être otages d'un test postérieur — c'était
+  # juste, et `annoncer` a suivi `attester` par simple transitivité, perdant sa dépendance au test de
+  # fumée. Le graphe disait alors : la Release publique peut naître pendant que le test du paquet
+  # installé est ROUGE, ou avant qu'il ait fini. Le commentaire en tête de ce fichier promettait
+  # l'inverse — « publié ÉPROUVÉ » — et rien ne le tenait plus. Défaut nommé par un auditeur externe
+  # (CODEX, 15/09). Les deux exigences ne s'opposent pas, elles portent sur des objets différents :
+  # l'ATTESTATION porte sur des octets déjà partis et ne doit rien attendre ; la RELEASE PUBLIQUE est
+  # une recommandation d'installer, et elle attend le test de ce qui s'installe.
   annoncer:
-    needs: [verifier, attester]
+    needs: [verifier, attester, eprouver]
     runs-on: ubuntu-latest
     permissions:
       contents: write        # créer la Release GitHub
@@ -634,10 +833,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
+          # Même raison qu'`attester` : ce job rejuge la cohorte avant de l'annoncer, au tag qui ancre le schéma.
+          fetch-tags: true
           persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: paquet-atteste
+          path: paquet
+
+      # ⚠️ LES NOTES ARRIVENT PAR UN ARTEFACT, PAS PAR UNE SORTIE DE JOB. C'est le correctif du
+      # 15/09 : la sortie de job qui les portait a été supprimée par la forge en chemin — « Skip
+      # output 'notes' since it may contain secret » — et la Release 0.1.169 est partie sans une
+      # ligne de ses notes, cinq jobs au vert. Un artefact n'est confronté à aucune valeur masquée.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: notes-de-version
           path: paquet
 
       # ⚠️ UN MOTIF QUI NE CORRESPOND À RIEN NE FAIT PAS ÉCHOUER `action-gh-release` : IL SE TAIT.
@@ -651,13 +861,26 @@ jobs:
       # `.sigstore.json`, le suffixe que Scorecard reconnaît comme signature), après vérification
       # de son mediaType. Cette étape reste ce qui transforme un nom qui dériverait — retour au
       # nom de l'action, action qui change son fichier — en refus plutôt qu'en fichier manquant.
-      - name: The four files the Release must carry are actually there
+      - name: The files the Release promises are actually there — four required, the measure said
+        id: presents
         run: |
           manquants=0
           for motif in "paquet/"*.tgz "paquet/"*.tgz.sha256 "paquet/"*.sigstore.json "paquet/"*.cdx.json; do
             if [ ! -e "$motif" ]; then
               echo "::error::aucun fichier pour « $motif » — la Release en porterait un de moins, en silence"
               manquants=1
+            fi
+          done
+          # ⚠️ LE CINQUIÈME EST DIT, PAS EXIGÉ — et c'est la seule différence entre les deux boucles.
+          # La mesure de charge n'existe que pour les commits dont la CI l'a produite : l'exiger
+          # bloquerait tout rejeu sur un tag antérieur au producteur, c'est-à-dire exactement les
+          # sorties que le dispatch existe pour rattraper. Son absence n'est pas silencieuse pour
+          # autant : elle s'écrit ici ET dans le corps de la Release. Aucun motif promis n'échappe
+          # aux deux boucles — le banc `releaseFichiersAttaches` en est la confrontation.
+          for motif in "paquet/"*-charge-*.json; do
+            if [ ! -e "$motif" ]; then
+              echo "::warning::aucun fichier pour « $motif » — cette Release ne portera pas la mesure de charge de son commit"
+              echo "charge=absente" >> "$GITHUB_OUTPUT"
             fi
           done
           ls -l paquet/
@@ -669,12 +892,20 @@ jobs:
       # précisément ce que cette Release a déjà vécu avec un motif qui ne correspondait à rien.
       - name: Compose the Release body — the notes, what changed by zone, and any provenance gap
         env:
-          NOTES: ${{ needs.verifier.outputs.notes }}
+          CHARGE: ${{ steps.presents.outputs.charge }}
           DECLENCHEUR: ${{ github.event_name }}
           SHA_DU_DECLENCHEMENT: ${{ github.sha }}
         run: |
+          # ⚠️ LES DEUX MORCEAUX SONT DES FICHIERS, ET CHACUN A SA GARDE. La table des zones l'avait
+          # depuis toujours ; les notes ne l'avaient pas, parce qu'elles arrivaient par une sortie de
+          # job — et le 15/09 la forge a supprimé cette sortie en chemin (« may contain secret »),
+          # laissant partir la Release 0.1.169 sans une ligne de ses notes, cinq jobs au vert. La
+          # garde d'alors vivait chez le PRODUCTEUR, qui avait bien extrait la section ; personne ne
+          # posait la seule question qui compte : est-ce ARRIVÉ ? Elle se pose ici.
+          [ -s paquet/notes.md ] || { echo "::error::paquet/notes.md manquant ou vide — la Release partirait sans dire ce qui a changé, et c'est arrivé le 15/09"; exit 1; }
           [ -s paquet/zones.md ] || { echo "::error::paquet/zones.md manquant ou vide — le corps de la Release perdrait la table des zones en silence"; exit 1; }
-          printf '%s\n\n' "$NOTES" > corps.md
+          cat paquet/notes.md > corps.md
+          printf '\n' >> corps.md
           cat paquet/zones.md >> corps.md
 
           # ⚠️ UN REJEU DÉCLENCHÉ AILLEURS QUE SUR LE TAG ATTESTE LE MAUVAIS COMMIT, EN SILENCE.
@@ -691,6 +922,32 @@ jobs:
           #
           # On ne peut pas le corriger ici — l'attestation est déjà signée quand ce job tourne — donc
           # ON LE DIT, dans le corps que le lecteur a sous les yeux au moment de vérifier.
+          # ⚠️ UNE RELEASE SANS SA MESURE LE DIT. Sinon le lecteur d'une série y verrait un trou
+          # sans savoir s'il manque une mesure ou si personne n'en a fait.
+          if [ "$CHARGE" = "absente" ]; then
+            {
+              printf '\n---\n\n'
+              printf '### No load artefact for this release\n\n'
+              printf "This commit's CI run produced no load artefact, so none is attached here.\n"
+              printf 'Either the tag predates the producer (`charge/rapport.js`), or the run artefact\n'
+              printf 'expired. The series has a gap at this version, and this note is the gap.\n'
+            } >> corps.md
+          # ⚠️ ET QUAND ELLE EST LÀ, ON LA LIT DANS LES NOTES — engendrée depuis les octets attachés
+          # par `tools/resume-de-charge.mjs` dans `attester`, jamais recopiée. Un tableau de charge
+          # que personne ne peut relier à une course, une version et un commit ne peut pas être
+          # contredit : c'est ce qui m'a permis, le 14/09, de publier le relevé d'une autre course
+          # sans que rien ne s'y oppose. Le sha256 de chaque fichier y figure, pour confronter.
+          elif [ -s paquet/resume-de-charge.md ]; then
+            {
+              printf '\n---\n\n'
+              printf '### Load measured by this commit'"'"'s own CI run\n\n'
+              cat paquet/resume-de-charge.md
+              printf '\n'
+            } >> corps.md
+          else
+            echo "::warning::la mesure de charge est attachée mais son résumé manque — les notes ne porteront pas le tableau"
+          fi
+
           TAG_SHA=$(git rev-parse HEAD)
           if [ "$DECLENCHEUR" = "workflow_dispatch" ] && [ "$TAG_SHA" != "$SHA_DU_DECLENCHEMENT" ]; then
             {
@@ -711,7 +968,7 @@ jobs:
           wc -l corps.md
 
       - name: GitHub Release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           tag_name: ${{ env.TAG }}
           name: ${{ env.TAG }}
@@ -726,3 +983,4 @@ jobs:
             paquet/*.tgz.sha256
             paquet/*.sigstore.json
             paquet/*.cdx.json
+            paquet/*-charge-*.json

@@ -327,6 +327,22 @@ function isAllowedStorageUrl(candidate, origins, hostBase, root) {
 //   3. le nombre de sauts est borné, et le protocole ne peut pas changer de nature : une
 //      redirection vers `file:` transformerait un amont distant en lecture de disque local.
 const MAX_REDIRECTIONS = 5;
+/**
+ * ⚠️ LE BUDGET EST GLOBAL À L'OPÉRATION, PAS PAR SAUT — ET IL ÉTAIT PAR SAUT.
+ *
+ * Chaque tour de boucle créait son propre `AbortSignal.timeout(60 s)`. Avec six tours (saut 0 à 5),
+ * une chaîne de redirections lente pouvait donc immobiliser la requête, sa socket et sa place
+ * d'admission pendant SIX MINUTES — alors que le commentaire juste en dessous affirmait « le délai
+ * est large mais il est borné ». Il bornait un saut ; personne ne bornait l'opération. Relevé par
+ * un audit externe le 12/09.
+ *
+ * ⚠️ CE N'EST PAS UN TROU DE SÉCURITÉ, ET LE DIRE COMPTE : chaque saut repasse la garde complète
+ * d'origine et recalcule le secret. Le risque est de DISPONIBILITÉ — c'est la même leçon que les
+ * appels non bornés du contexte autonome, au même endroit du raisonnement.
+ *
+ * Un seul signal, créé avant la boucle et partagé par tous les sauts : le total ne peut pas dépasser
+ * ce chiffre, quel que soit le nombre de redirections.
+ */
 const DELAI_MAX_MS = 60_000;
 
 async function fetchAllowedFile(url, { range } = {}, { origins, hostBase, root, secret } = {}) {
@@ -335,6 +351,10 @@ async function fetchAllowedFile(url, { range } = {}, { origins, hostBase, root, 
   if (local) return readLocal(local, range);
 
   let cible = String(url);
+  // ⚠️ CRÉÉ ICI, PAS DANS LA BOUCLE : `AbortSignal.timeout` compte à partir de sa création, donc un
+  // signal fabriqué avant le premier saut EST le budget de toute l'opération.
+  const budget = (typeof AbortSignal !== "undefined" && AbortSignal.timeout)
+    ? AbortSignal.timeout(DELAI_MAX_MS) : undefined;
   for (let saut = 0; saut <= MAX_REDIRECTIONS; saut++) {
     const headers = { "accept-encoding": "identity" };
     if (range) headers.range = range;
@@ -342,8 +362,9 @@ async function fetchAllowedFile(url, { range } = {}, { origins, hostBase, root, 
     if (isHostFetchUrl(cible, hostBase) && secret) headers["x-player-fetch-secret"] = secret;
 
     // Un amont qui ne répond jamais immobiliserait la requête et ses ressources indéfiniment.
-    // Le délai est large — un gros document met du temps — mais il est borné.
-    const r = await fetch(cible, { headers, redirect: "manual", signal: AbortSignal.timeout(DELAI_MAX_MS) });
+    // Le délai est large — un gros document met du temps — mais il borne l'OPÉRATION ENTIÈRE, pas
+    // chaque saut : le même signal sert à tous, donc le temps déjà consommé ne se reconstitue pas.
+    const r = await fetch(cible, { headers, redirect: "manual", ...(budget ? { signal: budget } : {}) });
     if (r.status < 300 || r.status > 399) return r;
 
     const suivante = r.headers.get("location");

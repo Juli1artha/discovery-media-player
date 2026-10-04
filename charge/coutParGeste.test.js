@@ -134,11 +134,88 @@ const BUDGET_RESYNC = 4;
 // ne saurait qu'un geste est passé de 2 à 3 tant qu'il reste sous 4 — et c'est précisément l'érosion
 // qu'on veut voir venir.
 const releve = [];
+function verdictDesDocuments() {
+    const fs = require("node:fs"), path = require("node:path");
+    const RACINE = path.join(__dirname, "..");
+    const mesure = new Map(releve.map((r) => [r.geste, r.n]));
+    const fusionne = mesure.get("battement (jeton porté)");
+    const degrade = mesure.get("battement (hôte sans 0019)");
+    expect(fusionne, "le banc n'a pas mesuré le régime fusionné : rien à confronter").toBeGreaterThan(0);
+    expect(degrade, "le banc n'a pas mesuré le régime dégradé : rien à confronter").toBeGreaterThan(0);
+    // 250 participants, un battement toutes les 25 s → le débit est le coût × 10.
+    const attendus = new Set([`**${fusionne}**†`, `**${degrade}**†`, `**${fusionne * 10}**†`, `**${degrade * 10}**†`]);
+
+    // ⚠️ ET LE SENS INVERSE, QU'UNE MUTATION A RÉVÉLÉ MANQUANT. La première écriture vérifiait que
+    // tout chiffre MARQUÉ est une mesure — mais pas que toute mesure est marquée. Retirer un † en
+    // laissant le chiffre passait donc au vert : le nombre sortait du périmètre comparé, et
+    // redevenait libre de dériver, dans le silence exact que le marqueur existe pour rompre. Une
+    // garde qui n'inspecte que ce qu'on lui présente se vide quand on cesse de lui présenter.
+    //
+    // Le COMPTE est donc épinglé, comme le témoin des gestes : en retirer un rougit, en ajouter un
+    // rougit aussi et quelqu'un décide. C'est un nombre écrit à la main — mais confronté à chaque
+    // exécution, ce qui est précisément la différence qu'on passe la semaine à établir.
+    const MARQUES_ATTENDUES = { "docs/HOST-CONTRACT.md": 4, "docs/CONFIGURATION.md": 4 };
+
+    const fautes = [];
+    for (const doc of ["docs/HOST-CONTRACT.md", "docs/CONFIGURATION.md"]) {
+      const texte = fs.readFileSync(path.join(RACINE, doc), "utf8");
+      if (!/† \*\*Recomputed from the code/.test(texte)) fautes.push(`${doc} : plus de légende du marqueur †`);
+      // ⚠️ LA PHRASE PEUT ÊTRE COUPÉE PAR UN RETOUR À LA LIGNE — le point ne traverse pas un saut de
+      // ligne, et la première écriture de cette garde accusait un document parfaitement correct.
+      if (!/without †[\s\S]{0,160}hand-written/.test(texte)) fautes.push(`${doc} : la légende ne dit plus ce que l'ABSENCE de † signifie`);
+      const marques = [...texte.matchAll(/\*\*(\d+)\*\*†/g)].map((m) => m[0]);
+      if (marques.length !== MARQUES_ATTENDUES[doc]) {
+        fautes.push(`${doc} : ${marques.length} chiffres marqués, ${MARQUES_ATTENDUES[doc]} attendus — un † retiré sort le nombre du périmètre comparé, un † ajouté demande une décision`);
+      }
+      for (const m of marques) {
+        if (!attendus.has(m)) fautes.push(`${doc} : ${m} n'est aucune des mesures du banc (${[...attendus].join(", ")})`);
+      }
+    }
+    expect(fautes, "un document annonce un coût que le banc ne mesure pas").toEqual([]);
+}
+
+  // documents en disant ce que l'absence de † veut dire.
+function verdictDuTemoin() {
+    const mesure = new Map(releve.map((r) => [r.geste, r.n]));
+    const ecarts = [];
+    for (const [geste, attendu] of Object.entries(TEMOIN)) {
+      if (!mesure.has(geste)) { ecarts.push(`${geste} : PLUS MESURÉ (témoin ${attendu})`); continue; }
+      const n = mesure.get(geste);
+      if (n !== attendu) ecarts.push(`${geste} : ${n} mesuré, ${attendu} au témoin`);
+    }
+    for (const { geste, n } of releve) {
+      if (!(geste in TEMOIN)) ecarts.push(`${geste} : ${n} mesuré, ABSENT du témoin`);
+    }
+    expect(ecarts,
+      "le témoin daté et la mesure divergent. Si le changement est voulu, mettez le témoin à jour "
+      + "AVEC sa date — c'est une décision, pas un ajustement")
+      .toEqual([]);
+}
+
+/**
+ * ⚠️ LES VERDICTS AGRÉGÉS VIVENT ICI, ET PLUS DANS DEUX ESSAIS QUI ESPÉRAIENT ÊTRE DERNIERS.
+ *
+ * Ils confrontent le témoin daté et les documents à CE QUE LA CAMPAGNE VIENT DE MESURER : ils lisent
+ * `releve`, que les essais au-dessus remplissent. Écrits comme des `it()`, ils dépendaient donc de
+ * leur rang — exécutés avant leurs mesures, ils annonçaient « PLUS MESURÉ » sur cinq gestes et
+ * accusaient le produit d'une régression qui n'existait pas. Mesuré par `tools/ordre-des-bancs.mjs`.
+ *
+ * Un verdict sur l'ensemble appartient à l'APRÈS-ENSEMBLE. `afterAll` le garantit sans rien
+ * supposer de l'ordre, et un échec y reste nommé : le message part tel quel.
+ *
+ * ⚠️ CE QUI RESTE VRAI D'UNE EXÉCUTION FILTRÉE : lancer un seul essai par `-t` laisse `releve`
+ * incomplet, et les verdicts diront « PLUS MESURÉ » sur les gestes qui n'ont pas tourné. C'est
+ * exact — ils n'ont pas tourné — mais ce n'est pas une régression du produit. La garde
+ * `ordre-des-bancs.mjs` ne filtre jamais ; la forge non plus.
+ */
 afterAll(() => {
   if (!releve.length) return;
   const large = Math.max(...releve.map((r) => r.geste.length));
   console.log("\n  COÛT PAR GESTE (allers-retours base)");
   for (const r of releve) console.log(`    ${r.geste.padEnd(large)}  ${String(r.n).padStart(3)}${r.note ? "   " + r.note : ""}`);
+
+  verdictDesDocuments();
+  verdictDuTemoin();
   console.log("");
 });
 const noter = (geste, n, note) => { releve.push({ geste, n, note }); return n; };
@@ -266,61 +343,4 @@ describe("coût par geste, en allers-retours base", () => {
   // ⚠️ LE MARQUEUR † EST EXIGÉ, comme pour docs/API.md : le retirer en laissant le chiffre ferait
   // croire au lecteur que ce nombre est écrit à la main. Et la légende est exigée avec lui — un
   // marqueur sans légende ne marque rien, et c'est SA SECONDE PHRASE qui protège les autres
-  // documents en disant ce que l'absence de † veut dire.
-  it("les documents disent le coût que le banc vient de mesurer", () => {
-    const fs = require("node:fs"), path = require("node:path");
-    const RACINE = path.join(__dirname, "..");
-    const mesure = new Map(releve.map((r) => [r.geste, r.n]));
-    const fusionne = mesure.get("battement (jeton porté)");
-    const degrade = mesure.get("battement (hôte sans 0019)");
-    expect(fusionne, "le banc n'a pas mesuré le régime fusionné : rien à confronter").toBeGreaterThan(0);
-    expect(degrade, "le banc n'a pas mesuré le régime dégradé : rien à confronter").toBeGreaterThan(0);
-    // 250 participants, un battement toutes les 25 s → le débit est le coût × 10.
-    const attendus = new Set([`**${fusionne}**†`, `**${degrade}**†`, `**${fusionne * 10}**†`, `**${degrade * 10}**†`]);
-
-    // ⚠️ ET LE SENS INVERSE, QU'UNE MUTATION A RÉVÉLÉ MANQUANT. La première écriture vérifiait que
-    // tout chiffre MARQUÉ est une mesure — mais pas que toute mesure est marquée. Retirer un † en
-    // laissant le chiffre passait donc au vert : le nombre sortait du périmètre comparé, et
-    // redevenait libre de dériver, dans le silence exact que le marqueur existe pour rompre. Une
-    // garde qui n'inspecte que ce qu'on lui présente se vide quand on cesse de lui présenter.
-    //
-    // Le COMPTE est donc épinglé, comme le témoin des gestes : en retirer un rougit, en ajouter un
-    // rougit aussi et quelqu'un décide. C'est un nombre écrit à la main — mais confronté à chaque
-    // exécution, ce qui est précisément la différence qu'on passe la semaine à établir.
-    const MARQUES_ATTENDUES = { "docs/HOST-CONTRACT.md": 4, "docs/CONFIGURATION.md": 4 };
-
-    const fautes = [];
-    for (const doc of ["docs/HOST-CONTRACT.md", "docs/CONFIGURATION.md"]) {
-      const texte = fs.readFileSync(path.join(RACINE, doc), "utf8");
-      if (!/† \*\*Recomputed from the code/.test(texte)) fautes.push(`${doc} : plus de légende du marqueur †`);
-      // ⚠️ LA PHRASE PEUT ÊTRE COUPÉE PAR UN RETOUR À LA LIGNE — le point ne traverse pas un saut de
-      // ligne, et la première écriture de cette garde accusait un document parfaitement correct.
-      if (!/without †[\s\S]{0,160}hand-written/.test(texte)) fautes.push(`${doc} : la légende ne dit plus ce que l'ABSENCE de † signifie`);
-      const marques = [...texte.matchAll(/\*\*(\d+)\*\*†/g)].map((m) => m[0]);
-      if (marques.length !== MARQUES_ATTENDUES[doc]) {
-        fautes.push(`${doc} : ${marques.length} chiffres marqués, ${MARQUES_ATTENDUES[doc]} attendus — un † retiré sort le nombre du périmètre comparé, un † ajouté demande une décision`);
-      }
-      for (const m of marques) {
-        if (!attendus.has(m)) fautes.push(`${doc} : ${m} n'est aucune des mesures du banc (${[...attendus].join(", ")})`);
-      }
-    }
-    expect(fautes, "un document annonce un coût que le banc ne mesure pas").toEqual([]);
-  });
-
-  it("le relevé daté en tête de fichier dit ce que le banc vient de mesurer", () => {
-    const mesure = new Map(releve.map((r) => [r.geste, r.n]));
-    const ecarts = [];
-    for (const [geste, attendu] of Object.entries(TEMOIN)) {
-      if (!mesure.has(geste)) { ecarts.push(`${geste} : PLUS MESURÉ (témoin ${attendu})`); continue; }
-      const n = mesure.get(geste);
-      if (n !== attendu) ecarts.push(`${geste} : ${n} mesuré, ${attendu} au témoin`);
-    }
-    for (const { geste, n } of releve) {
-      if (!(geste in TEMOIN)) ecarts.push(`${geste} : ${n} mesuré, ABSENT du témoin`);
-    }
-    expect(ecarts,
-      "le témoin daté et la mesure divergent. Si le changement est voulu, mettez le témoin à jour "
-      + "AVEC sa date — c'est une décision, pas un ajustement")
-      .toEqual([]);
-  });
 });

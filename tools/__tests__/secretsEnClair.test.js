@@ -19,7 +19,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { secretsDeTexte, secretsDeEnv, inspecter, estJetonServiceRole, ESPECES, ECHANTILLONS, especesSansEchantillon, temoinNonVu, fichiersSuivis } from "../secrets-en-clair.mjs";
+import { secretsDeTexte, secretsDeEnv, inspecter, estJetonServiceRole, ESPECES, ECHANTILLONS, especesSansEchantillon, temoinNonVu, fichiersSuivis, valeurDe } from "../secrets-en-clair.mjs";
 
 const ICI = dirname(fileURLToPath(import.meta.url));
 
@@ -264,5 +264,71 @@ describe("le témoin posé : la sonde voit-elle encore un identifiant ?", () => 
       try { return readFileSync(f, "utf8").includes(litteral); } catch { return false; }
     });
     expect(porteurs, "le témoin est écrit en clair quelque part : la garde finira par s'accuser").toEqual([]);
+  });
+});
+
+// ⚠️ TROIS SONDES QUE NI LA GARDE NI CE BANC NE VOYAIENT. Mesuré le 01/09 en les aveuglant une par
+// une : la garde restait verte et aucun test ne bougeait. Elles ne sont pas fautives — elles n'ont
+// simplement jamais été éprouvées, et un code que rien n'exerce est un code que rien ne corrige.
+describe("⚠️ la normalisation base64url — et pourquoi rien ne peut la tuer", () => {
+  const charge = (obj) => Buffer.from(JSON.stringify(obj)).toString("base64url");
+  const jwt = (obj) => `eyJhbGciOiJIUzI1NiJ9.${charge(obj)}.signature`;
+
+  it("reconnaît un jeton service_role dont la charge est en base64url", () => {
+    expect(estJetonServiceRole(jwt({ role: "service_role", iss: "supabase" }))).toBe(true);
+  });
+
+  it("un jeton anonyme, ou ce qui n'est pas un jeton, ne l'est pas", () => {
+    expect(estJetonServiceRole(jwt({ role: "anon" }))).toBe(false);
+    expect(estJetonServiceRole("pas.un.jwt")).toBe(false);
+    expect(estJetonServiceRole("sanspoint")).toBe(false);
+  });
+
+  // ⚠️ CE QUI SUIT N'EST PAS UN TEST DE LA RÈGLE, C'EST LA PREUVE QU'ELLE EST INOBSERVABLE.
+  //
+  // `estJetonServiceRole` remplace `-` par `+` et `_` par `/` avant de décoder — la traduction
+  // base64url → base64 standard. Le balayage de mutation du 01/09 a montré que ces deux
+  // remplacements survivent à tout : aveuglés, ni la garde ni aucun banc ne bouge.
+  //
+  // La raison n'est pas un trou de couverture, c'est que `Buffer.from(x, "base64")` de Node
+  // ACCEPTE DÉJÀ l'alphabet base64url. Aucune charge ne peut donc distinguer les deux chemins, et
+  // un test qui prétendrait les couvrir mentirait sur ce qu'il éprouve.
+  //
+  // On mesure donc l'inobservabilité elle-même, plutôt que de l'affirmer en commentaire : le jour
+  // où un Node cesserait d'être permissif, CE cas rougirait et dirait pourquoi le code doit rester.
+  it("⚠️ les deux remplacements sont INOBSERVABLES sur ce Node — mesuré, pas supposé", () => {
+    const avecTirets = charge({ role: "service_role", ref: "ÿþý-_" });
+    expect(avecTirets, "la charge d'essai doit porter les caractères en question")
+      .toMatch(/[-_]/);
+    const brut = Buffer.from(avecTirets, "base64").toString("utf8");
+    const normalise = Buffer.from(avecTirets.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
+    expect(brut, "Node lit l'alphabet base64url tel quel : les deux chemins donnent le MÊME texte")
+      .toBe(normalise);
+    expect(JSON.parse(brut).role).toBe("service_role");
+  });
+});
+
+// ⚠️ `valeurDe` DÉCITE AVANT DE DÉCOMMENTER, et l'ordre est ce qui compte : une valeur citée porte
+// son commentaire À L'INTÉRIEUR des guillemets si l'auteur l'y a mis, et le retirer alors mutilerait
+// un vrai secret. Aveugler la reconnaissance des guillemets laissait la garde verte et ce banc muet.
+describe("⚠️ la valeur d'une ligne .env : citée d'abord, commentée ensuite", () => {
+  it("une valeur citée rend son contenu, guillemets retirés", () => {
+    expect(valeurDe('"une-phrase"')).toBe("une-phrase");
+    expect(valeurDe("'une-phrase'")).toBe("une-phrase");
+  });
+
+  it("⚠️ et un « # » DANS les guillemets fait partie du secret — on ne le coupe pas", () => {
+    expect(valeurDe('"mot#de#passe"'),
+      "sans la reconnaissance des guillemets, cette valeur serait tronquée à « mot »").toBe("mot#de#passe");
+  });
+
+  it("une valeur non citée perd son commentaire, avant comme après", () => {
+    expect(valeurDe("une-phrase # openssl rand")).toBe("une-phrase");
+    expect(valeurDe("   # openssl rand -hex 32")).toBe("");
+  });
+
+  it("les guillemets doivent s'APPARIER — une seule apostrophe n'ouvre rien", () => {
+    expect(valeurDe("\"pas-fermee")).toBe("\"pas-fermee");
+    expect(valeurDe("'ouvre\"ferme-autrement'")).toBe('ouvre"ferme-autrement');
   });
 });

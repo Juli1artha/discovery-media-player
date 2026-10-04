@@ -8,7 +8,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import { analyserAvecBash, blocsDe, blocsFautifs, sautes, estBash, lireDossier, temoinNonVu, PLANCHER_BLOCS } from "../shell-des-workflows.mjs";
+import { analyserAvecBash, blocsDe, blocsFautifs, sautes, estBash, lireDossier, temoinNonVu, PLANCHER_BLOCS, binaireDe } from "../shell-des-workflows.mjs";
 
 const wf = (steps, extra = "") => `name: T\non: push\njobs:\n  j:\n${extra}    steps:\n${steps}`;
 
@@ -139,5 +139,61 @@ describe("⚠️ le plancher sur ce que la phrase verte PRONONCE", () => {
     const analyses = blocs.length - sautes(blocs).length;
     expect(analyses, "112 le 01/09 — un effondrement ici est une sonde aveugle, pas un dépôt allégé")
       .toBeGreaterThanOrEqual(PLANCHER_BLOCS);
+  });
+});
+
+// ⚠️ TROIS SONDES QUE NI LA GARDE NI CE BANC NE VOYAIENT, mesurées le 01/09 : le choix du binaire
+// (`sh` ou `bash`) et les deux expressions qui EXTRAIENT le message d'erreur. Aucune n'est fautive ;
+// aucune n'était éprouvée. Le choix du binaire n'a aujourd'hui aucun sujet — les 112 blocs du dépôt
+// sont tous en `bash` — et c'est justement pourquoi il fallait un cas fabriqué.
+describe("⚠️ l'analyse elle-même : quel binaire, et ce qu'on garde de son refus", () => {
+  // ⚠️ LE CHOIX DU BINAIRE EST UNE FONCTION PURE, ET C'EST CE QUI LE REND ÉPROUVABLE PARTOUT. La
+  // version d'avant ne le vérifiait qu'en trouvant une forme que les deux analyseurs lisent
+  // différemment — un littéral de tableau, refusé par dash. Son commentaire disait « mesuré avant
+  // d'être cru » : mesuré sur dash, et cru UNIVERSEL. Sur macOS, `/bin/sh` EST bash et accepte ce
+  // littéral, donc le banc y rougissait sur une propriété du SYSTÈME et non du dépôt — la suite de
+  // ce dépôt était rouge sur la machine de son auteur sans que la forge, en Linux, puisse le voir.
+  it("⚠️ un bloc déclaré `sh` est dirigé vers SH, pas vers bash", () => {
+    expect(["sh", "sh -eu {0}"].map(binaireDe)).toEqual(["sh", "sh"]);
+    expect(["bash", "bash -e {0}", "pwsh", "", undefined].map(binaireDe))
+      .toEqual(["bash", "bash", "bash", "bash", "bash"]);
+  });
+
+  // ⚠️ ET LE COMPORTEMENT RÉEL, LÀ OÙ LE SYSTÈME PEUT ENCORE LE MONTRER. Cet essai demande que
+  // `sh` soit un analyseur DISTINCT de bash ; là où il ne l'est pas, il n'y a rien à observer — pas
+  // un défaut, pas un succès. Il est alors sauté en le DISANT dans son titre, plutôt que passé en
+  // vert sur rien. Le choix du binaire reste gardé par l'essai pur ci-dessus, en toutes
+  // circonstances : ce qui est sauté ici est un supplément, jamais la seule preuve.
+  const LITTERAL_TABLEAU = "tableau=(un deux)\n";
+  const shEstDistinct = (() => {
+    try { return analyserAvecBash(LITTERAL_TABLEAU, "sh") !== null; } catch { return false; }
+  })();
+  it.skipIf(!shEstDistinct)(
+    "⚠️ et sh le REFUSE réellement — sauté là où /bin/sh est bash, car il n'y a rien à discriminer",
+    () => {
+      expect(analyserAvecBash(LITTERAL_TABLEAU, "bash"), "bash accepte un littéral de tableau").toBeNull();
+      expect(analyserAvecBash(LITTERAL_TABLEAU, "sh"),
+        "sh le refuse — si le choix du binaire ne se lisait plus, ce cas rendrait null")
+        .toBeTruthy();
+    });
+
+  it("un shell inconnu retombe sur bash plutôt que d'échouer à lancer quoi que ce soit", () => {
+    expect(analyserAvecBash("if [ -z ]; then\n", "pwsh"), "un script cassé reste refusé").toBeTruthy();
+  });
+
+  it("⚠️ le message gardé NOMME l'erreur, il ne réécho pas le script", () => {
+    const dit = analyserAvecBash("if [ -z ]; then\n", "bash");
+    expect(dit, "bash refuse ce script").toBeTruthy();
+    expect(dit.toLowerCase(), "on garde la ligne qui parle de syntaxe").toMatch(/syntax|unexpected/);
+    expect(dit, "et pas le chemin du fichier temporaire, qui ne dit rien à personne")
+      .not.toMatch(/shellwf-|\/tmp\//);
+    expect(dit.split("\n"), "une ligne, pas la trace entière").toHaveLength(1);
+  });
+
+  it("⚠️ un refus dont AUCUNE ligne ne parle de syntaxe rend quand même quelque chose", () => {
+    // Le repli existe pour ça : sans lui, `find(...)` rend `undefined` et un bloc fautif
+    // remonterait avec un message vide — donc, `if (erreur)` étant faux, ne remonterait PAS.
+    expect(analyserAvecBash("if [ -z ]; then\n", "bash")).toBeTruthy();
+    expect(String(analyserAvecBash("if [ -z ]; then\n", "bash")).length).toBeGreaterThan(0);
   });
 });

@@ -481,6 +481,37 @@ base.
 frame. The last two fail the first: the frame was fine and the bar moved. Either half alone passes
 four of the six.
 
+⚠️ **A third failure the two questions do not catch: the property is held, but by side effect, and
+no assertion names it.** A host applied our own substitution answer to their harness and found this
+in their benches. Three of them double our `shares` export; none proved the double was reached.
+Removing the double turned **four** tests red — so the property *was* held, and that is exactly what
+disguised it: without the fixture the page renders nothing and the bundle globals are missing, so
+everything falls for reasons that have nothing to do with the property. **A red on removal is not
+evidence the assertion covers the thing; it may only prove the scaffolding was load-bearing.**
+
+Their diagnostic is better than "is there a floor?", and it transfers:
+
+- **Do not remove the double — change its value.** Removal collapses the setup and everything goes
+  red uninformatively. Mutating what the double *returns* leaves the setup standing and asks the
+  only question that matters: does any assertion notice? Theirs did not, until they added one; the
+  escaping case was a real record answering for the same key, where the page renders, the globals
+  exist, and only a check on the fixture's **value** sees the substitution.
+- ⚠️ **A refusal test can go green because the subject was unreachable, not because the refusal
+  works.** That is the same shape as the guard floors this repo fixed on 31/08 — five guards green
+  with their probe blinded — but one layer out: there the probe read nothing, here the *harness*
+  never presented anything to refuse. The guard-level rule was written; the bench-level one was not.
+- **A proof can exist and still be unnamed.** In their security guard the property *was* pinned —
+  buried in an access-wall test asserting `"Réservé"` while ostensibly about something else. A
+  rewording of that test would have removed the proof and nobody would have seen it go.
+
+⚠️ **And the honest result of running this against our own suite: inconclusive.** A probe over the
+101 literal `not.toContain` assertions flagged 77 with no positive assertion in the same file, then
+12 whose subject appears nowhere else in the file. On inspection the strongest candidate was **a
+false positive of the probe** — the subject is built by interpolation (`${id}@lu.example`), so the
+assertion does bite. The probe cannot see a constructed subject, which is most of them. **This does
+not say our benches are clean; it says this instrument could not tell.** Recorded as inconclusive
+rather than as a clean bill, which is the same rule the guards owe their verdicts.
+
 The remedy for the second question has a house form, and the count is worth writing down rather
 than the impression: **three test files carry an explicit anti-vacuity
 case** — `gardesAgent`, `voixNonCablee`, `etiquetteBornee`, added 24, 27 and 27 August — where the
@@ -855,12 +886,177 @@ this sweep: an **external analyser** (`bash -n`, `npm pack`, `git`), whose failu
 swallowed error rather than a blinded literal, and the **numeric and structural** decisions — an
 index, a comparison operator, a boundary — that neither operator touches.
 
+### The last twelve, and the two that no test can kill
+
+The regex sweep left **twelve probes that neither their own guard nor any bench in this tree could
+see** — the residue of 143 sites, named on this page rather than counted as passed. Closing them out
+was supposed to be bookkeeping. Ten died to a case that names them. The other two cannot die, and
+three of the ten took two attempts.
+
+⚠️ **Two probes are unobservable, and the honest move is to measure that rather than assert it.**
+`secrets-en-clair` normalises base64url before decoding — `.replace(/-/g, "+").replace(/_/g, "/")`.
+Blind either half and nothing changes anywhere, because `Buffer.from(s, "base64")` **already accepts
+`-` and `_`**: Node's decoder is base64url-tolerant, and the normalisation has been dead since it
+was written. Deleting it would be defensible; keeping it is also defensible, since the day the
+decoder is swapped for a strict one it becomes load-bearing again. What is not defensible is a
+comment claiming redundancy that no one has checked since. The bench now **computes both decodings
+and asserts they are equal** — if a future runtime ever separates them, the claim fails where it is
+made instead of rotting into folklore.
+
+⚠️ **Three first drafts passed for a reason other than the one they named, each time because a
+SECOND mechanism already covered the fixture.** Blinding is what said so; reading did not.
+
+- `liaison-de-crypto` strips the three string forms before hunting `crypto.` calls, and the
+  apostrophe form was unexercised. My fixture glued the call to the quote — `'crypto.createHash(…)'`
+  — and `appelsDuModule` **already refuses a `crypto` preceded by a quote character**. Green on both
+  sides of the blinding: the assertion measured the call-shape probe, not the stripper.
+- `langue-publiee` strips fenced code blocks, then inline backticks. A closed fence carries **six
+  backticks — an even number** — so the inline pass alone pairs them off and erases the whole block.
+  Every obvious fixture proves the second probe. The two part ways only on an **odd** count inside
+  the fence, where the pairing shifts by one and hands fragments of the block back to the prose.
+- `migrations-detectables` fingerprints a comment's text through `.replace(/\s+/g, " ").trim()`.
+  A fixture folded only at the head exercises `trim`, not the normalisation; the fold has to be
+  **internal**, which is how this repository actually writes long comments — concatenated literals
+  across three lines, as `0025` does.
+
+The shape is one rule: **a witness must differ from its subject on the axis under test, and on that
+axis alone.** A fixture that also differs elsewhere will be caught by whatever handles *elsewhere*,
+and the assertion passes without ever reaching what it names. This page already said a witness that
+resembles its subject does not test it; this is its neighbour — a witness that differs from its
+subject in *more than one way* does not test it either.
+
+⚠️ **And near-redundancy is worth measuring on the real corpus, not asserting from the code.** On
+the repository's 31 markdown files, blinding the fence stripper changes `compte()` on **zero** of
+them: today's documents contain no fenced block with an odd backtick count, so the probe earns
+nothing on the current corpus and everything on the day one does. The bench says both — the case
+that discriminates, and a case pinned precisely because it does *not*, so the next reader does not
+mistake it for coverage. **A probe that guards a shape the corpus does not yet have is not dead
+code; it is a claim whose subject has not arrived.** The two are told apart by measuring, and the
+measurement belongs in the bench.
+
+## A version number written by hand is a claim about the registry
+
+Four host-facing documents carried **eighteen statements, in the past tense, about two versions that
+had never been published** — the two numbers immediately after the published one — saying what each
+had *"stopped serving"* and *"stopped writing"*. The registry served `0.1.145`, which still serves and
+still writes both columns and ships migrations only up to `0024`. A host read `docs/RETENTION.md`, believed the change was live, and was then asked by
+its compliance function to apply migrations that were in no package. **The host found this by
+unpacking the version the registry actually serves. We did not find it at all.**
+
+⚠️ **The failure is a form, not an oversight.** A version number inside a sentence is an assertion
+about an external fact — the state of the registry — placed in a file that is connected to that fact
+by nothing. It is true when written, and an event outside the repository (or rather its *absence*:
+the release that never came) makes it false without the file changing. This page already names the
+remedy for the same shape elsewhere — `exemples-epingles` derives the number instead of writing it —
+and the remedy is the same here: **derive it, or do not name it.** A guard now refuses any document
+naming a version greater than `package.json`'s, which `docs/RELEASING.md` already holds equal to the
+tag and to the changelog's top section; the release window closes itself, since the bump lands in the
+same commit as the section describing it, with no exception to write and none to lift later.
+
+⚠️ **Writing docs for the version you are about to cut reads, to everyone else, as the present.** A
+document has no tense in the reader's hands: "stopped serving" is read as *has stopped*. Everything
+unreleased belongs to one future release whose number nobody knows yet, so it is named *"the next
+release"* or by something that exists — a migration number, an `[Unreleased]` section. Naming two
+different future numbers, as happened here, also produced an internal contradiction nobody caught:
+the same version was described as having stopped serving and as still writing.
+
+⚠️ **And the cost lands on whoever believed you.** The statement reached a compliance function as a
+plain fact, and an instruction to a host followed from it. When a claim about released state turns
+out to be about unreleased state, the correction is owed to everyone who acted on it, not only to the
+file. Fixing the document is the smaller half.
+
+⚠️ **A status line that reports an external state must carry its derivation or its date.** The same
+day, this session told its user four times that no release could be cut because *"0.1.145 shipped
+this morning"* and the repository ships one train per day. It had shipped **the previous day at
+12:04**. The rule was real, the fact was stale, and the conclusion drawn from it — *no release
+today* — was the one thing blocking every host from getting the fix. **A wrong fact about the past
+is survivable; a wrong fact that closes off the action is not.** When a sentence's job is to justify
+not doing something, check the fact under it first.
+
+## Erasing a column is not dropping it, and the intuition points the wrong way
+
+An arbitration asked for a stored IP address to be purged, with a stated preference: **drop the
+column rather than empty it**. The preference is the natural one — a column that is gone cannot leak
+— and it is wrong, in a way that only a measurement shows. On PostgreSQL 16.13, with `pageinspect`,
+on rows carrying an address:
+
+    after ALTER TABLE … DROP of the column        every address still in the heap
+    after routine VACUUM                          every address still there
+    after VACUUM FULL                             none — but it rewrites the table, under a lock
+
+    after UPDATE … SET ip = NULL                  old row versions, now dead
+    after routine VACUUM                          none
+
+⚠️ **`DROP` of a column marks the attribute dropped; it does not rewrite a single row.** The bytes
+stay in the heap until something rewrites the table — a `VACUUM FULL` or a `pg_repack`, neither of
+which a host runs spontaneously on a journal. Routine vacuum does not help: the rows are *live*, so
+there is nothing to reclaim. So the "clean" gesture leaves every address on disk **indefinitely**,
+invisible to every query — which is the worse of the two states, because the schema now swears the
+data is not there and nobody will ever look again. The `UPDATE` is what erases: it writes new row
+versions without the value and makes the old ones dead, and ordinary autovacuum collects them on its
+own, with no lock and no operator action.
+
+**The general shape: a deletion that is only a change of visibility is not a deletion.** Ask what
+physically rewrites the bytes, and whether anything in normal operation will ever do it. If the
+answer is "an operation an operator must choose to run", the erasure has not happened — it has been
+scheduled for nobody.
+
+⚠️ **And the same change ran into the rule that makes deployment order harmless.** Migrations here
+must be safe to apply *while the previous version of the code is running*; PostgREST rejects a write
+carrying an unknown column, so dropping one fails **every** write on that path for a host that
+migrates before deploying — with an error naming a column, not a version. That rule is a test, it
+caught the drop, and it was right to. The sequence is therefore: stop serving, stop writing, erase,
+and drop the column a release later once nothing supported writes it. The measurement is what makes
+the deferral free rather than a compromise — **the erasure is complete on day one; only the shape of
+the schema waits.**
+
+⚠️ **A migration that only erases leaves no trace in `information_schema`** — no column, no index,
+no constraint — so the repository's own detectability guard called it unprovable. That is the right
+verdict on the wrong-looking file: a purge is precisely the migration a host is most likely to be
+asked to *prove* to a regulator. It carries a `comment on column` for that, which `col_description()`
+answers. **The record of a deletion has to be something that exists.**
+
+⚠️ **A table nothing serves has no guardian, and that is where the oldest data hides.** The same
+arbitration went on to ask for the raw User-Agent, on the sessions table and on the *views* table.
+The sessions column had a defence — it is the source of `device`, `os` and `browser` — and it did not
+survive contact with its own premise: those three are derived **at write time** and are what a
+reading record carries, so the raw string has no reader, and *"we might re-parse it one day"* does
+not buy thirteen months of a fingerprint kept for nobody. But the views table was worse and nobody
+had looked: it has no derived columns at all, so it derived *nothing* from the string, wrote it, and
+none of the six queries touching these tables has ever read it back.
+
+The reason it hid is structural, not careless. **The coverage that existed asked what a session
+*hands out*** — a bench that reads the schema and refuses a column that is neither served nor
+withheld with a written reason. The views table is never handed out, so no such bench existed for it,
+and nothing ever asked what it merely *keeps*. Every audit of that area had been an audit of egress.
+**A column nothing serves is not a column without a question; it is a column whose question has no
+guardian.** Ask of each table both halves — what leaves it, and what it holds — because only the
+first has an obvious place to be asked.
+
+⚠️ **And answer "when is it purged" with the mechanism, not the number.** A retention window of
+thirteen months is easy to quote and, on its own, misleading here: this player's automatic sweep is
+**opt-in**, so on an installation that enabled neither it nor a manual run, no row has ever been
+deleted and the window describes an intention rather than an event. The honest answer has three
+parts — the rows (a policy someone must have switched on), the values inside surviving rows (erased
+by the migration, physically gone once routine autovacuum passes), and the copies nobody here
+controls (backups, WAL, exports, on the platform's own schedule). **When a compliance question asks
+for a date, the number that ends the sentence is usually the one you do not set.**
+
+⚠️ **A list of decisions rots in two directions, and only one was checked.** The session columns are
+covered by a list of what is *served* and a list of what is *withheld with a written reason*, and a
+bench read the schema to refuse a column present in neither. Nothing refused the mirror image: an
+entry motivating a column that no longer exists. Had the drop shipped, the reason for withholding
+`ip` would have stayed there indefinitely — prose about a thing that is not, which the next reader
+takes for the state of the world. **Any list that mirrors an external fact needs both directions
+checked, or it decays into a description of the past.**
+
 ## A derived perimeter is proven by a file that appears, not by a count
 
-**Twenty-three guards take their perimeter from the disk** (`git ls-files`, `readdirSync`,
-`npm pack`) rather than from a written list — counted, not remembered; an earlier note in this file
-said "eight", which was a memory. Three of those are libraries or comparison tools rather than
-sweeping guards. Deriving a perimeter was never the claim worth checking. **Deriving it
+**Most guards here take their perimeter from the disk** (`git ls-files`, `readdirSync`,
+`npm pack`) rather than from a written list. ⚠️ **This sentence used to open with a count, and the
+count rotted** — "eight" from memory, corrected to "twenty-three" by measurement, true when written
+and twenty-five a week later. Both were wrong to be here at all: the section argues that a count is
+not the proof, and then led with one. Deriving a perimeter was never the claim worth checking. **Deriving it
 *correctly* is**, and there is exactly one probe for that: *put a new file of the kind the rule
 judges into the repository, and see whether the guard turns red on it.*
 
@@ -1174,6 +1370,49 @@ without anyone touching it — so it needs a date, an address, or removal.
 | `AGENTS.md`: *Measured here on 26/08* | the counting was done on the **27th**; the date came from the subject, not the measurement |
 | `docs/HOST-CONTRACT.md`: *nothing in `server/` calls it today — that is measured* | present tense, undated, in the **published** page — written an hour before the date above was fixed, and left alone because the fix had been applied to the file that was pointed at rather than to the class |
 
+⚠️ **And the rule rotted inside its own rulebook — three times, found by looking rather than by an
+incident.** A host's rule sent us looking for present-tense numbers in prose; the sweep came back
+with three, all in files that carry this very section:
+
+| where | said | was |
+|---|---|---|
+| `AGENTS.md`, the derived-perimeter section | twenty-three guards | 25 |
+| `AGENTS.md`, twice in one section | thirty-three guards | 42 |
+| `docs/HOST-CONTRACT.md`, written that hour | thirty-nine guards | 42 — and *thirty-nine* was not even a guard count, it was how many **concluded conforming on one run** |
+
+⚠️ The sharpest of the three is the first: **it opens the section that argues a count is not the
+proof.** A rule stated correctly, in a paragraph disproving the practice, illustrated by the
+practice. Note also that the last one conflates a population with a measurement of it — "guards" and
+"guards green today" are different subjects, and only one of them is stable.
+
+None had a mechanical counter-measure available. Counting guards and grepping prose for a spelled
+number is the vocabulary problem again, and the fallback is the one named above: **the subject, not
+the wording**. So the numbers were removed rather than corrected. A magnitude that carries an
+argument survives as *most*, *every*, or a dated measurement; a magnitude that carries only
+impressiveness is rot with no upside.
+
+⚠️ **And the rule has a constructive half, which a host supplied after running our own sweep on
+their files.** Ours came back with three rotted numbers; theirs came back with **one** — and the
+interesting part was why the rest were sound. Not care. **Form.** Three shapes cannot rot, and
+between them they cover most of what a number is ever written for:
+
+| shape | their example | why it holds |
+|---|---|---|
+| a reading in the **past tense** | *"Verified: 1739 tests green (148 files)"* | it records an event; an event does not change |
+| anchored to an **artefact** | *"30 migrations, v12321 → v12417"* | bounded by two identifiers, so it re-verifies itself |
+| a **dated citation** of the defect | the four *"255 tests"* documenting its own removal | it quotes rather than claims |
+
+**Removal is the fourth, and the only one left when none of the three applies** — which is what the
+three cases above needed. A magnitude carrying an argument survives as *most*, *every*, or one of
+these three shapes; a magnitude carrying only impressiveness has no shape that saves it.
+
+⚠️ Their single rotted case is worth its own line, because it is this section's own failure at a
+larger scale: a present-tense sentence about a file that **had been deleted from the repository** —
+with the correction sitting six hundred and fifty lines above it, in the same file. Ours put a
+count in the paragraph disproving counts; theirs put the warning and the claim so far apart that
+neither reader ever holds both. **A warning in one place does not protect a claim in another**, and
+distance is what decides that, not intent.
+
 ⚠️ **A *position* is one of these numbers too — and neither this repository nor the host who caught
 it had read that into the rule.** Every catch above is a count or a date, so the rule reads as being
 about counts, and a cross-reference by line number slips underneath it. Two did, **in this very
@@ -1277,6 +1516,1146 @@ does not say who resolves it transfers the charge silently.
 Both cases have the same shape as the corollary two sections up, applied to a sentence rather than
 an output: **being present is not the same as being read.** A warning too far from its subject, and
 an assumption dressed as a precaution, are two ways of being present and doing nothing.
+
+## A timing guard buys its margin on the subject, never on the threshold
+
+The archive-seal step went red on `main` on a product that worked. The write **was** refused,
+refused **by the seal**, and it **did** block — 1137 ms, unblocking at the exact instant the
+concurrent transaction committed. Only the threshold refused.
+
+The arithmetic: the concurrent transaction holds the lock `pg_sleep(2)` seconds **from its own
+start**, and the write begins `sleep 0.6` later. The expected wait is 1.4 s against a 1200 ms
+floor — **200 ms of slack** — and any scheduling delay between the two *shortens* it, since the
+countdown has already begun. The runner's jitter that day was **315 ms**.
+
+**The fix is not to lower the floor.** Lowering it makes the bench green by making it less capable;
+lengthening the concurrent transaction makes it green while staying exactly as severe. The
+integrating host that read the fix put the rule better than the case: *the threshold is what you
+measure — moving it changes the question in order to get the answer.* Margin is bought on the
+**subject**, never on the **threshold**.
+
+Verified both ways before pushing, against a real PostgreSQL rather than reasoned about: at
+`pg_sleep(2)` with the observed jitter → 1123 ms, red (the forge's failure, reproduced); at
+`pg_sleep(4)` → green even under 2.5 s of jitter. And a positive control, because a bench made
+robust must be shown still to bite: with the seal trigger dropped, the write enters and it turns
+red.
+
+⚠️ **Why this matters past this one step.** A bench whose margin sits under its machine's jitter
+does not measure what it thinks it measures — it measures the runner's load. Worse, it *teaches its
+own red to read as noise*, which is the worst state a guard can reach: the day it is right, nobody
+believes it.
+
+## Every guard here measures this repository, and the defect lived at the host
+
+Three defects shipped in one day, each found by an integrating host within hours, none seen by any
+guard here: a counter saturating at our own bound; then, in its fix, a *server* ceiling passing
+under that bound (`db-max-rows`, 1000 by default on Supabase) so that a 1651-row table published
+`1000` **with `tronque: false`** — asserting an exactness it did not have.
+
+The reflex is to read that as a failure of the guards. A host read it better: **all three lived at
+the frontier between this code and an installation we cannot see.** PostgREST's ceiling is a fact
+of *their* database. The saturation only manifests at *their* volumes. And our test double, by
+construction, could not host that frontier at all.
+
+Guards that run here measure this repository. **None of them can measure what only exists at the
+host** — that is structural, not an oversight, and it is why these exchanges are worth their cost:
+not that the other party looks harder, but that they are not looking at the same object.
+
+The symmetry holds in the other direction, and the host said so first: their own defect of the same
+day — a statistics read truncated to the 1000 *oldest* rows of 6424 — lived entirely in their
+repository, in a file their own guards did not watch either. It took our counter for
+them to go and look.
+
+## A double that does not simulate a layer cannot be fixed by any dataset
+
+We already had the rule that a fixture must be able to **produce** the phenomenon. This is the rung
+below it, and it was missing.
+
+The counter's test double returned a *constant array*: it ignored `limit`, ignored the cursor, and
+had no ceiling of its own. So the ceiling defect was not *missed* in the bench — it was
+**unreachable** there. The fixture written with a real host's own volumes (257 and 1651) could
+change nothing, and not because those numbers are too small: because **the ceiling did not exist in
+the double's world**.
+
+A missing case is recovered by writing it. A missing **layer** is not.
+
+⚠️ And the reason it stays invisible: a database double that does not cap never announces *"I do
+not cap."* It behaves like a perfect database — which is indistinguishable, from the inside, from a
+correct one. So when a defect lives in a layer, ask what the double *is silently perfect at*, not
+what data you fed it.
+
+## A control that separates two mechanisms must rest on what only one of them can do
+
+An integrating host wired an optional seam of ours, then wrote a script to check it was actually
+being used. The script compared the published number against a value:
+
+```
+→ vues : 1655 | réel en base : 1651
+⇒ repli sur la voie par lignes — db.count n'a pas répondu
+```
+
+It was wrong, and the seam was working. Two faults stacked, and the second is the one worth
+keeping.
+
+The first is the section above this one: `1651` was a number they had measured *the day before* and
+written into the control by hand. Four rows arrived in between. A number in the present tense rots,
+and this time it rotted **inside the tool whose job was to check something else** — which is the
+placement that costs the most, because a rotted control does not fail loudly, it accuses the
+subject.
+
+The second is new. **They wrote a value control for a mechanism question.** The question was *which
+of two routes produced this number*; the assertion was *is this number 1651*. But both routes can
+return 1651. The property that actually separates them is that one of them **cannot exceed a
+ceiling** — the bounded route is structurally incapable of returning more than the server's
+`db-max-rows`, so `> 1000` is true of one mechanism and impossible for the other, whatever the table
+grows to. `= 1651` was true of both and expired at the next write.
+
+⚠️ So: **to distinguish two mechanisms, assert on something one can do and the other cannot** — a
+capability, a ceiling crossed, a call made or not made — never on a value both could produce. A
+value control over a mechanism question is green for the wrong reason, and it holds that green
+until the value drifts.
+
+Applied to ourselves the same hour, and it found something. Our own benches for those two routes
+are sound: they assert on the *calls recorded* — `vus.every(c => c.startsWith("count:"))` — which is
+a mechanism, not a value. But they are sound **only because a bench can see inside**. The host
+cannot see our calls, and the two routes published an identical card. The rule held on our side of
+the line and failed on theirs, which is the shape this repository already knows: a guard that is
+correct, and does not run on the perimeter you think. The card now carries `voie`, so the
+distinction they had to infer from luck of volume is one they can read.
+
+## A small installation does not merely lack occasions — it loses discriminating power
+
+An integrating host stated this about themselves, and it is the sharpest thing anyone said this
+week:
+
+> Nos faibles volumes nous protègent des défauts. Ici ils nous privent d'un signal que le volume
+> produisait gratuitement chez l'autre. **Un hôte plus chargé est mieux instrumenté sans avoir rien
+> instrumenté.**
+
+The case. Our purge card publishes a count. Two routes can produce it, and for a while the card did
+not say which. At the other host — 1655 rows — an exact count *is its own proof*: it exceeds the
+server's 1000-row ceiling, which the bounded route structurally cannot. At this host — 99 sessions,
+354 views — **no value can ever separate the two**. Same code, same card, and one of them is blind
+to a failure mode the other detects for free.
+
+⚠️ **So: a field whose value is its own witness at scale needs an explicit witness at small scale.**
+Not because small installations matter less, but because the free evidence large ones enjoy is an
+accident of their size and it silently disappears below a threshold nobody wrote down.
+
+Applied to our own card within the hour, and it found one. `mesures.relever()` omits any route
+family with no samples — correctly, since a `0 ms` would read as *instantaneous*. But the omission
+left `routes: {}` meaning either *no traffic* or *measurement is not running*, and a loaded host
+never meets the question because its entries are always there. The two sibling fields in the very
+same object already knew better — `statuts` publishes its five keys at zero, `boucleMs` publishes
+`n: 0` with explicit `null`s "rather than a zero that would read as: the loop is healthy". Three
+siblings, two carrying their denominator and one that had forgotten. That is what makes the rule
+measurable rather than arguable: the inconsistency was already inside the file.
+
+## Is there a state of the world where this value is false?
+
+The same host wrote *"this is not a defect; it is something a host cannot verify"*, and then
+retracted it themselves with the reason:
+
+> Ces deux propositions m'avaient l'air équivalentes. Elles ne le sont pas : **une chose
+> invérifiable devient un défaut dès qu'elle peut être fausse sans bruit.**
+
+⚠️ The question that separates a *limit of observation* from a *silent failure mode* is one line:
+**is there a state of the world in which this value is false?** If yes, the unverifiability is the
+defect, not its mitigation — because the reader will act on a value that nothing contradicts.
+
+Classifying a silent failure as an observation limit is comfortable in exactly the wrong direction:
+it converts something to fix into something to accept.
+
+## A binary is an assumption that no transition exists
+
+Stated by the other host, on a field of ours they had not thought to question:
+
+> Le cas où deux réponses coexistent n'est pas un cas limite, c'est un état normal du système
+> pendant une transition. **Un binaire est une hypothèse sur le fait qu'aucune transition
+> n'existe.**
+
+The card's `voie` says which route produced its numbers, and it has three states, not two. The third
+is not politeness about edge cases: a host **mid-purge**, with the column already dropped, makes
+`count` throw on the filtered paths and answer on the same table's totals — both routes serve the
+same read. A boolean would have had to round that, that is, lie about one of its halves, at the
+precise moment someone is reading those numbers to decide whether anything is left to erase.
+
+It is the same reasoning that gave `vide` three states, and the generalisation is worth keeping:
+before choosing a boolean, name the transition it assumes away. If you can name one, it is not a
+boolean.
+
+## The visibility of a defect is distributed inversely to its cost
+
+An integrating host has `safeupdate` preloaded, so an unrestricted `DELETE` or `UPDATE` is refused
+outright — even under `service_role`. They reported it as an obstacle they had paid for. It is the
+opposite: it is the **net**, and nothing in our host contract requires it.
+
+⚠️ Run that backwards and the shape appears. At a host that has the protection, the bad line fails
+loudly and someone learns the problem exists. At a host that does not, **the same line succeeds and
+empties the table** — silently, and nobody learns anything. So the host who is protected is the one
+who finds out, and the host who is exposed is the one who never does. They stated the general form,
+and it is worth more than the case:
+
+> the protection that makes a defect noisy is not guaranteed by the contract, so the protected host
+> learns the problem exists and the exposed host never does — **the visibility of a defect is
+> distributed inversely to its cost.**
+
+The practical consequence is a rule about where to put the fix. When a defect is only noisy where
+something optional catches it, **close it on the side you control** rather than requiring the
+catcher. We did not add "you must enable `safeupdate`" to the contract; we added a guard that
+refuses an unfiltered write in our own repository. Requiring the net asks every host to rescue us
+from a line we could simply not write.
+
+⚠️ And the corollary for reading reports: a host telling you about a defect is evidence they had the
+protection, not evidence they are the affected one. The affected ones are silent by construction.
+
+⚠️ **Which makes the whole channel biased, not just one report.** A host drew out the consequence
+after reading the rule back to us, and it is sharper than what we had written:
+
+> what you receive as field reports is filtered by the ability to see, so it is systematically biased
+> toward the best-instrumented installations. **The reports you will never get come from where it
+> breaks the most.**
+
+This is survivorship bias applied to a host contract, and it says what to do with a quiet channel:
+silence from an installation is not evidence that it is healthy, it is an absence of evidence
+weighted toward the installations least able to produce any. So do not rank a defect by how many
+hosts reported it — that count measures instrumentation, not incidence. And when a report arrives
+from a well-instrumented host, ask what the *unequipped* version of that installation would have
+experienced instead, because that version exists and will not write.
+
+⚠️ It also bounds what our own "What you can see and we cannot" section can achieve. Asking hosts
+what they cannot verify improves the answers from those who can already answer; it does nothing for
+the ones whose whole problem is that nothing at their installation would notice. Those are reached by
+closing defects on our side, never by asking better questions.
+
+⚠️ **And a host sharpened even that, in a way that changes what the section is for.** We had written
+the bound as a limit on reach. They put it as a statement about direction:
+
+> It is useful — our four replies are the proof — but it does not correct the bias, it exploits it
+> better. The only action that reaches the silent hosts is the one that does not depend on them.
+
+Keep both halves. The section is worth having: it produced the ceiling, the platform timeout, the
+substitution seam. But it is a *yield* improvement on the population that already answers, and
+counting its successes as evidence the channel is healthy is the same error one layer up. When
+choosing between one more question to hosts and one more defect closed here, the second is the only
+one that touches the installations we never hear from.
+
+## Two identical messages are one reading — the relay copies, the authors do not
+
+⚠️ **The rule below is sound. The evidence this section first claimed for it was not — and the way
+it was wrong is the rule biting the person who wrote it.** The original text said *"measured in both
+directions, at two hosts, independently — so it is a property of the channel and not an anecdote."*
+That was false. Two byte-identical replies arrived; we asked whether each host had written twice and
+recorded that "both said no". In fact **the relay operator had pasted the same host's message twice**
+— so one answer reached us twice, and we counted it as two. The reciprocal measurement (*our*
+announcement reaching them three times, our relayed message twice) is that same single host's
+report. One host, not two.
+
+⚠️ **We applied the rule to their messages and exempted our own summary of them.** The section warns
+in as many words that a duplicated relay manufactures the appearance of a second host at no cost —
+and then, four lines up, claimed two independent hosts on evidence that was one host twice. Checking
+the hosts' identity and not checking our own sentence about it is the whole failure: **a rule about
+evidence has to be run against the claim you are about to write, not only against the input.**
+
+What did settle it was the step the rule already prescribed: **asking the person who operates the
+relay**, the only party who can see both ends. They answered plainly that the duplication was theirs.
+Keep that as the first move, not the last.
+
+> Between two parties communicating through a human relay, the identity of two messages does not
+> prove two readings — it proves a copy-paste.
+
+The failure mode is the same shape as the instrumentation bias one section above, and just as
+comfortable: **it inflates the signal without inflating the information, in the direction that
+reassures.** A fact measured at one host is an anecdote; at two independently, a property — and a
+duplicated relay manufactures the *appearance* of the second host at no cost, which is precisely the
+evidence this repository upgrades a claim on.
+
+So, operationally: **before counting a second host as corroboration, establish that it is a second
+author.** Identical wording is disqualifying on its own, and near-identical wording deserves the
+question asked out loud. The channel has no way to see this from the inside, so the check has to be
+explicit — asking costs one sentence, and being wrong costs a rule written on one host's word while
+believing it rests on two.
+
+⚠️ **A label can be right while the payload under it is wrong — and that is harder to catch than a
+missing label.** A third delivery arrived, byte-identical to the first two, carrying a host's name.
+The name conflicted with what that host had itself reported an exchange earlier — the message said
+*"we were on 0.1.156"*, their own prior report said *"0.1.155 in production"*. The temptation was to
+decide which one they "really" meant. We did not, and the relay operator then explained: the label
+was the one they intended; the text pasted under it was the other host's.
+
+So: **a name attached by the transport is a routing intent, not evidence of authorship**, and a
+contradiction between a message and its named author is a question for the relay, never something to
+resolve by choosing the more convenient reading. The cost of guessing is the worst kind — a
+correction attributed to the wrong host teaches them we read their reports carelessly, and teaches
+us a fact about an installation nobody claimed.
+
+⚠️ **And a corollary about what you are then entitled to say you have.** When a duplicate is
+resolved, the reading it appeared to supply does not reappear elsewhere — it was never there.
+Discovering that two messages were one leaves you with **one fewer host heard from**, not with the
+same evidence better labelled. Say so: *"we have no reading from that host this round"* is a fact
+about coverage, and suppressing it is how a channel comes to look broader than it is.
+
+## Before asking anyone to change behaviour, check whether you need the information instead
+
+⚠️ **We asked every host to stay within one release of current. A host showed the ask was wrong, and
+the demonstration is the useful part, not the verdict.**
+
+> You are asking that hosts be up to date; what you need is to know which version a measurement was
+> taken on. They are not the same thing, and the second is strictly cheaper.
+
+The premise we had written — *a report we cannot reproduce is a report we cannot act on* — was
+sound. The conclusion did not follow from it. A report stamped with its version is reproducible
+however old the installation; an unstamped report is not, however current. So the need was for a
+**field in the report**, and we had asked for a **change in everyone's deployment cadence**: a far
+larger request, imposed on far more people, that does not even achieve the thing.
+
+Three things make this worth a section rather than a correction:
+
+- **Asking for a behaviour is the expensive way to get a fact.** When a request is about how others
+  should operate, look for the datum that would make the behaviour unnecessary. Usually it exists,
+  usually it is one field, and usually you already serve it — we serve `version` in the identity
+  card; we simply never asked anyone to quote it back.
+- ⚠️ **A request only the compliant can honour reads back as compliance.** Hosts who answer us would
+  have adopted the cadence; hosts who had drifted would neither adopt it nor tell us. The channel
+  would then have shown "hosts are aligned", and the number would have been measuring who replies.
+  This is the instrumentation bias two sections up, applied to cadence instead of yield — **and we
+  wrote it into the document within a day of writing the bias itself.** Knowing a failure mode by
+  name does not stop you walking into it; only checking each new ask against it does.
+- ⚠️ **Blaming a gap on the population you can see is how you miss that it is yours.** We attributed
+  the irreproducibility to host drift. Measured: of twelve host findings recorded in the contract,
+  **zero** name the version they were measured on, and several came from hosts who were current.
+  The information was lost when we wrote it down. **No behaviour change on their side would have
+  restored a field we never asked for and never recorded.**
+
+The test, before any ask that requires other people to act: *what fact would make this request
+unnecessary, is it cheaper, and can I get it without their cooperation changing?*
+
+## A guard that only serves when another has failed is the least exercised and the most needed
+
+The same week, a host pointed out that the timeout we had just corrected sits on a path their
+installation does not use: they take the exact-count route, so those timers only ever apply if
+`db.count` stops answering. Which is to say — the correction matters precisely when something else
+has already broken, and never before.
+
+> A guard that only serves in case of another's failure is the one you exercise least and need most.
+
+It is worth naming because the usual instinct runs the other way: a path that never executes in
+normal operation looks like a candidate for less care, not more. It deserves more, for the same
+reason a fallback deserves a bench — the first time it runs, everything else is already wrong, and
+nobody is in a position to notice that it ran badly.
+
+## An assertion whose subject is empty by construction observes the instrument, not the object
+
+A host returned our own question to us and brought back a shape our anti-vacuity rule does not
+cover. Their dark-theme guard carries a counter — *"the DEBT does not grow quietly"* — which sums
+the tokens present in their screens **and** listed in a `DEBT` exceptions table. That table is
+empty. So the filter `DEBT.has(t)` is structurally false, the sum is structurally `0`, and
+`expect(n).toBe(0)` cannot fail on **any** change to the code. It fails only if someone edits the
+test file itself.
+
+> It observes the instrument, not the object.
+
+⚠️ **This is one notch beyond "the probe recognised nothing."** Our rule from 31/08 covers the
+missing floor: a probe opens a corpus, recognises nothing in it, and returns CONFORMING instead of
+INCONCLUSIVE. Here the probe recognises perfectly well — it is its **subject** that cannot exist.
+The same audit passes over both, and only the second reads as a deliberate, documented assertion.
+The comment defending theirs said it would redden *"the day someone puts something back in"* — true,
+and that is the defect: *in* means the test, not the code that runs.
+
+The question that separates them is not *does this have a floor?* but ***is there a state of the
+world, reachable by changing only the code, in which this assertion fails?*** If the only path to
+red runs through the test file, the test measures the test.
+
+## A zero produced by a command that never ran looks exactly like a measured zero
+
+The same host, in the same report, caught themselves: their first reading announced `0` files in a
+directory their guard sweeps, and they nearly wrote to us that the guard swept the void. It was an
+artefact of the shell. **`zsh` aborts the entire command when a glob matches nothing**, so the `ls`
+never ran at all, and the count returned `0` without having counted anything. Checked another way:
+4 files.
+
+> A zero produced by a command that never ran looks exactly like a measured zero.
+
+This is the same family as the two above, one layer lower — beneath the probe, in the thing that was
+supposed to launch it. Our rules all assumed the measurement happened and asked what it saw. None
+asked whether it happened. The forms are ordinary and none of them announces itself: a failed glob
+under `zsh`, a pipeline killed by `set -e` before its last stage, a binary that is not installed, a
+`cd` that failed so every following command ran somewhere else. Each yields a number, and the number
+is indistinguishable from a real one.
+
+The remedy is the one this repository already applies to probes, moved up a level: **a count must be
+accompanied by something that proves the counting occurred.** A positive control is the cheapest
+form — plant something you know the instrument must find, and refuse the whole reading if it is not
+found.
+
+⚠️ **And a floor on the count does not supply it.** `tools/__tests__/planchersDesGardes.test.js`
+already carried one — *"the probe does find tools to exercise"*, at least 8 — which proves files
+were **found**. It proves nothing about the launcher. Every assertion in that file has the form
+*"the exit code is not 0"*, and a broken launcher satisfies all of them at once, silently and for
+free: `node` missing, a `cwd` that does not exist, a tree that failed to mount. The file now plants
+a tool it **knows** must exit 0 and refuses the whole reading if that plant is not caught. Without
+it, *"no guard is green"* and *"no guard ran"* are the same reading — and the second one is
+indistinguishable from success.
+
+## When you ask two sources the same question in the same words, convergence measures the question
+
+We had written a caution into a message before sending it: *if your two answers converge, it may be
+our shared wording rather than two observations.* A host sent it back to us as a rule, better
+stated than we had it:
+
+> When you put the same question to two sources in the same words, convergence measures the
+> question, not the sources.
+
+It is the reciprocal of the duplicate-relay rule, and worth keeping separate from it. There, two
+identical messages turned out to be one reading because the **channel** had copied. Here, two
+genuinely independent readings can still fail to be independent evidence, because the **question**
+supplied the answer. The channel case is an accident to be detected; this one is manufactured by us,
+at the moment we write the question.
+
+The practical consequence is not to stop asking two sources the same thing — it is to say so in the
+body, so that whoever reads the answers knows what the agreement is worth. Their note on timing is
+the part we had wrong: we had raised it as an honesty disclaimer after the fact. **Raise it before
+the answers arrive**, where it can still change what you conclude.
+
+## A guard applied to nothing and a guard never applied are worth the same
+
+Writing the guard above turned up two of our own, and the shape is a third variant of the family.
+`tools/filtre-avant-ecriture.mjs` and `tools/attributs-des-generes.mjs` were correct, fully covered
+by unit benches — and **applied to this repository nowhere**. Neither appears in any workflow, and
+every bench exercised them against fabricated temporary trees. The rule was enforced on fixtures and
+on nothing else.
+
+Nothing about that is visible from the outside: the benches are green, the coverage is real, the
+guard file reads exactly like the ones that do work. What was missing is a single assertion running
+the guard against the actual repository, and its absence looks identical to its presence in any
+summary that counts guards or counts tests.
+
+> Two questions, and the second is the one nobody asks: *does this guard look at anything?* and
+> *does anyone ever point it at us?*
+
+Both are now closed with a `le dépôt lui-même` bench, which is the convention the older guards
+already followed — it had simply never been required.
+
+⚠️ **This paragraph used to end: *"requiring it mechanically is a guard we have not written"*.** It is
+written now, as `tools/gardes-appliquees.mjs`, and it holds the rule in its two accepted forms: a
+workflow step that launches the guard in a way that can fail (`continue-on-error`, `|| true` and a
+background `&` do not count), or a `describe("le dépôt lui-même")` block whose body **uses**
+something the bench loaded from the guard. It reads both through the AST, never the text — and both
+halves of that choice were paid for before it merged:
+
+- **The audit that prompted it was wrong in all six cases it named.** On 23/09 an analysis of this
+  repository listed six guards "never launched". All six were applied: five by a "le dépôt lui-même"
+  block calling `garde.auditer()` *with no argument* — that is, on the repository — and the sixth by
+  `ecarts()` on the real `CODEOWNERS`, under another title. The probe had searched a vocabulary
+  (`racine`, `process.cwd`) and missed a bare call. The one real change it led to was renaming that
+  sixth block, so the rule can see what it already did.
+- **The guard's own first bench caught it lying.** Its "le dépôt lui-même" block asserts
+  `toEqual(["orphelins-tts.mjs"])`, and the first draft read any guard filename in the block as a
+  path being followed — crediting the operator tool it exempts. Only arguments of calls that follow
+  a path (`join`, `spawnSync`, `import`, …) count now. What exposed it was the symmetric rule — *an
+  exemption that is also applied is refused* — on its first run.
+
+What it does not check, and says so in its header: that the block applies the guard to the
+repository rather than to a fixture (the title is a declaration; review checks it), how often a
+workflow runs, and whether its job is required.
+
+## Before building the instrument, look for it — this repository already had it, and better
+
+The sharpest lesson of the day is not any of the three above. Asked to build a guard that runs every
+guard against an empty repository, we built it: inventory, skeleton, witness, benches, six mutations
+killed. It was green, it was fast, and it was **a worse duplicate of
+`tools/__tests__/planchersDesGardes.test.js`**, which has done exactly that since `ecdb78e` — and
+does it better, because its exemptions carry a predicate that re-verifies the reason
+(`tientEncore`) instead of a string we would have to believe.
+
+We did not discover this by reading. **The existing bench failed on the new guard within minutes of
+its being written** — because a guard whose corpus is the other guards travels with its corpus, and
+is therefore green on an empty repository. The thing we built to detect that defect had it.
+
+> A proposal to build is a claim that it does not exist. That claim is measurable before any code
+> is written, and it is cheaper then.
+
+The rule generalises past this repository. The instinct to build is strongest exactly when a problem
+has just been named clearly — which is also the moment when the search is shortest, because the
+name is fresh and searchable. What survived here is one assertion, grafted onto the existing file:
+the witness above, which was genuinely missing. That is the normal outcome of looking first — not
+nothing, but far less than what was proposed, and in the right place.
+
+## A witness proves the instrument ran; it does not prove the stimulus arrived
+
+The positive control added in 0.1.159 answers *"can this harness execute anything at all?"*. A host
+brought back the layer beneath it, from their own near-miss. Their mutation campaign reported two
+surviving guards, and they were about to tell us that two of seven were blind. Checking before
+sending: the `sed` for one of them had produced an **empty diff**. The mutant never landed. The
+guard had been **declared blind for having had nothing to see**. Redone properly, it kills that
+mutant twice, on exact equalities.
+
+> A witness proves the launcher runs. It does not prove the stimulus arrived.
+
+This is the fourth layer of the same family, and they are worth keeping distinct because each is
+invisible to the check above it:
+
+| what is missing | what it looks like |
+|---|---|
+| the probe recognised nothing in its corpus | green on nothing |
+| the command never ran (a failed glob, a killed pipeline) | a zero that looks measured |
+| the harness cannot execute anything | a non-zero that costs nothing |
+| **the stimulus never reached the subject** | **a healthy guard reported as blind** |
+
+⚠️ **And this one accuses rather than reassures**, which is why it deserves its own name. Every
+other failure in this family produces false comfort: a green that means nothing, a count that was
+never counted. This one fabricates a defect *at home*, and sends someone to fix a thing that was
+never broken. The cost lands on whoever is asked to repair the imaginary hole.
+
+**The refinement that halves the cost: only a survivor needs the check.** A killed mutant proves its
+own landing — the red is the evidence that the change reached the subject. It is exclusively the
+*surviving* mutant that is ambiguous, because "the guard did not notice" and "there was nothing to
+notice" produce the identical result. So the rule is not *verify every mutation*; it is **never
+believe a survivor whose diff you have not seen**.
+
+We hold this already, and it was verified rather than assumed:
+`tools/fixture-types/eprouver.mjs` — our one automated mutation campaign — does
+`if (mute === original)` and records that case as a survivor **with its own message**, *"the pattern
+no longer exists in the fixture"*. It fails the run, and it separates the two causes in the constat
+rather than merging them. That is the remedy, one notch better than requiring a non-empty diff,
+because the reader is told which of the two happened.
+
+## A value the test itself supplied is never evidence that a double was reached
+
+A host closed a file we had asked about, and the interesting part was not the answer but the unit.
+We had asked whether their fourth `describe` had a control. Their answer: the unit is not the
+`describe`, it is **the double each one borrows**. Three routes existed; one of them —
+their preview renderer — borrows **no double at all**, because its output comes from query
+parameters. Its fixture-looking value was the one **the test had sent in the request**.
+
+> They could have taken it for proof, and it would have been a false one.
+
+The shape generalises past test doubles. Any assertion that finds a value it supplied itself is
+measuring the round trip of its own input, not the mechanism in between: a header echoed back, an id
+you generated appearing in a response, a filename you wrote turning up in a listing. The value's
+presence proves transport, and transport is rarely the property under test.
+
+The question that separates them: ***if the component under test were replaced by one that returns
+its input unchanged, would this assertion still pass?*** If yes, the assertion is about the test.
+
+Their conclusion about the file is worth keeping too, because it changes the accounting: the file is
+closed not because every `describe` carries a control, but because **every participating double is
+asserted at least once**, and the routes that repeat an already-proven double would take the whole
+file red if that double broke. Coverage is owed to the seams, not to the syntax.
+
+## The count of tests that fall under a mutation is a second reading, of the coupling
+
+We had observed that mutating a fixture's value discriminates better than removing it, and that the
+discrimination sharpens as the harness gets healthier. A host took the observation further than we
+had, and the extension is the useful half:
+
+> The number of tests that fall is not noise around the verdict. It is a second measurement — of how
+> coupled the file is.
+
+In their case: mutating one file's fixture took down four tests, of which three fell for reasons
+unrelated to the property. Mutating another took down exactly one, the one that measures. Same
+method, same intent, and the difference is a property of the **files**, not of the mutation. The
+first file was telling them *"a control is missing"* and, in the same breath, *"too much here depends
+on a single render"* — and they had read only the first sentence.
+
+So a mutation campaign yields two outputs per subject and it is worth writing both down: **did
+anything notice** (the verdict), and **how much noticed for the wrong reasons** (the coupling). The
+second is free, arrives unbidden, and is the one nobody records.
+
+## A third party can also impute a defect you do not have
+
+The mirror of the rule from 0.1.159 — *when someone measures you and finds better than you, suspect
+their method before your own pessimism* — and it needs stating separately, because the instinct runs
+the other way. Accepting a criticism feels like rigour. It is only rigour if the criticism is true.
+
+A host read two corrections we had published and drew a rule from the pair: *"twice in three days, a
+verification announced and not existing"*, with a diagnosis about the writer of a tool's description
+knowing what the tool **should** do and therefore being unable to read what it does. **The diagnosis
+is excellent. The instance was wrong**, and we checked before accepting it: `docs/RELEASING.md`
+lists seven refusal conditions plus the caveat on the unverified CI check, and they correspond to
+what the preflight actually prints. **The document never claimed the lockfile was confronted.** Both
+false statements were made in conversation, not written in the repository.
+
+Conceding here would have cost more than the flattery it refused: it would have put a fabricated
+defect into our own record, where the next reader would find it and act on it. **A criticism is a
+measurement, and it is checked like one** — including, and especially, when it comes from someone
+whose last three findings were right.
+
+## A surviving mutant has three causes, and two of them accuse the guard wrongly
+
+We had written that only a survivor needs the diff check, because a killed mutant proves its own
+landing. A host took that back one step further, by **retracting the survivor they had reported to
+us**. Their mutant was not undetected — it was *benign*. They had planted a light background on an
+element that already carried a dark counterpart for the same property, so in dark mode the
+counterpart applies and the element is correctly themed. **The guard was right to stay silent.**
+They had also described its mechanism wrongly, and found that out only by reading the extractor
+instead of inferring it from the result.
+
+> The three causes of a survivor: the instrument is blind, the stimulus never arrived, or **there
+> was nothing to report**. Two of the three are the measurer's error, and both accuse the measured.
+
+So the control on a survivor must establish two things, not one: *did the mutation land* — and *was
+the mutation a defect*. The second is the one that gets skipped, because planting a mutant feels
+like it settles the question of whether it is a defect. It does not: a change that alters the source
+and changes no observable behaviour is exactly what a good guard must ignore, and flagging it would
+be shouting at correct code — which is how a guard ends up disabled.
+
+## A positive control proves the instrument answers; it does not prove the quantity means anything
+
+The same host produced the sharpest finding of the exchange, and it bounds everything above. Their
+exemption counter returned **−12**. A count of exemptions cannot be negative. **Their positive
+control passed** — the injected witness moved the number by exactly `+1`, so the instrument was
+answering. The method was nonetheless confounded: removing counterparts to simulate the absence of
+the rule also removed the tokens the rule excused, and the result netted two effects.
+
+> A positive control proves the instrument responds. It does not prove the measured quantity means
+> anything. What saved the measurement was not the control — it was an **impossible number**.
+
+This is the limit of every control in this file, ours included: the witness in
+`planchersDesGardes`, the stimulus check on a mutation, the floor on a corpus. **They all validate
+the instrument. None validates the definition.** A quantity can be measured faithfully by a working
+instrument and still be the wrong quantity, and no amount of instrument-checking will say so.
+
+The only free witness for a definition is a **bound**:
+
+> A bounded quantity leaving its bounds is the only free witness we have — and it exists only if the
+> bound was written.
+
+A count that cannot be negative, a percentage that cannot exceed 100, a subset that cannot be larger
+than its set, a duration that cannot precede its start. Each is one assertion, costs nothing, and
+fires precisely when the definition — not the instrument — has gone wrong. Writing it is cheap; the
+reason nobody writes it is that the impossible case *feels* unreachable, which is the same instinct
+that leaves a floor off a probe.
+
+## An admission is the cheapest source to believe, because nobody contests it
+
+A host had inferred a pattern in our repository from two corrections we had published about
+ourselves, without opening the file. When we showed the instance was wrong, their diagnosis of their
+own error was better than our refusal:
+
+> I generalised from your own admissions — the cheapest source to believe, since nobody contests a
+> confession.
+
+It is worth keeping because it runs against a habit this repository actively cultivates: we report
+our own defects, at length, on purpose. That practice has a side effect nobody warned us about — a
+self-reported defect arrives pre-authenticated. Nobody cross-checks the party accusing themselves,
+so the admission propagates further and faster than a finding that had to be argued for, and it gets
+generalised into a pattern that was never measured.
+
+Their second sentence is the one to keep with it: **accumulated credit is exactly what makes the
+fourth claim dangerous.** Three correct findings buy the fourth an unearned pass, from the same
+reader, on the same subject.
+
+And the consequence for the party being credited wrongly: **a polite concession is a piece of
+writing, not a silence.** Agreeing to a fabricated defect puts it in the record, where the next
+reader finds it and acts on it.
+
+## Contradicting your own recorded measurement is not the same failure as not checking
+
+Every rule in this file about unverified claims assumes the writer did not look. There is a worse
+case, and it is ours: **we measured, we wrote the measurement down, and then we asserted the
+opposite.**
+
+Verifying `0.1.158`, we unpacked the published tarball and recorded that `CHANGELOG.md` does not
+travel in it — only `HOST-CONTRACT.md` and `RETENTION.md` ship under `docs/`. Three trains later we
+told two hosts that a dead link in the changelog was *"in the package you install"*. One of them
+measured the tarball and sent the correction back.
+
+> Not "I did not check". **"I checked, I recorded the answer, and then I said the opposite."**
+
+No amount of checking prevents this one, because the check was already done. What it needs is a
+different reflex: **before asserting a fact about an artefact, ask whether this session has already
+measured it** — and if so, read what was written rather than what is remembered. A measurement's
+value decays not because it becomes wrong but because the memory of it drifts while the record sits
+still.
+
+The consequence is worth naming too, because it decides who pays: the false claim was addressed to
+people who act on what we tell them. An error in our own trace costs us a train; an error we send
+out costs someone else their afternoon.
+
+## A day-deadline carried as an instant must carry the timezone of its decision
+
+A host named a residual in their own code and we owed them this note for two trains: a broadcast
+link's expiry is built in the browser and stored as an absolute instant, so a link created outside
+the intended country would expire at the end of *its* day, not the intended one.
+
+Their framing was "the dependency is on the write side", which says where it lives. Ours, which they
+adopted: **the storage is right and the ambiguity is at construction.** An absolute instant is the
+correct representation; what is missing is that "end of day" is not a property of the instant, it is
+a property of the *place where the decision was made*. So the residual is not a semantics defect —
+it is an **unrecorded field**: which day, in which timezone.
+
+The remedy shape follows from that, and it matters because the intuitive fix is the wrong one: store
+the decision's timezone beside the instant; **never change the instant**. Changing the semantics of
+an already-stored value to fix a theoretical case is how existing data gets broken.
+
+They also answered the question of where this belongs, and we take their answer: **not a clause in
+the host contract.** The value is constructed at the host and only crosses our surface on read, so a
+contract describing how a host must build its instants would reach past anything we can verify. It
+belongs here, as a documented trap.
+
+## A grep over the callers does not see a call placed in a lifecycle
+
+We changed CI so a guard could see its object, then asked the obvious question — *does anything else
+run the suite?* — and answered it with `grep "npm test" .github/workflows/`. Two hits, both checked,
+both fine. We told two people the publication was not at risk.
+
+The publication failed. `npm publish` triggers `prepublishOnly`, which is `npm run build && npm
+test`. **The suite runs in that job without any `- run: npm test` line existing anywhere in it**,
+because the caller is `npm`, not the workflow.
+
+> A grep over the callers does not see a call placed in a lifecycle.
+
+The family is larger than npm: `prepare`, `postinstall`, `pretest`, git hooks, `Makefile` implicit
+rules, framework auto-discovery of files by name, a test runner globbing a directory. In each, the
+invocation exists in a **convention** rather than in a line someone wrote — so any search for the
+line comes back empty and reads as absence.
+
+The check that would have worked is not a better regex, it is a different question: **not "who calls
+this?" but "what runs here?"** — enumerated from the thing that does the running. For npm, that is
+the `scripts` block, where `prepublishOnly` sits three entries from `test`. We had even printed that
+block earlier in the same session.
+
+⚠️ **And the fact was not missing, it was unread.** The workflow file carried, twenty lines above the
+checkout we did not open, a comment beginning *"`npm publish` triggers `prepublishOnly`"*. Someone
+had already met this, written it down, and put it where the next person would need it. The search we
+ran could not reach it, and we never opened the file it was in.
+
+## Tagging, publishing and verifying fail separately — and a dead tag is a state none of them owns
+
+We had recorded three numbering anomalies in four releases and filed them under carelessness. A host
+read the sequence and returned a better diagnosis:
+
+> It is not a rigour defect, it is a coupling one. Tagging, publishing and verifying are three
+> gestures that fail separately, and your `prepublishOnly` welds two of them without saying so.
+
+The dead tag is the clean symptom: `v0.1.161` exists, nothing was published, and **no single gesture
+owns that state**. The tag says the version is cut. The registry says it does not exist. The
+changelog says it shipped. Each is locally consistent and the set is not, because nothing in the
+system is responsible for the *conjunction*.
+
+The practical consequence is not to merge the three — they fail separately for good reasons, and
+that is a feature. It is to notice that **a state spanning several gestures needs an owner**, and
+that the owner cannot be one of the gestures. Ours is now `tools/sections-et-tags.mjs`, which holds
+no gesture and only confronts their traces. That is why it can see what none of them can.
+
+⚠️ **And a welded pair is worse than a coupled one, because it is invisible.** `npm publish` runs
+`prepublishOnly`, so the suite executes inside the publish job with no line saying so. Two gestures
+became one at the moment of failure, and the failure was attributed to the wrong one.
+
+## A probe that searches a vocabulary misses a mechanism expressed differently
+
+A host turned the lifecycle rule on their own build and nearly sent us a defect that did not exist.
+Their sweep looked for `exit|throw|catch|existsSync|console.error` in two asset-copy scripts. One
+had none, and they were about to report it as *failing open*.
+
+Opening the file — which the search does not do — it calls `copyFileSync`, which **throws** on a
+missing source, and an uncaught exception in Node exits non-zero. **It fails loudly; simply not in
+the words that were being looked for.**
+
+> A probe that searches a vocabulary finds only the mechanisms that chose that vocabulary.
+
+The failure mode is ours from the other side: our own probes have looked for `inconclusif(` and
+missed a floor implemented as a `throw` caught by a wrapper. Same shape, and it will recur, because
+a search term is always a *guess about how someone else wrote it*. The check that survives is to ask
+what the code **does** on the bad input — which usually means running it on the bad input, not
+reading it for keywords.
+
+⚠️ **What their comparison actually found was smaller and better.** One script verifies its copy (a
+size floor); the other verifies only what Node gives for free — the source existed, the copy
+happened. **A copy that succeeds while producing the wrong file passes** — which is precisely the
+incident its own header documents. The missing control was already written fifteen lines away, in
+its sibling.
+
+## When a correction lands, separate the reasoning from the indicator
+
+We had proposed that a guard's blind spot might be correlated with where regressions land, using
+"carries an explicit dark-mode counterpart" as the indicator for "gets worked on". A host measured
+it — 12 of 770 — and showed the correlation does not hold in their architecture, where the dark
+theme is written once in the stylesheet. **We conceded the whole thing.** They refused the
+concession:
+
+> Your architecture invalidates the correlation, not the reasoning.
+
+The rule — *a blind spot correlated with where regressions land is a trap, not merely a risk* —
+holds everywhere. What failed was the **indicator**: carrying a counterpart does not mark what gets
+touched *there*. The right question in their codebase is *which colour families does the stylesheet
+not cite?* — same form, right predicate.
+
+Conceding too much is a failure mode of its own, and a flattering one: it looks like humility and it
+destroys a true general rule to settle a false particular one. **When a correction arrives, ask
+which of the two it reached** — the reasoning, or the thing you used to stand in for it.
+
+## An assumed limitation is an assertion wearing the clothes of a precaution
+
+A host built a tool and wrote, in the bench file that exists so nothing is claimed without being
+tried, a test declaring a known limitation: *a slash inside a character class derails it*. **The
+bench went red.** The tool handles it correctly. Six cases later, exactly one real breakage
+remained, and it was not the one they had assumed.
+
+> An assumed limitation is the same wood as a bare number: it looks like a precaution and it is a
+> claim.
+
+It is more dangerous than a bare number, because its form buys it trust. A stated limit reads as
+modesty — the author naming what they could not do — so nobody asks for its evidence. And it
+propagates: the next person plans around a wall that is not there, and the effort spent avoiding it
+is invisible in every measurement.
+
+The remedy is the one already applied to counts: **a limitation is a measurement and carries its
+case.** If you cannot produce the input that breaks it, you have not found a limit — you have found
+something you did not try.
+
+## An unwritten tool leaves no trace; an unwritten rule leaves at least the conversation
+
+Two debts in this exchange took the same two releases to be paid, for the same reason: each was
+named in a message rather than written into a file. The host who owed the other one drew the
+distinction we had missed:
+
+> Mine was a tool and yours was a rule — and an unwritten tool leaves no trace at all, where an
+> unwritten rule leaves at least the conversation.
+
+So the two decay differently. An unwritten rule survives in the exchange that produced it: someone
+can quote it back, and it will be re-derived from the same evidence next time. **An unwritten tool
+leaves nothing** — no artefact, no message worth quoting, and the next person does not rebuild it
+because they never learn it was wanted.
+
+The consequence for how debts are recorded: a rule can wait in a message for one round without
+being lost, and a tool cannot. When both are owed and only one can be done, **the tool goes first**.
+
+## Distance decides whether a warning protects a claim — and it is not linear
+
+Recorded above: a warning in one place does not protect a claim in another. A host sharpened it after
+comparing their case with ours, and the sharpening is the useful part.
+
+| | distance | what happened |
+|---|---|---|
+| theirs | 650 lines, same file | a present-tense claim about a deleted file; the correction sat far above and nobody joined them |
+| ours | one paragraph | a count opening the section arguing that a count is not the proof |
+
+⚠️ **Ours was the worse of the two, and its closeness is why.** Their formulation:
+
+> very far, one does not make the link; very close, one believes it has already been made.
+
+So proximity is not a defence and can be the opposite of one. A contradiction a paragraph apart
+reads as deliberate — as if the author had already reconciled the two — while the same contradiction
+across a file at least looks like an oversight someone might check. When a correction and the thing
+it corrects sit close together, neither distance nor good faith does the work: only stating the
+contradiction outright does.
+
+## Nothing here confronts a sentence with what it describes
+
+An external audit read this repository cold and returned four defects. Three of them share one
+shape: **a sentence that was true when it was written, and that the code stopped honouring under
+it.** The host contract said the shared rate counter "is not atomic" — false since migration
+`0004`, and contradicting the paragraph directly above it. An integration example omitted a field
+the route now requires. A comment claimed the visitor chooses what enters the voice cache, which
+stopped being true when the route began confronting the text with what the assistant actually said.
+
+⚠️ **The 38 guards saw none of them, and could not have.** They confront code with code, numbers
+with bounds, sections with tags. None confronts *prose* with what it describes, because the
+confrontation has no mechanical form: the fact that migration `0004` exists does not tell a program
+which English paragraph now lies.
+
+Two things follow, and the second is the one that costs.
+
+- **A doc correction is not bookkeeping here, it is a defect fix.** A host who reads a stale
+  warning builds a compensating control it does not need, or skips one it does. Correct the
+  sentence in place and say what it used to say — deleting it quietly leaves that host with no way
+  to learn their compensation was for nothing.
+- **When you change a behaviour, the prose that described the old one is part of the change.**
+  Grep for the mechanism you just moved, not for the words you happen to remember. The three stale
+  sentences above were each written by someone who fixed the code well and never searched for what
+  else spoke about it.
+
+⚠️ **And the fourth defect names the sharper version of this.** `vider()` in `server/mesures.js`
+promised "a fresh instance" and reset two counters out of four. Production never noticed —
+production never calls it. The **endurance benches** call it between warm-up and measurement, so
+they were charging the current scenario with the previous one's numbers. An instrument that
+measures the code we guard, weakened, with nothing saying so, is worse for this repository than a
+product defect: every conclusion drawn through it inherits the flaw silently. **Hold the tools that
+measure to the bar of the thing measured.**
+
+## A control that is not itself controlled proves nothing
+
+Three things in one train, and they are the same thing seen from three distances.
+
+**A rule written by hand is not a rule enforced.** A bench file here carried the comment *"a test
+that depends on its rank within the file does not prove what it claims"* directly above a test that
+obtained a "fresh module" with `vi.resetModules()` then `require`. Measured: both return the **same
+exports object** in CommonJS — `resetModules` clears vite's module registry, not Node's `require`
+cache. The test had always been reading its neighbours' leftovers. It passed only because it sits
+first in its block.
+
+**What it hid was in production.** `init()` discarded one execution memo and kept its twin, in a
+file that states three times that the two behave identically. They did — on the *read* path, the
+only one the benches looked at.
+
+⚠️ **And the control itself rotted mid-experiment.** Hand mutation testing needs a pristine copy to
+restore from. A killed run left a mutated file on disk; the next run copied *that* as its reference.
+Every "restored, identical" check afterwards compared the corruption to itself and said **true**.
+The measurements that followed were worthless and looked fine.
+
+So, three rules, cheapest first:
+
+- **Fingerprint the witness, don't diff against a copy of unknown provenance.** `sha1sum` the
+  pristine file once, print it, and assert it after every restore. A diff against a backup only
+  proves the two agree — not that either is right.
+- **A guard that spawns the suite must refuse to run inside it.** Otherwise the bench that launches
+  every tool launches this one, which launches the suite, which contains that bench. Here it left
+  **391 stray processes** and a load average of 224; nothing failed, everything just got slower and
+  wrong.
+- **An aggregate test declares its rank or gets fixed.** A test that reads what its neighbours
+  accumulated must say so — when it runs early it should report *"3 of 47 ran"*, not accuse the
+  repository of losing something it still has. A red that names the wrong culprit is worse than no
+  red, because someone learns the gesture for clicking past it.
+
+⚠️ **Declaring is easier than repairing, and the easy one is usually wrong.** Three files depended
+on their rank; the first instinct was to declare all three as legitimate sequence contracts. An
+external audit asked for the opposite, and two of the three turned out to be repairable in a few
+lines: listeners removed between benches, an aggregate verdict moved into `afterAll` where a verdict
+over everything belongs. A declaration is owed only where the dependency is genuinely a contract —
+and "I could not see how to fix it in five minutes" is not that.
+
+⚠️ **A measurement made on one machine is a claim about that machine.** A bench here proved "a block
+declared `sh` is judged by sh" by finding a form the two parsers read differently — and its own
+comment said *"measured before being believed"*. Measured on dash, believed universally. On macOS
+`/bin/sh` **is** bash, so the suite of this repository was red on its author's own machine while CI,
+on Linux, stayed green and could not see it. Where a property depends on the environment, make the
+part that does not depend on it a **pure function** and test that everywhere; let the behavioural
+half run only where the system can show it, and **skip it by name** rather than pass on nothing.
+
+⚠️ **The guard that came out of this was itself refused by the repository's own floor bench, and it
+was right to be.** The first version blamed every file that went red under shuffle. The floor's
+fixture copies `tools/` wholesale into an empty tree, so vitest finds benches there that fail for
+want of a repository — and the guard called them order-dependent. Every red now gets **replayed
+alone, unshuffled**: still red means the failure pre-existed and this guard has nothing to say about
+it; green means the shuffle is the cause. **Presence under a stimulus is not causation by it** —
+the same control a host taught us for mutants, applied to a guard.
+
+## A correct explanation of the noise is the best place to hide a signal
+
+The voice-cache sweep removed **nothing at all** in this repository's own reference host context,
+for as long as it existed. `storage.remove` carries an allow-list — a last barrier before a DELETE
+with the service-role key — and it named one bucket out of the two the sweep must reach. Every
+removal of a voice object was refused **before any network call**, the trace row was erased anyway,
+and the object stayed in a public bucket with no path left to it. That is the exact harm the
+migration behind the feature was written to make repairable, realised in full.
+
+⚠️ **What kept it invisible was not a lie. It was a true, measured, well-written paragraph.** Those
+refusals landed in an error counter, and the documentation attributes a high value there to
+alignment files that legitimately do not exist — with a host's own measurement to back it, 552
+audio files for 356 companions. Every word of that is right. And it is exactly why nobody looked: a
+correct account of why a number is noisy tells the reader to stop reading the number.
+
+So, when you document noise:
+
+- **Say what the number looks like when the thing is completely broken.** If "a third of these are
+  normal" and "all of these are failures" produce the same reading, the counter cannot be used, and
+  the documentation should say so instead of explaining the noise away.
+- **Separate the counts rather than annotate one.** Two numbers that cannot both be explained by the
+  same benign cause are worth more than one number with a paragraph.
+- **Be most suspicious of the counters you have already explained.** An unexplained anomaly gets
+  investigated. An explained one is finished business, and stays finished long after the explanation
+  stops covering what is actually happening.
+
+⚠️ **It was found while writing the documentation for a different fix on the same path** — not by a
+guard, not by a test, not by the audit that opened the file. Writing down precisely what a mechanism
+does forces you to check it, and that is a different act from reading the code.
+
+## The defect named inside the comment of its own fix
+
+A test file here opens by listing three ways a status could be claimed rather than proven. The third
+reads: a `track({role:"presenter"})` was enough to appear as the presenter to the whole audience,
+*"with the name and the avatar of his choice."* The **role** was then arbitrated by the server and
+tested thoroughly. The **avatar** stayed exactly as described — for months, in the sentence that
+describes the harm, in the file written to close it.
+
+Escaping made it look finished. `escapeHtml` on an avatar URL prevents markup injection, and does
+nothing about the `<img>` being **fetched**: every other viewer's IP, user agent, clock and page
+origin go to whoever wrote the URL. Not an XSS. A tracking pixel, aimed at the audience.
+
+- **When a fix enumerates what was wrong, each noun in that list is a separate defect.** "Name and
+  avatar of his choice" is two, and closing one does not close the other. Re-read your own incident
+  lists as checklists, not as prose.
+- **"It is escaped" answers one question.** Escaping governs how bytes are interpreted, never
+  whether a request leaves the machine. Ask both, separately.
+- **A barrier belongs where the paths converge, not where the first one arrives.** Two routes fed
+  this avatar: our own endpoints, and a peer-to-peer presence channel we never see. A server-side
+  check would have been thorough, provable, benched — and blind to half the traffic. The render is
+  the only place both arrive.
+
+⚠️ **And when the honest fix costs a feature, degrade visibly rather than keep the leak.** Member
+avatars hosted on a third party now render as initials. That is a real loss, reversible by the host
+in one move; the leak was neither visible nor theirs to notice.
+
+## A helper that cannot fail the way its callers fail
+
+`tenter(travail)` wraps a guard's work so that an exception becomes INCONCLUSIVE rather than
+VIOLATION — the difference between *"the probe could not look"* and *"your branch is wrong"*. It is
+four lines, it reads perfectly, and it is **synchronous**: `try { return travail(); }`. Hand it an
+`async` function and the `try` sees a promise being *returned*, not an error being thrown. The
+`catch` is never reached. The rejection surfaces later, outside, and Node exits 1.
+
+So the first tool here that touched the network would have announced *"this repository violates the
+rule"* on every connection blip — the exact inverse of what the taxonomy exists to say, from the
+helper written to guarantee it.
+
+- **A wrapper's contract includes which failures it can see.** "Catches exceptions" is not a
+  property; "catches exceptions thrown synchronously by a synchronous callee" is. Write the second.
+- **Async-shaped mistakes do not fail in tests that never reject.** Nothing here would have noticed:
+  the code is short, it reads well, and it only misbehaves when something *else* misbehaves.
+- **When you add the async sibling, keep both.** Deleting the sync one to "simplify" pushes every
+  existing caller through a promise for no reason; leaving them unlabelled invites the next person to
+  pick by autocomplete. The comment on each says what it cannot see.
+
+⚠️ **And the same pattern one level up:** a destructive tool's safeguards must each be mutated
+individually. Here, five of them — reporting by default, the age threshold, unreadable dates,
+foreign filenames, and the confirmation count. A safeguard nobody has tried to break is a comment.
+
+## The mechanisable sliver of "this sentence stopped being true"
+
+An earlier section here says no guard in this repository confronts prose with what it describes, and
+that the confrontation has no mechanical form: the existence of a migration does not tell a program
+which English paragraph now lies. **That still stands.** What turned out to be mechanisable is a much
+narrower thing, and naming the difference is the whole point.
+
+Once we **decide** a claim is retired, that decision is data. A guard can then confront the
+repository with the decision — not with reality. `tools/affirmations-retirees.mjs` does exactly that
+and nothing more.
+
+⚠️ **Except in a published migration.** Correcting a retired claim *in place* in
+`supabase/migrations/0004` between 0.1.163 and 0.1.164 was the rule applied faithfully — and it sent a
+host who fingerprints his migrations a "migration changed after application" alarm he had to
+`diff -u` to dismiss. Migrations ship in the tarball; they are executed artefacts, not prose.
+`tools/migrations-immuables.mjs` now refuses any byte change to a migration present in the highest
+tag, and `affirmations-retirees` treats `supabase/migrations/` as an archive. The correction goes to
+the contract, or to a new migration.
+
+It exists because the same failure recurred four times in two days: a sentence corrected in one
+place and left standing in its twin. One of them sat **95 lines above a correction made the same day
+in the same file**. One declared a whole stage out of scope in `SECURITY.md` — and a document that
+puts something out of scope is not neutral, it tells a researcher not to look. And the guard's very
+first run found a fourth copy that two human audits had walked past.
+
+- **A correction is not done when the sentence you were reading is fixed.** Grep for the *mechanism*
+  you changed, not the words you remember. You will not remember the translation, the SQL comment, or
+  the bench header.
+- **Keep the retired claim, marked.** Deleting it silently leaves a host who read it with no way to
+  learn their compensation was for nothing. So the rule is not "never write it" but "never write it
+  unmarked" — and the marker is searched on the line and the two above it, never below: a reader who
+  gives up at the false sentence never reaches the correction.
+- **Say what the guard does not do, inside the guard.** The temptation is to present this as "we
+  detect stale documentation". We do not. We detect one retracted phrase still being asserted, from a
+  list we maintain by hand. A guard oversold is a guard that will be trusted where it is blind.
+
+## The second repair of a proxy is the signal to stop using it
+
+A bench here proved "the database request carries an abort signal" by searching the source text of
+`standalone.js` for `AbortSignal.timeout(` in a window of characters around the request. It had
+already been bitten once: the first version searched the **raw** source, and the comment above the
+code contained those very words — so deleting the real call left it green. The repair was to strip
+comments before searching. The proxy was fixed, and kept.
+
+Then the signal composition was extracted into a function, the pattern moved out of the scanned
+window, and the bench went **red on a change that improves the property it guards**.
+
+That is the full shape of a bad proxy, seen twice from both sides: **green when the property is
+gone, red when the property is strengthened.** One of those is an accident; both of them is a
+verdict.
+
+- **Watch for the second repair.** The first failure of a proxy looks like a bug in the proxy. The
+  second tells you the proxy is measuring the wrong thing, and no third repair will fix that.
+- **A `describe` that promises "really" and a body that greps is the tell.** This one said *"the
+  standalone context really abandons a request that does not answer"* while checking spelling. Read
+  your titles as specifications.
+- **The replacement is usually cheap.** A `fetch` that never resolves and a race against a timer:
+  four lines, and it fails for exactly one reason — the request was not abandoned.
+
+## "In doubt, say no" is not the rule — "in doubt, say so" is
+
+Two routes here, two opposite-looking conclusions from the same uncertainty, and the rule that
+actually covers both.
+
+On the route that spends money, the doctrine is explicit: a text the player cannot verify as
+something the assistant said counts as *not said*, and the request is refused. *"I could not
+verify"* must read as **no**.
+
+On the reshare route, the same uncertainty was reported the same way — `sent: false` when the host
+call timed out — and it caused the harm. The caller reads "not sent", retries, and a host that
+**did** send the mail before answering late now sends a second one, on a second child link.
+
+The difference is not the confidence level. It is **who acts on the answer, and in which
+direction**. Where doubt blocks a spend, collapsing it to "no" is safe. Where doubt is read by
+something that retries, "no" *is* the spend. So:
+
+- **Never collapse "unknown" into the failure value when a caller may retry.** Give it its own
+  state, name it, and say in the contract that a retry may duplicate.
+- **Keep the old field.** Integrations read `sent`; changing its meaning to fix a third case would
+  break the two that worked. Add beside, don't redefine.
+- **A three-state answer is only useful if the third state reaches a person.** Document it as a
+  decision, not as a retry condition, or you have renamed the bug.
+
+⚠️ **And "non-blocking" is not "silent".** A hook installer swallowed every error to avoid failing
+`npm install` — correct principle — and said nothing, which turns *"we could not"* into *"all
+good"*. The developer believes the guard rail is in place and works without it. Non-blocking means
+the exit code is zero; it does not mean stderr is empty.
+
+## A campaign that refuses to guess beats one that guesses well
+
+Mutation testing was this repository's acceptance bar for two months, and it was performed **by
+hand**. Dozens of "N of N mutants killed" in the changelog: each true the day it was written, none
+reproducible afterwards — not by a reader, not by us. `tools/mutations.mjs` is the manifest that
+makes them replayable, and its design is mostly about what it refuses to say.
+
+**Three ways a mutation campaign lies, all of them in the direction of green:**
+
+- **The target is gone.** The code moved, the mutation applies to nothing, no bench reddens — and
+  "no bench reddened" reads as *killed*. The campaign gets greener as it drifts further from the
+  code.
+- **The target appears twice.** Something was mutated; which one is unknown, so the verdict names
+  nothing. This is not theoretical — it happened on the very first run here, and the tool said
+  INCONCLUSIVE instead of counting a kill.
+- **The baseline was already red.** Then every mutant touching that bench "kills", and the campaign
+  is greenest when the repository is most broken.
+
+All three must be a third state, never a kill. A campaign whose failure mode is optimism is worse
+than none.
+
+⚠️ **And fingerprint the file after restoring it.** A hand campaign here was interrupted mid-mutant,
+left the mutated file on disk, and the next run copied *that* as its pristine reference. Every
+"restored, identical" check afterwards compared the corruption to itself and said **true**. The tool
+now hashes before and after, and a mismatch stops everything — a repository in an unknown state is
+not a place to keep testing.
+
+⚠️ **Do not reach for a generic mutator over the whole codebase.** Hundreds of benign survivors —
+equivalent code, dead branches, defensive paths — teach the reader to skim the output, and a guard
+people skim is worse than a guard that is absent. A manifest of exact targets, each one a defect
+that actually happened, says something a reader can check.
+
+## A guard that is lazy about work can still be wasteful about existence
+
+The viewer's page rendering was already carefully bounded: canvases rendered lazily, a sliding
+window evicting the far ones, a pixel budget so two A4 pages on a ×3 screen could not blow the tab.
+Every one of those guards was about **work**. None was about **existence**: a placeholder `<div>`
+per page and a `<button>` per thumbnail were created for the whole document, up front. Ten thousand
+pages, seventy thousand nodes, measured in a real browser by an external audit — with every lazy
+guard working exactly as designed.
+
+- **"Lazy" bounds what you compute; it does not bound what you allocate.** Ask both questions
+  separately, and ask the second one about the cheapest-looking object in the loop. The placeholder
+  was so cheap nobody counted it.
+- **The hostile input is not always the heavy one.** A long document of blank pages costs nothing
+  to decode and everything to represent. Bound on the dimension the attacker controls for free.
+- **Keep the deciding arithmetic pure, and keep the DOM reconciliation dumb.** `fenetreVirtuelle`
+  is a function of numbers; the template only makes the DOM match its answer. That is what lets the
+  window be tested with `floor` edge cases and mutated in the campaign, while the template test just
+  counts nodes at 10 000 and 50 000 pages and finds the same six.
+
+⚠️ **And when a harness has to hook the source, make the hook assert its own success.** The viewer
+loads pdf.js through an ES `import()` that fails under jsdom and takes the refusal path — never
+`start()`. The bench substitutes a fake at that one call and then **checks the substitution
+happened**; a bench that evaluates a page which never starts is green on nothing, and that is
+precisely the kind of green this repository has learned to distrust.
 
 ## Boundaries
 

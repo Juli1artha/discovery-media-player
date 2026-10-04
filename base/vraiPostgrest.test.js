@@ -193,6 +193,65 @@ decrire("l'archive est scellée par la base, pas par le code", () => {
   });
 });
 
+// ⚠️ `db.count` LIT UN EN-TÊTE DE RÉPONSE — RIEN D'AUTRE ICI NE LE FAIT, ET AUCUN DOUBLE NE PEUT
+// L'ÉPROUVER. Le double en mémoire rend des corps ; le `Content-Range` de PostgREST est une
+// propriété du serveur. Toute la couche entre notre code et ce nombre — `Prefer: count=exact`,
+// `Range: 0-0`, la forme `début-fin/total`, et le `*` quand il ne compte pas — était donc DÉDUITE
+// DE LA DOCUMENTATION, pas constatée. C'est exactement ce que l'en-tête de ce fichier reproche aux
+// trois propriétés qu'il est venu couvrir.
+//
+// ⚠️ ET UN HÔTE INTÉGRATEUR A NOMMÉ CE MANQUE SUR SON PROPRE CODE LE MÊME JOUR : « supabaseCount
+// est de l'I/O, et je n'ai pas de clé de service en local : je n'ai pu éprouver ni le helper ni la
+// convergence des deux appelants autrement que par lecture. » Nous, nous avons un vrai PostgREST
+// dans la forge — ne pas s'en servir aurait été garder le manque en ayant les moyens de le combler.
+decrire("le compte exact vient du serveur, pas de notre lecture de la documentation", () => {
+  it("⚠️ il rend le compte EXACT, et il suit ce qu'on écrit", async () => {
+    const doc = "compte-" + crypto.randomBytes(5).toString("hex");
+    const chemin = `commercial_doc_shares?select=slug&doc_id=eq.${doc}`;
+    expect(await base.count(chemin), "une table sans ligne compte zéro, pas null").toBe(0);
+
+    for (let i = 0; i < 3; i += 1) {
+      await base.request("commercial_doc_shares", { method: "POST", body: [{
+        slug: "c-" + crypto.randomBytes(6).toString("hex"), doc_id: doc,
+        file_url: "https://exemple.test/d.pdf" }] });
+    }
+    expect(await base.count(chemin), "trois écritures, trois lignes comptées").toBe(3);
+  });
+
+  // ⚠️ LE CŒUR DE L'AFFAIRE : c'est POUR ÇA que la couture existe. Le comptage par lignes dépend du
+  // plafond de qui les rend ; le compte d'en-tête n'en a aucun à deviner. On le montre en demandant
+  // MOINS que le total : le corps est borné, le compte ne l'est pas.
+  it("⚠️ et il ne dépend PAS de ce que le corps a le droit de rendre", async () => {
+    const doc = "plafond-" + crypto.randomBytes(5).toString("hex");
+    for (let i = 0; i < 4; i += 1) {
+      await base.request("commercial_doc_shares", { method: "POST", body: [{
+        slug: "p-" + crypto.randomBytes(6).toString("hex"), doc_id: doc,
+        file_url: "https://exemple.test/d.pdf" }] });
+    }
+    const chemin = `commercial_doc_shares?select=slug&doc_id=eq.${doc}`;
+    const lignes = await base.request(`${chemin}&limit=2`);
+    expect(lignes.length, "le corps, lui, obéit à la limite").toBe(2);
+    expect(await base.count(`${chemin}&limit=2`), "le compte traverse la limite du corps").toBe(4);
+  });
+
+  // ⚠️ ZÉRO NE SE FABRIQUE PAS DEPUIS UNE PANNE : c'est la réponse qui autorise à supprimer une
+  // colonne. Sur une colonne inconnue, PostgREST rejette — et le rejet doit REMONTER, analysé,
+  // pour que l'appelant y lise le 42703 et non un compte.
+  it("⚠️ une colonne inconnue REJETTE avec son code analysé, elle ne rend pas zéro", async () => {
+    let refus = null;
+    try { await base.count("commercial_doc_shares?select=colonne_qui_n_existe_pas"); } catch (e) { refus = e; }
+    expect(refus, "un compte a été rendu là où la requête est invalide").toBeTruthy();
+    expect(refus.details && refus.details.code, "le corps analysé porte le code PostgreSQL").toBe("42703");
+  });
+
+  // ⚠️ LE CAS `…/*` — « je n'ai pas compté » — N'EST PAS ÉPROUVÉ ICI, ET C'EST DIT PLUTÔT QUE
+  // CACHÉ. Notre `count` demande TOUJOURS `count=exact`, donc ce PostgREST ne produira jamais cette
+  // forme en réponse à lui : le cas est inatteignable depuis ce banc. Une première rédaction le
+  // « couvrait » en recopiant l'expression régulière dans le banc — c'est-à-dire en éprouvant la
+  // COPIE et pas le code, la vacuité exacte que ce dépôt refuse. Il est éprouvé sur le vrai code
+  // dans server/__tests__/compteDuContexte.test.js, où un `fetch` posé rend l'en-tête voulu.
+});
+
 // ⚠️ L'UNICITÉ DES LIENS SYSTÈME NE S'ÉPROUVE QU'ICI : c'est un index partiel, il vit dans la base.
 decrire("un usage, un lien — la contrainte réelle tranche", () => {
   it("deux inserts avec la même clé d'idempotence : le second est refusé", async () => {

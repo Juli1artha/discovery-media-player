@@ -106,11 +106,30 @@ describe("les relectures publiques sont bornées", () => {
     const cleDe = (r) => (r.vues.find((v) => String(v.cle).startsWith("pread:")) || {}).cle;
 
     const direct = await lire({ state: "1" }, { socket: "198.51.100.7" });
-    expect(cleDe(direct)).toBe("pread:198.51.100.7");
+    expect(cleDe(direct)).toBe("pread:state:198.51.100.7");
 
     const usurpe = await lire({ state: "1" }, { socket: "198.51.100.7", entetes: { "x-forwarded-for": "203.0.113.9" } });
     expect(cleDe(usurpe), "sinon on change d'en-tête et le quota repart à zéro")
-      .toBe("pread:198.51.100.7");
+      .toBe("pread:state:198.51.100.7");
+  });
+
+  // ⚠️ DEUX POINTS, DEUX CLÉS. Le quota est dérivé « sur chacun des deux points » et une seule clé
+  // les faisait payer le même budget : le filet relit l'état ET le chat toutes les 25 s, donc une
+  // sortie unique portait 306 spectateurs, pas 613 — et saturer le chat coupait l'état, qui fait
+  // autorité sur la page affichée. Reproduit par un audit externe le 13/09 contre le vrai limiteur.
+  it("⚠️ l'état et le chat ont chacun leur clé, et saturer l'un ne coupe pas l'autre", async () => {
+    const cleDe = (r) => (r.vues.find((v) => String(v.cle).startsWith("pread:")) || {}).cle;
+    expect(cleDe(await lire({ state: "1" }, { socket: "198.51.100.8" }))).toBe("pread:state:198.51.100.8");
+    expect(cleDe(await lire({ chat: "1" }, { socket: "198.51.100.8" }))).toBe("pread:chat:198.51.100.8");
+    const chatSature = (cle) => !String(cle).startsWith("pread:chat:");
+    expect((await lire({ chat: "1" }, { autorise: chatSature })).statut, "le chat est refusé").toBe(429);
+    expect((await lire({ state: "1" }, { autorise: chatSature })).statut, "l'état passe : il ne partage pas le budget du chat").toBe(200);
+  });
+
+  it("une requête qui demande les DEUX points paie les deux clés", async () => {
+    const r = await lire({ state: "1", chat: "1" }, { socket: "198.51.100.9" });
+    const cles = r.vues.map((v) => String(v.cle)).filter((c) => c.startsWith("pread:") && !c.endsWith("quota-avert"));
+    expect(cles).toEqual(["pread:state:198.51.100.9", "pread:chat:198.51.100.9"]);
   });
 
   // ⚠️ Un refus muet ferait décrocher toute une salle sans cause nommée : l'exploitant verrait des

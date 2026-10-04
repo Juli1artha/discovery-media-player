@@ -4,6 +4,7 @@
 // Reste à PLAT dans server/ (les gardes de forge ciblent server/*.js).
 
 const { adresseAppelant, lcMembre, cleAnonyme, profilDuJeton } = require("./appelant");
+const { capturerSansBloquer } = require("./capture");
 const { jsonPour, etiquetteRoute } = require("./reponses.js");
 
 const { createPresentation, getPresentation, setPage, endPresentation, addMessage, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent } = require("./presentations");
@@ -49,7 +50,7 @@ async function traiter(req, res, body, _slug) {
           // hôte, chaque « Terminer » échouait en 23502 (marqueur d'archive NOT NULL) — et ce 500
           // muet ne laissait RIEN, même pas une ligne dans le journal d'erreurs. Un journal que
           // personne ne lit vaut peu ; aucun journal ne vaut rien du tout.
-          try { PLAYER.errors.capture(erreur instanceof Error ? erreur : new Error(String(erreur)), { route: etiquetteRoute("present-" + String(body.action || "").replace(/^present-/, "")) }); } catch { /* jamais bloquant */ }
+          try { capturerSansBloquer(PLAYER.errors, erreur instanceof Error ? erreur : new Error(String(erreur)), { route: etiquetteRoute("present-" + String(body.action || "").replace(/^present-/, "")) }); } catch { /* jamais bloquant */ }
           return jp(500, { ok: false });
         }
       }
@@ -174,7 +175,7 @@ async function traiter(req, res, body, _slug) {
           if (PLAYER.config && PLAYER.config.presenceStrict && !peutEmettre && !profil) {
             try {
               if (await PLAYER.limits.allow("presence:strict-inerte", 1, 3600)) {
-                PLAYER.errors.capture(new Error(
+                capturerSansBloquer(PLAYER.errors, new Error(
                   "PLAYER_PRESENCE_STRICT est posé mais AUCUN jeton ne peut être émis "
                   + "(PLAYER_PRESENCE_SECRET absent) : la porte reste OUVERTE. Armé tel quel, elle "
                   + "refuserait tous les participants anonymes.",
@@ -199,7 +200,13 @@ async function traiter(req, res, body, _slug) {
             key: profil ? lcMembre(profil.email) : cleAnon,
             name: (profil && profil.name) || body.name,
             email: profil ? profil.email : body.email,
-            avatar: (profil && profil.avatar) || body.avatar,
+            // ⚠️ UN ANONYME N'A PAS D'AVATAR, ET C'EST LA RÈGLE ÉCRITE PLUS HAUT APPLIQUÉE JUSQU'AU
+            // BOUT : « une identité prouvée REMPLACE celle qu'on affirme ». L'avatar d'un membre
+            // vient de son jeton ; celui d'un anonyme n'était qu'une URL affirmée, resservie à
+            // TOUTE l'audience dans une `<img>`. Ce n'est pas un XSS — c'est un pixel de suivi :
+            // l'IP, l'agent et l'heure de chaque spectateur partent chez qui a écrit l'URL.
+            // Rapporté par un audit externe le 12/09. Les initiales prennent la place.
+            avatar: profil ? profil.avatar : null,
             // ⚠️ ON N'AFFIRME PLUS LE TITRE, ON FOURNIT LA PREUVE (`controlHash`, plus bas) : c'est
             // la base qui compare. Affirmer `false` ici n'enlève donc rien — le titre vient du jeton.
             isMember: !!profil, isPresenter: false,
@@ -222,7 +229,7 @@ async function traiter(req, res, body, _slug) {
           // des présences) : une présentation close refuse toute écriture, jeton valide ou non.
           const pt = (r.ok && jetonCandidat) ? jetonCandidat : "";
           return jp(r.ok ? 200 : (r.status || 400), pt ? { ...r, pt } : r);
-        } catch (e) { try { PLAYER.errors.capture(e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
+        } catch (e) { try { capturerSansBloquer(PLAYER.errors, e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
       }
       // Gestion des présentations (membre AUTHENTIFIÉ requis) : liste / reprise / transfert / stats / historique doc.
       if (body.action === "present-list" || body.action === "present-reclaim" || body.action === "present-handover" || body.action === "present-owner-end" || body.action === "present-stats" || body.action === "present-doc-list" || body.action === "present-switch" || body.action === "present-content") {
@@ -275,7 +282,7 @@ async function traiter(req, res, body, _slug) {
           else if (body.action === "present-content") r = await setPresentationContent(String(body.slug || ""), (u && u.email) || "", isAdmin, body.content, String(body.control || ""));
           else r = await handoverPresentation(String(body.slug || ""), u.email, body.newOwner);
           return jp(r.ok ? 200 : (r.status || 400), r);
-        } catch (e) { try { PLAYER.errors.capture(e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
+        } catch (e) { try { capturerSansBloquer(PLAYER.errors, e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
       }
       // Chat de présentation (historisé) : n'importe quel participant (présentateur ou audience) poste un
       // message. Écriture via service role ; anti-spam par IP (60/h). La présentation doit exister.
@@ -298,10 +305,16 @@ async function traiter(req, res, body, _slug) {
           const r = await addMessage(String(body.slug || ""), {
             name: (profil && profil.name) || body.name,
             email: profil ? profil.email : body.email,
-            avatar: (profil && profil.avatar) || body.avatar,
+            // ⚠️ UN ANONYME N'A PAS D'AVATAR, ET C'EST LA RÈGLE ÉCRITE PLUS HAUT APPLIQUÉE JUSQU'AU
+            // BOUT : « une identité prouvée REMPLACE celle qu'on affirme ». L'avatar d'un membre
+            // vient de son jeton ; celui d'un anonyme n'était qu'une URL affirmée, resservie à
+            // TOUTE l'audience dans une `<img>`. Ce n'est pas un XSS — c'est un pixel de suivi :
+            // l'IP, l'agent et l'heure de chaque spectateur partent chez qui a écrit l'URL.
+            // Rapporté par un audit externe le 12/09. Les initiales prennent la place.
+            avatar: profil ? profil.avatar : null,
             isPresenter: validControl, isMember: !!profil, body: body.body, replyTo: body.replyTo, replyName: body.replyName, replyText: body.replyText, authorToken: body.authorToken, attachment: body.attachment , clientKey: body.clientKey });
           return jp(r.ok ? 200 : (r.status || 400), r);
-        } catch (e) { try { PLAYER.errors.capture(e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
+        } catch (e) { try { capturerSansBloquer(PLAYER.errors, e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
       }
       // Pièce jointe : URL d'upload signée (la présentation doit exister ; rate-limit).
       if (body.action === "present-upload-url") {
@@ -314,7 +327,7 @@ async function traiter(req, res, body, _slug) {
           if (!allowed) return jp(429, { ok: false, error: "rate" });
           const r = await createUploadUrl(String(body.slug || ""), body.name, body.type);
           return jp(r.ok ? 200 : (r.status || 400), r);
-        } catch (e) { try { PLAYER.errors.capture(e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
+        } catch (e) { try { capturerSansBloquer(PLAYER.errors, e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
       }
       // Chat : éditer / supprimer un message, verrouiller le chat.
       if (body.action === "present-msg-edit" || body.action === "present-msg-delete" || body.action === "present-chatlock") {
@@ -325,7 +338,7 @@ async function traiter(req, res, body, _slug) {
           else if (body.action === "present-msg-delete") r = await deleteMessage(String(body.slug || ""), body.msgId, { authorToken: body.authorToken, control: body.control });
           else r = await setChatLock(String(body.slug || ""), String(body.control || ""), !!body.locked);
           return jp(r.ok ? 200 : (r.status || 400), r);
-        } catch (e) { try { PLAYER.errors.capture(e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
+        } catch (e) { try { capturerSansBloquer(PLAYER.errors, e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
       }
       // Réaction emoji (toggle) sur un message du chat de présentation.
       if (body.action === "present-react") {
@@ -345,7 +358,7 @@ async function traiter(req, res, body, _slug) {
           const reacteur = require("./presentations").reacteurDepuisJeton(body.authorToken);
           const r = await toggleReaction(String(body.slug || ""), body.msgId, body.emoji, reacteur, body.etat);
           return jp(r.ok ? 200 : (r.status || 400), r);
-        } catch (e) { try { PLAYER.errors.capture(e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
+        } catch (e) { try { capturerSansBloquer(PLAYER.errors, e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jp(500, { ok: false }); }
       }
   return false;
 }

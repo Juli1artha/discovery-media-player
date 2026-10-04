@@ -12,7 +12,2249 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- **`tools/gardes-appliquees.mjs` : chaque garde est appliquée à ce dépôt par quelque chose qui peut
+  échouer.** Deux gardes justes, couvertes par leurs bancs, n'avaient longtemps été lancées nulle
+  part, et `AGENTS.md` écrivait qu'exiger leur application était « une garde que nous n'avons pas
+  écrite ». Elle l'exige sous les deux formes que le dépôt pratique déjà : une étape de workflow qui
+  la lance sans pouvoir avaler son échec (`continue-on-error`, `|| true` et un lancement en
+  arrière-plan ne comptent pas), ou un bloc `describe("le dépôt lui-même")` dont le corps **utilise**
+  ce que le banc a chargé depuis la garde. Les exemptions sont re-vérifiées à chaque passage, et une
+  exemption qui ne dispense plus rien est refusée. Mesuré à sa fusion : 47 gardes, 40 lancées par un
+  workflow, 6 appliquées par un banc seulement, 1 exemptée (`orphelins-tts`, outil d'exploitation).
+  Sept mutants, sept tués. ⚠️ **L'analyse qui l'a demandée se trompait sur les six cas qu'elle
+  nommait** : elle déclarait six gardes « jamais lancées », et les six étaient appliquées — cinq par
+  un `garde.auditer()` sans argument que sa sonde, qui cherchait un vocabulaire, n'a pas vu ; la
+  sixième, `codeowners-valide`, sous un titre hors convention, seul changement qui en a découlé. Et
+  **le premier banc de la garde l'a prise en défaut** : elle créditait comme « chemin suivi » un nom de
+  fichier écrit dans une assertion, ce qui rendait « appliqué » l'outil qu'elle exempte. C'est la
+  règle symétrique — une exemption appliquée est refusée — qui l'a montré au premier passage.
+
+## [0.1.172] — 2026-10-01
+
+### Added
+
+- **Un document réservé peut l'être à QUELQU'UN, pas seulement à « toute adresse prouvée ».** Le mur ne savait dire
+  qu'une chose : cette personne a prouvé son adresse. Un hôte qui réserve un document à son équipe, ou à une
+  organisation partenaire, ne pouvait pas l'exprimer — n'importe quelle adresse prouvée l'ouvrait. Nouveau greffon
+  facultatif `plugins.documentAccess.decide({ share, visitor })`, appelé pour un document `require_auth` une fois le
+  visiteur identifié : « oui » ouvre ; « non » remet le mur en disant que cette adresse n'a pas accès (avec la
+  possibilité d'en utiliser une autre), `?file=1` rend `403 denied` sans rien streamer, et le pont signale `denied` à
+  l'hôte ; une panne (exception, réponse illisible, `unavailable`) REFUSE (`auth-unavailable`, `503` pour le fichier),
+  jamais n'ouvre. Sans le greffon, rien ne change. Contrat : `docs/HOST-CONTRACT.md`. Banc : `murDocument.test.js`
+  (six cas, deux mutations rejouées).
+
+## [0.1.171] — 2026-10-01
+
 ### Fixed
+
+- **Une page de lien refusée lisait le lien deux fois.** 0.1.170 le demandait à `getShareBySlug`, puis,
+  quand il ne s'ouvrait pas, le relisait par `resoudreLien` pour dire pourquoi — la même ligne, deux
+  allers-retours, sur le refus le plus fréquent (un lien révoqué qui circule encore). La page interroge
+  désormais `resoudreLien` une fois : il rend le lien et la raison ensemble. Un banc compte les lectures
+  du lien dans quatre cas (révoqué, expiré, protégé, ouvert) : une chacun.
+
+- ⚠️ **0.1.170 est partie sur npm SANS Release, sans attestation et sans SBOM.** `attester` emporte les
+  artefacts de charge de la course CI de son commit et les juge par `tools/artefact-de-charge.mjs`, qui
+  relit le schéma **au tag** qui l'a ancré (`git show v0.1.169:…`). Son checkout n'avait pas les tags :
+  la garde a répondu NON CONCLUANT, à raison, et `annoncer` a été sauté. Le même défaut avait déjà été
+  corrigé dans le job `schema` de `ci.yml` — et le banc qui devait l'empêcher de revenir **ne lisait
+  que `ci.yml`**. Il lit désormais tous les workflows, dérivés du dossier. Élargi, il a rougi sur
+  `attester` ET sur `annoncer`, qui aurait échoué juste après. 0.1.170 ne se rejoue pas sur son tag
+  (le workflow de ce tag est celui qui a cassé) : c'est la prochaine version qui porte la Release, l'attestation et
+  la SBOM.
+
+## [0.1.170] — 2026-10-01
+
+### Fixed
+
+- ⚠️ **Le banc du producteur héritait de l'environnement de la forge, et son verdict dépendait donc
+  de l'endroit où il tournait.** Les courses de bout en bout étalaient `process.env` puis y
+  écrasaient le commit : elles héritaient de l'**évènement** du runner tout en **inventant** le
+  commit, si bien que sur une PR l'artefact produit se déclarait `event: pull_request` en portant un
+  commit fabriqué et aucune tête de branche. L'incohérence était sans conséquence tant que personne
+  ne la jugeait ; elle a rougi à la minute où le validateur a cessé d'accepter une PR sans tête —
+  dans la **même livraison**, et **sur la forge seulement**. ⚠️ C'est exactement la faute que cette
+  livraison reproche par ailleurs : un banc vert en local et rouge en PR n'éprouve pas ce qu'il
+  croit éprouver. Le correctif n'est pas de poser un évènement neutre à sept endroits — le banc
+  **compose** désormais son environnement, l'identité de la forge n'y entrant que si un essai la
+  demande, et deux essais épinglent la propriété.
+
+- **Deux fichiers temporaires composés à la main, remplacés par `mkdtempSync`.** Le dossier
+  temporaire est **partagé et inscriptible par tous** : un chemin qu'on compose soi-même peut déjà
+  exister, et qui l'a créé avant nous en décide les droits — ou y pose un lien qui renvoie ailleurs.
+  `Math.random()` n'est pas une source imprévisible et un `pid` se devine. CodeQL l'a relevé sur du
+  code neuf de cette branche ; la même faute vivait déjà dans `tools/ordre-des-bancs.mjs`, **hors du
+  diff, donc muette** — corrigée ici plutôt que laissée à redécouvrir. Au passage, un motif
+  d'expression régulière bâti en n'échappant que les points : un échappement *partiel* change de
+  sens dès qu'une contre-oblique apparaît, et la question posée se répondait par une recherche
+  littérale.
+
+- ⚠️ **`identity.prHeadSha` était un champ MORT : il a valu `null` dans toutes les courses de PR
+  depuis sa création.** Le producteur lisait `GITHUB_HEAD_SHA` — un nom que la forge **ne définit
+  pas**. Elle définit `GITHUB_HEAD_REF`, qui porte le *nom* de la branche ; la tête, elle, n'est
+  lisible que dans `github.event.pull_request.head.sha`, depuis le YAML, et aucune variable
+  d'environnement ne la transporte. Sur une PR, c'est le pire endroit où perdre ce champ :
+  `commitSha` y désigne un **commit de fusion éphémère** que la forge jette ensuite, si bien
+  qu'aucune de ces mesures ne se reliait plus à un objet durable — alors que la description du
+  schéma promettait le contraire. ⚠️ **Et le banc était vert** : il appelait `identite()` avec un
+  environnement *fabriqué*, où il posait lui-même le nom que le code lisait. Un tel banc prouve que
+  la fonction sait lire la variable qu'on lui donne, jamais que quelqu'un la donne — même faute que
+  le transport des notes, un contrôle chez le producteur qui ne dit rien du transport. Le correctif
+  tient les deux moitiés du câblage : la CI passe `PLAYER_RAPPORT_PR_HEAD` depuis l'évènement, le
+  validateur **refuse sémantiquement** `event: pull_request` avec `prHeadSha: null` (et l'accepte
+  hors PR — l'exiger sur un tag inventerait une tête qui n'existe pas), et un banc neuf **résout le
+  YAML réel** contre une charge utile de PR jusqu'à l'artefact, avec son témoin négatif. Une garde
+  générale interdit désormais qu'une source du dépôt lise un `GITHUB_*` absent de la documentation
+  du runner. Trois mutants. Relevé par un audit externe (CODEX, 15/09), sur la course réelle de la
+  PR 546.
+
+- ⚠️ **Le résumé de charge annonçait « 2 500 requêtes/s » comme un DÉBIT, alors qu'il divisait les
+  requêtes *planifiées* par la durée *visée*** — deux quantités qui existent avant la moindre
+  mesure. Un tel chiffre reste juste tant que rien ne rate, et **reste identique** le jour où la
+  moitié des requêtes n'est jamais partie : exactement le jour où un lecteur avait besoin de le voir
+  bouger. Le tableau en donne maintenant trois, nommées séparément — **planifiée** (l'intention),
+  **lancée** (le générateur a-t-il tenu ?), **atteinte** (requêtes achevées ÷ durée de la fenêtre
+  *mesurée*, le seul débit observé) — et le facteur de 62,5× est dit « de cadence **planifiée** »,
+  parce que c'est une propriété du scénario, pas un résultat. Un banc où les trois divergent, un
+  mutant qui rétablit l'ancienne formule. Relevé par un audit externe (CODEX, 15/09).
+
+- ⚠️ **Trois bancs tournaient DEUX FOIS sur la forge, et aucun des trois passages n'a jamais
+  rougi.** `base/endurance.test.js` et `base/statistiquesAgregees.test.js` ont chacun leur
+  configuration et leur étape dédiées — comme la campagne de charge avant eux — sans avoir jamais
+  été écartés du banc `base/`. L'exclusion qui avait corrigé le premier cas **nommait un fichier** :
+  la règle restait inécrite, et la faute a repoussé. Ce n'est pas qu'une question de temps de forge,
+  les deux passages écrivent dans la **même base d'essai** — l'interaction qui a déjà fait échouer
+  la graine non idempotente de `retention.test.js` sur une clé dupliquée. ⚠️ **La garde née de ce
+  correctif en a trouvé un troisième en naissant** : tout `charge/**` tournait sous `npm test` en
+  plus de `npm run test:charge`, et ce passage-là est **muet** — seule la configuration dédiée pose
+  `disableConsoleIntercept`, sans quoi le relevé, unique produit de ce banc, est avalé par Vitest.
+  Relevé par un audit externe (CODEX, 15/09).
+
+- ⚠️ **Un paragraphe de `release.yml` décrivait encore un transport de notes supprimé le jour
+  même.** Il disait que `verifier` « les passe en sortie de job » — précisément le mécanisme qui
+  avait *échoué* et qu'on venait de retirer. Un lecteur venu comprendre d'où arrivent les notes y
+  lisait le contraire du fichier qu'il avait sous les yeux. La prose des workflows de ce dépôt est
+  volumineuse **par choix** — un contrôle qu'on ne comprend pas se supprime — et elle vieillit comme
+  celle des documents ; aucune garde ne la lisait, faute de connaître le YAML.
+  `tools/affirmations-retirees.mjs` lit désormais `.yml` et descend dans `.github/`, l'affirmation
+  retirée est inscrite dans sa liste, et un mutant tient l'extension. Suggéré par un audit externe
+  (CODEX, 15/09).
+
+- ⚠️ **La Release 0.1.169 est partie sans une ligne de ses notes, et les cinq jobs étaient verts.**
+  Les notes voyageaient de `verifier` à `annoncer` par une **sortie de job**. La forge l'a supprimée
+  en chemin et l'a écrit dans son journal : `Skip output 'notes' since it may contain secret`. Le
+  runner confronte chaque sortie aux valeurs masquées et jette la sortie **entière** au moindre
+  soupçon ; `NOTES` est arrivé vide à la composition du corps, et la page publique a reçu son
+  tarball, son condensat, sa signature, son SBOM et ses trois mesures de charge — **sans les seize
+  entrées qui disent ce qui a changé**. Les cinq sorties précédentes portaient les leurs, ce qui
+  rendait la perte invisible. ⚠️ **La garde vivait du mauvais côté** : `test -s /tmp/notes.md`
+  prouvait que la section avait été *extraite* ; personne ne demandait si elle était *arrivée*. C'est
+  le défaut du 22/08 — un motif promis, aucun fichier, pas un mot — dans une autre matière. Le
+  correctif est de **forme**, pas de vigilance : les notes descendent dans le paquet comme
+  `zones.md`, où aucun masqueur ne les regarde, avec une garde `-s` chez le consommateur ; le
+  transport cesse d'être fragile au *contenu* de ce qu'il transporte, ce qu'aucune consigne de
+  prudence n'aurait garanti. ⚠️ **L'extraction, elle, RESTE dans le workflow, et c'est une contrainte
+  du dépôt que j'ai failli enfreindre** : ma première rédaction de ce correctif la déplaçait dans un
+  outil de `tools/` — plus propre, testable, une seule implémentation — or un rejeu par
+  `workflow_dispatch` exécute le workflow de `main` **contre le contenu du tag**, et cet outil
+  n'existe sur aucun tag publié. Le rattrapage d'une sortie ratée, raison d'être du dispatch, serait
+  devenu impossible. Ce qui vit dans le fichier de workflow vient toujours de `main` ; ce qui vit
+  dans `tools/` vient du tag. Le dépôt l'écrit déjà à propos du validateur de charge, et je l'avais
+  lu. Un mutant fige désormais la contrainte. Quatre mutants en tout. ⚠️ **Ce qui a déclenché le masqueur n'est pas
+  établi de l'extérieur** : la section 0.1.169 est la plus longue jamais écrite (18,5 Ko) et cite,
+  pour documenter le correctif de caviardage, une chaîne en forme de clé d'API — la coïncidence est
+  frappante mais reste une hypothèse, et le correctif ne repose pas sur elle.
+
+### Added
+
+- **Liens protégés : une échéance et un mot de passe sur un lien tracé** (migration
+  `0028-liens-proteges.sql`, capacité `link-protection`). Demandé par le premier hôte, dont la
+  fenêtre de partage disait « sans expiration ». `docshare.create` accepte `expiresAt` et
+  `password` ; `docshare.protect` les change ou les retire — **une action neuve de
+  `canManageShares`**, qu'une table d'hôte fermée refusera tant qu'elle ne la connaît pas. La règle
+  vit dans `server/lien-protege.js` et s'applique au seul endroit où un lien se résout
+  (`getShareBySlug`) : la page, le fichier (`?file=1`), l'assistant, la mesure et le re-partage se
+  ferment ensemble.
+  - **Lien expiré** : il le dit (`410`, `embed-denied` motif `expired`).
+  - **Lien protégé** : il demande son mot de passe, et le fichier rend `401` tant qu'il n'est pas
+    saisi.
+    - Le cookie de déverrouillage est `HttpOnly` et dure 8 h.
+    - Il est signé avec l'**empreinte** du mot de passe : aucune variable de plus à poser, et
+      changer le mot de passe referme les navigateurs déjà entrés.
+    - Les essais sont plafonnés par adresse ET par lien.
+  - ⚠️ **Sans requête, verrouillé** : un appel interne qui oublie de la passer obtient
+    « introuvable », jamais « ouvert ».
+  - ⚠️ **Sans la migration, créer un lien protégé est REFUSÉ** (503, qui nomme le fichier) au lieu
+    de se dégrader en lien ouvert que l'hôte afficherait comme protégé.
+  - L'empreinte n'est **jamais servie** : `docshare.list` rend `expiresAt` et un booléen.
+  - Un re-partage hérite des deux.
+  - 28 essais, dix mutations rejouées.
+- **`?page=N` ouvre un PDF à la page N** (capacité `start-page`), sur un lien tracé comme sur
+  l'aperçu interne : un entier, borné à 10 000 par le serveur et au nombre réel de pages par la
+  visionneuse. Demandé pour qu'une réponse qui cite « page 12 » ouvre la page 12.
+
+- ⚠️ **Ce qu'un rejeu de sortie ne peut PAS réparer, écrit là où on le cherchera.** Un
+  `workflow_dispatch` exécute le workflow de la **réf sur laquelle on le lance**, pendant que chaque
+  job extrait le **tag**. Le rejeu honnête se lance donc sur la réf du tag — sinon la garde de
+  provenance refuse, depuis l'incident 0.1.136 — mais cela fait tourner le `release.yml` **du tag**,
+  défauts compris. La 0.1.169 s'y est cognée : ses notes ont été perdues par un transport que le tag
+  porte encore, si bien que les deux rejeux possibles étaient inutiles — depuis `main`, refusé ;
+  depuis le tag, on rejoue le code qui a perdu les notes. Un rejeu répare une **course** qui a
+  échoué, jamais un **défaut du workflow du tag** ; ce cas-là se répare à la main, et seulement sous
+  forme *dérivée*. Consigné dans `docs/VERIFYING-RELEASES.md` et dans le workflow.
+
+- **`tools/configuration-des-bancs.mjs` : quelle configuration joue ce banc ? Une seule, et la
+  question se pose à un seul endroit.** La règle — un fichier de banc appartient à exactement une
+  configuration Vitest — tourne sur la forge, refuse aussi bien le **double** que l'**orphelin**,
+  nomme les exclusions **mortes** (une ligne qui n'écarte plus rien a l'air de protéger) et les
+  configurations qu'aucune commande npm ne lance, et rend NON CONCLUANT sur un arbre sans
+  configuration ou sans banc. ⚠️ **Elle existe parce que la réponse était écrite trois fois** : les
+  configurations la disent, le banc structurel la redisait, et `mutations.mjs` la redevinait en
+  lançant `npx vitest run <fichier>` **sans configuration** — ce qui l'a rendu NON CONCLUANT sur
+  onze mutants à la minute où `charge/**` est sorti de la configuration générale, sous le libellé
+  trompeur « base ROUGE ». La campagne interroge maintenant la même source que la garde ; 87 mutants
+  posés, 87 tués, zéro non concluant.
+
+- **Le schéma 1 est ANCRÉ à `v0.1.169`, et donc figé.** `charge/artefacts/ancres.json` nomme le tag
+  qui a publié le premier artefact ; la garde relit le schéma **à ce tag** (`git show`) et confronte
+  les empreintes — l'immuabilité se prouve hors de la copie courante, jamais contre un littéral
+  qu'un même commit pourrait modifier. Les trois empreintes coïncident : le schéma au tag, la copie
+  courante, et celle que portent les trois artefacts publiés — `ae81dab76fa9d946…`. À partir d'ici,
+  toute clé nouvelle ou sémantique nouvelle fait un **schéma 2** avec son corpus de compatibilité.
+  Un audit externe (CODEX) avait maintenu un veto sur ce gel tant que l'instrument acceptait une
+  cohorte tronquée, pouvait réussir sans produire d'artefact et se bloquer sans le documenter : ce
+  veto est ce qui a laissé le schéma 1 amendable assez longtemps pour recevoir la topologie, la
+  provenance explicite et les deux renommages. Dernier point de sa liste en neuf étapes.
+  ⚠️ **L'ancre a fait rougir la PR qui la posait, et la garde avait raison** : prouver l'immuabilité
+  suppose de relire le schéma *au tag*, ce qu'un `checkout` sans tags rend impossible — la garde a
+  répondu NON CONCLUANT, « rien n'a été vérifié, donc rien n'est prouvé », et le job `schema` est
+  tombé. Le job `check` avait déjà `fetch-tags: true` ; `schema`, qui joue `charge/rapport.js` et
+  juge sa cohorte au passage, ne l'avait pas. Une garde qui a besoin d'un objet git doit tourner là
+  où cet objet existe : un banc lie désormais les deux — tout job de CI qui lance le validateur ou le
+  producteur sort le dépôt avec ses tags — et un mutant le tient.
+
+## [0.1.169] — 2026-09-15
+
+### Added
+
+- **Le tableau d'une campagne se dérive de ses octets — `tools/resume-de-charge.mjs`.** Le 14/09 j'ai
+  relayé aux hôtes le relevé d'une course de PR (0.1.167, commit `8e9e37c`) en le présentant comme
+  celui du tag 0.1.168 (commit `f5f0ae7`). Les deux campagnes étaient vraies ; une seule mesurait le
+  tag ; personne ne pouvait le voir, parce que le tableau ne portait ni course, ni version, ni
+  commit, et que les percentiles avaient voyagé à la main d'un journal vers un message. « Faire plus
+  attention » ne corrige pas cela : ce qui corrige, c'est de retirer l'occasion. Le résumé est
+  engendré depuis les fichiers attachés, porte la provenance en tête et le **sha256 de chaque
+  fichier**, et il est **refusé quand la cohorte l'est** — une belle présentation fait passer ses
+  chiffres pour vérifiés. Il apparaît dans le corps de la Release, sous les notes. Il dit aussi ce
+  que la cadence vaut : 2 500 requêtes/s à mille spectateurs, contre ~40/s pour une relecture d'état
+  toutes les 25 s, soit **62,5×** la cadence nominale — une contrainte délibérée, pas une charge
+  réaliste, et le facteur n'était écrit nulle part.
+- **Le schéma 1 dit enfin les conditions de sa propre lecture.** `topology` (obligatoire) : le
+  générateur appelle `player.handler()` dans le processus, sans socket, sans parseur HTTP et sans
+  `bin/serve.js`, contre un PostgREST réel en loopback — sans quoi des latences de quelques
+  microsecondes se lisent comme du réseau. `environment` gagne le modèle de processeur, le
+  fournisseur et l'image du runner, la **période d'échantillonnage mémoire** (le pic n'est pas « le
+  maximum » mais « le maximum vu à cette cadence ») et la résolution du moniteur de boucle.
+  `identity` gagne dépôt, évènement, référence, numéro et tentative de course, et `prHeadSha` —
+  `GITHUB_SHA` sur une PR désigne un commit de fusion éphémère qui n'existera plus. `workload` gagne
+  la durée cible, les lectures par spectateur, l'algorithme et la graine. ⚠️ Deux renommages :
+  `scenario.maxInFlight` devient `workload.peakInFlight` (c'est un **résultat**, il figurait parmi
+  les entrées et laissait croire à un plafond imposé au générateur, alors que la boucle est ouverte),
+  et `isolation.processReused` devient `sameProcessAcrossCohort` (il valait `true` partout, y compris
+  à la position 1 où aucun processus n'avait servi : il ne disait pas ce qu'il énonçait). Ces
+  changements sont possibles **parce que le schéma 1 n'a encore ancré aucune publication** — c'est
+  exactement ce que le veto de l'audit sur l'ancre préserve. Demandé par un auditeur externe
+  (CODEX, 15/09).
+- **Une release porte désormais la mesure de charge de son propre commit.** Les artefacts produits
+  par `charge/rapport.js` vivaient sur le run de la forge, dont la rétention expire ; une release,
+  non. `attester` retrouve la course CI verte du commit taggué, en télécharge l'artefact
+  `artefacts-de-charge`, **rejuge la cohorte entière** avec `tools/artefact-de-charge.mjs` — on
+  n'attache pas une mesure qu'on n'a pas jugée — et l'attache sous
+  `discovery-media-player-<version>-charge-<position>-<spectateurs>.json`. ⚠️ **La mesure n'est pas
+  refaite ici, et c'est le point.** Rejouer la course dans le workflow de sortie aurait donné une
+  AUTRE mesure pour le même commit — autre runner, autre instant, autre base — soit deux séries pour
+  un même point sans rien pour les départager ; un banc interdit tout lancement du producteur dans
+  ce workflow, et un mutant le tient. ⚠️ **Elle est *dite*, pas *exigée* — seule des cinq.** Les
+  quatre autres actifs arrêtent la sortie s'ils manquent ; la mesure n'existe que pour les commits
+  dont la CI l'a produite, et l'exiger bloquerait exactement les rejeux par `workflow_dispatch` sur
+  un tag antérieur au producteur que le dispatch existe pour rattraper. Son absence n'est pour
+  autant jamais muette : un avertissement dans la course, et un paragraphe dans le corps de la
+  Release nommant laquelle des deux raisons s'applique — le défaut du 22/08 était le silence, pas
+  l'absence. Un artefact récupéré mais non jugeable, lui, arrête la sortie. `attester` gagne
+  `actions: read` ; le banc des fichiers attachés distingue les deux degrés et compte cinq promis
+  pour quatre exigés ; deux mutants sur le workflow.
+
+### Fixed
+
+- ⚠️ **Les compteurs s'observaient eux-mêmes : 1 000 requêtes de charge donnaient un delta de
+  1 001.** La lecture des compteurs passait par `GET ?contract=1` — donc par une requête qui traverse
+  le handler et incrémente `mesures.statuts.ok` au passage. Mesuré sur les trois artefacts du tag
+  0.1.168 : 1 001 pour 1 000, 10 001 pour 10 000, 1 001 pour 1 000. `delta = after − before` restait
+  vrai : un invariant qui ne regarde que la cohérence *interne* d'un relevé ne voit pas l'observateur
+  s'y ajouter. Corrigé par une couture interne (`__compteursSansObserver`) qui rend l'état sans le
+  modifier — ⚠️ **pas par une soustraction cachée** : un instrument qui se retranche discrètement est
+  plus difficile à auditer qu'un instrument faux. Ce que la fenêtre contient d'autre que la charge se
+  **dit** désormais, dans `counters.observerOverheadRequests`, et un nouvel invariant confronte la
+  somme des statuts internes au travail annoncé. Relevé par un auditeur externe (CODEX, 15/09).
+- ⚠️ **`measurementWindow` portait trois bornes de trois périodes différentes.** `startedAt` et
+  `processUptimeStartMs` dataient du début de la position — avant la création de la présentation et
+  le préchauffage — pendant que `durationMs` partait d'après le GC et que `processUptimeEndMs` était
+  relevé après les sondes, le GC final et la lecture des compteurs. Sur la course du tag : 4 057 ms
+  d'uptime pour 4 002,231 ms annoncés, aux trois positions. Les bornes sont maintenant prises deux à
+  deux, à l'ouverture et à la fermeture, sans rien entre elles ; `afterGc` reste hors fenêtre.
+  ⚠️ **Et le banc le prouve à l'horloge pilotée, pas sous une tolérance** — ma première version
+  comparait des millisecondes sous un seuil, et la campagne de mutations l'a refusée en laissant
+  survivre le mutant : sur un double en mémoire, ce qu'il s'agit d'exclure ne coûte que quelques
+  millisecondes et passe sous n'importe quel seuil défendable. L'audit l'avait écrit en toutes
+  lettres ; je ne l'avais pas fait. Relevé par un auditeur externe (CODEX, 15/09).
+- ⚠️ **`cache.peakInFlight` était le pic du processus, pas celui de la fenêtre.** `hits`, `misses` et
+  `coalesced` étaient convertis en deltas ; le pic, lui, était recopié du maximum depuis le
+  démarrage. Après une position chargée, une position calme héritait de l'ancien pic et affirmait une
+  concurrence qu'elle n'avait jamais vue. Le cache expose désormais une **fenêtre d'observation**
+  (`observerEnVol`) — l'état du cache n'est ni remis à zéro ni ralenti, seul un compteur parallèle
+  suit les productions simultanées — et le pic historique reste, séparé, sous
+  `processLifetimePeakInFlight`. Relevé par un auditeur externe (CODEX, 15/09).
+- ⚠️ **La gigue était tirée de `Math.random` et perdue.** Deux courses du même protocole n'étaient
+  donc pas la même expérience, et aucune ne se rejouait : on ne pouvait ni reproduire un pic ni
+  démontrer qu'un écart venait du code plutôt que du tirage. L'ordonnancement utilise un générateur
+  déterministe, et l'artefact porte `scheduleSeed` **avec** `scheduleAlgorithm` — une graine ne
+  rejoue rien si l'algorithme qui la consomme a changé, et n'enregistrer que l'une donnerait
+  l'illusion de la reproductibilité. Relevé par un auditeur externe (CODEX, 15/09).
+- ⚠️ **Un artefact d'échec part sur une Release publique, et son message n'était pas assaini.**
+  `failure.reason` recopiait `error.message` tel quel : une erreur PostgREST peut incorporer plusieurs
+  centaines de caractères de réponse réseau, une erreur de `fetch` porte l'URL appelée avec ses
+  paramètres. Les caractères de contrôle, URL, adresses, jetons et en-têtes d'autorisation sont
+  désormais remplacés par une marque **visible** — un lecteur doit voir qu'il manque quelque chose — et
+  un `failure.code` stable et énuméré accompagne le texte, parce qu'un code s'agrège là où un message
+  ne s'agrège pas. ⚠️ Ma première caviarderie **laissait passer le secret qu'elle visait** : le motif
+  prenait le mot-clé puis un seul mot, si bien que « Authorization: Bearer sk-live-4242 » perdait
+  « Bearer » et publiait le jeton juste derrière. Gardé comme mutant. Relevé par un auditeur externe
+  (CODEX, 15/09).
+- ⚠️ **Une cohorte d'un SEUL fichier passait, quand deux fichiers tronqués étaient refusés.**
+  `controlerCohorte` sortait sur `membres.length < 2` avant d'atteindre les règles de **couverture**
+  — la séquence annonce *n* rangs, la cohorte les tient tous ou s'arrête sur un échec — qui n'ont
+  pourtant besoin d'aucun second membre. Le comportement exact : un artefact de position 1 déclarant
+  `[100, 1000, 100]` passait sans un mot, les deux mêmes rangs sur trois étaient refusés. **La garde
+  était strictement plus faible sur moins de preuve** — une vacuité au cœur de l'outil écrit pour les
+  traquer, et la forme la plus tentante de la fraude involontaire : n'attacher qu'un fichier. Les
+  comparaisons entre membres bouclent déjà sur `slice(1)`, vide pour un seul : seule une cohorte à
+  zéro membre sort maintenant par avance. Défaut relevé par un auditeur externe (CODEX, 15/09).
+- ⚠️ **Le producteur sortait en succès sans avoir produit un seul artefact.** Avec une séquence vide,
+  la boucle ne tournait pas, rien n'était écrit, et `auditer` — appelé sans fichier — jugeait **le
+  corpus d'exemples** puis rendait « 2 artefact(s) conformes », code 0. Le programme confondait la
+  conformité de ses propres fixtures avec une campagne. Le refus est désormais la **première
+  instruction** de `courir`, avant le moindre `mkdir` : une configuration qu'on refuse de jouer ne
+  laisse pas de trace. Avec lui, une validation stricte de toute la configuration — plus de
+  `Number()` qui rend `NaN` en silence, plus de filtre qui ampute : `100,bad,1000` devenait
+  `[100, 1000]`, une séquence que personne n'avait demandée et que l'artefact portait ensuite comme
+  s'il s'agissait du protocole. Séquence non vide, effectifs entiers sûrs et strictement positifs,
+  lectures par spectateur idem, durée bornée, produit total sous un plafond explicite ; un refus
+  sort en **code 2** — ni un succès, ni une campagne qui a échoué en produisant son artefact.
+  Défaut relevé par un auditeur externe (CODEX, 15/09).
+- ⚠️ **Un handler qui ne résolvait jamais bloquait la course sans laisser d'échec.** `Promise.all`
+  attendait une promesse suspendue indéfiniment : la course ne finissait pas, n'échouait pas, et
+  n'écrivait **aucun** artefact — alors que le producteur promet un document même en échec. Le pire
+  des trois états : ni succès, ni échec documenté, rien. Désormais une échéance par requête (30 s,
+  avec un `AbortSignal` porté par la requête synthétique et la réponse détruite à l'expiration), un
+  budget global par position, et le nettoyage — échantillonneur mémoire, moniteur de boucle, sonde
+  posée sur `db.request` — dans un `finally` : une exception laissait jusqu'ici `base.request`
+  détourné, donc la position suivante mesurée à travers l'instrument de la précédente. Une requête
+  expirée **invalide la position** au lieu de se ranger dans les statuts : à ces latences, une
+  échéance qui tire ne dit pas « c'est lent » mais « quelque chose ne répond plus », et la ranger
+  dans `other5xx` produirait un artefact d'allure normale au milieu d'une panne. ⚠️ Deux défauts
+  trouvés en écrivant ce correctif, gardés comme mutants : `res.destroy(erreur)` sur un `Writable`
+  sans écouteur `error` **tuait le processus** — le producteur mourait au lieu d'écrire l'artefact
+  d'échec que l'échéance devait garantir ; et les lectures de carte n'honoraient pas l'échéance
+  injectée, si bien que l'échec accusait `JSON.parse` au lieu de nommer le délai. Défaut relevé par
+  un auditeur externe (CODEX, 15/09).
+- ⚠️ **Mon correctif du 14/09 avait détaché la Release publique du test de fumée, et déplacé un
+  risque sans le dire.** Rattacher `attester` à `publier` était juste — les preuves d'octets déjà
+  partis ne doivent pas être otages d'un test postérieur. Mais `annoncer` suivait `attester` par
+  simple transitivité et a **perdu sa dépendance à `eprouver`** : le graphe autorisait désormais une
+  Release publique créée pendant que le test du paquet installé était rouge, ou avant qu'il ait
+  fini, alors que le workflow promet « publié ÉPROUVÉ ». Le banc de provenance n'exigeait que
+  « `annoncer` atteignable depuis `verifier` », propriété restée vraie : trop faible pour voir la
+  perte. Et le même correctif avait retiré un abri sans le remplacer — `attester` lisait
+  `dist.integrity` **une seule fois**, ce qui était sans risque tant qu'il héritait des quatre
+  minutes d'attente de `eprouver` ; le vide de propagation qui a coûté la sortie 0.1.168 était
+  **réarmé un job plus loin**, frappant cette fois l'attestation elle-même. Les deux exigences ne
+  s'opposent pas, elles portent sur des objets différents : l'**attestation** porte sur des octets
+  déjà partis et n'attend personne ; la **Release publique** est une recommandation d'installer, et
+  elle attend le test de ce qui s'installe. Graphe corrigé (`annoncer: needs: [verifier, attester,
+  eprouver]`), attente bornée à trois sorties dans `attester`, deux bancs et deux mutants. Défauts
+  nommés par un auditeur externe (CODEX, 15/09).
+- ⚠️ **Une Release pouvait porter la mesure d'un autre commit, et ça m'est arrivé.** J'ai relayé aux
+  hôtes le relevé d'une course de PR — `0.1.167`, commit `8e9e37c` — en le présentant comme celui du
+  tag `0.1.168` (commit `f5f0ae7`). Les deux campagnes étaient vraies ; une seule mesurait le tag ;
+  **rien dans l'outillage ne pouvait les distinguer**, parce que le validateur ne juge que la
+  cohérence *interne* d'une campagne. L'attachement contrôle désormais la provenance de chaque
+  artefact — `identity.packageVersion` contre la version du tag, `identity.commitSha` contre son
+  commit, `identity.runId` contre la course retenue (par préfixe : la tentative fait partie du nom)
+  — et refuse la sortie sinon. ⚠️ Le banc **exécute le script tel qu'il est écrit dans le workflow**,
+  pas une copie : sa première version découpait `process.argv` comme pour `node fichier.js` alors que
+  `node -e` décale d'un cran, et **refusait toute cohorte, la bonne comprise** — verte sur rien,
+  rouge sur tout, invisible jusqu'au jour d'une sortie. C'est ce banc qui l'a trouvée. Défaut relevé
+  par un auditeur externe (CODEX, 15/09).
+- ⚠️ **La garde des boucles de réessai refusait une forme conforme.** `premiereInstruction` lisait
+  une *ligne* là où le shell lit une *instruction* : `cmd \` suivi de `|| { echo "::error::…";
+  exit 1; }` — la forme la plus répandue de ces fichiers, imposée par leur largeur — n'était vue que
+  par sa première ligne, sans aveu, et la boucle était refusée. Un refus faux n'est pas un défaut de
+  confort : il pousse à écrire la forme que l'outil accepte plutôt que la forme juste, et à ce régime
+  plus personne ne croit ses refus. Les lignes continuées sont recollées avant lecture ; la garde
+  relève maintenant huit boucles.
+- ⚠️ **Une boucle de réessai sortait par épuisement exactement comme par succès, et ça a coûté une
+  publication.** Le 14/09, la 0.1.168 est partie sur le registre sans sa Release, son SBOM ni
+  l'attestation de son archive. Le test de fumée attendait que le registre serve la version fraîche
+  — vingt tentatives de six secondes — et la version est devenue installable **vingt-cinq secondes
+  après** l'abandon de la boucle ; celle-ci est sortie sans rien dire, le `npm i` qui suivait portait
+  `--silent` et a échoué sans un mot, et la course est morte après cent vingt-cinq secondes de
+  silence complet, sautant `attester` et `annoncer`. Un hôte (ADV) a nommé la forme : « ce n'est pas
+  un défaut d'attente, c'est une garde qui échoue **ouvert** — épuiser les tentatives est traité
+  comme un succès ; une boucle de réessai a trois sorties, pas deux : réussi, refusé, et j'ai
+  renoncé, et la troisième est un échec ». Trois correctifs et une garde : l'attente passe à quatre
+  minutes **et** avoue son abandon, l'installation cesse d'être muette, et `tools/boucles-de-reessai.mjs`
+  tient la règle pour les sept boucles de réessai des workflows — après le `done`, un `::error::` qui
+  nomme ce qui n'est jamais venu, ou le rejeu du test. Les deux autres boucles qui sortaient muettes
+  (image en CI, player sous scan ZAP) sont corrigées avec. Non concluant quand la sonde ne voit
+  aucune boucle : zéro n'est pas une conformité. Deux mutants — dont celui qui cherche l'aveu
+  n'importe où dans le bloc, la première version de cette sonde, verte sur le défaut qu'elle
+  cherchait parce que le bloc fautif portait deux `::error::` plus bas, à propos d'autre chose.
+- ⚠️ **Les preuves d'un paquet publié ne dépendent plus d'un test postérieur à sa publication.**
+  `attester` — SBOM, attestation de l'archive — dépendait de `eprouver`, le test de fumée. Un échec
+  de propagation du registre a donc emporté des preuves qui portent sur des octets déjà partis :
+  pendant trois minutes et demie, le paquet était installable sans que la Release, le SBOM ni le
+  bundle Sigstore existent. Retenir ces preuves ne protège personne et prive de moyens de
+  vérification exactement ceux qui installent pendant ce créneau. `attester` dépend désormais de
+  `publier` ; `eprouver` reste une garde dont le rouge rougit la course. ⚠️ La provenance SLSA de
+  npm, elle, est atomique avec la publication — horodatée deux secondes avant que `npm publish`
+  rende la main — et n'a jamais manqué : c'est l'essentiel, et la distinction compte pour qui évalue
+  le risque de ce créneau. Défaut d'ordonnancement nommé par un hôte (ADV, 14/09).
+
+## [0.1.168] — 2026-09-14
+
+### Added
+
+- **L'artefact de charge a un schéma, et la forge le tient.** Les bancs de charge imprimaient leur
+  relevé dans le journal de la forge, lu par un humain, jamais comparé ; un audit externe l'a dit :
+  la preuve runtime de la performance n'existe pas. Première pièce du lot : `charge/artefact.schema-1.json`
+  (`schemaVersion: 1`, JSON Schema 2020-12), la structure spécifiée par l'audit prise à la lettre —
+  identité, environnement, scénario, générateur mesuré (`workload`, contre l'omission coordonnée),
+  isolation, fenêtre de mesure, latences, statuts, base, cache, processus avec quatre relevés
+  mémoire (`baseline`, `peak`, `end`, `afterGc`), exactitude, compteurs du processus en
+  avant/après/delta, bloc `relay` exigé pour ce scénario quand la course est allée au bout ;
+  `complete: false` avec sa raison quand elle s'arrête, et alors aucun bloc de mesure n'est exigé.
+  Écarts à sa lettre, dits : `scenario.position` et `scenario.sequence` portent l'ordre
+  d'exécution que son protocole demande d'enregistrer ; ses deux emplacements pour le plafond
+  mémoire sont réunis en `environment.memoryLimitMiB` + `memoryLimitSource` ; le modèle d'arrivée
+  (`open-loop|closed-loop`) et la forme du trafic (`uniform|jittered|burst`) sont deux axes, pas une
+  énumération ; les statuts sont **disjoints** (`2xx`, `429`, `other4xx`, `503`, `other5xx`,
+  `other`) ; `scenario.requests`, qui doublait `workload`, est retiré. **Doctrine de version** : un
+  schéma est immuable dès le premier artefact publié sous son numéro, toute clé ou sémantique
+  nouvelle fait un schéma suivant, le validateur choisit le schéma par `schemaVersion` — la
+  première rédaction promettait des ajouts optionnels sans changement de numéro sur des objets
+  fermés, deux promesses qu'on ne peut pas tenir ensemble (audit, onzième passe).
+- **Le validateur compile le schéma en entier et tient ce que le schéma ne sait pas dire.**
+  `tools/artefact-de-charge.mjs` compile chaque schéma avec `ajv` (2020-12, mode strict, dépendance
+  de développement épinglée) avant tout artefact : mot-clé inconnu, référence non résolue, motif
+  incompilable, `required` ou `enum` qui ne sont pas des listes, `type` inconnu rendent la garde
+  non concluante, même dans une branche qu'aucun exemple ne matérialise — un validateur maison d'un
+  sous-ensemble de JSON Schema avait été tenté d'abord, et un audit y a trouvé deux fois le même
+  jour une branche qu'il ne lisait pas (un mot-clé sauté, puis un `$ref` externe jamais résolu) ; un
+  parcours préalable ne subsiste que pour donner le chemin des trois défauts qu'`ajv` nomme sans
+  chemin. Puis la forme, chaque champ obligatoire absent nommé par son chemin, toute clé hors schéma
+  refusée ; puis les **invariants entre nombres** : `complete: true` sans raison d'échec, durée
+  positive, au moins 1 000 observations, `sequence[position − 1] === spectators`,
+  `scheduled ≥ started ≥ completed === latencyMs.n`, quantiles ordonnés, `min ≤ mean ≤ max`,
+  `timeouts ≤ calls`, pic mémoire ≥ départ et ≥ fin, classes d'histogramme fixes (`edges[0] = 0`,
+  strictement croissantes, `[a, b)`, une classe `overflow` ouverte, `counts + overflow = n`) sous un
+  `binSetId` **dérivé** des bornes et recalculé, `delta = after − before`, plafond mémoire `null` si
+  et seulement si sa source est `unknown`, statuts disjoints sommant à `completedRequests`, chaque
+  2xx jugée (`correctResponses + emptyResponses + wrongPresentation = 2xx`), relais
+  (`admitted + refused = completedRequests`, `refused ≤ 503`, `bytesTransferred ≤ admitted ×
+  fileBytes`, `descriptors.peak ≥ idle`). Les grandeurs dérivables (`throughputRps`,
+  `database.callsPerRequest`) ne sont **pas stockées** : elles se recalculent. Et la **cohorte** :
+  complète (positions exactement `1..n`, tous complets) ou interrompue (préfixe continu, dernier
+  `complete: false`, rien après), constantes nommées (`runId`, commit, version, empreinte du schéma,
+  environnement entier, scénario, modèle et forme d'arrivée, isolation), variables d'échelle
+  nommément exclues, même `binSetId` ⇒ mêmes bornes. Chaque artefact porte `identity.schemaSha256`,
+  l'empreinte canonique du schéma sous lequel il a été produit, exigée égale à celle du schéma
+  appliqué ; et `charge/artefacts/ancres.json` nommera, au premier artefact publié, le tag de cette
+  publication : la garde relit le schéma **à ce tag** et le confronte, empreinte contre empreinte —
+  l'immuabilité se prouve hors de la copie courante. Un corpus de deux formes (minimal complet aux
+  nombres cohérents, incomplet) est le test de compatibilité ; toutes les clés du schéma 1 sont
+  figées dans un banc. Dix mutants sur l'artefact. Les vrais artefacts ne vivront pas dans le
+  dépôt : ils seront attachés aux releases.
+- **Le producteur d'artefact, et le premier `100 → 1 000 → 100`.** `charge/rapport.js` est un
+  programme, pas un banc : il rend un document même quand la course échoue. Il joue la séquence
+  dans un seul processus, contre le vrai PostgREST de la forge, sur le scénario `state-hot`
+  (`GET ?present=&state=1`, la lecture que mille spectateurs font toutes les 25 secondes) — une
+  présentation par position, sa page égale à son rang pour qu'un état venu d'ailleurs soit
+  détectable, un préchauffage hors mesure, puis un générateur en **boucle ouverte** avec gigue dont
+  le retard est mesuré (un générateur saturé fabriquerait de bons percentiles) ; il relève latences
+  et histogramme à classes fixes, statuts disjoints, octets, appels et pic en vol de la base par une
+  sonde sur la couture, servies / regroupées / produites du cache de lecture (compteurs nouveaux de
+  `server/cache.js`, avec leur banc), CPU, retard de boucle p99, quatre relevés mémoire avec un vrai
+  GC (`--expose-gc` exigé, sinon la position échoue et le dit), et les compteurs de la carte en
+  avant / après / delta. Un artefact par position, jugés en cohorte par la garde avant d'être
+  attachés au run de la forge ; une position qui échoue laisse son `complete: false` et arrête la
+  course. Banc de bout en bout contre le double PostgREST en mémoire (deux positions, mille
+  observations chacune, cohorte acceptée ; une position cassée, artefact interrompu, code 1).
+  Quatre mutants.
+
+### Fixed
+
+- **La garde d'ordre réclamait une cause à une exécution verte.** La confirmation isolée d'un rouge
+  peut être verte (interférence de la suite complète, instable), et sa pièce disait « aucune cause
+  exploitable — rejouer en verbose » : un rejeu pour trouver la cause d'un succès (audit, dixième
+  passe, sur la 0.1.167). « Aucune cause exploitable » ne se dit plus que d'une exécution non verte
+  ou incohérente : code 0 sans signal et rapport « passed », c'est un vert, et un vert se tait. Banc
+  vert sans message, banc « code 0 sans rapport » qui réclame encore ; mutant.
+
+### Changed
+
+- **La zone `context` dit qui l'exécute.** Une note de version a écrit à un hôte que le contexte
+  autonome était « sans effet chez vous : vous fournissez votre contexte », alors qu'il exécute
+  `context/standalone.js` tel quel depuis août et l'avait dit trois fois (ADV, 14/09). Le libellé de
+  la zone et le contrat disent que la ligne de partage est la forme du câblage, lue **par capacité**
+  et non par hôte : le contexte autonome tel quel reçoit toute la zone, et son `errors.capture` est
+  celui du lecteur ; un contexte composé depuis `createStandaloneContext` (l'exemple Vercel du dépôt)
+  reçoit chaque capacité héritée et aucune remplacée ; un contexte qui n'importe rien de `context/`
+  n'est touché que par `server/`. La première version de cette règle était binaire ; l'audit a
+  montré le troisième cas dans le dépôt lui-même. La forme de chaque hôte est la ligne dont les
+  notes sont écrites.
+- Le contrat dit que la borne de temps d'une capacité doit couvrir le **corps**, pas seulement les
+  en-têtes : `fetch` se règle aux en-têtes et `response.text()` se fige sur un flux resté ouvert, un
+  délai qui s'arrête aux en-têtes ne borne que la moitié du chemin ; le même `AbortSignal` passé au
+  `fetch` couvre les deux. Règle d'un hôte (STUDIO, 13/09), qui l'avait trouvée chez lui.
+
+## [0.1.167] — 2026-09-14
+
+### Fixed
+
+- ⚠️ **Une promesse rejetée par `errors.capture` arrêtait le processus.** Trente-cinq appels
+  portaient « jamais bloquant » sous un `try/catch` — qui n'attrape qu'une exception synchrone. Le
+  contrat autorise `capture` à rendre une promesse ; un `capture` qui rejette, à `init`, avec une
+  configuration hors plage : `unhandledRejection`, sortie 1 avant le premier octet servi (reproduit
+  par un audit externe sur le tag v0.1.166, sixième passe). `server/capture.js` porte la règle une
+  fois pour tous : exception ET promesse neutralisées, jamais attendue. Banc dans un vrai
+  sous-processus : `capture` rejette, configuration invalide, le témoin est atteint, sortie 0. ⚠️ Le
+  contexte autonome ne l'appliquait d'abord qu'à `appelHote` : cinq appels directs à `journal.capture`
+  restaient sous un `try/catch`, et `ctx.errors` est le même objet — un hôte qui pose un `capture` qui
+  rejette tuait le processus à `mail.send` sans secret, avant tout réseau (audit, septième passe).
+  Un seul helper local, `capturerJournalSansBloquer`, pour les six emplacements ; banc en vrai
+  sous-processus sur `mail.send`, sortie 0 ; un banc structurel refuse tout appel direct non attendu
+  au journal hors des deux helpers. Deux mutants.
+- ⚠️ **Le contexte autonome disait « transmis tel quel » et convertissait encore.** `Number("abc")`
+  arrivait au cœur en `NaN`, et le diagnostic disait `relayStallMs=NaN` : l'exploitant ne retrouvait
+  pas ce qu'il avait saisi (audit, sixième passe). La chaîne d'environnement passe intacte, le cœur
+  la borne et cite ce qu'il a reçu ; les types disent qu'une chaîne est acceptée. Banc sur le chemin
+  autonome complet, pas seulement sur `entierBorne`. Mutant.
+
+- ⚠️ **La garde d'ordre des bancs concluait sur le code de sortie seul, et son contrôle était
+  contaminé par le stimulus.** Trois défauts, trouvés par l'audit sur deux passes. Le rejeu individuel
+  se décidait par `r.status === 0` (septième passe) ; la première correction ne confrontait que les
+  rejeux, et l'exécution mélangée initiale rendait encore « conforme » sur un rapport vert écrit puis
+  un processus en 1, tandis que `status: null` (tué par signal) passait pour un code non nul
+  concordant (huitième passe). `confronterExecution` est la seule confrontation, pour toute exécution
+  de vitest : tout vert + 0 + aucun signal → vert ; un rouge + code entier non nul + aucun signal →
+  rouge ; tout le reste — `null`, signal, vert + non-zéro, rouge + 0, rapport absent, vide ou
+  incomplet — non concluant, avec ses pièces. Et un contrôle exécuté juste après la suite lourde
+  rougissait d'épuisement, pas d'ordre : six fichiers « déjà rouges » chez l'audit, 6/6 verts
+  quelques instants plus tard. Chaque rouge reçoit désormais **deux confirmations isolées** — seul en
+  ordre normal, seul mélangé sous la même graine — et une table ne conclut « dépendance » que sur
+  vert/rouge ; vert/vert est une interférence de la suite complète (non concluant, pas une accusation),
+  rouge/vert est instable. Les pièces de chaque rouge sont conservées : messages d'échec du rapport,
+  code, signal, fin de stderr, graine, mode. Quatre mutants.
+
+### Changed
+
+- **Les pièces de diagnostic traversent la chaîne.** Sur une forge au cache npm non inscriptible,
+  `npm pack` sortait en 255 avec `EPERM`, et `inventaire-tarball` jetait son stderr : la seule pièce
+  qui remontait était « code 255 » ; un audit a passé une passe à attribuer six rouges avant de
+  trouver la cause (neuvième passe). `lancerPack` lève désormais en nommant code, signal et fin de
+  stderr, bornés, et un banc lance un vrai sous-processus qui échoue avec une cause identifiable. La
+  garde d'ordre prend la première ligne **informative** d'un `failureMessages` (« Error:
+  STACK_TRACE_ERROR » n'est pas une cause), reprend le `message` du fichier quand un hook a échoué,
+  et quand rien n'est exploitable le dit avec la commande de rejeu détaillé. Deux mutants.
+- ⚠️ **La carte porte trois natures, et la règle « lire `fenetreS` avant `total` » n'en couvrait
+  qu'une.** Le paragraphe de la veille l'étendait à « tout `mesures` » ; un hôte (ADV) a appliqué la
+  règle des compteurs à `memoireMio`, qui est une **jauge** (`process.memoryUsage()` à l'instant de
+  la lecture, aucune fenêtre n'entre dans sa production) — et rien sur la carte ne lui disait qu'elle
+  n'était pas couverte. Le contrat distingue désormais compteur (sauvé par `fenetreS`), jauge (rien
+  ne la sauve : un processus au repos depuis une semaine pèse autant qu'un processus né il y a une
+  minute, seule une lecture sous charge dit quelque chose) et échantillon (`boucleMs`, qui rend
+  `null` tant qu'il n'a rien vu et se sauve tout seul). C'est l'hôte qui a dressé le tableau.
+- Le contrat dit aussi que l'échantillonnage externe d'un compteur de processus **hérite** de la
+  fenêtre au lieu de la rattraper — calcul de l'hôte : un cron quotidien sur des fenêtres de 15 s
+  observe 0,017 % de l'année, un cron horaire 0,42 % — et que la seule forme qui marcherait sur du
+  serverless est une poussée à la fin du processus, que le lecteur ne fait pas et qu'aucune
+  plate-forme ne garantit. La limite est écrite avec son issue, pour que personne ne construise
+  l'échantillonneur d'abord.
+- Deux textes contredisaient la mesure : « une chaîne est refusée » (alors que `"45000"` passe) devient
+  « une chaîne qui n'est pas un entier dans la plage » ; « la RSS passe de 130 à 194 Mio » (dans les
+  types et un nom de banc) redevient ce qui a été mesuré — de 63 à 193–257 Mio, une croissance de 130
+  à 194. `CONFIGURATION.md` porte la seconde mesure de l'audit (pic 181 Mio, la RSS ne redescend pas
+  après GC) et dit que 1024 est une borne syntaxique, pas une garantie mémoire.
+
+- Le contrat dit de lire `fenetreS` **avant** `total`, et pourquoi : sur du serverless, le
+  processus est l'unité qui meurt, et les compteurs de processus (`lectureSaturee`,
+  `relaisRefuses`, `mesures`) ne peuvent jamais accumuler plus que la vie d'un démarrage à froid.
+  Un hôte (ADV) a lu ses deux domaines à quelques minutes d'écart : fenêtres de 15 et 19 s, puis 4
+  et 7 s — `total: 0` y dit « rien depuis un quart de minute », presque aucune information. Limite
+  d'applicabilité, pas défaut du champ ; écrite à côté du champ.
+- Le contrat et `CONFIGURATION.md` disent que `mesures.memoireMio` n'est que la moitié d'un chiffre :
+  l'autre moitié est le plafond mémoire du processus, que le lecteur ne connaît pas et qu'aucune
+  plateforme ne sert de la même façon (`AWS_LAMBDA_FUNCTION_MEMORY_SIZE` sur les fonctions Lambda,
+  Vercel compris ; la limite cgroup en conteneur). Un hôte (STUDIO) y a perdu une demi-journée :
+  ni l'API projet, ni les journaux, ni son `vercel.json` ne le portaient.
+- `server/bornes.js` dit que la coercition qui fabrique une valeur plausible n'est pas propre aux
+  booléens (`Number(null)` et `Number("")` valent 0) et que l'ordre des opérations est le remède :
+  l'absence est écartée avant toute conversion. Remarque d'un hôte qui l'avait payée six fois.
+
+## [0.1.166] — 2026-09-14
+
+### Added
+
+- **`relaisRefuses` sur la carte de contrat** — `{ total, fenetreS, derniereIlYaS }`, même forme que
+  `lectureSaturee`, autre plafond : les relais de fichiers refusés en 503 parce que
+  `config.maxConcurrentRelays` était atteint. Un hôte (ADV) a répondu « nous n'avons jamais saturé
+  les relais » par `lectureSaturee.total = 0`, qui ne compte que le cache de lecture — lecture
+  raisonnable d'une carte qui n'avait pas de compteur de relais, et `mesures.statuts.occupe503`
+  confond les deux. On demandait aux hôtes de chercher « relais refusés » dans leurs journaux ; une
+  question que la carte peut trancher ne doit pas être posée comme une fouille de journaux. État du
+  processus, jamais remis à zéro par `init`.
+
+### Fixed
+
+- ⚠️ **`init()` désarmait le plafond des relais.** Chaque réinitialisation remettait le compteur de
+  relais en vol à zéro, même avec des relais de l'ancien contexte encore ouverts : avec un plafond
+  de 1, la demande suivante partait vers l'amont pendant que la place était prise, puis le `finally`
+  de l'ancien relais rendait le compteur négatif (reproduit par un audit externe, cinquième passe,
+  13/09, sur le tag v0.1.165). Le compteur appartient au processus et ne se relit plus ; `init` ne
+  relit que la configuration, pour les relais admis après lui ; et les bornes de temps d'un relais
+  sont **capturées à son admission** — un `init` pendant le transfert ne les change pas. Couture
+  `__relaisEnCours` pour qu'un banc vérifie « jamais remis à zéro, jamais négatif ». Deux mutants.
+- ⚠️ **Un délai au-delà de la limite native de `setTimeout` était accepté, et durait 1 ms.** La
+  borne prenait « tout nombre fini positif » ; Node plafonne `setTimeout` à 2 147 483 647 ms et ramène
+  tout dépassement à 1 ms : un `relayStallMs` de 2 147 483 648 — « 24,8 jours » — abandonnait le
+  transfert en 6 ms, avec 65 `TimeoutOverflowWarning` (audit, cinquième passe). `server/bornes.js`
+  n'accepte plus qu'un **entier sûr dans une plage écrite** (relais 1–1024 ; délais 1–86 400 000 ms,
+  soit 24 h, bien sous la limite native) ; hors plage — décimale, chaîne, `Infinity`, booléen — le
+  défaut s'applique et le cœur le **dit une fois à `init`** avec la plage. Le contexte autonome
+  transmet la valeur d'environnement telle quelle, pour que cette seule vérification la voie ; il la
+  normalisait en silence. Mutant.
+- ⚠️ **Une affirmation annoncée retirée que la garde ne connaissait pas.** La 0.1.165 disait « le
+  cœur n'a aucun secret serveur » retirée ; la phrase vivait encore dans `routes-visiteur.js`, et
+  `affirmations-retirees` rendait « aucune écrite comme vraie » — vrai au sens strict (elle ne
+  confronte le dépôt qu'à sa liste), faux au sens qui compte (audit, cinquième passe). Le commentaire
+  est réécrit en place, l'affirmation est dans `RETIREES` sous ses formes française et anglaise, avec
+  un banc positif (la phrase nue est une violation) et négatif (une citation marquée passe ; « un
+  secret de serveur ne doit pas… » n'est pas la phrase). Mutant.
+
+### Changed
+
+- Le contrat dit qu'un dépôt d'hôte ne doit pas vivre dans un dossier synchronisé, et que sortir
+  seulement `node_modules` par un lien symbolique est un cul-de-sac (`npm` le remplace par un vrai
+  dossier, à `install` comme à `ci`). Rapporté par un hôte (STUDIO, quatre casses en six jours dans
+  iCloud Drive), non reproduit ici — écrit pour que personne n'ait à le retrouver.
+- ⚠️ **Le tableau des zones a une zone `pages`** : `server/page-*.js`, `server/gabarit-*.js` et les
+  deux bundles générés — le HTML et le JavaScript de la page des spectateurs. « `browser` : 0 » a été
+  lu six trains de suite par un hôte comme « rien ne change pour nos visiteurs » ; c'était vrai de
+  `dist/bridge.js` et faux de la page, dont le code vivait dans `server`. Une mesure juste, mal
+  étiquetée, passe tous les contrôles de provenance — c'est l'hôte qui l'a dit, et il a raison.
+- ⚠️ **64 relais simultanés n'est pas une valeur sûre partout**, et les docs le disent désormais :
+  mesuré par l'audit avec le vrai chemin relais, 64 × 8 Mio et des clients lents font monter la RSS
+  du processus de 63 à 193–257 Mio. Sur un processus à 256 Mio, 16 à 32 ; 64 à partir de 512 Mio,
+  après mesure. Borne haute de configuration : 1024.
+
+- La forge rejoue la garde d'ordre des bancs sous **quatre** graines : jour, 42, 20260913 et
+  **20260912** — cette dernière demandée par l'audit externe (quatrième passe) et omise du train
+  0.1.165, ce qui lui avait été dit. Aucune dépendance d'ordre trouvée sous elle.
+
+## [0.1.165] — 2026-09-13
+
+### Fixed
+
+- ⚠️ **Deux points de relecture, une seule clé de quota : une sortie unique portait 306 spectateurs,
+  pas 613.** Le filet du navigateur relit l'état ET le chat toutes les 25 s ; le quota était dérivé
+  « sur chacun des deux points » et appliqué sous `pread:<ip>` — et saturer le chat coupait l'état,
+  qui fait autorité sur la page affichée. Reproduit par un audit externe (troisième passe, 13/09)
+  contre le vrai limiteur. Deux clés (`pread:state:`, `pread:chat:`), le quota par point, une requête
+  qui demande les deux paie les deux. La simulation (`charge/audienceDerriereUneIp`) pose désormais
+  deux décisions par intervalle — sa première écriture n'en posait qu'une, c'est elle qui annonçait
+  613 — et une **couture** neuve (`filetDeuxPoints`) exécute la vraie page d'audience pour compter ce
+  qu'un tick émet : un état, un chat, pas un troisième. ⚠️ **Et le filet ne part plus en chœur** :
+  mille spectateurs qui rejoignent ensemble relisaient ensemble, 2 000 GET en phase toutes les 25 s ;
+  le premier tick est tiré entre 0 et 25 s, la période ne change pas.
+- ⚠️ **La virtualisation bornait le DOM, pas la géométrie : à 200 %, la moitié d'un document de
+  10 000 pages était injoignable.** Chrome plafonne la hauteur de défilement autour de 33 554 430 px
+  (mesuré : 33 554 428 ou 33 554 432 selon la mise en page — on retient le plus bas). Les espaceurs
+  portaient la hauteur de TOUTES les pages absentes : au-delà, un `scrollTop` posé ne menait nulle
+  part. « 6 nœuds à 50 000 pages » était vrai et **incomplet** — l'audit l'a mesuré dans Chrome réel.
+  Le remède durable est un défilement segmenté (train suivant) ; en attendant, un **plafond explicite,
+  jamais silencieux** : `pagesAtteignables` (pur, `src/viewer.ts`) calcule la dernière page dont le
+  haut et le bas tiennent sous le plafond à la géométrie courante, la visionneuse s'y arrête, un saut
+  au-delà s'y arrête aussi, et un avis (`role=status`) dit « au-delà de la page N sur M à ce zoom —
+  réduisez le zoom ». Éprouvé **dans Chrome** : 10 000 et 50 000 pages × 50/100/200/300 %, portrait,
+  première/milieu/dernière atteignable matérialisées et courantes, DOM ≤ 12, `scrollHeight` sous le
+  plafond — avec un pdf.js de laboratoire servi sur la même URL, substitution comptée. Deux mutants.
+  ⚠️ **Et le mode une page rendait la VRAIE dernière page présente, courante et invisible** : la fenêtre
+  y posait encore les espaceurs des milliers de pages précédentes — la 10 000ᵉ était à 8 339 242 px
+  du haut, sous un cadre de 900 px. Nos bancs prouvaient le DOM et le numéro, pas l'écran ; l'audit
+  a mesuré l'écran (quatrième passe). En mode une page : aucun espaceur (`avant = apres = 0`), et
+  la structure de ce mode vit désormais dans la visionneuse de base — `enterOnePage()` est offert à
+  tout greffon, pas seulement à l'assistant dont la feuille portait seule les règles. Banc Chrome :
+  10 000 et 50 000 pages, première, milieu et **vraie dernière page** dont le cadre intersecte le
+  cadre visible. L'avis du mode continu propose « réduisez le zoom, ou passez en mode une page », et
+  dit quand même le zoom minimal ne suffirait pas. Mutant.
+- ⚠️ **`visitor-verify` et `visitor-google` n'avaient aucun plafond** — seule la demande de code en
+  avait un : mille tentatives depuis une adresse, zéro appel au limiteur (audit externe, 13/09).
+  Deux dimensions pour le code — 100/h par adresse, 10 par quart d'heure par identité (empreinte de
+  l'email normalisé, jamais l'adresse en clair) — 100/h par adresse pour Google, 5/h par identité pour
+  la demande. Pris à l'admission : réussite, échec et exception consomment pareil, et le greffon n'est
+  **pas appelé** au-delà. Le contrat dit désormais ce que le greffon doit garantir de son côté (code
+  court, expirant, à usage unique). Mutant.
+  ⚠️ **Un SHA-256 d'email n'est pas une anonymisation** : il se renverse par dictionnaire (audit,
+  quatrième passe). La clé d'identité vient désormais du greffon — `visitors.rateLimitKey(email)`,
+  HMAC avec un secret côté hôte et séparation de domaine, appelé avec l'email normalisé, préfixé
+  `h:` — et, sans la capacité ou si elle échoue, l'empreinte reste (`e:`, jamais confondue) et le
+  repli est **dit une fois par processus**. « Le cœur n'a pas de secret serveur » était trop absolu
+  (le contexte autonome porte `ipHashSecret`) : la clé appartient à l'hôte, pas à ce secret. Mutant.
+- ⚠️ **Le flux bornait les octets, rien ne bornait le nombre de flux.** 200 demandes lentes, 200
+  connexions amont, 200 pipelines, 200 réponses ouvertes dans un processus (audit externe, 13/09).
+  Admission par processus AVANT l'appel amont — `config.maxConcurrentRelays`, `PLAYER_MAX_RELAYS`,
+  défaut 64 — refus 503 + `Retry-After` sans file d'attente, place rendue en `finally` (succès, erreur
+  amont, client parti au milieu du flux : éprouvés), dit une fois par heure à l'exploitant. Mutant.
+  ⚠️ **Une place n'est bornée que si le relais qui l'occupe FINIT** — et un client qui cesse de lire
+  le gardait pour toujours : `finally` jamais atteint, place jamais rendue, plafond à 1 → plus aucun
+  fichier (reproduit par l'audit, quatrième passe). `requestTimeout` ne borne que la réception de la
+  requête, pas l'émission de la réponse — le commentaire du serveur autonome affirmait le contraire,
+  corrigé. Deux bornes par relais, configurables (`config.relayStallMs` 30 s, `config.relayMaxMs`
+  15 min ; `PLAYER_RELAY_STALL_MS`, `PLAYER_RELAY_MAX_MS`) : abandon par le signal du pipeline,
+  source amont détruite, réponse détruite, place rendue — éprouvé : client figé, puis demande
+  suivante admise ; budget total sur un flux qui progresse sans jamais finir. Mutant.
+- ⚠️ **Le serveur autonome confondait trois issues dans un corps vide et gardait les délais de Node.**
+  Trop gros, illisible et connexion partie rendaient `{}` puis « bad-event » ; `requestTimeout`
+  300 s et `headersTimeout` 60 s sont ceux d'un serveur derrière un proxy (mesurés par l'audit).
+  Désormais 413 + `Connection: close` sans drainer, 400, rien ; 30 s / 15 s / keep-alive 5 s.
+- **Les ACL effectives des fonctions `security definer` sont lues sur une vraie base**, après
+  `init.sql` et les migrations : chaque `prosecdef` doit être inexécutable par `public` (un
+  `proacl` NULL est le défaut, donc PUBLIC), `anon` et `authenticated` — rôles créés s'ils manquent,
+  et le banc exige des lignes. Les `revoke` écrits ne prouvaient pas l'état.
+- **Trois commentaires décrivaient des mécanismes supprimés** — « `map` reste appliqué tel quel »
+  (le gestionnaire ignore la charge), « le serveur renvoie la clé et l'audience compare » (cette clé
+  n'existe plus, le serveur ne rend qu'un nom). Réécrits en invariant + raison, et les deux
+  affirmations sont **retirées** dans `affirmations-retirees` : elles ne reviendront pas sans marqueur.
+  ⚠️ La garde était verte pendant qu'ils mentaient : elle ne connaît que ce qu'on a décidé de retirer,
+  jamais une phrase historique neuve — c'est sa limite écrite, et c'est un audit qui les a trouvés.
+- ⚠️ **« Suite mélangée verte » était faux, et la garde d'ordre masquait la violation.** Sous la
+  graine 20260913, `routeSlugEtSaturation` rougissait : son banc de saturation laissait **128
+  promesses éternelles** dans le cache de lecture global, et les essais suivants du fichier recevaient
+  503. La garde lisait les lignes « FAIL » de la **sortie texte** de vitest — y compris celles que des
+  bancs impriment volontairement en lançant des gardes — classait ces fichiers « déjà rouges »,
+  rendait NON CONCLUANT, et ce non-concluant passait avant la violation confirmée. Trois défauts,
+  trouvés par l'audit (quatrième passe). Le banc règle ses deferreds dans `afterEach` et **vérifie
+  que le cache est vide** (couture `__cacheLecture`) ; la garde lit le **rapport JSON** de vitest,
+  une violation prime sur un non-concluant, et la forge rejoue trois graines (jour, 42, 20260913).
+  Le contrat dit désormais que `db.request` — et toute capacité — doit se régler en temps borné :
+  128 lectures en vol et l'instance répond 503 à tous.
+
+- ⚠️ **`storage.remove` absent était un TROISIÈME état, et il faisait partir la ligne.** La 0.1.164
+  distinguait « a échoué » de « a réussi » ; elle ne voyait pas « n'a pas été tenté ». Un hôte qui
+  fournit `put` sans `remove` (STUDIO) fabriquait des objets définitivement inatteignables à chaque
+  passage, sans qu'aucun compteur ne bouge — la perte irréversible que le correctif nommait, par
+  l'autre porte. Trouvé par l'hôte en lisant `retention.js:141` et `:248`, pas le contrat, qui
+  supposait qu'on en fournit un. Désormais : ligne porteuse de fichier **retenue**, comptée dans
+  `retenues`, `sansRemove: true` sur le résultat (en `dryRun` aussi, pour le lire avant d'armer), et
+  la capacité manquante dite **une fois par processus** (`errors.capture`, `benin`). Une ligne sans
+  fichier part toujours. Deux bancs disaient l'inverse — « les lignes partent quand même, la limite
+  est dite, pas simulée » — une décision antérieure à la règle « jamais une ligne au-dessus d'un
+  fichier resté » ; réécrits. Sa leçon, reçue de l'hôte : quand on annonce « `false` fait désormais
+  X », la question suivante est ce que font `null`, `undefined` et l'exception.
+- ⚠️ **L'hôte déclarait le motif de son refus de courrier, et on le jetait.** Un hôte (ADV) répond
+  `{ sent: false, motif }` à chaque refus — huit motifs — précisément pour que « refusé » ne se lise
+  pas « en panne » ; `reshare` ne lisait que `sent`. La désambiguïsation que le contrat disait
+  manquante, au moins un hôte l'envoyait déjà. `hostReason` porte désormais `reason` ou `motif`
+  quand c'est une chaîne, bornée à 80 caractères ; un objet n'est pas recopié.
+- ⚠️ **Une migration publiée ne change plus — pas même un commentaire.** La 0004 a changé entre
+  0.1.163 et 0.1.164 (prose corrigée en place, aucune instruction SQL) ; un hôte qui empreinte ses
+  migrations a reçu l'alarme « migration modifiée après application » et a dû faire un `diff -u`
+  pour la lever. Les migrations voyagent dans le tarball : ce sont des artefacts exécutés, pas des
+  documents. `tools/migrations-immuables.mjs` confronte l'arbre au **tag le plus haut** (triplets
+  numériques, pas l'ordre lexical) : toute différence d'octet ou disparition est une violation ; sans
+  tag lisible, NON CONCLUANT. `affirmations-retirees` traite `supabase/migrations/` comme une archive,
+  sinon les deux gardes se contrediraient. 8 bancs. Câblée sur la forge.
+- Le contrat dit que les avatars `data:` et `blob:` sont refusés au rendu, et pourquoi — un hôte les
+  utilisait comme repli et voyait des initiales sans une ligne pour le dire.
+
+## [0.1.164] — 2026-09-12
+
+### Fixed
+
+- ⚠️ **Le présentateur créait un élément par page et un bouton par vignette, pour TOUT le document.**
+  Le rendu des canvas était déjà paresseux et borné — fenêtre glissante, budget de pixels — mais les
+  **gabarits**, eux, étaient tous là. Mesuré par un audit externe dans un Chrome réel : 10 000 pages
+  → ~70 000 nœuds, 50 000 → ~450 000, et une reconstruction au zoom de 2,4 s. Un document hostile
+  n'a pas besoin d'être lourd : il lui suffit d'être **long**.
+  La visionneuse ne matérialise plus qu'une **fenêtre** de pages et de vignettes autour du visible ;
+  deux espaceurs portent la hauteur des absents. Mesuré en jsdom, à 10, 10 000 et 50 000 pages :
+  **6 nœuds dans `#pages`, 18 dans `#vignIn`, identiques aux trois échelles** — 4 pages
+  matérialisées, 8 vignettes, 7 et 13 après un saut au milieu du document. Les observateurs,
+  l'éviction des canvas et le rendu paresseux sont inchangés : ils voient simplement moins
+  d'éléments.
+  ⚠️ **Le calcul de la fenêtre est pur et vit dans `src/viewer.ts`**, pas dans le gabarit : c'est
+  lui qui décide ce qui existe, et s'il se trompe un lecteur voit un trou ou une page en double. Il
+  s'éprouve donc seul, avec des nombres — `floor` des deux côtés et un `+1` d'index, parce qu'un
+  `ceil` d'un côté laisse un trou d'une page exactement sur une frontière. `positionDe` est son
+  inverse : la page demandée se rejoint par sa position calculée, puis **naît**, puis s'aligne.
+  Le banc navigateur suit : il ne cherche plus la page 30 dans le DOM (elle n'y est pas avant
+  qu'on s'en approche) mais déduit sa position des pages nées, compte la **fenêtre** de vignettes
+  plutôt que 40 boutons, et exige que chaque parcours ait **eu lieu** (`cur ≥ 38`) — l'un d'eux,
+  écrit avec `if (el)`, passait vert sans avoir bougé.
+  ⚠️ **Le banc compte des nœuds, jamais des millisecondes** — c'est la demande de l'audit et la
+  règle du dépôt. La borne est `plafondFenetre`, calculée avec les constantes du gabarit ; et
+  avant + matérialisées + après = tout le document, la borne de compte qui trahit une définition qui
+  dérape. Cinq mutants ajoutés à la campagne : fenêtre non virtuelle, pages toutes matérialisées,
+  saut sans matérialisation, vignettes toutes matérialisées, chargement sans échéance.
+  ⚠️ **Et un document qui n'arrive jamais est désormais abandonné.** La tâche `getDocument` n'était
+  ni bornée ni détruite : un transfert qui ne finit pas gardait son worker jusqu'à la fermeture de
+  l'onglet. Délai global de deux minutes, `destroy()`, et un message — éprouvé à 119 s puis 121 s.
+  ⚠️ **Le harnais a dû substituer le chargement de pdf.js par crochet de source** — la visionneuse
+  l'importe en module ES, ce qui échoue en jsdom et conduit à `refuserWorker()`, jamais à `start()`.
+  Le banc **vérifie que la substitution a eu lieu** : sans elle, il évaluerait une page qui ne
+  démarre pas et prouverait vert sur rien.
+
+- ⚠️ **`tools/mutations.mjs` — notre critère d'acceptation était manuel, et il est désormais
+  rejouable.** Le CHANGELOG porte des dizaines de « N mutations sur N tuées » : chacune était vraie
+  le jour où elle a été écrite, produite **à la main**, sans artefact, **non rejouable par
+  quiconque** — y compris par nous, le lendemain. Nous avions d'abord annoncé « zéro outil de
+  mutation », ce qui était **faux** (`tools/fixture-types/eprouver.mjs` en est un, sur les types) ;
+  la formulation juste est celle de l'audit, et celle-ci est la campagne sur le **comportement**.
+  **12 mutants, 12 tués.** Chacun est un défaut qui a **réellement existé** — aucun inventé pour
+  faire nombre : prédicat de purge absent du DELETE, trace effacée au-dessus d'un objet resté,
+  bucket des voix hors liste blanche, objet absent compté en échec, signal qui remplace le plancher,
+  budget de relais par saut, avatar de toute origine, comparaison par préfixe, avatar anonyme
+  resservi sur deux chemins, échec de hook muet.
+  ⚠️ **Pas de mutation générique sur 10 800 lignes, et le refus est motivé** : des centaines de
+  survivants bénins apprendraient à ignorer la sortie, et une garde qu'on ignore est pire
+  qu'absente.
+  ⚠️ **Elle refuse de conclure de trois façons, et chacune la rendrait plus verte qu'elle ne
+  devrait** : cible absente (le code a bougé, le mutant ne mute rien), cible **en double** (le
+  verdict ne désigne aucune des deux), base **déjà rouge** (tous les mutants qui touchent ce banc
+  passeraient pour tués — la campagne serait d'autant plus verte que le dépôt est cassé).
+  ⚠️ **Et le contrôle a servi dès le premier passage** : `avatar-anonyme-resservi` a rendu **non
+  concluant** parce que sa cible existait **deux fois**. Scindé en deux mutants portant chacun le
+  contexte qui le rend unique. Un outil qui refuse de deviner vaut mieux qu'un outil qui devine bien.
+  ⚠️ **L'empreinte est vérifiée après chaque restauration**, parce qu'une campagne manuelle
+  interrompue a déjà laissé un fichier muté sur disque que l'exécution suivante a pris pour sa
+  référence. Un écart arrête tout : le dépôt est alors dans un état inconnu.
+
+- ⚠️ **La clé d'idempotence du re-partage EXISTAIT DÉJÀ, et écrire la migration demandée aurait été
+  un doublon.** `idem_key` est sur cette table depuis la **migration 0011**, globalement unique
+  quand elle est renseignée, avec son attente de schéma déjà câblée — elle servait au chemin
+  serveur-à-serveur et n'avait jamais été offerte au re-partage. Une colonne neuve aurait donné
+  **deux** mécanismes d'idempotence à la même table, dont un seul contraint par l'autre. La 0028
+  écrite puis **supprimée** : le travail était de brancher, pas d'ajouter.
+  ⚠️ **La clé de l'appelant est empreintée côté serveur, jamais recopiée.** Le format est
+  `genre:sha256` et les genres existants désignent des liens **système** : recopier une chaîne
+  fournie laisserait un appelant écrire `hote:…` et faire retomber son re-partage sur le lien
+  système d'un document, par la grâce même de la contrainte d'unicité.
+  ⚠️ **Et le banc a trouvé la moitié manquante** : un lien idempotent qui réexpédie laisse le défaut
+  entier — le destinataire reçoit deux courriers, ce qu'on répare. `delivery: "idempotent"` dit
+  « c'était déjà fait », pas « ça a échoué ».
+- ⚠️ **Une salle de mille personnes derrière une sortie unique décroche à la 37ᵉ minute, AU REPOS.**
+  Simulé contre le **vrai limiteur**, aux constantes réelles du produit : le quota est dimensionné
+  pour **25** lecteurs par sortie, et une sortie en porte **613**. À 700 spectateurs le premier refus
+  tombe à 53 min ; à 1 000, à 37 min — sans qu'un seul geste du présentateur n'ait lieu. La campagne
+  de charge existante distribue mille clients sur 250 adresses, donc quarante par sortie : elle ne
+  pose pas cette question. ⚠️ Ce n'est **pas** une campagne de charge et il ne faut pas la lire ainsi
+  — rien n'y mesure de millisecondes. Le chiffre est une **décision d'exploitation**, et le relevé
+  est imprimé pour qui déploie.
+  ⚠️ **Une borne écrite a attrapé mon propre harnais** : 88 401 acceptées pour un plafond de 88 400.
+  Le `finally` qui restaurait l'horloge s'exécutait **au `return`**, donc la boucle asynchrone
+  tournait contre le temps **réel**. Le limiteur était juste ; l'instrument dérivait, et il l'a dit
+  parce qu'une borne était écrite.
+  ⚠️ **`creerLimites` accepte désormais une horloge**, pour qu'un banc n'ait plus à rustiner un
+  global : une horloge passée en argument ne peut pas fuir hors de son appel.
+
+- ⚠️ **`sent: false` mentait quand la vérité était « je ne sais pas », et c'est ce mensonge qui
+  duplique les courriers.** Trois issues tenaient dans un booléen : l'hôte a refusé, **nous** avons
+  refusé, ou l'appel a échoué **sans que nous sachions ce que l'hôte a fait**. Seul le dernier est
+  dangereux — si l'hôte a réellement envoyé puis répondu trop tard, un client qui lit « false »
+  réessaie et crée un **second lien enfant** en envoyant un **second courrier**.
+  ⚠️ **C'est la doctrine de `bot-tts` retournée.** Là-bas, « je n'ai pas pu vérifier » doit se lire
+  **non**, parce que le doute empêche une dépense. Ici, le doute lu comme « non » **provoque** la
+  dépense. La règle constante n'est donc pas « dans le doute, non » — c'est **« dans le doute,
+  dis-le »**, et laisse l'appelant choisir en sachant. `delivery` porte les quatre états ; `sent`
+  reste inchangé pour les intégrations qui le lisent. L'idempotence vraie demande une colonne, donc
+  une migration : elle n'est pas là, et le contrat dit quoi faire en attendant.
+- ⚠️ **Le délai des relais de fichiers bornait un SAUT, pas l'opération.** Chaque tour de boucle
+  créait son propre `AbortSignal.timeout(60 s)` : avec six tours possibles, une chaîne de
+  redirections lente immobilisait requête, socket et place d'admission jusqu'à **six minutes** —
+  alors que le commentaire juste en dessous affirmait « le délai est large mais il est **borné** ».
+  Un seul signal, créé avant la boucle, partagé par tous les sauts. Ce n'est pas un trou de sécurité
+  — chaque saut repasse la garde d'origine et recalcule le secret — c'est de la **disponibilité**.
+  ⚠️ Le banc compare l'**identité** des signaux : quatre signaux différents, c'est quatre fois
+  soixante secondes ; un seul, c'est l'opération bornée.
+- ⚠️ **Un `catch` vide confondait « non bloquant » et « muet ».** L'installation du hook git avalait
+  toute erreur sans un mot : un audit externe a rendu le dossier non inscriptible et obtenu sortie 0,
+  aucun message, aucun hook — le développeur croit son garde-fou posé et travaille sans. Le principe
+  était juste (échouer là ferait échouer `npm install` pour une commodité), la conclusion ne l'était
+  pas. Il l'écrit désormais sur **stderr**, jamais stdout, parce qu'une garde parse ce canal.
+  ⚠️ **Et le stimulus du banc ne passe plus par les permissions** : rendre un dossier non
+  inscriptible ne reproduit rien **sous root**, qui écrit malgré le mode — mesuré dans ce conteneur,
+  l'essai prenait une branche de secours et passait en ne prouvant rien. Un stimulus dont la présence
+  dépend de l'utilisateur qui lance les bancs n'est pas un stimulus.
+
+- ⚠️ **Un banc prouvait « la requête porte un signal d'abandon » en cherchant le motif dans la SOURCE
+  — et c'est la deuxième fois que ce proxy mord.** La première est écrite dans sa propre correction :
+  il cherchait dans la source brute, le commentaire au-dessus du code contenait les mots, donc
+  retirer l'appel réel le laissait **vert**. On avait filtré les commentaires — proxy réparé, gardé.
+  Cette fois, extraire la composition des signaux dans une fonction a sorti le motif de la fenêtre :
+  **rouge sur un remaniement qui améliore la propriété gardée**. Vert quand la propriété disparaît,
+  rouge quand elle se renforce : l'un est un accident, les deux sont un verdict. Le bloc s'appelait
+  déjà « abandonne **réellement** » ; il éprouve désormais le comportement, avec un `fetch` qui ne
+  répond jamais.
+
+- ⚠️ **`tools/affirmations-retirees.mjs` — la sous-classe mécanisable de « une phrase a cessé d'être
+  vraie », et elle est née de QUATRE récidives en deux jours.** « Le compte partagé n'est pas
+  atomique » corrigé dans le contrat anglais, laissé **95 lignes plus haut dans le fichier français
+  qu'on éditait le même jour**. « Un visiteur décide de ce qui entre » corrigé dans deux fichiers sur
+  **quatre**. Et « par processus par conception » laissé dans `SECURITY.md` et
+  `docs/THREAT-MODEL.md`, où il mettait **hors périmètre un étage que le code implémente** — un
+  document qui déclare quelque chose hors périmètre n'est pas neutre : il dit à un chercheur de ne
+  pas regarder.
+  ⚠️ **Elle ne confronte PAS une phrase à ce qu'elle décrit, et il ne faut pas le croire.**
+  `AGENTS.md` dit qu'aucune garde ici ne sait faire ça, et ça reste vrai : le fait qu'une migration
+  existe ne dit à aucun programme quel paragraphe ment. Ce qui est mécanisable, c'est la sous-classe
+  où **nous avons déjà décidé** qu'une affirmation est retirée. Elle confronte le dépôt à cette
+  décision, pas à la réalité. C'est beaucoup moins — et c'est exactement ce qui a échoué quatre fois.
+  ⚠️ **Son premier passage a trouvé une copie que DEUX audits humains avaient manquée** : l'en-tête
+  d'un banc, quatrième exemplaire d'une phrase corrigée trois fois ailleurs.
+  La règle : une affirmation retirée peut encore s'écrire — on corrige **en place** pour qu'un hôte
+  qui l'a lue l'apprenne — mais la ligne doit porter un marqueur de rétractation, cherché sur elle et
+  les **deux précédentes** (une citation s'enroule), **jamais après** (un lecteur qui abandonne à la
+  phrase fausse ne lira pas la correction). Archives exclues : un CHANGELOG cite ce qui était vrai à
+  sa date. 386 fichiers confrontés. 12 bancs, **4 mutations sur 4 tuées**.
+- ⚠️ **Un signal fourni par l'appelant SUPPRIMAIT le plancher au lieu de s'y ajouter.**
+  `options.signal || AbortSignal.timeout(delai)` : un hôte qui bornait lui-même une opération longue
+  croyait **ajouter** une garantie et en **retirait** une. Mesuré : avec un signal qui n'expire jamais
+  et `timeoutMs: 20`, la promesse était encore en attente après 150 ms ; elle est rejetée après 20 ms.
+  ⚠️ **Et le commentaire bénissait le défaut** — « un signal fourni par l'appelant a priorité ».
+  L'intention était juste ; « a priorité » était la mauvaise traduction de « borner ». Le premier des
+  deux qui parle gagne. Défaut **latent** (aucun appel du produit ne transmet de signal aujourd'hui),
+  rapporté par un audit externe. Le repli sans `AbortSignal.any` est éprouvé en retirant la méthode,
+  pas supposé.
+
+- ⚠️ **`tools/orphelins-tts.mjs` — le stock que la purge cassée a échoué, et qu'aucune correction ne
+  rattrape.** Les objets « purgés » sont toujours dans le bucket, ligne effacée : inatteignables par
+  le produit, par construction. Cet outil **sort du contrat exprès** — il parle à l'API Storage pour
+  faire la seule chose que le contrat n'expose pas, `list`. Il n'est donc pas une garde, ne tourne
+  dans aucun workflow, et **ne joint personne** tant qu'on ne le lui demande pas.
+  ⚠️ **Il ne peut pas distinguer nos orphelins de ceux d'un hôte, et aucune mesure ne le peut.** Un
+  objet sans ligne est l'un de trois : orphelin de la purge, vestige d'avant la 0021, ou fichier
+  écrit par l'hôte sous notre convention — un intégrateur en a rapporté **908**. D'où : rapport par
+  défaut, candidats limités à ce qui dépasse la fenêtre de rétention, **nombre à recopier** depuis un
+  rapport produit sur l'état courant, et rien de touché dont on ne sache pas lire la date. 11 bancs,
+  **5 mutations sur 5 tuées**.
+- ⚠️ **`tenter` ne pouvait pas attraper une exception asynchrone, et l'échec était silencieux.** Son
+  `try { return travail(); }` voit une fonction `async` **rendre** une promesse sans lever : le
+  `catch` n'est jamais atteint, la promesse est rejetée plus tard, et Node sort en **1**. Un outil
+  qui joint le réseau aurait donc annoncé « ce dépôt viole la règle » à chaque coupure — l'inverse
+  exact de ce que la taxonomie existe pour dire. `tenterAsync` fait le `await` dans le `try`. Le code
+  fautif est court, il se lit bien, et il n'échoue que quand autre chose échoue : rien ne l'aurait
+  signalé.
+
+- ⚠️ **Un avatar pouvait être n'importe quelle URL, et devenait une `<img>` dans le navigateur de
+  CHAQUE spectateur — un pixel de suivi, pas un XSS.** L'échappement protège le balisage, pas le
+  **chargement** : l'IP, l'agent, l'heure et l'origine de la page de tout le public partaient chez
+  quiconque avait écrit l'URL. Reproduit par un audit externe contre le vrai rendu du chat.
+  ⚠️ **Le défaut était nommé dans le commentaire de sa propre correction.** `titreUsurpe.test.js`
+  raconte depuis sa première ligne qu'un `track({role:"presenter"})` permettait d'apparaître comme
+  le présentateur « **avec le nom et l'avatar de son choix** ». Le **rôle** a été arbitré par le
+  serveur ; l'avatar est resté, cité dans la phrase qui décrit le mal, jamais éprouvé.
+  ⚠️ **Deux chemins y menaient, et un seul passe par le serveur.** Le chat et la présence
+  enregistrée transitent par nos routes ; la présence **Realtime** part en pair-à-pair et n'est
+  jamais vue par nous. Aucune barrière serveur ne pouvait l'atteindre — d'où une barrière **au
+  rendu**, seul point où les deux chemins se rejoignent.
+  Trois barrières : un anonyme ne fournit plus d'avatar (une identité prouvée remplace ce qu'on
+  affirme, et il ne prouve rien) ; un avatar stocké doit venir de l'origine du stockage de l'hôte ;
+  et le rendu refuse toute origine non déclarée, initiales à la place. ⚠️ **La comparaison porte sur
+  l'ORIGINE, pas sur un préfixe** — `https://<base>.attaquant.net` commence comme ce qu'on
+  reconnaît. Mutations posées sur les trois barrières, toutes tuées.
+  ⚠️ **Conséquence visible pour les hôtes** : des avatars de membres hébergés ailleurs (Gravatar,
+  un CDN) s'affichent désormais en initiales. Dégradation **visible et réversible** — il suffit de
+  les servir depuis son propre stockage — là où la fuite était invisible et subie par l'audience.
+
+- ⚠️ **La purge du cache de voix n'a JAMAIS retiré un seul objet dans le contexte de référence, et
+  ce qui l'a caché est une explication juste.** `storage.remove` porte une liste blanche de buckets
+  — dernière barrière avant un DELETE à la clé service_role — et elle ne nommait que
+  `present-attachments`. `tts-cache` était refusé **avant tout appel réseau** : chaque retrait
+  rendait `false`, la trace partait quand même, et l'objet restait dans un bucket **public** sans
+  plus aucun chemin vers lui, puisque cette capacité expose `put` et `remove` mais **jamais `list`**.
+  C'est exactement le mal que la migration 0021 avait été écrite pour rendre réparable, réalisé à
+  **100 %**.
+  ⚠️ **Le masquage vaut le défaut.** Ces refus étaient comptés dans `fichiersErreur`, que
+  `docs/RETENTION.md` explique par un fait **vrai et mesuré** — un tiers des empreintes n'a pas de
+  `.json` d'alignement (552 mp3 pour 356 json, relevé par un hôte). Une explication correcte du
+  bruit rendait un échec **total** indiscernable du fonctionnement normal. Trouvé en écrivant la
+  documentation du correctif d'un **autre** défaut du même chemin.
+  La liste blanche nomme désormais les deux buckets que la rétention doit atteindre, et rien
+  d'autre : le refus de tout autre bucket, et de toute traversée de chemin, tombe toujours **avant**
+  le réseau — éprouvé, parce qu'élargir une liste blanche est le moment exact où l'on cesse de garder.
+- ⚠️ **Une ligne ne part plus au-dessus d'un fichier qui a résisté.** La suppression était
+  inconditionnelle : un `storage.remove` en échec effaçait quand même la ligne, donc le seul chemin
+  vers l'objet. Une ligne retenue est récupérable — le passage suivant réessaie ; un fichier perdu ne
+  l'est pas. `retenues` le NOMME dans le rapport, sans quoi on remplacerait un défaut muet par un
+  autre. ⚠️ **Et l'alignement `.json` ne retient rien** : un tiers des empreintes n'en a pas, donc
+  seul l'audio commande — sinon le correctif de la sous-rétention créait une sur-rétention d'un tiers
+  du cache. ⚠️ **Ni le parent au-dessus d'un enfant retenu** : la condition ne connaissait que
+  « tronqué », et « retenu » est une seconde façon de ne pas être parti — sans quoi cette réparation
+  rouvrait l'orphelin parent/enfant fermé par un audit précédent.
+  ⚠️ **Et « déjà absent » devient un succès, à la source.** Notre propre contexte rendait `r.ok` :
+  Supabase répond en erreur pour un objet manquant, donc le correctif ci-dessus aurait retenu des
+  lignes **pour toujours** en attendant des fichiers inexistants. 404 et un corps nommant l'absence
+  valent « retiré » ; une vraie panne (500) ou un refus (403) restent des échecs.
+- ⚠️ **Le prédicat de purge voyage avec le DELETE.** On sélectionnait par date et on supprimait par
+  **identifiant seul** : un battement arrivant entre les deux requêtes rafraîchissait une ligne, qui
+  était effacée quand même — jugée sur une date qui n'était plus la sienne. Reproduit par un audit
+  externe, reproduit ici avant correction. PostgREST applique tous les prédicats de l'URL au moment
+  du DELETE : rejouer le filtre fait juger la ligne sur son état **à cet instant-là**. La fenêtre de
+  course ne disparaît pas, elle cesse d'être destructrice. Le filtre est un paramètre **obligatoire**,
+  parce qu'optionnel il s'oublie.
+  ⚠️ **Et l'éprouvette des bancs modélisait une base indifférente aux prédicats** — elle n'appliquait
+  que `in.(…)`. Aucune assertion écrite au-dessus d'elle ne POUVAIT voir le prédicat manquant : l'URL
+  fautive et l'URL correcte y produisent le même résultat. Le nouveau bloc porte sa propre éprouvette,
+  qui applique les prédicats, et l'ancienne dit désormais ce qu'elle ne voit pas.
+
+- ⚠️ **La règle était écrite à la main dans le dépôt, au-dessus d'un mécanisme qui ne l'appliquait
+  pas.** `server/__tests__/repliRpcSignature.test.js` portait le commentaire *« un essai qui dépend
+  de son rang dans le fichier ne prouve pas ce qu'il annonce »* au-dessus d'un essai qui obtenait un
+  « module neuf » par `vi.resetModules()` puis `require`. **Mesuré : les deux rendent le MÊME objet
+  d'exports en CommonJS** — `resetModules` vide le registre des modules transformés par vite, pas le
+  cache `require` de Node. L'essai lisait donc l'héritage de ses voisins depuis toujours, et ne
+  passait que parce qu'il se trouve en tête de son bloc.
+- ⚠️ **Et ce qu'il masquait était en PRODUCTION.** `presentations.init()` jetait le mémo
+  d'exécution du durcissement et **gardait celui de la fusion**, alors que le fichier écrit **trois
+  fois** que les deux jumeaux se comportent identiquement — *« même patron que 0018 »*, *« même
+  lecture que `etatDurcissementBootstrap`, délibérément »*. Ils l'étaient sur le chemin de LECTURE,
+  le seul que les bancs regardaient, et pas sur la remise à zéro. Un hôte qui rappelle `init` avec
+  un autre contexte — donc possiblement une autre base — lisait une observation faite sur la base
+  **précédente** sous le nom de la nouvelle. Banc écrit : il échoue sans le correctif.
+- ⚠️ **`tools/ordre-des-bancs.mjs` — la suite mélangée, avec le contrôle de stimulus que sa
+  première écriture n'avait pas.** Elle accusait tout fichier rouge sous mélange ; **le plancher
+  `planchersDesGardes` l'a REFUSÉE**, et il avait raison : son éprouvette copie `tools/` en entier
+  dans un arbre vide, donc vitest y trouve des bancs qui échouent faute de dépôt, et la garde les
+  déclarait dépendants de leur rang. Chaque rouge est désormais **rejoué seul, sans mélange** : s'il
+  échoue aussi, l'échec préexiste et la garde se tait ; s'il passe, le mélange est bien la cause. Et
+  si un rouge préexiste, l'ordre n'est pas mesurable du tout — **NON CONCLUANT**, jamais vert.
+  ⚠️ **Elle refuse de se lancer depuis un lancement de bancs, et c'est une propriété.**
+  `planchersDesGardes` lance chaque outil de `tools/`, donc celui-ci, donc la suite — qui contient
+  `planchersDesGardes`. Écrite sans ce garde-fou, elle a fait ce qu'on attend d'une imbrication : le
+  banc ne finissait plus, et **391 processus résiduels ont écrasé la machine** — au point que le
+  témoin de référence est devenu faux sans le dire.
+  ⚠️ **La graine est imprimée**, parce qu'une garde non déterministe dont l'échec ne se reproduit
+  pas est un rouge qu'on apprend à ignorer. Par défaut le jour UTC ; `--graine=<n>` rejoue.
+  ⚠️ **Elle n'exige pas que tout banc survive au mélange.** Des fichiers dépendent de leur ordre
+  légitimement — un verdict agrégé, un écouteur posé une fois. Ils sont **déclarés avec leur raison
+  et nommés à chaque exécution** : une dette déclarée, pas une exemption muette. 10 bancs,
+  **5 mutations sur 5 tuées**, dont une par expiration — l'imbrication qu'elle empêche.
+- ⚠️ **Déclarer était plus facile que réparer, et un audit externe a demandé l'inverse. Il avait
+  raison : deux des trois déclarations d'ordre sont supprimées parce que les fichiers sont RÉPARÉS.**
+  `finDePresentation` exigeait d'être en tête de son fichier — chaque banc ré-injecte le HTML dans la
+  MÊME fenêtre jsdom, donc les scripts se rejouent et empilent un écouteur de départ de page ; sept
+  bancs produisaient sept avis de fin. ⚠️ **Et le fichier disait déjà la solution sans l'appliquer** :
+  son commentaire sur les minuteries annonce *« c'est la même cause que les beacons empilés, traitée
+  cette fois à la racine plutôt que contournée »*. Les minuteries l'étaient ; les écouteurs ne
+  l'étaient pas. Ils sont désormais retirés entre bancs, et **un essai monte deux bancs exprès** pour
+  le prouver — sans lui : trois avis de fin au lieu d'un.
+  ⚠️ **Compter les écouteurs aurait été un mauvais témoin, et la mesure l'a dit** : un banc en pose
+  **deux** sur `pagehide`, pas un. Exiger « exactement un » rougissait à tous les rangs, premier
+  compris. Ce qui se prouve n'est pas leur nombre, c'est qu'il **ne croît pas**.
+- ⚠️ **`coutParGeste` portait deux verdicts agrégés écrits comme des essais qui espéraient être
+  derniers.** Ils confrontent le témoin daté et les documents à ce que la campagne vient de mesurer,
+  en lisant un relevé que les essais d'avant remplissent : exécutés avant eux, ils annonçaient
+  « PLUS MESURÉ » sur cinq gestes et accusaient le produit d'une régression inexistante. Ils vivent
+  dans `afterAll` — un verdict sur l'ensemble appartient à l'après-ensemble — et **mordent toujours**,
+  éprouvé en faussant le témoin puis en retirant un marqueur d'un document.
+- ⚠️ **La suite de ce dépôt était ROUGE sur la machine de son auteur, et la forge ne pouvait pas le
+  voir.** `shellDesWorkflows` éprouvait « un bloc déclaré `sh` est jugé par sh » en cherchant une
+  forme que les deux analyseurs lisent différemment — un littéral de tableau, que dash refuse. Son
+  commentaire dit *« mesuré avant d'être cru »* : **mesuré sur dash, et cru universel**. Sur macOS,
+  `/bin/sh` EST bash et l'accepte. Le choix du binaire devient une **fonction pure**, éprouvable
+  partout ; le comportement réel reste éprouvé là où le système peut le montrer, et **sauté en le
+  disant dans son titre** là où il n'y a rien à discriminer — jamais vert sur rien. Trouvé par un
+  audit externe qui a lancé la suite sur un autre système que le nôtre.
+- ⚠️ **Un essai qui résume ses voisins le DÉCLARE désormais plutôt que de le subir.** Le dernier
+  essai de `planchersDesGardes` lit un accumulateur rempli par les essais générés au-dessus ;
+  exécuté avant eux, il échouait en accusant le dépôt d'avoir perdu une formule qu'il n'avait pas
+  perdue — un rouge qui désigne le mauvais coupable. Il dit maintenant combien d'essais ont tourné.
+
+
+## [0.1.163] — 2026-09-11
+
+### Fixed
+
+- ⚠️ **Un audit externe a lu ce dépôt sans rien en savoir, et les quatre défauts qu'il rend tiennent
+  tous en une phrase : ce qui est écrit ici a cessé d'être vrai sans que rien ne le dise.** Aucun
+  n'est une régression de code — trois sont des affirmations que le code a démenties en évoluant
+  sous elles, le quatrième une fonction qui promettait plus qu'elle ne faisait. **Nos 38 gardes en
+  ont vu zéro**, parce qu'elles confrontent du code à du code et des nombres à des bornes : aucune
+  ne confronte une *phrase* à ce qu'elle décrit. C'est la limite, mesurée, de tout ce qui précède.
+- ⚠️ **`context/standalone.js` bornait UN appel réseau sur quatre, et le raisonnement pour le borner
+  était écrit à côté du seul qui l'était.** `db.request` abandonne après 15 s, avec le motif en
+  commentaire : un service qui accepte la connexion et ne répond plus immobilise la requête, sa
+  socket **et** la place d'admission jusqu'à ce que la plateforme tue la fonction. Les trois autres
+  — suppression Storage, signature d'envoi, vérification de jeton — partaient nus. **L'audit l'a
+  mesuré plutôt que lu**, en remplaçant `fetch` : `REST hasSignal true`, les trois autres `false`.
+  ⚠️ **Ce n'est pas un contournement d'autorisation** : ces chemins refusent en cas d'échec. Le
+  risque est de **disponibilité**, et il frappe aussi les purges et les consultations protégées.
+  Corrigé par un `fetchBorne()` unique et **quatre délais nommés et inégaux** — une vérification de
+  jeton est sur le chemin d'une réponse qu'un visiteur attend (5 s), un transfert Storage ne l'est
+  pas (15 s) ; un délai unique ferait patienter le visiteur au rythme du service le plus lent. Il
+  ne reste **aucun `fetch` nu** dans le fichier. 3 bancs neufs, **4 mutations sur 4 tuées**.
+- ⚠️ **`vider()` dans `server/mesures.js` annonçait « repartir d'une instance vierge » et laissait
+  survivre `histoBase` et le retard de boucle.** La télémétrie de production ne s'en plaignait pas
+  — `vider()` n'y est jamais appelée. **Les bancs d'endurance, eux, l'appellent entre l'échauffement
+  et la mesure**, puis entre scénarios : ils attribuaient au scénario courant les appels base de
+  l'échauffement et les ralentissements de boucle du scénario précédent. ⚠️ **Ce n'est pas un défaut
+  de produit, c'est pire pour ce dépôt : un instrument affaibli mesure moins bien le code qu'il
+  surveille, et rien ne le dit.** L'audit l'a **reproduit** — `avant base n=1 boucle n=0`, puis
+  `apresVider base n=1 boucle n=2`. La remise à zéro se fait **en place** (`reset()`), parce que
+  réassigner `histoBase` périmerait l'export par identité `__histoBase` et les bancs mesureraient un
+  objet que le module n'utilise plus.
+- ⚠️ **Le contrat hôte affirmait que le compteur de débit partagé « n'est pas atomique ». C'est faux
+  depuis la migration `0004`, et la phrase contredisait le paragraphe juste au-dessus d'elle.** Elle
+  a été écrite avant que la fonction de base n'existe et a survécu à ce qu'elle décrivait. ⚠️ **Et
+  la dégradation réelle est l'inverse de ce qu'elle laissait croire : sans `0004`, l'étage partagé
+  ne compte pas moins bien, il ne compte PAS DU TOUT** — le code laisse passer et seul le compteur
+  local, par processus, subsiste ; une limite de 120/h en autorise alors 120 *par exécution*.
+  L'avertissement émis par le lecteur nommait le même mode inexistant : il dit désormais que le
+  compteur partagé est **indisponible**. Le contrat porte maintenant une **matrice à quatre lignes**
+  plutôt qu'une phrase — corrigée et non supprimée, parce qu'un hôte qui l'a lue a pu bâtir une
+  compensation dont il n'a pas besoin.
+- ⚠️ **Trois autres phrases décrivaient un `bot-tts` que la 0.1.140 avait déjà remplacé.** L'exemple
+  d'intégration de `docs/CONFIGURATION.md` omettait `sessionId`, pourtant **exigé** — un hôte qui le
+  recopiait recevait un refus sans comprendre ; `docs/RETENTION.md` et `server/retention.js`
+  affirmaient toujours qu'« un visiteur décide de ce qui entre » dans le cache de voix, alors que la
+  route confronte le texte à ce que l'assistant a réellement dit : l'appelant **propose**, il ne
+  choisit pas. Ce qui reste vrai est la conséquence — chaque texte **distinct accepté** laisse un
+  MP3 et un JSON dans un bucket public, et seule la fenêtre de rétention en borne la durée.
+  Le contrat hôte, lui, ne nommait que `text` et `content` là où le code lit `text`, `content` **ou**
+  `body` : un hôte dont les messages ne portent que `body` aurait lu ici que son assistant ne parle
+  jamais.
+- ⚠️ **Le seul cycle du graphe des modules serveur est rompu, et il tenait à une constante.**
+  `schema.js` empruntait `STALE_MS` et `signatureAbsente` à `presentations.js` par `require()`
+  dynamiques, alors que `presentations.js` importe lui-même `signatureAbsente` de `erreurs-base.js`
+  — trois modules pour une fonction qui en habite un. Le seuil vit désormais dans une feuille,
+  `server/constantes-presentation.js`, qui n'importe rien et ne peut donc fermer aucun cycle ;
+  `schema.js` lit la fonction à sa source. Graphe mesuré après coup : **27 fichiers, 57 arcs, zéro
+  cycle**.
+
+## [0.1.162] — 2026-09-10
+
+### Added
+
+- ⚠️ **`tools/sections-et-tags.mjs` — une section sans tag publie un lien qui ne résout pas, un tag
+  sans section publie une version que personne ne peut lire.** La garde naît sur **deux** défauts
+  réels, dont un a **soixante-seize versions**.
+  ⚠️ **Le lien mort n'était pas une négligence : il est EXIGÉ par une autre garde.** Le bloc de
+  références du CHANGELOG est régénéré mécaniquement depuis l'ordre des sections (`changelog.mjs`,
+  `urlAttendue`), donc une section `[0.1.159]` produit obligatoirement `compare/v0.1.158...v0.1.159`
+  — vers un tag qui n'existera jamais. Le modèle de cette garde suppose que **toute section a un
+  tag**, et personne ne l'avait éprouvé.
+  ⚠️ **Et la mesure en a sorti un autre.** Sur 158 sections confrontées à 160 tags : une seule
+  section sans tag (`0.1.159`, celle du jour), et **trois tags sans section**. Deux sont des tags
+  morts documentés ; **`v0.1.84` est PUBLIÉE au registre et n'a aucune section** — quiconque
+  l'installe ou ouvre sa Release ne trouve nulle part ce qu'elle a changé. Personne ne l'avait vu.
+  ⚠️ **L'en-tête de `changelog.mjs` décrit ce monde de travers**, et c'est ce qui a masqué le
+  défaut : il justifie son calcul par *« l'historique a au moins une discontinuité (la 0.1.85 suit
+  la 0.1.83) »*. **C'est faux** — la 0.1.84 existe et le registre la sert. La discontinuité est dans
+  le CHANGELOG, pas dans l'historique. Son calcul reste juste, mais pour une raison qui n'est pas
+  celle qu'il écrit.
+  12 bancs, **7 mutations sur 7 tuées**, chacune sous contrôle de stimulus — motif présent **et**
+  diff non vide assertés avant de croire un verdict.
+
+### Changed
+
+- ⚠️ **Un survivant a trois causes, et deux accusent la garde à tort.** Un hôte a **retiré le
+  survivant** qu'il nous avait rapporté : son mutant n'était pas ignoré, il était **bénin** — une
+  surface claire posée sur un élément portant déjà un pendant sombre de la même propriété, donc
+  correctement thématisé. **La garde avait raison de se taire.** Notre raffinement de la 0.1.160
+  n'en couvrait que la moitié : un survivant doit prouver que la mutation a **atterri** *et* qu'elle
+  était **un défaut**. Signaler un mutant bénin, c'est crier sur du bon code — la façon dont une
+  garde finit désactivée.
+- ⚠️ **Un contrôle positif prouve que l'instrument répond ; il ne prouve pas que la grandeur a un
+  sens.** Le même hôte a produit la trouvaille la plus forte de l'échange, et elle **borne tout ce
+  qui précède**. Leur compteur d'exemptions a rendu **−12**. Un compte d'exemptions ne peut pas être
+  négatif. **Leur contrôle positif passait** — le témoin injecté déplaçait le chiffre de `+1`. La
+  méthode était pourtant confondue.
+  **C'est la limite de tous nos contrôles, le témoin de la 0.1.159 compris : ils valident
+  l'instrument, aucun ne valide la définition.** Une grandeur peut être mesurée fidèlement par un
+  instrument qui marche et rester la mauvaise grandeur.
+  ⚠️ **Le seul témoin gratuit d'une définition est une borne** — *« une grandeur bornée qui sort de
+  ses bornes, et elle n'existe que si on a écrit la borne »*. Un compte qui ne peut pas être négatif,
+  un pourcentage qui ne peut pas dépasser 100, un sous-ensemble qui ne peut pas excéder son ensemble.
+  Une assertion, coût nul, et elle tire exactement quand la **définition** a dérapé.
+- ⚠️ **Un aveu est la source la moins chère à croire, parce que personne ne le conteste.** Un hôte
+  avait déduit un motif dans notre dépôt à partir de deux corrections que nous avions publiées sur
+  nous-mêmes, sans ouvrir le fichier. Son diagnostic de sa propre erreur vaut mieux que notre refus.
+  **Cela court contre une pratique que ce dépôt cultive** : nous rapportons nos défauts, longuement,
+  exprès — et un défaut auto-signalé arrive **pré-authentifié**. Personne ne recoupe celui qui
+  s'accuse. Avec son corollaire : *le crédit accumulé est exactement ce qui rend la quatrième
+  affirmation dangereuse*, et *une concession polie est une écriture, pas un silence*.
+- ⚠️ **Contredire sa propre mesure enregistrée n'est pas la même faute que ne pas vérifier.** Toutes
+  nos règles supposent que l'auteur n'a pas regardé. Il y a pire, et c'est de nous : en vérifiant la
+  `0.1.158`, nous avions dépaqueté le tarball et **écrit** que le CHANGELOG n'y voyage pas. Trois
+  trains plus tard, nous avons dit à deux hôtes que le lien mort était *« dans le paquet que vous
+  installez »*. L'un d'eux a mesuré et nous a renvoyé la correction.
+  **Aucune vérification n'empêche celle-là, puisque la vérification avait déjà eu lieu.** Il y faut
+  un autre réflexe : *cette session a-t-elle déjà mesuré ce fait ?* — et lire ce qui a été écrit
+  plutôt que ce dont on se souvient. Une mesure ne devient pas fausse ; **c'est la mémoire qui dérive
+  pendant que la trace reste immobile.** Et l'erreur partait vers des gens qui agissent sur ce que
+  nous leur disons : une faute dans notre trace coûte un train, une faute qu'on envoie coûte
+  l'après-midi de quelqu'un d'autre.
+- **La dette du STUDIO est payée avec deux trains de retard** : *une échéance-jour transportée comme
+  instant doit porter le fuseau de sa décision.* Le stockage est juste, l'ambiguïté est à la
+  construction — « fin de journée » n'est pas une propriété de l'instant mais du **lieu où la
+  décision est prise**, donc le résiduel est un **champ non enregistré**, pas un défaut de
+  sémantique. Le correctif stocke le fuseau **à côté** de l'instant et ne change jamais l'instant.
+  Et leur réponse sur l'emplacement est reprise : **pas une clause du contrat d'hôte** — la valeur
+  est construite chez eux et ne traverse notre surface qu'en lecture.
+- ⚠️ **PUIS ELLE A FAIT ÉCHOUER LA PUBLICATION, ET LE FAIT QUI MANQUAIT ÉTAIT ÉCRIT VINGT LIGNES
+  AU-DESSUS DU CHECKOUT QUE JE N'AI PAS OUVERT.** Le tag `v0.1.161` a été poussé, `verifier` a tout
+  validé — puis `publier` a échoué. Cause : `npm publish` déclenche `prepublishOnly`
+  (« npm run build && npm test »), donc **la suite tourne dans ce job sans qu'aucun `- run: npm test`
+  n'y apparaisse**, et son checkout ne rapportait pas les tags. La garde a rendu NON CONCLUANT, les
+  bancs sont tombés, rien n'a été publié.
+  ⚠️ **Et l'affirmation « la publication n'était pas menacée » était fausse.** Elle reposait sur un
+  `grep npm test` **dans les workflows** : deux occurrences trouvées, deux vérifiées. La troisième
+  est déclenchée par **npm**, pas par le workflow. *Un grep sur les appelants ne voit pas un appel
+  posé dans un cycle de vie.* Le commentaire de `release.yml` disait déjà *« `npm publish` déclenche
+  `prepublishOnly` »* — trois lignes au-dessus du checkout non ouvert. **Le fait n'était pas absent,
+  il était non lu.**
+  Reprise conforme à `docs/RELEASING.md` : un tag mort ne se déplace pas, **on coupe le numéro
+  suivant**. `v0.1.161` rejoint donc les tags morts déclarés — et cette entrée est **réellement
+  exercée** par la garde, vérifié plutôt que supposé. `fetch-tags: true` est posé sur `publier`.
+- ⚠️ **La garde neuve a rougi en forge, et la cause était que la forge ne lui donnait pas son objet.**
+  `actions/checkout` ne rapporte **pas** les tags par défaut : sur le runner, `git tag -l` rend une
+  liste vide, la garde rend honnêtement NON CONCLUANT — *« la confrontation ne peut pas être
+  établie »* — et les deux bancs « le dépôt lui-même » tombent. **Le plancher anti-vacuité a
+  fonctionné exactement comme prévu ; c'est l'environnement qui ne fournissait rien à confronter.**
+  Le correctif est `fetch-tags: true` sur le job `check` — la profondeur reste à 1, l'historique
+  n'est pas rapatrié. `verifier`, qui lance aussi la suite au moment du tag, utilise déjà
+  `fetch-depth: 0` et rapporte donc les tags : la publication n'était pas menacée.
+  ⚠️ **Ce qui n'a PAS été fait, et le commentaire l'écrit aux deux endroits : relâcher le banc.**
+  Accepter « non concluant » l'aurait rendu vert partout où les tags manquent — vert en ne regardant
+  rien, la vacuité même que cette garde retire. **C'est l'environnement qui doit fournir l'objet,
+  jamais l'assertion qui doit baisser.** L'échec a été reproduit avant d'être corrigé, puis le même
+  contrôle remontré au vert.
+- ⚠️ **Un hôte diagnostique notre séquence de numéros mieux que nous : ce n'est pas un défaut de
+  rigueur, c'est un défaut de COUPLAGE.** *« Taguer, publier et vérifier sont trois gestes qui
+  échouent séparément, et votre `prepublishOnly` en soude deux sans le dire. »* Le tag mort est le
+  symptôme propre : `v0.1.161` existe, rien n'est publié, et **aucun geste ne possède cet état** — le
+  tag dit que la version est coupée, le registre dit qu'elle n'existe pas, le changelog dit qu'elle
+  est sortie. Chacun est localement cohérent, l'ensemble ne l'est pas, parce que rien n'est
+  responsable de la **conjonction**. Le remède n'est pas de fusionner les trois — ils échouent
+  séparément pour de bonnes raisons — mais de reconnaître qu'**un état qui enjambe plusieurs gestes a
+  besoin d'un propriétaire, et que ce propriétaire ne peut pas être l'un d'eux.** Le nôtre est
+  `sections-et-tags.mjs`, qui ne tient aucun geste et ne fait que confronter leurs traces.
+- ⚠️ **Une sonde qui cherche un VOCABULAIRE rate un mécanisme exprimé autrement — et un hôte a failli
+  nous rapporter un défaut inexistant pour cette raison.** Leur relevé cherchait
+  `exit|throw|catch|existsSync` dans deux scripts de recopie ; l'un n'avait rien, et ils allaient
+  écrire « celui-ci échoue ouvert ». En **ouvrant le fichier** : il appelle `copyFileSync`, qui
+  **lève** sur une source absente, et une exception non rattrapée sort en code non nul. **Il échoue
+  bruyamment, simplement pas par les mots cherchés.** C'est notre défaut vu de l'autre côté : nos
+  propres sondes ont cherché `inconclusif(` et raté un plancher posé en `throw`. Un terme de
+  recherche est toujours **une supposition sur la façon dont un autre a écrit** ; ce qui tient est de
+  demander ce que le code FAIT sur la mauvaise entrée — donc de l'y lancer.
+  Et ce que leur comparaison a réellement trouvé est plus petit et meilleur : **une copie qui réussit
+  en produisant le mauvais fichier passe**, et le contrôle qui manque était écrit quinze lignes plus
+  loin, chez son frère.
+- ⚠️ **Nous avons concédé trop large, et l'hôte a refusé la concession.** Notre hypothèse — l'angle
+  mort d'une garde corrélé à l'endroit où les régressions atterrissent — a été mesurée chez eux
+  (12 sur 770) et ne tient pas dans leur architecture. Nous avons abandonné le tout. Leur réponse :
+  *« votre architecture invalide votre corrélation, pas votre raisonnement »*. La règle reste vraie ;
+  c'est **l'indicateur** qui était faux. **Concéder trop est un défaut à soi seul, et flatteur** : ça
+  ressemble à de l'humilité, et ça détruit une règle générale juste pour régler un cas particulier
+  faux. Quand une correction arrive, demander **laquelle des deux elle a atteinte**.
+- ⚠️ **Une limite supposée est une affirmation déguisée en précaution.** Un hôte avait écrit, dans le
+  fichier de bancs qui existe pour ne rien affirmer sans l'éprouver, un test **déclarant une limite
+  connue**. Le banc a rougi : l'outil traitait très bien le cas. *« Du même bois qu'un nombre nu :
+  elle a l'air d'une précaution et c'est une affirmation. »* Plus dangereuse qu'un nombre nu, parce
+  que sa forme lui achète la confiance — une limite énoncée se lit comme de la modestie, donc
+  personne n'en demande la preuve, et le suivant contourne un mur qui n'existe pas.
+- **Un outil non écrit ne laisse aucune trace ; une règle non écrite laisse au moins la
+  conversation.** Deux dettes de cet échange ont mis deux trains, pour la même raison — nommées dans
+  un message, pas dans un fichier. La distinction vient de l'hôte qui devait l'autre : une règle
+  survit dans l'échange qui l'a produite, un outil ne laisse rien du tout, et le suivant ne le
+  reconstruit pas parce qu'il n'apprend jamais qu'on le voulait. **Quand les deux sont dus et qu'un
+  seul peut être fait, l'outil passe devant.**
+- **L'audit réciproque de nos propres scripts de cycle de vie ne trouve rien, et c'est écrit comme
+  tel.** La question d'un hôte, retournée sur nous : deux scripts, `prepublishOnly` (celui qui nous a
+  coûté la `0.1.161`) et `prepare → install-hooks.mjs`, qui s'exécute à **chaque `npm ci`** sans
+  qu'aucun workflow ne le nomme. Mesuré plutôt que supposé : il échoue **en sécurité, délibérément et
+  documenté** — rien hors d'un dépôt git, rien depuis `node_modules`, et sur `stderr` jamais `stdout`
+  parce qu'une autre garde parse un `npm pack --json`. Un résultat négatif reste un résultat.
+- **Les exemples sont repinés sur `0.1.160`**, mesuré plutôt que déduit : `0.1.158` est encore dans
+  la fenêtre aujourd'hui mais en sortirait dès la publication de `0.1.161`. Le verrou est régénéré
+  par l'outillage — deux lignes, aucune dépendance. Cinquième train sous la procédure du 07/09.
+
+## [0.1.160] — 2026-09-09
+
+### Changed
+
+- ⚠️ **Un témoin prouve que l'instrument tourne ; il ne prouve pas que le stimulus est arrivé.** Le
+  contrôle positif ajouté en `0.1.159` répond à *« ce montage sait-il exécuter quoi que ce soit ? »*.
+  Un hôte a rapporté la couche en dessous, depuis son propre quasi-accident : sa campagne de mutation
+  annonçait **deux** gardes survivantes, et il allait nous écrire que deux sur sept sont aveugles.
+  Vérification avant envoi — son `sed` avait produit un **diff vide** sur l'une d'elles. Le mutant
+  n'a jamais atterri. **La garde avait été déclarée aveugle pour n'avoir rien eu à voir.** Refaite,
+  elle tue ce mutant deux fois, sur des égalités exactes.
+  ⚠️ **Et celle-ci accuse au lieu de rassurer**, ce qui lui vaut son propre nom. Toutes les autres
+  défaillances de cette famille fabriquent du confort : un vert qui ne dit rien, un compte qui n'a
+  rien compté. Celle-ci fabrique un défaut **chez soi**, et envoie quelqu'un réparer une chose qui
+  n'était pas cassée.
+  **Le raffinement qui divise le coût : seul un survivant a besoin du contrôle.** Un mutant tué
+  prouve son propre atterrissage — le rouge *est* la preuve que le changement a atteint son sujet.
+  La règle n'est donc pas « vérifier chaque mutation », c'est **ne jamais croire un survivant dont
+  on n'a pas vu le diff**.
+  ⚠️ **Nous tenons déjà la propriété, et c'est vérifié plutôt que supposé.**
+  `tools/fixture-types/eprouver.mjs` — notre unique campagne de mutation automatisée — teste
+  `if (mute === original)` et enregistre ce cas comme survivant **avec son propre message**, *« le
+  motif n'existe plus dans la fixture »*. Il fait échouer la campagne, et **sépare les deux causes
+  dans le constat** au lieu de les confondre : un cran au-dessus d'exiger un diff non vide, puisque
+  le lecteur apprend laquelle des deux s'est produite.
+- ⚠️ **Une valeur que le test a lui-même fournie n'est jamais la preuve qu'un double a été atteint.**
+  Nous demandions à un hôte si son quatrième `describe` portait un contrôle. Sa réponse déplace
+  l'unité : ce n'est pas le `describe`, c'est **le double que chacun emprunte**. Trois voies, dont
+  une — son rendu d'aperçu — n'emprunte **aucun double**, sa sortie venant des paramètres de requête.
+  Sa valeur d'allure fixture était celle que **le test avait envoyée dans la requête**. *« J'aurais
+  pu la prendre pour une preuve, et c'en aurait été une fausse. »*
+  La question qui sépare : *si le composant éprouvé était remplacé par un composant qui rend son
+  entrée inchangée, cette assertion passerait-elle encore ?* Si oui, elle parle du test.
+  Et leur comptabilité vaut d'être reprise : le fichier est clos non parce que chaque `describe`
+  porte un contrôle, mais parce que **chaque double participant est affirmé au moins une fois** —
+  la couverture est due aux coutures, pas à la syntaxe.
+- ⚠️ **Le nombre de tests qui tombent sous une mutation est un second relevé — celui du couplage.**
+  Nous avions observé que muter la valeur d'une fixture discrimine mieux que la retirer. Un hôte
+  pousse l'observation plus loin que nous : le nombre de tests qui tombent **n'est pas du bruit
+  autour du verdict**, c'est une seconde mesure. Chez eux, un fichier en fait tomber quatre dont
+  trois pour des raisons étrangères ; un autre en fait tomber exactement un, celui qui mesure. Même
+  méthode, même intention — la différence est une propriété des **fichiers**. Le premier leur disait
+  *« il manque un contrôle »* et, dans le même souffle, *« trop de choses dépendent ici d'un seul
+  rendu »*, et ils n'avaient lu que la première phrase.
+- ⚠️ **Un tiers peut aussi vous imputer un défaut que vous n'avez pas — et nous avons vérifié avant
+  d'accepter.** C'est le miroir de la règle écrite en `0.1.159`, et il mérite d'être posé à part
+  parce que l'instinct va dans l'autre sens : accepter une critique **ressemble** à de la rigueur.
+  Un hôte a lu nos deux corrections et en a tiré une règle — *« deux fois en trois jours, une
+  vérification annoncée et non existante »* — avec un diagnostic excellent : celui qui décrit un
+  outil sait ce qu'il **devrait** faire, et cette connaissance l'empêche de lire ce qu'il fait.
+  **Le diagnostic est juste ; l'instance est fausse.** `docs/RELEASING.md` énumère sept conditions de
+  refus plus la réserve sur la CI non vérifiée, et elles correspondent à ce que le préflight imprime.
+  **Le document n'a jamais prétendu que le verrou était confronté.** Les deux affirmations fausses
+  étaient dans la conversation, pas dans le dépôt. Concéder aurait coûté plus que la flatterie
+  refusée : cela aurait inscrit un défaut fabriqué dans notre propre trace, où le prochain lecteur
+  l'aurait trouvé et aurait agi dessus. **Une critique est une mesure, et se vérifie comme telle** —
+  y compris, et surtout, quand elle vient de quelqu'un dont les trois derniers constats étaient bons.
+- **Les exemples ne sont PAS repinés, et c'est la première fois en huit trains.** `acceptables()` rend
+  les deux plus hautes versions **publiées**, lues à l'exécution : les exemples épinglent `0.1.158`,
+  qui reste dans la fenêtre que `0.1.159` soit publiée ou non. La règle a été **lue plutôt que
+  déduite** — l'habitude de repiner à chaque train aurait épinglé une version que le registre ne sert
+  pas encore, donc un rouge garanti. Le verrou est régénéré par l'outillage : deux lignes, aucune
+  dépendance. Quatrième train sous la procédure écrite le 07/09.
+
+## [0.1.159] — 2026-09-09
+
+### Added
+
+- ⚠️ **Un témoin planté exprès dans le banc des planchers — sans lui, toutes ses assertions étaient
+  gratuites.** `planchersDesGardes` monte un dépôt vide et exige que chaque outil **refuse** plutôt
+  que de conclure au vert. Il portait déjà un plancher sur le **comptage** — *« la sonde trouve bien
+  des outils à éprouver »*, au moins 8 — qui prouve qu'on a **trouvé** des fichiers. Il ne prouvait
+  rien sur le **lanceur**. Or toutes ses assertions sont de la forme *« le code n'est pas 0 »*, et un
+  lanceur cassé les satisfait **toutes**, gratuitement et en silence : `node` introuvable, un `cwd`
+  qui n'existe pas, un arbre mal monté.
+  **La forme vient de la session ADV**, qui l'a trouvée chez elle un cran plus bas, dans le shell :
+  `zsh` avorte la commande entière quand un glob ne correspond à rien, donc leur `ls` n'a jamais
+  tourné et le comptage a rendu `0` **sans avoir compté**. *« Un zéro produit par une commande qui
+  n'a pas eu lieu ressemble exactement à un zéro mesuré. »* Ici c'est le **non-zéro** qui l'était.
+  Le banc plante désormais un outil dont il **sait** qu'il doit sortir en 0, et refuse tout le relevé
+  s'il n'est pas attrapé. Deux mutations, deux tuées.
+
+### Changed
+
+- ⚠️ **LA GARDE DEMANDÉE N'A PAS ÉTÉ AJOUTÉE : LE DÉPÔT L'AVAIT DÉJÀ, ET EN MIEUX.** Elle a pourtant
+  été écrite en entier — inventaire, squelette, témoin, 14 bancs, **6 mutations sur 6 tuées**, 4
+  secondes d'exécution — avant qu'on découvre qu'elle doublait
+  `tools/__tests__/planchersDesGardes.test.js`, qui fait exactement cela depuis `ecdb78e`. Et le fait
+  **mieux** : ses exemptions portent un prédicat qui revérifie leur motif (`tientEncore`), là où les
+  nôtres étaient une liste de chaînes qu'il aurait fallu croire.
+  ⚠️ **Ce n'est pas une relecture qui l'a trouvé, c'est le banc existant qui a rougi sur la garde
+  neuve** — parce qu'une garde dont le corpus est *les autres gardes* voyage avec son corpus, et
+  reste donc verte sur un dépôt vide. **L'outil écrit pour détecter ce défaut le portait.** Le
+  doublon est supprimé ; ce qui survit est **une assertion**, greffée sur le fichier existant.
+  La règle est écrite dans `AGENTS.md` : *proposer de construire est une affirmation d'inexistence,
+  et elle se mesure avant la première ligne de code — moins cher à ce moment-là.* L'envie de
+  construire est la plus forte juste après qu'un problème a été nommé clairement, c'est-à-dire au
+  moment précis où la recherche serait la plus courte.
+- ⚠️ **Deux de nos gardes n'étaient appliquées à ce dépôt nulle part, et rien ne le montrait.**
+  `filtre-avant-ecriture` et `attributs-des-generes` : correctes, entièrement couvertes par des bancs
+  unitaires, citées dans **aucun** workflow, et éprouvées uniquement contre des arbres **fabriqués**.
+  La règle était tenue sur des fixtures et sur rien d'autre — bancs verts, couverture réelle,
+  fichiers indiscernables de ceux qui fonctionnent. **Une garde appliquée à rien et une garde jamais
+  appliquée valent la même chose.** Les deux reçoivent un banc « le dépôt lui-même » ; les deux
+  étaient déjà conformes, donc le trou n'a rien laissé passer — cette fois. L'exiger mécaniquement
+  reste à écrire, et c'est nommé comme tel plutôt que promis.
+- **`AGENTS.md` gagne cinq règles**, dont trois viennent des hôtes : le **sujet vide par
+  construction** — une table d'exceptions vide rend le filtre structurellement faux et la somme
+  structurellement nulle, donc l'assertion ne peut rougir que si l'on édite le test (*« elle observe
+  l'instrument, pas l'objet »*, leur formule, meilleure que la nôtre) ; le **zéro d'une commande qui
+  n'a pas eu lieu** ; et la règle du STUDIO sur la convergence — *quand on pose la même question à
+  deux sources avec les mêmes mots, la convergence mesure la question, pas les sources* — avec leur
+  correction sur le **moment** de le dire : avant que les réponses arrivent, pas après. Les deux
+  dernières sont les nôtres : *une garde appliquée à rien et une garde jamais appliquée valent la
+  même chose*, et *chercher avant de construire*.
+- ⚠️ **Une mesure venue d'un tiers peut se tromper dans le sens qui vous flatte.** ADV comptait 1
+  constat estampillé sur 12 dans notre contrat, nous en comptions 0. Ils tranchent pour notre zéro :
+  leur critère acceptait une version citée deux lignes plus loin, ce qui attrape une mention de
+  **livraison** et non de **mesure**. Quand un tiers vous mesure et trouve mieux que vous, suspecter
+  sa méthode avant votre pessimisme.
+- **Première corroboration externe de la chaîne de provenance.** ADV a recalculé les trois empreintes
+  de `0.1.158` sur l'octet reçu — SHA-1, sha512, sha256 — et les trois correspondent caractère pour
+  caractère aux nôtres, sur un téléchargement séparé et une autre chaîne d'outils. Ils étaient en
+  `0.1.157` : notre tableau de zones **était** leur diff, première fois que la mise en garde
+  `N-1 → N` se résout en « oui, c'est le vôtre ».
+- **Les trois exemples sont repinés sur `0.1.158`**, que la publication de `0.1.159` laisse dans la
+  fenêtre. **Huitième train d'affilée.** Le verrou est régénéré par l'outillage — deux lignes, aucune
+  dépendance. Troisième train sous la procédure écrite le 07/09.
+
+## [0.1.158] — 2026-09-08
+
+### Changed
+
+- ⚠️ **Une propriété peut être TENUE sans être ÉPROUVÉE — un hôte l'a trouvé chez lui en
+  appliquant notre propre réponse sur la substituabilité.** Trois de ses bancs doublent notre export
+  `shares` ; aucun ne prouvait que le double était atteint. **En retirant le double, quatre tests
+  rougissent** — et c'est précisément ce qui déguisait le défaut : sans la fixture, la page ne rend
+  rien et les globales manquent, donc tout tombe pour des raisons étrangères à la propriété. **Un
+  rouge au retrait ne prouve pas que l'assertion couvre la chose ; il peut ne prouver que l'échafaudage
+  portait la charge.**
+  Leur diagnostic vaut mieux que « y a-t-il un plancher ? » et il se transporte : **ne pas retirer le
+  double, changer sa VALEUR** — le retrait effondre le montage et tout rougit sans rien apprendre,
+  la mutation laisse le montage debout et pose la seule question qui compte, *une assertion s'en
+  aperçoit-elle ?*. Le cas qui échappait était un vrai enregistrement répondant pour la même clé :
+  page rendue, globales présentes, et seul un contrôle sur la **valeur** de la fixture le voit.
+  ⚠️ **Un test de REFUS peut passer au vert parce que le sujet était inatteignable**, pas parce que
+  le refus fonctionne. Même forme que les cinq gardes corrigées le 31/08 — vertes avec leur sonde
+  aveuglée — mais d'un cran plus loin : là la sonde ne lisait rien, ici le **harnais** ne présentait
+  rien à refuser. La règle existait pour les gardes, pas pour les bancs. Elle y est désormais.
+  ⚠️ **Et une preuve peut exister sans être nommée** : chez eux elle était enfouie dans un test de mur
+  d'accès affirmant « Réservé » à propos d'autre chose. Une reformulation l'aurait retirée sans que
+  personne ne le voie.
+- ⚠️ **Notre propre audit sur ce motif est NON CONCLUANT, et c'est écrit comme tel.** Une sonde sur
+  les 101 `not.toContain` littéraux a rendu 77 sans contrôle positif dans le même fichier, puis 12
+  dont le sujet n'apparaît nulle part ailleurs. À l'inspection, le plus fort est un **faux positif de
+  la sonde** : le sujet est construit par interpolation (`${id}@lu.example`), donc l'assertion mord.
+  **La sonde ne sait pas voir un sujet construit, ce qu'est la plupart d'entre eux.** Cela ne dit pas
+  que nos bancs sont sains ; cela dit que cet instrument ne pouvait pas trancher — la règle que nos
+  gardes doivent à leurs propres verdicts, appliquée à un audit maison.
+- ⚠️ **Le contrat prévient que le diff d'une livraison est le NÔTRE, pas celui de l'hôte.** Le tableau
+  des zones compare toujours la nouvelle version à **celle qui précède**. Un hôte deux ou trois trains
+  en arrière regarde un autre diff, et c'est le sien qui décide. Un hôte l'a attrapé en le refaisant :
+  nous comparions `0.1.156 → 0.1.157`, il sautait depuis `0.1.155`, et sa comparaison rend un
+  troisième fichier que nous n'avions pas nommé. Même conclusion au bout — zéro migration, zéro ligne
+  de code dans `server/` hors commentaires — **mais obtenue sur son écart, pas sur notre parole.**
+
+- ⚠️ **La règle « deux messages identiques sont une lecture » était juste ; la preuve que nous en
+  donnions était fausse, et de la manière exacte que la règle décrit.** Le texte affirmait « mesuré
+  dans les deux sens, chez deux hôtes, indépendamment ». Faux : **l'opérateur du relais avait collé
+  deux fois le message du même hôte.** Une réponse nous est parvenue deux fois et nous l'avons
+  comptée pour deux. La mesure réciproque vient de ce même hôte unique. **Un hôte, pas deux.**
+  ⚠️ **Nous avons appliqué la règle à leurs messages en exemptant notre propre résumé.** La section
+  avertit noir sur blanc qu'un relais dupliqué fabrique gratuitement l'apparence d'un second hôte —
+  et revendiquait quatre lignes plus haut deux hôtes indépendants sur une preuve qui en valait un.
+  **Une règle sur les preuves doit être passée sur l'affirmation qu'on s'apprête à écrire, pas
+  seulement sur l'entrée.**
+  ⚠️ **L'affirmation fausse a été PUBLIÉE** — section `[0.1.157]` de ce fichier, et notes de la
+  Release `v0.1.157`. Elle n'est **pas réécrite** : les notes publiées sont un artefact daté, et les
+  corriger en silence ferait diverger le dépôt de ce que les lecteurs ont déjà reçu. La correction
+  est ici, elle nomme la version où le défaut est paru, et c'est la seule façon qu'un lecteur de
+  `0.1.157` a de la trouver.
+- ⚠️ **Une étiquette peut être juste alors que le contenu placé dessous ne l'est pas** — plus
+  difficile à attraper qu'une étiquette absente. Une troisième livraison portait un nom d'hôte qui
+  contredisait le rapport antérieur de cet hôte. Nous n'avons **pas** tranché ; l'opérateur du relais
+  a expliqué : l'étiquette était celle qu'il visait, le texte collé dessous était celui de l'autre
+  hôte. Ce qui a résolu l'affaire est l'étape que la règle prescrivait déjà — **demander à qui opère
+  le relais, seul à voir les deux bouts**. À garder comme premier geste, pas comme dernier recours.
+- ⚠️ **Et le corollaire sur ce qu'on a le droit de dire qu'on possède** : quand un doublon est
+  résolu, la lecture qu'il semblait fournir ne réapparaît pas ailleurs — elle n'a jamais existé.
+  Découvrir que deux messages n'en font qu'un laisse **un hôte de moins entendu**, pas la même preuve
+  mieux étiquetée. Le dire est un fait de couverture ; le taire est la façon dont un canal paraît
+  plus large qu'il n'est.
+- **Le contrat demande aux hôtes de se nommer DANS le rapport**, pas seulement par la façon de
+  l'envoyer — même raisonnement que l'estampille de version, appliqué au *qui* plutôt qu'au *quoi*.
+
+- ⚠️ **Nous demandions la mauvaise chose, et un hôte l'a démontré plutôt qu'affirmé.** Le contrat
+  priait les hôtes de rester à un train de la dernière version, au motif qu'*un rapport que nous ne
+  pouvons pas reproduire est un rapport sur lequel nous ne pouvons pas agir*. La prémisse est juste ;
+  **la conclusion n'en découlait pas** : *« vous demandez que les hôtes soient à jour ; ce dont vous
+  avez besoin est de savoir sur quelle version une mesure a été prise — ce n'est pas la même chose,
+  et la seconde est strictement moins chère. »* Un hôte de onze trains en retard qui écrit « mesuré
+  sur 0.1.146 : la table de 1600 lignes en rend 1000 » donne un rapport reproductible ; un hôte
+  parfaitement aligné qui écrit « ça renvoie 1000 » n'en donne pas.
+  **La demande est donc remplacée par l'estampille** : la version mesurée devient un champ attendu de
+  tout rapport, au même rang que « formes et comptages, jamais de contenus ». Elle ne coûte rien —
+  `version` est déjà servi dans la carte d'identité. Rester à jour garde une valeur propre et plus
+  petite, mais n'est plus présenté comme ce qui rend un rapport exploitable.
+- ⚠️ **Et le défaut était chez nous, pas chez eux — mesuré dans notre propre document.** Ils
+  comptaient 12 constats d'hôtes rapportés dans le contrat dont **1** portant une version à
+  proximité. Nous avons **re-mesuré plutôt que de les croire**, et le résultat est plus dur : sur ces
+  douze, **zéro** ne nomme la version mesurée. La seule ligne datée du fichier estampille **notre**
+  mesure de **notre** code. Plusieurs de ces constats venaient d'hôtes à jour ce jour-là.
+  **L'information a été perdue à la rédaction, pas au déploiement, et aucun alignement futur ne la
+  restaure** — c'est écrit tel quel, avec le fait que les entrées antérieures **ne peuvent pas être
+  ré-estampillées**.
+- ⚠️ **La demande avait la forme exacte du biais que nous venions d'écrire contre nous-mêmes.** Elle
+  n'aurait été honorée que par les hôtes qui répondent, et serait restée invisible chez ceux qui ont
+  dérivé : le canal aurait affiché « les hôtes sont alignés » en mesurant qui répond. C'est le biais
+  d'instrumentation appliqué à la cadence au lieu du rendement — **et nous l'avons écrit dans le
+  document moins d'un jour après avoir écrit le biais lui-même.**
+- **`AGENTS.md` gagne la règle générale** : *avant de demander à quiconque de changer de
+  comportement, vérifier si c'est l'information dont on a besoin.* Demander un comportement est la
+  façon coûteuse d'obtenir un fait ; **une demande que seuls les conformes peuvent honorer se relit
+  comme de la conformité** ; et imputer un manque à la population qu'on voit est la façon de rater
+  qu'il est le sien. Le test : *quel fait rendrait cette demande inutile, est-il moins cher, et
+  puis-je l'obtenir sans que leur coopération change ?*
+- **Les trois exemples épinglaient `0.1.156`, que la publication de `0.1.158` pousse hors de la
+  fenêtre.** Repinés sur `0.1.157`, que le registre sert. **Septième train d'affilée**, troisième
+  fois devancé : la garde mesure la fenêtre des versions **publiées**, donc verte à l'instant du tag
+  et rouge une heure plus tard.
+- **Le verrou est régénéré par l'outillage** — `npm install --package-lock-only --ignore-scripts`,
+  deux lignes, aucune dépendance. Deuxième train sous la procédure écrite le 07/09.
+- ⚠️ **Le compte de gardes que nous publiions à chaque train n'était pas fondé — et nous l'avons
+  trouvé en le mesurant, pas en le relisant.** Les commits annonçaient *« 42 gardes conformes, 0
+  violation, 3 non concluantes hors forge, sur 45 exécutées »*. Le dénominateur était `tools/*.mjs`
+  moins deux fichiers connus, et **le classement de chacun était son CODE DE SORTIE**. Or dix des
+  quarante-sept ne rendent aucun verdict : quatre bibliothèques sans bloc d'exécution directe
+  (`resultat-garde`, `execute-directement`, `inventaire-tarball`, `workflows-yaml`), un installateur
+  de crochets, un filtre qui lit `stdin` (`plus-haut-tag`), une sentinelle horaire qui sort
+  **volontairement** 0 quand le registre est injoignable (`exemples-en-retard`), un générateur de
+  rapport et un serveur de fixture qui prennent des arguments, et le préflight lui-même. **Sorties 0,
+  donc comptées conformes.**
+  ⚠️ **Et deux des trois « non concluantes » étaient des messages d'usage.** `zones-du-tarball` et
+  `zap-base-de-scan` attendent des arguments ; lancés sans, ils écrivent `usage : …` et sortent 2 —
+  que la boucle lisait comme *NON CONCLUANT*. **Ce n'était pas une garde qui refuse de conclure,
+  c'était notre invocation qui était fausse.** Une seule des trois, `verdict-zap`, l'était vraiment.
+  ⚠️ **Le symptôme est celui contre lequel `execute-directement.mjs` a été écrit, retourné contre le
+  compte qui le contient.** Son en-tête prévient qu'*« il tourne et ne fait rien » est le pire
+  symptôme possible : pas d'erreur, pas de message, un code de sortie qui dit « tout va bien »* — et
+  ce module était lui-même compté comme une garde verte pour avoir tourné sans rien faire en sortant
+  0. **Un compte qui additionne des fichiers ouverts au lieu de verdicts rendus est la règle
+  anti-vacuité, appliquée à l'instrument qui la vérifie.**
+  Le chiffre publié désormais compte **les gardes qui rendent un verdict** — celles dont le bloc
+  d'exécution directe appelle `conclure()`, plus `requete-diagnostic` qui rend le sien par `rendre()`
+  et son code. Les dix autres sont nommées ci-dessus et **ne sont pas des gardes**. Aucune garde n'est
+  ajoutée sur ce motif dans ce train : la faire naître ici la ferait naître le jour où elle est verte.
+
+## [0.1.157] — 2026-09-08
+
+### Added
+
+- ⚠️ **Le verrou déclarait une version de ONZE TRAINS en retard, et rien ne le disait.**
+  `package.json` était à `0.1.156`, `package-lock.json` à `0.1.145`. Aucun banc, aucune garde,
+  aucun préflight n'avait de raison de parler : **npm ne lit pas ce champ à l'installation**, donc
+  rien ne cassait. La cause est mécanique et non un oubli — un train monte la version en *écrivant*
+  `package.json`, et seul `npm version` l'aurait propagée. Le défaut se reproduisait donc à
+  chaque publication.
+  `tools/version-du-verrou.mjs` refuse l'écart aux **deux** emplacements du verrou qui décrivent ce
+  paquet, et son constat nomme le remède (`npm install --package-lock-only`) plutôt que le seul
+  symptôme. Quatre mutations meurent ; un verrou dont la forme change rend **inconcluant** plutôt que
+  vert — sans quoi un `lockfileVersion` futur ferait taire la garde au lieu de la faire parler, et
+  l'écart repartirait invisible comme il l'a été onze trains durant.
+  ⚠️ **Contrairement aux deux gardes précédentes, celle-ci naît sur un défaut RÉEL** : le contrôle
+  positif réintroduit l'écart mesuré du 05/09 et exige le rouge.
+- ⚠️ **Une garde refuse désormais qu'on PHOTOGRAPHIE le contexte injecté — et la question vient d'un
+  hôte, pas de nous.** Il avait écrit un utilitaire de pagination après un incident, avec sa raison
+  en tête, et cet utilitaire n'était appelé **nulle part**. La cause n'est apparue qu'en essayant de
+  s'en servir : il appelait la liaison **locale** de son client de base, alors que ses bancs
+  remplacent l'**export** — l'adopter cassait donc le banc censé le couvrir. Sa phrase est ce qu'il
+  faut retenir : *« personne n'écrit "je ne l'utilise pas parce qu'il casse mes doubles" — on renonce
+  en silence »*. Une aide non substituable ne produit aucun rouge : elle produit une **absence
+  d'usage**, que rien ne distingue d'un besoin qui n'existait pas.
+  `tools/couture-substituable.mjs` refuse toute capture (`const db = PLAYER.db`, une
+  déstructuration, l'objet entier) dans `server/` et `context/`. **Verte le jour où elle est
+  écrite, et c'est le sujet** : nos 144 appels passent déjà par l'objet au point d'usage. Elle
+  protège le prochain. Quatre mutations meurent (motif de déstructuration retiré, anti-vacuité
+  retirée, commentaires non filtrés, liste des membres réduite), et zéro appel reconnu rend
+  **inconcluant**, jamais conforme.
+  ⚠️ **La sévérité est ici celle du silence** : une capture ne casse aucun banc chez nous, puisque
+  nos bancs injectent avant d'appeler. Elle casse le double de l'hôte, chez l'hôte, sans que rien
+  ici ne rougisse.
+
+### Changed
+
+- **L'écart est refermé**, régénéré par l'outillage et non à la main : exactement deux lignes, aucun
+  brassage de dépendances.
+- ⚠️ **`docs/RELEASING.md` : la version va dans DEUX fichiers, et la procédure le dit maintenant.**
+  Une garde refuse, une procédure explique — la garde est le filet, pas le mode d'emploi. Avec la
+  raison pour laquelle l'écart méritait une garde alors qu'il ne cassait rien : le verrou est ce que
+  lisent les outils qui n'exécutent pas npm (`plancher-de-node.mjs` conclut hors ligne à partir de
+  lui, un SBOM le prend pour source, un audit de chaîne le compare au tag). Chacun aurait lu
+  `0.1.145` pour un artefact déclarant `0.1.156`, et **une incohérence pareille ressemble à une
+  falsification plutôt qu'à une négligence** — ce qu'un dépôt qui publie des attestations de
+  provenance ne peut pas se permettre.
+- ⚠️ **`docs/HOST-CONTRACT.md` demande explicitement aux hôtes de rester à jour — un train
+  d'écart au plus.** Un hôte avait posé la question après avoir vérifié une version sans monter
+  dessus, en faisant valoir que ce qui rend une vérification utile est la vérification, pas
+  l'épinglage. Le raisonnement est juste et la réponse est quand même oui, pour une raison qui est la
+  nôtre et non la leur : **un rapport que nous ne pouvons pas reproduire est un rapport sur lequel
+  nous ne pouvons pas agir.** Tout ce que ce document contient est arrivé sous la forme « nous avons
+  mesuré X », et valait quelque chose parce que la même version pouvait être dressée à côté.
+  C'est écrit comme une **demande, pas une exigence** : rien ne refuse de tourner sur une version
+  plus ancienne et le numéro de contrat ne bouge pas.
+- ⚠️ **Le contrat dit où est la couture, parce qu'un hôte l'a demandé et que ce n'était écrit nulle
+  part.** Réponse en deux moitiés dont une seule est une promesse, mesurées le 05/09 sur `server/`
+  et `context/` : le **contexte injecté est substituable** — 144 appels, **0 capture**, chacun
+  relit `PLAYER.<membre>` à l'instant où il tire, donc le double de l'hôte est bien celui qui
+  s'exécute ; **nos exports ne le sont pas entre eux** — **64 noms exportés sur 75** sont aussi
+  appelés par leur liaison locale. Doubler `getShareBySlug` sur le module exporté n'atteindra pas
+  `overview()`. C'est du CommonJS ordinaire, on ne réécrit pas 64 sites pour ça — mais l'hôte
+  l'aurait découvert à ses frais, donc c'est écrit.
+- ⚠️ **Le tri des lectures se fait sur ce que la valeur DEVIENT, pas sur le nombre de lignes — et
+  c'est un hôte qui a corrigé notre axe.** Il a balayé les siennes, les a toutes fermées, et rapporté
+  que le compte de lignes était le mauvais critère depuis le début. Les plus chères étaient des
+  **agrégations** : un solde de crédits sommé par `reduce`, un compteur pris comme `rows.length`,
+  un cumul de visites. **Une somme tronquée est fausse ET plausible**, ce qui est pire que le symptôme
+  habituel du plafond — une liste visiblement vieille. Son registre de crédits était à 503 lignes et
+  grossit à chaque appel IA : la facture serait devenue fausse avant que la table paraisse suspecte.
+  La question utile n'est donc pas « ceci peut-il dépasser 1000 ? » mais **« cette valeur est-elle
+  agrégée ou affichée ? »**
+- ⚠️ **« Non mesuré » et « non mesurable ici » ne suffisaient pas : il existe un TROISIÈME cas, et
+  nous avions posé le choix comme s'il était binaire.** Un hôte a refusé les deux branches pour ses
+  deux chiffres de sauvegarde, après vérification sur **deux jeux d'outils indépendants** : *non
+  mesurable par une session* — ni l'API de la plateforme ni les outils MCP n'exposent la fenêtre PITR
+  ni l'âge de la plus ancienne sauvegarde — mais *mesurable par un humain*, une session authentifiée
+  au tableau de bord les affiche. C'est donc une dette dont le payeur est **nécessairement une
+  personne** : elle se comporte comme une limite structurelle envers tout agent, et comme une dette
+  envers l'installation. D'où la règle que nous n'avions jamais écrite, sur **qui** est interrogé :
+  une question qu'un hôte ne peut pas résoudre avec les outils qu'il exécute n'est pas résolue en la
+  reposant.
+- ⚠️ **`AGENTS.md` : deux messages identiques sont UNE lecture — le relais copie, les auteurs non.**
+  Mesuré dans les deux sens, chez deux hôtes, indépendamment : deux réponses nous sont parvenues
+  identiques à l'octet près ; interrogés, les deux hôtes ont confirmé n'avoir écrit qu'une fois. L'un
+  a fourni la mesure réciproque, qui tranche — notre annonce des gestes 0024 lui est parvenue **trois
+  fois**, et notre message de l'autre hôte **deux fois**. Le défaut a la même forme que le biais
+  d'instrumentation et le même confort : **il gonfle le signal sans gonfler l'information, dans le
+  sens qui rassure.** Un relais dupliqué fabrique l'apparence du second hôte gratuitement — or c'est
+  exactement ce sur quoi ce dépôt promeut une anecdote en propriété. Avant de compter un second hôte
+  comme corroboration, **établir que c'est un second auteur**.
+- ⚠️ **Et un hôte a affûté la borne de notre propre section d'appel aux hôtes** : *« elle ne corrige
+  pas le biais, elle l'exploite mieux — la seule action qui atteint les hôtes silencieux est celle
+  qui ne dépend pas d'eux »*. La section vaut d'être gardée, elle a produit le plafond, le délai de
+  la plateforme et la couture ; mais c'est un gain de **rendement** sur la population qui répond
+  déjà, et compter ses succès comme une preuve de bonne santé du canal est la même erreur d'un cran
+  plus haut.
+- **Les trois exemples épinglaient `0.1.155`, que la publication de `0.1.157` pousse hors de la
+  fenêtre.** Repinés sur `0.1.156`, que le registre sert. **Sixième train d'affilée**, et corrigé
+  *avant* le tag pour la deuxième fois : la garde mesure la fenêtre des versions **publiées**, donc
+  elle est verte à l'instant du tag et rougirait une heure plus tard, sur `main`.
+
+## [0.1.156] — 2026-09-05
+
+### Fixed
+
+- ⚠️ **L'asymétrie de sévérité n'était écrite qu'à UN des deux bouts, et c'est le défaut que ce dépôt
+  a nommé la veille.** `delaiLecture()` explique pourquoi un réglage invalide retombe « à la
+  différence des fenêtres de rétention » ; `fenetresValidees()`, **quatre cent cinquante lignes plus
+  haut**, ne disait pas qu'un frère fait délibérément l'inverse. Un lecteur n'arrive jamais aux deux.
+  Un hôte a prédit le défaut avant qu'il ne coûte quoi que ce soit : *« sans la phrase, le prochain
+  lecteur harmonisera — dans un sens ou dans l'autre — et croira corriger une incohérence »*. C'est
+  la section « un avertissement à un endroit ne protège pas une affirmation à un autre, et c'est la
+  distance qui en décide », appliquée à du code plutôt qu'à de la prose, et trouvée par lecture
+  plutôt qu'au prochain incident.
+  La note est désormais aux deux extrémités, et elle nomme la règle : **la sévérité se règle sur la
+  conséquence de l'erreur, pas sur la nature du réglage** — une fenêtre fausse supprime des lignes,
+  un délai faux fait au pire attendre. Uniformiser serait une régression, quel que soit le sens.
+- **Les trois exemples épinglaient `0.1.154`, que la publication de `0.1.156` pousse hors de la
+  fenêtre.** Repinés sur `0.1.155`, que le registre sert. C'est le **cinquième train d'affilée** où
+  cette garde parle, et chaque fois pour la bonne raison : **publier une version invalide un fait
+  écrit ailleurs dans le dépôt**, et trois `package.json` que personne n'allait rouvrir. Corrigé
+  *avant* le tag cette fois, plutôt qu'au refus qui suit la publication — la garde mesure la fenêtre
+  des versions **publiées**, donc elle est verte à l'instant du tag et rougirait une heure plus tard.
+  Une garde qui ne rougit qu'après coup a raison trop tard ; c'est au poseur du tag d'anticiper ce
+  qu'il déplace.
+
+### Changed
+
+- ⚠️ **`AGENTS.md` : le biais ne porte pas sur un rapport, il porte sur le canal entier.** Un hôte a
+  tiré la conséquence de notre propre corollaire, et elle est plus dure que ce que nous avions
+  écrit : *« ce que vous recevez comme retour d'expérience est filtré par la capacité à voir, donc
+  systématiquement biaisé vers les installations les mieux instrumentées — les rapports que vous
+  n'aurez jamais viennent de là où ça casse le plus »*.
+  C'est un biais du survivant appliqué à un contrat d'hôte, et il dit quoi faire d'un canal
+  silencieux : le silence d'une installation n'est pas une preuve de santé, c'est une absence de
+  preuve pondérée vers celles qui en produisent le moins. **Ne classez donc pas un défaut par le
+  nombre d'hôtes qui l'ont signalé — ce compte mesure l'instrumentation, pas l'incidence.**
+  ⚠️ Et il borne ce que notre propre section « What you can see and we cannot » peut accomplir :
+  demander à des hôtes ce qu'ils ne peuvent pas vérifier améliore les réponses de ceux qui savent
+  déjà répondre, et ne fait rien pour ceux dont le problème est que rien chez eux ne remarquerait.
+  Ceux-là ne s'atteignent qu'en fermant les défauts de notre côté.
+
+## [0.1.155] — 2026-09-03
+
+### Added
+
+- **Le délai de lecture de la purge devient réglable — `config.retention.delaiLectureMs`.** Un hôte a
+  formulé la critique mieux que nous ne l'avions vue : **une constante choisie contre un cas connu
+  porte la date de ce cas.** « Le jour où un hôte annonce 15 s, ce n'est pas votre minuterie qu'il
+  faudra ajuster — c'est le fait qu'elle soit une constante. » Corriger 8000 en 12000 reproduisait le
+  défaut avec une mèche plus longue, exactement comme corriger un nombre nu dans de la prose en
+  produit un autre.
+  Bornes 1 000–120 000 ms, défaut 12 000 : l'absence rend le comportement d'aujourd'hui à l'octet
+  près. ⚠️ **Un réglage invalide RETOMBE sur le défaut au lieu de lever**, à la différence des
+  fenêtres de rétention — et la différence est de conséquence : une fenêtre fausse SUPPRIME des
+  lignes, un délai faux fait au pire attendre. Quatre mutations meurent (réglage ignoré, validation
+  sautée, défaut ramené à 8000, bornes retirées).
+
+### Changed
+
+- ⚠️ **Le `statement_timeout` à 8 s n'est pas la particularité d'un hôte : c'est le réglage par
+  défaut de la plateforme.** Le second hôte l'a mesuré chez lui après lecture de la nouvelle section
+  — `authenticator` 8 s, `authenticated` 8 s, **`anon` 3 s** — et la valeur en collision était bien
+  la sienne. Le contrat le dit maintenant au bon niveau de généralité : *supposez que vous l'avez
+  tant que vous n'avez pas regardé*. Un fait mesuré chez un hôte est une anecdote ; le même mesuré
+  chez deux, indépendamment, est une propriété de la plateforme.
+- ⚠️ **`docs/HOST-CONTRACT.md` distingue « non mesuré » de « non mesurable ici », à la demande
+  explicite d'un hôte.** Ils avaient raison qu'un contrat qui les confond **attend indéfiniment une
+  réponse qui ne viendra pas**. « Non mesuré » est une dette : quelqu'un la paiera. « Non mesurable
+  ici » est une propriété structurelle de l'installation — leur plus grosse table fait 356 lignes,
+  la plus grosse lisible par `anon` en fait 836, et ce sont des volumes d'usage, pas de
+  configuration. Le plafond `db-max-rows` ne sera donc **jamais** observé chez eux, et la mesure de
+  l'autre hôte — 1651 lignes publiées 1000 — restera la seule preuve qu'on en produira.
+  Les deux catégories veulent des choses opposées : une dette se relance, une limite structurelle
+  s'écrit et cesse d'être réclamée.
+- **`AGENTS.md` gagne trois règles, toutes formulées par les hôtes sur leurs propres constats.**
+  ⚠️ *La visibilité d'un défaut est distribuée à l'inverse de son coût* : `safeupdate` rend
+  l'écriture sans filtre bruyante là où il est présent, et le contrat ne l'exige pas — donc l'hôte
+  protégé apprend que le problème existe et l'hôte exposé, chez qui la même ligne vide la table, ne
+  l'apprend jamais. D'où la conséquence pratique : **fermer du côté qu'on contrôle** plutôt
+  qu'exiger le filet. Et le corollaire pour lire les rapports : un hôte qui signale un défaut prouve
+  qu'il avait la protection, pas qu'il est l'affecté — les affectés se taisent par construction.
+  *Une garde qui ne sert qu'en cas de panne d'une autre est la moins éprouvée et la plus
+  nécessaire* : un hôte a relevé que le délai corrigé ne s'exerce chez lui que si `db.count` cesse de
+  répondre. L'instinct traite un chemin mort en régime normal comme méritant moins de soin ; il en
+  mérite plus, puisque la première fois qu'il s'exécute, tout le reste est déjà cassé.
+  *La distance décide, et elle n'est pas linéaire* — « très loin, on ne fait pas le lien ; très
+  près, on croit l'avoir déjà fait ». Leur cas était à six cent cinquante lignes, le nôtre à un
+  paragraphe, et **le nôtre était le pire** : une contradiction proche se lit comme délibérée.
+
+
+## [0.1.154] — 2026-09-03
+
+### Added
+
+- ⚠️ **Une garde refuse désormais tout `DELETE`, `PATCH` ou `PUT` écrit sans prédicat — et elle est
+  verte le jour de sa naissance, ce qui est le sujet.** Nos onze sites d'écriture portent déjà un
+  filtre ; ce n'est pas ce qu'elle protège. Elle protège le prochain, écrit dans six mois par
+  quelqu'un qui n'aura pas eu cette conversation.
+  Ce qui la motive est **une mesure d'hôte, pas une crainte** : un intégrateur a `safeupdate`
+  préchargé sur `authenticator`, donc chez lui une écriture sans clause restrictive est refusée même
+  sous `service_role` — et le message d'erreur ne nomme pas `safeupdate`, si bien que le refus arrive
+  sans sa raison. Il l'a payé une fois, sur une de nos fonctions.
+  ⚠️ **Et il faut lire ce refus à l'envers : `safeupdate` est le FILET, pas l'obstacle.** Chez un
+  hôte qui l'a, l'écriture sans filtre échoue bruyamment ; chez un hôte qui ne l'a pas — et rien dans
+  le contrat ne l'exige — la même ligne réussit et vide la table. Le défaut est silencieux
+  exactement là où il est grave.
+  La garde exige un **prédicat**, pas un point d'interrogation : `?select=id` est une projection, pas
+  un filtre, et c'est la forme qui survit à une relecture. Treize bancs, dont quatre contrôles
+  positifs — un `DELETE` nu refusé, un `PATCH` à projection seule refusé, un `DELETE` nu **en
+  commentaire** qui n'accuse personne, et zéro site reconnu qui rend NON CONCLUANT plutôt que
+  conforme.
+
+### Changed
+
+- **Le délai de lecture de la purge passe de 8 000 à 12 000 ms, pour cesser d'être ÉGAL à un plafond
+  serveur connu.** Un hôte a mesuré un `statement_timeout` de 8 s sur son rôle `authenticator`, que
+  le `SET ROLE` de PostgREST ne réinitialise pas : notre code hérite donc du plafond alors que
+  `service_role` n'en affiche aucun. Deux minuteries à la même valeur ne rendent pas un résultat faux
+  ici — les deux voies retombent sur `null`, un banc l'éprouve — mais elles rendent la **cause**
+  indécidable : quand notre abandon gagne la course, le `57014` du serveur ne nous parvient jamais.
+  C'est la règle de la marge sur le sujet, appliquée à du code de production.
+- **`docs/HOST-CONTRACT.md` documente ce plafond invisible**, et son titre « Four things that will
+  bite » perd son compte en même temps qu'il gagne une cinquième entrée — sans quoi il pourrissait à
+  la ligne suivante. ⚠️ **L'ancre `#four-things-that-will-bite` a été déplacée du même geste** : un
+  renvoi laissé derrière aurait été la variante « position » du même défaut, que ce fichier décrit
+  déjà.
+- **`AGENTS.md` : la règle « un nombre au présent pourrit » gagne sa moitié constructive**, fournie
+  par un hôte qui a passé notre balayage sur ses propres fichiers. Le nôtre a rendu trois nombres
+  pourris, le sien **un** — et l'intéressant est pourquoi les autres tenaient : non par soin, mais
+  par **forme**. Un relevé au passé, un compte borné par deux identifiants, une citation datée du
+  défaut : aucune des trois ne peut pourrir. Le retrait est la quatrième, et la seule quand aucune
+  des trois ne s'applique.
+  Son unique cas pourri vaut sa ligne : une phrase au présent sur un fichier **supprimé du dépôt**,
+  la correction siégeant six cent cinquante lignes plus haut dans le même fichier. **Un
+  avertissement à un endroit ne protège pas une affirmation à un autre**, et c'est la distance qui en
+  décide, pas l'intention.
+
+
+## [0.1.153] — 2026-09-02
+
+### Added
+
+- **`docs/HOST-CONTRACT.md` : « What you can see and we cannot ».** Trois défauts en une semaine ont
+  été trouvés par des hôtes, et aucun des trois n'était trouvable d'ici — nos gardes mesurent ce
+  dépôt, pas une installation qu'elles n'ont jamais vue, et ce n'est pas une lacune qu'on comble en
+  ajoutant une garde de plus. Ce canal fonctionnait par chance : deux intégrateurs attentifs. La
+  section pose quatre questions précises plutôt que d'appeler au « retour d'expérience » — un
+  plafond de leur installation que nous supposons absent, une affirmation de la carte qu'ils peuvent
+  confronter à leur base, ce que leurs volumes leur cachent **et ce qu'ils leur révèlent
+  gratuitement**, et une règle tirée de leur propre défaut. Chacune est imprimée avec ce que son
+  absence nous a coûté.
+  Elle demande aussi ce qu'ils **n'ont pas fait** — « non mesuré » et « rien trouvé » sont deux
+  phrases différentes — et dit quoi ne pas envoyer : des formes et des comptes, jamais des contenus,
+  ni IP ni agent bruts, qui sont les colonnes que la moitié de ce contrat existe pour supprimer.
+
+
+- ⚠️ **`mesures.familles` — le dénominateur de `routes`, qui manquait depuis le début, et qu'une
+  règle d'hôte a permis de trouver au lieu de l'attendre.** Une famille sans échantillon est omise
+  de `routes`, à raison : un `0 ms` se lirait « instantané ». Mais l'omission laissait `routes: {}`
+  signifier indifféremment « aucun trafic sur la fenêtre » ou « la mesure ne tourne pas ». Un hôte
+  chargé ne rencontre jamais la question — ses entrées sont toujours là, donc leur présence témoigne
+  d'elle-même ; un hôte à 99 sessions n'a aucun témoin.
+  ⚠️ **Et les deux champs voisins du même objet avaient déjà raison**, ce qui rend l'omission
+  mesurable plutôt qu'opinable : `statuts` publie ses cinq clés à zéro, `boucleMs` publie `n: 0`
+  avec des `null` explicites « plutôt qu'un zéro qui se lirait la boucle est saine ». Trois champs
+  frères, deux qui portaient leur dénominateur et un qui l'avait oublié. L'incohérence était
+  interne, pas théorique — un banc l'éprouve désormais comme telle.
+  ⚠️ **La garde de confidentialité du relevé a refusé l'ajout, et elle a été élargie sans être
+  désarmée.** Elle exige que toute feuille soit un nombre ou `null` ; `familles` y introduit des
+  chaînes. L'exception est nommée par son **chemin autant que par son vocabulaire** : seules des
+  valeurs de `FAMILLES`, seulement sous `familles[i]`. Écrire « les chaînes sont tolérées » aurait
+  rendu la garde muette au premier slug. Prouvé par deux contrôles positifs : un slug qui fuit
+  ailleurs est refusé, et un slug déguisé en famille au bon chemin est refusé **deux fois**.
+
+### Fixed
+
+- ⚠️ **La règle « un nombre au présent pourrit » avait pourri dans son propre livre de règles, trois
+  fois.** Trouvé en cherchant, pas au prochain incident : `AGENTS.md` annonçait « twenty-three
+  guards » (25) et deux fois « thirty-three guards » (42), et la section écrite dans l'heure dans
+  `docs/HOST-CONTRACT.md` en ajoutait une troisième, « thirty-nine » — laquelle n'était même pas un
+  compte de gardes mais le nombre ayant **conclu conforme sur une exécution**, deux sujets
+  différents dont un seul est stable.
+  ⚠️ La plus nette des trois ouvrait **la section qui soutient qu'un compte n'est pas la preuve** :
+  une règle correctement énoncée, dans un paragraphe qui réfute la pratique, illustrée par la
+  pratique. Aucune n'avait de contre-mesure mécanique disponible — compter les gardes et chercher un
+  nombre en toutes lettres dans la prose est le problème de vocabulaire que ce fichier décrit déjà
+  comme sans parade. Les nombres sont donc **retirés plutôt que corrigés** : une grandeur qui porte
+  un argument survit en « most », « every » ou une mesure datée ; une grandeur qui ne porte que de
+  l'impressionnant est du pourrissement sans contrepartie. Le constat est inscrit dans la section
+  concernée, au passé et avec ses trois adresses.
+
+### Changed
+
+- **`AGENTS.md` gagne trois règles, toutes formulées par les hôtes sur leurs propres défauts.**
+  ⚠️ **Une petite installation n'est pas seulement privée d'occasions — elle perd du pouvoir
+  discriminant.** À 1655 lignes, un compte exact *est sa propre preuve* : il dépasse le plafond que
+  la voie bornée ne peut structurellement pas franchir. À 99 sessions, aucune valeur ne peut jamais
+  séparer les deux voies. Même code, même carte, et l'une des deux installations est aveugle à une
+  panne que l'autre détecte gratuitement. D'où : **un champ dont la valeur est son propre témoin à
+  grande échelle a besoin d'un témoin explicite à petite échelle.** C'est cette règle qui a trouvé
+  `familles` dans l'heure.
+  ⚠️ **« Y a-t-il un état du monde où cette valeur est fausse ? »** — la question qui sépare une
+  limite d'observation d'un mode de défaillance silencieux. Un hôte avait écrit « ce n'est pas un
+  défaut, c'est une chose qu'un hôte ne peut pas vérifier », puis s'est repris lui-même : une chose
+  invérifiable **devient** un défaut dès qu'elle peut être fausse sans bruit. Classer un échec
+  silencieux en limite d'observation est confortable dans le mauvais sens — ça convertit une chose à
+  corriger en une chose à accepter.
+  ⚠️ **Un binaire est une hypothèse sur le fait qu'aucune transition n'existe.** Le troisième état
+  de `voie` n'est pas une politesse envers les cas limites : pendant une purge, colonne déjà
+  supprimée, `count` lève sur les chemins filtrés et répond sur les totaux de la même table. Avant
+  de choisir un booléen, nommer la transition qu'il suppose inexistante ; si on peut la nommer, ce
+  n'est pas un booléen. Même raisonnement que celui qui a donné trois états à `vide`.
+
+## [0.1.152] — 2026-09-02
+
+### Added
+
+- ⚠️ **La carte de purge dit maintenant par quelle voie ses nombres ont été obtenus (`voie`), parce
+  que les nombres ne le disent pas.** Deux hôtes intégrateurs l'ont relevé le même jour, sans se
+  connaître et par deux chemins opposés : l'un constatant qu'à ses volumes il ne pouvait pas
+  vérifier sa propre couture, l'autre en écrivant un contrôle qui n'a fonctionné que par chance de
+  volume — sa table portait 1655 lignes, et la voie bornée est structurellement incapable de
+  dépasser le plafond de mille, donc le nombre lui-même faisait preuve.
+  Le défaut est un **échec silencieux**, pas une gêne de lecture : un compte exact et un compte
+  borné non tronqué rendent un bloc **rigoureusement identique** — mêmes nombres, même `tronque`,
+  même `vide`. Un `db.count` qui rend une chaîne ou un flottant retombe donc sans bruit sur la voie
+  bornée, et l'hôte croit sa couture branchée alors qu'elle ne sert pas. Sous mille lignes, personne
+  ne pouvait le voir. Le banc décisif le rend exécutable : à volumes identiques, une couture qui
+  marche et une couture cassée produisent deux cartes égales **une fois `voie` retirée**, ce qui
+  fait mourir ce banc si le champ disparaît.
+  ⚠️ **Trois états, et le troisième n'est pas une commodité** : `"mixte"` arrive vraiment — un hôte
+  en cours de purge dont la colonne est déjà supprimée fait lever `count` sur les chemins filtrés et
+  répondre sur les totaux de la même table, donc les deux voies servent dans la même lecture. Un
+  drapeau binaire aurait dû arrondir ce cas, c'est-à-dire mentir sur l'une des deux moitiés.
+  Ajout additif au sens de ce dépôt : un lecteur qui ignore le champ voit exactement ce qu'il voyait.
+  Les cinq mutations meurent (champ retiré, voie forcée à l'une puis à l'autre, `mixte` arrondi,
+  voies échangées) ; un banc de forme exacte, déjà là, a d'ailleurs refusé le nouveau champ avant
+  qu'on ne l'y déclare.
+
+- **`AGENTS.md` : un contrôle qui sépare deux mécanismes doit s'appuyer sur ce que l'un peut faire
+  et l'autre non.** La règle vient d'un hôte, sur son propre défaut : il a écrit un contrôle de
+  *valeur* pour une question de *mécanisme*. `= 1651` est vrai des deux voies et périme à la
+  première écriture ; `> 1000` est impossible à l'une des deux, quelle que soit la croissance de la
+  table. Son autre moitié — `1651` mesuré la veille et écrit en dur — est notre section « un nombre
+  au présent pourrit », cette fois **dans l'outil chargé de vérifier autre chose**, la position qui
+  coûte le plus cher puisqu'un contrôle pourri n'échoue pas, il accuse.
+  Appliquée à nous-mêmes dans l'heure, elle a trouvé quelque chose : nos bancs des deux voies sont
+  justes — ils portent sur les **appels enregistrés**, pas sur une valeur — mais ils ne le sont que
+  parce qu'un banc voit à l'intérieur. L'hôte ne voit pas nos appels. La règle tenait de notre côté
+  de la frontière et tombait du sien : une garde correcte qui ne s'exécute pas sur le périmètre
+  qu'on croit, la forme de défaut que ce dépôt traque le plus.
+
+
+## [0.1.151] — 2026-09-02
+
+### Fixed
+
+- **The three examples pinned `0.1.148`, which the publication of `0.1.150` pushed out of the
+  window.** The guard refused, correctly and for the right reason — *"a copier would receive a
+  stale player"* — and it refused on `main`, not on a branch: the release I cut is what moved the
+  window under them. Bumped to `0.1.150`. The lesson is small and worth the line: **publishing a
+  version invalidates a fact stated elsewhere in the repository**, and the only reason that fact
+  did not rot silently is that something counts it.
+- ⚠️ **Two more scans read comments as code — the same class, found the same day, in the same file.**
+  The portability guard was corrected this morning after it flagged the very sentence documenting
+  its own rule. Two others in `ci.yml` had the identical blind spot, and both were measured rather
+  than suspected: a bare `// … aLaColonne( …` dropped into `server/handler.js` turned the
+  schema-inventory step red — accusing prose — and a `// migration: "…"` line pushed the schema
+  floor from **10 to 11**, which is the *worse* direction for a floor: a comment could hold the
+  threshold up while the real form drifts, masking exactly the failure the step exists to catch.
+  Both now classify code and comment before counting, using `sourceUtile`'s spelling rather than a
+  second one. Verified three ways: prose no longer accuses, a **real** out-of-inventory call still
+  refuses, and the floor no longer inflates.
+  An integrating host stated the general rule after reproducing our own fault while checking us —
+  their scan counted "1 file containing `offset=`" and both occurrences were comments: **any sweep
+  looking for a *form* in code must classify code and comment before it counts.**
+- ⚠️ **A concurrency bench had less margin than its machine had jitter, and it went red on a product
+  that worked.** The archive-seal step measures that a write *waits* for a concurrent close. The
+  concurrent transaction holds the lock `pg_sleep(2)` seconds from **its own** start; the write
+  begins `sleep 0.6` later — so the expected wait is 1.4 s against a 1200 ms floor, **200 ms of
+  slack**, and any scheduling delay between the two *shortens* it, the countdown having already
+  begun. Measured on `main`: `code=1 durée=1137ms` — refused, refused **by the seal**, unblocked at
+  the exact instant the other transaction committed. Every substantive assertion passed; only the
+  threshold refused, on 315 ms of runner jitter.
+  **The floor is not lowered** — that would weaken what the bench proves. The concurrent transaction
+  is lengthened instead: the bar stays at 1200 ms and the slack goes from 200 ms to over two
+  seconds. Reproduced locally against a real PostgreSQL (1123 ms at the observed jitter, red; green
+  at 4 s of sleep even under 2.5 s of jitter), and the bench still bites — with the seal dropped,
+  the write enters and it turns red. A bench whose margin sits under its machine's jitter does not
+  measure what it thinks: it measures the runner, and it teaches its own red to read as noise.
+
+### Added
+
+- ⚠️ **An entire directory of bench code was never linted, and that is why a dead variable reached
+  the forge.** CodeQL flagged an unused helper I had written in `base/vraiPostgrest.test.js` — a
+  real defect, and a trivial one. What matters is *why ESLint had not*: `base/` is **configured** by
+  `eslint.config.mjs` but was never passed to the CLI, so eight bench files ran unchecked. Added to
+  the lint targets, with the eight dead `eslint-disable no-console` directives removed — they name
+  a rule this configuration does not define, which is why ESLint itself calls them unused.
+  Verified by reintroducing a dead variable: it is now caught **locally**, where before only a
+  scanner on the forge could see it. Fixing the case without the class would have left the next one
+  to the same detour.
+- ⚠️ **`db.count` is now exercised against a **real** PostgREST, and the two response shapes that
+  server cannot produce are exercised on the real code rather than a copy.** The header path —
+  `Prefer: count=exact`, `Range: 0-0`, the `start-end/total` shape, and the `*` that means *"I did
+  not count"* — was **deduced from documentation, not observed**, which is precisely what this
+  repository's real-database bench exists to stop. The forge has a real PostgREST; not using it
+  would have been keeping a gap while holding the means to close it. An integrating host named the
+  same limitation on their own helper the same day.
+  A first draft "covered" the unreachable cases by **re-typing the regular expression in the
+  bench** — testing the copy, not the code, the exact vacuity this repository refuses everywhere.
+  They are covered instead by posing a `fetch` and driving the production path: four mutants of the
+  real implementation die (a missing count rendering zero, dropping `count=exact`, dropping the
+  body bound, and taking the first number in the header).
+- **`docs/HOST-CONTRACT.md` now says which hosts get it for free.** A host asked whether `db.count`
+  was a capability of the standalone context or one more expectation in the contract — *"the two
+  look alike in your code and not at all alike at your hosts"* — and the page did not answer.
+  It does now: the standalone context shipped in this package implements it, so a host building on
+  it has nothing to decide or write.
+- **`db.count(path)` — an optional seam that makes the purge counter exact, and whose absence is the
+  previous behaviour.** When a host exposes it, the player asks it first and publishes an exact
+  count: no bound, no `tronque`, and **no rows transported at all**. When it is absent — every
+  third-party host today — the bounded read with its cursor probe runs exactly as before. That
+  fallback is the whole design: requiring a new method would break every host that implements the
+  `db` capability itself, and the only kind of contract addition this repository allows is the kind
+  nobody has to adopt.
+  ⚠️ **It asks the question, not the mechanism.** *How many rows does this path select?* — not
+  *read this header*. A PostgREST host answers with `Prefer: count=exact`; a host on another
+  database answers with a `count(*)`. Naming the header in the contract would have made it
+  PostgREST-only, which the portability rule refuses.
+  ⚠️ **Anything that is not a non-negative integer is read as "no answer"** — a string, a float,
+  `undefined`, `NaN` — and the player falls back rather than believing it. Zero is the answer that
+  authorises dropping a column; it is never inferred from a reply that did not count.
+  The measured shape is in `server/mesures.js` too: `Object.create` would have let a new capability
+  method through **live and unmeasured**, quietly falsifying that file's own promise to cover
+  "even what nobody has written yet".
+
+### Changed
+
+- ⚠️ **Two lines were deleted because no mutation could kill them**, which is this repository's own
+  bar applied to code written the same hour. A `42703` branch on the exact route rendered zero "like
+  the other one" — muted, not one bench went red, and for a reason of substance rather than a
+  missing case: **a dropped column fails both routes identically**, so the fallback already renders
+  that zero. It added nothing observable and created a second place to keep one rule. The bench that
+  covered it went with it: a bench no mutation kills describes a coincidence, not a behaviour.
+  The `typeof … !== "function"` early-out survived its mutation too and was **kept with its comment
+  corrected**: it is not a guard — the `catch` already handles a missing method — it buys a *cost*,
+  five constructed exceptions per card read on every host without `count`.
+- **`docs/HOST-CONTRACT.md` and `server/retention.js` now record what was *measured* about the two
+  exact-count routes**, so neither is proposed again in six months as if untried. `?select=count()`
+  is **dead** — `db-aggregates-enabled` is `false` by default, verified on two distinct Supabase
+  projects, and the measurement is solid because `PGRST123` arrives *before* the permission check
+  (the same table without an aggregate answers `42501`): it is a property of the configuration, not
+  of authorization. `Prefer: count=exact` with `Range: 0-0` **works** — the exact count travels in
+  the header, the body carries nothing. It is the only one of the two that exists, and its only
+  obstacle is the host contract.
+- **`AGENTS.md` gains three sections**, each from a defect this repository actually paid for: a
+  timing guard buys its margin on the **subject**, never on the threshold; thirty-three guards
+  measure this repository and none can measure what only exists at the host; and a double that does
+  not simulate a **layer** cannot be fixed by any dataset, because a database double that never
+  caps behaves like a perfect one — indistinguishable, from the inside, from a correct one.
+
+
+## [0.1.150] — 2026-09-02
+
+### Fixed
+
+- ⚠️ **The truncation flag assumed our bound was the only ceiling, and a host measured what that
+  cost — four hours after 0.1.149 shipped.** PostgREST has a ceiling of its own, `db-max-rows`, set
+  to **1000** by default on Supabase: the server returns 1000 rows however many you ask for. The
+  counter asked for `borne + 1` and compared the received length to `borne`, so it compared against
+  the wrong number — a table of **1651** rows was published as `1000` **with `tronque: false`**.
+  That is the defect 0.1.149 had just fixed, moved one rung out and **made worse**: the previous
+  version claimed nothing, this one *asserted* the number was exact. A reader of "0 of 1000"
+  concludes the zero is proven over the whole table, when 651 rows were never looked at.
+  The question asked is now the only one whose answer depends on no ceiling — **is there anything
+  after what I received** — by requesting a single row at the next offset. A row returned proves
+  more remain; none proves the lot was the whole, whichever ceiling produced it and without having
+  to know it. `vide` was correct throughout and stays so: the three probes read zero, far below any
+  ceiling, so no ceiling can have fabricated them. It was the *denominator* that lied — the field
+  added precisely to make the zeros interpretable.
+- ⚠️ **And the fix for it was first written with `offset=`, which this repository forbids — a rule
+  that lived only in a workflow `grep`.** Thirty-three guards ran green locally; the forge refused
+  the push. The remedy was written **three hundred and eighty lines up in the same file**: *"keyset
+  cursor pagination (`col=gt.<last>`), not offset — the forge's portability guard forbids `offset=`,
+  and a cursor is stable under concurrent writes anyway."* That is the second time in one file that
+  an existing remedy went unseen, after `purgerParLots`'s own `tronque` flag. The probe now uses the
+  cursor, which is also the better answer: it needs no response header and no ceiling to guess.
+- ⚠️ **And the forge's own portability guard read the prose that explains it.** It strips `//`
+  lines — a correction made once, for exactly this reason — but not *block* comments, so the
+  sentence documenting the rule tripped the rule. The only way out would have been to degrade the
+  explanation to satisfy the guard, which is what that correction exists to prevent, left half
+  done. It now strips what `sourceUtile` has always stripped. ⚠️ **The rule lives here in two
+  copies, and the weak one was the guard**: the tested module strips all three comment forms, the
+  inline `grep` stripped one. Three of its four patterns are now counted by that module instead.
+- **`and=()` and `offset=` are now *counted*, not announced in prose.** They sat on the same
+  `docs/API.md` row as `or=()` — which carried its `†` and its counter — while they carried neither.
+  A table whose rows are half-guarded reads as a guarded table, which this repository had already
+  written down about this very file. A rule a contributor cannot run before pushing is a rule
+  learned by breaking it.
+- **The test double did not model the server, so this defect was unreachable rather than missed.**
+  It returned a constant array: it ignored `limit`, ignored `offset`, and had no ceiling of its own.
+  No fixture over it could produce the phenomenon, including the one written with a real host's own
+  volumes — 257 and 1651 both sit under our bound, so neither can saturate it. A missing case is
+  recoverable by writing it; a missing *layer* is not. The double now answers as PostgREST does:
+  offset, then limit, then its own ceiling.
+
+### Added
+
+- **`docs/HOST-CONTRACT.md` now warns hosts that the ceiling applies to *their* reads too.**
+  `limit=20000` does not return twenty thousand rows — PostgREST caps at `db-max-rows` (1000 on a
+  default Supabase project) and says so nowhere in the body. A read asking for more is not a large
+  read, it is a **false belief**, invisible while the tables are small. An integrating host asked
+  the question of its own code the day it found this in our counter and it was not hypothetical: a
+  statistics read ordered `asc` with no limit was seeing the 1000 *oldest* rows of 6424, so a "last
+  opened" date read months stale for a link opened the day before. The document also states which
+  sort direction is the forgiving one — saturating under `desc` loses the oldest rows, under `asc`
+  it loses the ones anyone is looking at.
+
+## [0.1.149] — 2026-09-02
+
+### Fixed
+
+- **The purge counter could saturate in silence, and the fix already existed three hundred lines
+  away.** It asked for `limit=BORNE` and published the row count, so a database carrying five
+  thousand addresses reported `1000` — indistinguishable from an exact thousand. **A wrong number
+  that reads as right, which is worse than an absent one: an absence makes you look, a number makes
+  you conclude.** `purgerRetention` has returned a `tronque` flag for exactly this reason since it
+  was written; the neighbouring function did not. Two integrating hosts found it the same day,
+  independently, within hours of the release. The counter now asks for `BORNE + 1` — the extra row
+  only ever proves that more remain — caps what it publishes, and states `tronque`. `vide` was
+  correct throughout, and stays so: saturation can only make it `false`, never wrongly `true`.
+- **And the bound was below the volumes it was meant to describe.** Set at 1000, it saturated on a
+  real host's views table (1651 rows) **on day one** — a counter that caps under its subject
+  describes nothing. Raised to 5000, which covers both known hosts with headroom; it is a ceiling on
+  *cost*, not an opinion about what a host may hold.
+- **`docs/RETENTION.md` asked for two backup numbers that no tooling can produce.** Two hosts
+  verified independently, on two different toolsets, that neither the provider's API nor its MCP
+  tools expose the PITR window or the oldest snapshot's age: a human must read them from the
+  dashboard. The instruction was *executable in appearance* — an agent following it finds no tool
+  and must either stop or, the real risk, report the purge complete having skipped the one step it
+  could not measure. Also corrected: it is not always "the later of two", since an option that is
+  not subscribed retains nothing and therefore defers nothing.
+- **The retention state was written as a binary and there are three.** Off · **armed but never
+  exercised** · armed and has deleted — and only the third lets anyone call a retention period an
+  *event*. A host measured the middle one at home: sweep armed, oldest row 63 days old, zero rows
+  past thirteen months out of 1908. It is indistinguishable in its effects from being off, which
+  makes it the most misleading of the three, and its first real execution lands roughly eighteen
+  months after it was armed, on data nobody will have watched. The document now names the three and
+  says to exercise the sweep deliberately before that day rather than discovering its behaviour when
+  it matters.
+
+### Added
+
+- **The purge counter now carries what it looked at** — `lignes`, per table. A bare `0` cannot tell
+  "purged" from "never written" from "the probe is aimed wrong"; the denominator separates them.
+  This is the repository's own anti-vacuity rule, applied everywhere in `tools/` and missing here
+  until a host asked for it.
+- **The purge attestation becomes a host-contract commitment.** The `comment on column` that each
+  purge migration posts was designed for a person proving a purge; a host reported that its
+  inventory now reads it **mechanically**, crossing it with the residual counts to raise an alarm.
+  That is the moment an artefact becomes an interface, and the reason to commit is the failure mode:
+  quietly ceasing to post it would make that alarm **silent without saying so** — a failure caused
+  here and invisible there. `docs/HOST-CONTRACT.md` now states the exact, stable marker and promises
+  it on every column a future migration empties. ⚠️ **And the promise is guarded rather than
+  written**: a new check refuses any migration that empties a column without the marker. The
+  question a host put to us — *what turns red if someone undoes it?* — has an answer for this one.
+
+
+## [0.1.148] — 2026-09-01
+
+### Added
+
+- **`?contract=1&schema=1` now says what is still stored, not only what may be purged.** A `purge`
+  block counts the rows that still carry a reader IP or a raw User-Agent, per table, with a
+  three-state `vide`: `true` (nothing of that legacy is left on this instance's live rows — the
+  condition under which those columns can eventually be dropped), `false` (rows remain), and
+  **`null` when a probe did not answer** — a failed probe must never read as a zero, because zero
+  is the answer that authorises a deletion. **Why it exists:** our tables live in the *host's*
+  database, and a host's audit enumerates *its own* tables — a dependency's schema occupies a zone
+  nobody's inventory visits. Two integrating hosts found 2361 rows still carrying these columns,
+  and found them because a third party asked a question about its own database, not because
+  anything told them. `retentionSweep` said "I *can* purge"; nothing said what had piled up. Counts
+  are bounded and read one small column, so the bound reads as *at least*, never as exactly; and
+  the cost runs opposite to intuition — cheap while much remains, a full scan once nothing does —
+  which is stated in the code rather than hidden, the expensive case being the terminal one where
+  the counter has finished its work. **A column an operator has since dropped counts zero, not
+  `null`**: that is a known state, not a failure, and reading it as unknown would blind the counter
+  at the exact moment its subject is settled. Only PostgreSQL's `42703` is read that way; any other
+  error stays `null`, and so does a host whose `db` capability does not return a parsed body.
+
+### Changed
+
+- **`docs/RETENTION.md` no longer promises to drop the three purged columns in a later release** —
+  a statement that was misleading in a way worth naming: **we cannot know which player version runs
+  against a host's database, and the host can.** Shipping that `DROP` in `supabase/migrations/`,
+  which every host replays, would hand an irreversible gesture to installations we have never seen;
+  on `0.1.145` and earlier it would reject every session and view write, with an error naming a
+  column rather than a version. The section now states the condition, hands over the three
+  statements, and says plainly what they buy: **tidiness, not erasure.** The erasure already
+  happened — `0026` and `0027` removed the values, and routine autovacuum removed them from the
+  pages, measured on a real host at **four seconds** after the second migration, with no lock and
+  nothing triggered by hand. It also warns what is lost with the column: the `col_description()`
+  comment is what *proves* the purge was applied, and a count of zero does not, since it cannot
+  tell "purged" from "never written".
+
+
+## [0.1.147] — 2026-09-01
+
+> ⚠️ **`0.1.146` n'existera jamais, et voici pourquoi** — pour que personne n'ait à le deviner en
+> voyant un trou dans la suite. Le tag `v0.1.146` a été posé sur le commit qui PRÉCÈDE la coupe,
+> lequel déclarait encore `0.1.145` et ne portait aucune section `[0.1.146]`. `verifier` refuse un
+> tag qui ne s'accorde pas avec `package.json` : rien n'a été publié — ni npm, ni Release, ni
+> attestation — et le registre est resté sur `0.1.145`. Le préflight avait refusé lui aussi, une
+> ligne plus haut, en imprimant **« Préflight de publication — v0.1.145 »** et
+> **« REFUSÉ : 2 contrôle(s) en échec »**. C'est très exactement le mode de panne que
+> `docs/RELEASING.md` décrit depuis la `0.1.141`, et son remède est écrit : un tag ne se reprend
+> pas — la protection interdit sa suppression —, donc on **coupe le numéro suivant**. Avec
+> `v0.1.147` posé, le tag mort cesse d'être le plus haut et `image-reconcile` redevient sain sans
+> qu'aucune garde soit désarmée. Le numéro sauté est le prix.
+
+
+### Removed
+
+- **The raw User-Agent is erased too, on both tables.** We had argued for keeping it — the only
+  source from which `device`, `os` and `browser` could be recomputed on rows already written — and
+  the argument that settled it was ours turned around: those three are derived *at write time* and
+  are what a reading record carries, so the raw string had no reader, and "we might re-parse it one
+  day" does not justify thirteen months of a fingerprint kept for nobody. This release stops serving
+  it, stops writing it, and ships migration `0027`, which erases what was there — same shape and same
+  measurement as the IP purge, with the column removals deferred together to a later release.
+  **On `commercial_doc_views` the case was starker than anyone had noticed**: unlike the sessions
+  table it has no `device`, `os` or `browser`, so it derived *nothing* from the string, wrote it, and
+  none of the six queries that touch these two tables has ever read it back. It went unnoticed
+  because the coverage that existed asked what a *session* hands out — and this table is never handed
+  out, so nothing asked what it merely keeps. A column nothing serves is not a column without a
+  question; it is a column whose question has no guardian, and one now exists. `docs/RETENTION.md`
+  also answers, precisely, from what date a purge is complete end to end — including the part that
+  is uncomfortable: the automatic sweep is **opt-in**, so on a host that enabled neither it nor a
+  manual run, the 13-month window describes an intention rather than an event.
+
+- **The reader's IP address is erased.** This release stops serving it, stops **writing** it,
+  and migration `0026` erases what thirteen months of journal still held in the clear — the half
+  the code could not reach on its own. **The column is emptied, not dropped, and emptying is what
+  actually erases** — which is the reverse of the intuition, so it was measured rather than
+  assumed. An `ALTER TABLE … DROP` of a column marks the attribute dropped without rewriting the
+  rows: on PostgreSQL 16.13 with `pageinspect`, every address is still physically present after the
+  drop, still present after a routine `VACUUM` — the rows are *live*, so there is nothing to
+  reclaim — and only a `VACUUM FULL`, which rewrites the table under an exclusive lock, removes
+  them. Dropping the column alone would therefore have left every address on disk indefinitely,
+  invisible to any query and so never checked by anyone again, while the schema swore it was not
+  there. With the `UPDATE … SET ip = NULL`, ordinary autovacuum reclaims the old row versions by
+  itself, with no lock and no operator action. Verified end to end on a populated database: 200 rows
+  kept, 200 addresses gone after a routine vacuum, the migration replayable with no further effect.
+  **The erasure is complete today**; what is deferred is the shape of the schema. The column stays
+  because a migration here must be safe to apply while the *previous* version of the player is
+  running — the rule that makes the deployment order harmless, and a test enforces it: **every
+  published version** still writes `ip`, PostgREST rejects a write carrying an unknown column, and dropping it today
+  would fail **every** session write of a host that migrates before deploying, with an error naming
+  a column rather than a version. Removal is a later release, once no supported version writes it;
+  until then the column is always `NULL` and carries a comment in the database saying so, which is
+  also how a host attests that 0026 ran — a migration that only erases data leaves no trace in
+  `information_schema`, and a purge is precisely the migration a host is most likely to be asked to
+  prove. What the migration cannot reach — write-ahead logs, backups, exports — follows the host's
+  own retention policy and is stated in `docs/RETENTION.md` rather than simulated, alongside a
+  notice written *before* the change for any host that queried the column directly. The raw `ua` is
+  kept: it is the only source from which `device`, `os` and `browser` can be recomputed on rows
+  already written, and dropping it is a separate decision rather than one implied by this one. One
+  guard was missing and now exists: the list of session columns *served or withheld with a reason*
+  was checked in one direction only, so an entry motivating a column that no longer exists could
+  have sat there indefinitely.
+
+### Fixed
+
+- **Four host-facing documents announced two versions that had never been published**, in the past
+  tense — eighteen statements in all, naming the two version numbers immediately after the published
+  one and describing what they *"stopped serving"* and *"stopped writing"*. The registry serves
+  `0.1.145`, which still serves and still writes the reader IP and the raw User-Agent, and ships
+  migrations only up to `0024`. (The numbers are not repeated here: putting an unpublished version
+  into a host-facing document is the artefact being removed, and the new guard refused this entry
+  until they came out — correctly.) An integrating host read `docs/RETENTION.md`,
+  believed the change was live, and was then asked to apply migrations that were in no package; it
+  found the gap by unpacking the version the registry actually serves. Every such claim now names
+  something that exists — *the next release*, or a migration number — and `docs/RETENTION.md` opens
+  the purge section by saying plainly that none of it is published yet and what to check. **A new
+  guard refuses any document naming a version greater than `package.json`'s**, which
+  `docs/RELEASING.md` already holds equal to the tag and to the changelog's top section: between
+  releases it is the newest version that exists, and during a release the bump lands in the same
+  commit as the section describing it, so the window closes itself with no exception to write. The
+  guard caught a perimeter defect in its own first line — a double-star pathspec matches nothing in
+  `git ls-files`, so it read only the changelog while the sixteen documents holding the error went
+  unseen, with a non-zero count keeping its floor happy — and it now requires every declared root to
+  yield a subject.
 
 - Reading sessions no longer carry the reader's IP address **nor the raw User-Agent**. Both `docshare.sessions` and
   `docshare.sessionsByRecipient` returned the stored row as-is, which includes `ip` — the datum
@@ -41,6 +2283,22 @@ the notes there are this file's section for that version.
   now also carries its filiation (`parent_slug` and the parent's recipient), without which the rule
   is invisible to the caller. Hosts: see `docs/HOST-CONTRACT.md` — a member you answer *no* to on
   `list.all` now sees only their own chain.
+- The twelve regular-expression probes that neither their guard nor any bench could see are closed
+  out. Ten now die to a case that names them: what a fenced code block hides from a language check,
+  which of three string forms a crypto-binding guard strips, which shell a workflow step runs under
+  and what survives of its refusal, the root `permissions:` block, a SQL block comment that must not
+  fabricate a signature, and the whitespace fold that makes a comment's fingerprint depend on its
+  text rather than on the file's layout. **Two cannot die and now say so with a measurement**:
+  `secrets-en-clair` normalises base64url before decoding, and Node's decoder already accepts `-`
+  and `_` — the bench computes both decodings and asserts they are equal, so the redundancy is
+  checked at every run instead of being claimed in a comment nobody has re-verified. Three of the
+  ten took two attempts, each because the first fixture differed from its subject in more than one
+  way and was caught by a second mechanism before reaching the probe it named: a call glued to its
+  quote that the call-shape probe already refuses, a closed fence whose six backticks the inline
+  stripper pairs off by itself, and a comment folded at the head where `trim` suffices. The fence
+  stripper changes the verdict on **zero** of the repository's 31 markdown files — it guards a shape
+  no document has yet — and the bench pins that too, so the next reader does not mistake proximity
+  for coverage.
 - The probes that are not regular expressions had never been measured, and they hold up worse than
   the ones that are: 152 of them, 90 leaving their guard green, against 55 of 143 for the regexes.
   Five had a live subject. `surface-publique` loaded three modules instead of seven and read
@@ -158,6 +2416,22 @@ the notes there are this file's section for that version.
   turns `main` red on a check that has nothing to do with whoever opened the PR.
 
 ### Added
+
+- **A standalone host can finally arm the retention purge.** `server/retention.js` requires
+  `config.retention.balayage === true`, and that strict opt-in is right — the windows are business
+  decisions, and a deletion should act only where an operator has written it down. But
+  `context/standalone.js` exposed **no retention key at all**: a host consuming that context as-is
+  had nowhere to write it, so only those hand-writing their own context could ever arm the sweep.
+  The others accumulated with no recourse, and without knowing a recourse existed. **An opt-in that
+  part of the fleet cannot reach is not an opt-in, it is an unavailability** — and it surfaced only
+  because two hosts counted what had piled up in their own databases. `PLAYER_RETENTION_SWEEP=1`
+  arms it, and the four windows come with it rather than after: exposing the switch alone would arm
+  the purge **on our defaults**, which is precisely the failure mode `retention.js` already
+  describes, reached by an environment variable instead of an oversight. Whoever arms it must be
+  able to decide what they are arming. A missing variable sets no key at all — writing `undefined`
+  over a default would make validation fail and refuse every purge for the most ordinary case,
+  a host that arms without setting months — and an unreadable value is refused by the core, naming
+  the key, with **zero deletions**, rather than corrected here where it would go silent.
 
 - `docshare.sessionsByRecipient` reads one person's reading sessions across every document —
   address, optional date bound, cursor pagination — under the same scope as `docshare.list` and
@@ -5591,7 +7865,32 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.145...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.172...HEAD
+[0.1.172]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.171...v0.1.172
+[0.1.171]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.170...v0.1.171
+[0.1.170]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.169...v0.1.170
+[0.1.169]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.168...v0.1.169
+[0.1.168]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.167...v0.1.168
+[0.1.167]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.166...v0.1.167
+[0.1.166]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.165...v0.1.166
+[0.1.165]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.164...v0.1.165
+[0.1.164]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.163...v0.1.164
+[0.1.163]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.162...v0.1.163
+[0.1.162]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.160...v0.1.162
+[0.1.160]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.159...v0.1.160
+[0.1.159]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.158...v0.1.159
+[0.1.158]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.157...v0.1.158
+[0.1.157]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.156...v0.1.157
+[0.1.156]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.155...v0.1.156
+[0.1.155]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.154...v0.1.155
+[0.1.154]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.153...v0.1.154
+[0.1.153]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.152...v0.1.153
+[0.1.152]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.151...v0.1.152
+[0.1.151]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.150...v0.1.151
+[0.1.150]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.149...v0.1.150
+[0.1.149]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.148...v0.1.149
+[0.1.148]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.147...v0.1.148
+[0.1.147]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.145...v0.1.147
 [0.1.145]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.144...v0.1.145
 [0.1.144]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.143...v0.1.144
 [0.1.143]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.142...v0.1.143

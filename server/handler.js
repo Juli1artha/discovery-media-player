@@ -6,9 +6,10 @@
 //  - GET  /doc/:slug?file=1     → stream le PDF depuis le Storage (MÊME ORIGINE → pas de souci CORS pour pdf.js)
 //  - POST /api/doc {slug,event…}→ journalise un événement (open / page / heartbeat) — best-effort
 const crypto = require("crypto");
+const { capturerSansBloquer } = require("./capture");
 const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
-const { getShareBySlug } = require("./shares");
+const { resoudreLien } = require("./shares");
 const { PRESENT_QUOTA_PER_HOUR, PRESENT_CACHE_MS, estSlug } = require("./shared.generated.js");
 const { creerCache, CODE_SATURATION } = require("./cache.js");
 const mesures = require("./mesures.js");
@@ -40,6 +41,22 @@ function init(ctx) {
   // `init`, et un hôte a le même droit. On n'ajoute qu'une chose, on n'en fige aucune.
   if (ctx && ctx.db) { const vu = Object.create(ctx); vu.db = mesures.observerBase(ctx.db); ctx = vu; }
   PLAYER = ctx;
+  // ⚠️ LA CONFIGURATION SE RELIT, L'ÉTAT VIVANT NE SE REMET PAS À ZÉRO. Cette ligne posait
+  // `relaisEnCours = 0` : un hôte qui rappelle `init` pendant qu'un relais est ouvert désarmait le
+  // plafond — la demande suivante partait vers l'amont avec l'unique place encore prise, et le
+  // `finally` de l'ancien relais rendait ensuite le compteur négatif (reproduit par un audit externe,
+  // cinquième passe, 13/09). Le compteur appartient au processus, pas au contexte : il ne se relit pas.
+  // Les bornes de temps, elles, sont capturées à l'ADMISSION de chaque relais (`relayerSousAdmission`) :
+  // un relais admis sous 30 s reste sous 30 s, quoi qu'un `init` ultérieur décide.
+  const bornes = bornesRelais(ctx && ctx.config);
+  plafondRelais = bornes.plafond;
+  relaisStallMs = bornes.stallMs;
+  relaisMaxMs = bornes.maxMs;
+  if (bornes.invalides.length) {
+    // Une fois, ici — pas à chaque relais : un réglage hors plage est une erreur de déploiement, dite
+    // à l'exploitant avec la plage, plutôt qu'un défaut appliqué en silence.
+    try { capturerSansBloquer(PLAYER.errors, new Error(`réglages de relais hors plage, défauts appliqués : ${bornes.invalides.join(" ; ")}`), { route: "relais", benin: true }); } catch { /* jamais bloquant */ }
+  }
   // Le domaine reçoit le même contexte : une seule construction pour tout le player.
   require("./shares").init(ctx);
   require("./retention").init(ctx);
@@ -54,6 +71,55 @@ function init(ctx) {
   docbot = ctx.plugins.bot;
 }
 const isAllowedStorageUrl = (url) => PLAYER.storage.isAllowedUrl(url);
+
+// ⚠️ LE FLUX BORNAIT LES OCTETS, RIEN NE BORNAIT LE NOMBRE DE FLUX. `fetchFile` partait sans
+// admission : 200 demandes lentes simultanées → 200 connexions amont, 200 pipelines, 200 réponses
+// ouvertes, dans un seul processus (reproduit par un audit externe le 13/09). Le streaming empêche
+// d'allouer 60 Mo par requête ; il n'empêche pas d'ouvrir mille sockets. Une admission par processus,
+// AVANT l'appel amont : refus immédiat 503 + Retry-After quand c'est plein — aucune file d'attente,
+// une file non bornée est le même défaut avec un délai — et la place rendue dans un `finally`, donc
+// aussi sur erreur amont et sur déconnexion cliente (le pipeline rejette alors). Le plafond vient du
+// contexte (`config.maxConcurrentRelays`, défaut 64) : assez pour les requêtes Range parallèles de
+// pdf.js, borné pour un processus. Sur serverless la plate-forme borne déjà la concurrence globale ;
+// ceci protège le mode autonome et chaque instance chaude.
+const { bornesRelais, RELAIS_SIMULTANES_DEFAUT, RELAIS_STALL_MS_DEFAUT, RELAIS_MAX_MS_DEFAUT } = require("./bornes");
+let plafondRelais = RELAIS_SIMULTANES_DEFAUT, relaisEnCours = 0;
+// ⚠️ COMPTÉS, PARCE QU'UN HÔTE A CRU LES LIRE AILLEURS. On demandait aux hôtes de chercher « relais
+// refusés » dans leurs journaux ; l'un d'eux a répondu par `lectureSaturee.total = 0` de la carte —
+// qui ne compte que le cache de lecture, pas les relais (13/09). Une question qu'un hôte peut
+// trancher par la carte ne doit pas être posée comme une fouille de journaux : la carte est
+// structurée, datée, et répond même pour l'hôte qui ne lit jamais ses journaux. État du processus,
+// comme `relaisEnCours` : jamais remis à zéro par `init`.
+let relaisRefusesTotal = 0, dernierRefusRelais = null;
+// ⚠️ UNE PLACE N'EST BORNÉE QUE SI LE RELAIS QUI L'OCCUPE FINIT. Un client qui cesse de lire — ou un
+// amont qui cesse d'envoyer — laissait le pipeline en attente pour toujours : `finally` jamais atteint,
+// place jamais rendue, et avec un plafond de 1, plus aucun fichier ne partait (reproduit par un audit
+// externe le 13/09). `requestTimeout` ne borne que la RÉCEPTION de la requête, pas l'émission de la
+// réponse — le commentaire de `bin/serve.js` affirmait le contraire. Deux bornes, configurables par
+// le contexte : sans progression pendant `relayStallMs` (30 s), ou au-delà de `relayMaxMs` (15 min),
+// le pipeline est ABANDONNÉ par signal — source amont détruite, réponse détruite, rejet, `finally`.
+// ⚠️ Les valeurs viennent de `server/bornes.js` : entiers dans une plage écrite, jamais « tout nombre
+// fini » — `setTimeout` ramène à 1 ms tout délai au-delà de 2 147 483 647 ms (audit, cinquième passe).
+let relaisStallMs = RELAIS_STALL_MS_DEFAUT, relaisMaxMs = RELAIS_MAX_MS_DEFAUT;
+async function relayerSousAdmission(res, travail) {
+  if (relaisEnCours >= plafondRelais) {
+    relaisRefusesTotal += 1; dernierRefusRelais = Date.now();
+    // Une fois par heure, l'exploitant l'apprend : un 503 muet ressemble à une panne d'amont.
+    try {
+      if (await PLAYER.limits.allow("relais:sature-avert", 1, 3600)) {
+        capturerSansBloquer(PLAYER.errors, new Error(`relais refusés : ${plafondRelais} transferts simultanés atteints dans ce processus (config.maxConcurrentRelays)`), { route: "relais", benin: true });
+      }
+    } catch { /* jamais bloquant */ }
+    res.setHeader("Retry-After", "2");
+    refuserEnTexte(res, 503, "Trop de transferts en cours, réessayez dans un instant");
+    return;
+  }
+  // Les bornes de CE relais sont figées ici : un `init` pendant le transfert relit la configuration
+  // pour les suivants, jamais pour celui-ci.
+  const bornes = { stallMs: relaisStallMs, maxMs: relaisMaxMs };
+  relaisEnCours += 1;
+  try { await travail(bornes); } finally { relaisEnCours -= 1; }
+}
 
 // GREFFONS de ce studio — jamais du player. `null` quand le module est absent ou coupé
 // (`PLAYER_PLUGINS_OFF`) : chaque usage doit donc être gardé, et le player continue sans eux.
@@ -105,7 +171,7 @@ const originOf = (u) => { try { return new URL(u).origin; } catch { return ""; }
 // Tiers épinglés (SUPAJS, TIERS, balise…) : extraits dans server/tiers.js.
 const { TIERS } = require("./tiers");
 
-const { notFoundHtml, softWallHtml } = require("./page-mur");
+const { notFoundHtml, softWallHtml, motDePasseHtml, lienExpireHtml } = require("./page-mur");
 const { viewerHtml } = require("./page-visionneuse");
 const { presentHtml } = require("./page-audience");
 
@@ -219,7 +285,7 @@ const { refuserEnTexte, repondreJson, repondreJsonTexte } = require("./reponses.
 // exemplaires d'un fait divergent, c'est la formule du dépôt.
 const POLITIQUE_PERMISSIONS = "camera=(), microphone=(), geolocation=(), payment=()";
 
-async function relayerFichier(res, r, disposition) {
+async function relayerFichier(res, r, disposition, bornes = { stallMs: relaisStallMs, maxMs: relaisMaxMs }) {
   if (!r) { refuserEnTexte(res, 404, "Fichier indisponible"); return; }
   // 413 et 416 sont des REFUS ARGUMENTÉS de l'amont local (plafond, borne absurde) : les fondre
   // dans un 502 dirait « panne » là où l'amont a dit « demande irrecevable ».
@@ -245,7 +311,7 @@ async function relayerFichier(res, r, disposition) {
   const brute = r.headers.get("content-length");
   const annoncee = Number(brute || 0);
   if (annoncee > PLAFOND_RELAIS) {
-    try { PLAYER.errors.capture(new Error(`relais refusé : ${annoncee} octets au-dessus du plafond de ${PLAFOND_RELAIS}`), { route: "relais" }); } catch { /* jamais bloquant */ }
+    try { capturerSansBloquer(PLAYER.errors, new Error(`relais refusé : ${annoncee} octets au-dessus du plafond de ${PLAFOND_RELAIS}`), { route: "relais" }); } catch { /* jamais bloquant */ }
     refuserEnTexte(res, 413, "Fichier trop volumineux");
     // ⚠️ Renoncer ne suffit pas : un corps jamais tiré laisse la connexion amont OUVERTE, et le
     // pool de sockets s'épuise sur les gros fichiers — exactement la ressource qu'on protège.
@@ -299,21 +365,33 @@ async function relayerFichier(res, r, disposition) {
   if (!compresse && brute) res.setHeader("Content-Length", brute);
 
   const plafond = PLAFOND_RELAIS;
+  // Deux minuteries et un signal : « sans progression » se réarme à chaque morceau qui PASSE (si le
+  // client ne lit plus, la contre-pression arrête les morceaux et la minuterie tombe) ; « budget total »
+  // ne se réarme jamais. L'abandon passe par le signal du pipeline, qui détruit la source ET la réponse.
+  const abandon = new globalThis.AbortController();
+  let stall = null;
+  const rearmer = () => { clearTimeout(stall); stall = setTimeout(() => abandon.abort(new Error(`relais abandonné : aucune progression depuis ${bornes.stallMs} ms`)), bornes.stallMs); };
+  const budget = setTimeout(() => abandon.abort(new Error(`relais abandonné : plus de ${bornes.maxMs} ms au total`)), bornes.maxMs);
+  rearmer();
   try {
     await pipeline(Readable.fromWeb(r.body), async function* (source) {
       let vus = 0;
       for await (const morceau of source) {
         vus += morceau.length;
         if (vus > plafond) throw new Error(`relais interrompu : ${vus} octets reçus, plafond ${plafond}`);
+        rearmer();
         yield morceau;
       }
-    }, res);
+    }, res, { signal: abandon.signal });
   } catch (erreur) {
     // ⚠️ ROMPRE, PAS RÉPONDRE — et le DIRE. Aucun code de retour n'est plus disponible ; ne
     // reste que la coupure. Une coupure fréquente ici est un plafond mal réglé ou un amont
     // défaillant : l'avaler ferait passer un défaut d'exploitation pour un caprice du réseau.
-    try { PLAYER.errors.capture(erreur instanceof Error ? erreur : new Error(String(erreur)), { route: "relais" }); } catch { /* jamais bloquant */ }
+    const cause = abandon.signal.aborted && abandon.signal.reason instanceof Error ? abandon.signal.reason : erreur;
+    try { capturerSansBloquer(PLAYER.errors, cause instanceof Error ? cause : new Error(String(cause)), { route: "relais" }); } catch { /* jamais bloquant */ }
     try { res.destroy(); } catch { /* le socket est peut-être déjà parti */ }
+  } finally {
+    clearTimeout(stall); clearTimeout(budget);
   }
 }
 
@@ -426,6 +504,16 @@ function embedFrameAncestors() {
  *
  * On répond `embed-denied` : la décision reste la nôtre, l'hôte apprend seulement à ne pas replier.
  */
+/**
+ * LA PAGE OÙ LE DOCUMENT S'OUVRE (`?page=N`) — demandée par le premier hôte pour qu'une réponse qui cite
+ * « page 12 » ouvre la page 12. Un entier, au moins 1, borné au plafond de pages déjà tenu ailleurs (10 000) ;
+ * tout le reste vaut 1. La visionneuse la borne ENCORE au nombre réel de pages, qu'elle seule connaît.
+ */
+function pageDeDepart(q) {
+  const n = Math.trunc(Number(q && q.page));
+  return Number.isFinite(n) && n > 1 ? Math.min(n, 10_000) : 1;
+}
+
 function sendRefusal(res, reason, embed) {
   if (!embed) return sendHtml(res, 404, notFoundHtml());
   const nonce = crypto.randomBytes(16).toString("base64");
@@ -655,6 +743,9 @@ async function handlerMesure(req, res) {
         capabilities: [
           "docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth",
           "host-share", "host-mail", "retention",
+          // `link-protection` (0028) : un lien tracé peut porter une échéance et un mot de passe
+          // (`docshare.create` / `docshare.protect`). `start-page` : `?page=N` ouvre le document à la page N.
+          "link-protection", "start-page",
         ],
         // ⚠️ POUR QUELLES ORIGINES cette instance accepte d'être encadrée. Un booléen ne
         // suffisait pas : un hôte a besoin de voir que SON domaine manque, pas seulement que
@@ -762,6 +853,15 @@ async function handlerMesure(req, res) {
             derniereIlYaS: dernier == null ? null : Math.max(0, Math.round((Date.now() - dernier) / 1000)),
           };
         })(),
+        // ⚠️ MÊME FORME, AUTRE PLAFOND. `lectureSaturee` est le cache de lecture ; ceci est l'admission
+        // des relais de fichiers (`config.maxConcurrentRelays`). Un hôte a lu le premier pour le second
+        // (13/09) parce que le second n'existait pas sur la carte — et `mesures.statuts.occupe503`
+        // les confond. Trois clés, jamais séparées : un total sans sa fenêtre ment par omission.
+        relaisRefuses: {
+          total: relaisRefusesTotal,
+          fenetreS: Math.round(process.uptime()),
+          derniereIlYaS: dernierRefusRelais == null ? null : Math.max(0, Math.round((Date.now() - dernierRefusRelais) / 1000)),
+        },
         // ⚠️ CE QUE CETTE INSTANCE A VÉCU — parce que `lectureSaturee` ne répondait qu'à UNE
         // question. « La route est-elle lente ? », « lesquelles ? », « la base ou nous ? »,
         // « combien de 5xx ? », « la boucle décroche-t-elle ? » n'avaient aucune réponse
@@ -801,6 +901,18 @@ async function handlerMesure(req, res) {
           ...(String(q.schema || "") === "1"
             ? await require("./schema").sonderTout()
             : require("./schema").etatDuSchema()) },
+        // ⚠️ CE QUI S'ACCUMULE, PAS SEULEMENT CE QU'ON PEUT PURGER. `retentionSweep` ci-dessus dit
+        // « je PEUX purger » ; il ne dit rien de ce qui est là. Nos tables vivent dans la base de
+        // l'hôte, et l'audit d'un hôte énumère SES tables : le schéma d'une dépendance occupe une
+        // zone que les inventaires de personne ne visitent. Deux hôtes ont trouvé 2361 lignes
+        // portant encore une adresse ou un agent brut — parce qu'un TIERS avait posé une question
+        // sur SA base, pas parce que quoi que ce soit le leur avait dit.
+        //
+        // Sous `&schema=1` seulement : c'est une lecture de la base, et sans le paramètre cette
+        // carte garde sa propriété de répondre quand plus rien ne répond.
+        ...(String(q.schema || "") === "1"
+          ? { purge: await require("./retention").resteDeLaPurge() }
+          : {}),
         // « L'hôte peut-il créer un lien en son nom propre ? » — configuré, pas seulement
         // possible. Un hôte qui oublie le secret reçoit un 401 qui ressemble à un droit
         // manquant ; ce booléen le lui dit sans qu'il ait à essayer.
@@ -838,10 +950,16 @@ async function handlerMesure(req, res) {
       // Placée AVANT `getPresentation` — écrite après, elle aurait laissé passer très exactement la
       // requête qu'elle est censée épargner. Le quota se déduit de la cadence de l'audience
       // (`src/cadence.ts`), il n'est pas choisi à la main.
-      const sondage = String(q.state || "") === "1" || String(q.chat || "") === "1";
-      if (sondage) {
-        const ipSondage = adresseAppelant(req) || "anon";
-        if (!(await PLAYER.limits.allow(`pread:${ipSondage}`, PRESENT_QUOTA_PER_HOUR, 3600))) {
+      // ⚠️ DEUX POINTS, DEUX CLÉS — LE QUOTA EST DÉRIVÉ « SUR CHACUN DES DEUX POINTS » ET UNE SEULE
+      // CLÉ LES FAISAIT PAYER LE MÊME BUDGET. Le filet du navigateur relit l'état ET le chat toutes
+      // les 25 s (`gabarit-live.js`) : sous `pread:<ip>`, une sortie unique portait 306 spectateurs
+      // au repos, pas les 613 annoncés — et une saturation du chat coupait l'état, qui fait autorité
+      // sur la page affichée. Reproduit par un audit externe le 13/09 contre le vrai limiteur. Une
+      // requête qui demanderait les deux points paie les deux.
+      const points = [String(q.state || "") === "1" ? "state" : null, String(q.chat || "") === "1" ? "chat" : null].filter(Boolean);
+      const ipSondage = points.length ? (adresseAppelant(req) || "anon") : "";
+      for (const point of points) {
+        if (!(await PLAYER.limits.allow(`pread:${point}:${ipSondage}`, PRESENT_QUOTA_PER_HOUR, 3600))) {
           // ⚠️ UN REFUS MUET FAIT UNE AUDIENCE QUI DÉCROCHE SANS CAUSE NOMMÉE. Le 429 n'apparaît
           // que dans la console du spectateur ; l'exploitant, lui, verrait des pages qui ne tournent
           // plus chez tout un bâtiment. Une fois par heure suffit à nommer la cause sans inonder.
@@ -964,8 +1082,10 @@ async function handlerMesure(req, res) {
       if (String(q.file || "") === "1") {
         if (!isAllowedStorageUrl(pres.file_url)) { refuserEnTexte(res, 404, "Fichier indisponible"); return; }
         const range = req.headers["range"];
-        const r = await PLAYER.storage.fetchFile(pres.file_url, { range });
-        await relayerFichier(res, r, null);
+        await relayerSousAdmission(res, async (bornes) => {
+          const r = await PLAYER.storage.fetchFile(pres.file_url, { range });
+          await relayerFichier(res, r, null, bornes);
+        });
         return;
       }
       const supaUrl = (PLAYER.config && PLAYER.config.supabaseUrl) || "";
@@ -987,13 +1107,15 @@ async function handlerMesure(req, res) {
       if (!isAllowedStorageUrl(url)) return sendRefusal(res, "url-not-allowed", embed);
       if (String(q.stream || "") === "1") {
         const range = req.headers["range"];
-        const r = await PLAYER.storage.fetchFile(url, { range });
-        await relayerFichier(res, r, dispositionInline(q.name));
+        await relayerSousAdmission(res, async (bornes) => {
+          const r = await PLAYER.storage.fetchFile(url, { range });
+          await relayerFichier(res, r, dispositionInline(q.name), bornes);
+        });
         return;
       }
       const supaUrl = (PLAYER.config && PLAYER.config.supabaseUrl) || "";
       const supaKey = (PLAYER.config && PLAYER.config.supabasePublishableKey) || "";
-      const pseudo = { preview: true, embed, slug: "", file_name: String(q.name || "document.pdf"), doc_title: String(q.title || q.name || "Document"), raw_url: url, doc_id: String(q.docId || ""), presenter_name: String(q.by || ""), presenter_avatar: String(q.av || ""), internal_email: String(q.uemail || ""), internal_token: String(q.it || ""), supa_url: supaUrl, supa_key: supaKey, auto_present: String(q.autopresent || "") === "1", resume_slug: String(q.resume || ""), brand_key: String(q.brand || "") || null, stream_url: `/api/doc?preview=1&stream=1&url=${encodeURIComponent(url)}&name=${encodeURIComponent(String(q.name || ""))}` };
+      const pseudo = { preview: true, embed, page_depart: pageDeDepart(q), slug: "", file_name: String(q.name || "document.pdf"), doc_title: String(q.title || q.name || "Document"), raw_url: url, doc_id: String(q.docId || ""), presenter_name: String(q.by || ""), presenter_avatar: String(q.av || ""), internal_email: String(q.uemail || ""), internal_token: String(q.it || ""), supa_url: supaUrl, supa_key: supaKey, auto_present: String(q.autopresent || "") === "1", resume_slug: String(q.resume || ""), brand_key: String(q.brand || "") || null, stream_url: `/api/doc?preview=1&stream=1&url=${encodeURIComponent(url)}&name=${encodeURIComponent(String(q.name || ""))}` };
       // ⚠️ LA MARQUE MANQUAIT ICI, ET SEULEMENT ICI. Toute la machinerie existe — l'hôte répond à
       // `PLAYER_HOST_BRAND_URL`, `branding.forKey` résout, les liens tracés affichent la bonne
       // marque. Ce chemin-ci ne l'appelait simplement pas, et aucun paramètre ne transportait la
@@ -1023,8 +1145,31 @@ async function handlerMesure(req, res) {
         embed ? embedFrameAncestors() : "'self'");
     }
 
-    const share = slug ? await getShareBySlug(slug) : null;
-    if (!share) return sendRefusal(res, "revoked", embed);
+    // ⚠️ UNE LECTURE, PAS DEUX. 0.1.170 demandait le lien à `getShareBySlug`, puis, quand il ne s'ouvrait pas,
+    // le RELISAIT par `resoudreLien` pour dire pourquoi — la même ligne, deux allers-retours, et sur le chemin le plus
+    // fréquent des refus (un lien révoqué qui circule encore). `resoudreLien` rend les deux à la fois.
+    const lu = slug ? await resoudreLien(slug, req) : { share: null, refus: "revoked", ligne: null };
+    const share = lu.share;
+    if (!share) {
+      // ⚠️ UN LIEN PROTÉGÉ (0028) NE SE CONFOND PAS AVEC UN LIEN RÉVOQUÉ. Expiré, il le DIT — la
+      // personne peut en demander un autre ; fermé par un mot de passe, il le DEMANDE. Et dans les
+      // deux cas le FICHIER reste derrière : servir la page du mot de passe en laissant `?file=1`
+      // streamer le PDF serait une porte de décor (la leçon de `murDocument.test.js`).
+      const { refus, ligne } = lu;
+      if (refus === "expired") {
+        if (String(q.file || "") === "1") { repondreJson(res, 410, { ok: false, error: "expired" }); return; }
+        if (!embed) return sendHtml(res, 410, lienExpireHtml(ligne));
+        const xnonce = crypto.randomBytes(16).toString("base64");
+        return sendHtml(res, 410, lienExpireHtml(ligne) + `<script nonce="${xnonce}">try{parent.postMessage({type:"3dd-doc-embed-denied",reason:"expired"},"*")}catch(e){}</script>`, `'nonce-${xnonce}'`, "", embedFrameAncestors());
+      }
+      if (refus === "password") {
+        if (String(q.file || "") === "1") { repondreJson(res, 401, { ok: false, error: "password" }); return; }
+        let plogo = ""; try { plogo = await PLAYER.branding.logo(); } catch { /* sans logo */ }
+        const mnonce = crypto.randomBytes(16).toString("base64");
+        return sendHtml(res, 200, motDePasseHtml(ligne, mnonce, plogo, embed), `'nonce-${mnonce}'`, originesImages(plogo, ligne), embed ? embedFrameAncestors() : "'self'");
+      }
+      return sendRefusal(res, "revoked", embed);
+    }
 
     // Soft wall : un document require_auth n'est servi qu'à un visiteur au jeton valide.
     // Mur d'accès visiteur — greffon. SANS lui, un document « compte requis » ne doit surtout PAS
@@ -1034,27 +1179,53 @@ async function handlerMesure(req, res) {
     if (share.require_auth === true && !visitors) return sendRefusal(res, "auth-unavailable", embed);
     const gated = share.require_auth === true && !visitor;
 
+    // L'ACCÈS PAR DOCUMENT (0.1.172) — greffon facultatif `documentAccess`. Le mur ne savait dire qu'une chose :
+    // « cette personne a prouvé son adresse ». Un hôte qui réserve un document à SON équipe, ou à une organisation,
+    // ne pouvait pas l'exprimer : toute adresse prouvée l'ouvrait. Le greffon répond, pour un document réservé et un
+    // visiteur identifié, « oui » ou « non » — c'est l'HÔTE qui sait qui a droit à quoi.
+    //   · absent : l'ancien comportement (une adresse prouvée suffit) — rien ne change pour un hôte qui ne l'a pas ;
+    //   · « non » : le mur revient, en disant que CETTE adresse n'a pas accès, et propose d'en utiliser une autre ;
+    //   · une panne (exception, réponse illisible, `reason: "unavailable"`) : REFUS — jamais d'ouverture par défaut.
+    let refusAcces = null;
+    if (share.require_auth === true && visitor && PLAYER.plugins.documentAccess) {
+      let d = null;
+      try { d = await PLAYER.plugins.documentAccess.decide({ share, visitor }); } catch (e) {
+        try { await PLAYER.errors.capture(e, { route: "doc", etape: "documentAccess" }); } catch { /* la capture ne décide rien */ }
+      }
+      if (!d || d.ok !== true) refusAcces = d && d.ok === false && d.reason !== "unavailable" ? "denied" : "auth-unavailable";
+    }
+    if (refusAcces === "auth-unavailable") {
+      if (String(q.file || "") === "1") { repondreJson(res, 503, { ok: false, error: "auth-unavailable" }); return; }
+      return sendRefusal(res, "auth-unavailable", embed);
+    }
+
     if (String(q.file || "") === "1") {
       if (gated) { repondreJson(res, 401, { ok: false, error: "auth" }); return; }
+      // Le FICHIER reste derrière un refus d'accès, comme derrière le mur : une page qui dit non en laissant ?file=1
+      // streamer le PDF serait une porte de décor.
+      if (refusAcces === "denied") { repondreJson(res, 403, { ok: false, error: "denied" }); return; }
       // Stream depuis le Storage en RELAYANT les requêtes Range → pdf.js charge progressivement (les 1res
       // pages s'affichent sans télécharger tout le PDF) → affichage bien plus rapide.
       const range = req.headers["range"];
-      const r = await PLAYER.storage.fetchFile(share.file_url, { range });
-      await relayerFichier(res, r, dispositionInline(share.file_name));
+      await relayerSousAdmission(res, async (bornes) => {
+        const r = await PLAYER.storage.fetchFile(share.file_url, { range });
+        await relayerFichier(res, r, dispositionInline(share.file_name), bornes);
+      });
       return;
     }
 
     // Soft wall : contenu réservé → on sert la page de connexion visiteur (email + code)
     // AVANT de charger le lecteur. À la vérification, le cookie est posé → un reload lève le mur.
-    if (gated) {
+    if (gated || refusAcces === "denied") {
       let wlogo = ""; try { wlogo = await PLAYER.branding.logo(); } catch { /* sans logo */ }
       const wnonce = crypto.randomBytes(16).toString("base64");
       const gcid = visitors.googleClientId();
       // Intégré : le mur reste affiché (le visiteur peut s'y connecter sur place) mais il DIT à
       // l'hôte que le document est retenu — sinon l'hôte croit à une panne et replie sur son
-      // lecteur, qui lui ouvrirait le document que ce mur protège.
-      const wall = softWallHtml(share, wnonce, wlogo, gcid)
-        + (embed ? `<script nonce="${wnonce}">try{parent.postMessage({type:"3dd-doc-embed-denied",reason:"auth-required"},"*")}catch(e){}</script>` : "");
+      // lecteur, qui lui ouvrirait le document que ce mur protège. Refusé à CETTE adresse : `denied`.
+      const raison = refusAcces === "denied" ? "denied" : "auth-required";
+      const wall = softWallHtml(share, wnonce, wlogo, gcid, refusAcces === "denied" ? { refuse: String(visitor.email || "") } : null)
+        + (embed ? `<script nonce="${wnonce}">try{parent.postMessage({type:"3dd-doc-embed-denied",reason:${jsonPourScript(raison)}},"*")}catch(e){}</script>` : "");
       return sendSoftWallHtml(res, wall, wnonce, [originOf(wlogo), originOf(share.brand_logo)].filter(Boolean).join(" "), embed ? embedFrameAncestors() : null);
     }
 
@@ -1109,7 +1280,7 @@ async function handlerMesure(req, res) {
     // exactement comme sans PLAYER_HOST_AUTHZ_URL personne ne peut DIFFUSER.
     if (share.embed && !(PLAYER.config.extraFrameAncestors || []).length) {
       try {
-        PLAYER.errors.capture(
+        capturerSansBloquer(PLAYER.errors,
           new Error("?embed=1 demandé mais DOC_FRAME_ANCESTORS est vide : seuls une page de même origine et *.vercel.app peuvent encadrer cette instance"),
           { route: "doc", indice: "le navigateur bloquera l'iframe avant le chargement — aucun embed-denied ne partira" },
         );
@@ -1118,6 +1289,7 @@ async function handlerMesure(req, res) {
     const frameAncestors = share.embed
       ? embedFrameAncestors()
       : "'self'";
+    share.page_depart = pageDeDepart(q);
     return sendHtml(res, 200, viewerHtml(share, nonce, logoUrl, pitch), `'nonce-${nonce}'`, originesImages(logoUrl, share), frameAncestors);
   } catch (error) {
     try { await PLAYER.errors.capture(error, { route: "doc", method: req.method }); } catch { /* ignore */ }
@@ -1131,6 +1303,26 @@ async function handlerMesure(req, res) {
 // ⚠️ Exporté pour être ÉPROUVÉ, pas pour être appelé : le plafond du relais ne se vérifie qu en
 // regardant si le corps a été lu, ce qu aucune route ne peut montrer de l extérieur.
 // ⚠️ Exporté pour être ÉPROUVÉ : « le contexte reste vivant » ne se vérifie pas de l'extérieur.
-module.exports = { __contexte: () => PLAYER, handler, init, TIERS, POLITIQUE_PERMISSIONS, refuserEnTexte, repondreJson, __relayerFichier: relayerFichier, __jsonPourScript: jsonPourScript };
+module.exports = { __contexte: () => PLAYER, handler, init, TIERS, POLITIQUE_PERMISSIONS, refuserEnTexte, repondreJson, __relayerFichier: relayerFichier, __jsonPourScript: jsonPourScript,
+  // ⚠️ COUTURE DE BANC : le compteur de relais en vol est un état du PROCESSUS, jamais remis à zéro par
+  // `init`. Un banc doit pouvoir vérifier qu'il revient à zéro et ne passe jamais sous zéro.
+  __relaisEnCours: () => relaisEnCours,
+  // ⚠️ COUTURE DE BANC, PAS D'API : le cache de lecture est global au module, et un banc qui laisse des
+  // lectures en vol contamine le suivant (128 promesses éternelles, 503 partout — trouvé par un audit
+  // externe sous mélange, graine 20260913). Un banc doit pouvoir VÉRIFIER qu'il rend le cache vide.
+  __cacheLecture: cacheLecture,
+  // ⚠️ COUTURE DE MESURE : LIRE LES COMPTEURS SANS LES INCRÉMENTER. Le rapport de charge relevait
+  // ces grandeurs par un `GET ?contract=1` — c'est-à-dire par une requête qui TRAVERSE le handler et
+  // incrémente `mesures.statuts.ok` au passage. Le delta d'une fenêtre de 1 000 requêtes valait donc
+  // 1 001, systématiquement, et pour chaque position : l'observateur se comptait lui-même. Une
+  // soustraction cachée aurait corrigé le chiffre en aggravant le problème — un instrument qui se
+  // retranche discrètement est plus difficile à auditer qu'un instrument faux. La couture rend l'état
+  // tel qu'il est, sans le modifier ; ce que la fenêtre contient d'autre que la charge se DIT, dans
+  // `counters.observerOverheadRequests`. Défaut relevé par un audit externe (CODEX, 15/09).
+  __compteursSansObserver: () => ({
+    lectureSaturee: { total: cacheLecture.satures().total },
+    relaisRefuses: { total: relaisRefusesTotal },
+    mesures: mesures.relever(),
+  }) };
 
 // redeploy: forcer le build production (Vercel a sauté la prod du merge #463 — wording re-partage).

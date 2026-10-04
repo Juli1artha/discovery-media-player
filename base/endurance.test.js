@@ -63,7 +63,6 @@ let player, mesures, presentations, contexte, racine;
 
 decrire("endurance : le scénario mixte, dans la durée", () => {
   beforeAll(async () => {
-    // eslint-disable-next-line no-console
     console.log(`\n  ENDURANCE — ${DUREE_S} s, ${APPELANTS} appelants simultanés, scénario mixte.`
       + "\n  Campagne longue : PLAYER_ENDURANCE_SECONDES=1800 npm run test:endurance");
     process.env.SUPABASE_URL = BASE;
@@ -176,7 +175,6 @@ decrire("endurance : le scénario mixte, dans la durée", () => {
     const rssFin = moyenne(echantillonsRss.slice(-tiers));
 
     const ligne = (n, v) => `    ${String(n).padEnd(30)}${v}`;
-    // eslint-disable-next-line no-console
     console.log([
       `\n  ── endurance — ${total} appels en ${DUREE_S} s (${Math.round(total / DUREE_S)}/s) ──`,
       ...GESTES.map(([nom]) => {
@@ -238,7 +236,6 @@ decrire("endurance : le scénario mixte, dans la durée", () => {
 
       const refus = resultats.filter((r) => r.statut === 503);
       const erreurs = resultats.filter((r) => r.statut >= 500 && r.statut !== 503);
-      // eslint-disable-next-line no-console
       console.log(`\n  ── saturation — 200 clés distinctes, base +400 ms ──\n`
         + `    503 réessayables               ${refus.length}\n`
         + `    autres 5xx                     ${erreurs.length}\n`

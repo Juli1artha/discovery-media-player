@@ -38,6 +38,74 @@ allocation is the cost. An upstream that announces no `Content-Length` passes an
 refuse what one cannot measure, and closing by default would cut off perfectly legitimate storages.
 This bounds the **large**, not the **unknown**.
 
+### The standalone server's own bounds (not variables)
+
+`bin/serve.js` is meant to be exposed directly, so it does not inherit Node's proxy-grade defaults.
+Since this train: **`requestTimeout` 30 s, `headersTimeout` 15 s, keep-alive 5 s** (Node's defaults
+were 300 s / 60 s — a socket trickling headers held a minute, a slow body five). ⚠️ These bound the
+**request**; a slow *response* (a relay) is bounded by the relay's own stall/total limits above,
+not by `requestTimeout`. A JSON body is read up
+to **1 MB**: above it the answer is **413** with `Connection: close` (the rest is not drained), an
+unreadable body gets **400**, and a connection that leaves mid-body gets nothing. Until this train the
+three cases collapsed into an empty body and a misleading `400 bad-event`. A reverse proxy in front may
+impose stricter bounds; it must not loosen these.
+
+### `PLAYER_MAX_RELAYS`
+
+Number of files relayed **at the same time** by one process (default **64**). The stream bounds the
+bytes of each relay; nothing bounded how many relays were open — an external audit opened 200 slow
+transfers at once and got 200 upstream connections, 200 pipelines and 200 open responses (13/09).
+Above the ceiling the relay answers **503 with `Retry-After: 2` before any upstream call**; there is
+no queue, because an unbounded queue is the same defect with a delay. The slot is released in a
+`finally`, so an upstream error or a client that disconnects mid-stream gives it back. Sixty-four is
+plenty for pdf.js's parallel Range requests; a serverless platform bounds global concurrency itself,
+so this mostly protects the standalone server and each warm instance. Hosts wiring their own context
+set `config.maxConcurrentRelays`.
+
+⚠️ **64 is a default, not a safe value for every platform.** Measured by an external audit on
+0.1.165 with the real handler → storage → pipeline path, 64 relays of 8 MiB each and deliberately slow
+consumers: back-pressure holds (512 MiB went through, memory did not follow), but the process RSS
+rose from ~63 MiB to a peak of **193–257 MiB**, with ~85 MiB more in `arrayBuffers`. On a process
+capped at 256 MiB, set **16–32**; 64 from 512 MiB upwards, after measuring on your own sockets and
+memory profile. A second run by the same audit on 0.1.166 (64 × 8 MiB, consumers slowed to 50 ms)
+peaked at 181 MiB of RSS, a growth of 118 MiB — and the RSS **did not come back after GC**, only
+`external` and `arrayBuffers` did: the allocator keeps what it grew. The accepted range is an
+**integer from 1 to 1024**; anything else (a decimal, a string that is not an integer in that range,
+a number above it) falls back to 64 and is reported **once at `init`** through `errors.capture`
+(`benin: true`) with the range — never silently. ⚠️ 1024 is a **syntactic** bound on the setting,
+not a guarantee against memory exhaustion: nothing in the player knows how much memory your process
+may use. ⚠️ The card's `mesures.memoireMio.rss` is half of
+the decision: the other half is the ceiling of your process, which the player cannot see — on
+Lambda-based functions it is `AWS_LAMBDA_FUNCTION_MEMORY_SIZE`, in a container the cgroup limit.
+Read both before touching this number; an RSS on a fresh process says nothing about 64 slow relays.
+
+⚠️ **The counter of open relays belongs to the process, not to the context.** Until 0.1.165,
+calling `init` again reset it to zero while relays were still open: the next request went upstream
+with the only slot still taken, and the old relay's `finally` then drove the counter negative (audit,
+fifth pass). `init` re-reads the ceiling and the delays for the relays *admitted after it*; a relay
+already in flight keeps the bounds it was admitted under.
+
+### `PLAYER_RELAY_STALL_MS`, `PLAYER_RELAY_MAX_MS`
+
+A slot is only bounded if the relay holding it ends. A client that stops reading — or an upstream
+that stops sending — left the pipeline waiting forever: `finally` never reached, slot never
+returned, and with a ceiling of 1 no file went out again (reproduced by an external audit, 13/09).
+`requestTimeout` does **not** cover this: it bounds the reception of the request, not the emission
+of the response. Two bounds, per relay: **no progress for `PLAYER_RELAY_STALL_MS`** (default 30 s —
+re-armed on every chunk that actually passes) or **longer than `PLAYER_RELAY_MAX_MS`** (default
+15 min) aborts the pipeline through its signal: upstream source destroyed, response destroyed, slot
+released. Hosts wiring their own context set `config.relayStallMs` / `config.relayMaxMs`.
+
+⚠️ **Integers, in milliseconds, from 1 to 86 400 000 (24 h).** Node's `setTimeout` caps at
+2 147 483 647 ms and silently clamps anything above to **1 ms**: a stall delay of 2 147 483 648 —
+"about 24.8 days" — aborted a transfer after 6 ms, with 65 `TimeoutOverflowWarning` (audit, fifth
+pass). The first bound accepted "any finite positive number"; it now accepts an integer in the range
+above, and a value outside it (a decimal, a string that is not an integer in the range, `Infinity`,
+above 24 h) falls back to the default and is reported once at `init`. The standalone context passes
+the environment value through **as the string it received** — `"abc"` reaches the core as `"abc"`,
+and the report says `relayStallMs=abc` — so that this single check sees what the operator typed;
+converting it there turned it into `NaN` before anyone could read it (audit, sixth pass).
+
 ## The minimum
 
 | Variable | |
@@ -222,6 +290,11 @@ we had told them to write a file they did not need. Code you don't write cannot 
 | `PLAYER_IP_HASH_SECRET` | salts the attendance IP fingerprint — falls back to `PLAYER_PRESENCE_SECRET` |
 | `PLAYER_PRESENCE_SECRET` | signs **presence tokens** — set it to start issuing them (see below) |
 | `PLAYER_PRESENCE_STRICT` | `1` ⇒ a presence heartbeat is recorded **only** with a proven token |
+| `PLAYER_RETENTION_SWEEP` | `1` ⇒ arms the automatic retention purge. Without it nothing is ever deleted automatically |
+| `PLAYER_RETENTION_LOGS_MONTHS` | reading-log window, whole months in `[1, 120]` (default 13) |
+| `PLAYER_RETENTION_PRESENTATIONS_MONTHS` | presentation-archive window (default 12) |
+| `PLAYER_RETENTION_REVOKED_LINKS_MONTHS` | revoked-link window (default 13) |
+| `PLAYER_RETENTION_VOICE_MONTHS` | voice-cache window (default 13) |
 | `PLAYER_TRUSTED_PROXY_HOPS` | how many **trusted** proxies sit in front of this instance |
 
 ### Presence tokens, and how to close the door safely
@@ -479,8 +552,11 @@ embedding this assistant knows it must wire them; these four were the only ones 
 was driven by a server secret.
 
 So `bot-tts` is an **integration point, not a feature**: a host that wants a speaking assistant
-issues an HTTP POST of `{ action: "bot-tts", slug, text }` from its own front end, and wires those
-controls itself. Reported on 26/08 by an integrating host who went looking for the caller and
+issues an HTTP POST of `{ action: "bot-tts", slug, sessionId, text }` from its own front end, and
+wires those controls itself. ⚠️ **`sessionId` is required, and this example omitted it** — an
+external audit found the omission on 2026-09-11. The route refuses without it, and it refuses again
+if the text was not one the assistant actually spoke in that session: the caller *proposes* a text,
+it does not choose one. Reported on 26/08 by an integrating host who went looking for the caller and
 found none — with 908 objects in its own `tts-cache` bucket, written by its own code.
 
 ⚠️ **THE ROUTE ONLY SPEAKS WHAT THE ASSISTANT ACTUALLY SAID.** Until 26/08 it accepted `text` as

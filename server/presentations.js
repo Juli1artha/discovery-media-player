@@ -4,6 +4,7 @@
 // (cf. migration v12324) — écriture service role only. Le présentateur détient un control_token ; on en
 // stocke le HASH (sha256) → l'audience peut lire la ligne (Realtime) sans pouvoir piloter.
 const crypto = require("crypto");
+const { capturerSansBloquer } = require("./capture");
 // Base de données via le contexte injecté (cf. _player-context.js) — aucune adhérence au studio.
 // ⚠️ Le contexte est REÇU, pas construit. Ce module ne doit pas savoir d'où il vient : c'est ce
 // qui lui permettra de partir dans le dépôt du player sans emporter le studio avec lui.
@@ -15,7 +16,23 @@ const crypto = require("crypto");
 const ROTATIONS = [0, 90, 180, 270];
 
 let PLAYER = null;
-function init(ctx) { PLAYER = ctx; _bumpSansDurcissementJusqua = 0; _avertRpcPresence = false; _etatDurcissement = "inconnu"; }
+/**
+ * ⚠️ `init` JETTE LES OBSERVATIONS, ET IL DOIT LES JETER TOUTES. Les mémos d'exécution disent ce que
+ * CE processus a constaté de CETTE base. Un contexte neuf peut être une autre base : reporter une
+ * observation d'avant, c'est rapporter une propriété de la base précédente sous le nom de la
+ * nouvelle.
+ *
+ * ⚠️ LE MÉMO DE LA FUSION MANQUAIT ICI, ET LES DEUX JUMEAUX SE DISENT IDENTIQUES TROIS FOIS DANS CE
+ * FICHIER — « même patron que 0018 », « même lecture que `etatDurcissementBootstrap`,
+ * délibérément ». Ils l'étaient sur le chemin de LECTURE, le seul que les bancs regardaient, et pas
+ * sur la remise à zéro. Une règle énoncée n'est pas une règle tenue, et celle-ci était énoncée.
+ */
+function init(ctx) {
+  PLAYER = ctx;
+  _bumpSansDurcissementJusqua = 0; _etatDurcissement = "inconnu";
+  _bumpSansFusionJusqua = 0; _etatFusion = "inconnu";
+  _avertRpcPresence = false;
+}
 
 /**
  * L'état OBSERVÉ du durcissement des bootstraps — pas sa configuration.
@@ -171,7 +188,10 @@ async function touchPresentation(slug, control) {
 
 // Liste des présentations en cours (membre authentifié). Auto-purge : une présentation active dont le
 // dernier heartbeat remonte à > STALE_MS (présentateur parti sans clôturer) est marquée inactive.
-const STALE_MS = 3 * 60 * 1000;
+// ⚠️ LE SEUIL VIT DÉSORMAIS DANS UNE FEUILLE, et `schema.js` le lit de là plutôt que d'ici. Il
+// était défini ici et emprunté par un `require()` dynamique croisé, ce qui fermait le seul cycle du
+// graphe serveur. Le commentaire ci-dessus reste : il explique POURQUOI trois minutes.
+const { STALE_MS } = require("./constantes-presentation.js");
 
 /**
  * ÉCRIRE SEULEMENT SI LA CONDITION TIENT ENCORE — au moment de l'écriture, pas au moment du contrôle.
@@ -468,7 +488,7 @@ async function createUploadUrl(slug, name, type) {
   // serait pire : une pièce jointe qui ne part jamais, sans que personne sache que la capacité
   // manque.
   if (!PLAYER.storage || typeof PLAYER.storage.signUpload !== "function") {
-    try { PLAYER.errors.capture(new Error("storage.signUpload absent du contexte : les pièces jointes de chat sont indisponibles"), {}); } catch { /* jamais bloquant */ }
+    try { capturerSansBloquer(PLAYER.errors, new Error("storage.signUpload absent du contexte : les pièces jointes de chat sont indisponibles"), {}); } catch { /* jamais bloquant */ }
     return { ok: false, status: 501 };
   }
   const signe = await PLAYER.storage.signUpload("present-attachments", path);
@@ -584,6 +604,33 @@ function premierPublic(reponse) {
   return messagePublic(row);
 }
 
+/**
+ * ⚠️ UN AVATAR N'EST GARDÉ QUE S'IL VIENT D'UNE ORIGINE QU'ON SERT DÉJÀ — DEUXIÈME BARRIÈRE.
+ *
+ * La première est en amont : `routes-direct.js` n'accepte plus l'avatar d'un anonyme. Celle-ci
+ * couvre ce qui reste — l'avatar d'un MEMBRE, qui vient de son jeton, donc des métadonnées d'un
+ * fournisseur d'identité. Un fournisseur peut laisser son utilisateur écrire ce champ ; une
+ * identité prouvée prouve QUI parle, pas OÙ pointe son image.
+ *
+ * Ce qui passe : une URL relative, ou une URL dont l'origine est celle du stockage de l'hôte. Tout
+ * le reste devient `null`, et l'audience voit des initiales. ⚠️ C'est une dégradation VISIBLE et
+ * réversible — un hôte dont les avatars vivent ailleurs les sert depuis son stockage — là où la
+ * fuite, elle, était invisible et subie par les spectateurs.
+ *
+ * ⚠️ ON COMPARE DES ORIGINES, PAS DES PRÉFIXES. `https://<base>.attaquant.net` commence par ce
+ * qu'on croit reconnaître ; son origine, non.
+ */
+function avatarAdmissible(avatar, base) {
+  const brut = String(avatar || "").trim();
+  if (!brut) return null;
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(brut) && !brut.startsWith("//")) return brut.slice(0, 600);
+  let u, b;
+  try { u = new URL(brut); } catch { return null; }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  try { b = new URL(String(base || "")); } catch { return null; }
+  return u.origin === b.origin ? brut.slice(0, 600) : null;
+}
+
 async function addMessage(slug, { name, email, avatar, isPresenter, isMember, body, replyTo, replyName, replyText, authorToken, attachment, clientKey }) {
   if (await estArchive(slug)) return REFUS_ARCHIVE;
   const b = String(body || "").trim().slice(0, 2000);
@@ -611,7 +658,7 @@ async function addMessage(slug, { name, email, avatar, isPresenter, isMember, bo
   const row = {
     slug: String(slug), author_name: (name || "").trim().slice(0, 80) || null,
     author_email: (email || "").trim().toLowerCase().slice(0, 160) || null,
-    author_avatar: (avatar || "").slice(0, 600) || null,
+    author_avatar: avatarAdmissible(avatar, (PLAYER.config && PLAYER.config.supabaseUrl) || ""),
     is_presenter: !!isPresenter, is_member: !!isMember, body: b, attachment: att,
     author_hash: authorToken ? sha(authorToken) : null,
     reply_to: rt, reply_name: rt ? ((replyName || "").slice(0, 80) || null) : null, reply_text: rt ? ((replyText || "").slice(0, 140) || null) : null,
@@ -641,7 +688,7 @@ async function addMessage(slug, { name, email, avatar, isPresenter, isMember, bo
     // attendu est journalisé une fois, en clair, parce qu'un renvoi fréquent est une information.
     const conflit = cle && estConflit(erreur);
     if (!conflit) throw erreur;
-    try { PLAYER.errors.capture(new Error("message déjà enregistré (renvoi) : " + String(slug)), { route: "present-chat", benin: true }); } catch { /* jamais bloquant */ }
+    try { capturerSansBloquer(PLAYER.errors, new Error("message déjà enregistré (renvoi) : " + String(slug)), { route: "present-chat", benin: true }); } catch { /* jamais bloquant */ }
     const deja = await PLAYER.db.request(
       `doc_presentation_messages?slug=eq.${enc(String(slug))}&client_key=eq.${enc(cle)}&select=*&limit=1`);
     const ligne = Array.isArray(deja) && deja[0];
@@ -976,7 +1023,7 @@ async function appelerBump(corps, durcissementVoulu) {
     // bootstrap auto-déclaré s'emparer d'une présence réclamée — c'est-à-dire une fermeture qui
     // rassure sans protéger. On nomme donc le fichier ET la conséquence.
     try {
-      PLAYER.errors.capture(new Error(
+      capturerSansBloquer(PLAYER.errors, new Error(
         "bootstrap de présence NON durci : appliquez supabase/migrations/0018-bootstrap-non-usurpable.sql. "
         + "Sans elle, un bootstrap auto-déclaré peut écraser une présence déjà réclamée par un porteur "
         + "de jeton — n'armez pas PLAYER_PRESENCE_STRICT avant de l'avoir appliquée.",
@@ -1116,7 +1163,7 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
     // battements ORDINAIRES, qui continuent de se replier normalement.
     if (onlyIfUnclaimed) {
       try {
-        PLAYER.errors.capture(new Error(
+        capturerSansBloquer(PLAYER.errors, new Error(
           "bootstrap de présence refusé : le contrôle anti-usurpation n'a pas pu s'exécuter — "
           + ((erreur && erreur.message) || erreur),
         ), { route: "present-attend" });
@@ -1135,7 +1182,7 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
         const fichier = transitionDispo
           ? "supabase/migrations/0017-jeton-presence.sql (ou 0015-presence-atomique.sql)"
           : "supabase/migrations/0015-presence-atomique.sql";
-        PLAYER.errors.capture(new Error(
+        capturerSansBloquer(PLAYER.errors, new Error(
           "présence non atomique : appliquez " + fichier + ". "
           + "Sans elle, la présence est écrite par lire-modifier-réécrire (correct) mais le plafond "
           + "de création de faux participants anonymes n'est pas appliqué. "
@@ -1189,7 +1236,7 @@ async function recordAttendance(slug, participant, { presentation = null, ipHash
         if (!estConflit(erreur)) throw erreur;
         // Journalisé comme bénin : deux onglets qui arrivent ensemble sont une information, pas
         // une panne — et la garde des écritures muettes exige que tout rattrapage parle.
-        try { PLAYER.errors.capture(new Error("présence déjà ouverte (second onglet) : " + String(slug)), { route: "present-attend", benin: true }); } catch { /* jamais bloquant */ }
+        try { capturerSansBloquer(PLAYER.errors, new Error("présence déjà ouverte (second onglet) : " + String(slug)), { route: "present-attend", benin: true }); } catch { /* jamais bloquant */ }
         continue;   // le tour suivant relit : la ligne que l'autre onglet vient de créer
       }
     }

@@ -1,0 +1,166 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 3D Discovery
+// CE QUE LA GARDE DES AFFIRMATIONS RETIRÉES SAIT VOIR, ET CE QU'ELLE NE PRÉTEND PAS SAVOIR.
+//
+// ⚠️ ELLE NE CONFRONTE PAS UNE PHRASE À CE QU'ELLE DÉCRIT. AGENTS.md dit qu'aucune garde ici ne sait
+// faire ça, et ça reste vrai : le fait qu'une migration existe ne dit à aucun programme quel
+// paragraphe ment. Ce qui est mécanisable, c'est la sous-classe où NOUS AVONS DÉJÀ DÉCIDÉ qu'une
+// affirmation est retirée — la garde confronte le dépôt à cette décision, pas à la réalité. C'est
+// beaucoup moins, et c'est exactement ce qui a échoué quatre fois en deux jours.
+
+import { describe, it, expect } from "vitest";
+
+import { RETIREES, MARQUEURS, REGARD_ARRIERE, DOSSIERS, EXTENSIONS, nonMarquees, estArchive, estLaGardeElleMeme, fichiersDe } from "../affirmations-retirees.mjs";
+
+const UNE = [{ nom: "essai", motif: /le ciel est vert/i, pourquoi: "x".repeat(40), retiree: "2026-01-01" }];
+
+describe("relever une affirmation retirée", () => {
+  it("une affirmation nue est relevée, avec sa ligne", () => {
+    const f = nonMarquees("a\nle ciel est vert\nb", UNE);
+    expect(f).toHaveLength(1);
+    expect(f[0].ligne).toBe(2);
+  });
+
+  it("la même phrase MARQUÉE sur sa ligne passe", () => {
+    expect(nonMarquees("ce paragraphe disait que le ciel est vert", UNE)).toEqual([]);
+  });
+
+  // ⚠️ UNE CITATION S'ENROULE. Exiger le marqueur sur la ligne EXACTE forcerait un formatage tordu
+  // et apprendrait à glisser un mot-marqueur par réflexe — une garde qu'on satisfait par un tic ne
+  // garde plus rien.
+  it("⚠️ le marqueur vaut sur les deux lignes PRÉCÉDENTES", () => {
+    expect(nonMarquees("ce paragraphe disait\nque\nle ciel est vert", UNE)).toEqual([]);
+    expect(nonMarquees("ce paragraphe disait\nune\nautre\nchose, le ciel est vert", UNE), "trois lignes : trop loin")
+      .toHaveLength(1);
+  });
+
+  // ⚠️ ON REGARDE EN ARRIÈRE SEULEMENT. Une rétractation qui SUIT ne protège pas : un lecteur qui
+  // abandonne à la phrase fausse ne lira jamais la correction. Ce dépôt a déjà écrit la règle de
+  // distance — « très loin, on ne fait pas le lien ; très près, on croit qu'il a déjà été fait ».
+  it("⚠️ un marqueur APRÈS l'affirmation ne la protège pas", () => {
+    expect(nonMarquees("le ciel est vert\nce paragraphe disait n'importe quoi", UNE)).toHaveLength(1);
+  });
+
+  it("plusieurs affirmations sur une même ligne sont toutes relevées", () => {
+    const deux = [...UNE, { nom: "b", motif: /la mer est rouge/i, pourquoi: "y".repeat(40), retiree: "2026-01-01" }];
+    expect(nonMarquees("le ciel est vert et la mer est rouge", deux)).toHaveLength(2);
+  });
+});
+
+describe("le périmètre", () => {
+  // ⚠️ LES ARCHIVES SONT EXCLUES, ET C'EST LA SEULE EXCLUSION. Un CHANGELOG et un rapport d'audit
+  // SONT des récits datés : ils citent ce qui était vrai à leur date. Les réécrire falsifierait
+  // l'histoire qu'ils portent — et c'est cette histoire qui permet à un hôte de comprendre ce qu'il
+  // a cru.
+  it("⚠️ le CHANGELOG et les rapports d'audit sont hors périmètre", () => {
+    expect(estArchive("CHANGELOG.md")).toBe(true);
+    expect(estArchive("docs/AUDIT-2026-08-15-SECONDE-PASSE.md")).toBe(true);
+    // Une migration LIVRÉE est un artefact que des hôtes ont exécuté : `migrations-immuables.mjs`
+    // interdit d'y corriger quoi que ce soit, donc cette garde ne peut pas l'exiger.
+    expect(estArchive("supabase/migrations/0004-limites-atomiques.sql")).toBe(true);
+    expect(estArchive("supabase/init.sql"), "init.sql n'est pas une migration appliquée : il se corrige").toBe(false);
+    expect(estArchive("docs/HOST-CONTRACT.md")).toBe(false);
+    expect(estArchive("SECURITY.md")).toBe(false);
+  });
+
+  it("la garde et son banc s'excluent eux-mêmes — ils DÉFINISSENT les motifs", () => {
+    expect(estLaGardeElleMeme("tools/affirmations-retirees.mjs")).toBe(true);
+    expect(estLaGardeElleMeme("tools/__tests__/affirmationsRetirees.test.js")).toBe(true);
+    expect(estLaGardeElleMeme("tools/changelog.mjs")).toBe(false);
+  });
+
+  it("la sonde trouve réellement des fichiers dans ce dépôt", () => {
+    const f = fichiersDe(".", ["docs", "server"]);
+    expect(f.length, "une sonde qui ne lit rien conclurait vert sur rien").toBeGreaterThan(50);
+    expect(f.some((x) => x.startsWith("docs/"))).toBe(true);
+    expect(f.includes("CHANGELOG.md")).toBe(false);
+  });
+
+  it("⚠️ la prose des WORKFLOWS est lue elle aussi — elle vieillit comme celle des documents", () => {
+    // ⚠️ CE QUI A VÉCU DANS L'ANGLE MORT. Le 15/09, le transport des notes de version a cessé
+    // d'être une sortie de job ; le paragraphe qui l'expliquait dans `release.yml` a continué de
+    // décrire l'ancien mécanisme, et aucune garde ne pouvait le voir puisque aucune ne lisait de
+    // YAML. Les workflows de ce dépôt portent délibérément beaucoup de prose — un contrôle qu'on
+    // ne comprend pas se supprime — et cette prose-là ment aussi bien qu'une autre.
+    expect(EXTENSIONS, "sans .yml, la prose des workflows n'est confrontée à rien").toContain(".yml");
+    expect(DOSSIERS, "sans .github, l'extension .yml ne rencontrerait aucun workflow").toContain(".github");
+    const f = fichiersDe(".", DOSSIERS);
+    expect(f, "les workflows ne sont pas atteints par la sonde").toContain(".github/workflows/release.yml");
+    expect(f.filter((x) => x.endsWith(".yml")).length).toBeGreaterThan(3);
+  });
+});
+
+describe("les entrées elles-mêmes", () => {
+  // ⚠️ UNE ENTRÉE SANS RAISON EST UNE EXEMPTION MUETTE. La différence tient tout entière là : une
+  // exemption dit « ceci est en ordre » ; une entrée datée et motivée dit « ceci a cessé d'être vrai
+  // tel jour, voici pourquoi ». Les deux laissent passer une relecture, une seule l'explique.
+  it("⚠️ chaque affirmation retirée porte une raison et une date", () => {
+    for (const r of RETIREES) {
+      expect(String(r.pourquoi).length, r.nom).toBeGreaterThan(30);
+      expect(r.retiree, r.nom).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(r.motif.test("")).toBe(false);
+    }
+  });
+
+  it("le vocabulaire des marqueurs reste PAUVRE — une liste riche rendrait la garde verte sur tout", () => {
+    expect(MARQUEURS.length).toBeLessThan(30);
+    expect(MARQUEURS.some((m) => m.test("une phrase ordinaire sans rétractation")), "aucun marqueur ne doit matcher une phrase neutre")
+      .toBe(false);
+  });
+
+  it("le regard en arrière est court", () => {
+    expect(REGARD_ARRIERE).toBeLessThanOrEqual(3);
+  });
+});
+
+// ⚠️ UNE AFFIRMATION ANNONCÉE RETIRÉE QUE LA LISTE NE CONNAISSAIT PAS. Le CHANGELOG de 0.1.165 disait
+// « le cœur n'a aucun secret serveur » retirée ; la phrase vivait encore dans `routes-visiteur.js`
+// et cette garde rendait « aucune écrite comme vraie » — vrai au sens strict (elle ne confronte le
+// dépôt qu'à SA liste), faux au sens qui compte. Trouvé par un audit externe (cinquième passe,
+// 13/09). Le moteur n'était pas en cause ; la définition l'était. Ces bancs fixent l'entrée.
+describe("⚠️ « le cœur n'a pas de secret de serveur »", () => {
+  const entree = RETIREES.filter((r) => /secret de serveur/.test(r.nom));
+  it("est dans la liste — c'est le défaut : l'annoncer retirée sans l'y mettre", () => {
+    expect(entree).toHaveLength(1);
+  });
+
+  it("la phrase NUE est une violation, sous ses quatre formes", () => {
+    for (const phrase of [
+      "(Le cœur n'a pas de secret de serveur, par conception — donc une empreinte, pas un HMAC.)",
+      "the player holds no server secret at all",
+      "le cœur n'a aucun secret serveur",
+      "il n'y a pas de secret de serveur dans le cœur",
+    ]) {
+      expect(nonMarquees(phrase, entree), phrase).toHaveLength(1);
+    }
+  });
+
+  it("une citation MARQUÉE reste permise — on corrige en place, on ne supprime pas l'histoire", () => {
+    expect(nonMarquees("ce paragraphe affirmait « le cœur n'a pas de secret de serveur » — retiré", entree)).toEqual([]);
+    expect(nonMarquees("An earlier version of this paragraph\nsaid the player holds no server secret at all", entree)).toEqual([]);
+  });
+
+  it("un secret de serveur qui EXISTE n'est pas la phrase retirée", () => {
+    expect(nonMarquees("Un secret de serveur ne doit pas donner à voir qui a lu quoi.", entree)).toEqual([]);
+    expect(nonMarquees("ELEVENLABS_API_KEY is a server secret against a paid API", entree)).toEqual([]);
+  });
+});
+
+// ⚠️ LE DÉPÔT LUI-MÊME, PARCE QUE C'EST LA PROPRIÉTÉ QUI COMPTE — et parce qu'elle a été fausse
+// quatre fois. Le premier passage de cette garde a trouvé une occurrence que DEUX audits humains
+// avaient manquée : l'en-tête d'un banc, quatrième copie d'une phrase corrigée trois fois ailleurs.
+describe("⚠️ le dépôt lui-même", () => {
+  it("aucune affirmation retirée n'est écrite comme vraie", async () => {
+    const { readFileSync } = await import("node:fs");
+    const fautes = [];
+    // ⚠️ LE PÉRIMÈTRE VIENT DE LA GARDE, IL N'EST PAS RECOPIÉ ICI. Il l'était, et les deux listes
+    // ont divergé le jour où `.github` est entré dans l'une : ce banc a continué de conclure « rien
+    // d'écrit comme vrai » sur un dépôt dont il ne lisait plus la même part que la garde de forge.
+    for (const f of fichiersDe(".", DOSSIERS)) {
+      let t;
+      try { t = readFileSync(f, "utf8"); } catch { continue; }
+      for (const x of nonMarquees(t)) fautes.push(`${f}:${x.ligne} — ${x.nom}`);
+    }
+    expect(fautes).toEqual([]);
+  });
+});

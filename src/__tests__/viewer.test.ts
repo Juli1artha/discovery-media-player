@@ -10,6 +10,12 @@ import {
   ROTATIONS,
   ancrageApresZoom,
   arrowState,
+  fenetreVirtuelle,
+  pasVertical,
+  plafondFenetre,
+  positionDe,
+  pagesAtteignables,
+  PLAFOND_DEFILEMENT_PX,
   aspectApresRotation,
   averageColor,
   clampPage,
@@ -366,5 +372,123 @@ describe("fitWidth avec rotation", () => {
   it("sans rotation, rend exactement ce qu'il rendait avant l'ajout du paramètre", () => {
     expect(fitWidth({ ...base, rotation: 0 })).toBe(fitWidth(base));
     expect(fitWidth({ ...base, rotation: undefined })).toBe(fitWidth(base));
+  });
+});
+
+// ⚠️ LE PRÉSENTATEUR CRÉAIT UN ÉLÉMENT PAR PAGE POUR TOUT LE DOCUMENT — 10 000 pages, ~70 000
+// nœuds, mesuré par un audit externe dans un Chrome réel. Le calcul de la fenêtre est pur et vit
+// ici : c'est lui qui décide ce qui existe, et s'il se trompe un lecteur voit un trou ou une page en
+// double. Les nombres ci-dessous sont ceux du gabarit (écart 16, padding 22).
+describe("⚠️ la fenêtre virtuelle : ce qui existe, et ce qui n'est qu'une hauteur", () => {
+  const G = { hauteurElement: 1000, ecart: 16, decalageHaut: 22 };
+  const f = (debutVisible: number, extra: Partial<Parameters<typeof fenetreVirtuelle>[0]> = {}) =>
+    fenetreVirtuelle({ ...G, debutVisible, hauteurVisible: 900, total: 10000, marge: 3, ...extra });
+
+  it("en haut du document, la fenêtre commence à 1 et ne déborde pas en négatif", () => {
+    const r = f(0);
+    expect(r.debut).toBe(1);
+    expect(r.avant).toBe(0);
+    expect(r.fin).toBeGreaterThanOrEqual(2);
+  });
+
+  it("⚠️ la fenêtre est BORNÉE quel que soit le document — c'est toute la propriété", () => {
+    const plafond = plafondFenetre({ hauteurVisible: 900, hauteurElement: 1000, ecart: 16, marge: 3 });
+    for (const y of [0, 22, 1015, 1016, 1017, 500000, 5_000_000, 10_160_000]) {
+      const r = f(y);
+      expect(r.fin - r.debut + 1, `à y=${y}`).toBeLessThanOrEqual(plafond);
+      expect(r.fin - r.debut + 1, `à y=${y}`).toBeGreaterThan(0);
+    }
+  });
+
+  it("⚠️ pas de trou sur une frontière exacte : la page qui contient le haut du visible est dedans", () => {
+    // y = 22 + 1016 : le haut du visible est exactement le haut de la page 2.
+    const r = f(22 + 1016, { marge: 0 });
+    expect(r.debut).toBe(2);
+    // y = 22 + 1015 : un pixel avant, la page 1 est encore entamée en haut.
+    expect(f(22 + 1015, { marge: 0 }).debut).toBe(1);
+  });
+
+  it("les espaceurs portent EXACTEMENT ce que la fenêtre ne matérialise pas", () => {
+    const pas = pasVertical(G.hauteurElement, G.ecart);
+    for (const y of [0, 3_000_000, 10_160_000]) {
+      const r = f(y);
+      expect(r.avant).toBe((r.debut - 1) * pas);
+      expect(r.apres).toBe((10000 - r.fin) * pas);
+      // Borne : avant + matérialisé + après = tout le document. Une grandeur bornée qui sort de ses
+      // bornes est le seul témoin gratuit d'une définition.
+      expect((r.debut - 1) + (r.fin - r.debut + 1) + (10000 - r.fin)).toBe(10000);
+    }
+  });
+
+  it("en bas du document, la fenêtre finit à `total` et ne déborde pas", () => {
+    const r = f(10_160_000);
+    expect(r.fin).toBe(10000);
+    expect(r.apres).toBe(0);
+  });
+
+  it("un document vide ne matérialise rien, sans NaN", () => {
+    expect(f(0, { total: 0 })).toEqual({ debut: 0, fin: 0, avant: 0, apres: 0 });
+  });
+
+  it("des entrées absurdes sont bornées, jamais NaN — un pas nul superposerait tout", () => {
+    expect(pasVertical(0, 0)).toBe(1);
+    expect(pasVertical(NaN, undefined)).toBe(1);
+    const r = fenetreVirtuelle({ debutVisible: NaN, hauteurVisible: -5, hauteurElement: 0, ecart: NaN, decalageHaut: -1, total: 3.7, marge: -2 });
+    expect(r.debut).toBe(1);
+    expect(r.fin).toBeGreaterThanOrEqual(1);
+    expect(Number.isFinite(r.avant) && Number.isFinite(r.apres)).toBe(true);
+  });
+
+  it("`positionDe` est l'inverse de la fenêtre : la page n commence là où la fenêtre la trouve", () => {
+    for (const n of [1, 2, 4999, 10000]) {
+      const y = positionDe(n, G);
+      expect(f(y, { marge: 0 }).debut).toBe(n);
+    }
+    expect(positionDe(1, G)).toBe(22);
+    expect(positionDe(0, G), "0 et les valeurs sous 1 valent 1").toBe(22);
+  });
+});
+
+// ⚠️ LA VIRTUALISATION BORNE LE DOM, PAS LA GÉOMÉTRIE — reproduit par un audit externe le 13/09 dans
+// Chrome réel : à 200 % un document de 10 000 pages s'arrête vers la 8 615ᵉ, parce que la hauteur de
+// défilement sature à 33 554 432 px. Ces bancs fixent le calcul de la dernière page atteignable.
+describe("⚠️ pagesAtteignables — ce que le plafond de défilement du navigateur laisse joindre", () => {
+  const G = { hauteurElement: 1200, ecart: 16, decalageHaut: 22 };
+
+  it("Chrome plafonne autour de 33 554 430 px — la constante est la plus BASSE des valeurs mesurées, pas une puissance de deux choisie", () => {
+    expect(PLAFOND_DEFILEMENT_PX).toBe(33554428);
+    expect(PLAFOND_DEFILEMENT_PX).toBeLessThan(2 ** 25);
+  });
+
+  it("un document court est entièrement atteignable", () => {
+    expect(pagesAtteignables({ ...G, total: 40 })).toBe(40);
+    expect(pagesAtteignables({ ...G, total: 1 })).toBe(1);
+  });
+
+  it("⚠️ la dernière page atteignable tient ENTIÈRE sous le plafond — haut et bas", () => {
+    const n = pagesAtteignables({ ...G, total: 100000 });
+    expect(positionDe(n, G) + G.hauteurElement, "le bas de la dernière atteignable est sous le plafond").toBeLessThanOrEqual(PLAFOND_DEFILEMENT_PX);
+    expect(positionDe(n + 1, G) + G.hauteurElement, "la suivante déborde").toBeGreaterThan(PLAFOND_DEFILEMENT_PX);
+  });
+
+  it("⚠️ à 200 % sur 1 440 px (page ≈ 3 900 px), la 8 615ᵉ est la dernière — le nombre de l'audit", () => {
+    const n = pagesAtteignables({ hauteurElement: 3879, ecart: 16, decalageHaut: 22, total: 10000 });
+    expect(n).toBeGreaterThanOrEqual(8600);
+    expect(n).toBeLessThanOrEqual(8630);
+  });
+
+  it("réduire le zoom rend des pages : la fonction est monotone en la hauteur", () => {
+    const a = pagesAtteignables({ ...G, hauteurElement: 2400, total: 100000 });
+    const b = pagesAtteignables({ ...G, hauteurElement: 1200, total: 100000 });
+    const c = pagesAtteignables({ ...G, hauteurElement: 600, total: 100000 });
+    expect(a).toBeLessThan(b);
+    expect(b).toBeLessThan(c);
+  });
+
+  it("un plafond plus bas (autre navigateur) se passe en argument, et des entrées absurdes ne donnent jamais 0 ni NaN", () => {
+    expect(pagesAtteignables({ ...G, total: 1000 }, 10_000)).toBe(8);
+    expect(pagesAtteignables({ ...G, total: 1000 }, 100), "même la première déborde : elle reste la seule").toBe(1);
+    expect(pagesAtteignables({ hauteurElement: NaN, ecart: NaN, decalageHaut: NaN, total: 5 })).toBe(5);
+    expect(pagesAtteignables({ ...G, total: 0 })).toBe(0);
   });
 });

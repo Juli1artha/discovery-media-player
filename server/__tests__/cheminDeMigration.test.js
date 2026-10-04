@@ -48,6 +48,18 @@ describe("le chemin de migration existe et dit ses règles", () => {
     "aucune migration ne contient « %s »", (interdit) => {
       const fautives = migrations().filter((f) => {
         let sql = fs.readFileSync(path.join(DOSSIER, f), "utf8").toLowerCase();
+        // ⚠️ ON RETIRE LES COMMENTAIRES AVANT DE CHERCHER. Cette garde lisait tout le fichier, donc
+        // aussi les lignes `--` qui EXPLIQUENT le geste interdit et pourquoi la migration s'en
+        // abstient : la 0026 dit pourquoi elle ne supprime pas la colonne, et se faisait accuser de
+        // la supprimer. La seule issue était alors d'écrire AUTOUR de la garde — de dégrader
+        // l'explication pour la satisfaire —, ce qui est précisément le mauvais résultat : le
+        // fichier devient moins clair pour qu'un motif soit content.
+        //
+        // Une sonde qui lit du commentaire invente des coupables. La règle porte sur les
+        // INSTRUCTIONS, pas sur la prose ; un geste interdit écrit dans un commentaire n'est pas
+        // exécuté. Même correction que celle déjà faite sur la garde de portabilité des requêtes
+        // (`ci.yml`) et sur la sonde des colonnes de schéma, pour la même raison.
+        sql = sql.replace(/--[^\n]*/g, " ");
         // ⚠️ « alter publication … drop table » n'est PAS un drop de table : il retire la table
         // d'une PUBLICATION — additif au sens de cette garde (les données ne bougent pas, un hôte
         // au code ancien continue de fonctionner). Le motif brut l'attrapait (0009) ; on retire
@@ -59,6 +71,21 @@ describe("le chemin de migration existe et dit ses règles", () => {
         `« ${interdit} » n'est pas additif : un hôte qui n'a pas encore déployé le nouveau code casse.\n`
         + "Ajoutez plutôt, et retirez une fois que plus personne ne lit l'ancien champ.")
         .toEqual([]);
+    });
+
+  // ⚠️ ET LA RÈGLE PORTE SUR LES INSTRUCTIONS, PAS SUR LA PROSE — sinon la garde ne mesure plus le
+  // SQL mais la façon d'en parler, et le fichier le plus soigneusement expliqué devient le plus
+  // suspect. Les deux moitiés sont éprouvées ici : sans la seconde, retirer les commentaires
+  // aurait pu tout laisser passer sans que personne le voie.
+  it.each(["drop column", "drop table", "rename to", "rename column", "set not null"])(
+    "⚠️ « %s » reste refusé en INSTRUCTION, et permis en commentaire", (interdit) => {
+      const nu = (sql) => sql.toLowerCase().replace(/--[^\n]*/g, " ")
+        .replace(/alter\s+publication\s+\S+\s+drop\s+table/g, "");
+      expect(nu(`alter table public.t ${interdit} x;`), "une instruction doit rester attrapée")
+        .toContain(interdit);
+      expect(nu(`-- ce fichier ne fait surtout pas de ${interdit}\ncreate table if not exists public.t ();`),
+        "une explication n'est pas un geste : elle n'est pas exécutée")
+        .not.toContain(interdit);
     });
 
   it("chaque migration est rejouable", () => {

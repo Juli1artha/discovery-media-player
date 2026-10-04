@@ -145,3 +145,41 @@ describe("⚠️ le périmètre écarte les bancs, et il le dit", () => {
     expect(auPerimetre("context/__tests__/y.js")).toBe(false);
   });
 });
+
+// ⚠️ LE DÉPOUILLAGE DES APOSTROPHES N'ÉTAIT VU PAR PERSONNE — mesuré le 01/09. Les trois formes de
+// chaîne sont retirées avant de chercher les APPELS, parce que les gabarits portent du code
+// NAVIGATEUR dans des littéraux et que `crypto` y est le global, légitimement. Deux des trois
+// formes étaient éprouvées ; l'apostrophe ne l'était pas, et rien ne l'aurait dit.
+describe("⚠️ les TROIS formes de chaîne sont dépouillées, pas deux", () => {
+  const METHODES = ["createHash", "randomUUID", "createHmac"];
+  // ⚠️ L'APPEL N'EST PAS COLLÉ AU GUILLEMET, et ce n'est pas un détail de mise en forme.
+  // `appelsDuModule` exige que le caractère précédant `crypto` ne soit ni un point, ni un mot, ni un
+  // guillemet — un `crypto.` collé à l'ouvrant n'est DÉJÀ pas relevé, dépouillage ou pas. Le témoin
+  // serait alors vert des deux côtés et ne prouverait rien. Un gabarit réel porte de toute façon une
+  // ligne de code, pas un appel nu. L'appel n'emploie pas de guillemets pour que la forme à
+  // apostrophes ne soit pas coupée en deux par les siens.
+  const appelDans = (ouvre, ferme) => `const gabarit = ${ouvre}let h = crypto.createHash(algo);${ferme};\n`;
+
+  it.each([
+    ["accents graves", "`", "`"],
+    ["guillemets", '"', '"'],
+    ["apostrophes", "'", "'"],
+  ])("un appel écrit dans une chaîne à %s n'est pas pris pour un appel réel", (_quoi, ouvre, ferme) => {
+    const code = appelDans(ouvre, ferme);
+    expect(appelsDuModule(code, METHODES), "sans dépouillage, cet appel serait relevé").not.toEqual([]);
+    expect(appelsDuModule(sansChaines(code), METHODES), "dépouillé, il disparaît").toEqual([]);
+  });
+
+  it("⚠️ et un appel RÉEL, hors de toute chaîne, survit au dépouillage", () => {
+    const code = 'const h = crypto.createHash("sha256");\n';
+    expect(appelsDuModule(sansChaines(code), METHODES)).toEqual(["createHash"]);
+  });
+
+  it("le dépouillage ne détruit pas la LIAISON, qui est elle-même une chaîne", () => {
+    // `lieCrypto` lit le code AVEC ses chaînes, justement pour ça — le rappeler ici garde les deux
+    // décisions côte à côte plutôt qu'à quarante lignes d'écart.
+    const code = 'const crypto = require("crypto");\nconst h = crypto.createHash("sha256");\n';
+    expect(lieCrypto(code), "la liaison se lit sur le code brut").toBe(true);
+    expect(appelsDuModule(sansChaines(code), METHODES)).toEqual(["createHash"]);
+  });
+});

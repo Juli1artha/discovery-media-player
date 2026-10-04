@@ -14,7 +14,10 @@ function notFoundHtml() {
 // Page « soft wall » : accès à un document réservé (require_auth). On ne demande PAS un compte,
 // on propose de RECEVOIR le document — l'email est l'action pour débloquer, pas un péage.
 // Email → code à 6 chiffres → cookie posé → reload → le lecteur s'ouvre. (Google = Lot B.)
-function softWallHtml(share, nonce, logoUrl, googleClientId) {
+function softWallHtml(share, nonce, logoUrl, googleClientId, opts) {
+  // Refusé à CETTE adresse (greffon `documentAccess`, 0.1.172) : on le dit, et on garde le formulaire — l'issue est
+  // de s'identifier avec l'adresse à laquelle le document a été envoyé.
+  const refuse = opts && typeof opts.refuse === "string" ? opts.refuse : null;
   const title = esc(share.doc_title || share.file_name || "ce document");
   const brandLogo = esc(share.brand_logo || "");
   const dark = !!share.brand_dark;
@@ -56,8 +59,11 @@ function softWallHtml(share, nonce, logoUrl, googleClientId) {
 <body>
   <div class=card>
     ${logo ? `<img class=logo src="${logo}" alt="${logoAlt}">` : ""}
-    <h1>Accédez à votre document</h1>
-    <p class=sub><span class=doc>${title}</span><br>Débloquez-le en un instant.</p>
+    ${refuse !== null
+      ? `<h1>Ce document vous est réservé</h1>
+    <p class=sub><span class=doc>${title}</span><br>${refuse ? `L'adresse ${esc(refuse)} n'y a pas accès.` : "Cette adresse n'y a pas accès."} Identifiez-vous avec l'adresse à laquelle il vous a été envoyé.</p>`
+      : `<h1>Accédez à votre document</h1>
+    <p class=sub><span class=doc>${title}</span><br>Débloquez-le en un instant.</p>`}
 
     ${gcid ? `<div id=gbtn class=gbtn></div><div class=orsep><span>ou par email</span></div>` : ""}
     <div id=s1>
@@ -122,4 +128,58 @@ ${gcid ? `<script nonce="${nonce}" src="https://accounts.google.com/gsi/client" 
 </body></html>`;
 }
 
-module.exports = { init, notFoundHtml, softWallHtml };
+// ── LIEN PROTÉGÉ (0028) — les deux pages que le visiteur voit à la place du document ──────────────────
+//
+// Elles ne montrent de la ligne que le TITRE et la marque — ce que la page du document montrerait aussi.
+// Jamais l'échéance exacte d'un lien protégé par mot de passe, jamais rien de l'empreinte.
+const STYLE_PORTE = `*{box-sizing:border-box}html,body{margin:0;height:100%}
+  body{font:15px/1.55 -apple-system,system-ui,Segoe UI,Roboto,sans-serif;color:#1c1a17;background:#f3efe8;display:flex;align-items:center;justify-content:center;padding:24px}
+  .card{width:100%;max-width:400px;background:#fff;border-radius:18px;padding:32px 30px 26px;box-shadow:0 18px 50px rgba(30,22,12,.14);text-align:center}
+  .logo{max-height:40px;max-width:180px;margin:0 auto 20px;display:block;object-fit:contain}
+  h1{font-size:19px;font-weight:800;letter-spacing:-.02em;margin:0 0 6px}
+  .sub{font-size:13.5px;color:#7c7266;margin:0 0 20px}.doc{font-weight:700;color:#1c1a17}
+  label{display:block;text-align:left;font-size:12px;font-weight:700;color:#3a352e;margin:0 0 6px}
+  input{width:100%;padding:13px 14px;border:1px solid #ddd4c6;border-radius:12px;font:inherit;background:#fbf9f6;outline:none}
+  input:focus{border-color:#c8996a;box-shadow:0 0 0 3px #c8996a22}
+  .btn{width:100%;margin-top:14px;padding:13px;border:0;border-radius:12px;font:inherit;font-weight:700;color:#fff;background:#1c1a17;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:default}.err{color:#c0392b;font-size:12.5px;min-height:16px;margin:10px 0 0}`;
+
+/** La page qui demande le mot de passe d'un lien. Le mot part en `fetch` (jamais dans l'URL), le cookie revient, la page se recharge. */
+function motDePasseHtml(ligne, nonce, logoUrl, embed) {
+  const titre = esc((ligne && (ligne.doc_title || ligne.file_name)) || "ce document");
+  const logo = esc((ligne && ligne.brand_logo) || logoUrl || "");
+  return `<!doctype html><html lang=fr><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1"><meta name=robots content="noindex,nofollow"><link rel=icon href="data:,">
+<title>Document protégé — ${titre}</title><style>${STYLE_PORTE}</style></head>
+<body><form class=card id=f autocomplete=off>
+  ${logo ? `<img class=logo src="${logo}" alt="">` : ""}
+  <h1>Document protégé</h1>
+  <p class=sub><span class=doc>${titre}</span><br>Saisissez le mot de passe que l'on vous a communiqué.</p>
+  <label for=mdp>Mot de passe</label><input id=mdp type=password autocomplete=current-password autofocus required maxlength=200>
+  <button class=btn id=ok type=submit>Ouvrir le document</button>
+  <p class=err id=err role=alert></p>
+</form>
+<script nonce="${nonce}">(function(){var S=${jsonPourScript(String((ligne && ligne.slug) || ""))};
+${embed ? `try{parent.postMessage({type:"3dd-doc-embed-denied",reason:"password-required"},"*")}catch(e){}` : ""}
+var f=document.getElementById('f'),b=document.getElementById('ok'),e=document.getElementById('err'),m=document.getElementById('mdp');
+f.addEventListener('submit',function(ev){ev.preventDefault();if(!m.value)return;b.disabled=true;e.textContent='';
+fetch('/api/doc',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'link-unlock',slug:S,password:m.value})})
+.then(function(r){return r.json().catch(function(){return{ok:false}})}).then(function(j){
+if(j&&j.ok){location.reload();return;}b.disabled=false;m.select();
+e.textContent=j&&j.error==='rate'?'Trop d\u2019essais. Réessayez dans quelques minutes.':j&&j.error==='revoked'?'Ce lien n\u2019est plus disponible.':'Mot de passe incorrect.';
+}).catch(function(){b.disabled=false;e.textContent='Connexion impossible. Réessayez.';});});})();</script>
+</body></html>`;
+}
+
+/** La page d'un lien expiré : la raison, et le geste qui débloque — en demander un nouveau. */
+function lienExpireHtml(ligne) {
+  const titre = esc((ligne && (ligne.doc_title || ligne.file_name)) || "ce document");
+  return `<!doctype html><html lang=fr><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1"><meta name=robots content="noindex,nofollow"><link rel=icon href="data:,">
+<title>Lien expiré</title><style>${STYLE_PORTE}</style></head>
+<body><main class=card><h1>Ce lien a expiré</h1>
+<p class=sub><span class=doc>${titre}</span><br>Le lien qui vous a été envoyé n'est plus valable. Demandez-en un nouveau à la personne qui vous l'a transmis.</p>
+</main></body></html>`;
+}
+
+module.exports = { init, notFoundHtml, softWallHtml, motDePasseHtml, lienExpireHtml };

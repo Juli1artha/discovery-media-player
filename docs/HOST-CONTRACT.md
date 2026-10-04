@@ -25,7 +25,7 @@ need.
    it the same day, and remove it when the release lands.
 6. **Describe what you do — including what you think is trivial.** Not *"report deviations"*: you
    cannot know what one is, because that would mean knowing this page better than we do. ⚠️ The
-   over-specified sentence in [the `tts-cache` section](#four-things-that-will-bite) stood for
+   over-specified sentence in [the `tts-cache` section](#what-will-bite) stood for
    weeks, and it took a host mentioning its own naming **as a curiosity** for anyone to look. Its
    own account of it, on 27/08: *"je ne l'ai décrite que parce que je citais `preview-fr-v2` comme
    une curiosité, sans savoir que c'était un écart. Si j'avais su que votre page l'interdisait, je
@@ -41,7 +41,7 @@ need.
   "contract": 1,
   "version": "<the running version>",
   "runtime": { "node": "<what this instance runs on>", "nodeRequired": ">=22.13.0" },
-  "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention"],
+  "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention", "link-protection", "start-page"],
   "frameAncestors": ["'self'", "https://*.vercel.app", "https://app.example.com"],
   "separateIssuer": true,
   "internalStrict": true,
@@ -50,7 +50,8 @@ need.
   "presenceDurcissement": "inconnu",
   "presenceFusion": "inconnu",
   "lectureSaturee": { "total": 0, "fenetreS": 0, "derniereIlYaS": null },
-  "mesures": { "fenetreS": 0, "seauxMs": [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000], "routes": {}, "base": { "n": 0 }, "statuts": { "ok": 0, "refus4xx": 0, "debit429": 0, "occupe503": 0, "erreur5xx": 0 }, "memoireMio": { "rss": 0, "heap": 0, "tampons": 0 }, "boucleMs": { "n": 0, "moyen": null, "p99": null, "resolutionMs": 20 } },
+  "relaisRefuses": { "total": 0, "fenetreS": 0, "derniereIlYaS": null },
+  "mesures": { "fenetreS": 0, "seauxMs": [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000], "familles": ["document", "presentation", "action", "fichier", "carte", "autre"], "routes": {}, "base": { "n": 0 }, "statuts": { "ok": 0, "refus4xx": 0, "debit429": 0, "occupe503": 0, "erreur5xx": 0 }, "memoireMio": { "rss": 0, "heap": 0, "tampons": 0 }, "boucleMs": { "n": 0, "moyen": null, "p99": null, "resolutionMs": 20 } },
   "retentionSweep": false,
   "hostShare": true,
   "hostMail": true,
@@ -180,10 +181,11 @@ these numbers from their side.
 |---|---|
 | `fenetreS` | seconds this process has been running — **the window every total below was counted over** |
 | `seauxMs` | the bucket ladder the percentiles are read off, published **with** the numbers |
-| `routes` | one entry per family of work — `document`, `presentation`, `action`, `fichier`, `carte`, `autre`. Families absent from the object were never exercised in this process |
+| `familles` | **the denominator of `routes`** — every family this build measures, whether or not it was exercised. It does not move with traffic; that is what makes it a denominator |
+| `routes` | one entry per family of work — `document`, `presentation`, `action`, `fichier`, `carte`, `autre`. Families absent from the object were never exercised in this process. ⚠️ **`familles` is the scale, `routes` is the measure: `familles` never varies; what was seen is in `routes`.** A host displayed the scale as the measure for a whole day — "6 familles", permanently, on an instance that had just restarted — because nothing on the card said which of the two was which (STUDIO, 14/09) |
 | `base` | the same shape, for calls through the `db` capability **you** supply — measured at the seam, so it covers every call, including ones nobody has written yet |
 | `statuts` | responses by class: `ok` (<400), `refus4xx`, `debit429`, `occupe503`, `erreur5xx` |
-| `memoireMio` | `rss`, `heap` (heap used), `tampons` (`arrayBuffers`) in MiB, read at the moment of the request |
+| `memoireMio` | `rss`, `heap` (heap used), `tampons` (`arrayBuffers`) in MiB, read at the moment of the request. ⚠️ **Half a number**: it is only judicable against the memory ceiling of the process, which the player does not know and no platform serves the same way — on Lambda-based functions (Vercel included) read `AWS_LAMBDA_FUNCTION_MEMORY_SIZE`; in a container, the cgroup limit. A host spent half a day finding that its project API, its logs and its `vercel.json` all left it out (14/09). Display the ceiling beside the RSS, or the RSS says nothing about the relay ceiling you can afford. And the ceiling makes the RSS **comparable, not the question decidable**: whether 64 relays fit is settled only by a reading under load, never by a gauge read at rest (STUDIO, 14/09) |
 | `boucleMs` | event-loop **delay** — `moyen` and `p99` in ms, with `n` samples and the sampler's `resolutionMs` |
 
 ⚠️ **A percentile over buckets is a bound, not a value.** `p95sousMs: 250` reads *"95% of calls
@@ -193,6 +195,17 @@ reading is. `null` means *past the top of the ladder* (over 10 s), which is itse
 
 ⚠️ **`n: 0` is not `0 ms`.** A family that was never exercised reports `{ "n": 0 }` and nothing
 else, and `boucleMs` with no samples reports `moyen: null` — not a zero that would read as *healthy*.
+
+⚠️ **`routes: {}` used to be indistinguishable from broken instrumentation, and `familles` is why
+it no longer is.** Omitting an unexercised family is correct — a `0 ms` would read as *instantaneous*
+— but the omission left a reader unable to tell *no traffic in this window* from *measurement is not
+running*. A loaded host never meets the question: its entries are always there, so their presence
+witnesses itself.
+
+The rule came from a host measuring their own smallness: **a field whose value is its own witness at
+scale needs an explicit witness at small scale.** At 99 sessions nothing witnesses anything, and a
+busier host is better instrumented without having instrumented anything. `statuts` and `boucleMs`
+already carried their denominators; `routes` had not.
 
 ⚠️ **`boucleMs` is the delay, not the interval.** The sampler observes how long its own timer
 actually took, which at rest equals its resolution; the resolution is subtracted, so an idle
@@ -225,9 +238,60 @@ saturate*; on a process that started four seconds ago it says *nobody has looked
 same trap as `inconnu` in the two rows above, and the reason the three keys are returned as one
 object rather than as separate fields you could read apart.
 
+⚠️ **Read `fenetreS` first — and on serverless, expect it to stay short.** Every counter on this
+card belongs to the process, and on a serverless platform the process is the unit that dies: a host
+read its two domains a few minutes apart and got windows of 15 s and 19 s, then 4 s and 7 s — the
+processes had been recycled in between (14/09). There, `total: 0` over 15 seconds means *nothing in
+the last quarter of a minute*, which is almost no information, and these counters can structurally
+never accumulate more than a cold start's lifetime. This is not a defect of the field — on a
+long-lived process it says what it should — it is a limit of applicability, and `fenetreS` is the
+key that reveals it. So the reading order is: `fenetreS`, then `total`; and a fleet of short windows
+is a fact about your hosting, never a reassurance. ⚠️ **And sampling from outside does not repair a
+short window — it inherits it.** A host did the arithmetic (14/09): a daily cron reading a counter
+whose window is ~15 s observes 15 × 365 = 5 475 seconds a year out of 31 536 000, 0.017 % of the
+time; an hourly one, 0.42 %. A `total: 0` collected 365 times a year says exactly what it says once,
+with the added look of a time series — the credibility of a surveillance without the surveillance.
+The only form that would work on serverless is a **push at the end of the process**, because the
+process is the one entity that knows its own total and it dies without saying it. The player does
+not do that today, and no serverless platform guarantees a hook to do it in; this paragraph states
+the limit with its way out, so that nobody builds the sampler first.
+The same applies to `relaisRefuses` below and to the **counters** under `mesures` (`statuts`,
+`routes`, `base`).
+
+⚠️ **Three natures share this card, and the rule above covers only the first.** An earlier version
+of this paragraph said it applied to "everything under `mesures`" — too broad, and a host applied
+the counter rule to a gauge because nothing told it the gauge was not covered (14/09).
+
+| nature | examples | what qualifies it | what saves it |
+|---|---|---|---|
+| **counter** | `lectureSaturee`, `relaisRefuses`, `mesures.statuts` | accumulates over `fenetreS` | read `fenetreS` first — a long window makes a zero informative |
+| **gauge** | `mesures.memoireMio` | the state **at the instant of the read** (`process.memoryUsage()`); no window enters its production | **nothing on the card**: a process idle for a week shows the same ~64 MiB as one born a minute ago, and a long window would only make it *look* trustworthy. It says nothing about what the process would weigh under load; the only way to learn that is to read it *during* a load — which an audit can provoke and a host must not on real readers |
+| **sample** | `mesures.boucleMs` | `{ n: 0, moyen: null, p99: null }` until something was observed | itself — it refuses to answer rather than return an interpretable zero |
+
 ⚠️ **It is process-local.** Behind a load balancer this is the count of the instance that answered,
 not of your deployment. Aggregating is your job — and letting you believe otherwise would be worse
 than returning nothing.
+
+### `relaisRefuses` — what the relay admission refused
+
+Same three keys, same reading rules, **another ceiling**: this counts the file relays refused with
+`503` + `Retry-After: 2` because `config.maxConcurrentRelays` was reached (see *Relay `Range`* in the
+three things a host implements). ⚠️ `lectureSaturee` does **not** cover it — it is the read cache
+only. A host answered *"we never saturate relays"* from `lectureSaturee.total = 0` (13/09), which was
+a reasonable reading of a card that had no relay counter; and `mesures.statuts.occupe503` mixes the
+two refusals. This field exists so that the question *did this instance refuse a relay?* is answered
+by the card, structured and dated, and never by a search through logs for `relais refusés` — the
+log line stays for diagnosis, the card is the way to *notice*. Process-local like everything on this
+card, and **never reset by `init`**, exactly like the counter of open relays.
+
+⚠️ **A zero is informative only beside the traffic that could have produced the event — `fenetreS`
+alone is not enough.** A host read `total: 0` over a 999-second window and showed *no relay
+refused*, *no saturated read* in green; over that window `mesures.routes` carried only `action`
+(3 calls) — not one file, not one presentation read, so neither counter had had a single occasion
+(STUDIO, 14/09). Read `mesures.routes.fichier.n` next to `relaisRefuses` and
+`mesures.routes.presentation.n` next to `lectureSaturee` — the families are `familleDe`'s, not
+guessed — and the timer wraps the whole handler, so `n` counts the refused calls too: it is the
+denominator you want. Both hosts' cards now say *no occasion yet* instead of green.
 
 ⚠️ **Before you upgrade, do not read `presenceDurcissement` or `presenceFusion`.** They are *reports
 of execution*: on an instance where nothing is running they say `inconnu`, which means *nobody
@@ -398,6 +462,80 @@ inheritance both refuse — without either of them knowing why.
 Requires `supabase/migrations/0001-destinataire-atteste.sql`. Until it is applied the player refuses
 the attested creation and names the file; it never falls back to the other column.
 
+## The visitor wall (`plugins.visitors`): what the player counts, and what your plugin must do
+
+A host can gate documents behind a soft wall — an e-mail code, or a Google credential — by providing
+`plugins.visitors` with `requestCode(email, { title })`, `verifyCode(email, code, name)` and
+`verifyGoogle(credential)`. The player exposes them as `visitor-request`, `visitor-verify` and
+`visitor-google`.
+
+⚠️ **Until this train, only the request was rate-limited; verification called your plugin directly.**
+An external audit reproduced 1 000 code attempts and 1 000 Google verifications from one address with
+zero limiter calls (13/09). A short code with no counter in the plugin was brute-forceable, and a
+Google verification per anonymous request was a network amplifier. The player no longer assumes your
+plugin counts — the same rule as the assistant's session↔document binding: a security property must
+not depend on code the player does not contain.
+
+| action | per address | per identity (fingerprint of the normalised e-mail, never the address) |
+|---|---|---|
+| `visitor-request` | 20 / hour | 5 / hour |
+| `visitor-verify` | 100 / hour | 10 / 15 minutes |
+| `visitor-google` | 100 / hour | — |
+
+Counters are taken **at admission**: success, failure and an exception in your plugin consume them
+alike. Beyond a limit the answer is `429 { error: "rate" }` and **your plugin is not called**.
+
+⚠️ **Provide `rateLimitKey(email): Promise<string>` on the plugin — the identity key should be
+yours.** Without it the player keys the per-identity counters on a truncated SHA-256 of the
+normalised e-mail: `player_rate_limits` never carries an address in clear, but a fingerprint is a
+**pseudonym, not a secret** — anyone reading that table, a backup or an admin tool can precompute the
+fingerprints of likely addresses (an audit showed it on 13/09). Your implementation should be a
+stable, opaque HMAC with a host-side secret and **domain separation**:
+`HMAC(secret, "visitor-email\0" + emailNormalised)`. The player calls it with the e-mail already
+trimmed and lower-cased, prefixes your key with `h:` (a fallback fingerprint gets `e:`, so the two
+never collide), and truncates it to 64 characters. If the capability is absent, throws, or returns
+anything but a non-empty string, the player **falls back to the fingerprint and reports it once per
+process** through `errors.capture` (`benin: true`): refusing to limit would be worse than limiting
+under a weak pseudonym, and silence would be worse than both. (An earlier version of this paragraph
+said the player holds no server secret at all — too absolute: the standalone context already carries
+`ipHashSecret` for another purpose. The key still belongs with you, not with that secret.)
+
+⚠️ **What your plugin must still guarantee — the player cannot do it for you:**
+
+- the code is **short-lived** (minutes, not hours) and **single-use**: a code that stays valid after a
+  successful verification can be replayed from a shoulder-surfed screen;
+- the code has enough entropy for 10 attempts per quarter-hour not to be a lottery — six digits give
+  one chance in 100 000 per attempt at that pace, which is acceptable; four digits are not;
+- `verifyGoogle` validates the credential's audience and issuer server-side, and does not accept an
+  expired token.
+
+The player's counters bound the *rate*; your plugin bounds the *code*. Both are needed, and neither
+replaces the other.
+
+## Who may open a restricted document (`plugins.documentAccess`, 0.1.172)
+
+The visitor wall answers one question: *has this person proven an address?* A host that restricts a document to
+**its own team**, or to one partner organisation, could not express it — any proven address opened it. Provide
+`plugins.documentAccess` with:
+
+```js
+decide({ share, visitor }) → Promise<{ ok: true } | { ok: false, reason?: "denied" | "unavailable" }>
+```
+
+It is called for a document whose link carries `require_auth`, once the visitor is signed in (`visitor` is what
+`plugins.visitors.currentVisitor(req)` returned). It is **not** called for an open document, nor before the visitor
+signs in — the wall handles that.
+
+| your answer | what the reader gets |
+|---|---|
+| `{ ok: true }` | the document |
+| `{ ok: false }` | the wall again, saying *this address* has no access, so they can sign in with the one the document was sent to; `?file=1` answers `403 { error: "denied" }` without streaming; embedded, the bridge reports `denied` |
+| an exception, anything unreadable, or `{ ok: false, reason: "unavailable" }` | a **refusal** (`auth-unavailable`; `?file=1` → `503`) — never an opening. The exception goes to `errors.capture` |
+
+Without the plugin, nothing changes: a proven address opens the document, as before. ⚠️ **That is also why its
+absence is silent** — a host that upgrades the player without wiring the plugin keeps the old behaviour and sees no
+error. Test that your host actually provides it.
+
 ## ⚠️ What `limits.allow` promises changed
 
 It used to promise *best effort, per process*. The standalone context now counts in a **shared
@@ -429,10 +567,25 @@ Two deliberate exceptions, both written next to the code:
   with a shared counter would make the guard pay the price we had just spared the thing it guards.
   On that path the real protection is the cache, not the counter.
 
-⚠️ **The shared count is not atomic.** PostgREST cannot express "increment": it is a read then a
-write. Two instances can read the same value and write one. The counter therefore **under**-estimates
-under heavy concurrency — it lets a little more through, never refuses wrongly. Said plainly rather
-than implying a precision we do not have.
+⚠️ **The paragraph that used to stand here said the shared count was not atomic. That has been
+false since `0004`, and it contradicted the paragraph above it in this same document.** It was
+written before the database function existed and outlived what it described. An external audit found
+it on 2026-09-11; it is corrected rather than quietly deleted, because a host who read it may have
+built a compensating control they do not need.
+
+Here is the matrix, stated once, so nothing has to be inferred:
+
+| Installed | What actually protects you |
+|---|---|
+| `0003` **and** `0004` | fast local refusal **+ shared atomic counter** — the limit means what it says for the instance |
+| `0003` without `0004` | **local only.** The function is absent, PostgREST answers 404, and the shared stage lets through after warning by name |
+| neither | **local only**, in memory, warned by name |
+| keys prefixed `pread:` | local only, **deliberately** — see the exception above |
+
+⚠️ **Read the second row carefully: without `0004` the shared stage does not count less well, it
+does not count at all.** The degradation is to the local counter, not to a weaker shared one. The
+warning the player emits used to say *"non-atomic rate counters"*, which named a mode that does not
+exist; it now says the shared counter is unavailable.
 
 ## The three things a host implements
 
@@ -454,6 +607,7 @@ POST  →  { "email": "…", "role": "…", "action": "<one of the names below>"
 | `list.all` | list everyone's links **and everyone's reading sessions** |
 | `revoke` | revoke a link |
 | `setauth` | change a link's access wall |
+| `protect` | set, change or remove a link's **expiry date and password** (migration `0028`) |
 | `overview` | read a document's aggregate figures |
 | `sessions` | read individual reading sessions — of one document, or of one recipient across all of them |
 | `test` | create a rehearsal link |
@@ -467,7 +621,7 @@ than the player. That failure reads exactly like a permission problem, which is 
 expensive. **Compare this table against your own at each upgrade**, and prefer a refusal that names
 the unknown action over one that looks like a role issue.
 
-⚠️ **`list.all` now widens `sessions` as well, and until `0.1.146` nothing did.** `docshare.list`
+⚠️ **`list.all` widens `sessions` as well from `0.1.147`, and until it nothing did.** `docshare.list`
 has always asked you two questions — *may they list?* then *may they list everything?* — and
 narrowed to the caller's own links when the second answer was no. `docshare.sessions` asked only the
 first, and returned every session of the document: the reading sessions table carries the
@@ -481,6 +635,171 @@ person's sessions across every document and is therefore the call where the scop
 forwarded re-shares of their own links included, because they caused those readings. Nothing
 changes for a role you already answer *yes* to. If your table predates `list.all`, see the warning
 above: an unheard-of action answered *no* narrows this view rather than breaking it.
+
+⚠️ **`?contract=1&schema=1` now tells you what is still stored, not only what you may purge.**
+`retentionSweep` says the instance *can* purge; it says nothing about what has piled up. The card
+gains a `purge` block counting the rows that still carry a reader IP or a raw User-Agent:
+
+    "purge": { "borne": 5000, "tronque": false, "lignes": { "sessions": 1908, "vues": 3200 },
+               "sessionsIp": 0, "sessionsUa": 0, "vuesUa": 0, "vide": true, "voie": "bornee" }
+
+`vide` is the reading that matters: `true` means nothing of that legacy is left **on this
+instance's live rows** — the condition under which those columns can eventually be dropped —
+`false` means rows remain, and **`null` means at least one probe did not answer**. A count is
+`null` for the same reason: a failed probe must never read as a zero, because zero is the answer
+that authorises a deletion.
+
+`lignes` is what the counter **looked at**, per table. A bare `0` cannot tell "purged" from "never
+written" from "the probe is aimed wrong"; the denominator separates them — *0 of 1908* means there
+was something to look at, *0 of 0* means the table is empty or out of reach and the zero proves
+nothing. It is `null` on the same terms as the counts.
+
+The counts are **bounded** at `borne` rows and read one small column. ⚠️ **`tronque` says whether
+anything was cut off**: when it is `true`, every number in the block is a *lower bound*, not a
+count. Without it a saturated `5000` would be indistinguishable from an exact five thousand — a
+wrong number that reads as right, which is worse than an absent one, because an absence makes you
+look and a number makes you conclude. `vide` stays correct either way: saturation can only make it
+`false`, never wrongly `true`.
+
+⚠️ **And `tronque` does not assume our bound is the only ceiling** — it did, for one release, and a
+host measured what that cost. PostgREST has a ceiling of its own, `db-max-rows`, set to **1000** by
+default on Supabase: the server returns 1000 rows however many you ask for. Comparing the received
+length against `borne` then compares against the wrong number, and a table of 1651 rows was
+published as `1000` **with `tronque: false`** — asserting an exactness it did not have.
+
+So the question asked is not *did I hit my bound* but **is there anything after what I received**:
+one row is requested past the last one received, by keyset cursor (`col=gt.<last>`, never by
+offset — a cursor is stable under concurrent writes, and it is this repository's pagination rule). A row returned proves more remain; none proves the lot was
+the whole — whichever ceiling produced it, without having to know it. **What this does not cover,
+stated rather than glossed:** a server ceiling of *zero* stays indistinguishable from an empty table
+by the response body alone. Reading the count from `Content-Range` under `Prefer: count=exact` has
+no ceiling to guess and transports nothing; it is strictly better, and it needs the `db` capability
+to expose response headers, which today it does not.
+
+⚠️ **`db.count(path)` is the seam that closes this, and it is optional.** ⚠️ **The standalone
+context shipped in this package already implements it** — if you build your context from
+`discovery-media-player/context/standalone`, you get it on your next upgrade and there is nothing
+to decide or write. This section is for a host that implements the `db` capability itself. A host
+asked which of the two it was, and the answer was missing from this page: *"the two look alike in
+your code and not at all alike at your hosts."* ⚠️ **The same line decides which zone of a release
+reaches you, and it is read per capability, not per host.** Three forms. A host that runs
+`context/standalone` as is (ADV does, unchanged since August — **read in its public wiring
+repository, not taken from a message**: for a host whose wiring is public, the file is the source,
+and a replaced context would show in a commit before it showed in a message) executes every change to the `context`
+zone — the environment pass-through, the journal helper — and its `errors.capture` is the player's
+own. A host that **composes** its context from `createStandaloneContext` and replaces some
+capabilities (the Vercel example in this repository does: `identity` and `branding` are its own,
+everything else inherited) is reached by every change to a capability it inherits, and by none to a
+capability it replaced; `creerLimites` is exported for exactly that host. A host whose context
+imports nothing from `context/` (STUDIO) is touched by `server/` only. That line was missing from
+what the player held about its hosts, and a release note told one of them a change to its own file
+was "without effect on your side" (14/09); the first version of this paragraph was binary, and an
+audit pointed at the repository's own example as the third case. Say your form once; it is the
+line the notes are written from. If your `db` capability
+exposes it, the player asks it first and publishes an **exact** count — no bound, no `tronque`, and
+no rows transported at all. If it is absent, everything above still applies unchanged: the bounded
+read with its cursor probe. **That fallback is the whole design.** Third-party hosts implement this
+capability themselves, and requiring a new method would break every one of them; the only kind of
+contract addition this repository allows is the kind whose absence is the previous behaviour.
+
+    db.count(path) → number | null
+
+**It asks the question, not the mechanism.** *How many rows does this path select?* — not *read this
+header*. A PostgREST host answers with `Prefer: count=exact`; a host on another database answers
+with a `count(*)`. Naming the header in the contract would have made it PostgREST-only, which the
+portability rule refuses.
+
+⚠️ **Answer `null` when you cannot say — never `0`.** Zero is the answer that authorises dropping a
+column. Anything that is not a non-negative integer (a string, a float, `undefined`, `NaN`) is read
+as "no answer" and the player falls back rather than believing it.
+
+⚠️ **And `voie` tells you which route produced the numbers, because the numbers cannot.** `"exact"`,
+`"bornee"`, or `"mixte"` when both served the same read — which happens for real: a host mid-purge
+whose column is already dropped makes `count` throw on the filtered paths and answer on the same
+table's totals.
+
+This field exists because two hosts, independently and on the same day, found they could not verify
+their own seam. An exact count and an untruncated bounded count render an **identical** block —
+same numbers, same `tronque`, same `vide`. So a `db.count` that returns a string, or a float, falls
+back **silently** and the card looks exactly like a working one: you believe your seam is wired
+when it is not. One host caught it only by luck of volume — their table held 1655 rows, and the
+bounded route is structurally incapable of exceeding the 1000-row ceiling, so the number itself
+happened to be proof. Under a thousand rows there is no such luck, and the other host, whose
+volumes are small, could not tell at all.
+
+**Check `voie`, not a value.** A control that distinguishes two *mechanisms* must rest on something
+one can do and the other cannot; a value both could return proves nothing, and a value written down
+from yesterday's measurement rots without anyone touching anything.
+
+⚠️ **The two alternatives were measured at a host, not assumed here** — recorded so nobody proposes
+them again in six months believing they were never tried. **`?select=count()` is dead**:
+`db-aggregates-enabled` is `false` by default, verified on two distinct Supabase projects, and the
+measurement is solid for a reason worth stating — the `PGRST123` error arrives *before* the
+permission check, where the same table queried without an aggregate answers `42501 permission
+denied`. The answer therefore depends on neither grants nor any `revoke`: it is a property of the
+**configuration**, not of authorization. That was the route we would have preferred, since it bound
+no one to a contract. **`Prefer: count=exact` with `Range: 0-0` works**: the exact count travels in
+the header and the body carries nothing. It is the only one of the two that exists, and its only
+obstacle is this contract.
+
+⚠️ **And the same ceiling applies to every read you make through your own client, not just to
+ours.** `limit=20000` does not return twenty thousand rows: PostgREST caps the response at
+`db-max-rows` — **1000** on a default Supabase project — and says so nowhere in the body. A read
+that asks for more than that ceiling is not a large read, it is a **false belief**, and it stays
+invisible while your tables are small. So the question is worth asking of your own code as well as
+of ours: *does my client paginate, or do I believe that `limit=20000` returns 20 000 rows?*
+
+One host asked it of itself the day it found this in our counter, and the answer was not
+hypothetical: a statistics read ordered `created_at.asc` with no `limit` was seeing the **1000
+oldest** rows of 6424, so a "last opened" date read months stale for a link opened the day before,
+and every breakdown described the beginning of the history. They also count **32** reads asking for
+more than the ceiling — all latent on their volumes today, all live on an older installation.
+
+⚠️ **The sort direction decides how bad it gets.** A read that saturates while ordered `desc` loses
+the oldest rows; ordered `asc` it loses the newest — that is, the ones anyone is looking at. Same
+ceiling, same silence, opposite severity. Counting is indifferent to it, but anything that reads
+*content* under a ceiling should prefer `desc`.
+
+They run only under `&schema=1`, the mode where you have asked for the database.
+
+⚠️ **The purge attestation is a commitment, not a convenience.** Every column this player empties
+carries a `comment on column` whose text **begins with the exact marker**:
+
+    VIDE ET PLUS JAMAIS ECRITE depuis la <migration number>.
+
+Read it through `col_description()`. It is what *proves* a purge was applied — a count of zero does
+not, since it cannot tell "purged" from "never written". **We commit to two things**: to post it on
+every column a future migration empties, and not to reword that prefix. It is deliberately plain
+ASCII, without accent or apostrophe, so it survives encodings and needs no escaping.
+
+This used to be a convenience, designed for a person proving a purge. A host told us its inventory
+now reads it **mechanically**, crossing it with the residual counts to raise an alarm when values
+reappear beside an attestation. That is the moment an artefact becomes an interface — and the reason
+to commit is the failure mode: if we quietly stopped posting it, that alarm would go **silent
+without saying so**, a failure caused here and invisible there. A guard in this repository refuses
+any migration that empties a column without the marker, so undoing the commitment turns something
+red rather than turning something quiet.
+
+⚠️ **Why this exists at all:** our tables live in *your* database, and your audit enumerates *your*
+tables — a dependency's schema occupies a zone nobody's inventory visits. Two integrating hosts
+found 2361 rows still carrying these columns, and they found them because a third party asked a
+question about its own database, not because anything told them.
+
+⚠️ **The reader IP is erased, and a direct query of your own will start seeing nothing.** The
+sessions table carried `ip` in the clear. `0.1.147` stops serving it — no player path reads it back,
+so nothing in this contract changes — stops writing it, and ships migration **0026**, which erases
+what thirteen months of journal still hold. ⚠️ **This lands in `0.1.147` and not before**: on `0.1.145`
+and earlier the column is still written and still served. `npm view discovery-media-player version`
+tells you which one you are about to install. **What changes for you:** nothing, unless you
+read that column yourself in a report or dashboard outside the player, in which case its values are
+empty from the day you apply 0026. The column itself stays for now: dropping it would fail every
+session write of a host that applies migrations before deploying, so its removal is a later release.
+[`docs/RETENTION.md`](RETENTION.md) sets out what the migration erases, why emptying — not
+dropping — is what actually removes the bytes, and what it cannot reach: your backups. The raw `ua`
+is erased too, on this table and on `commercial_doc_views`, by migration **0027** and for the same
+reason: `device`, `os` and `browser` are derived from it at write time and are what a reading record
+carries, so the raw string had no reader left. On the views table it had none at all — that table has
+no derived columns.
 
 ⚠️ **`presentations.list.all` and `presentations.stats` are deliberately separate.** Seeing *that* a
 presentation happened and seeing *who attended it* are different sensitivities: the first returns
@@ -534,6 +853,24 @@ Four requirements, in order of what they cost when missed:
    anywhere. Announce the length of what you send, request `Accept-Encoding: identity`, and refuse
    a compressed `206` — range bounds refer to compressed bytes.
 2. **Relay `Range`** (`206` + `Accept-Ranges: bytes`). Progressive loading depends on it.
+   ⚠️ And expect the player to hold **at most `config.maxConcurrentRelays` relays open per process**
+   (default 64; `PLAYER_MAX_RELAYS` in the standalone context): above it the player answers **503
+   with `Retry-After: 2` before calling you**, with no queue. The stream bounded bytes; nothing
+   bounded how many streams were open — an audit opened 200 slow transfers and got 200 upstream
+   connections (13/09). The slot is released in a `finally`, so your errors and a client leaving
+   mid-stream give it back — and so does a relay that **stops progressing**: no chunk for
+   `config.relayStallMs` (30 s) or a total beyond `config.relayMaxMs` (15 min) aborts the pipeline,
+   destroying your response and the client's. A client that stops reading no longer keeps a slot
+   forever; a route of yours that stops sending does not either.
+   ⚠️ Three things about those numbers, all measured on 0.1.165 by an audit: **64 is not a safe
+   default everywhere** — 64 relays × 8 MiB with slow consumers took the process RSS from ~63 MiB to
+   193–257 MiB; on a 256 MiB process set 16–32. The settings are **integers in a written range**
+   (`maxConcurrentRelays` 1–1024, the two delays 1–86 400 000 ms): out of range falls back to the
+   default and is reported once at `init` through `errors.capture`, because `setTimeout` clamps
+   anything above 2 147 483 647 ms to 1 ms and a "24-day" delay aborted a relay in 6 ms. And the
+   **counter of open relays is never reset by `init`**: calling `init` again re-reads the ceiling and
+   the delays for the relays admitted afterwards; one already in flight keeps its slot and its
+   bounds, so a re-initialisation cannot let a request past a full ceiling.
 3. **Accept a server-to-server call.** A tracked link is opened by someone with no session on your
    side. Authenticate the player with the shared secret in the `x-player-fetch-secret` **header** —
    header only, never a query string: logs keep URLs.
@@ -550,6 +887,38 @@ Four requirements, in order of what they cost when missed:
    never a path**. You re-read the path with the caller's session and your own row-level rules
    decide. **Corollary:** when the reference itself carries a capability, signing is not enough —
    it must be encrypted. *Signed* means nobody can forge it; it has never meant nobody can read it.
+
+## Protected links and the start page (migration `0028`)
+
+**Capabilities `link-protection` and `start-page`.** Test them by presence before offering the feature.
+
+A tracked link can carry an **expiry date** and a **password** (migration `0028-liens-proteges.sql`).
+`docshare.create` accepts `expiresAt` (an ISO date, in the future, at most 730 days ahead) and
+`password` (4 to 200 characters). `docshare.protect { slug, expiresAt?, password? }` changes an existing
+link: an absent field is left unchanged, `null` removes it. Your `canManageShares` table must know the
+action name **`protect`** — a closed table refuses it (see above).
+
+What you get back, in `docshare.list`: `expiresAt` and a boolean `protege`. **Never the password's
+hash** — it never leaves the database. A refusal you can show the user (bad date, password too short,
+migration missing) comes back as `{ ok: false, error: "<sentence>" }` with a 400 or 503 status.
+
+⚠️ **Without the migration, creating a protected link is REFUSED (503), not degraded.** Elsewhere a
+missing column makes a field silently skipped; here, skipping it would create an *open* link that your
+interface calls protected. Unprotected links are unaffected.
+
+⚠️ **The protection holds on every path, not only the page.** The file (`?file=1`), the assistant,
+reading measurement and reshare all resolve the link through the same function. An expired link
+answers `410` everywhere; a password-protected link shows a password page, and `?file=1` answers `401`
+until the browser has entered it (an `HttpOnly` cookie, 8 hours, `SameSite=Lax`). Changing the password
+closes every browser that had entered the old one. A reshare **inherits** both the date and the password.
+
+⚠️ **A password-protected link embedded by a third-party origin does not receive its cookie** (the
+browser does not send a `SameSite=Lax` cookie into a cross-site frame). The password page stays up in
+the frame and posts `embed-denied` with `password-required`: open such links at top level.
+
+**`?page=N`** opens a PDF at page N — on a tracked link and on the internal preview alike. An integer
+above 1, capped at 10 000 by the server and at the document's real page count by the viewer; anything
+else opens page 1.
 
 ## The postMessage bridge
 
@@ -574,7 +943,10 @@ closed.
 |---|---|---|
 | `revoked` | unknown or revoked link | do not open |
 | `auth-required` | restricted document, visitor not signed in | do not open — the wall stays up |
-| `auth-unavailable` | restricted document, access wall missing from this instance | do not open |
+| `auth-unavailable` | restricted document, access wall missing from this instance — or the host's `documentAccess` plugin failed | do not open |
+| `denied` | restricted document, visitor signed in but the host's `documentAccess` plugin says this address has no access (0.1.172) | do not open — the wall stays up and offers another address |
+| `expired` | the link's expiry date has passed (migration `0028`) | do not open — the page tells the reader to ask for a new link |
+| `password-required` | the link is password-protected and this browser has not entered it (migration `0028`) | do not open — the password page stays up in the frame |
 | `ended` | presentation over or unknown | do not open |
 | `url-not-allowed` | the file URL is not covered by the guard | **open**, and report the configuration |
 
@@ -582,7 +954,29 @@ The rule underneath, safer than the list: **never fall back on a refusal of *acc
 back on an inability to *reach*.** And "do not fall back" applies to what you **offer** — an
 "Open ↗" button left in place is falling back one second later.
 
-## Four things that will bite
+## What will bite
+
+⚠️ **`node_modules` cannot be a symlink, and a repository inside a syncing folder will break under
+you.** Reported by a host (13/09), not reproduced here: a checkout living in iCloud Drive had files
+duplicated and emptied *while being worked on* — four breakages in six days, four different
+signatures, one of which blocked a delivery. Their escape route, a symbolic link from `node_modules`
+to a folder outside the sync, is a dead end: `npm` replaces the link with a real directory, whether
+the target is empty or populated, on `install` as on `ci`. Keep the clone itself outside any
+synchronised folder; there is no way to keep only its dependencies out.
+
+⚠️ **Every capability you provide must settle in bounded time — `db.request` first of all.** The
+player awaits your `db.request`, `storage.fetchFile`, `mail.send` and the visitor plugin; a promise
+that never settles keeps a request in flight, and the read cache admits at most 128 in-flight reads
+per process before answering **503 busy** to everyone. A database call that hangs is therefore not
+"slow", it is an availability incident for the whole instance — the exact mechanism an audit
+reproduced inside the test suite with a never-settling promise (13/09). Time out your own calls
+(the standalone context bounds its own with `AbortSignal`), and never return a promise you cannot
+guarantee will settle. ⚠️ **The bound must cover the body, not only the headers.** `fetch` resolves
+as soon as the headers arrive; `response.text()` then hangs on a stream left open, so a timeout
+that stops at the headers bounds half the path. Pass the same `AbortSignal` to the fetch, which
+aborts the body read too (the standalone context does), and if you retry an abandoned call, retry a
+read only, never a write. A host (STUDIO, 13/09) found its own `db.request` bounded that way — at
+the headers — and rewrote it; the rule is theirs.
 
 **Your document-opening doors reappear.** A host has more than one place that opens a file, and new
 ones get written. Keep the list and hunt it periodically — and note that **your search criteria
@@ -630,7 +1024,10 @@ claimed the opposite. Two consequences you must act on:
 - **`bot-tts` now requires a `sessionId`**, bound to the requested `slug`, and the text must match
   something the assistant said in that session. The player reads `listMessages(sessionId)` and
   treats a message as the assistant's when its `role` is `bot`, `assistant` or `ai`, taking the text
-  from `text` or `content`. **Anything it cannot read counts as "not said"** — an unrecognised shape
+  from `text`, `content` or `body` — the same three fields, in the same order, as everywhere else in
+  this document. ⚠️ **This sentence named only the first two**, and an external audit found the
+  mismatch on 2026-09-11: a host whose messages carry `body` and nothing else would have read here
+  that its assistant never speaks, while the code reads it perfectly well. **Anything it cannot read counts as "not said"** — an unrecognised shape
   yields an empty set and every request is refused. On the one route that spends money, *"I could
   not verify"* must read as **no**, never as *go ahead*.
 
@@ -643,6 +1040,94 @@ because a host said so **before** hitting it: its messages carry `body` and noth
 was a correct `bot`, and the reader would have returned an empty string for every message — an empty
 set, so every request refused, on a perfectly correct integration. If your field is none of those
 three, tell us and we widen the list. The field name carries no security; the **role** filter does.
+
+⚠️ **`reshare` now answers with a three-state `delivery`, and the state you must handle is
+`"unknown"`.** The response used to carry a single `sent` boolean, which collapsed three different
+outcomes: your mail path declined, *we* declined, or **the call failed without us learning what your
+side did**. Only the third is dangerous — if your host really sent the message and then answered too
+late, a caller reading `sent: false` retries, creating a **second child link and a second email**.
+
+| `delivery` | what happened | what to do |
+|---|---|---|
+| `"sent"` | your mail path reported success | nothing |
+| `"refused"` | a decision was made — yours or ours; `sendRefused` names it, and when your mail hook answered `{ sent: false, reason }` (or `motif`) that word comes back as `hostReason`, trimmed to 80 characters | surface the reason; retrying will refuse again |
+| `"unknown"` | the call failed (timeout, network). **We do not know whether the mail went out** | surface it to a human. **Do not retry automatically** — a retry may duplicate the email |
+| `"not-requested"` | `send` was falsy | nothing |
+
+`sent` is unchanged for integrations already reading it.
+
+⚠️ **Your refusal reason was being thrown away.** One host answers every refusal with
+`{ sent: false, motif }` — eight distinct reasons — precisely so that *refused* never reads as *down*;
+the route read only `sent`. From this train on, a string `reason` or `motif` on your hook's answer travels
+back to the caller as `hostReason` (a string, at most 80 characters; an object is ignored). It is
+your word to your own caller, not a channel: keep it short and non-sensitive.
+
+⚠️ **And you can now make the retry safe: pass a `clientKey`.** Two `reshare` calls with the same
+parent, the same recipient and the same `clientKey` return the **same child link** and send **one**
+email — the second answers `delivery: "idempotent"`, which means *"this was already done"*, not
+*"this failed"*. Generate the key before the first call and reuse it on every retry.
+
+- The key you send is **fingerprinted on our side**, together with the parent and the recipient. It
+  is never stored as you wrote it, and it cannot collide with the system links the host-to-host path
+  creates.
+- ⚠️ **This rides on migration `0011`, which you may already have.** No new column was added: the
+  table has carried a unique idempotency key since then, and the reshare route had simply never been
+  offered it. If `0011` is not applied, `clientKey` is ignored and you get the old behaviour — a
+  retry creates a second link. Nothing breaks; the guarantee is what degrades, and `delivery` still
+  tells you when you are in doubt.
+- Without a `clientKey`, nothing changes: several links to the same recipient remain possible, which
+  is a legitimate thing to want.
+
+⚠️ **Avatars are only loaded from origins the page already serves content from, and everything else
+degrades to initials.** An avatar URL is an `<img>` in the browser of **every other viewer**: an
+arbitrary URL therefore sends each of them — their IP, user agent, the time, the page origin — to
+whoever wrote it. That is not an XSS (the markup is escaped); it is a privacy leak aimed at your
+audience, and an external audit reproduced it on 2026-09-12 against the real chat renderer.
+
+Three things changed, and the second one is the one you may notice:
+
+- **A participant who is not authenticated no longer supplies an avatar at all.** A proven identity
+  replaces what is asserted; an anonymous visitor proves nothing, so the field is dropped and the
+  audience sees initials.
+- **A member's avatar must come from your Supabase origin (or be a relative URL).** It arrives from
+  your identity provider's metadata, and a provider that lets a user edit that field would hand us
+  an arbitrary URL under a proven name. ⚠️ **If your members' avatars live elsewhere — Gravatar, a
+  CDN, Google — they will now render as initials.** Serve them from your own storage to get the
+  images back. The degradation is visible and reversible; the leak was neither.
+- **The renderer refuses the same URLs again**, because one path never reaches this server: a
+  participant can broadcast presence over Realtime straight to the other viewers. No server-side
+  barrier can see that, so the check also lives where every path converges — at render time.
+- ⚠️ **`data:` and `blob:` URLs are refused too, deliberately.** They reach no one, but a data URL
+  travels inside every message row and every presence broadcast, and one more "harmless" form is
+  one more form to reason about at the next audit. A host that stores avatars as data URLs — as an
+  offline fallback, say — will see initials, and nothing will say why except this line. (Asked for by
+  a host, 13/09: three of its members carry one.)
+
+⚠️ **What your `storage.remove` returns now decides whether a row survives.** It returns a boolean:
+`true` means the object is gone, `false` means it is still there. Until 0.1.163 the retention sweep
+erased the row either way — and since this capability exposes `put` and `remove` but **never
+`list`**, the row is the only path to the object: erasing it stranded the file in the bucket
+permanently. The sweep now **keeps the row** when `remove` returns `false`, and reports it as
+`retenues`. Two consequences for you:
+
+- **Do not return `false` for an object that was already absent.** An already-gone object is a
+  success for this purpose — returning `false` makes the sweep retain a row forever, waiting for a
+  file that does not exist. ⚠️ **The player's own standalone context used to have exactly this bug**,
+  found while writing this paragraph: it returned `r.ok`, and Supabase Storage answers an error for a
+  missing object, so the fix for lost files would have created permanent retention instead. It now
+  treats 404 — and a body naming "not found" — as removed, because what is being asked is *"the
+  object is no longer there"*, and it is not there. If you wrap a different provider, do the same.
+- **`retenues > 0` in a retention report means your provider refused a removal**, not that the purge
+  is broken. The next pass retries. A row that lingers is recoverable; a file whose only pointer was
+  erased is not.
+- ⚠️ **If you provide no `storage.remove` at all, file-bearing rows are retained too — and the report
+  says so.** There were three states, not two: `true`, `false`, and *not attempted*. Until 0.1.164 the
+  third one let the row go "as before" — so a host providing `put` without `remove` manufactured
+  permanently unreachable objects at every sweep, with no counter moving. A host found it by reading
+  `retention.js`, not this paragraph, which assumed you provide one. Now: the row stays, `retenues`
+  counts it, the report carries `sansRemove: true` (in `dryRun` too, so you can read it before arming
+  the sweep), and the missing capability is reported once per process through `errors.capture` with
+  `benin: true`. Provide `storage.remove` and the next pass lets them go.
 
 **If you write to the `tts-cache` bucket yourself, write the trace too.** Retention removes an object
 only when its fingerprint has a row in `doc_tts_objects`, and only the player's own route writes that
@@ -730,8 +1215,257 @@ cannot. Setting the number spares you that reasoning entirely.
 but *did you measure exactly what fails*. Two true statements about the same instance can describe
 different responses.
 
+**⚠️ The ceiling on your requests is set by the role that OPENS the connection, not the one they run
+as.** Two hosts measured this independently, and it is invisible from our side. Their `authenticator`
+role carries a `statement_timeout`; PostgREST's `SET ROLE` does **not** reset it, so code running as
+`service_role` inherits it — while `service_role` itself shows no setting at all, so nothing our code
+can read suggests a limit exists. Both measured **8 seconds** on `authenticator` and on
+`authenticated`, and **3 seconds** on `anon`: this is the platform default on Supabase, not a
+peculiarity of one installation, so assume you have it until you have looked. Every request we issue
+is capped at that value, and a lock waited on for longer than it fails. Your paginated `selectAll`, a batched retention sweep, a
+`count` on a large table: each is one statement, so each gets the whole budget and no more,
+whatever the batch size.
+
+Our own client abort no longer sits at that same value, deliberately, and it is no longer a
+constant: `config.retention.delaiLectureMs` (1 000–120 000 ms, default 12 000) lets a host who knows
+their ceiling say so. A host put the reason better than we had seen it — *a constant chosen against
+a known case carries the date of that case; the day a host announces 15 s, it is not the timer that
+needs adjusting, it is the fact that it is a constant.* An invalid value falls back to the default
+rather than refusing: a wrong retention window deletes rows, a wrong timeout at worst waits. Two timers set to the same
+number do not produce a wrong answer here — both routes fall back to `null`, and a bench proves it —
+but they make the *cause* undecidable: when our abort wins the race, the server's `57014` never
+reaches us and "too slow" becomes indistinguishable from "the network died".
+
+**⚠️ And `safeupdate` refuses an unrestricted write even under `service_role` — read that backwards.**
+The same host has it preloaded on `authenticator`: a `DELETE` or `UPDATE` with no restricting clause
+is rejected outright, and the error message does not name `safeupdate`, so the refusal arrives
+without its reason. They paid for that once, on one of our functions.
+
+The trap is not the refusal. **`safeupdate` is the net.** At a host that has it, an unfiltered write
+fails loudly; at a host that does not — and nothing in this contract requires it — the very same
+line succeeds and empties the table. The defect is therefore silent exactly where it is severe. A
+guard in this repository now refuses any `DELETE`, `PATCH` or `PUT` we write without a restricting
+predicate, and it counts `?select=…` as a projection rather than a filter, because that is the shape
+that survives a review.
+
+## What you can see and we cannot
+
+**Read this only if you run this player somewhere.** If you are evaluating it, skip to Versioning —
+this section asks for nothing from you.
+
+⚠️ **Everything below exists because three defects in one week were found by hosts, not by us**, and
+none of the three was findable from here. Every guard here measures this repository. They
+cannot measure an installation they have never seen, and that is not a gap we can close by adding
+one more. So this is not a request for feedback in general — it is four specific questions we cannot
+answer ourselves, each printed with what it cost us not to have asked it earlier.
+
+You owe us none of this. But you are the only one who can answer any of it.
+
+**1. A ceiling in your installation that we assume away.** PostgREST's `db-max-rows` is set to 1000
+by default on Supabase: the server returns 1000 rows however many you ask for. We compared what we
+received against *our* bound, concluded "not truncated", and published `1000` rows of a 1651-row
+table **asserting the number was exact** — which is worse than the defect it replaced, because the
+previous version claimed nothing. Four hours after the release, a host measured it. If your
+deployment caps, times out, paginates, or rewrites anything between us and your database, that
+limit is invisible from here and our arithmetic is probably wrong about it.
+
+⚠️ **If you sweep your own reads for this, sort them by what the value BECOMES, not by how many rows
+it holds.** This criterion is not ours: a host swept theirs, closed all of them, and reported that
+the row count had been the wrong axis the whole time. The expensive ones were the **aggregations** —
+a credit balance summed with a `reduce`, a read counter taken as `rows.length`, a visit tally
+incremented per row. A truncated sum does not look truncated: **it is wrong *and* plausible**, which
+is worse than the ceiling's usual symptom, a list that at least renders visibly stale. Their credit
+ledger stood at 503 rows and grows on every AI call — the invoice would have gone wrong before the
+table ever looked big enough to suspect.
+
+So the useful question about one of your reads is not *"could this exceed 1000?"* but **"is this
+value aggregated, or displayed?"** A displayed list degrades visibly. An aggregate degrades into a
+number someone will believe. Truncation you have decided to keep is fine and cheap to make honest —
+theirs kept one, bounded to 1000 and stated rather than assumed.
+
+**2. Something this card asserts that you can check against your own database.** Not "does it look
+right" — *does this number match what a query returns right now*. The purge card is the obvious one:
+`vide: true` is what authorises dropping a column, so a wrong `true` is expensive and a wrong `0`
+authorises a deletion. A host who compared the card against their own tables is the reason the
+counter stopped being able to lie.
+
+**3. What your volumes hide from you — and what they reveal for free.** This one is the least
+obvious and cost us a field. At 1655 rows an exact count **is its own proof**: it exceeds a ceiling
+the bounded route structurally cannot cross, so the number itself witnesses which mechanism ran. At
+99 sessions no value can ever separate the two, and a broken seam is indistinguishable from a
+working one. Same code, same card — one installation detects a failure for free that the other
+cannot see at all. So: **tell us your orders of magnitude**, and tell us when a field of ours only
+makes sense at your scale. A small host is not merely short of occasions; it has lost discriminating
+power, and that is our problem to fix with an explicit witness, not theirs to live with.
+
+**4. A rule you drew from your own defect.** The most useful things we received this week were not
+bug reports. They were sentences: *a control that separates two mechanisms must rest on what one can
+do and the other cannot, never on a value both could return* — and *is there a state of the world
+where this value is false?*, which is the question separating a limit of observation from a silent
+failure mode. Both were written by hosts about their own mistakes. Both, applied to this repository
+within the hour, found something. A defect tells us about one line; a rule tells us where to look.
+
+⚠️ **And tell us what you did not do.** A host closed a report with thirty-two reads still
+unaudited, said so plainly, and that sentence is the only reason we know those reads exist. We
+cannot measure your code. We can only know what someone wrote down. *"Not measured"* and *"nothing
+found"* are different sentences, and only one of them is honest when you have not looked.
+
+⚠️ **Say which of the two kinds it is: *not measured yet*, or *not measurable here*.** A host asked
+for this distinction in as many words, and they were right that a contract which conflates them
+waits forever for an answer that will never come. *Not measured yet* is a debt: someone will pay it.
+*Not measurable here* is a structural property of that installation — no measurement available to
+them can produce the phenomenon at all.
+
+Their own case is the clean one. `db-max-rows` caps a response at 1000 rows; their largest table
+holds 356, and the largest one readable by `anon` on their application database holds 836. Those are
+usage volumes, not configuration — they cannot make them bigger to see the ceiling, and the only way
+to reach it would be to widen production grants for a diagnosis, which they will not do and should
+not. So that ceiling will never be observed there. **The other host's 1651 rows published as 1000 is
+the only proof of it anyone will produce, and that is final** — which is also why we record where a
+measurement came from rather than only what it said.
+
+The two kinds want opposite things from us: a debt should be chased, a structural limit should be
+written down and stopped being asked about.
+
+⚠️ **And there is a third kind, which we proposed as a false choice and a host corrected.** We asked
+another host to sort two backup figures — the PITR window, and the age of the oldest snapshot — into
+debt or structural limit. Their answer was neither, and the distinction is operational rather than
+pedantic:
+
+- **Not measurable by a session.** Checked against two independent toolsets — a second host's and
+  their own — neither the platform API nor the MCP tools expose either figure. The one tool with a
+  near-enough name restores a *paused* project.
+- **Measurable by a human.** An authenticated dashboard session displays both.
+
+So it is a debt whose payer is *necessarily a person*, and that is what makes it its own kind: it
+behaves like a structural limit toward every automated agent (chasing it changes nothing, no session
+will ever produce it), and like a debt toward the installation (someone can pay it, and until they
+do, the purge is not datable end to end). Their own phrasing, which we adopt: *"no session can
+render them; a human can, and until one has, the purge is not datable end to end."* They had raised
+it with theirs four times.
+
+The practical consequence for us is a rule about **who we are asking**, which we had never written:
+a question a host cannot answer with the tools they run on is not answered by asking again. Either
+it reaches a person, or it should be recorded and dropped.
+
+⚠️ **Where the substitution seam is, because a host asked and the answer was not written anywhere.**
+Their question came from their own defect: they had written a pagination helper after an incident,
+with its reason at the top, and it was called *nowhere*. The cause turned up only when they tried to
+use it — it called the **local binding** of their database client, while their benches replace the
+**export**, so adopting it broke the very bench that covered it. Their sentence is the part worth
+keeping: *"nobody writes «I don't use it because it breaks my doubles» — you give up in silence."*
+A non-substitutable helper produces no red, no complaint, no trace. It produces an absence of use,
+which nothing distinguishes from a need that never existed.
+
+Asked of us, the answer has two halves and only one of them is a promise:
+
+- **The injected context is substitutable, and that is the seam.** Every call reads `PLAYER.<member>`
+  at the moment it fires; nothing captures it into a local binding at module load, before you have
+  injected anything. Measured on 2026-09-05 across `server/` and `context/`: **144 calls, 0
+  captures.** Your double of `db.request` is the one that runs. `tools/couture-substituable.mjs`
+  now refuses a capture, so this stays true rather than happening to be true today.
+- **Our exports are not substitutable among themselves, and we do not promise they are.** Same date,
+  same zones: **64 of 75 exported names are also called internally through their local binding.**
+  If you stub `getShareBySlug` on the module we export and expect `overview()` to see your stub, it
+  will not. That is ordinary CommonJS and we are not changing 64 call sites for it — but you would
+  have discovered it the expensive way, so it is written here instead.
+
+Bring us the seam you need and cannot get, rather than working around a missing one in silence.
+
+⚠️ **What every report must carry: the version you measured on.** One field, and it is the one we
+kept losing. `version` is already in the identity card — `GET /api/doc` serves it — so this costs
+you a copy-paste and nothing else: *"measured on 0.1.146"*, beside the shape and the count.
+
+This is here because a host showed that we had asked for the wrong thing. We had asked hosts to stay
+current, reasoning that we cannot act on a report we cannot reproduce. Their correction: **what we
+need is not that you are up to date, it is knowing which version the measurement came from** — and a
+stamped report from a host eleven releases behind is reproducible, while an unstamped one from a
+perfectly current host is not. We then measured this document: of twelve host findings recorded in
+it, **none** names the version it was measured on. Some of those hosts were current at the time. The
+information was lost when we wrote it down, and no amount of future alignment brings it back.
+
+So: **shape, count, version.** If the measurement spans an upgrade, say both. If you no longer know
+which version a past observation came from, say that too — *"measured some time before 0.1.150"* is
+worth more than a number we would have to guess at, and far more than silence.
+
+⚠️ **And name yourself inside the report, not just in how you send it.** Reports reach us through
+whatever channel carries them, and a channel can deliver the same message twice or put one host's
+text under another host's name — both happened to us in a single round, and we spent an exchange
+establishing who had said what instead of acting on it. Neither you nor we could tell from our own
+end; only the person relaying could, and they did. **One line of self-identification in the body
+costs nothing and survives any relay** — the same reasoning as the version stamp, applied to *who*
+rather than *what*.
+
+The consequence for us is worth stating too, since it is about how much we can claim to have heard:
+when a duplicate is resolved, the reading it seemed to provide does not turn up elsewhere. It leaves
+us with one fewer host heard from, and we would rather record that plainly than let a channel look
+wider than it is.
+
+**What not to send.** Shapes and counts, never contents. No row data, no reader IPs or User-Agents —
+those are the columns half this contract exists to get rid of — no keys, tokens, connection strings,
+or private hostnames. *"A table of ~1600 rows returned 1000"* is the whole of what we needed to fix
+the ceiling defect; the rows themselves would have added nothing and created a problem.
+
+**What we do with it.** Every item above became code, a bench that dies if the fix is removed, and a
+dated entry naming the case. That last part is deliberate and a host asked for it: an abstract
+justification rots, a dated incident does not. In six months someone will read a field and ask why
+it exists, and the answer will name you.
+
+⚠️ **But that date is ours, and for a long time we mistook it for yours.** Every changelog section
+carries the day *we shipped the fix* — 155 out of 155, checked. None carries the version *you*
+measured on, and the two answer different questions: ours says when it was closed, yours says what
+the observation was of. We had that backwards long enough to ask hosts for the wrong thing, so it is
+worth stating plainly rather than quietly correcting: **the entries above this line are unstamped,
+and cannot be retro-stamped** — the versions they were measured on were never recorded and are not
+recoverable. Everything from here on carries the stamp you send.
+
 ## Versioning
 
 Semantic versioning on the package, independent of the `contract` number. Pin an **exact** version:
 the player and its hosts deploy separately, and a range brings in a version nobody decided to
 deploy, on a day someone ran `npm install` for another reason.
+
+⚠️ **When we say a release "changes nothing for you", check it from *your* version — ours is not
+yours.** The zone table in every Release compares the new version to **the one immediately before
+it**. That is our convenience, not your situation: a host two or three releases back is looking at a
+different diff, and theirs is the one that decides. A host caught this by redoing it — we had
+compared `0.1.156 → 0.1.157`; they were jumping from `0.1.155`, ran their own comparison, and got a
+third file we had not mentioned. Same conclusion in the end (no migrations, zero lines of code in
+`server/` once comments are excluded), **but reached on their span rather than on our word.**
+
+So take the reassurance as a starting point and not as a finding. The tarballs are public: `npm pack`
+both versions and `diff -rq` the two trees is a minute's work, and it is the only version of the
+question that is about your installation.
+
+⚠️ **We asked you to stay current. That was the wrong ask, and a host took it apart.** The previous
+version of this paragraph requested that hosts keep the pin no more than one release behind, on the
+grounds that *a report we cannot reproduce is a report we cannot act on.* The premise is right. The
+conclusion did not follow:
+
+> You are asking that hosts be up to date; what you need is to know **which version a measurement
+> was taken on**. They are not the same thing, and the second is strictly cheaper.
+
+They are exactly right, and the counter-example is decisive. A host eleven releases behind who
+writes *"measured on 0.1.146: the 1600-row table returned 1000"* has given us a reproducible report.
+A perfectly aligned host who writes *"it returns 1000"* has not — and we find out only on the day we
+try to replay it. **Alignment neither implies the stamp nor substitutes for it.**
+
+⚠️ **And it is measurable in this very document — which is how we know the drift was never the
+cause.** They counted twelve places where this contract reports a host's finding and found one
+carrying a version nearby. We re-measured rather than take it: of those twelve, **zero** carry the
+version the host measured on. The single dated line in this file stamps *our own* measurement of our
+own code, not anyone's report. Several of those findings came from hosts who were current at the
+time. **The information was lost in the writing, not in the deployment, and no future alignment
+restores it.**
+
+⚠️ **Worse: the ask had the shape of the bias we had just written against ourselves.** A request to
+stay aligned can only be honoured by hosts who answer us, and is invisible in hosts who have
+drifted — so the channel would have reported "hosts are aligned" because the aligned are the only
+ones we hear from. That is the instrumentation bias one level up, applied to cadence instead of
+yield. The host who named it also took the release anyway, which is why the correction is theirs and
+not a concession.
+
+**So the ask is now the stamp, and it is above, in what a report must carry.** Staying current keeps
+a smaller and separate value — you get fixes sooner, and a release that changes nothing for you
+costs nothing to take — but it is no longer presented as what makes your reports usable. It never
+was.

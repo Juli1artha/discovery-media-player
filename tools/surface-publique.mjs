@@ -177,7 +177,21 @@ export const INTERNES_TOLERES = {
   // ⚠️ `__contexte` : DÉCIDÉ, pas subi. « Le contexte de l'hôte reste vivant après `init` » ne se
   // vérifie pas du dehors — et c'est précisément la propriété qu'une enveloppe de mesure a cassée
   // une fois (la forge l'a vue, pas nous). L'exporter est le prix d'un banc qui la garde.
-  ".": ["__relayerFichier", "__jsonPourScript", "__contexte"],
+  // ⚠️ `__cacheLecture` : DÉCIDÉ le 13/09. Le cache de lecture est global au module ; un banc qui
+  // laisse des lectures en vol contamine le suivant (128 promesses éternelles, 503 partout — trouvé
+  // par un audit externe sous mélange). Un banc doit pouvoir VÉRIFIER qu'il rend le cache vide, et
+  // cette propriété ne se lit pas du dehors. L'exporter est le prix d'un afterEach qui la garde.
+  // ⚠️ `__relaisEnCours` : DÉCIDÉ le 13/09 (cinquième passe de l'audit). `init` remettait le compteur
+  // de relais à zéro et désarmait le plafond ; la propriété « jamais remis à zéro, jamais négatif » ne
+  // se lit pas du dehors. L'exporter est le prix d'un banc qui la garde.
+  // ⚠️ `__compteursSansObserver` : DÉCIDÉ le 15/09 (audit CODEX). Le rapport de charge relevait les
+  // compteurs par un `GET ?contract=1` — donc par une requête qui TRAVERSE le handler et incrémente
+  // le compteur qu'elle mesure : le delta d'une fenêtre de 1 000 requêtes valait 1 001, à chaque
+  // position. Lire l'état sans le modifier n'est pas faisable du dehors, par construction : toute
+  // route publique passe par la mesure. L'alternative aurait été une soustraction cachée dans le
+  // producteur — un instrument qui se retranche discrètement est plus difficile à auditer qu'un
+  // instrument faux. L'exporter est le prix d'une mesure qui ne se compte pas elle-même.
+  ".": ["__relayerFichier", "__jsonPourScript", "__contexte", "__cacheLecture", "__relaisEnCours", "__compteursSansObserver"],
 };
 
 /**

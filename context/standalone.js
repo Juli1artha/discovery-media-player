@@ -18,6 +18,20 @@
 const crypto = require("node:crypto");
 const storage = require("./storage");
 
+// ⚠️ « JAMAIS BLOQUANT » NE TENAIT QUE POUR UNE EXCEPTION SYNCHRONE, ICI AUSSI. Le cœur a reçu
+// `server/capture.js` à la sixième passe de l'audit ; ce contexte gardait cinq appels directs à
+// `journal.capture` sous un `try/catch`, et un helper en ligne dans `appelHote`. Or `ctx.errors` et le
+// journal capturé par ces capacités sont LE MÊME objet : un hôte qui pose un `capture` qui rejette
+// tuait le processus à `mail.send` sans secret, avant tout réseau (reproduit par l'audit, septième
+// passe, 14/09). Même règle que le cœur, reprise ici sans l'importer — le contexte ne dépend pas du
+// serveur — et UNE seule forme : tout appel au journal passe par ici, un banc structurel le tient.
+function capturerJournalSansBloquer(journal, erreur, meta) {
+  try {
+    const resultat = journal && typeof journal.capture === "function" ? journal.capture(erreur, meta) : undefined;
+    if (resultat && typeof resultat.then === "function") resultat.then(undefined, () => { /* un journal ne doit jamais interrompre le traitement */ });
+  } catch { /* exception synchrone : même règle */ }
+}
+
 /**
  * Retire les barres finales d'une base d'URL.
  *
@@ -41,11 +55,83 @@ function sansBarreFinale(valeur) {
 }
 
 /** Client REST minimal (PostgREST). Absent de configuration ⇒ chaque appel échoue franchement. */
+/**
+ * ⚠️ UN SEUL ENDROIT QUI BORNE, PARCE QU'IL Y EN AVAIT UN SUR QUATRE.
+ *
+ * `db.request` abandonnait déjà après un délai, avec le raisonnement écrit à côté : sans signal, un
+ * service qui accepte la connexion et ne répond plus immobilise la requête, sa socket ET la place
+ * d'admission jusqu'à ce que la plateforme tue la fonction. Trois autres appels — suppression
+ * Storage, signature d'envoi, vérification de jeton — partaient nus. Un audit externe l'a mesuré le
+ * 11/09 en remplaçant `fetch` : `REST hasSignal true`, les trois autres `false`.
+ *
+ * ⚠️ CE N'EST PAS UN CONTOURNEMENT D'AUTORISATION : ces chemins refusent en cas d'échec, ils rendent
+ * `null` ou `false`. Le risque est de DISPONIBILITÉ — sous concurrence, des sockets, de la mémoire
+ * et des exécutions serverless retenues par un tiers lent, y compris pour les purges et les
+ * consultations protégées.
+ *
+ * ⚠️ ET UNE COURSE DE PROMESSES NE SUFFIRAIT PAS : elle rendrait la main sans ANNULER le `fetch`,
+ * donc sans rien libérer. C'est `AbortSignal` ou rien. Un signal fourni par l'appelant s'AJOUTE au
+ * plancher — voir `composerSignaux` : le premier des deux qui parle gagne.
+ */
+/**
+ * ⚠️ ON COMPOSE LES SIGNAUX, ON NE LES REMPLACE PAS — ET LA PREMIÈRE ÉCRITURE LES REMPLAÇAIT.
+ *
+ * Elle disait `options.signal || AbortSignal.timeout(delai)` : un signal fourni par l'appelant
+ * SUPPRIMAIT le plancher, au lieu de s'y ajouter. Un hôte qui borne lui-même une opération longue
+ * croyait donc ajouter une garantie, et en retirait une. Mesuré : avec un signal qui n'expire jamais
+ * et `timeoutMs: 20`, la promesse est encore en attente après 150 ms.
+ *
+ * ⚠️ ET LE COMMENTAIRE BÉNISSAIT LE DÉFAUT. Il écrivait « un signal fourni par l'appelant a
+ * priorité — un hôte qui borne lui-même une opération longue n'est pas écrasé ». L'intention est
+ * juste ; « a priorité » était la mauvaise traduction. Le premier des deux qui parle gagne : c'est
+ * ce que « borner » veut dire. Rapporté par un audit externe le 12/09 comme défaut LATENT — aucun
+ * appel du produit ne transmet aujourd'hui de signal, donc personne ne l'aurait vu arriver.
+ */
+function composerSignaux(fourni, delaiMs) {
+  const horloge = (typeof AbortSignal !== "undefined" && AbortSignal.timeout)
+    ? AbortSignal.timeout(delaiMs) : undefined;
+  if (!fourni) return horloge;
+  if (!horloge) return fourni;
+  if (typeof AbortSignal.any === "function") return AbortSignal.any([fourni, horloge]);
+  // ⚠️ REPLI SANS `AbortSignal.any` : un contrôleur qui suit les deux. Le `aborted` se teste AVANT
+  // de s'abonner — un signal déjà déclenché n'émettra plus jamais son événement, et l'attendre
+  // serait une attente infinie posée par la précaution elle-même.
+  const relais = new globalThis.AbortController();
+  const abandonner = () => { try { relais.abort(); } catch { /* déjà abandonné */ } };
+  for (const s of [fourni, horloge]) {
+    if (s.aborted) { abandonner(); break; }
+    try { s.addEventListener("abort", abandonner, { once: true }); } catch { /* signal exotique */ }
+  }
+  return relais.signal;
+}
+
+function fetchBorne(cible, options = {}, delaiMs) {
+  const signal = composerSignaux(options.signal, delaiMs);
+  return fetch(cible, { ...options, ...(signal ? { signal } : {}) });
+}
+
+/**
+ * Les délais, nommés plutôt qu'écrits en clair sur l'appel. ⚠️ ILS NE SONT PAS ÉGAUX, ET C'EST LE
+ * SUJET : une vérification de jeton est sur le chemin d'une réponse qu'un visiteur attend, un
+ * transfert vers Storage ne l'est pas. Un délai unique ferait patienter le visiteur au rythme du
+ * service le plus lent.
+ */
+const DELAI_AUTH_MS = 5000;
+const DELAI_ROUTE_HOTE_MS = 4000;
+const DELAI_STOCKAGE_MS = 15000;
+const DELAI_BASE_MS = 15000;
+
 function creerDb(env) {
   const url = sansBarreFinale(env.SUPABASE_URL);
   const cle = String(env.SUPABASE_SERVICE_ROLE_KEY || "");
 
-  async function request(chemin, options = {}) {
+  // ⚠️ UN SEUL ENDROIT QUI APPELLE ET QUI REJETTE. `count` a besoin d'un EN-TÊTE de la réponse,
+  // pas de son corps ; le tenter avec son propre `fetch` aurait recopié la construction des
+  // en-têtes, l'abandon, et surtout la forme de l'erreur (`statusCode`/`details`) dont six sites
+  // appelants dépendent. Une seconde orthographe de « appeler PostgREST et rejeter correctement »
+  // est exactement la recopie que ce dépôt a déjà payée trois fois. `request` et `count` se
+  // partagent donc l'appel ; ils ne se partagent que ce qu'ils lisent de la réponse.
+  async function appel(chemin, options = {}) {
     if (!url || !cle) {
       // Message explicite plutôt que `undefined` plus loin : sans base, ce sont les liens tracés
       // et les présentations qui sont indisponibles — pas l'affichage d'un document.
@@ -61,12 +147,10 @@ function creerDb(env) {
     // transforme un ralentissement en refus général. Une course `Promise.race` ne suffirait pas —
     // elle rendrait la main sans ANNULER le fetch, donc sans libérer quoi que ce soit. L'hôte peut
     // fournir son propre `signal` (opérations longues : purges, transferts). (Audit externe.)
-    const delai = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 15000;
-    const signal = options.signal || (typeof AbortSignal !== "undefined" && AbortSignal.timeout
-      ? AbortSignal.timeout(delai) : undefined);
-    const r = await fetch(`${url}/rest/v1/${chemin}`, {
+    const delai = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : DELAI_BASE_MS;
+    const r = await fetchBorne(`${url}/rest/v1/${chemin}`, {
       method: methode,
-      ...(signal ? { signal } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
       headers: {
         apikey: cle,
         Authorization: `Bearer ${cle}`,
@@ -74,7 +158,7 @@ function creerDb(env) {
         ...(options.headers || {}),
       },
       body: options.body ? JSON.stringify(options.body) : undefined,
-    });
+    }, delai);
     if (!r.ok) {
       // ⚠️ LE CORPS DIT POURQUOI, LE CODE NE DIT QUE COMBIEN. Un « 400 » nu a coûté un aller-retour
       // de forge complet pour apprendre ce que PostgREST avait écrit dans sa réponse depuis le
@@ -92,8 +176,45 @@ function creerDb(env) {
       try { erreur.details = JSON.parse(detail); } catch { /* corps non JSON : le message suffit */ }
       throw erreur;
     }
+    return r;
+  }
+
+  async function request(chemin, options = {}) {
+    const r = await appel(chemin, options);
     const texte = await r.text();
     return texte ? JSON.parse(texte) : null;
+  }
+
+  /**
+   * ⚠️ LE COMPTE EXACT, ET C'EST UNE QUESTION — PAS UN MÉCANISME. Le contrat demande « combien de
+   * lignes ce chemin sélectionne-t-il ? » ; il ne demande pas de lire un en-tête. Un hôte sur une
+   * autre base répond par un `count(*)`, celui-ci par PostgREST. Nommer le mécanisme dans le
+   * contrat l'aurait rendu PostgREST-seulement, ce que la règle de portabilité refuse.
+   *
+   * ⚠️ POURQUOI IL EXISTE : le comptage par LIGNES dépend des plafonds de qui les rend. PostgREST a
+   * `db-max-rows`, réglé à 1000 par défaut chez Supabase, et un hôte a mesuré une table de 1651
+   * lignes rendue « 1000 ». Le compte d'en-tête, lui, n'a AUCUN plafond à deviner et ne transporte
+   * rien. Mesuré chez un hôte le 02/09 : `Prefer: count=exact` + `Range: 0-0` rend bien le compte
+   * exact ; l'autre voie envisagée, `?select=count()`, est morte — `db-aggregates-enabled` vaut
+   * `false` par défaut, vérifié sur deux projets distincts.
+   *
+   * ⚠️ ET UN GET PLUTÔT QU'UN HEAD, DÉLIBÉRÉMENT. Un HEAD ne rend aucun corps, donc aucune erreur
+   * ANALYSÉE : l'appelant ne pourrait plus distinguer « colonne supprimée » (42703, un état connu
+   * qui vaut zéro) d'une panne. `Range: 0-0` ne coûte qu'une ligne et garde l'erreur lisible.
+   *
+   * ⚠️ RENDRE `null` PLUTÔT QUE ZÉRO QUAND LE COMPTE MANQUE. PostgREST écrit `…/*` quand il ne
+   * compte pas. Zéro est la réponse qui autorise à supprimer une colonne : la fabriquer depuis une
+   * réponse qui ne compte pas serait le pire mensonge que cette capacité puisse faire.
+   */
+  async function count(chemin, options = {}) {
+    const r = await appel(chemin, {
+      ...options,
+      method: "GET",
+      headers: { ...(options.headers || {}), Prefer: "count=exact", Range: "0-0" },
+    });
+    // `Content-Range: 0-0/1651` — le total suit la barre. `…/*` veut dire « je n'ai pas compté ».
+    const trouve = /\/(\d+)\s*$/.exec(String(r.headers.get("content-range") || ""));
+    return trouve ? Number(trouve[1]) : null;
   }
 
   /** Lecture paginée complète : un document très partagé dépasse la pagination par défaut. */
@@ -107,7 +228,7 @@ function creerDb(env) {
     }
   }
 
-  return { request, selectAll, configuree: !!(url && cle) };
+  return { request, selectAll, count, configuree: !!(url && cle) };
 }
 
 /**
@@ -121,17 +242,16 @@ async function appelHote(url, secret, corps, errors) {
   // indiscernable de « le droit est refusé », et on cherche pendant une demi-journée du côté des
   // rôles. Un hôte qui a écrit sa route sur la description du contrat plutôt que sur le code a
   // perdu exactement ce temps-là.
-  const signaler = (quoi) => { try { errors && errors.capture(new Error(`route hôte : ${quoi}`), { url }); } catch { /* jamais bloquant */ } };
+  const signaler = (quoi) => capturerJournalSansBloquer(errors, new Error(`route hôte : ${quoi}`), { url });
   try {
-    const r = await fetch(url, {
+    const r = await fetchBorne(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...(secret ? { "x-player-fetch-secret": secret } : {}),
       },
       body: JSON.stringify(corps),
-      signal: AbortSignal.timeout(4000), // une décision qui tarde est une décision absente
-    });
+    }, DELAI_ROUTE_HOTE_MS); // une décision qui tarde est une décision absente
     if (!r.ok) { signaler(`réponse ${r.status}`); return null; }
     const d = await r.json().catch(() => null);
     if (!d || typeof d !== "object") { signaler("réponse illisible (JSON attendu)"); return null; }
@@ -168,13 +288,33 @@ async function appelHote(url, secret, corps, errors) {
  * base. Y adosser un compteur partagé ferait payer à la garde le prix qu'on venait d'épargner à ce
  * qu'elle garde. Sur ce chemin, la protection réelle est le cache, pas le compteur.
  *
- * ⚠️ LE COMPTE PARTAGÉ N'EST PAS ATOMIQUE. PostgREST ne sait pas exprimer « incrémente » : c'est une
- * lecture puis une écriture. Deux instances peuvent donc lire la même valeur et n'en écrire qu'une —
- * le compteur SOUS-estime sous forte concurrence. Pour une limite de débit, sous-estimer signifie
- * laisser passer un peu plus, jamais refuser à tort. Le dire vaut mieux que laisser croire à une
- * exactitude qu'on n'a pas.
+ * ⚠️ CE PARAGRAPHE DISAIT QUE LE COMPTE PARTAGÉ N'EST PAS ATOMIQUE. C'EST FAUX DEPUIS 0004, et il
+ * a survécu à ce qu'il décrivait — écrit quand PostgREST ne savait pas exprimer « incrémente »,
+ * donc quand compter était une lecture puis une écriture. La migration `0004-limites-atomiques.sql`
+ * a remplacé les deux par UNE instruction serveur : `player_rate_limit_bump`. Corrigé plutôt que
+ * supprimé, parce qu'un hôte qui l'a lu a pu bâtir une compensation dont il n'a pas besoin.
+ *
+ * ⚠️ ET LA DÉGRADATION RÉELLE EST L'INVERSE DE CE QU'IL LAISSAIT CROIRE. Sans 0004, l'étage partagé
+ * ne compte pas moins bien : IL NE COMPTE PAS DU TOUT. Le `return true` plus bas laisse passer, et
+ * seul le compteur LOCAL, par processus, subsiste — une limite de 120/h en autorise 120 PAR
+ * EXÉCUTION. « Non atomique » nommait un mode qui n'existe pas : un comptage partagé dégradé.
+ *
+ * La matrice complète est dans `docs/HOST-CONTRACT.md` ; elle est la version qui fait foi.
+ *
+ * ⚠️ CETTE PHRASE-CI EST LE JUMEAU FRANÇAIS DE CELLE CORRIGÉE DANS LE CONTRAT LE 11/09 — À 95
+ * LIGNES DE L'AVERTISSEMENT CORRIGÉ LE MÊME JOUR, DANS CE MÊME FICHIER. Corriger un exemplaire
+ * d'une affirmation et pas l'autre est le mode de panne que ce dépôt traque partout ailleurs : deux
+ * copies d'une règle divergent, et personne ne les confronte. Cherchez le MÉCANISME que vous venez
+ * de changer, pas les mots dont vous vous souvenez.
  */
-function creerLimites(db, journal) {
+/**
+ * @param horloge lecture du temps, injectable. ⚠️ ELLE EXISTE POUR QU'UN BANC N'AIT PAS À REMPLACER
+ * `Date.now` GLOBALEMENT. Une simulation d'une heure d'audience doit faire avancer le temps ; le
+ * seul moyen était de rustiner un global, ce qui laisse l'instrument dépendre d'un `finally` posé au
+ * bon endroit — et la première écriture de cette simulation l'avait posé au mauvais, mesurant en
+ * partie le temps RÉEL sans le dire. Une horloge passée en argument ne peut pas fuir.
+ */
+function creerLimites(db, journal, horloge = () => Date.now()) {
   const seaux = new Map();
   const PREFIXES_LOCAUX = ["pread:"];
   let partageDisponible = null;   // null = pas encore demandé
@@ -188,7 +328,7 @@ function creerLimites(db, journal) {
   // anti-inondation, et c'est le compromis explicitement recommandé.
   const PLAFOND_CLES = 5000;
   function localAutorise(cle, max, fenetreSecondes) {
-    const maintenant = Date.now();
+    const maintenant = horloge();
     const fenetreMs = fenetreSecondes * 1000;
     let e = seaux.get(cle);
     if (!e || maintenant - e.debut >= fenetreMs) e = { debut: maintenant, compte: 0 };
@@ -207,7 +347,7 @@ function creerLimites(db, journal) {
   function prevenirUneFois(message) {
     if (deja === message) return;
     deja = message;
-    try { journal.capture(new Error(message), { route: "limits" }); } catch { /* jamais bloquant */ }
+    try { capturerJournalSansBloquer(journal, new Error(message), { route: "limits" }); } catch { /* jamais bloquant */ }
   }
 
   async function tablePresente() {
@@ -220,7 +360,7 @@ function creerLimites(db, journal) {
       if (!signale) {
         signale = true;
         try {
-          journal.capture(new Error(
+          capturerJournalSansBloquer(journal, new Error(
             "compteurs de débit non partagés : appliquez supabase/migrations/0003-limites-partagees.sql. "
             + "Sans elle, chaque instance compte pour elle seule et les limites sont plus lâches qu'annoncé.",
           ), { route: "limits" });
@@ -263,8 +403,14 @@ function creerLimites(db, journal) {
         // passer ; dans les deux cas on le dit, en NOMMANT le fichier à appliquer. C'est la règle
         // du chemin de migration : dégrader, jamais casser, et ne jamais dégrader en silence.
         prevenirUneFois(
-          "compteurs de débit non atomiques : appliquez supabase/migrations/0004-limites-atomiques.sql. "
-          + "Sans elle, plusieurs requêtes simultanées peuvent dépasser la limite ensemble. "
+          // ⚠️ CE MESSAGE NOMMAIT UN MODE QUI N'EXISTE PAS. Il disait « compteurs non atomiques »,
+          // ce qui décrit un comptage partagé plus faible. Or ici il n'y a PLUS de comptage partagé
+          // du tout : le `return true` ci-dessous laisse passer, et seul l'étage local subsiste.
+          // Dire « non atomique » laisse croire qu'un plafond d'instance tient encore, en moins
+          // précis. Trouvé par un audit externe le 11/09, avec la contradiction jumelle du contrat.
+          "compteur de débit PARTAGÉ INDISPONIBLE : appliquez supabase/migrations/0004-limites-atomiques.sql. "
+          + "Sans elle il ne reste que le compteur LOCAL, par processus — une limite de 120/h en "
+          + "autorise 120 PAR EXÉCUTION. Ce n'est pas un comptage partagé dégradé, c'est aucun. "
           + "(" + ((erreur && erreur.message) || erreur) + ")",
         );
         return true;
@@ -309,16 +455,48 @@ function createStandaloneContext(env = process.env) {
         // ⚠️ DERNIÈRE BARRIÈRE avant un DELETE à la clé service_role (P1 huitième audit). Bucket en
         // liste blanche, et refus de toute traversée — chaque segment sur l'alphabet des chemins
         // signés. `fetch` normalise `..` : un chemin non validé sortirait du bucket visé.
-        if (bucket !== "present-attachments") return false;
+        //
+        // ⚠️ LA LISTE NE PORTAIT QU'UN BUCKET SUR LES DEUX, ET LA PURGE DU CACHE DE VOIX N'A DONC
+        // JAMAIS RIEN RETIRÉ. `tts-cache` était refusé ICI, avant tout appel réseau : chaque retrait
+        // rendait `false`, la trace partait quand même, et l'objet restait dans un bucket PUBLIC
+        // sans plus aucun chemin vers lui — puisque cette capacité expose `put` et `remove`, jamais
+        // `list`. C'est très exactement le mal que la migration 0021 avait été écrite pour rendre
+        // réparable, à 100 %, en silence.
+        //
+        // ⚠️ ET CE SILENCE ÉTAIT DOCUMENTÉ. Le rapport comptait ces refus dans `fichiersErreur`, que
+        // `docs/RETENTION.md` explique par un fait vrai — un tiers des empreintes n'a pas de `.json`
+        // d'alignement (552 mp3 pour 356 json, mesuré par un hôte). Une explication JUSTE rendait
+        // donc un échec TOTAL indiscernable d'un fonctionnement normal. Trouvé le 12/09 en écrivant
+        // la documentation du correctif d'un AUTRE défaut du même chemin.
+        //
+        // La liste énumère maintenant les deux buckets que la rétention doit atteindre, et rien
+        // d'autre : la barrière garde son objet, elle cesse d'interdire le travail qu'on lui demande.
+        if (bucket !== "present-attachments" && bucket !== "tts-cache") return false;
         const segs = String(chemin).split("/");
         for (const seg of segs) {
           if (seg === "" || seg === "." || seg === ".." || !/^[A-Za-z0-9._-]+$/.test(seg)) return false;
         }
         try {
-          const r = await fetch(`${base}/storage/v1/object/${encodeURIComponent(bucket)}/${segs.map(encodeURIComponent).join("/")}`, {
+          const r = await fetchBorne(`${base}/storage/v1/object/${encodeURIComponent(bucket)}/${segs.map(encodeURIComponent).join("/")}`, {
             method: "DELETE", headers: { apikey: cle, Authorization: `Bearer ${cle}` },
-          });
-          return r.ok;
+          }, DELAI_STOCKAGE_MS);
+          if (r.ok) return true;
+          // ⚠️ UN OBJET DÉJÀ ABSENT EST UN SUCCÈS POUR CE QU'ON DEMANDE ICI, ET CE N'EST PLUS UNE
+          // NUANCE DE COMPTAGE. La purge RETIENT désormais la ligne quand ce
+          // retrait rend `false`, parce que la ligne est le seul chemin vers l'objet (`storage`
+          // expose `put` et `remove`, jamais `list`). Rendre `false` sur un objet qui n'est plus là
+          // retiendrait donc la ligne POUR TOUJOURS, en attendant un fichier qui n'existe pas —
+          // exactement la sur-rétention que le correctif de la sous-rétention ne doit pas créer.
+          // Ce qu'on demande est « l'objet n'est plus là », et il n'y est plus.
+          //
+          // ⚠️ ON LIT LE CORPS PARCE QUE LE CODE NE SUFFIT PAS. Le Storage de Supabase répond 400
+          // sur un objet manquant, pas seulement 404 : se fier au seul statut raterait le cas le
+          // plus fréquent. NON VÉRIFIÉ CONTRE UN SUPABASE VIVANT DEPUIS CE DÉPÔT — ce qui est
+          // éprouvé ici est la CORRESPONDANCE (statut et corps vers verdict), pas la forme exacte
+          // que le fournisseur émet. Un hôte qui observerait une autre formulation doit la dire.
+          if (r.status === 404) return true;
+          const corps = await r.text().catch(() => "");
+          return /not[_ ]?found|no such key|does not exist/i.test(corps);
         } catch { return false; }
       },
 
@@ -339,11 +517,11 @@ function createStandaloneContext(env = process.env) {
         const cle = String(env.SUPABASE_SERVICE_ROLE_KEY || "");
         if (!base || !cle || !bucket || !chemin) return null;
         try {
-          const r = await fetch(`${base}/storage/v1/object/upload/sign/${bucket}/${chemin}`, {
+          const r = await fetchBorne(`${base}/storage/v1/object/upload/sign/${bucket}/${chemin}`, {
             method: "POST",
             headers: { apikey: cle, Authorization: `Bearer ${cle}`, "Content-Type": "application/json" },
             body: "{}",
-          });
+          }, DELAI_STOCKAGE_MS);
           if (!r.ok) return null;
           const d = await r.json().catch(() => null);
           const url = d && d.url;
@@ -356,7 +534,7 @@ function createStandaloneContext(env = process.env) {
       },
     },
 
-    db: { request: db.request, selectAll: db.selectAll },
+    db: { request: db.request, selectAll: db.selectAll, count: db.count },
 
     // Sans expéditeur configuré, le re-partage et le code du mur d'accès sont indisponibles — et
     // le disent. Ils ne prétendent pas avoir envoyé.
@@ -382,7 +560,7 @@ function createStandaloneContext(env = process.env) {
         const secret = String(env.PLAYER_HOST_MAIL_SECRET || "");
         if (!url) return null;
         if (!secret) {
-          try { journal.capture(new Error("PLAYER_HOST_MAIL_URL est configurée sans PLAYER_HOST_MAIL_SECRET : aucun envoi ne partira"), {}); } catch { /* ignore */ }
+          try { capturerJournalSansBloquer(journal, new Error("PLAYER_HOST_MAIL_URL est configurée sans PLAYER_HOST_MAIL_SECRET : aucun envoi ne partira"), {}); } catch { /* ignore */ }
           return null;
         }
         const reponse = await appelHote(url, secret, message, journal);
@@ -427,13 +605,13 @@ function createStandaloneContext(env = process.env) {
         if (emetteur && !cle) {
           // Le refus silencieux est le piège de cette configuration : sans clé, chaque membre est
           // simplement « non authentifié », ce qui ressemble à un droit manquant. On le dit.
-          try { journal.capture(new Error("PLAYER_AUTH_URL est configurée sans PLAYER_AUTH_KEY : aucun jeton ne peut être vérifié"), {}); } catch { /* ignore */ }
+          try { capturerJournalSansBloquer(journal, new Error("PLAYER_AUTH_URL est configurée sans PLAYER_AUTH_KEY : aucun jeton ne peut être vérifié"), {}); } catch { /* ignore */ }
         }
         if (!jeton || !url || !cle) return null;
         try {
-          const r = await fetch(`${url}/auth/v1/user`, {
+          const r = await fetchBorne(`${url}/auth/v1/user`, {
             headers: { apikey: cle, Authorization: `Bearer ${jeton}` },
-          });
+          }, DELAI_AUTH_MS);
           return r.ok ? await r.json() : null;
         } catch { return null; }
       },
@@ -593,7 +771,7 @@ function createStandaloneContext(env = process.env) {
         // parfaitement intentionnée — vaut refus, et le dit. C'est le cas le plus courant au
         // branchement d'un nouvel hôte.
         if (reponse && typeof reponse.allowed !== "boolean") {
-          try { journal.capture(new Error("route d'autorisation : champ `allowed` booléen attendu"), { recu: Object.keys(reponse).join(",") }); } catch { /* ignore */ }
+          try { capturerJournalSansBloquer(journal, new Error("route d'autorisation : champ `allowed` booléen attendu"), { recu: Object.keys(reponse).join(",") }); } catch { /* ignore */ }
         }
         return reponse ? reponse.allowed === true : false;
       },
@@ -676,6 +854,22 @@ function createStandaloneContext(env = process.env) {
       supabasePublishableKey: env.SUPABASE_PUBLISHABLE_KEY || "",
       mapsKey: env.GOOGLE_MAPS_API_KEY || "",
       extraFrameAncestors: String(env.DOC_FRAME_ANCESTORS || "").split(/\s+/).filter(Boolean),
+      // Transferts de fichiers simultanés par processus (défaut 64) : le relais refuse en 503 au-delà,
+      // avant tout appel amont. Lu ICI, pas dans le cœur — la configuration entre par le contexte.
+      // ⚠️ TRANSMIS TEL QUEL, PAS NORMALISÉ ICI. La première écriture faisait `Number(x) || 64` : une
+      // valeur illisible devenait le défaut EN SILENCE, et 2 147 483 648 passait jusqu'à `setTimeout`,
+      // qui ramène un tel délai à 1 ms (audit externe, cinquième passe). Les plages vivent dans
+      // `server/bornes.js`, et le cœur les applique à `init` en DISANT une fois ce qu'il a refusé —
+      // si on bornait ici, il ne verrait qu'une valeur valide et l'exploitant ne saurait jamais.
+      // ⚠️ ET « TEL QUEL » VEUT DIRE LA CHAÎNE, PAS `Number(chaîne)`. La seconde écriture convertissait
+      // encore : « abc » arrivait au cœur en NaN et le diagnostic disait `relayStallMs=NaN` — l'exploitant
+      // ne retrouvait pas ce qu'il avait saisi (audit, sixième passe). La chaîne passe intacte ; absente
+      // ou vide, le cœur applique le défaut sans avertir (« non posé »).
+      maxConcurrentRelays: env.PLAYER_MAX_RELAYS,
+      // Un relais sans progression pendant relayStallMs, ou plus long que relayMaxMs, est abandonné
+      // (source et réponse détruites) : sans ça, un client qui cesse de lire garde sa place pour toujours.
+      relayStallMs: env.PLAYER_RELAY_STALL_MS,
+      relayMaxMs: env.PLAYER_RELAY_MAX_MS,
 
       /**
        * Clé de `localStorage` sous laquelle VOTRE application range la session de ses membres.
@@ -712,8 +906,58 @@ function createStandaloneContext(env = process.env) {
       // avec une SÉPARATION DE DOMAINE (préfixe distinct) — il est déjà requis par la fonctionnalité
       // qui produit ce hachage, ce qui évite une variable obligatoire de plus.
       ipHashSecret: String(env.PLAYER_IP_HASH_SECRET || env.PLAYER_PRESENCE_SECRET || ""),
+      retention: retentionDepuisEnv(env),
     },
   };
 }
 
-module.exports = { createStandaloneContext, creerLimites };
+/**
+ * La rétention, telle qu'un hôte AUTONOME peut la décider — et il ne le pouvait pas.
+ *
+ * ⚠️ CE FICHIER N'EXPOSAIT AUCUNE CLÉ DE RÉTENTION, ce qui rendait le balayage inatteignable pour
+ * quiconque consomme ce contexte tel quel. `server/retention.js` exige `config.retention.balayage
+ * === true`, et cet opt-in strict est juste : les fenêtres sont des décisions MÉTIER — ce qu'un
+ * conseiller peut encore prouver à un client — et une suppression ne doit agir que là où un
+ * exploitant l'a ÉCRITE. Mais un hôte autonome n'avait nulle part où l'écrire. Seuls ceux qui
+ * rédigent leur contexte à la main pouvaient armer la purge ; les autres accumulaient sans
+ * recours, et sans même savoir que le recours existait. Un opt-in dont la moitié du parc ne peut
+ * pas se saisir n'est pas un opt-in, c'est une indisponibilité.
+ *
+ * ⚠️ ET LES FENÊTRES VIENNENT AVEC, PAS SEULEMENT L'INTERRUPTEUR. N'exposer que `balayage`
+ * armerait la purge SUR NOS DÉFAUTS — exactement ce que le commentaire de `retention.js` décrit
+ * comme le mode de panne du second hôte, cette fois par une variable au lieu d'un oubli. Qui arme
+ * doit pouvoir décider ce qu'il arme.
+ *
+ * ⚠️ UNE CLÉ ABSENTE EST ABSENTE, JAMAIS `undefined`. `fenetresValidees` fusionne cet objet
+ * PAR-DESSUS les défauts : y poser `journauxMois: undefined` ferait échouer la validation et
+ * refuserait toute suppression chez un hôte qui a simplement armé sans régler les mois. La valeur
+ * n'entre donc que si la variable porte quelque chose.
+ *
+ * ⚠️ ET UNE VALEUR ILLISIBLE N'EST PAS CORRIGÉE ICI. `Number("abc")` vaut `NaN`, `"12.5"` n'est pas
+ * entier : le cœur les REFUSE en nommant la clé, avant le premier DELETE. La rattraper ici la
+ * rendrait silencieuse, et une purge est le dernier endroit où deviner.
+ */
+// ⚠️ ET LES QUATRE LECTURES SONT ÉCRITES EN CLAIR, PAS BOUCLÉES SUR UNE TABLE DE NOMS. La première
+// version faisait `env[TABLE[cle]]` — plus court, et refusé par `tools/env-lues.mjs` : un nom
+// d'environnement construit à l'exécution n'est trouvable par personne. Ni un `grep`, ni la garde
+// qui vérifie que chaque variable lue est documentée. La concision se paierait sur une variable
+// oubliée dans `docs/CONFIGURATION.md`, que rien ne rattraperait.
+function poserMois(out, cle, brut) {
+  const t = String(brut || "").trim();
+  // ⚠️ Absente = ABSENTE. `fenetresValidees` fusionne cet objet PAR-DESSUS les défauts : y poser
+  // `undefined` ferait échouer la validation et refuserait toute purge chez un hôte qui a
+  // simplement armé sans régler les mois.
+  if (t) out[cle] = Number(t);
+}
+
+function retentionDepuisEnv(env) {
+  const out = {};
+  if (String(env.PLAYER_RETENTION_SWEEP || "") === "1") out.balayage = true;
+  poserMois(out, "journauxMois", env.PLAYER_RETENTION_LOGS_MONTHS);
+  poserMois(out, "presentationsMois", env.PLAYER_RETENTION_PRESENTATIONS_MONTHS);
+  poserMois(out, "liensRevoquesMois", env.PLAYER_RETENTION_REVOKED_LINKS_MONTHS);
+  poserMois(out, "voixMois", env.PLAYER_RETENTION_VOICE_MONTHS);
+  return out;
+}
+
+module.exports = { createStandaloneContext, creerLimites, retentionDepuisEnv };

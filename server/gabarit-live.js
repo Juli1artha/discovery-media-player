@@ -303,7 +303,17 @@ var Live=(function(){
   var RSVG='<svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2 stroke-linecap=round><circle cx=12 cy=12 r=9 /><path d="M8.5 14.5s1.4 1.7 3.5 1.7 3.5-1.7 3.5-1.7"/><line x1=9 y1=9.2 x2=9.01 y2=9.2 /><line x1=15 y1=9.2 x2=15.01 y2=9.2 /></svg>';
   function esc(s){return Player.live.escapeHtml(s);}
   function ini(n){return Player.live.initials(n);}
-  function av(u,n){return Player.live.avatarHtml(u,n);}
+  // ⚠️ LES ORIGINES AUTORISÉES POUR UN AVATAR, CALCULÉES UNE FOIS. Sans liste, avatarHtml ne rend
+  // une image que depuis la MÊME origine : une URL arbitraire retombe sur les initiales plutôt que
+  // de faire partir l'IP de chaque spectateur chez un inconnu. On déclare le stockage de l'hôte,
+  // d'où viennent les avatars légitimes ; rien d'autre. Voir origineAvatarAutorisee dans
+  // src/live.ts pour le pourquoi, et pour le chemin Realtime que le serveur ne voit pas passer.
+  //
+  // ⚠️ PAS D'ACCENT GRAVE DANS CE FICHIER : il est lui-même un littéral de gabarit, et un accent
+  // grave dans un COMMENTAIRE le referme. Le lint l'a refusé — « Unexpected token » sur une ligne
+  // qui n'est que du commentaire.
+  var ORIGINES_AV=(function(){var o=[];try{if(LIVECFG&&LIVECFG.supaUrl)o.push(String(LIVECFG.supaUrl));}catch(e){}return o;})();
+  function av(u,n){return Player.live.avatarHtml(u,n,ORIGINES_AV);}
   function isOverlay(){var pn=document.getElementById('chatPanel');return !!(window.matchMedia&&window.matchMedia('(max-width:720px)').matches)||!!(pn&&pn.classList.contains('float'));}
   // Aplatit l'état de présence en DÉDOUBLONNANT par identité (email, sinon nom) → un participant reconnecté
   // (nouveau MYID) ou un fantôme websocket non nettoyé n'apparaît qu'une fois. On garde la méta présentateur si dispo.
@@ -585,11 +595,13 @@ var Live=(function(){
       // C'est une meilleure propriété que d'essayer de l'empêcher — elle vaut aussi le jour où le
       // transport lui-même a un défaut.
       //
-      // ⚠️ 'map' et 'typing' restent appliqués tels quels, et c'est un choix : ce sont des signaux
-      // ÉPHÉMÈRES (mouvements de carte, « untel écrit »), sans état serveur à confronter et à
-      // fréquence élevée. Les revérifier coûterait un aller-retour par déplacement de souris pour
-      // protéger… un déplacement de souris. Ce qui fait autorité — la page affichée, le document,
-      // la fin de la présentation — passe par 'state', qui est relu.
+      // ⚠️ INVARIANT : AUCUNE CHARGE DE DIFFUSION N'EST APPLIQUÉE TELLE QUELLE. 'map' déclenche une
+      // relecture de l'état serveur SANS lire sa charge (voir plus bas, « aucune charge ne passe »).
+      // Seul 'typing' reste volontairement éphémère et non confronté : « untel écrit » n'a pas d'état
+      // serveur et ne porte aucun privilège — au pire un faux « untel écrit ». Ce qui fait autorité —
+      // la page affichée, le document, la fin de la présentation — passe par 'state', qui est relu.
+      // (Ce paragraphe affirmait que 'map' restait appliqué tel quel alors que le code l'ignorait
+      // déjà : réécrit le 13/09 sur relevé d'un audit externe.)
       function relire(url,applique){
         fetch('/api/doc?present='+encodeURIComponent(SLUG)+url)
           .then(function(r){return r.json();})
@@ -659,16 +671,23 @@ var Live=(function(){
       // rattrape ce cas : elle ne coûte presque rien et évite qu'une audience reste figée sur un
       // état périmé en croyant être à jour. C'est l'inverse d'une optimisation : c'est le prix de
       // la borne.
-      _filet=setInterval(function(){_ordEtat.maintenant();_ordChat.maintenant();},25000);
+      // ⚠️ ET LE FILET NE PART PAS EN CHŒUR. Mille spectateurs qui rejoignent ensemble relisaient
+      // ensemble : une rafale de 2 000 GET toutes les 25 s, en phase, pour une audience qui ne fait
+      // rien. Un décalage initial tiré entre 0 et 25 s étale la rafale sans augmenter la fréquence
+      // maximale — chacun garde exactement une relecture de chaque point par 25 s. Le même
+      // identifiant porte d'abord le délai puis l'intervalle : clearInterval les retire tous deux.
+      function filetTick(){_ordEtat.maintenant();_ordChat.maintenant();}
+      _filet=setTimeout(function(){filetTick();_filet=setInterval(filetTick,25000);},Math.floor(Math.random()*25000));
 
-      // ⚠️ LE TITRE VIENT D'ICI, PAS DE LA PRÉSENCE. La liste des participants tirait
-      // « présentateur » de la charge de présence, que chacun compose lui-même : un
-      // 'track({role:"presenter"})' suffisait à apparaître comme le présentateur devant toute
-      // l'audience, avec le nom et l'avatar de son choix. Le canal ne peut pas arbitrer ça — un
-      // participant légitime a le droit d'y écrire SA présence.
-      //
-      // Le serveur renvoie la CLÉ de celui qui a prouvé le control_token ; l'audience compare. Pas
-      // de clé, pas de titre : mieux vaut aucun titre qu'un titre usurpé.
+      // ⚠️ INVARIANT : LE TITRE « PRÉSENTÉ PAR » VIENT EXCLUSIVEMENT DE state.presenter_name, relu
+      // auprès du serveur — jamais de la présence Realtime, que chacun compose lui-même. Aucune
+      // métadonnée de présence (role, name, avatar) ne porte un privilège : la liste des participants
+      // n'affiche aucun badge de rôle, et modération comme paternité sont arbitrées par le serveur
+      // sur ses propres jetons. Une présence hostile peut au plus falsifier SA ligne cosmétique.
+      // Raison : le canal ne peut pas arbitrer — un participant légitime a le droit d'y écrire SA
+      // présence, donc rien de ce qui y transite ne peut fonder un droit.
+      // (Ce commentaire affirmait que « le serveur renvoie la clé et l'audience compare » : cette clé
+      // n'existe plus, le serveur ne rend qu'un nom. Réécrit le 13/09 sur relevé d'un audit externe.)
       function etatDuServeur(st){
         if(typeof st.presenter_name!=='undefined'){var n2=st.presenter_name||'';
           if(n2!==PRESNAME){PRESNAME=n2;try{if(ch)renderPres(ch.presenceState());}catch(e){}}}

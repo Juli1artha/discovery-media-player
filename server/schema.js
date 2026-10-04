@@ -52,6 +52,8 @@
 // — il balaie le dossier et refuse un nom qui déclencherait la garde, au moment où on l'écrit.
 // (La forme de la règle vient du STUDIO : une règle tenue par habitude a un taux de couverture que
 // personne ne mesure.)
+const { capturerSansBloquer } = require("./capture");
+
 const RACINE_MIGRATIONS = "supabase/migrations/";
 
 const ATTENDUES = {
@@ -79,6 +81,15 @@ const ATTENDUES = {
     table: "commercial_doc_shares", colonne: "idem_key",
     migration: "0011-liens-uniques.sql",
     fonction: "empêcher deux demandes simultanées de créer deux liens système pour le même usage",
+  },
+  // Lien protégé (0028). `password_hash` voyage avec `expires_at` dans la même migration : une sonde
+  // suffit. ⚠️ CETTE ATTENTE NE DÉGRADE PAS EN SILENCE comme les autres : sans elle, la CRÉATION d'un
+  // lien protégé est REFUSÉE (shares.js, `migrationManquante`) — un lien ouvert qui se dirait protégé
+  // serait pire que pas de lien.
+  lienProtege: {
+    table: "commercial_doc_shares", colonne: "expires_at",
+    migration: "0028-liens-proteges.sql",
+    fonction: "faire expirer un lien tracé et le protéger par un mot de passe",
   },
   revocationDatee: {
     table: "commercial_doc_shares", colonne: "revoked_at",
@@ -460,7 +471,7 @@ const PORTEE_FUSION =
 // plus rien.
 async function journaliser(cle, message) {
   try {
-    if (await PLAYER.limits.allow(cle, 1, 3600)) PLAYER.errors.capture(new Error(message), { route: "schema" });
+    if (await PLAYER.limits.allow(cle, 1, 3600)) capturerSansBloquer(PLAYER.errors, new Error(message), { route: "schema" });
   } catch { /* jamais bloquant */ }
 }
 
@@ -471,7 +482,10 @@ async function ajouterMigrationsDePresence(etat) {
     p_max_gap_ms: 0, p_anon_cap: 0, p_has_token: null, p_only_if_unclaimed: true,
   };
   const estSignatureAbsente = (erreur) => {
-    try { return require("./presentations.js").signatureAbsente(erreur); } catch { return false; }
+    // ⚠️ À LA SOURCE, PAS PAR `presentations.js`. Ce détour fermait le seul cycle du graphe serveur
+    // (audit externe du 11/09) alors que `presentations.js` importe lui-même cette fonction de
+    // `erreurs-base.js` : trois modules pour une fonction qui en habite un.
+    try { return require("./erreurs-base.js").signatureAbsente(erreur); } catch { return false; }
   };
 
   etat.fusionBaseCouvre = PORTEE_FUSION;
@@ -526,7 +540,7 @@ async function ajouterMigrationsDePresence(etat) {
     // boucle, et un journal sans frein deviendrait une arme.
     try {
       if (await PLAYER.limits.allow("schema:durcissement-absent", 1, 3600)) {
-        PLAYER.errors.capture(new Error(
+        capturerSansBloquer(PLAYER.errors, new Error(
           absente
             ? "migration 0018-bootstrap-non-usurpable.sql ABSENTE : les bootstraps de présence ne "
               + "sont pas contrôlés. N'armez pas PLAYER_PRESENCE_STRICT avant de l'appliquer — il "
@@ -612,7 +626,7 @@ async function ajouterPresence(etat) {
     // même que celui du balayage des présentations orphelines — plutôt que d'inventer un second
     // nombre qui divergerait. Le présentateur bat toutes les 30 s (`present-touch`) : une présentation
     // sans battement depuis trois minutes est abandonnée, pas silencieuse. (Relevé du second hôte.)
-    const vivantDepuis = new Date(Date.now() - require("./presentations").STALE_MS).toISOString();
+    const vivantDepuis = new Date(Date.now() - require("./constantes-presentation.js").STALE_MS).toISOString();
     const actives = await PLAYER.db.request(`doc_presentations?active=eq.true&last_seen=gt.${encodeURIComponent(vivantDepuis)}&select=slug${bornee}`);
     const nActives = Array.isArray(actives) ? actives.length : 0;
     // ⚠️ `couvre` VOYAGE AVEC LES NOMBRES, ET C'EST LE POINT. Le commentaire ci-dessus protège celui

@@ -35,11 +35,11 @@ Purpose: reading statistics for a document that was sent out. **Purge: 13 months
 |---|---|---|
 | `commercial_doc_views.recipient_email` | who the read is attributed to | purged with the row, 13 months after `at` |
 | `commercial_doc_views.session_id` | correlates the views of one session | same |
-| `commercial_doc_views.ua` | browser (raw User-Agent) | same |
+| `commercial_doc_views.ua` | **emptied from `0.1.147`** | ⚠️ Emptied by migration **0027**, which ships with that release and not before. The clearest case of the three: unlike the sessions table, this one has no `device`, `os` or `browser` — it derived *nothing* from the string, wrote it, and no query in this player has ever read it back. A browser fingerprint kept for thirteen months with no reader at all, unnoticed because the question had never been asked table by table |
 | `commercial_doc_sessions.recipient_email` | session attribution | purged with the row, 13 months after `last_at` |
 | `commercial_doc_sessions.session_id` | session identifier | same |
-| `commercial_doc_sessions.ip` | **IP address in the clear** | same — the most sensitive datum in the schema. ⚠️ Since 0.1.146 it is **stored but never served**: neither `docshare.sessions` nor `docshare.sessionsByRecipient` carries it — nor the raw `ua` — and nothing in the player reads it back. What a session hands out is an explicit allow-list, so a column added later does not leave by default. Note the asymmetry it leaves: a presentation attendee's address is kept as a salted HMAC (`creator_ip_hash`), a reader's is kept in the clear — same datum, two decisions |
-| `commercial_doc_sessions.ua` | raw User-Agent | same. ⚠️ Since 0.1.146 **stored but never served** either: `device`, `os` and `browser` are derived from it at write time and are what the reading records carry |
+| `commercial_doc_sessions.ip` | **emptied from `0.1.147`** | ⚠️ It held the reader's IP address in the clear and was the most sensitive datum in this schema. **`0.1.147`** stops **serving** it, stops **writing** it, and ships migration **0026**, which erases what thirteen months of journal still carry. ⚠️ **On `0.1.145` and earlier it is still written and still served** — upgrading is what stops it. The column itself survives for now — dropping it would break a host that applies migrations before deploying (see *Purging the reader IP* below); its removal is a later release. The asymmetry this table used to note ends here, upward: a presentation attendee's address is a salted HMAC, a reader's is now nothing at all |
+| `commercial_doc_sessions.ua` | **emptied from `0.1.147`** | ⚠️ **`0.1.147`** stops serving it, stops writing it, and ships migration **0027**, which erases what is there. ⚠️ **On `0.1.145` and earlier it is still written.** `device`, `os` and `browser` are derived from it *at write time* and are what a reading record carries — so the raw string had no reader left, and "we might re-parse it one day" does not justify thirteen months of a fingerprint kept for nobody. Same treatment and same reason as `ip`: emptied now, column removed in a later release |
 | `commercial_doc_sessions.num_pages` / `commercial_doc_sessions.pages_time` | page-by-page reading behaviour | same |
 
 ## Reading logs (internal team)
@@ -68,6 +68,12 @@ purge stays silent (schema probe); the others still run.
 | `commercial_doc_shares.recipient_name` | recipient's name | same |
 | `commercial_doc_shares.created_by` | email of the salesperson who created it | same |
 | `commercial_doc_shares.file_name` | file name (may carry a person's name) | business data, purged with the row |
+| `commercial_doc_shares.password_hash` | scrypt hash of the link's password (`salt:hash`, migration 0028) — never served, never the password itself | kept while the link lives (it *is* the lock); removed by `docshare.protect` with `password: null`; purged with the row |
+
+⚠️ **An expired link is not a revoked one** (0028). Its expiry date closes it to readers, but does not
+start the 13-month clock: the purge reads `revoked_at`, and only revocation sets it. A host that wants
+expired links purged revokes them — expiry is an access rule, not a retention rule, and folding one into
+the other would make "extend this link" silently lose a year of statistics.
 
 ## Live presentations
 
@@ -131,12 +137,210 @@ it is the trace. The row records a fingerprint and a date and nothing else: writ
 would recreate, inside the database, whatever personal data the bucket may already hold — and make
 it queryable, which is strictly worse than not having it.
 
-⚠️ **A visitor chooses what goes in.** `bot-tts` accepts the caller's text, so a unique text leaves
-an MP3 and a JSON in a public bucket. The grouping and ceilings added in 0.1.140 bound the cost per
+⚠️ **This paragraph used to say a visitor chooses what goes in. That stopped being true** when
+`bot-tts` began confronting the text with what the assistant actually said in that session — an
+external audit found the stale claim on 2026-09-11. The caller **proposes** a text; only a text the
+assistant already spoke is accepted. What still holds is the consequence: each *distinct accepted*
+text leaves an MP3 and a JSON in a public bucket. The grouping and ceilings added in 0.1.140 bound the cost per
 hour; only this window bounds the **duration**.
+
+## Purging the reader IP and User-Agent (migrations 0026 and 0027)
+
+> ⚠️ **UPGRADE FIRST, THEN APPLY — the order is not a preference.** Both migrations ship in
+> `0.1.147`, together with the code that stops writing these columns. On `0.1.145` and earlier the
+> player **still writes and still serves** the IP and the raw User-Agent, and carries migrations only
+> up to `0024`. Applying 0026 or 0027 to a database whose player is older leaves that player writing
+> new values into columns you have just emptied: the purge would be undone at the next heartbeat.
+> `npm view discovery-media-player version` tells you what the registry serves; your own deployment
+> tells you what you are running, and it is the second number that decides.
+>
+> This paragraph is written this precisely because its opposite stood here: a claim, in the past
+> tense, that the change was already live, naming versions that had never been published. An
+> integrating host caught it by unpacking what the registry actually serves, after being asked to
+> apply migrations that were in no package. A guard now refuses any document naming a version the
+> repository has not cut.
+
+⚠️ **Read this before upgrading if you have ever queried `commercial_doc_sessions.ip` directly.**
+`0.1.147` stops serving it — no player path reads it back — stops writing it, and ships the migration
+that empties it, so nothing in the player changes; a report or dashboard of your own
+that reads values from it starts seeing empty ones. This notice exists so that it is announced
+*before*, not explained afterwards.
+
+**The column is emptied, not dropped — and emptying is what actually erases.** This is the reverse
+of the intuition, so it is worth the measurement. `ALTER TABLE … DROP` of a column marks the
+attribute dropped; it does **not** rewrite the rows. Measured on PostgreSQL 16.13 with
+`pageinspect`, on rows carrying an address:
+
+| after | addresses still present in the heap |
+|---|---|
+| dropping the column | **all of them** |
+| … then routine `VACUUM` | **all of them** — the rows are *live*, so there is nothing to reclaim |
+| … then `VACUUM FULL` | none — but that rewrites the table under an exclusive lock |
+| `UPDATE … SET ip = NULL`, then routine `VACUUM` | **none** |
+
+Dropping the column on its own would have left every address on disk indefinitely — invisible to
+any query, and therefore never checked by anyone again, while the schema swore it was not there. The
+`UPDATE` writes new row versions without the address and makes the old ones dead; **ordinary
+autovacuum reclaims them by itself**, with no exclusive lock and no operator action. Verified end to
+end on a populated database: 200 rows kept, 200 addresses gone after a routine vacuum, the migration
+replayable with no further effect. **The erasure is therefore complete today.** What is deferred is
+the shape of the schema, not the data.
+
+**Dropping the three columns is YOUR decision, not a migration we will ship.** This section used to
+say the removal would come "in a later release", which was misleading: **we cannot know which player
+version runs against your database, and you can.** A `DROP` is only safe once every instance writing
+to that database is on `0.1.147` or later; on `0.1.145` and earlier PostgREST would reject every
+session and view write, with an error naming a column rather than a version. Shipping that `DROP` in
+`supabase/migrations/`, which every host replays, would hand the same irreversible gesture to hosts
+whose deployment we have never seen. So it stays where the answer is known — with you.
+
+**How to know the moment has come.** `?contract=1&schema=1` reports `purge.vide`. When it is `true`
+on every instance pointing at that database, and every one of them is on `0.1.147` or later, nothing
+writes those columns any more. Then, if you want the schema tidied:
+
+```sql
+alter table public.commercial_doc_sessions drop column if exists ip;
+alter table public.commercial_doc_sessions drop column if exists ua;
+alter table public.commercial_doc_views    drop column if exists ua;
+```
+
+⚠️ **This buys tidiness, not erasure — the erasure already happened.** `0026` and `0027` are what
+removed the values, and routine autovacuum is what removed them from the pages (measured on a real
+host: four seconds after the second migration, no lock, nothing triggered by hand). A `DROP` on
+already-empty columns rewrites nothing and frees nothing. Run it because a schema should say what it
+holds, not because anything is still there.
+
+⚠️ **And you lose the attestation with the column.** The comment carried by each column — readable
+through `col_description()` — is what proves the purge was applied; a count of zero does not, since
+it cannot tell "purged" from "never written". Capture that proof before dropping if you may need to
+show it. After the drop, `purge.vide` still reads `true`: an absent column is a known state, not an
+unknown one.
+
+**Why the column itself survives, for now.** A migration here must be safe to apply *while the
+previous version of the player is running* — that rule is what makes the deployment order harmless,
+and it is enforced by a test. **Every version before `0.1.147` writes `ip`**, and PostgREST rejects a write carrying an
+unknown column: dropping it today would fail **every** session write of a host that applies
+migrations before deploying, with an error naming a column rather than a version. The column is
+removed in a later release, once no supported version writes it. Until then it exists, is always
+`NULL`, and carries a comment in the database saying so — `col_description()` on it is how you
+attest that 0026 ran.
+
+**What the migration cannot reach, and you can.** Write-ahead logs already written, backups, exports
+and migration dumps still carry the addresses; they follow *your* retention policy, not this file.
+This is the general rule stated at the end of *Limits stated rather than left unsaid* — a dropped
+column is itself a retention act, and earlier copies follow the host's backup policy — in its first
+concrete instance. A host that must attest a **complete** purge expires or rewrites its earlier
+backups; no migration can do that on its behalf.
+
+**The raw User-Agent goes the same way (0027), on both tables.** `0.1.147` stops serving it, stops
+writing it, and 0027 erases what is there — same shape, same measurement, same
+deferred column removal. `device`, `os` and `browser` are derived from the string *at write time* and
+are what a reading record carries, so the raw value had no reader; "we might re-parse it one day" is
+not a reason to keep a fingerprint for thirteen months. On `commercial_doc_views` the case is
+starker still: that table has no derived columns at all, so it derived nothing from the string and no
+query has ever read it back.
+
+**What is not covered.** `player_rate_limits.key` may still hold an address in the clear and expires
+on its own. `doc_presentation_attendees.creator_ip_hash` is a salted HMAC, not an address.
+
+## From what date is a purge complete end to end
+
+A question worth answering precisely, because the honest answer has three parts and only one of them
+is a number.
+
+**1. The rows.** Reading logs are deleted **13 months** after `at` / `last_at` by default. A host
+changes that through `config.retention` — whole months in `[1, 120]`.
+
+⚠️ **But the automatic sweep is strictly opt-in**, and there are **three** states, not two — an
+integrating host measured the one we had left out:
+
+| state | how to tell | what you may claim |
+|---|---|---|
+| **off** | `retentionSweep` false, and no `retention.run` in your logs | nothing has ever been deleted; the window is a policy you have not applied |
+| **armed, never exercised** | armed, but no row has yet reached the window — check the age of your oldest row against it | nothing has ever been deleted **either**, and not for want of configuration |
+| **armed, and has deleted** | armed, and a run reported non-zero counts | the window is an *event*, and only here |
+
+⚠️ **The middle state is the misleading one**, because it has every appearance of the good one: armed,
+correct, and indistinguishable in its effects from being off — no deletion, no log, no evidence it
+works. A host reported exactly this: sweep armed, oldest row 63 days old, **zero rows past 13 months
+out of 1908**. Its first real execution will be roughly **eighteen months after it was armed**, on
+data nobody will have looked at, never having run in anger. Treat it as what it is — a guard that has
+never been exercised, with a deadline — and exercise it deliberately before then, on a copy or with
+`retention.run` and a short window, rather than discovering its behaviour the day it matters.
+
+Anyone attesting a retention period should establish which of the **three** is true of the
+installation in front of them, rather than quoting the default.
+
+**2. The values inside surviving rows.** Erased by 0026 and 0027 as soon as they are applied, and
+physically gone from the table once routine autovacuum has passed — no operator action, typically
+minutes to hours on an active table. This part does not wait for the 13 months.
+
+**3. Backups, write-ahead logs, exports and migration dumps.** **Outside this player's reach, and we
+neither set nor observe them.** They follow the hosting platform's own settings — typically a
+point-in-time-recovery window plus a snapshot schedule, each with its own retention. Ask the platform
+for **the PITR window and the age of the oldest retained snapshot**; until they have rolled past the
+day 0026/0027 were applied, earlier copies still hold the erased values.
+
+⚠️ **Neither number is exposed by any API, and that matters more than it looks.** Two integrating
+hosts checked independently, on two different toolsets: the provider's API and its MCP tools return
+region, status and engine version — nothing about backups. **A human has to read them from the
+dashboard.** This is written here because the instruction above is *executable in appearance*: an
+agent following it will look for a tool, find none, and then either stop — or, the real risk, report
+the purge complete having skipped the one step it could not measure. If you cannot produce these two
+numbers, say so; do not round the sentence.
+
+⚠️ **And it is not always "the later of two".** An option that is not subscribed retains nothing, so
+it defers nothing. A host with no PITR and eight daily snapshots has **one** deadline, not two: the
+age of its oldest snapshot. Take the later of the deadlines that *exist*.
+
+## Cleaning up the objects the broken sweep stranded
+
+The voice-cache sweep removed nothing until it was fixed (see above), so every voice object it
+"purged" is still in the bucket with its row deleted — unreachable by the product, by construction.
+`tools/orphelins-tts.mjs` exists for exactly that backlog, and for nothing else.
+
+```
+node tools/orphelins-tts.mjs --inspecter [--age-jours=N] [--limite=N]
+node tools/orphelins-tts.mjs --inspecter --supprimer --confirme=<the count from the report>
+```
+
+It reads `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from the environment, and it deliberately
+**steps outside the host contract**: it talks to the Storage API directly to do the one thing the
+contract does not expose — `list`. That is why it is not a guard, runs in no workflow, and contacts
+nothing at all until you pass `--inspecter`.
+
+⚠️ **It cannot tell our orphans from yours, and no measurement can.** An object with no row is one of
+three things: stranded by the broken sweep, a relic from before migration 0021, or **a file your own
+code wrote under the player's naming** — one integrating host reported 908 of those. The tool
+therefore:
+
+- **reports by default** and deletes nothing;
+- treats only objects **older than the retention window** as candidates — a recent object with no row
+  may be a synthesis whose trace write just failed, and deleting it would erase a file the product is
+  about to serve;
+- refuses to act unless you **type the candidate count back** from a report it produced on the
+  current state. If the number has changed since you looked, the bucket moved, and that is precisely
+  what the barrier is there to tell you;
+- never touches a name that is not `<fingerprint>.mp3` / `.json`, nor an object whose date it cannot
+  read — no date means *we do not know*, and we do not delete what we do not know.
+
+Read the report before passing `--supprimer`. If your own code writes to this bucket, write the trace
+too (see *Voice* in `docs/HOST-CONTRACT.md`) — that is what makes your objects distinguishable, and
+what keeps them out of this tool's candidate list.
 
 ## Limits stated rather than left unsaid
 
+- ⚠️ **Until the next release the voice-cache sweep removed nothing at all, in the reference host context,
+  and the paragraph below is what hid it.** `storage.remove` carries an allow-list — a last barrier
+  before a DELETE with the service-role key — and it named only `present-attachments`. `tts-cache`
+  was refused **before any network call**: every removal returned `false`, the trace row was erased
+  anyway, and the object stayed in a public bucket with no path left to it. That is precisely the
+  harm migration 0021 was written to make repairable, realised at 100%.
+  ⚠️ **What concealed it is a true explanation.** Those refusals were counted in `fichiersErreur`,
+  which the next bullet attributes — correctly — to alignment files that legitimately do not exist.
+  A correct account of the noise is the best place to hide a signal. Found on 2026-09-12 while
+  writing the documentation for a *different* fix on the same path; the allow-list now names both
+  buckets the sweep must reach, and nothing else.
 - ⚠️ **`fichiersErreur` can be high without any removal having failed.** Each fingerprint has two
   objects, and the alignment `.json` is not always there — the provider does not always return one.
   Measured on an integrating host's bucket on 27/08: **552 `.mp3` for 356 `.json`**, so 196 audio
@@ -160,6 +364,34 @@ hour; only this window bounds the **duration**.
 - **The dryRun report is complete for presentations**: `messagesExaminees`, `presencesExaminees`
   and `fichiersCandidats` say what the REAL purge would do — same selection walk, no-op deletion,
   `efface.* = 0`.
+- ⚠️ **A row is never erased above a file that resisted, and `retenues` counts the rows kept.**
+  Until 0.1.163 the deletion was unconditional: a failed `storage.remove` still erased the row — and
+  with it the only path to the object. The `storage` capability exposes `put` and `remove`, **never
+  `list`**, which is the very argument that justified migration 0021: with no row there is nothing
+  to walk, so the object stays in the bucket **permanently**, beyond the reach of any sweep. Found
+  by an external audit on 2026-09-12, reproduced before being fixed. A retained row is recoverable —
+  the next pass retries it; a lost file is not. Read `retenues > 0` as *"the storage provider refused
+  a removal; look at it"*, not as a purge failure.
+- ⚠️ **And "not attempted" is the third state, found by a host on 0.1.164.** A host providing `put`
+  without `remove` had no capability to refuse with: `retirerFichier` answered `null` and the row
+  went "as before" — the irreversible loss above, through the other door. Now a missing
+  `storage.remove` retains every file-bearing row, counts it in `retenues`, sets `sansRemove: true` on
+  the result (also in `dryRun`), and is reported once per process (`errors.capture`, `benin: true`).
+  A row without a file still goes.
+- ⚠️ **The alignment `.json` never retains anything — only the audio does.** A third of fingerprints
+  legitimately have no companion (see the 552/356 measurement above); gating the row on both objects
+  would hold a third of the cache forever to protect files that do not exist. So the `.mp3` alone
+  decides, and a missing `.json` is still **counted** in `fichiersErreur` rather than masked.
+- ⚠️ **A presentation is not deleted above a retained message.** The condition used to require only
+  that nothing was `tronque`; "retained" is a second way of not having gone, and without it the fix
+  above would have reopened the parent/child orphan an earlier audit had closed.
+- ⚠️ **The delete carries the purge predicate, not just the identifiers.** The sweep selects by date
+  and used to delete by identifier alone: a heartbeat landing between the two requests refreshed a
+  row that was then erased anyway, judged on a date that was no longer its own. Same audit, same
+  day, also reproduced. PostgREST applies every predicate in the URL at delete time, so replaying
+  the original filter makes the row be judged on its state **at that instant**. The race window does
+  not disappear — it stops being destructive. `select=` returns only what actually went, so the
+  counts stay honest when the database spares a row at the last moment.
 - **The purge advances in BOUNDED BATCHES** (200 rows, a ceiling of 5000 per table and 500
   presentations per run): it selects a batch of identifiers, deletes them with `id=in.(…)`, and
   starts again. The report (`r.rapport`) carries, per table: `examinees`, `supprimees`, `tronque`

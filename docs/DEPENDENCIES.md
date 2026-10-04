@@ -33,6 +33,13 @@ process, under the operator's credentials. A dependency is therefore added only 
 A dependency that fails any of these is written by hand instead. Several of the guards in `tools/`
 exist for exactly that reason.
 
+The bar cuts the other way too. `ajv` (development only, pinned exactly) validates the load-artefact
+schema in strict mode: a hand-written JSON Schema validator was tried first, for a two-hundred-line
+schema, and an audit found twice in one day a branch of the schema it did not read — a keyword it
+skipped, then a reference it never resolved because no fixture exercised that branch. A partial
+validator of a standard is the work of maintaining the standard, and that work is larger than the
+work of removing a dependency later (14/09).
+
 ## Obtaining dependencies
 
 Only from the public npm registry, over HTTPS, and only through `npm ci`:

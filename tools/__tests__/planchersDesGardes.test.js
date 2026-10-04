@@ -104,6 +104,30 @@ describe("aucune garde ne déclare victoire sur un dépôt vide", () => {
     expect(outils().length, "aucun outil relevé : cette garde vise à côté").toBeGreaterThanOrEqual(8);
   });
 
+  it("⚠️ UN TÉMOIN PLANTÉ EXPRÈS SORT EN 0 — sans quoi tous les `not.toBe(0)` d'en dessous sont gratuits", () => {
+    // ⚠️ LE PLANCHER DU COMPTAGE NE COUVRE PAS LE LANCEUR. Celui du dessus prouve qu'on a TROUVÉ des
+    // outils ; il ne prouve pas qu'on sache en EXÉCUTER un. Or toutes les assertions de ce fichier
+    // sont de la forme « le code n'est pas 0 » : un lanceur cassé — `node` introuvable, un `cwd`
+    // qui n'existe pas, un arbre mal monté — les satisfait TOUTES, gratuitement et en silence.
+    //
+    // La forme nous vient de la session ADV le 09/09, qui l'a trouvée chez elle au niveau du shell :
+    // `zsh` avorte la commande entière quand un glob ne correspond à rien, donc leur `ls` n'a jamais
+    // tourné et le comptage a rendu 0 SANS AVOIR COMPTÉ. « Un zéro produit par une commande qui n'a
+    // pas eu lieu ressemble exactement à un zéro mesuré. » Ici, c'est le NON-zéro qui serait gratuit.
+    //
+    // Le remède est un contrôle positif : on plante un outil dont on SAIT qu'il doit sortir en 0, et
+    // s'il ne le fait pas, aucun refus mesuré dans ce fichier ne prouve quoi que ce soit.
+    const ou = arbre((d) => writeFileSync(join(d, "tools", "temoin-vacuite.mjs"),
+      'import { conclure, conforme } from "./resultat-garde.mjs";\n'
+      + 'conclure(conforme("je ne regarde rien, et je sors en 0"));\n'));
+    try {
+      const { code, sortie } = lancer("temoin-vacuite.mjs", ou);
+      expect(code, "le témoin — une fausse garde qui rend CONFORME sans rien regarder — n'a pas rendu 0 : "
+        + `le montage ne sait pas exécuter un outil (${sortie.slice(0, 200)}), donc les refus mesurés `
+        + "plus bas ne séparent pas « la garde a refusé » de « rien n'a tourné »").toBe(0);
+    } finally { rmSync(ou, { recursive: true, force: true }); }
+  });
+
   it("chaque outil est soit ÉPROUVÉ, soit EXEMPTÉ avec une raison qui tient encore", () => {
     const fautes = [];
     for (const nom of outils()) {
@@ -116,9 +140,14 @@ describe("aucune garde ne déclare victoire sur un dépôt vide", () => {
   });
 
   const nomme = [];
+  // ⚠️ COMBIEN D'ESSAIS ALIMENTENT LE RÉSUMÉ D'EN BAS — pour qu'il puisse dire qu'il en manque
+  // plutôt que d'échouer sans expliquer. Voir la note de cet essai final.
+  const eprouves = [];
+  const ATTENDUS = readdirSync(join(RACINE, "tools")).filter((f) => f.endsWith(".mjs") && !EXEMPTES[f]).length;
   for (const nom of readdirSync(join(RACINE, "tools")).filter((f) => f.endsWith(".mjs"))) {
     if (EXEMPTES[nom]) continue;
     it(`${nom} refuse plutôt que de conclure au vert`, () => {
+      eprouves.push(nom);
       const { code, sortie } = lancer(nom, vide);
       // ⚠️ CE QU'ON AFFIRME EST LE REFUS, PAS SA POLITESSE. Un outil qui plante sur un fichier absent
       // refuse aussi — mal, mais il ne ment pas. Nommer la cause est une qualité SÉPARÉE : l'exiger
@@ -169,7 +198,17 @@ describe("aucune garde ne déclare victoire sur un dépôt vide", () => {
   // propriété qui compte — il ne ment pas. Exiger que chacun NOMME sa cause obligerait à réécrire
   // des outils corrects ; on se borne à exiger qu'au moins un le fasse encore, faute de quoi la
   // tournure « la sonde vise à côté » aurait disparu du dépôt sans que personne l'ait décidé.
+  //
+  // ⚠️ ET CET ESSAI DÉPEND DE SON RANG — IL LE DÉCLARE PLUTÔT QUE DE LE SUBIR. C'est un RÉSUMÉ des
+  // essais générés ci-dessus : il lit ce qu'ils ont accumulé, donc il n'a de sens qu'après eux.
+  // Exécuté avant, `nomme` est vide et l'essai échouait en accusant le dépôt d'avoir perdu une
+  // formule qu'il n'avait pas perdue — un rouge qui désigne le mauvais coupable. Le plancher
+  // ci-dessous le dit à sa place. Le fichier est déclaré dans `tools/ordre-des-bancs.mjs`, avec sa
+  // raison, plutôt qu'exempté en silence.
   it("au moins un refus nomme encore sa cause plutôt que de simplement planter", () => {
+    expect(eprouves.length,
+      `résumé des essais d'au-dessus : ${eprouves.length} sur ${ATTENDUS} ont tourné. Cet essai n'a de sens qu'APRÈS eux — c'est un ordre déclaré (tools/ordre-des-bancs.mjs), pas une régression du dépôt`)
+      .toBe(ATTENDUS);
     expect(nomme.length, "plus aucun outil ne dit « la sonde vise à côté » : la formule a disparu du dépôt")
       .toBeGreaterThan(0);
   });

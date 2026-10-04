@@ -102,6 +102,7 @@ const BOT_CSS = `
   body.onepage #pages{height:100%;display:flex;align-items:center;justify-content:center;padding:0}
 
   body.onepage #pages .page{display:none;margin:0}
+  body.onepage #pages .pspace{display:none} /* un espaceur de pages absentes pousserait la page courante hors de l'écran */
   body.onepage #pages .page.cur{display:block;box-shadow:0 6px 34px rgba(0,0,0,.16)}
   /* Transition de page sobre en mode guidé/lecture (glissé directionnel ~0,28 s). Exclut le player mobile
      (rythme rapide). Activable/désactivable via .botanim (CFG.botAnim, défaut ON — param profil futur). */

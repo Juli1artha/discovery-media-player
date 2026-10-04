@@ -46,6 +46,18 @@ describe("ranger un chemin", () => {
     expect(zoneDe("dist/bridge.d.ts")).not.toBe("types");
   });
 
+  // ⚠️ « browser : 0 » a été lu six trains de suite comme « rien ne change pour nos visiteurs » (un
+  // hôte, 13/09). Le JavaScript de la page vit dans des gabarits sous server/ : c'est la zone `pages`.
+  it("⚠️ la page des visiteurs est `pages`, pas `server` ni `browser` — gabarits, pages et bundles générés", () => {
+    for (const f of ["server/page-visionneuse.js", "server/page-audience.js", "server/gabarit-live.js", "server/gabarit-agent.js", "server/browser.generated.js", "server/shared.generated.js"]) {
+      expect(zoneDe(f), f).toBe("pages");
+    }
+    expect(zoneDe("server/handler.js"), "le code que l'hôte exécute reste `server`").toBe("server");
+    expect(zoneDe("server/routes-liens.js")).toBe("server");
+    expect(zoneDe("dist/bridge.js"), "le pont reste `browser`").toBe("browser");
+    expect(zoneDe("server/pages/x.js"), "un sous-dossier n'est pas une page").toBe("server");
+  });
+
   it("rend null pour ce qu'aucune zone ne réclame", () => {
     expect(zoneDe("charge/scenario.js")).toBeNull();
   });

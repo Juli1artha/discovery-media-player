@@ -57,7 +57,10 @@ create table if not exists public.commercial_doc_shares (
   idem_key        text,
   -- Destinataire attesté par l'hôte : sert à ATTRIBUER une lecture, jamais à expédier en son nom.
   -- `recipient_email`, elle, dit qui peut expédier — vide quand personne ne le peut.
-  attested_recipient_email text
+  attested_recipient_email text,
+  -- Lien protégé (0028) : échéance et empreinte du mot de passe, nulles par défaut.
+  expires_at      timestamptz,
+  password_hash   text                       -- « sel:hash » scrypt — JAMAIS servi
 );
 create index if not exists cds_doc_id_idx on public.commercial_doc_shares (doc_id);
 -- ⚠️ RÈGLE (sixième audit) : tout index sur une colonne apparue APRÈS un init déjà publié est
@@ -108,6 +111,10 @@ create table if not exists public.commercial_doc_views (
   seconds         integer constraint ck_views_seconds_borne check (seconds is null or (seconds >= 0 and seconds <= 86400)),
   session_id      text,
   at              timestamptz not null default now(),
+  -- ⚠️ VIDE, ET PLUS JAMAIS ÉCRITE (0027, demande ADV du 01/09/2026). Cette table n'a ni `device`,
+  -- ni `os`, ni `browser` : elle ne dérivait RIEN de cette chaîne, l'écrivait, et aucune requête ne
+  -- l'a jamais relue. Elle demeure le temps qu'aucune version supportée ne l'écrive — voir la note
+  -- de `commercial_doc_sessions.ip` ci-dessous pour la raison, qui est la même.
   ua              text
 );
 create index if not exists cdv_slug_idx on public.commercial_doc_views (slug);
@@ -128,7 +135,17 @@ create table if not exists public.commercial_doc_sessions (
   max_page        integer constraint ck_sessions_max_page_borne check (max_page is null or (max_page >= 0 and max_page <= 10000)),
   total_seconds   integer default 0 constraint ck_sessions_total_seconds_borne check (total_seconds is null or (total_seconds >= 0 and total_seconds <= 86400)),
   pages_time      jsonb   default '{}'::jsonb,
+  -- ⚠️ VIDE, ET PLUS JAMAIS ÉCRITE (0027). `device`, `os` et `browser` ci-dessous en sont dérivés À
+  -- L'ÉCRITURE et sont, eux, servis : la chaîne brute n'a plus de lecteur. Même sort que `ip`, même
+  -- raison de survivre encore.
   ua              text,
+  -- ⚠️ VIDE, ET PLUS JAMAIS ÉCRITE (0026, arbitrage ADV du 01/09/2026). Elle a porté l'adresse du
+  -- lecteur en clair ; la 0.1.146 a cessé de la SERVIR, la 0026 efface ce qui restait et plus
+  -- aucune écriture ne la remplit. Elle demeure ici parce qu'une migration doit rester sûre
+  -- pendant que la version PRÉCÉDENTE du code tourne — celle-là l'écrit encore, et PostgREST
+  -- rejette une écriture portant une colonne inconnue : la supprimer aujourd'hui ferait échouer
+  -- TOUTES les écritures de session d'un hôte pas encore déployé. Sa suppression est le geste
+  -- d'une livraison ULTÉRIEURE, quand plus aucune version supportée ne l'écrit.
   ip              text,
   device          text,
   os              text,
@@ -792,6 +809,38 @@ update public.commercial_doc_shares set revoked_at = now() where revoked = true 
 -- job compare.
 alter table public.doc_presentations
   add column if not exists view_rotation integer not null default 0;
+-- 0028 — même rattrapage : une base installée avant aujourd'hui ne verrait jamais ces deux colonnes en
+-- rejouant ce fichier, et le player refuserait alors de créer un lien protégé (il le dit, 503).
+alter table public.commercial_doc_shares
+  add column if not exists expires_at timestamptz;
+alter table public.commercial_doc_shares
+  add column if not exists password_hash text;
+comment on column public.commercial_doc_shares.expires_at is
+  'Echeance du lien : au-dela, il ne se resout plus. Nulle = sans expiration.';
+comment on column public.commercial_doc_shares.password_hash is
+  'Empreinte du mot de passe du lien (sel:hash, scrypt, hex). Nulle = sans mot de passe. '
+  'Jamais servie : un hote n''en voit qu''un booleen.';
+
+-- ⚠️ ET LE RATTRAPAGE VAUT AUSSI POUR CE QU'ON EFFACE (0026). Une base installée avant aujourd'hui
+-- porte treize mois d'adresses ; `create table if not exists` ne touche pas une table déjà là, donc
+-- rejouer ce fichier ne les effacerait jamais. Le geste est celui de la 0026, à l'identique, et il
+-- ne coûte rien sur une base neuve — où la colonne est vide par construction.
+update public.commercial_doc_sessions set ip = null where ip is not null;
+-- 0027 — même geste pour le User-Agent brut, sur les DEUX tables.
+update public.commercial_doc_sessions set ua = null where ua is not null;
+update public.commercial_doc_views set ua = null where ua is not null;
+comment on column public.commercial_doc_sessions.ua is
+  'VIDE ET PLUS JAMAIS ECRITE depuis la 0027. A porte le User-Agent brut du lecteur. Les champs '
+  'device, os et browser en sont derives A L''ECRITURE et sont, eux, servis. Conservee le temps '
+  'qu''aucune version supportee du lecteur ne l''ecrive. Voir docs/RETENTION.md.';
+comment on column public.commercial_doc_views.ua is
+  'VIDE ET PLUS JAMAIS ECRITE depuis la 0027. A porte le User-Agent brut du lecteur. Cette table '
+  'n''en derivait rien et aucune requete ne l''a jamais relue. Conservee le temps qu''aucune '
+  'version supportee du lecteur ne l''ecrive. Voir docs/RETENTION.md.';
+comment on column public.commercial_doc_sessions.ip is
+  'VIDE ET PLUS JAMAIS ECRITE depuis la 0026. A porte l''adresse IP du lecteur en clair. '
+  'Conservee le temps qu''aucune version supportee du lecteur ne l''ecrive : la supprimer '
+  'aujourd''hui casserait les ecritures d''un hote pas encore deploye. Voir docs/RETENTION.md.';
 
 -- ⚠️ ET LE RATTRAPAGE VAUT AUSSI POUR LES CONTRAINTES, PAS SEULEMENT POUR LES COLONNES (0020).
 -- Elles sont déclarées dans le corps des tables ci-dessus, ce qui règle la base VIERGE — et ne

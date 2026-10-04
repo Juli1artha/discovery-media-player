@@ -149,8 +149,21 @@ if (estExecuteDirectement(import.meta.url)) {
           chmodSync(cible, 0o755);
           process.stderr.write(raison + "\n");
         }
-      } catch {
-        // Un hook non installé ne doit jamais empêcher d'installer le projet.
+      } catch (erreur) {
+        // ⚠️ NON BLOQUANT N'EST PAS MUET, ET CE `catch` VIDE CONFONDAIT LES DEUX. Le principe
+        // au-dessus est juste — un hook non installé ne doit jamais empêcher d'installer le projet,
+        // parce qu'échouer ici ferait échouer `npm install` pour une commodité de développement.
+        // Mais n'en RIEN DIRE transforme « nous n'avons pas pu » en « tout va bien » : un audit
+        // externe a rendu le dossier de hooks non inscriptible le 12/09 et obtenu sortie 0, aucun
+        // message, aucun hook. Le développeur croit son garde-fou posé ; il travaille sans.
+        //
+        // Sur stderr pour la raison écrite plus haut : `prepare` tourne pendant `npm pack --json`,
+        // dont une garde PARSE la sortie standard.
+        process.stderr.write(
+          `hooks git : pre-push NON installé (${(erreur && erreur.message) || erreur}). `
+          + "Ce n'est pas bloquant — le projet s'installe — mais votre garde-fou local n'est pas en "
+          + "place : les vérifications de pré-envoi ne tourneront pas.\n",
+        );
       }
     }
   }

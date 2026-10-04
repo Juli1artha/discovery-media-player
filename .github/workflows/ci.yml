@@ -30,7 +30,20 @@ jobs:
       matrix:
         node: ["22", "24"]
     steps:
+      # ⚠️ LES TAGS SONT NÉCESSAIRES, ET SANS EUX UNE GARDE NE VOIT PLUS SON OBJET. `checkout` ne
+      # les rapporte pas par défaut : `git tag -l` rend une liste VIDE sur le runner. La garde
+      # `sections-et-tags.mjs` confronte les sections du CHANGELOG aux tags qui existent — sans
+      # tags, elle rend honnêtement NON CONCLUANT (« la confrontation ne peut pas être établie »),
+      # c'est-à-dire qu'elle ne garde rien ici. `fetch-tags` coûte une liste de références ; la
+      # profondeur reste à 1, l'historique n'est pas rapatrié.
+      #
+      # ⚠️ NE RELÂCHEZ PAS LE BANC POUR FAIRE PASSER CE JOB. Le banc « le dépôt lui-même » de cette
+      # garde EXIGE le vert, exprès : le rendre tolérant à l'absence de tags le rendrait vert en ne
+      # regardant rien, ce qui est la vacuité que ce dépôt retire partout. C'est l'environnement qui
+      # doit fournir l'objet, pas l'assertion qui doit baisser.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-tags: true
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ matrix.node }}
@@ -350,9 +363,140 @@ jobs:
       # exemplaires d'une règle divergent, personne ne les confronte, et le jour où l'un se corrige
       # l'autre continue de bénir — c'est le défaut que ce dépôt traque partout ailleurs. Un seul
       # module décide (tools/changelog.mjs), il a ses tests, la forge et le préflight l'appellent.
+      # ⚠️ UN BANC QUI DÉPEND DE SON RANG NE PROUVE PAS CE QU'IL ANNONCE — et cette règle était
+      # DÉJÀ ÉCRITE dans le dépôt, à la main, au-dessus d'un mécanisme qui ne l'appliquait pas.
+      # `repliRpcSignature.test.js` obtenait un « module neuf » par `vi.resetModules()` puis
+      # `require` : mesuré, les deux rendent le MÊME objet d'exports en CommonJS. L'essai lisait
+      # l'héritage de ses voisins, et ne passait que parce qu'il est en tête de bloc. Ce qu'il
+      # masquait était en PRODUCTION : `presentations.init()` jetait un mémo d'exécution et gardait
+      # son jumeau, que le fichier déclare identique trois fois.
+      #
+      # ⚠️ ÉTAPE DE FORGE ET NON BANC, PAR CONSTRUCTION : cette garde LANCE la suite, donc l'appeler
+      # depuis la suite l'imbriquerait dans elle-même — elle refuse de tourner quand `VITEST` est
+      # posé. La propriété ne peut donc pas être gardée par un banc ; elle l'est ici.
+      #
+      # ⚠️ ET ELLE N'EXIGE PAS QUE TOUT BANC SURVIVE AU MÉLANGE. Des fichiers dépendent de leur ordre
+      # LÉGITIMEMENT ; ils sont déclarés dans la garde avec leur raison et nommés à chaque exécution.
+      # Rougir dessus serait crier sur du bon code — la façon dont une garde finit désactivée.
+      # ⚠️ UNE AFFIRMATION QU'ON A DÉCIDÉ DE RETIRER NE DOIT PLUS SE LIRE COMME VRAIE, NULLE PART.
+      # Quatre fois en deux jours, la même panne : une phrase corrigée à un endroit, son jumeau
+      # laissé ailleurs — dont une copie que DEUX audits humains avaient manquée, et une qui mettait
+      # hors périmètre, dans SECURITY.md, un étage que le code implémente : elle disait à un
+      # chercheur de ne pas regarder.
+      #
+      # ⚠️ CETTE GARDE NE CONFRONTE PAS UNE PHRASE À CE QU'ELLE DÉCRIT, et il ne faut pas le croire :
+      # AGENTS.md dit qu'aucune garde ici ne sait faire ça, et ça reste vrai. Elle confronte le dépôt
+      # à une DÉCISION que nous avons déjà prise — la sous-classe étroite, et la seule mécanisable.
+      # ⚠️ NOTRE CRITÈRE D'ACCEPTATION ÉTAIT MANUEL, ET UN AUDIT EXTERNE L'A CORRIGÉ EN DEUX TEMPS.
+      # Le CHANGELOG porte des dizaines de « N mutations sur N tuées » : chacune était vraie le jour
+      # où elle a été écrite, produite à la main, sans artefact, non rejouable — y compris par nous,
+      # le lendemain. Nous avions d'abord annoncé « zéro outil de mutation », ce qui était FAUX :
+      # `tools/fixture-types/eprouver.mjs` en est un, sur les TYPES. Ceci est la campagne sur le
+      # COMPORTEMENT, et chaque mutant est un défaut qui a réellement existé.
+      #
+      # ⚠️ PAS DE MUTATION GÉNÉRIQUE SUR 10 800 LIGNES : des centaines de survivants bénins
+      # apprendraient à ignorer la sortie, et une garde qu'on ignore est pire qu'absente. Un
+      # manifeste de cibles exactes dit quelque chose de vérifiable.
+      #
+      # ⚠️ ELLE MODIFIE DES FICHIERS PUIS LES RESTAURE, et vérifie l'empreinte après chaque mutant :
+      # une campagne manuelle interrompue a déjà laissé un fichier muté sur disque, que l'exécution
+      # suivante a pris pour sa référence. Elle refuse aussi de tourner depuis les bancs.
+      - name: Every recorded defect is still guarded — behaviour mutation campaign
+        if: matrix.node == '22'
+        run: node tools/mutations.mjs
+
+      - name: No retracted claim is still written as true
+        if: matrix.node == '22'
+        run: node tools/affirmations-retirees.mjs
+
+      # ⚠️ TROIS FOIS LE MÊME DÉFAUT, ET AUCUN DES TROIS N'A JAMAIS ROUGI. Un banc qui reçoit sa
+      # propre configuration et sa propre étape continue de tourner dans le banc général si personne
+      # ne l'en écarte — deux passages, verts tous les deux, dans la MÊME base d'essai. C'est arrivé
+      # à la campagne de charge, à l'endurance, aux statistiques agrégées, puis à tout `charge/**`
+      # (dont le second passage AVALE son propre relevé, faute de `disableConsoleIntercept`). Les
+      # deux premiers correctifs nommaient un fichier ; la règle manquait, et la faute a repoussé.
+      - name: Every bench file belongs to exactly one vitest configuration
+        if: matrix.node == '22'
+        run: node tools/configuration-des-bancs.mjs
+
+      # ⚠️ UNE GARDE APPLIQUÉE À RIEN ET UNE GARDE JAMAIS APPLIQUÉE VALENT LA MÊME CHOSE. Deux gardes
+      # justes, couvertes par leurs bancs, n'ont longtemps été lancées nulle part ; `AGENTS.md` a
+      # écrit qu'exiger leur application était « une garde que nous n'avons pas écrite ». Celle-ci
+      # l'exige : chaque garde est lancée par une étape qui peut échouer, ou appliquée au dépôt dans
+      # un bloc « le dépôt lui-même » — et elle se l'applique à elle-même par cette étape.
+      - name: Every guard is applied to this repository by something that can fail
+        if: matrix.node == '22'
+        run: node tools/gardes-appliquees.mjs
+
+      # ⚠️ UNE MIGRATION LIVRÉE NE CHANGE PLUS — PAS MÊME UN COMMENTAIRE. Entre 0.1.163 et 0.1.164 la
+      # 0004 a bougé (prose corrigée en place) ; les migrations voyagent dans le tarball, des hôtes
+      # les ont exécutées et empreintées, et l'un d'eux a dû faire un `diff -u` pour savoir qu'il
+      # n'avait rien à ré-appliquer. La référence est le tag le plus haut : d'où `fetch-tags` en
+      # tête de ce job, sans quoi la garde rend NON CONCLUANT.
+      - name: A published migration never changes, not even a comment
+        run: node tools/migrations-immuables.mjs
+
+      # ⚠️ QUATRE GRAINES : le jour (change chaque jour), 42 (fixe), 20260913 — celle sous laquelle un
+      # audit externe a trouvé une dépendance d'ordre que la garde masquait en lisant la sortie texte —
+      # et 20260912, demandée par le même audit et d'abord omise : une graine qu'un auditeur nomme est
+      # une graine qu'il rejouera, autant qu'elle soit ici avant lui.
+      - name: No bench depends on its rank within its file
+        if: matrix.node == '22'
+        run: node tools/ordre-des-bancs.mjs --graine=jour,42,20260912,20260913
+
+      # ── L'ARTEFACT DE CHARGE : UN DOCUMENT, PAS UNE LIGNE DE JOURNAL ─────────────────────────
+      # ⚠️ Les bancs de charge de ce dépôt imprimaient leur relevé dans le journal de la forge, lu par
+      # un humain, jamais comparé. Un audit externe : « la preuve runtime attendue pour la
+      # performance n'existe pas ». Elle prend la forme d'un JSON au schéma versionné
+      # (`charge/artefact.schema-<N>.json`, `schemaVersion: N`, immuable une fois publié), produit
+      # même en échec, attaché aux releases. Cette étape COMPILE chaque schéma en entier (ajv 2020-12
+      # en mode strict, non concluant sur tout défaut, même dans une branche qu'aucun exemple ne
+      # matérialise), relit au tag l'ancre de tout schéma déjà publié, éprouve le corpus (un artefact
+      # minimal, un `complete: false`) en forme ET en invariants entre nombres, et refuse toute clé
+      # qui n'est pas écrite. Non concluant sans corpus.
+      # ── UNE BOUCLE DE RÉESSAI A TROIS SORTIES, PAS DEUX ──────────────────────────────────────
+      # ⚠️ Écrite après un incident daté : la publication de la 0.1.168 a laissé le paquet parti et
+      # la Release absente, parce qu'une boucle attendant le registre est sortie par ÉPUISEMENT
+      # exactement comme par succès — vingt-cinq secondes avant que la version devienne installable.
+      # « Ce n'est pas un défaut d'attente, c'est une garde qui échoue ouvert » (un hôte, 14/09).
+      # Cette garde tient la règle pour toute boucle de réessai des workflows : après son `done`, un
+      # `::error::` qui nomme ce qui n'est jamais venu, ou le rejeu du test. Non concluant si elle
+      # n'en voit aucune — zéro boucle relevée n'est pas une conformité.
+      - name: Every retry loop says when it gave up
+        if: matrix.node == '22'
+        run: node tools/boucles-de-reessai.mjs
+
+      - name: Every load artefact validates against its schema, and the schema cannot widen in silence
+        if: matrix.node == '22'
+        run: node tools/artefact-de-charge.mjs
+
       - name: Every changelog section has its exact comparison link
         if: matrix.node == '22'
         run: node tools/changelog.mjs
+
+      # ⚠️ UN NUMÉRO DE VERSION ÉCRIT À LA MAIN EST UNE AFFIRMATION SUR LE REGISTRE, dans un fichier
+      # que rien ne relie au registre. Le 01/09, quatre documents lus par les intégrateurs portaient
+      # DIX-HUIT affirmations au passé sur deux versions jamais publiées : un hôte a cru l'arrêt
+      # d'écriture livré et s'est vu demander d'appliquer des migrations qui n'étaient dans aucun
+      # paquet. C'est lui qui l'a mesuré, en dépaquetant la version servie — pas nous.
+      #
+      # La règle se dérive de `package.json`, que `docs/RELEASING.md` tient déjà égal au tag et à la
+      # section de tête du CHANGELOG : entre deux sorties il EST la dernière version publiée, et
+      # pendant la PR de sortie il monte dans le même commit que la section qui la décrit. La
+      # fenêtre se referme donc d'elle-même, sans exception à écrire.
+      - name: No document announces a version that does not exist
+        if: matrix.node == '22'
+        run: node tools/versions-annoncees.mjs
+
+      # ⚠️ UN ARTEFACT CONÇU POUR UNE PERSONNE EST LU PAR UNE MACHINE. Le commentaire posé sur une
+      # colonne purgée (0026, 0027) devait servir à un humain prouvant une purge ; un hôte nous a
+      # signalé que son inventaire le croise avec ses comptes résiduels pour lever une alarme.
+      # Cesser de le poser ne casserait rien ici — ça rendrait cette alarme MUETTE, sans rien lui
+      # dire. C'est le moment où l'on décide entre commodité et engagement, et l'engagement qui ne
+      # vit que dans une phrase est un fait figé de plus. Ceci est ce qui rougit si on le défait.
+      - name: Every emptied column carries its attestation
+        if: matrix.node == '22'
+        run: node tools/attestation-de-purge.mjs
 
       # ⚠️ `engines` ANNONÇAIT `>=22` ET `pdfjs-dist` EXIGEAIT `>=22.13.0` (mesuré le 25/08). Entre
       # node 22.0 et 22.12, le paquet déclarait donc que tout allait bien et faisait tourner son
@@ -513,7 +657,20 @@ jobs:
           #
           # Une sonde qui lit du commentaire invente des coupables. Même correction que celle faite
           # le même jour sur la sonde des colonnes de schéma, pour la même raison.
-          sans_commentaires=$(grep -avE '^[[:space:]]*//' server/*.js --with-filename --line-number || true)
+          #
+          # ⚠️ ET LA CORRECTION N'AVAIT ÉTÉ FAITE QUE POUR `//`. Les commentaires de BLOC passaient au
+          # travers : une ligne « * … la garde interdit `offset=` … » — c'est-à-dire l'explication de
+          # la règle elle-même — faisait rougir la garde. Elle a donc accusé la phrase qui la
+          # documente, et la seule issue aurait été de dégrader l'explication pour la satisfaire :
+          # exactement ce que le paragraphe ci-dessus dit vouloir empêcher, resté à moitié fait.
+          #
+          # ⚠️ ET CETTE RÈGLE EXISTE ICI EN DOUBLE, LA COPIE FAIBLE ÉTANT CELLE-CI. `sourceUtile` de
+          # tools/surface-base.mjs retire `//`, `*` ET `/*` depuis longtemps, et il est éprouvé ;
+          # ce `grep` inline ne l'était pas. Les motifs sont maintenant COMPTÉS par cet outil
+          # (`or=(`, `and=(`, `offset=`) et comparés à docs/API.md, ce qui rend ce bloc redondant
+          # pour trois de ses quatre motifs — le quatrième, `select=…(`, ne l'est pas encore.
+          # Tant qu'il vit, il doit lire la même chose que l'outil.
+          sans_commentaires=$(grep -avE '^[[:space:]]*(//|\*|/\*)' server/*.js --with-filename --line-number || true)
           exotique=$(printf '%s\n' "$sans_commentaires" | grep -E 'select=[^&`"]*\(|[?&]or=\(|[?&]and=\(|offset=' || true)
           [ -z "$exotique" ] || { echo "::error::PostgREST-specific syntax raises the porting cost:"; echo "$exotique"; exit 1; }
           # ⚠️ ON COMPARE, ON N'AFFICHE PAS. Cette étape se contentait d'imprimer le compte en
@@ -551,14 +708,28 @@ jobs:
       - name: Schema expectations go through the declared inventory
         if: matrix.node == '22'
         run: |
-          hors=$(grep -arn 'aLaColonne(' server/*.js | grep -v '^server/schema.js:' || true)
+          # ⚠️ ON CLASSE COMMENTAIRE ET CODE AVANT DE COMPTER — troisième fois que ce dépôt paie
+          # cette leçon, et la première où elle est appliquée à TOUTES ses sondes le même jour.
+          # Mesuré : un simple « // … aLaColonne( … » posé dans server/handler.js faisait rougir
+          # cette étape, qui accusait donc la PROSE expliquant sa propre règle. La seule issue
+          # aurait été de dégrader l'explication pour la satisfaire.
+          # La formule est celle de `sourceUtile` (tools/surface-base.mjs), à l'identique : une
+          # seconde orthographe de « ce fichier sans ses commentaires » est la recopie que ce dépôt
+          # a déjà payée. Un hôte l'a formulée en général le 02/09 : tout balayage qui cherche une
+          # FORME dans du code doit classer code et commentaire AVANT de compter.
+          code=$(grep -avE '^[[:space:]]*(//|\*|/\*)' server/*.js --with-filename --line-number || true)
+          hors=$(printf '%s\n' "$code" | grep -E ':[0-9]+:.*aLaColonne\(' | grep -v '^server/schema.js:' || true)
           [ -z "$hors" ] || { echo "::error::sonde de schéma hors inventaire — utilisez attendue(nom) :"; echo "$hors"; exit 1; }
           # ⚠️ LE MOTIF SUIT LA FORME PUBLIÉE, ET IL A DÉJÀ DÉRIVÉ UNE FOIS. Il cherchait
           # « migration: "supabase/migrations/ » ; le jour où ce préfixe a été retiré des valeurs
           # (une garde d'hôte tire sur « supabase »), ce grep a compté zéro — et sous « bash -e »
           # un grep -c sans correspondance sort en 1, donc l'étape est morte SANS message, sur un
           # « exit code 1 » que rien n'expliquait. Le refus était juste, sa raison invisible.
-          n=$(grep -ac 'migration: "' server/schema.js || true)
+          # ⚠️ ET CE PLANCHER SE GONFLE SUR UN COMMENTAIRE, ce qui est le pire sens pour un
+          # plancher : mesuré, « // migration: "…" » ajouté à ce fichier le fait passer de 10 à 11.
+          # Un commentaire pourrait donc MAINTENIR ce seuil pendant que la forme réelle dérive —
+          # c'est-à-dire masquer exactement la panne que cette étape existe pour attraper.
+          n=$(grep -avE '^[[:space:]]*(//|\*|/\*)' server/schema.js | grep -c 'migration: "' || true)
           # ⚠️ PLANCHER LARGE, ET LA RAISON DIFFÈRE DE CELLE DES AUTRES PLANCHERS DE CE DÉPÔT. Le
           # nombre d'attentes n'est PAS monotone : une colonne qui cesse d'être un point de
           # dégradation quitte légitimement ATTENDUES pour NON_SONDEES. Un seuil exact rougirait
@@ -876,6 +1047,15 @@ jobs:
       PSQL: psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d player -qtA
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # ⚠️ SANS LES TAGS, L'ANCRE DU SCHÉMA NE PEUT PAS ÊTRE RELUE. `charge/rapport.js` juge sa
+          # cohorte par `tools/artefact-de-charge.mjs`, qui prouve l'immuabilité du schéma en le
+          # relisant AU TAG qui a publié son premier artefact (`git show v0.1.169:…`). Un checkout
+          # sans tags rend cette lecture impossible : la garde répond NON CONCLUANT — ce qui est son
+          # comportement juste, « rien n'a été vérifié, donc rien n'est prouvé » — et le job rougit.
+          # C'est arrivé à la PR qui a posé l'ancre : le job `check`, lui, avait déjà `fetch-tags`.
+          # Une garde qui a besoin d'un objet git doit tourner là où cet objet existe.
+          fetch-tags: true
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "22"
@@ -927,6 +1107,40 @@ jobs:
           fi
           echo "init.sql contient déjà tout ce que les migrations apportent."
 
+      # ⚠️ LES ACL EFFECTIVES, PAS LES REVOKE ÉCRITS. Les migrations révoquent nommément quatre
+      # surcharges de player_attendance_bump et player_rate_limit_bump ; un `security definer`
+      # oublié, ou une surcharge de plus, est EXÉCUTABLE PAR PUBLIC par défaut Postgres — donc par
+      # anon et authenticated, avec les droits du propriétaire. Aucun banc ne l'interrogeait sur une
+      # vraie base (relevé par un audit externe, 13/09). Ici on lit pg_proc APRÈS init.sql ET les
+      # migrations : chaque fonction `prosecdef` doit être inexécutable par public (proacl explicite
+      # sans grantee 0 — un proacl NULL est le défaut, donc PUBLIC), par anon et par authenticated.
+      # Les rôles sont créés s'ils manquent (un Postgres nu ne les a pas, Supabase si) : sans eux
+      # has_function_privilege lève, et la vérification ne prouverait rien. Et le banc exige des
+      # LIGNES : zéro fonction lue, c'est la sonde qui vise à côté, pas une base propre.
+      - name: No SECURITY DEFINER function is executable by public, anon or authenticated
+        run: |
+          # ⚠️ ON REND LA BASE COMME ON L'A TROUVÉE. Une étape plus bas exige que ces rôles soient ABSENTS
+          # (son contrôle « rôles absents » a rougi quand cette étape les a laissés derrière elle) : on ne
+          # crée que ceux qui manquent, et on retire exactement ceux-là à la fin.
+          crees=""
+          for r in anon authenticated; do
+            if [ "$($PSQL -c "select 1 from pg_roles where rolname='$r'")" != "1" ]; then $PSQL -c "create role $r nologin"; crees="$crees $r"; fi
+          done
+          lignes=$($PSQL -c "select p.oid::regprocedure::text
+              || ' public=' || (p.proacl is null or exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0 and a.privilege_type = 'EXECUTE'))::text
+              || ' anon=' || has_function_privilege('anon', p.oid, 'execute')::text
+              || ' authenticated=' || has_function_privilege('authenticated', p.oid, 'execute')::text
+            from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+            where n.nspname = 'public' and p.prosecdef order by 1")
+          echo "$lignes"
+          n=$(printf '%s\n' "$lignes" | grep -c 'public=')
+          [ "$n" -ge 2 ] || { echo "::error::$n fonction(s) security definer lue(s) — attendu au moins 2 (player_rate_limit_bump, player_attendance_bump) : la sonde vise à côté"; exit 1; }
+          if printf '%s\n' "$lignes" | grep -E '=true'; then
+            echo "::error::une fonction security definer est exécutable par public, anon ou authenticated"; exit 1
+          fi
+          echo "$n fonction(s) security definer, aucune exécutable par public/anon/authenticated"
+          for r in $crees; do $PSQL -c "drop role $r"; done
+
       # ⚠️ LA FORME NE VOIT NI LES PUBLICATIONS NI LE REPLICA IDENTITY SANS QU'ON LES LUI DONNE — le
       # relevé ci-dessus les inclut désormais, sans quoi la parité init/migrations ne couvrait ni
       # l'un ni l'autre (même angle mort, déjà comblé deux fois : nullabilité, triggers). Ce
@@ -966,14 +1180,31 @@ jobs:
       # deux transactions réelles — PostgREST ne sait pas faire ça, psql si. Les deux sens :
       # une clôture non committée doit faire ATTENDRE puis REFUSER l'écriture ; une écriture en
       # cours doit faire attendre la clôture.
+      # ⚠️ LA MARGE DE CE BANC ÉTAIT PLUS PETITE QUE LA GIGUE DE LA MACHINE, ET IL A FINI PAR ROUGIR
+      # SUR UN PRODUIT QUI MARCHAIT. Mesuré le 02/09 sur main : « code=1 durée=1137ms », refus par le
+      # scellé, déblocage à l'instant EXACT où la transaction concurrente a validé — le comportement
+      # testé était donc juste de bout en bout. Seul le seuil a refusé.
+      #
+      # L'arithmétique : la transaction concurrente tient le verrou `pg_sleep(SOMMEIL)` secondes à
+      # partir de SON démarrage ; l'écriture testée commence `sleep 0.6` après. L'attente vaut donc
+      # SOMMEIL − 0,6 s — et TOUT retard d'ordonnancement entre les deux la RÉDUIT, puisque le
+      # compte à rebours, lui, a déjà commencé. À SOMMEIL=2 la marge sur le seuil de 1200 ms valait
+      # 200 ms ; la gigue observée ce jour-là valait 315 ms.
+      #
+      # ⚠️ ON N'ABAISSE PAS LE SEUIL — ce serait affaiblir ce que le banc PROUVE. On allonge la
+      # transaction concurrente : la barre reste à 1200 ms, et la marge passe de 200 ms à plus de
+      # deux secondes. Un banc dont la marge est sous la gigue de sa machine ne mesure pas ce qu'il
+      # croit mesurer : il mesure la charge du runner, et il apprend à lire son rouge comme du bruit.
       - name: The archive seal blocks a concurrent close, both ways
+        env:
+          SOMMEIL: 4
         run: |
           $PSQL -c "insert into public.doc_presentations (slug, control_hash, file_url, active) values ('__course', 'h', 'https://exemple.test/x.pdf', true)"
 
-          ( psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d player -qtA <<'SQL'
+          ( psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d player -qtA -v sommeil="$SOMMEIL" <<'SQL'
           begin;
           update public.doc_presentations set active=false, control_hash=null where slug='__course';
-          select pg_sleep(2);
+          select pg_sleep(:sommeil);
           commit;
           SQL
           ) &
@@ -992,10 +1223,10 @@ jobs:
           [ $duree -ge 1200 ] || { echo "::error::l'écriture n'a pas ATTENDU la clôture (${duree}ms) : les verrous ne se voient pas"; exit 1; }
 
           $PSQL -c "update public.doc_presentations set active=true, control_hash='h' where slug='__course'"
-          ( psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d player -qtA <<'SQL'
+          ( psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d player -qtA -v sommeil="$SOMMEIL" <<'SQL'
           begin;
           insert into public.doc_presentation_messages (slug, body) values ('__course', 'avant la clôture');
-          select pg_sleep(2);
+          select pg_sleep(:sommeil);
           commit;
           SQL
           ) &
@@ -1410,6 +1641,45 @@ jobs:
           PLAYER_CHARGE_SPECTATEURS: "1000"
         run: npm run test:campagne
 
+      # ── L'ARTEFACT DE CHARGE : LE PREMIER 100 → 1 000 → 100, UN PROCESSUS, JUGÉ EN COHORTE ──
+      # ⚠️ La campagne au-dessus IMPRIME son relevé ; personne ne l'a jamais comparé d'un train à
+      # l'autre, et un audit l'a dit : la preuve runtime de la performance n'existait pas. Ici, un
+      # PROGRAMME (pas un banc) joue la séquence demandée par l'audit — 100 spectateurs, puis 1 000
+      # (qui bénéficie du JIT et des caches du premier), puis 100 (le témoin) — dans un seul
+      # processus, sur ce runner, contre ce PostgREST, en boucle ouverte, et écrit un artefact par
+      # position au schéma `charge/artefact.schema-1.json`. Une position qui échoue laisse son
+      # `complete: false` et arrête la course : une absence d'artefact ne doit jamais ressembler à
+      # un banc réussi. Les trois sont jugés EN COHORTE par `tools/artefact-de-charge.mjs` avant
+      # d'être attachés à ce run — puis, au prochain train, à la release.
+      #
+      # ⚠️ LES VERSIONS VIENNENT DE CE QUI TOURNE, pas d'une copie du nom d'une image : psql demande
+      # la sienne à Postgres, le producteur demande la sienne à PostgREST (racine OpenAPI). Une
+      # copie du tag de l'image serait un fait en deux exemplaires non confrontés.
+      # `--expose-gc` : `afterGc` est un relevé après un VRAI GC ; sans lui, la position échoue et
+      # le dit, plutôt que d'écrire un chiffre qui n'a pas été mesuré.
+      - name: The first structured load artefact — 100 → 1 000 → 100, one process, judged as a cohort
+        env:
+          PLAYER_TEST_POSTGREST_URL: http://127.0.0.1:3002
+          # ⚠️ SUR UNE PR, `GITHUB_SHA` DÉSIGNE UN COMMIT DE FUSION ÉPHÉMÈRE, fabriqué par la forge
+          # pour l'occasion et qui n'existera plus ensuite. La tête réelle de la branche n'est
+          # lisible que dans `github.event.pull_request.head.sha` — il n'existe AUCUNE variable
+          # d'environnement qui la porte. Le producteur cherchait `GITHUB_HEAD_SHA`, qui n'existe
+          # pas : `identity.prHeadSha` valait donc `null` dans TOUTES les vraies courses de PR,
+          # pendant que le banc, lui, passait — il éprouvait `identite()` sur un environnement
+          # fabriqué, jamais le câblage. Un champ nourri par une variable que personne ne fournit
+          # est un champ mort, et sa description promettait le contraire. Relevé par un auditeur
+          # externe (CODEX, 15/09), sur la course réelle de la PR 546.
+          PLAYER_RAPPORT_PR_HEAD: ${{ github.event.pull_request.head.sha || '' }}
+        run: |
+          PLAYER_RAPPORT_POSTGRES="$($PSQL -c 'show server_version')" \
+            node --expose-gc charge/rapport.js --sortie=/tmp/artefacts-de-charge
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: artefacts-de-charge
+          path: /tmp/artefacts-de-charge/
+          if-no-files-found: error
+
       # ── L'ENDURANCE : CE QU'UNE RAFALE NE PEUT PAS MONTRER ────────────────────────────────────
       # ⚠️ COURT ICI, ET C'EST LE POINT. Tous les bancs de charge de ce dépôt sont INSTANTANÉS : N
       # appels lancés ensemble, un relevé, fini. Une mémoire qui monte lentement, un cache qui ne
@@ -1683,6 +1953,8 @@ jobs:
         run: |
           docker run -d --name player-ci -p 3000:3000 player:ci
           for i in $(seq 1 30); do curl -fsS localhost:3000/healthz && break || sleep 1; done
+          curl -fsS localhost:3000/healthz >/dev/null \
+            || { echo "::error::l'image n'a jamais répondu sur /healthz en 30 s — sans cet aveu, l'abandon de la boucle se lirait comme un démarrage réussi"; docker logs player-ci; exit 1; }
           curl -fsS "localhost:3000/api/doc?contract=1" | grep -q '"contract":1'
           docker rm -f player-ci
 

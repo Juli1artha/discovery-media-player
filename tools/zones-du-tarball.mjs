@@ -39,8 +39,24 @@ import { estExecuteDirectement } from "./execute-directement.mjs";
 export const ZONES = [
   { nom: "documents", quoi: "what a human reads", est: (f) => /\.md$/i.test(f) || /(^|\/)LICEN[CS]E/i.test(f) },
   { nom: "manifest", quoi: "package.json — version, exports, dependencies", est: (f) => f === "package.json" },
+  // ⚠️ « browser : 0 » A ÉTÉ LU SIX TRAINS DE SUITE COMME « RIEN NE CHANGE POUR NOS VISITEURS », et
+  // c'était faux : le JavaScript de la page des spectateurs ne vit pas dans `dist/`, il vit dans des
+  // chaînes de gabarits sous `server/` — `page-*.js`, `gabarit-*.js` et les deux bundles générés. La
+  // zone `browser` disait vrai de `dist/bridge.js` et ne disait rien de la page. Un hôte (ADV) a rangé
+  // ce tableau du côté « mesuré » pendant six trains, et il l'était — d'autre chose (13/09). Cette
+  // zone est ce que « la page des visiteurs a-t-elle changé ? » demande vraiment. Avant `server` :
+  // sinon tout tomberait dans « the code the host executes », qui est vrai et insuffisant.
+  { nom: "pages", quoi: "the visitors' page — HTML and inline JavaScript the host renders and the browser executes", est: (f) => /^server\/(?:page-[^/]+\.js|gabarit-[^/]+\.js|browser\.generated\.js|shared\.generated\.js)$/.test(f) },
   { nom: "server", quoi: "the code the host executes", est: (f) => f.startsWith("server/") },
-  { nom: "context", quoi: "the injected-context implementations", est: (f) => f.startsWith("context/") },
+  // ⚠️ « SANS EFFET CHEZ VOUS : VOUS FOURNISSEZ VOTRE CONTEXTE » — écrit à un hôte qui exécute
+  // `context/standalone.js` tel quel depuis août, et l'avait dit trois fois (ADV, 14/09). Cette zone
+  // est du code d'hôte pour un hôte et pas pour l'autre, et la ligne de partage est la forme de son
+  // câblage, pas son type. Le libellé le dit, pour que personne ne relise « context : 1 » comme
+  // « pas moi » sans avoir vérifié quel contexte il exécute. ⚠️ ET LA LIGNE N'EST PAS BINAIRE : le
+  // propre exemple Vercel du dépôt COMPOSE son contexte depuis `createStandaloneContext` et ne
+  // remplace que `identity` et `branding` — chaque capacité héritée l'atteint, les remplacées non
+  // (audit, dixième passe). La règle se lit par capacité, pas par hôte.
+  { nom: "context", quoi: "the injected-context implementations — reaches a host per capability: all of it if `context/standalone` runs as is, each inherited capability if the host composes its context from it, none if the context imports nothing from `context/`", est: (f) => f.startsWith("context/") },
   // ⚠️ `dist/` PORTE DEUX ARTEFACTS QUI N'ONT PAS LE MÊME CONSOMMATEUR, et un seul suffixe les
   // sépare. `dist/bridge.js` est exécuté par la page des visiteurs ; `dist/bridge.d.ts` est lu par
   // le `tsc` de l'hôte. L'un casse à l'exécution, l'autre au build — deux incidents différents,
@@ -54,7 +70,7 @@ export const ZONES = [
   // ⚠️ L'ORDRE COMPTE : `.d.ts` d'abord, sinon tout `dist/` tomberait dans `browser`. Le reste de
   // `dist/` — dont son `package.json`, qui déclare le type de module — est bien chargé par la page.
   { nom: "browser-types", quoi: "the declarations the host's tsc reads for « ./bridge » — breaks a build, never a page", est: (f) => f.startsWith("dist/") && f.endsWith(".d.ts") },
-  { nom: "browser", quoi: "what the visitors' page executes", est: (f) => f.startsWith("dist/") },
+  { nom: "browser", quoi: "what the visitors' page executes through « ./bridge » — the page itself is the `pages` zone", est: (f) => f.startsWith("dist/") },
   { nom: "cli", quoi: "the command-line entry point", est: (f) => f.startsWith("bin/") },
   // ⚠️ ZONE À PART, MAIS PAS POUR LA RAISON ÉVIDENTE. Ces déclarations ne changent JAMAIS
   // l'exécution — elles cassent une CI, et un build rouge après fusion est un autre incident qu'une

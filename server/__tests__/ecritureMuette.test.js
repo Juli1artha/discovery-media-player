@@ -123,7 +123,11 @@ describe("aucune écriture de mesure n'est rattrapée en silence", () => {
         // la garde accusait donc un rattrapage qui trie (« ce cas-ci je le connais, tout le reste
         // remonte ») — c'est-à-dire le contraire d'un silence. Cinquième correction de cette
         // sonde, et toujours la même : elle vaut ce que vaut sa lecture.
-        const DIT = /capture\s*\(|console\.(warn|error)|statusCode\s*=\s*5|\b\w+\(5\d\d\s*,|\bthrow\b/;
+        // ⚠️ `capturerSansBloquer(` PARLE AUSSI — depuis le 14/09 les appels « jamais bloquant »
+        // passent par ce helper (un capture qui REJETTE arrêtait le processus). Sixième correction de
+        // cette sonde : `capture\s*\(` ne voyait pas « capturer », et accusait sept rattrapages qui
+        // journalisent. Toujours la même leçon : elle vaut ce que vaut sa lecture.
+        const DIT = /capture(?:rSansBloquer)?\s*\(|console\.(warn|error)|statusCode\s*=\s*5|\b\w+\(5\d\d\s*,|\bthrow\b/;
         const appeles = [...corps.matchAll(/(?:await\s+)?([A-Za-z_$][\w$]*)\s*\(/g)].map((m) => m[1]);
         const parle = DIT.test(corps) || appeles.some((nom) => DIT.test(corpsDe(nom)));
         if (!parle) muets.push(`${path.basename(f)}:${i + 1}  ${ligne.trim().slice(0, 70)}`);
@@ -178,12 +182,77 @@ describe("ce qu'une session interne conserve, et ce qu'elle ne conserve pas", ()
     expect(ligne.os, "les champs dérivés restent renseignés").toBeTruthy();
   });
 
-  // La population externe, elle, les garde — la distinction est le produit, pas un détail.
-  it("la session EXTERNE les conserve, elle", async () => {
+  // ⚠️ ET LA SESSION EXTERNE NE LES CONSERVE PLUS NON PLUS — ce cas affirmait l'inverse jusqu'au
+  // 01/09/2026 (« deux populations, deux promesses »). L'ADV a demandé le User-Agent brut sur les
+  // deux tables, et l'argument qui emporte est celui que NOUS faisions pour le garder, retourné :
+  // `device`, `os` et `browser` sont dérivés à l'écriture et servis, donc la chaîne n'a plus de
+  // lecteur, et « pouvoir la ré-analyser un jour » ne justifie pas treize mois d'empreinte.
+  //
+  // La distinction entre les deux populations demeure — elle porte sur ce qui est MESURÉ et rendu,
+  // pas sur ce qui traîne en colonne.
+  it("⚠️ la session EXTERNE ne stocke plus l'agent brut, mais en garde les champs dérivés", async () => {
+    await shares.upsertSession(
+      { slug: "s", doc_id: "d1" }, { sessionId: "s1" },
+      { ip: "203.0.113.9", ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/120 Safari/537" },
+    );
+    expect(Object.keys(ligne), "la 0027 a vidé la colonne : plus rien ne l'écrit").not.toContain("ua");
+    expect(JSON.stringify(ligne), "aucune chaîne d'agent, sous quelque clé que ce soit")
+      .not.toContain("AppleWebKit");
+    expect([ligne.device, ligne.os, ligne.browser], "ce qui se LIT d'une session reste écrit")
+      .toEqual(["Ordinateur", "macOS", "Chrome"]);
+  });
+
+  // ⚠️ ET LA TABLE DES CONSULTATIONS, OÙ LE CAS EST PLUS NET ENCORE. Elle n'a ni `device`, ni `os`,
+  // ni `browser` : elle ne dérivait RIEN de cette chaîne. Elle l'écrivait, et aucune des six
+  // requêtes de ce dépôt qui la touchent ne l'a jamais relue — une empreinte conservée treize mois
+  // sans le moindre lecteur. Personne ne l'avait remarqué parce que la question n'avait jamais été
+  // posée table par table.
+  it("⚠️ une CONSULTATION n'écrit plus l'agent — et cette table n'en dérivait rien", async () => {
+    await shares.logView({ slug: "s", doc_id: "d1" },
+      { event: "open", page: 1, sessionId: "s1", ua: "Mozilla/5.0 (X11) AppleWebKit/537 Chrome/120" });
+    expect(ligne, "la ligne doit être construite").toBeTruthy();
+    expect(Object.keys(ligne)).not.toContain("ua");
+    expect(JSON.stringify(ligne)).not.toContain("AppleWebKit");
+    expect(ligne.event, "et ce qui MESURE la consultation reste écrit").toBe("open");
+    expect(ligne.page).toBe(1);
+  });
+
+  // ⚠️ L'APPELANT CONTINUE DE LA PASSER, des deux côtés, exprès : il ne sait pas ce que chaque
+  // table conserve. Éprouvé pour que la prochaine personne ne « nettoie » pas les appelants — c'est
+  // par cette porte-là que la donnée reviendrait.
+  it("⚠️ passer l'agent reste sans effet et sans erreur, sur les deux chemins", async () => {
+    await expect(shares.logView({ slug: "s" }, { event: "open", ua: "peu importe" }))
+      .resolves.toBeUndefined();
+    expect(JSON.stringify(ligne)).not.toContain("peu importe");
+    await expect(shares.upsertSession({ slug: "s" }, { sessionId: "s9" }, { ua: "peu importe" }))
+      .resolves.toBeUndefined();
+    expect(ligne.session_id, "sans agent du tout, l'écriture se fait pareil").toBe("s9");
+  });
+
+  // ⚠️ ET L'ADRESSE N'EST PLUS ÉCRITE NON PLUS — LA MOITIÉ QUE LE CODE NE POUVAIT PAS RÉGLER SEUL.
+  // Ne plus la SERVIR (0.1.146) laissait treize mois de journal la porter en clair. La colonne
+  // n'existe plus : si cette écriture la posait encore, chaque battement de chaque lecteur partirait
+  // en erreur PostgREST — ce cas est donc autant une garde de rétention qu'une garde de service.
+  it("⚠️ mais elle n'écrit plus l'adresse — la colonne n'existe plus", async () => {
     await shares.upsertSession(
       { slug: "s", doc_id: "d1" }, { sessionId: "s1" },
       { ip: "203.0.113.9", ua: "Mozilla/5.0 Chrome/120" },
     );
-    expect(Object.keys(ligne), "deux populations, deux promesses").toContain("ua");
+    expect(Object.keys(ligne), "la 0026 a supprimé la colonne : l'écrire ferait échouer l'upsert")
+      .not.toContain("ip");
+    expect(JSON.stringify(ligne), "aucune adresse, sous quelque clé que ce soit")
+      .not.toContain("203.0.113.9");
+  });
+
+  // ⚠️ ET L'APPELANT CONTINUE DE LA PASSER, exprès : il ne sait pas ce que chaque table conserve.
+  // Ce qui vaut d'être éprouvé, c'est que la lui passer ne casse RIEN — sinon la prochaine personne
+  // « nettoierait » les appelants et l'adresse ressortirait par la porte du refactoring.
+  it("⚠️ passer l'adresse reste sans effet et sans erreur, des deux côtés", async () => {
+    await expect(shares.upsertSession({ slug: "s", doc_id: "d1" }, { sessionId: "s1" },
+      { ip: "198.51.100.4", ua: "x" })).resolves.toBeUndefined();
+    expect(JSON.stringify(ligne)).not.toContain("198.51.100.4");
+    await expect(shares.upsertSession({ slug: "s", doc_id: "d1" }, { sessionId: "s2" }, { ua: "x" }))
+      .resolves.toBeUndefined();
+    expect(ligne.session_id, "sans adresse du tout, l'écriture se fait pareil").toBe("s2");
   });
 });

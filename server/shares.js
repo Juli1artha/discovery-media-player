@@ -3,7 +3,9 @@
 // GED commerciale : liens de partage tracés (un par destinataire) + agrégation des consultations.
 // Tables service-role only (cf. migration v12321) → tout passe par le service role ici.
 const crypto = require("crypto");
+const { capturerSansBloquer } = require("./capture");
 const { signatureAbsente } = require("./erreurs-base.js");
+const protection = require("./lien-protege.js");
 // Tout ce qui vient de l'hôte passe par le contexte injecté — base, email, marque. C'est ce qui
 // permettra à ce fichier de partir dans le dépôt du player sans emporter le studio avec lui.
 // ⚠️ Le contexte est REÇU, pas construit. Ce module ne doit pas savoir d'où il vient : c'est ce
@@ -29,8 +31,14 @@ function newSlug() { return crypto.randomBytes(9).toString("base64url"); } // ~1
 
 // Crée un lien de partage (un par destinataire). Dénormalise titre/URL/nom pour résilience (le doc vit dans
 // un snapshot). Renvoie le slug.
-async function createShare({ docId, docTitle, fileUrl, fileName, recipientEmail, recipientName, attestedRecipientEmail, createdBy, bot, botScript, guided, profileId, allowDownload, isTest, videoLayout, logo, logoDark, brandKey, idemKey}) {
+async function createShare({ docId, docTitle, fileUrl, fileName, recipientEmail, recipientName, attestedRecipientEmail, createdBy, bot, botScript, guided, profileId, allowDownload, isTest, videoLayout, logo, logoDark, brandKey, idemKey, expiresAt, password}) {
   if (!docId || !fileUrl) throw Object.assign(new Error("doc invalide"), { statusCode: 400 });
+  // LA PROTECTION (0028) : lue et bornée AVANT tout, et refusée plutôt que perdue quand la colonne
+  // manque (cf. `migrationManquante`). Sans protection demandée, rien ne change pour personne.
+  const demande = protection.protectionDemandee({ expiresAt, password }, Date.now());
+  if (demande.refus) throw Object.assign(new Error(demande.refus), { statusCode: 400, publique: true });
+  if (demande.protege && !(await require("./schema").attendue("lienProtege"))) throw migrationManquante();
+  const champsProtection = demande.protege ? Object.fromEntries(Object.entries(demande.champs).filter(([, v]) => v != null)) : {};
   const slug = newSlug();
   // ⚠️ LA CLÉ N'EST ÉCRITE QUE LÀ OÙ LA COLONNE EXISTE — PostgREST rejette le POST ENTIER sur une
   // colonne inconnue : chez un hôte non migré, ce n'est pas l'unicité qu'on perdrait, c'est la
@@ -60,6 +68,7 @@ async function createShare({ docId, docTitle, fileUrl, fileName, recipientEmail,
     brand_key: (brandKey || "").trim() || null,
     brand_logo: (logo || "").trim() ? String(logo).trim().slice(0, 500) : null,
     brand_dark: !!logoDark, // fond sombre du loader (logo clair/blanc)
+    ...champsProtection,
   };
   await PLAYER.db.request("commercial_doc_shares", { method: "POST", headers: { Prefer: "return=minimal" }, body: [row] });
   return { slug };
@@ -67,8 +76,11 @@ async function createShare({ docId, docTitle, fileUrl, fileName, recipientEmail,
 
 // Re-partage depuis la visionneuse publique (forward) : crée un lien ENFANT tracé pour un nouveau
 // destinataire, rattaché au lien parent (parent_slug) → chaîne de diffusion. created_by = celui qui forwarde.
-async function createReshare(parentSlug, { email, name }) {
-  const parent = await getShareBySlug(parentSlug);
+// ⚠️ `req` : le parent se relit AVEC la requête du visiteur. Un parent protégé par un mot de passe ne se
+// re-partage que par qui l'a franchi — et l'enfant HÉRITE de la protection (expiration et empreinte,
+// comme tout le reste : voir l'inversion ci-dessous). Le transférer ne lève donc rien.
+async function createReshare(parentSlug, { email, name, clientKey, req }) {
+  const parent = await getShareBySlug(parentSlug, req);
   if (!parent) throw Object.assign(new Error("lien introuvable"), { statusCode: 404 });
   const slug = newSlug();
 
@@ -103,7 +115,44 @@ async function createReshare(parentSlug, { email, name }) {
   //
   // `created_at` est retiré : la base le pose. `is_test` est hérité — un lien de répétition dont
   // un enfant compterait dans les vraies statistiques les fausserait.
+  // ⚠️ LA CLÉ D'IDEMPOTENCE EXISTE DÉJÀ SUR CETTE TABLE, ET AJOUTER LA MIENNE AURAIT ÉTÉ UN
+  // DOUBLON. `idem_key` (migration 0011) est globalement unique quand elle est renseignée, et sert
+  // depuis toujours au chemin serveur-à-serveur. Elle n'avait simplement jamais été offerte au
+  // re-partage. Une colonne neuve aurait donné deux mécanismes d'idempotence à la même table, dont
+  // un seul aurait été contraint par l'autre : le pire des deux mondes.
+  //
+  // ⚠️ ET LA CLÉ DE L'APPELANT EST EMPREINTÉE ICI, PAS RECOPIÉE. Le format est « genre:sha256 » et
+  // les genres existants — `hote`, `repetition` — désignent des liens SYSTÈME. Recopier une chaîne
+  // fournie laisserait un appelant écrire « hote:… » et entrer en collision avec le lien système
+  // d'un document : la contrainte d'unicité ferait alors retomber son re-partage sur ce lien-là.
+  // Le genre est donc posé par nous, et la chaîne de l'appelant n'est qu'un composant parmi
+  // d'autres — le parent en fait partie, sinon la même clé réutilisée ailleurs collisionnerait.
+  const cle = clientKey
+    ? cleIdempotence("repartage", [parent.slug, low(email) || "", String(clientKey).slice(0, 200)])
+    : null;
+  const cleDispo = cle ? await require("./schema.js").attendue("liensUniques") : false;
+
+  // ⚠️ ON REGARDE AVANT D'ÉCRIRE, PUIS APRÈS AVOIR ÉCHOUÉ. Le premier coup d'œil sert le cas
+  // courant — un réessai après un délai dépassé ; l'index unique sert le cas concurrent, où deux
+  // réessais partent ensemble. Une lecture seule est une course ; une contrainte seule transforme
+  // un réessai ordinaire en erreur. C'est le même patron que `createShare` deux fonctions plus haut.
+  if (cleDispo) {
+    const existant = await reshareParCle(cle);
+    if (existant) return { slug: existant.slug, docTitle: parent.doc_title, idempotent: true };
+  }
+
+  // ⚠️ LA CLÉ DU PARENT NE S'HÉRITE PAS — elle désigne le lien du PARENT, et l'index unique la
+  // refuserait sur un second porteur. C'est très exactement la décision que le commentaire
+  // ci-dessus réclame d'écrire plutôt que d'oublier.
+  //
+  // ⚠️ ET C'EST UN `delete`, PAS UN DÉSTRUCTURAGE, POUR UNE RAISON DE GARDE. Écrit
+  // `{ idem_key: _herite, ...reste }`, ce retrait ressemble à une ÉCRITURE pour
+  // `colonneMigreeConditionnelle.test.js`, qui cherche `idem_key\s*:` hors d'une portée
+  // conditionnelle — et qui a raison de ne pas tenter de distinguer les deux par expression
+  // régulière. On ne relâche pas la garde : on écrit l'exclusion sous une forme qui ne se confond
+  // avec rien.
   const { created_at: _cree, ...herite } = parent;
+  delete herite.idem_key;
   const row = {
     ...herite,
     slug,
@@ -112,15 +161,82 @@ async function createReshare(parentSlug, { email, name }) {
     created_by: parent.recipient_email || parent.created_by || null,
     parent_slug: parent.slug,
     revoked: false,
+    ...(cleDispo ? { idem_key: cle } : {}),
   };
-  await PLAYER.db.request("commercial_doc_shares", { method: "POST", headers: { Prefer: "return=minimal" }, body: [row] });
-  return { slug, docTitle: parent.doc_title };
+  try {
+    await PLAYER.db.request("commercial_doc_shares", { method: "POST", headers: { Prefer: "return=minimal" }, body: [row] });
+  } catch (erreur) {
+    // ⚠️ SANS CLÉ DISPONIBLE, ON NE RATTRAPE RIEN : une erreur d'écriture doit remonter. « Déjà là »
+    // n'est une réussite que lorsqu'une clé a été posée pour que ce soit le cas.
+    if (!cleDispo) throw erreur;
+    const existant = await reshareParCle(cle);
+    if (existant) return { slug: existant.slug, docTitle: parent.doc_title, idempotent: true };
+    throw erreur;
+  }
+  return { slug, docTitle: parent.doc_title, idempotent: false };
 }
 
-async function getShareBySlug(slug) {
-  const rows = await PLAYER.db.request(`commercial_doc_shares?slug=eq.${enc(String(slug || ""))}&revoked=eq.false&select=*&limit=1`);
-  return Array.isArray(rows) && rows[0] ? rows[0] : null;
+/** Le lien déjà créé pour cette clé d'idempotence, s'il existe. */
+async function reshareParCle(cle) {
+  try {
+    const rows = await PLAYER.db.request(`commercial_doc_shares?idem_key=eq.${enc(String(cle))}&select=slug&limit=1`);
+    return Array.isArray(rows) && rows[0] ? rows[0] : null;
+  } catch { return null; }
 }
+
+/**
+ * LE SEUL ENDROIT OÙ UN LIEN SE RÉSOUT — et donc où il se ferme. Révoqué, expiré, ou protégé par un mot
+ * de passe que cette requête n'a pas franchi : `null`, pour la page, le fichier, l'assistant, la mesure
+ * et le re-partage à la fois (règle et pièges : lien-protege.js).
+ *
+ * ⚠️ `req` EST LA REQUÊTE PUBLIQUE, et son absence VERROUILLE. Un appel interne qui l'oublie sur un lien
+ * protégé obtient « introuvable » — c'est le sens voulu : l'oubli ferme au lieu d'ouvrir.
+ */
+async function getShareBySlug(slug, req) {
+  return (await resoudreLien(slug, req)).share;
+}
+
+/**
+ * POURQUOI UN LIEN NE S'OUVRE PAS — pour le DIRE à qui le reçoit. Révoqué ou inconnu (`revoked`), expiré
+ * (`expired`, il peut en demander un autre), ou fermé par un mot de passe (`password` : on lui montre la
+ * page qui le demande, avec le titre et la marque du lien — rien d'autre de la ligne ne sort).
+ */
+async function resoudreLien(slug, req) {
+  const rows = await PLAYER.db.request(`commercial_doc_shares?slug=eq.${enc(String(slug || ""))}&revoked=eq.false&select=*&limit=1`);
+  const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+  if (!row) return { share: null, refus: "revoked", ligne: null };
+  if (protection.expire(row, Date.now())) return { share: null, refus: "expired", ligne: row };
+  if (!protection.deverrouille(row, req)) return { share: null, refus: "password", ligne: row };
+  return { share: row, refus: null, ligne: row };
+}
+
+/**
+ * POSER, CHANGER OU RETIRER LA PROTECTION D'UN LIEN EXISTANT. Champ absent = inchangé, `null` = retiré.
+ * ⚠️ Un lien révoqué ne se protège pas : il est déjà fermé, et le « rouvrir » en le modifiant serait un
+ * geste que personne n'a demandé — le `revoked=eq.false` du filtre le laisse hors d'atteinte.
+ */
+async function setShareProtection(slug, entree) {
+  const d = protection.protectionDemandee(entree, Date.now());
+  if (d.refus) throw Object.assign(new Error(d.refus), { statusCode: 400, publique: true });
+  if (!Object.keys(d.champs).length) return { ok: true, ...protection.protectionServie({}) };
+  if (!(await require("./schema").attendue("lienProtege"))) throw migrationManquante();
+  const rows = await PLAYER.db.request(`commercial_doc_shares?slug=eq.${enc(String(slug || ""))}&revoked=eq.false`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: d.champs });
+  const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+  if (!row) throw Object.assign(new Error("Lien introuvable ou révoqué."), { statusCode: 404, publique: true });
+  return { ok: true, ...protection.protectionServie(row) };
+}
+
+/**
+ * ⚠️ UNE PROTECTION DEMANDÉE SANS SA COLONNE N'EST PAS UNE PROTECTION DÉGRADÉE, C'EST UN LIEN OUVERT.
+ * Ailleurs, une colonne absente fait sauter le champ en silence (la clé d'idempotence, la date de
+ * révocation) : le lien marche, un peu moins bien. Ici, sauter `expires_at` créerait un lien qui ne
+ * meurt jamais pendant que l'hôte affiche « expire le 15 », et sauter `password_hash` un lien que
+ * quiconque ouvre. On REFUSE donc de créer, et on nomme la migration.
+ */
+const migrationManquante = () => Object.assign(
+  new Error("Protection des liens indisponible : appliquez la migration 0028-liens-proteges.sql."),
+  { statusCode: 503, publique: true },
+);
 
 // ⚠️ BORNER CE QUI VIENT DU DEHORS — TOUS les chemins d'écriture publics, et le pluriel a coûté.
 //
@@ -162,11 +278,20 @@ const mesureBornee = ({ page, maxPage, seconds }) => ({
 });
 
 // Journalise un événement de consultation (ouverture / page vue / battement). Best-effort.
-async function logView(share, { event, page, maxPage, seconds, sessionId, ua }) {
+//
+// ⚠️ `ua` N'EST PLUS ÉCRIT, ET LA SIGNATURE LE DIT — même geste que pour `ip` sur les sessions, sur
+// demande explicite de l'ADV le 01/09/2026. Le cas est ici PLUS NET qu'ailleurs : cette table n'a
+// ni `device`, ni `os`, ni `browser`, donc elle ne dérivait RIEN de cette chaîne. Elle l'écrivait,
+// et personne — aucune requête de ce dépôt — ne l'a jamais relue. Une empreinte de navigateur
+// conservée treize mois sans le moindre lecteur.
+//
+// L'appelant continue de la passer : il ne sait pas ce que chaque table conserve, et ce n'est pas à
+// lui de le savoir. La garder en paramètre nommé laisserait croire qu'elle sert.
+async function logView(share, { event, page, maxPage, seconds, sessionId, ua: _ua }) {
   const row = {
     slug: share.slug, doc_id: share.doc_id, recipient_email: share.recipient_email,
     event: String(event || "open").slice(0, 16), ...mesureBornee({ page, maxPage, seconds }),
-    session_id: String(sessionId || "").slice(0, 64) || null, ua: String(ua || "").slice(0, 300) || null,
+    session_id: String(sessionId || "").slice(0, 64) || null,
   };
   await PLAYER.db.request("commercial_doc_views", { method: "POST", headers: { Prefer: "return=minimal" }, body: [row] });
 }
@@ -307,7 +432,8 @@ async function listSharesForDoc(docId, owner) {
   const VIDE = { opens: 0, maxPage: 0, seconds: 0, sessions: 0, lastAt: null };
   const enriched = shareList.map((sh) => {
     const a = agregats.bySlug.get(sh.slug) || VIDE;
-    return { slug: sh.slug, parent_slug: sh.parent_slug || null, recipient_email: sh.recipient_email, recipient_name: sh.recipient_name, created_by: sh.created_by, created_at: sh.created_at, revoked: sh.revoked, opens: a.opens, sessions: a.sessions, maxPage: a.maxPage, seconds: a.seconds, lastAt: a.lastAt };
+    // La protection se SERT par `protectionServie` : l'échéance et un booléen — jamais l'empreinte.
+    return { slug: sh.slug, parent_slug: sh.parent_slug || null, recipient_email: sh.recipient_email, recipient_name: sh.recipient_name, created_by: sh.created_by, created_at: sh.created_at, revoked: sh.revoked, ...protection.protectionServie(sh), opens: a.opens, sessions: a.sessions, maxPage: a.maxPage, seconds: a.seconds, lastAt: a.lastAt };
   });
 
   // ⚠️ HISTOGRAMME PUIS CUMUL DESCENDANT — O(pages + sessions) au lieu de O(pages × sessions).
@@ -370,7 +496,7 @@ async function overviewEnBase(since) {
       lastAt: r.last_at || null,
     }])) || [];
   } catch (erreur) {
-    try { PLAYER.errors.capture(erreur, { route: "overview", indice: "consultations internes indisponibles — la vue d'ensemble ne montrera que les ouvertures client" }); } catch { /* jamais bloquant */ }
+    try { capturerSansBloquer(PLAYER.errors, erreur, { route: "overview", indice: "consultations internes indisponibles — la vue d'ensemble ne montrera que les ouvertures client" }); } catch { /* jamais bloquant */ }
   }
   return { byDoc: new Map(vues), intByDoc: new Map(internes) };
 }
@@ -478,16 +604,28 @@ function parseUa(ua) {
 
 // Upsert d'une session de consultation (résumé envoyé périodiquement par la visionneuse). Stocke le temps
 // PAR page (cumulatif côté client → on remplace), totaux, appareil. Conserve started_at (insert) via merge.
-async function upsertSession(share, p, { ip, ua }) {
+// ⚠️ `ip` N'EST PLUS ÉCRITE, ET LA SIGNATURE LE DIT — comme pour la session INTERNE plus bas, et
+// pour la même raison. La 0.1.146 avait cessé de la SERVIR ; la colonne a été purgée puis
+// supprimée par la 0026 (arbitrage ADV du 01/09/2026). L'appelant continue de la passer : il ne
+// sait pas ce que chaque table conserve, et ce n'est pas à lui de le savoir. La garder en
+// paramètre nommé laisserait croire qu'elle sert — c'est comme ça qu'une donnée revient dans une
+// ligne où elle n'a plus de colonne, et l'écriture partirait alors en erreur PostgREST à chaque
+// battement de chaque lecteur.
+async function upsertSession(share, p, { ip: _ip, ua }) {
   const sessionId = String(p.sessionId || "").slice(0, 64);
   if (!sessionId) return;
+  // ⚠️ `ua` SERT ENCORE ICI, ET N'EST PLUS STOCKÉ — la distinction est tout le raisonnement. La
+  // chaîne arrive dans l'en-tête de la requête, `parseUa` en tire trois champs lisibles, et ce sont
+  // EUX qu'on garde. La chaîne elle-même n'avait plus de lecteur depuis la 0.1.146 ; « pouvoir la
+  // ré-analyser un jour » ne justifie pas treize mois d'empreinte conservée pour personne (ADV,
+  // 01/09/2026). C'est donc le paramètre qui reste, pas la colonne.
   const { device, os, browser } = parseUa(ua);
   const row = {
     session_id: sessionId, slug: share.slug, doc_id: share.doc_id, recipient_email: share.recipient_email,
     // Bornées comme la session INTERNE : plafond d'entrées, clés/valeurs numériques, totaux capés.
     num_pages: bornerNombre(p.numPages, BORNES.pages), max_page: mesureBornee({ maxPage: p.maxPage }).max_page,
     total_seconds: bornerNombre(p.totalSeconds, BORNES.secondes) || 0, pages_time: bornerPagesTime(p.pagesTime),
-    ua: String(ua || "").slice(0, 300), ip: String(ip || "").slice(0, 60), device, os, browser, last_at: new Date().toISOString(),
+    device, os, browser, last_at: new Date().toISOString(),
   };
   // started_at non touché par l'upsert (default à l'insert ; merge ne l'écrase pas car absent du body).
   await PLAYER.db.request("commercial_doc_sessions?on_conflict=session_id", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: [row] });
@@ -604,14 +742,19 @@ const CHAMPS_SERVIS = [
  * revient au bout de six mois, parce que personne ne sait pourquoi elle n'était pas là.
  */
 const CHAMPS_RETENUS = {
-  ip: "adresse IP en clair — « the most sensitive datum in the schema » selon docs/RETENTION.md, "
-    + "que rien ne lit et dont une fiche de lecture n'a pas besoin ; les participants d'une "
-    + "présentation n'ont, eux, qu'un HMAC salé de la leur",
-  ua: "User-Agent brut — un vecteur d'empreinte, et surtout REDONDANT : `parseUa` en tire "
-    + "`device`, `os` et `browser` à l'écriture, et ces trois-là sont servis. La chaîne complète "
-    + "ne porte rien de plus qu'un lecteur de fiche lise ; elle porte seulement de quoi "
-    + "reconnaître un appareil d'une session à l'autre. Elle reste STOCKÉE (docs/RETENTION.md la "
-    + "purge à treize mois) : ne plus la servir et ne plus la garder sont deux décisions",
+  ip: "adresse IP en clair — VIDÉE par la 0026 et plus jamais écrite (arbitrage ADV du "
+    + "01/09/2026). La colonne demeure le temps qu'aucune version supportée ne l'écrive : "
+    + "`docs/MIGRATIONS.md` exige qu'une migration soit sûre pendant que la version PRÉCÉDENTE "
+    + "tourne, or celle-là l'écrit encore et PostgREST rejette une écriture portant une colonne "
+    + "inconnue. Sa suppression est le geste d'une livraison ultérieure ; d'ici là elle est ici, "
+    + "vide, et retenue",
+  ua: "User-Agent brut — VIDÉ par la 0027 et plus jamais écrit (demande ADV du 01/09/2026). Un "
+    + "vecteur d'empreinte, et surtout REDONDANT : `parseUa` en tire `device`, `os` et `browser` à "
+    + "l'écriture, et ces trois-là sont servis. Nous avions plaidé pour le garder — seule source "
+    + "d'où recalculer les trois sur des lignes déjà écrites — et c'est notre propre argument qui "
+    + "l'a emporté contre nous : une chaîne sans lecteur ne se garde pas treize mois pour un "
+    + "recalcul hypothétique. La colonne demeure le temps qu'aucune version supportée ne l'écrive, "
+    + "pour la même raison que `ip`",
 };
 
 /** La projection d'une ligne de session : ce qui sort, et rien d'autre. */
@@ -854,7 +997,7 @@ async function upsertInternalSession(p, { ip: _ip, ua }) {
     try {
       if (await PLAYER.limits.allow("intsess:jetee", 1, 3600)) {
         const manque = !sessionId ? "sessionId" : "docId";
-        PLAYER.errors.capture(new Error(`session interne jetée : ${manque} absent — rien ne sera mesuré tant qu'il manque`), { route: "internal-session" });
+        capturerSansBloquer(PLAYER.errors, new Error(`session interne jetée : ${manque} absent — rien ne sera mesuré tant qu'il manque`), { route: "internal-session" });
       }
     } catch { /* un journal ne doit jamais empêcher une lecture */ }
     return;
@@ -918,4 +1061,4 @@ async function internalStatsForDoc(docId) {
 }
 
 module.exports = {
-  cleIdempotence, init, createShare, createReshare, sendReshareEmail, getShareBySlug, logView, upsertSession, listSharesForDoc, listSessionsForDoc, listSessionsForRecipient, racineDuLien, curseurDe, curseurLu, sessionServie, CHAMPS_SERVIS, CHAMPS_RETENUS, revokeShare, setShareAuth, overview, upsertInternalSession, internalStatsForDoc };
+  cleIdempotence, init, createShare, createReshare, sendReshareEmail, getShareBySlug, resoudreLien, setShareProtection, logView, upsertSession, listSharesForDoc, listSessionsForDoc, listSessionsForRecipient, racineDuLien, curseurDe, curseurLu, sessionServie, CHAMPS_SERVIS, CHAMPS_RETENUS, revokeShare, setShareAuth, overview, upsertInternalSession, internalStatsForDoc };

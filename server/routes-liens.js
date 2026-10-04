@@ -4,13 +4,26 @@
 // Reste à PLAT dans server/ (les gardes de forge ciblent server/*.js).
 
 const { adresseAppelant } = require("./appelant");
+const { capturerSansBloquer } = require("./capture");
 const { jsonPour, repondreJson, etiquetteRoute } = require("./reponses.js");
 const { estConflit } = require("./erreurs-base.js");
-const { createShare, createReshare, sendReshareEmail, revokeShare, setShareAuth, listSharesForDoc, listSessionsForDoc, listSessionsForRecipient, internalStatsForDoc, cleIdempotence, getShareBySlug, logView, upsertSession, upsertInternalSession, overview: docOverview } = require("./shares");
+const { createShare, createReshare, sendReshareEmail, revokeShare, setShareAuth, setShareProtection, listSharesForDoc, listSessionsForDoc, listSessionsForRecipient, internalStatsForDoc, cleIdempotence, getShareBySlug, logView, upsertSession, upsertInternalSession, overview: docOverview } = require("./shares");
 const { SESSION_QUOTA_PER_HOUR, VIEW_QUOTA_PER_HOUR } = require("./shared.generated.js");
 
 let PLAYER = null;
 const init = (ctx) => { PLAYER = ctx; };
+
+/**
+ * Le motif qu'un crochet de courrier DÉCLARE avec son refus (`reason` ou `motif`), borné : une chaîne
+ * courte, ou rien. Jamais un objet, jamais plus de 80 caractères — c'est un mot de l'hôte à son
+ * appelant, pas un canal.
+ */
+function motifDeclare(r) {
+  const m = r && (r.reason !== undefined ? r.reason : r.motif);
+  if (m === null || m === undefined || typeof m === "object") return null;
+  const t = String(m).trim().slice(0, 80);
+  return t || null;
+}
 
 // Traite les actions de cette famille. Le MARQUEUR est le retour : les blocs répondent puis
 // sortent par leurs `return` d'origine (valeur ≠ false) ; si aucune action ne correspond, la
@@ -44,7 +57,7 @@ async function traiter(req, res, body, slug) {
           const { action: _a, ...opts } = body;
           const resultat = await require("./retention").purgerRetention(Date.now(), opts);
           return jd(resultat.ok === false ? 400 : 200, resultat);
-        } catch (e) { try { PLAYER.errors.capture(e, { route: "retention" }); } catch { /* jamais bloquant */ } return jd(500, { ok: false }); }
+        } catch (e) { try { capturerSansBloquer(PLAYER.errors, e, { route: "retention" }); } catch { /* jamais bloquant */ } return jd(500, { ok: false }); }
       }
       if (String(body.action || "").startsWith("docshare.")) {
         const jd = jsonPour(res);
@@ -147,7 +160,7 @@ async function traiter(req, res, body, slug) {
                 });
               } catch (erreur) {
                 if (!estConflit(erreur)) throw erreur;
-                try { PLAYER.errors.capture(new Error("backfill hôte : la clé était déjà posée ailleurs — " + docId), { route: "hostshare", benin: true }); } catch { /* jamais bloquant */ }
+                try { capturerSansBloquer(PLAYER.errors, new Error("backfill hôte : la clé était déjà posée ailleurs — " + docId), { route: "hostshare", benin: true }); } catch { /* jamais bloquant */ }
                 const gagnant = await PLAYER.db.request(`commercial_doc_shares?idem_key=eq.${encodeURIComponent(cleHote)}&select=slug&limit=1`);
                 if (!Array.isArray(gagnant) || !gagnant[0]) throw erreur;
                 return jd(200, { ok: true, slug: gagnant[0].slug, reused: true });
@@ -174,7 +187,7 @@ async function traiter(req, res, body, slug) {
               return jd(200, { ok: true, slug: neuf.slug, reused: false });
             } catch (erreur) {
               if (!estConflit(erreur)) throw erreur;
-              try { PLAYER.errors.capture(new Error("lien hôte déjà créé par une demande simultanée : " + docId), { route: "hostshare", benin: true }); } catch { /* jamais bloquant */ }
+              try { capturerSansBloquer(PLAYER.errors, new Error("lien hôte déjà créé par une demande simultanée : " + docId), { route: "hostshare", benin: true }); } catch { /* jamais bloquant */ }
               const gagnant = await PLAYER.db.request(`commercial_doc_shares?idem_key=eq.${encodeURIComponent(cleHote)}&select=slug&limit=1`);
               if (!Array.isArray(gagnant) || !gagnant[0]) throw erreur;   // 409 d'autre chose : on ne l'invente pas
               return jd(200, { ok: true, slug: gagnant[0].slug, reused: true });
@@ -254,7 +267,7 @@ async function traiter(req, res, body, slug) {
               await PLAYER.db.request(`commercial_doc_shares?slug=eq.${encodeURIComponent(ex[0].slug)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { doc_title: body.docTitle || null, file_url: String(body.fileUrl), file_name: body.fileName || null, bot_enabled: true, bot_guided: true, bot_profile_id: (body.profileId || "").trim() || null, revoked: false, ...(cleDispo ? { idem_key: cleTest } : {}) } });
             } catch (erreur) {
               if (!estConflit(erreur)) throw erreur;
-              try { PLAYER.errors.capture(new Error("backfill répétition : la clé était déjà posée ailleurs — " + docId), { route: "docshare-test", benin: true }); } catch { /* jamais bloquant */ }
+              try { capturerSansBloquer(PLAYER.errors, new Error("backfill répétition : la clé était déjà posée ailleurs — " + docId), { route: "docshare-test", benin: true }); } catch { /* jamais bloquant */ }
               const gagnant = await PLAYER.db.request(`commercial_doc_shares?idem_key=eq.${encodeURIComponent(cleTest)}&select=slug&limit=1`);
               if (!Array.isArray(gagnant) || !gagnant[0]) throw erreur;
               return jd(200, { ok: true, slug: gagnant[0].slug, reused: true });
@@ -267,7 +280,7 @@ async function traiter(req, res, body, slug) {
             return jd(200, { ok: true, slug: t.slug });
           } catch (erreur) {
             if (!estConflit(erreur)) throw erreur;
-            try { PLAYER.errors.capture(new Error("lien de répétition déjà créé par une demande simultanée : " + docId), { route: "docshare-test", benin: true }); } catch { /* jamais bloquant */ }
+            try { capturerSansBloquer(PLAYER.errors, new Error("lien de répétition déjà créé par une demande simultanée : " + docId), { route: "docshare-test", benin: true }); } catch { /* jamais bloquant */ }
             const gagnant = await PLAYER.db.request(`commercial_doc_shares?idem_key=eq.${encodeURIComponent(cleTest)}&select=slug&limit=1`);
             if (!Array.isArray(gagnant) || !gagnant[0]) throw erreur;
             return jd(200, { ok: true, slug: gagnant[0].slug, reused: true });
@@ -277,9 +290,21 @@ async function traiter(req, res, body, slug) {
           await revokeShare(String(body.slug || ""));
           return jd(200, { ok: true });
         }
-        const { slug } = await createShare({ brandKey: body.brandKey, docId: body.docId, docTitle: body.docTitle, fileUrl: body.fileUrl, fileName: body.fileName, recipientEmail: body.recipientEmail, recipientName: body.recipientName, createdBy: u.email, bot: body.bot, botScript: body.botScript, guided: body.guided, profileId: body.profileId, allowDownload: body.allowDownload, videoLayout: body.videoLayout, logo: body.logo, logoDark: body.logoDark });
+        // LIEN PROTÉGÉ (0028) : poser, changer ou retirer l'échéance et le mot de passe d'un lien
+        // existant. Même portée que `docshare.setauth` — l'hôte tranche par `canManageShares(u, "protect")`.
+        if (body.action === "docshare.protect") {
+          return jd(200, await setShareProtection(String(body.slug || ""), { expiresAt: body.expiresAt, password: body.password }));
+        }
+        const { slug } = await createShare({ brandKey: body.brandKey, docId: body.docId, docTitle: body.docTitle, fileUrl: body.fileUrl, fileName: body.fileName, recipientEmail: body.recipientEmail, recipientName: body.recipientName, createdBy: u.email, bot: body.bot, botScript: body.botScript, guided: body.guided, profileId: body.profileId, allowDownload: body.allowDownload, videoLayout: body.videoLayout, logo: body.logo, logoDark: body.logoDark, expiresAt: body.expiresAt, password: body.password });
         return jd(200, { ok: true, slug });
-        } catch (e) { try { PLAYER.errors.capture(e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jd(500, { ok: false }); }
+        } catch (e) {
+          // ⚠️ UN REFUS ARGUMENTÉ N'EST PAS UNE PANNE (0028). « Le mot de passe compte 4 caractères au
+          // moins », « appliquez la migration 0028 » : l'hôte doit pouvoir le MONTRER, au lieu d'un 500
+          // muet qui ressemble à une instance cassée. Seules les erreurs marquées `publique` sortent ;
+          // les autres restent capturées et tues, comme avant.
+          if (e && e.publique && e.statusCode) return jd(e.statusCode, { ok: false, error: e.message });
+          try { capturerSansBloquer(PLAYER.errors, e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jd(500, { ok: false });
+        }
       }
 
       // Re-partage (forward depuis la visionneuse) : crée un lien enfant tracé, et envoie l'email via 3D
@@ -298,13 +323,17 @@ async function traiter(req, res, body, slug) {
         const allowed = await PLAYER.limits.allow(`reshare:${ip}`, 8, 3600);
         if (!allowed) return j(429, { ok: false, error: "rate", message: "Trop de partages, réessayez plus tard." });
         let out = null;
-        try { out = await createReshare(body.slug || slug, { email: mail, name: body.name }); } catch { /* parent introuvable */ }
+        try { out = await createReshare(body.slug || slug, { email: mail, name: body.name, clientKey: body.clientKey, req }); } catch { /* parent introuvable */ }
         if (!out) return j(404, { ok: false });
         let sent = false;
-        let refusEnvoi = null;
-        if (body.send) {
+        let refusEnvoi = null, motifHote = null;
+        // ⚠️ UN LIEN IDEMPOTENT NE RENVOIE PAS DE COURRIER, ET C'EST L'AUTRE MOITIÉ DU CORRECTIF.
+        // Rendre le même enfant tout en réexpédiant laisserait le défaut entier : le destinataire
+        // reçoit deux messages, ce qui est exactement ce qu'on répare. Trouvé par le banc de
+        // l'idempotence, qui rougissait sur un lien pourtant correctement dédoublonné.
+        if (body.send && !out.idempotent) {
           try {
-            const parent = await getShareBySlug(body.slug || slug);
+            const parent = await getShareBySlug(body.slug || slug, req);
             // ⚠️ ON N'ENVOIE DE COURRIER QUE POUR UN LIEN QUI A UN DESTINATAIRE.
             //
             // Le lecteur d'un lien ANONYME est un visiteur quelconque : lui laisser demander un
@@ -353,19 +382,51 @@ async function traiter(req, res, body, slug) {
             // Signalé par la seconde passe d'audit (P1-1).
             const publique = String(PLAYER.legal.publicUrl || "").trim();
             if (!publique) {
-              try { PLAYER.errors.capture(new Error("PLAYER_PUBLIC_URL non configurée : envoi refusé (le lien de l'email serait construit depuis l'en-tête Host, que le client choisit)"), { route: "reshare" }); } catch { /* jamais bloquant */ }
+              try { capturerSansBloquer(PLAYER.errors, new Error("PLAYER_PUBLIC_URL non configurée : envoi refusé (le lien de l'email serait construit depuis l'en-tête Host, que le client choisit)"), { route: "reshare" }); } catch { /* jamais bloquant */ }
               refusEnvoi = "public-url-unconfigured";
               throw new Error("URL publique non configurée");
             }
             const origin = publique;
             const r = await sendReshareEmail({ parent, childSlug: out.slug, origin, toEmail: mail, toName: body.name });
             sent = !!(r && r.sent);
+            if (!sent) {
+              refusEnvoi = refusEnvoi || "host-declined";
+              // ⚠️ L'HÔTE DIT POURQUOI, ET ON LE JETAIT. Un hôte (ADV, 13/09) répond délibérément
+              // `{ sent: false, motif }` à chaque refus — huit motifs distincts — précisément pour que
+              // « refusé » ne se confonde pas avec « en panne ». On ne lisait que `sent` : la
+              // désambiguïsation que le contrat disait manquante, au moins un hôte l'envoyait déjà.
+              // Bornée et recopiée telle quelle : c'est un mot de l'hôte à son propre appelant.
+              motifHote = motifDeclare(r);
+            }
           } catch { /* best-effort : le lien existe quand même */ }
         }
+        // ⚠️ `sent: false` MENTAIT QUAND LA VÉRITÉ ÉTAIT « JE NE SAIS PAS », ET C'EST CE MENSONGE QUI
+        // DUPLIQUE LES COURRIERS.
+        //
+        // Trois issues se ressemblaient dans un seul booléen : l'hôte a refusé, nous avons refusé,
+        // ou l'appel a échoué SANS que nous sachions ce que l'hôte a fait. Le dernier cas est le
+        // seul dangereux : si l'hôte a réellement envoyé puis répondu trop tard, un client qui lit
+        // « false » réessaie — et crée un SECOND lien enfant en envoyant un SECOND courrier.
+        // Relevé par un audit externe le 12/09.
+        //
+        // ⚠️ C'EST LA DOCTRINE DE `bot-tts` RETOURNÉE. Là-bas, « je n'ai pas pu vérifier » doit se
+        // lire NON, parce que le doute empêche une dépense. Ici, le doute lu comme « non » PROVOQUE
+        // la dépense, parce que quelqu'un réessaie. La règle constante n'est pas « dans le doute,
+        // non » : c'est « dans le doute, DIS-LE » — et laisse l'appelant choisir, en sachant.
+        //
+        // `sent` reste, inchangé, pour les intégrations qui le lisent déjà. `delivery` porte les
+        // trois états. L'IDEMPOTENCE VRAIE — une clé qui ferait retomber un réessai sur le MÊME
+        // lien enfant — demande une colonne, donc une migration : elle n'est pas ici, et
+        // `docs/HOST-CONTRACT.md` dit ce que l'appelant doit faire en attendant.
+        const delivery = out.idempotent ? "idempotent"
+          : !body.send ? "not-requested"
+            : sent ? "sent"
+              : refusEnvoi ? "refused"
+                : "unknown";
         // Le refus se DIT : « rien n'est parti » et « l'envoi n'était pas permis » ne se
         // ressemblent pas, et une interface qui les confond propose un bouton qui ne marchera
         // jamais.
-        return j(200, { ok: true, slug: out.slug, sent, ...(refusEnvoi ? { sendRefused: refusEnvoi } : {}) });
+        return j(200, { ok: true, slug: out.slug, sent, delivery, ...(refusEnvoi ? { sendRefused: refusEnvoi } : {}), ...(motifHote ? { hostReason: motifHote } : {}) });
       }
       // ⚠️ CE REPLI NE COUVRE QUE LES ÉVÉNEMENTS ANALYTIQUES (P2 huitième audit). Une action POST
       // qu'aucune famille n'a reconnue tombait ici et repartait `{"ok":true}` — une faute de
@@ -420,7 +481,7 @@ async function traiter(req, res, body, slug) {
           // et le signalement passe AVANT le `return`, sans quoi il ne s'exécuterait jamais.
           try {
             if (await PLAYER.limits.allow("intsess:quota-avert", 1, 3600)) {
-              PLAYER.errors.capture(new Error(`session interne refusée : quota horaire atteint (${SESSION_QUOTA_PER_HOUR}/h par adresse) — la mesure s'arrête tant qu'il l'est`), { route: "internal-session" });
+              capturerSansBloquer(PLAYER.errors, new Error(`session interne refusée : quota horaire atteint (${SESSION_QUOTA_PER_HOUR}/h par adresse) — la mesure s'arrête tant qu'il l'est`), { route: "internal-session" });
             }
           } catch { /* un journal ne doit jamais empêcher une lecture */ }
           repondreJson(res, 429, { ok: false, error: "rate" });
@@ -438,7 +499,7 @@ async function traiter(req, res, body, slug) {
           // Une fois par heure et par instance : assez pour être vu dans les journaux, pas assez
           // pour les noyer — un avertissement répété à chaque battement ne se lit plus.
           if (await PLAYER.limits.allow("intsess:avert", 1, 3600)) {
-            try { PLAYER.errors.capture(new Error("session interne écrite sans jeton : l'identité vient du navigateur. Poser PLAYER_INTERNAL_STRICT=1 une fois l'hôte à jour"), { route: "internal-session" }); } catch { /* ignore */ }
+            try { capturerSansBloquer(PLAYER.errors, new Error("session interne écrite sans jeton : l'identité vient du navigateur. Poser PLAYER_INTERNAL_STRICT=1 une fois l'hôte à jour"), { route: "internal-session" }); } catch { /* ignore */ }
           }
         }
         // Le jeton fait foi quand il est là : c'est l'hôte qui se porte garant, pas l'appelant.
@@ -469,7 +530,7 @@ async function traiter(req, res, body, slug) {
           // de mesure.
           try {
             if (await PLAYER.limits.allow("intsess:echec", 1, 3600)) {
-              PLAYER.errors.capture(new Error(`écriture de session interne refusée : ${e && e.message ? e.message : "cause inconnue"} — la mesure ne s'enregistre pas`), { route: "internal-session" });
+              capturerSansBloquer(PLAYER.errors, new Error(`écriture de session interne refusée : ${e && e.message ? e.message : "cause inconnue"} — la mesure ne s'enregistre pas`), { route: "internal-session" });
             }
           } catch { /* un journal ne doit jamais empêcher une lecture */ }
         }
@@ -497,12 +558,12 @@ async function traiter(req, res, body, slug) {
         // que l'exploitant peut relier à un quota, plutôt qu'une mesure qui stagne sans explication.
         try {
           const avert = estSession ? "sess:quota-avert" : "view:quota-avert";
-          if (await PLAYER.limits.allow(avert, 1, 3600)) PLAYER.errors.capture(new Error(`télémétrie externe abandonnée (${body.event}) : quota horaire atteint (${quotaTrack}/h par adresse)`), { route: "track", abandon: true });
+          if (await PLAYER.limits.allow(avert, 1, 3600)) capturerSansBloquer(PLAYER.errors, new Error(`télémétrie externe abandonnée (${body.event}) : quota horaire atteint (${quotaTrack}/h par adresse)`), { route: "track", abandon: true });
         } catch { /* jamais bloquant */ }
         repondreJson(res, 200, { ok: true });
         return;
       }
-      const share = await getShareBySlug(body.slug || slug);
+      const share = await getShareBySlug(body.slug || slug, req);
       if (share && !share.is_test) { // répétition générale : la lecture de test ne compte pas dans les stats
         try {
           // 'session' = résumé riche (temps par page, appareil) → upsert ; open/page/heartbeat → journal léger (funnel/overview).
@@ -517,7 +578,7 @@ async function traiter(req, res, body, slug) {
           // n'aurait rien vu : c'est ce qui rend la classe dangereuse, pas l'instance.
           try {
             if (await PLAYER.limits.allow("sess:echec", 1, 3600)) {
-              PLAYER.errors.capture(new Error(`écriture de mesure refusée : ${e && e.message ? e.message : "cause inconnue"} — la lecture n'est pas comptée`), { route: "track" });
+              capturerSansBloquer(PLAYER.errors, new Error(`écriture de mesure refusée : ${e && e.message ? e.message : "cause inconnue"} — la lecture n'est pas comptée`), { route: "track" });
             }
           } catch { /* un journal ne doit jamais empêcher une lecture */ }
         }
