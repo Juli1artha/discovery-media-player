@@ -46,8 +46,17 @@ the notes there are this file's section for that version.
   ne groupe plus que l'outillage de développement en mineure ou correctif : la dépendance de production et toute majeure arrivent seules, leur nom dans le titre.
   `docs/DEPENDENCIES.md` écrit la règle de fusion qui manquait — une PR Dependabot est fusionnée ou
   fermée, avec sa raison, avant le passage mensuel suivant ; deux épinglages avaient attendu plus
-  d'un mois. ⚠️ **Ce que cette montée ne prend pas** : pdf.js 6.4.299, publiée le 03/10, la veille
-  de cette reprise, n'est pas incluse ; elle arrivera seule au prochain passage.
+  d'un mois. ⚠️ **Et le lot cachait un piège que sa CI n'a pas pu montrer** : son lockfile montait
+  aussi jsdom 30.0.1 → 30.1.1, sous la plage `^30.0.1`, sans que le titre le nomme. En rejouant la
+  campagne de mutation, le mutant `visionneuse-pages-toutes-materialisees` (dix mille pages posées
+  dans le DOM) a tenu son banc plus de vingt minutes. Mesuré sur la même machine, même mutant :
+  46 s avec vitest 4 et jsdom 30.0.1 ; plus de dix minutes, arrêté, avec vitest 4 et jsdom 30.1.1 ;
+  35 s avec vitest 4 et jsdom 30.1.2. La cause est jsdom, pas vitest 5 — une régression que 30.1.2
+  corrige. Le plancher passe à `^30.1.2`. La CI de #551 n'avait rien vu parce que `npm test` y
+  était tombé avant d'atteindre la campagne ; et le job n'a pas de `timeout-minutes`, donc il aurait
+  pu rester bloqué jusqu'à la limite de GitHub. ⚠️ **Ce que cette montée ne prend pas** : pdf.js
+  6.4.299, publiée le 03/10, la veille de cette reprise, n'est pas incluse ; elle arrivera seule au
+  prochain passage.
 
 ## [0.1.172] — 2026-10-01
 
