@@ -7,7 +7,7 @@ const { adresseAppelant } = require("./appelant");
 const { capturerSansBloquer } = require("./capture");
 const { jsonPour, repondreJson, etiquetteRoute } = require("./reponses.js");
 const { estConflit } = require("./erreurs-base.js");
-const { createShare, createReshare, sendReshareEmail, revokeShare, setShareAuth, listSharesForDoc, listSessionsForDoc, listSessionsForRecipient, internalStatsForDoc, cleIdempotence, getShareBySlug, logView, upsertSession, upsertInternalSession, overview: docOverview } = require("./shares");
+const { createShare, createReshare, sendReshareEmail, revokeShare, setShareAuth, setShareProtection, listSharesForDoc, listSessionsForDoc, listSessionsForRecipient, internalStatsForDoc, cleIdempotence, getShareBySlug, logView, upsertSession, upsertInternalSession, overview: docOverview } = require("./shares");
 const { SESSION_QUOTA_PER_HOUR, VIEW_QUOTA_PER_HOUR } = require("./shared.generated.js");
 
 let PLAYER = null;
@@ -290,9 +290,21 @@ async function traiter(req, res, body, slug) {
           await revokeShare(String(body.slug || ""));
           return jd(200, { ok: true });
         }
-        const { slug } = await createShare({ brandKey: body.brandKey, docId: body.docId, docTitle: body.docTitle, fileUrl: body.fileUrl, fileName: body.fileName, recipientEmail: body.recipientEmail, recipientName: body.recipientName, createdBy: u.email, bot: body.bot, botScript: body.botScript, guided: body.guided, profileId: body.profileId, allowDownload: body.allowDownload, videoLayout: body.videoLayout, logo: body.logo, logoDark: body.logoDark });
+        // LIEN PROTÉGÉ (0028) : poser, changer ou retirer l'échéance et le mot de passe d'un lien
+        // existant. Même portée que `docshare.setauth` — l'hôte tranche par `canManageShares(u, "protect")`.
+        if (body.action === "docshare.protect") {
+          return jd(200, await setShareProtection(String(body.slug || ""), { expiresAt: body.expiresAt, password: body.password }));
+        }
+        const { slug } = await createShare({ brandKey: body.brandKey, docId: body.docId, docTitle: body.docTitle, fileUrl: body.fileUrl, fileName: body.fileName, recipientEmail: body.recipientEmail, recipientName: body.recipientName, createdBy: u.email, bot: body.bot, botScript: body.botScript, guided: body.guided, profileId: body.profileId, allowDownload: body.allowDownload, videoLayout: body.videoLayout, logo: body.logo, logoDark: body.logoDark, expiresAt: body.expiresAt, password: body.password });
         return jd(200, { ok: true, slug });
-        } catch (e) { try { capturerSansBloquer(PLAYER.errors, e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jd(500, { ok: false }); }
+        } catch (e) {
+          // ⚠️ UN REFUS ARGUMENTÉ N'EST PAS UNE PANNE (0028). « Le mot de passe compte 4 caractères au
+          // moins », « appliquez la migration 0028 » : l'hôte doit pouvoir le MONTRER, au lieu d'un 500
+          // muet qui ressemble à une instance cassée. Seules les erreurs marquées `publique` sortent ;
+          // les autres restent capturées et tues, comme avant.
+          if (e && e.publique && e.statusCode) return jd(e.statusCode, { ok: false, error: e.message });
+          try { capturerSansBloquer(PLAYER.errors, e, { route: etiquetteRoute(body.action) }); } catch { /* jamais bloquant */ } return jd(500, { ok: false });
+        }
       }
 
       // Re-partage (forward depuis la visionneuse) : crée un lien enfant tracé, et envoie l'email via 3D
@@ -311,7 +323,7 @@ async function traiter(req, res, body, slug) {
         const allowed = await PLAYER.limits.allow(`reshare:${ip}`, 8, 3600);
         if (!allowed) return j(429, { ok: false, error: "rate", message: "Trop de partages, réessayez plus tard." });
         let out = null;
-        try { out = await createReshare(body.slug || slug, { email: mail, name: body.name, clientKey: body.clientKey }); } catch { /* parent introuvable */ }
+        try { out = await createReshare(body.slug || slug, { email: mail, name: body.name, clientKey: body.clientKey, req }); } catch { /* parent introuvable */ }
         if (!out) return j(404, { ok: false });
         let sent = false;
         let refusEnvoi = null, motifHote = null;
@@ -321,7 +333,7 @@ async function traiter(req, res, body, slug) {
         // l'idempotence, qui rougissait sur un lien pourtant correctement dédoublonné.
         if (body.send && !out.idempotent) {
           try {
-            const parent = await getShareBySlug(body.slug || slug);
+            const parent = await getShareBySlug(body.slug || slug, req);
             // ⚠️ ON N'ENVOIE DE COURRIER QUE POUR UN LIEN QUI A UN DESTINATAIRE.
             //
             // Le lecteur d'un lien ANONYME est un visiteur quelconque : lui laisser demander un
@@ -551,7 +563,7 @@ async function traiter(req, res, body, slug) {
         repondreJson(res, 200, { ok: true });
         return;
       }
-      const share = await getShareBySlug(body.slug || slug);
+      const share = await getShareBySlug(body.slug || slug, req);
       if (share && !share.is_test) { // répétition générale : la lecture de test ne compte pas dans les stats
         try {
           // 'session' = résumé riche (temps par page, appareil) → upsert ; open/page/heartbeat → journal léger (funnel/overview).

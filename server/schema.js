@@ -82,6 +82,15 @@ const ATTENDUES = {
     migration: "0011-liens-uniques.sql",
     fonction: "empêcher deux demandes simultanées de créer deux liens système pour le même usage",
   },
+  // Lien protégé (0028). `password_hash` voyage avec `expires_at` dans la même migration : une sonde
+  // suffit. ⚠️ CETTE ATTENTE NE DÉGRADE PAS EN SILENCE comme les autres : sans elle, la CRÉATION d'un
+  // lien protégé est REFUSÉE (shares.js, `migrationManquante`) — un lien ouvert qui se dirait protégé
+  // serait pire que pas de lien.
+  lienProtege: {
+    table: "commercial_doc_shares", colonne: "expires_at",
+    migration: "0028-liens-proteges.sql",
+    fonction: "faire expirer un lien tracé et le protéger par un mot de passe",
+  },
   revocationDatee: {
     table: "commercial_doc_shares", colonne: "revoked_at",
     migration: "0013-revocation-datee.sql",

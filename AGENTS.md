@@ -1934,8 +1934,30 @@ summary that counts guards or counts tests.
 > *does anyone ever point it at us?*
 
 Both are now closed with a `le dépôt lui-même` bench, which is the convention the older guards
-already followed — it had simply never been required. Requiring it mechanically is a guard we have
-not written; it is named here so the next person writing one does not rediscover this by accident.
+already followed — it had simply never been required.
+
+⚠️ **This paragraph used to end: *"requiring it mechanically is a guard we have not written"*.** It is
+written now, as `tools/gardes-appliquees.mjs`, and it holds the rule in its two accepted forms: a
+workflow step that launches the guard in a way that can fail (`continue-on-error`, `|| true` and a
+background `&` do not count), or a `describe("le dépôt lui-même")` block whose body **uses**
+something the bench loaded from the guard. It reads both through the AST, never the text — and both
+halves of that choice were paid for before it merged:
+
+- **The audit that prompted it was wrong in all six cases it named.** On 23/09 an analysis of this
+  repository listed six guards "never launched". All six were applied: five by a "le dépôt lui-même"
+  block calling `garde.auditer()` *with no argument* — that is, on the repository — and the sixth by
+  `ecarts()` on the real `CODEOWNERS`, under another title. The probe had searched a vocabulary
+  (`racine`, `process.cwd`) and missed a bare call. The one real change it led to was renaming that
+  sixth block, so the rule can see what it already did.
+- **The guard's own first bench caught it lying.** Its "le dépôt lui-même" block asserts
+  `toEqual(["orphelins-tts.mjs"])`, and the first draft read any guard filename in the block as a
+  path being followed — crediting the operator tool it exempts. Only arguments of calls that follow
+  a path (`join`, `spawnSync`, `import`, …) count now. What exposed it was the symmetric rule — *an
+  exemption that is also applied is refused* — on its first run.
+
+What it does not check, and says so in its header: that the block applies the guard to the
+repository rather than to a fixture (the title is a declaration; review checks it), how often a
+workflow runs, and whether its job is required.
 
 ## Before building the instrument, look for it — this repository already had it, and better
 

@@ -57,7 +57,10 @@ create table if not exists public.commercial_doc_shares (
   idem_key        text,
   -- Destinataire attesté par l'hôte : sert à ATTRIBUER une lecture, jamais à expédier en son nom.
   -- `recipient_email`, elle, dit qui peut expédier — vide quand personne ne le peut.
-  attested_recipient_email text
+  attested_recipient_email text,
+  -- Lien protégé (0028) : échéance et empreinte du mot de passe, nulles par défaut.
+  expires_at      timestamptz,
+  password_hash   text                       -- « sel:hash » scrypt — JAMAIS servi
 );
 create index if not exists cds_doc_id_idx on public.commercial_doc_shares (doc_id);
 -- ⚠️ RÈGLE (sixième audit) : tout index sur une colonne apparue APRÈS un init déjà publié est
@@ -806,6 +809,17 @@ update public.commercial_doc_shares set revoked_at = now() where revoked = true 
 -- job compare.
 alter table public.doc_presentations
   add column if not exists view_rotation integer not null default 0;
+-- 0028 — même rattrapage : une base installée avant aujourd'hui ne verrait jamais ces deux colonnes en
+-- rejouant ce fichier, et le player refuserait alors de créer un lien protégé (il le dit, 503).
+alter table public.commercial_doc_shares
+  add column if not exists expires_at timestamptz;
+alter table public.commercial_doc_shares
+  add column if not exists password_hash text;
+comment on column public.commercial_doc_shares.expires_at is
+  'Echeance du lien : au-dela, il ne se resout plus. Nulle = sans expiration.';
+comment on column public.commercial_doc_shares.password_hash is
+  'Empreinte du mot de passe du lien (sel:hash, scrypt, hex). Nulle = sans mot de passe. '
+  'Jamais servie : un hote n''en voit qu''un booleen.';
 
 -- ⚠️ ET LE RATTRAPAGE VAUT AUSSI POUR CE QU'ON EFFACE (0026). Une base installée avant aujourd'hui
 -- porte treize mois d'adresses ; `create table if not exists` ne touche pas une table déjà là, donc

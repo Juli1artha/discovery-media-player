@@ -9,7 +9,7 @@ const crypto = require("crypto");
 const { capturerSansBloquer } = require("./capture");
 const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
-const { getShareBySlug } = require("./shares");
+const { resoudreLien } = require("./shares");
 const { PRESENT_QUOTA_PER_HOUR, PRESENT_CACHE_MS, estSlug } = require("./shared.generated.js");
 const { creerCache, CODE_SATURATION } = require("./cache.js");
 const mesures = require("./mesures.js");
@@ -171,7 +171,7 @@ const originOf = (u) => { try { return new URL(u).origin; } catch { return ""; }
 // Tiers épinglés (SUPAJS, TIERS, balise…) : extraits dans server/tiers.js.
 const { TIERS } = require("./tiers");
 
-const { notFoundHtml, softWallHtml } = require("./page-mur");
+const { notFoundHtml, softWallHtml, motDePasseHtml, lienExpireHtml } = require("./page-mur");
 const { viewerHtml } = require("./page-visionneuse");
 const { presentHtml } = require("./page-audience");
 
@@ -504,6 +504,16 @@ function embedFrameAncestors() {
  *
  * On répond `embed-denied` : la décision reste la nôtre, l'hôte apprend seulement à ne pas replier.
  */
+/**
+ * LA PAGE OÙ LE DOCUMENT S'OUVRE (`?page=N`) — demandée par le premier hôte pour qu'une réponse qui cite
+ * « page 12 » ouvre la page 12. Un entier, au moins 1, borné au plafond de pages déjà tenu ailleurs (10 000) ;
+ * tout le reste vaut 1. La visionneuse la borne ENCORE au nombre réel de pages, qu'elle seule connaît.
+ */
+function pageDeDepart(q) {
+  const n = Math.trunc(Number(q && q.page));
+  return Number.isFinite(n) && n > 1 ? Math.min(n, 10_000) : 1;
+}
+
 function sendRefusal(res, reason, embed) {
   if (!embed) return sendHtml(res, 404, notFoundHtml());
   const nonce = crypto.randomBytes(16).toString("base64");
@@ -733,6 +743,9 @@ async function handlerMesure(req, res) {
         capabilities: [
           "docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth",
           "host-share", "host-mail", "retention",
+          // `link-protection` (0028) : un lien tracé peut porter une échéance et un mot de passe
+          // (`docshare.create` / `docshare.protect`). `start-page` : `?page=N` ouvre le document à la page N.
+          "link-protection", "start-page",
         ],
         // ⚠️ POUR QUELLES ORIGINES cette instance accepte d'être encadrée. Un booléen ne
         // suffisait pas : un hôte a besoin de voir que SON domaine manque, pas seulement que
@@ -1102,7 +1115,7 @@ async function handlerMesure(req, res) {
       }
       const supaUrl = (PLAYER.config && PLAYER.config.supabaseUrl) || "";
       const supaKey = (PLAYER.config && PLAYER.config.supabasePublishableKey) || "";
-      const pseudo = { preview: true, embed, slug: "", file_name: String(q.name || "document.pdf"), doc_title: String(q.title || q.name || "Document"), raw_url: url, doc_id: String(q.docId || ""), presenter_name: String(q.by || ""), presenter_avatar: String(q.av || ""), internal_email: String(q.uemail || ""), internal_token: String(q.it || ""), supa_url: supaUrl, supa_key: supaKey, auto_present: String(q.autopresent || "") === "1", resume_slug: String(q.resume || ""), brand_key: String(q.brand || "") || null, stream_url: `/api/doc?preview=1&stream=1&url=${encodeURIComponent(url)}&name=${encodeURIComponent(String(q.name || ""))}` };
+      const pseudo = { preview: true, embed, page_depart: pageDeDepart(q), slug: "", file_name: String(q.name || "document.pdf"), doc_title: String(q.title || q.name || "Document"), raw_url: url, doc_id: String(q.docId || ""), presenter_name: String(q.by || ""), presenter_avatar: String(q.av || ""), internal_email: String(q.uemail || ""), internal_token: String(q.it || ""), supa_url: supaUrl, supa_key: supaKey, auto_present: String(q.autopresent || "") === "1", resume_slug: String(q.resume || ""), brand_key: String(q.brand || "") || null, stream_url: `/api/doc?preview=1&stream=1&url=${encodeURIComponent(url)}&name=${encodeURIComponent(String(q.name || ""))}` };
       // ⚠️ LA MARQUE MANQUAIT ICI, ET SEULEMENT ICI. Toute la machinerie existe — l'hôte répond à
       // `PLAYER_HOST_BRAND_URL`, `branding.forKey` résout, les liens tracés affichent la bonne
       // marque. Ce chemin-ci ne l'appelait simplement pas, et aucun paramètre ne transportait la
@@ -1132,8 +1145,31 @@ async function handlerMesure(req, res) {
         embed ? embedFrameAncestors() : "'self'");
     }
 
-    const share = slug ? await getShareBySlug(slug) : null;
-    if (!share) return sendRefusal(res, "revoked", embed);
+    // ⚠️ UNE LECTURE, PAS DEUX. 0.1.170 demandait le lien à `getShareBySlug`, puis, quand il ne s'ouvrait pas,
+    // le RELISAIT par `resoudreLien` pour dire pourquoi — la même ligne, deux allers-retours, et sur le chemin le plus
+    // fréquent des refus (un lien révoqué qui circule encore). `resoudreLien` rend les deux à la fois.
+    const lu = slug ? await resoudreLien(slug, req) : { share: null, refus: "revoked", ligne: null };
+    const share = lu.share;
+    if (!share) {
+      // ⚠️ UN LIEN PROTÉGÉ (0028) NE SE CONFOND PAS AVEC UN LIEN RÉVOQUÉ. Expiré, il le DIT — la
+      // personne peut en demander un autre ; fermé par un mot de passe, il le DEMANDE. Et dans les
+      // deux cas le FICHIER reste derrière : servir la page du mot de passe en laissant `?file=1`
+      // streamer le PDF serait une porte de décor (la leçon de `murDocument.test.js`).
+      const { refus, ligne } = lu;
+      if (refus === "expired") {
+        if (String(q.file || "") === "1") { repondreJson(res, 410, { ok: false, error: "expired" }); return; }
+        if (!embed) return sendHtml(res, 410, lienExpireHtml(ligne));
+        const xnonce = crypto.randomBytes(16).toString("base64");
+        return sendHtml(res, 410, lienExpireHtml(ligne) + `<script nonce="${xnonce}">try{parent.postMessage({type:"3dd-doc-embed-denied",reason:"expired"},"*")}catch(e){}</script>`, `'nonce-${xnonce}'`, "", embedFrameAncestors());
+      }
+      if (refus === "password") {
+        if (String(q.file || "") === "1") { repondreJson(res, 401, { ok: false, error: "password" }); return; }
+        let plogo = ""; try { plogo = await PLAYER.branding.logo(); } catch { /* sans logo */ }
+        const mnonce = crypto.randomBytes(16).toString("base64");
+        return sendHtml(res, 200, motDePasseHtml(ligne, mnonce, plogo, embed), `'nonce-${mnonce}'`, originesImages(plogo, ligne), embed ? embedFrameAncestors() : "'self'");
+      }
+      return sendRefusal(res, "revoked", embed);
+    }
 
     // Soft wall : un document require_auth n'est servi qu'à un visiteur au jeton valide.
     // Mur d'accès visiteur — greffon. SANS lui, un document « compte requis » ne doit surtout PAS
@@ -1143,8 +1179,31 @@ async function handlerMesure(req, res) {
     if (share.require_auth === true && !visitors) return sendRefusal(res, "auth-unavailable", embed);
     const gated = share.require_auth === true && !visitor;
 
+    // L'ACCÈS PAR DOCUMENT (0.1.172) — greffon facultatif `documentAccess`. Le mur ne savait dire qu'une chose :
+    // « cette personne a prouvé son adresse ». Un hôte qui réserve un document à SON équipe, ou à une organisation,
+    // ne pouvait pas l'exprimer : toute adresse prouvée l'ouvrait. Le greffon répond, pour un document réservé et un
+    // visiteur identifié, « oui » ou « non » — c'est l'HÔTE qui sait qui a droit à quoi.
+    //   · absent : l'ancien comportement (une adresse prouvée suffit) — rien ne change pour un hôte qui ne l'a pas ;
+    //   · « non » : le mur revient, en disant que CETTE adresse n'a pas accès, et propose d'en utiliser une autre ;
+    //   · une panne (exception, réponse illisible, `reason: "unavailable"`) : REFUS — jamais d'ouverture par défaut.
+    let refusAcces = null;
+    if (share.require_auth === true && visitor && PLAYER.plugins.documentAccess) {
+      let d = null;
+      try { d = await PLAYER.plugins.documentAccess.decide({ share, visitor }); } catch (e) {
+        try { await PLAYER.errors.capture(e, { route: "doc", etape: "documentAccess" }); } catch { /* la capture ne décide rien */ }
+      }
+      if (!d || d.ok !== true) refusAcces = d && d.ok === false && d.reason !== "unavailable" ? "denied" : "auth-unavailable";
+    }
+    if (refusAcces === "auth-unavailable") {
+      if (String(q.file || "") === "1") { repondreJson(res, 503, { ok: false, error: "auth-unavailable" }); return; }
+      return sendRefusal(res, "auth-unavailable", embed);
+    }
+
     if (String(q.file || "") === "1") {
       if (gated) { repondreJson(res, 401, { ok: false, error: "auth" }); return; }
+      // Le FICHIER reste derrière un refus d'accès, comme derrière le mur : une page qui dit non en laissant ?file=1
+      // streamer le PDF serait une porte de décor.
+      if (refusAcces === "denied") { repondreJson(res, 403, { ok: false, error: "denied" }); return; }
       // Stream depuis le Storage en RELAYANT les requêtes Range → pdf.js charge progressivement (les 1res
       // pages s'affichent sans télécharger tout le PDF) → affichage bien plus rapide.
       const range = req.headers["range"];
@@ -1157,15 +1216,16 @@ async function handlerMesure(req, res) {
 
     // Soft wall : contenu réservé → on sert la page de connexion visiteur (email + code)
     // AVANT de charger le lecteur. À la vérification, le cookie est posé → un reload lève le mur.
-    if (gated) {
+    if (gated || refusAcces === "denied") {
       let wlogo = ""; try { wlogo = await PLAYER.branding.logo(); } catch { /* sans logo */ }
       const wnonce = crypto.randomBytes(16).toString("base64");
       const gcid = visitors.googleClientId();
       // Intégré : le mur reste affiché (le visiteur peut s'y connecter sur place) mais il DIT à
       // l'hôte que le document est retenu — sinon l'hôte croit à une panne et replie sur son
-      // lecteur, qui lui ouvrirait le document que ce mur protège.
-      const wall = softWallHtml(share, wnonce, wlogo, gcid)
-        + (embed ? `<script nonce="${wnonce}">try{parent.postMessage({type:"3dd-doc-embed-denied",reason:"auth-required"},"*")}catch(e){}</script>` : "");
+      // lecteur, qui lui ouvrirait le document que ce mur protège. Refusé à CETTE adresse : `denied`.
+      const raison = refusAcces === "denied" ? "denied" : "auth-required";
+      const wall = softWallHtml(share, wnonce, wlogo, gcid, refusAcces === "denied" ? { refuse: String(visitor.email || "") } : null)
+        + (embed ? `<script nonce="${wnonce}">try{parent.postMessage({type:"3dd-doc-embed-denied",reason:${jsonPourScript(raison)}},"*")}catch(e){}</script>` : "");
       return sendSoftWallHtml(res, wall, wnonce, [originOf(wlogo), originOf(share.brand_logo)].filter(Boolean).join(" "), embed ? embedFrameAncestors() : null);
     }
 
@@ -1229,6 +1289,7 @@ async function handlerMesure(req, res) {
     const frameAncestors = share.embed
       ? embedFrameAncestors()
       : "'self'";
+    share.page_depart = pageDeDepart(q);
     return sendHtml(res, 200, viewerHtml(share, nonce, logoUrl, pitch), `'nonce-${nonce}'`, originesImages(logoUrl, share), frameAncestors);
   } catch (error) {
     try { await PLAYER.errors.capture(error, { route: "doc", method: req.method }); } catch { /* ignore */ }

@@ -12,6 +12,61 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- **`tools/gardes-appliquees.mjs` : chaque garde est appliquée à ce dépôt par quelque chose qui peut
+  échouer.** Deux gardes justes, couvertes par leurs bancs, n'avaient longtemps été lancées nulle
+  part, et `AGENTS.md` écrivait qu'exiger leur application était « une garde que nous n'avons pas
+  écrite ». Elle l'exige sous les deux formes que le dépôt pratique déjà : une étape de workflow qui
+  la lance sans pouvoir avaler son échec (`continue-on-error`, `|| true` et un lancement en
+  arrière-plan ne comptent pas), ou un bloc `describe("le dépôt lui-même")` dont le corps **utilise**
+  ce que le banc a chargé depuis la garde. Les exemptions sont re-vérifiées à chaque passage, et une
+  exemption qui ne dispense plus rien est refusée. Mesuré à sa fusion : 47 gardes, 40 lancées par un
+  workflow, 6 appliquées par un banc seulement, 1 exemptée (`orphelins-tts`, outil d'exploitation).
+  Sept mutants, sept tués. ⚠️ **L'analyse qui l'a demandée se trompait sur les six cas qu'elle
+  nommait** : elle déclarait six gardes « jamais lancées », et les six étaient appliquées — cinq par
+  un `garde.auditer()` sans argument que sa sonde, qui cherchait un vocabulaire, n'a pas vu ; la
+  sixième, `codeowners-valide`, sous un titre hors convention, seul changement qui en a découlé. Et
+  **le premier banc de la garde l'a prise en défaut** : elle créditait comme « chemin suivi » un nom de
+  fichier écrit dans une assertion, ce qui rendait « appliqué » l'outil qu'elle exempte. C'est la
+  règle symétrique — une exemption appliquée est refusée — qui l'a montré au premier passage.
+
+## [0.1.172] — 2026-10-01
+
+### Added
+
+- **Un document réservé peut l'être à QUELQU'UN, pas seulement à « toute adresse prouvée ».** Le mur ne savait dire
+  qu'une chose : cette personne a prouvé son adresse. Un hôte qui réserve un document à son équipe, ou à une
+  organisation partenaire, ne pouvait pas l'exprimer — n'importe quelle adresse prouvée l'ouvrait. Nouveau greffon
+  facultatif `plugins.documentAccess.decide({ share, visitor })`, appelé pour un document `require_auth` une fois le
+  visiteur identifié : « oui » ouvre ; « non » remet le mur en disant que cette adresse n'a pas accès (avec la
+  possibilité d'en utiliser une autre), `?file=1` rend `403 denied` sans rien streamer, et le pont signale `denied` à
+  l'hôte ; une panne (exception, réponse illisible, `unavailable`) REFUSE (`auth-unavailable`, `503` pour le fichier),
+  jamais n'ouvre. Sans le greffon, rien ne change. Contrat : `docs/HOST-CONTRACT.md`. Banc : `murDocument.test.js`
+  (six cas, deux mutations rejouées).
+
+## [0.1.171] — 2026-10-01
+
+### Fixed
+
+- **Une page de lien refusée lisait le lien deux fois.** 0.1.170 le demandait à `getShareBySlug`, puis,
+  quand il ne s'ouvrait pas, le relisait par `resoudreLien` pour dire pourquoi — la même ligne, deux
+  allers-retours, sur le refus le plus fréquent (un lien révoqué qui circule encore). La page interroge
+  désormais `resoudreLien` une fois : il rend le lien et la raison ensemble. Un banc compte les lectures
+  du lien dans quatre cas (révoqué, expiré, protégé, ouvert) : une chacun.
+
+- ⚠️ **0.1.170 est partie sur npm SANS Release, sans attestation et sans SBOM.** `attester` emporte les
+  artefacts de charge de la course CI de son commit et les juge par `tools/artefact-de-charge.mjs`, qui
+  relit le schéma **au tag** qui l'a ancré (`git show v0.1.169:…`). Son checkout n'avait pas les tags :
+  la garde a répondu NON CONCLUANT, à raison, et `annoncer` a été sauté. Le même défaut avait déjà été
+  corrigé dans le job `schema` de `ci.yml` — et le banc qui devait l'empêcher de revenir **ne lisait
+  que `ci.yml`**. Il lit désormais tous les workflows, dérivés du dossier. Élargi, il a rougi sur
+  `attester` ET sur `annoncer`, qui aurait échoué juste après. 0.1.170 ne se rejoue pas sur son tag
+  (le workflow de ce tag est celui qui a cassé) : c'est la prochaine version qui porte la Release, l'attestation et
+  la SBOM.
+
+## [0.1.170] — 2026-10-01
+
 ### Fixed
 
 - ⚠️ **Le banc du producteur héritait de l'environnement de la forge, et son verdict dépendait donc
@@ -113,6 +168,32 @@ the notes there are this file's section for that version.
   frappante mais reste une hypothèse, et le correctif ne repose pas sur elle.
 
 ### Added
+
+- **Liens protégés : une échéance et un mot de passe sur un lien tracé** (migration
+  `0028-liens-proteges.sql`, capacité `link-protection`). Demandé par le premier hôte, dont la
+  fenêtre de partage disait « sans expiration ». `docshare.create` accepte `expiresAt` et
+  `password` ; `docshare.protect` les change ou les retire — **une action neuve de
+  `canManageShares`**, qu'une table d'hôte fermée refusera tant qu'elle ne la connaît pas. La règle
+  vit dans `server/lien-protege.js` et s'applique au seul endroit où un lien se résout
+  (`getShareBySlug`) : la page, le fichier (`?file=1`), l'assistant, la mesure et le re-partage se
+  ferment ensemble.
+  - **Lien expiré** : il le dit (`410`, `embed-denied` motif `expired`).
+  - **Lien protégé** : il demande son mot de passe, et le fichier rend `401` tant qu'il n'est pas
+    saisi.
+    - Le cookie de déverrouillage est `HttpOnly` et dure 8 h.
+    - Il est signé avec l'**empreinte** du mot de passe : aucune variable de plus à poser, et
+      changer le mot de passe referme les navigateurs déjà entrés.
+    - Les essais sont plafonnés par adresse ET par lien.
+  - ⚠️ **Sans requête, verrouillé** : un appel interne qui oublie de la passer obtient
+    « introuvable », jamais « ouvert ».
+  - ⚠️ **Sans la migration, créer un lien protégé est REFUSÉ** (503, qui nomme le fichier) au lieu
+    de se dégrader en lien ouvert que l'hôte afficherait comme protégé.
+  - L'empreinte n'est **jamais servie** : `docshare.list` rend `expiresAt` et un booléen.
+  - Un re-partage hérite des deux.
+  - 28 essais, dix mutations rejouées.
+- **`?page=N` ouvre un PDF à la page N** (capacité `start-page`), sur un lien tracé comme sur
+  l'aperçu interne : un entier, borné à 10 000 par le serveur et au nombre réel de pages par la
+  visionneuse. Demandé pour qu'une réponse qui cite « page 12 » ouvre la page 12.
 
 - ⚠️ **Ce qu'un rejeu de sortie ne peut PAS réparer, écrit là où on le cherchera.** Un
   `workflow_dispatch` exécute le workflow de la **réf sur laquelle on le lance**, pendant que chaque
@@ -7784,7 +7865,10 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.169...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.172...HEAD
+[0.1.172]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.171...v0.1.172
+[0.1.171]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.170...v0.1.171
+[0.1.170]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.169...v0.1.170
 [0.1.169]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.168...v0.1.169
 [0.1.168]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.167...v0.1.168
 [0.1.167]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.166...v0.1.167

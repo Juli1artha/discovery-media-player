@@ -41,7 +41,7 @@ need.
   "contract": 1,
   "version": "<the running version>",
   "runtime": { "node": "<what this instance runs on>", "nodeRequired": ">=22.13.0" },
-  "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention"],
+  "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention", "link-protection", "start-page"],
   "frameAncestors": ["'self'", "https://*.vercel.app", "https://app.example.com"],
   "separateIssuer": true,
   "internalStrict": true,
@@ -512,6 +512,30 @@ said the player holds no server secret at all — too absolute: the standalone c
 The player's counters bound the *rate*; your plugin bounds the *code*. Both are needed, and neither
 replaces the other.
 
+## Who may open a restricted document (`plugins.documentAccess`, 0.1.172)
+
+The visitor wall answers one question: *has this person proven an address?* A host that restricts a document to
+**its own team**, or to one partner organisation, could not express it — any proven address opened it. Provide
+`plugins.documentAccess` with:
+
+```js
+decide({ share, visitor }) → Promise<{ ok: true } | { ok: false, reason?: "denied" | "unavailable" }>
+```
+
+It is called for a document whose link carries `require_auth`, once the visitor is signed in (`visitor` is what
+`plugins.visitors.currentVisitor(req)` returned). It is **not** called for an open document, nor before the visitor
+signs in — the wall handles that.
+
+| your answer | what the reader gets |
+|---|---|
+| `{ ok: true }` | the document |
+| `{ ok: false }` | the wall again, saying *this address* has no access, so they can sign in with the one the document was sent to; `?file=1` answers `403 { error: "denied" }` without streaming; embedded, the bridge reports `denied` |
+| an exception, anything unreadable, or `{ ok: false, reason: "unavailable" }` | a **refusal** (`auth-unavailable`; `?file=1` → `503`) — never an opening. The exception goes to `errors.capture` |
+
+Without the plugin, nothing changes: a proven address opens the document, as before. ⚠️ **That is also why its
+absence is silent** — a host that upgrades the player without wiring the plugin keeps the old behaviour and sees no
+error. Test that your host actually provides it.
+
 ## ⚠️ What `limits.allow` promises changed
 
 It used to promise *best effort, per process*. The standalone context now counts in a **shared
@@ -583,6 +607,7 @@ POST  →  { "email": "…", "role": "…", "action": "<one of the names below>"
 | `list.all` | list everyone's links **and everyone's reading sessions** |
 | `revoke` | revoke a link |
 | `setauth` | change a link's access wall |
+| `protect` | set, change or remove a link's **expiry date and password** (migration `0028`) |
 | `overview` | read a document's aggregate figures |
 | `sessions` | read individual reading sessions — of one document, or of one recipient across all of them |
 | `test` | create a rehearsal link |
@@ -863,6 +888,38 @@ Four requirements, in order of what they cost when missed:
    decide. **Corollary:** when the reference itself carries a capability, signing is not enough —
    it must be encrypted. *Signed* means nobody can forge it; it has never meant nobody can read it.
 
+## Protected links and the start page (migration `0028`)
+
+**Capabilities `link-protection` and `start-page`.** Test them by presence before offering the feature.
+
+A tracked link can carry an **expiry date** and a **password** (migration `0028-liens-proteges.sql`).
+`docshare.create` accepts `expiresAt` (an ISO date, in the future, at most 730 days ahead) and
+`password` (4 to 200 characters). `docshare.protect { slug, expiresAt?, password? }` changes an existing
+link: an absent field is left unchanged, `null` removes it. Your `canManageShares` table must know the
+action name **`protect`** — a closed table refuses it (see above).
+
+What you get back, in `docshare.list`: `expiresAt` and a boolean `protege`. **Never the password's
+hash** — it never leaves the database. A refusal you can show the user (bad date, password too short,
+migration missing) comes back as `{ ok: false, error: "<sentence>" }` with a 400 or 503 status.
+
+⚠️ **Without the migration, creating a protected link is REFUSED (503), not degraded.** Elsewhere a
+missing column makes a field silently skipped; here, skipping it would create an *open* link that your
+interface calls protected. Unprotected links are unaffected.
+
+⚠️ **The protection holds on every path, not only the page.** The file (`?file=1`), the assistant,
+reading measurement and reshare all resolve the link through the same function. An expired link
+answers `410` everywhere; a password-protected link shows a password page, and `?file=1` answers `401`
+until the browser has entered it (an `HttpOnly` cookie, 8 hours, `SameSite=Lax`). Changing the password
+closes every browser that had entered the old one. A reshare **inherits** both the date and the password.
+
+⚠️ **A password-protected link embedded by a third-party origin does not receive its cookie** (the
+browser does not send a `SameSite=Lax` cookie into a cross-site frame). The password page stays up in
+the frame and posts `embed-denied` with `password-required`: open such links at top level.
+
+**`?page=N`** opens a PDF at page N — on a tracked link and on the internal preview alike. An integer
+above 1, capped at 10 000 by the server and at the document's real page count by the viewer; anything
+else opens page 1.
+
 ## The postMessage bridge
 
 Described once in [`src/bridge.ts`](https://github.com/Juli1artha/discovery-media-player/blob/main/src/bridge.ts) and published as `discovery-media-player/bridge`
@@ -886,7 +943,10 @@ closed.
 |---|---|---|
 | `revoked` | unknown or revoked link | do not open |
 | `auth-required` | restricted document, visitor not signed in | do not open — the wall stays up |
-| `auth-unavailable` | restricted document, access wall missing from this instance | do not open |
+| `auth-unavailable` | restricted document, access wall missing from this instance — or the host's `documentAccess` plugin failed | do not open |
+| `denied` | restricted document, visitor signed in but the host's `documentAccess` plugin says this address has no access (0.1.172) | do not open — the wall stays up and offers another address |
+| `expired` | the link's expiry date has passed (migration `0028`) | do not open — the page tells the reader to ask for a new link |
+| `password-required` | the link is password-protected and this browser has not entered it (migration `0028`) | do not open — the password page stays up in the frame |
 | `ended` | presentation over or unknown | do not open |
 | `url-not-allowed` | the file URL is not covered by the guard | **open**, and report the configuration |
 

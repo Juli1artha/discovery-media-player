@@ -5,6 +5,7 @@
 const crypto = require("crypto");
 const { capturerSansBloquer } = require("./capture");
 const { signatureAbsente } = require("./erreurs-base.js");
+const protection = require("./lien-protege.js");
 // Tout ce qui vient de l'hôte passe par le contexte injecté — base, email, marque. C'est ce qui
 // permettra à ce fichier de partir dans le dépôt du player sans emporter le studio avec lui.
 // ⚠️ Le contexte est REÇU, pas construit. Ce module ne doit pas savoir d'où il vient : c'est ce
@@ -30,8 +31,14 @@ function newSlug() { return crypto.randomBytes(9).toString("base64url"); } // ~1
 
 // Crée un lien de partage (un par destinataire). Dénormalise titre/URL/nom pour résilience (le doc vit dans
 // un snapshot). Renvoie le slug.
-async function createShare({ docId, docTitle, fileUrl, fileName, recipientEmail, recipientName, attestedRecipientEmail, createdBy, bot, botScript, guided, profileId, allowDownload, isTest, videoLayout, logo, logoDark, brandKey, idemKey}) {
+async function createShare({ docId, docTitle, fileUrl, fileName, recipientEmail, recipientName, attestedRecipientEmail, createdBy, bot, botScript, guided, profileId, allowDownload, isTest, videoLayout, logo, logoDark, brandKey, idemKey, expiresAt, password}) {
   if (!docId || !fileUrl) throw Object.assign(new Error("doc invalide"), { statusCode: 400 });
+  // LA PROTECTION (0028) : lue et bornée AVANT tout, et refusée plutôt que perdue quand la colonne
+  // manque (cf. `migrationManquante`). Sans protection demandée, rien ne change pour personne.
+  const demande = protection.protectionDemandee({ expiresAt, password }, Date.now());
+  if (demande.refus) throw Object.assign(new Error(demande.refus), { statusCode: 400, publique: true });
+  if (demande.protege && !(await require("./schema").attendue("lienProtege"))) throw migrationManquante();
+  const champsProtection = demande.protege ? Object.fromEntries(Object.entries(demande.champs).filter(([, v]) => v != null)) : {};
   const slug = newSlug();
   // ⚠️ LA CLÉ N'EST ÉCRITE QUE LÀ OÙ LA COLONNE EXISTE — PostgREST rejette le POST ENTIER sur une
   // colonne inconnue : chez un hôte non migré, ce n'est pas l'unicité qu'on perdrait, c'est la
@@ -61,6 +68,7 @@ async function createShare({ docId, docTitle, fileUrl, fileName, recipientEmail,
     brand_key: (brandKey || "").trim() || null,
     brand_logo: (logo || "").trim() ? String(logo).trim().slice(0, 500) : null,
     brand_dark: !!logoDark, // fond sombre du loader (logo clair/blanc)
+    ...champsProtection,
   };
   await PLAYER.db.request("commercial_doc_shares", { method: "POST", headers: { Prefer: "return=minimal" }, body: [row] });
   return { slug };
@@ -68,8 +76,11 @@ async function createShare({ docId, docTitle, fileUrl, fileName, recipientEmail,
 
 // Re-partage depuis la visionneuse publique (forward) : crée un lien ENFANT tracé pour un nouveau
 // destinataire, rattaché au lien parent (parent_slug) → chaîne de diffusion. created_by = celui qui forwarde.
-async function createReshare(parentSlug, { email, name, clientKey }) {
-  const parent = await getShareBySlug(parentSlug);
+// ⚠️ `req` : le parent se relit AVEC la requête du visiteur. Un parent protégé par un mot de passe ne se
+// re-partage que par qui l'a franchi — et l'enfant HÉRITE de la protection (expiration et empreinte,
+// comme tout le reste : voir l'inversion ci-dessous). Le transférer ne lève donc rien.
+async function createReshare(parentSlug, { email, name, clientKey, req }) {
+  const parent = await getShareBySlug(parentSlug, req);
   if (!parent) throw Object.assign(new Error("lien introuvable"), { statusCode: 404 });
   const slug = newSlug();
 
@@ -173,10 +184,59 @@ async function reshareParCle(cle) {
   } catch { return null; }
 }
 
-async function getShareBySlug(slug) {
-  const rows = await PLAYER.db.request(`commercial_doc_shares?slug=eq.${enc(String(slug || ""))}&revoked=eq.false&select=*&limit=1`);
-  return Array.isArray(rows) && rows[0] ? rows[0] : null;
+/**
+ * LE SEUL ENDROIT OÙ UN LIEN SE RÉSOUT — et donc où il se ferme. Révoqué, expiré, ou protégé par un mot
+ * de passe que cette requête n'a pas franchi : `null`, pour la page, le fichier, l'assistant, la mesure
+ * et le re-partage à la fois (règle et pièges : lien-protege.js).
+ *
+ * ⚠️ `req` EST LA REQUÊTE PUBLIQUE, et son absence VERROUILLE. Un appel interne qui l'oublie sur un lien
+ * protégé obtient « introuvable » — c'est le sens voulu : l'oubli ferme au lieu d'ouvrir.
+ */
+async function getShareBySlug(slug, req) {
+  return (await resoudreLien(slug, req)).share;
 }
+
+/**
+ * POURQUOI UN LIEN NE S'OUVRE PAS — pour le DIRE à qui le reçoit. Révoqué ou inconnu (`revoked`), expiré
+ * (`expired`, il peut en demander un autre), ou fermé par un mot de passe (`password` : on lui montre la
+ * page qui le demande, avec le titre et la marque du lien — rien d'autre de la ligne ne sort).
+ */
+async function resoudreLien(slug, req) {
+  const rows = await PLAYER.db.request(`commercial_doc_shares?slug=eq.${enc(String(slug || ""))}&revoked=eq.false&select=*&limit=1`);
+  const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+  if (!row) return { share: null, refus: "revoked", ligne: null };
+  if (protection.expire(row, Date.now())) return { share: null, refus: "expired", ligne: row };
+  if (!protection.deverrouille(row, req)) return { share: null, refus: "password", ligne: row };
+  return { share: row, refus: null, ligne: row };
+}
+
+/**
+ * POSER, CHANGER OU RETIRER LA PROTECTION D'UN LIEN EXISTANT. Champ absent = inchangé, `null` = retiré.
+ * ⚠️ Un lien révoqué ne se protège pas : il est déjà fermé, et le « rouvrir » en le modifiant serait un
+ * geste que personne n'a demandé — le `revoked=eq.false` du filtre le laisse hors d'atteinte.
+ */
+async function setShareProtection(slug, entree) {
+  const d = protection.protectionDemandee(entree, Date.now());
+  if (d.refus) throw Object.assign(new Error(d.refus), { statusCode: 400, publique: true });
+  if (!Object.keys(d.champs).length) return { ok: true, ...protection.protectionServie({}) };
+  if (!(await require("./schema").attendue("lienProtege"))) throw migrationManquante();
+  const rows = await PLAYER.db.request(`commercial_doc_shares?slug=eq.${enc(String(slug || ""))}&revoked=eq.false`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: d.champs });
+  const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+  if (!row) throw Object.assign(new Error("Lien introuvable ou révoqué."), { statusCode: 404, publique: true });
+  return { ok: true, ...protection.protectionServie(row) };
+}
+
+/**
+ * ⚠️ UNE PROTECTION DEMANDÉE SANS SA COLONNE N'EST PAS UNE PROTECTION DÉGRADÉE, C'EST UN LIEN OUVERT.
+ * Ailleurs, une colonne absente fait sauter le champ en silence (la clé d'idempotence, la date de
+ * révocation) : le lien marche, un peu moins bien. Ici, sauter `expires_at` créerait un lien qui ne
+ * meurt jamais pendant que l'hôte affiche « expire le 15 », et sauter `password_hash` un lien que
+ * quiconque ouvre. On REFUSE donc de créer, et on nomme la migration.
+ */
+const migrationManquante = () => Object.assign(
+  new Error("Protection des liens indisponible : appliquez la migration 0028-liens-proteges.sql."),
+  { statusCode: 503, publique: true },
+);
 
 // ⚠️ BORNER CE QUI VIENT DU DEHORS — TOUS les chemins d'écriture publics, et le pluriel a coûté.
 //
@@ -372,7 +432,8 @@ async function listSharesForDoc(docId, owner) {
   const VIDE = { opens: 0, maxPage: 0, seconds: 0, sessions: 0, lastAt: null };
   const enriched = shareList.map((sh) => {
     const a = agregats.bySlug.get(sh.slug) || VIDE;
-    return { slug: sh.slug, parent_slug: sh.parent_slug || null, recipient_email: sh.recipient_email, recipient_name: sh.recipient_name, created_by: sh.created_by, created_at: sh.created_at, revoked: sh.revoked, opens: a.opens, sessions: a.sessions, maxPage: a.maxPage, seconds: a.seconds, lastAt: a.lastAt };
+    // La protection se SERT par `protectionServie` : l'échéance et un booléen — jamais l'empreinte.
+    return { slug: sh.slug, parent_slug: sh.parent_slug || null, recipient_email: sh.recipient_email, recipient_name: sh.recipient_name, created_by: sh.created_by, created_at: sh.created_at, revoked: sh.revoked, ...protection.protectionServie(sh), opens: a.opens, sessions: a.sessions, maxPage: a.maxPage, seconds: a.seconds, lastAt: a.lastAt };
   });
 
   // ⚠️ HISTOGRAMME PUIS CUMUL DESCENDANT — O(pages + sessions) au lieu de O(pages × sessions).
@@ -1000,4 +1061,4 @@ async function internalStatsForDoc(docId) {
 }
 
 module.exports = {
-  cleIdempotence, init, createShare, createReshare, sendReshareEmail, getShareBySlug, logView, upsertSession, listSharesForDoc, listSessionsForDoc, listSessionsForRecipient, racineDuLien, curseurDe, curseurLu, sessionServie, CHAMPS_SERVIS, CHAMPS_RETENUS, revokeShare, setShareAuth, overview, upsertInternalSession, internalStatsForDoc };
+  cleIdempotence, init, createShare, createReshare, sendReshareEmail, getShareBySlug, resoudreLien, setShareProtection, logView, upsertSession, listSharesForDoc, listSessionsForDoc, listSessionsForRecipient, racineDuLien, curseurDe, curseurLu, sessionServie, CHAMPS_SERVIS, CHAMPS_RETENUS, revokeShare, setShareAuth, overview, upsertInternalSession, internalStatsForDoc };

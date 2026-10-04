@@ -363,11 +363,21 @@ describe("⚠️ l'ancre : l'immuabilité se prouve contre le tag qui a publié,
     //
     // Une garde qui a besoin d'un objet git doit tourner là où cet objet existe. Ce banc lie les
     // deux : quel que soit le job qui lance l'un de ces outils, son checkout emporte les tags.
-    const ci = parse(readFileSync(join(RACINE, ".github/workflows/ci.yml"), "utf8"));
+    //
+    // ⚠️ ET CE BANC NE LISAIT QUE `ci.yml` — LE TROISIÈME JOB L'A PROUVÉ, À LA SORTIE 0.1.170. `attester`, dans
+    // `release.yml`, juge aussi la cohorte (il emporte les artefacts de la course CI du commit), avec un checkout
+    // sans tags : la garde a répondu NON CONCLUANT, et la Release, l'attestation et la SBOM ne sont jamais
+    // parties. Le périmètre est donc TOUS les workflows — dérivé du dossier, pas énuméré — et le banc compte
+    // les fichiers qu'il a lus, pour qu'un dossier vide ne passe pas pour un dossier conforme.
+    const dossier = join(RACINE, ".github/workflows");
+    const fichiers = readdirSync(dossier).filter((f) => /\.ya?ml$/.test(f));
+    expect(fichiers, "la sonde n'a lu aucun workflow").toEqual(expect.arrayContaining(["ci.yml", "release.yml"]));
     const juge = (job) => (job.steps || []).some((e) => typeof e.run === "string"
       && (e.run.includes("tools/artefact-de-charge.mjs") || e.run.includes("charge/rapport.js")));
-    const jugeurs = Object.entries(ci.jobs).filter(([, job]) => juge(job));
-    expect(jugeurs.length, "aucun job de CI ne juge la cohorte — la sonde vise à côté").toBeGreaterThan(0);
+    const jugeurs = fichiers.flatMap((f) => Object.entries(parse(readFileSync(join(dossier, f), "utf8")).jobs || {})
+      .filter(([, job]) => juge(job)).map(([nom, job]) => [`${f} › ${nom}`, job]));
+    expect(jugeurs.length, "aucun job ne juge la cohorte — la sonde vise à côté").toBeGreaterThan(0);
+    expect(jugeurs.map(([n]) => n), "le job qui emporte la mesure dans la Release est dans le périmètre").toContain("release.yml › attester");
     for (const [nom, job] of jugeurs) {
       const sorties = (job.steps || []).filter((e) => String(e.uses || "").startsWith("actions/checkout@"));
       expect(sorties.length, `le job ${nom} juge l'ancre sans sortir le dépôt`).toBeGreaterThan(0);

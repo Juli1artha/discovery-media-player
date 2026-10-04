@@ -110,9 +110,11 @@ describe("⚠️ le filet émet ce que le modèle de charge compte : un état ET
   });
 
   it("⚠️ sur une heure, chaque point reste sous RESYNC_READS_PER_HOUR quel que soit le tirage — le décalage n'ajoute rien", async () => {
-    const C = window.Player.cadence;
+    // ⚠️ `Player` N'EXISTE QU'APRÈS `audience()` — c'est elle qui exécute les scripts de la page. Lu en tête d'essai, il
+    // venait de l'essai PRÉCÉDENT : joué en premier (graine 20261001 de `ordre-des-bancs`), l'essai tombait sur `undefined`.
     for (const tirage of [0, 0.999]) {
       const a = await audience(tirage);
+      const C = window.Player.cadence;
       await vi.advanceTimersByTimeAsync(3_600_000);
       // +1 : une heure FERMÉE contient 145 multiples de 25 s quand un tick tombe sur ses deux bords
       // (0 et 3 600 000). C'était déjà vrai sans décalage pour une fenêtre [3600 s, 7200 s] ; la

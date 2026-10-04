@@ -507,6 +507,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
+          # ⚠️ SANS LES TAGS, LA COHORTE NE PEUT PAS ÊTRE JUGÉE — et c'est ce qui a coûté à 0.1.170 sa Release,
+          # son attestation et sa SBOM. L'étape qui emporte les artefacts de charge les juge par
+          # `tools/artefact-de-charge.mjs`, qui relit le schéma AU TAG qui l'a ancré (`git show v0.1.169:…`) :
+          # sur ce checkout sans tags, la garde a répondu NON CONCLUANT, à raison, et `annoncer` a été sauté.
+          # Même défaut que le job `schema` de ci.yml, déjà corrigé — le banc qui le gardait ne lisait que ci.yml.
+          fetch-tags: true
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "24"
@@ -827,6 +833,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
+          # Même raison qu'`attester` : ce job rejuge la cohorte avant de l'annoncer, au tag qui ancre le schéma.
+          fetch-tags: true
           persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -960,7 +968,7 @@ jobs:
           wc -l corps.md
 
       - name: GitHub Release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           tag_name: ${{ env.TAG }}
           name: ${{ env.TAG }}
