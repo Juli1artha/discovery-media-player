@@ -23,8 +23,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ⚠️ CHAQUE JOB DÉCLARE SON DÉLAI. Sans `timeout-minutes`, un banc bloqué court jusqu'au défaut de
+  # GitHub — 360 minutes — en tenant la file de toutes les PR. Ce n'est pas théorique : le 04/10,
+  # jsdom 30.1.1 (tiré par #551) faisait tenir le banc d'un mutant plus de vingt minutes au lieu de
+  # 46 s, et la CI de #551 ne l'a pas montré parce que `npm test` y tombait avant la campagne.
+  # Règle des valeurs : 2,5 × la plus longue durée RÉUSSIE relevée, plancher 10 min. Relevé le 04/10
+  # sur les 40 derniers runs terminés de ce workflow : check (22) 700 s, check (24) 72 s, schema
+  # 123 s, navigateur 100 s, docker 42 s, publication 17 s. Si un job approche sa borne, c'est la
+  # mesure qu'on refait, pas la borne qu'on pousse. `tools/__tests__/delaisDesJobs.test.js` exige
+  # qu'aucun job n'en soit dépourvu.
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -999,6 +1009,7 @@ jobs:
   # inexécutable dans un conteneur nu, et personne ne la lancerait plus en boucle.
   navigateur:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
@@ -1026,6 +1037,7 @@ jobs:
   # confronter au moins une fois — et « quelqu'un » peut être cette étape.
   schema:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     services:
       postgres:
         # Un vrai Postgres, parce que le double en mémoire le dit lui-même : « pas de contraintes,
@@ -1936,6 +1948,7 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       # ⚠️ CE JOB EXÉCUTE DÉSORMAIS DE L'OUTILLAGE DU DÉPÔT, DONC IL L'INSTALLE. Il ne le faisait
@@ -2002,6 +2015,7 @@ jobs:
   # seule et ouvre une issue. Celle-ci reste pour l'immédiateté ; l'autre pour la certitude.
   publication:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
