@@ -12,7 +12,7 @@ development tooling, which never reaches a consumer: `files` in `package.json` r
 published tarball to `bin`, `context`, `dist`, `server`, `supabase`, `types` and a short list of
 documents.
 
-It is pinned exactly — `6.2.108`, not `^6.2.108` — because it is the rendering engine. A minor
+It is pinned exactly — a version, never a `^` range — because it is the rendering engine. A minor
 release of the component that draws every page is a decision, not a routine bump: it is read,
 tested against the browser bench, and merged on purpose.
 
@@ -76,8 +76,18 @@ per package per week would bury real contributions under noise, and a review que
 not review. Two rules shape what arrives:
 
 - **Development tooling is grouped**, so a batch of patch and minor bumps is reviewed once.
-- **A major upgrade of a GitHub Action arrives alone**, never inside a group, with the action's
-  name in the title. Grouped majors are how one hid before.
+- **Everything else arrives alone**, never inside a group, with its name in the title: the
+  runtime dependency, and any major upgrade, of a GitHub Action or of a development tool. Grouped
+  updates are how such changes hid, twice. In August, a batch of action bumps carried a major of
+  the code-scanning action. In October, a batch named `dev-tooling` carried the rendering engine
+  and a major of the test runner. The consumer-fixture bench turned that second batch red, not
+  review.
+
+A Dependabot pull request is **merged or closed, with the reason, before the next monthly run.**
+Pinning by digest only protects anyone if the pins move: in October, a pin of the release
+workflow's attestation action and a Node base-image digest had both waited more than a month,
+behind a queue nobody was emptying. A pull request that cannot be merged as it stands (it fails
+CI, or carries a decision) is taken over in a branch that fixes it, rather than left open.
 
 Two upgrades are deliberately held back, each with the reason recorded beside it in
 `dependabot.yml`:

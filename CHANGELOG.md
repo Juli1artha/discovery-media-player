@@ -31,6 +31,24 @@ the notes there are this file's section for that version.
   fichier écrit dans une assertion, ce qui rendait « appliqué » l'outil qu'elle exempte. C'est la
   règle symétrique — une exemption appliquée est refusée — qui l'a montré au premier passage.
 
+### Changed
+
+- **pdf.js 6.2.108 → 6.3.289, et le moteur de rendu ne voyage plus caché dans un lot d'outillage.**
+  La montée arrivait dans #551, une PR Dependabot intitulée « 9 updates » et groupée sous le nom
+  `dev-tooling` — avec vitest 4 → 5, une majeure du lanceur de tous les bancs. `docs/DEPENDENCIES.md`
+  dit pourtant qu'une mineure de pdf.js se **décide** : `patterns: ["*"]` ne regarde pas le type de
+  dépendance. C'est `fixtureConso.test.js` qui l'a vu, en refusant une éprouvette consommatrice qui
+  aurait éprouvé une autre version que celle que le paquet livre. Reprise ici : l'éprouvette est
+  alignée, les notes de 6.3.289 lues en entier : aucune des cinq API changées en `[api-minor]`
+  (`getJSActions`, `getFieldObjects`, `getPermissions`, `documentInfo`, `markInfo`), ni
+  `getRawData` désormais réservé au visualiseur interne, n'est appelée par le player — le même
+  `grep` trouve trois `getDocument`, il voit donc un appel quand il y en a un. Et `dependabot.yml`
+  ne groupe plus que l'outillage de développement en mineure ou correctif : la dépendance de production et toute majeure arrivent seules, leur nom dans le titre.
+  `docs/DEPENDENCIES.md` écrit la règle de fusion qui manquait — une PR Dependabot est fusionnée ou
+  fermée, avec sa raison, avant le passage mensuel suivant ; deux épinglages avaient attendu plus
+  d'un mois. ⚠️ **Ce que cette montée ne prend pas** : pdf.js 6.4.299, publiée le 03/10, la veille
+  de cette reprise, n'est pas incluse ; elle arrivera seule au prochain passage.
+
 ## [0.1.172] — 2026-10-01
 
 ### Added
