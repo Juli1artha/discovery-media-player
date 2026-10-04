@@ -10,9 +10,18 @@ updates:
     directory: /
     schedule: { interval: monthly }
     open-pull-requests-limit: 3
+    # ⚠️ LE GROUPE PORTAIT LE NOM « dev-tooling » ET CONTENAIT LE MOTEUR DE RENDU. `patterns: ["*"]`
+    # ne regarde pas le type de dépendance : #551 (01/10) titrait « 9 updates » et y glissait
+    # pdfjs-dist 6.2.108 → 6.3.289 — la montée que ce commentaire même dit DÉCIDÉE — ainsi que
+    # vitest 4 → 5, une majeure du lanceur de tous les bancs. La forme exacte de #253, ci-dessous,
+    # sur l'autre écosystème. C'est `fixtureConso.test.js` qui l'a vu, pas la relecture.
+    # Désormais le groupe ne prend que l'outillage de développement en mineure ou correctif ; la
+    # dépendance de production et toute majeure arrivent SEULES, leur nom dans le titre.
     groups:
       dev-tooling:
         patterns: ["*"]
+        dependency-type: development
+        update-types: ["minor", "patch"]
     commit-message: { prefix: "chore(deps)" }
     # ⚠️ TypeScript est couplé à `typescript-eslint`, qui déclare une plage de pairs STRICTE
     # (`>=4.8.4 <6.1.0` à ce jour). Proposer TypeScript 7 sans le linter qui l'accepte produit une

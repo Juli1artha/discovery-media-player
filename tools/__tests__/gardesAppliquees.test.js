@@ -19,7 +19,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, beforeAll } from "vitest";
 
 import {
   estUneGarde, lancementsDe, neutralisation, applicationsDuBanc, auditer, EXEMPTEES,
@@ -231,8 +231,17 @@ describe("⚠️ LA GARDE REFUSE, PLUTÔT QUE DE CONCLURE AU VERT", () => {
 });
 
 describe("le dépôt lui-même", () => {
+  // ⚠️ UN SEUL AUDIT POUR LE BLOC, ET UN DÉLAI DÉCLARÉ. L'audit lit en AST tous les bancs et tous
+  // les workflows du dépôt : 1,6 à 1,8 s seul, mesuré le 04/10 sur une machine chargée. Pendant
+  // l'étape de couverture, tous les fichiers en parallèle, il a dépassé les 5 s par défaut de vitest
+  // — rouge sur un dépôt conforme ; le même banc lancé seul passe. La cause n'est PAS
+  // l'instrumentation, qui ne couvre ni `tools/` ni ses bancs : c'est la concurrence des autres
+  // fichiers, non mesurée plus finement. Le délai n'est pas ce que ce bloc mesure — son sujet est la
+  // conclusion de l'audit. Le refaire trois fois triplait seulement le coût, d'où l'unique appel.
+  let r;
+  beforeAll(() => { r = auditer(); }, 60_000);
+
   it("⚠️ chaque garde de ce dépôt est appliquée à ce dépôt — et c'est CE banc qui le mesure", () => {
-    const r = auditer();
     expect(r.code, (r.constats || r.raisons || []).join("\n")).toBe(0);
   });
 
@@ -240,7 +249,7 @@ describe("le dépôt lui-même", () => {
     // ⚠️ LE PLANCHER VIT ICI, PAS DANS LA GARDE : il porte sur la population de CE dépôt, et une
     // éprouvette plus petite n'a pas à le satisfaire. Il compte les FORMES RECONNUES — lancements et
     // blocs — et non les fichiers ouverts : c'est le nombre qui tombe quand la sonde devient aveugle.
-    const { resume } = auditer();
+    const { resume } = r;
     const [, gardes, lancees, lancements, blocs] = resume.match(/^(\d+) garde\(s\) : (\d+) lancée\(s\) par un workflow \((\d+) lancement\(s\) reconnu\(s\).*\((\d+) bloc\(s\) « le dépôt lui-même »/).map(Number);
     expect(gardes, "moins de trente gardes reconnues : `estUneGarde` ne lit plus l'idiome").toBeGreaterThanOrEqual(30);
     expect(lancees, "moins de trente gardes lancées par un workflow : la sonde des blocs `run:` est aveugle").toBeGreaterThanOrEqual(30);
@@ -251,6 +260,6 @@ describe("le dépôt lui-même", () => {
   it("l'exemption d'aujourd'hui a toujours son sujet, et son motif tient", () => {
     // Une exemption de banc vérifiée seulement sur des éprouvettes pourrait survivre à son motif.
     expect(Object.keys(EXEMPTEES)).toEqual(["orphelins-tts.mjs"]);
-    expect(auditer().resume).toMatch(/1 exemptée\(s\) : orphelins-tts\.mjs$/);
+    expect(r.resume).toMatch(/1 exemptée\(s\) : orphelins-tts\.mjs$/);
   });
 });
