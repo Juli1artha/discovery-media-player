@@ -45,7 +45,11 @@ export function blocsDe(fichier, texte) {
     (def.steps || []).forEach((etape, i) => {
       if (typeof etape.run !== "string") return;
       const shell = etape.shell || def.defaults?.run?.shell || w.defaults?.run?.shell || "bash";
-      blocs.push({ fichier, job, indice: i + 1, nom: etape.name || `étape ${i + 1}`, shell, run: etape.run });
+      // `continue-on-error`, de l'étape ou du job : un bloc qui ne peut pas faire échouer son étape ne
+      // garde rien, quoi qu'il lance — `gardes-appliquees.mjs` le lit ici plutôt que de reparser le YAML.
+      // Toute valeur autre que `false` compte, y compris une expression : « peut ne pas échouer » suffit.
+      const continueOnError = [etape["continue-on-error"], def["continue-on-error"]].some((v) => v !== undefined && v !== false);
+      blocs.push({ fichier, job, indice: i + 1, nom: etape.name || `étape ${i + 1}`, shell, run: etape.run, continueOnError });
     });
   }
   return blocs;
