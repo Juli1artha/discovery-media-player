@@ -33,6 +33,13 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- **Chaque job de `ci.yml` déclare son délai.** Aucun ne le faisait : un banc bloqué aurait couru
+  jusqu'au défaut de GitHub, 360 minutes, en tenant la file de toutes les PR — et la reprise de #551
+  a montré que ce n'était pas théorique (jsdom 30.1.1, ci-dessous). Règle des valeurs, écrite à côté
+  d'elles : 2,5 × la plus longue durée réussie relevée sur les 40 derniers runs, plancher 10 min —
+  `check` 30 min (700 s relevées), les quatre autres 10 min. `delaisDesJobs.test.js` exige un délai
+  par job, inférieur au défaut de GitHub ; il nommait les cinq jobs avant ce changement.
+
 - **pdf.js 6.2.108 → 6.3.289, et le moteur de rendu ne voyage plus caché dans un lot d'outillage.**
   La montée arrivait dans #551, une PR Dependabot intitulée « 9 updates » et groupée sous le nom
   `dev-tooling` — avec vitest 4 → 5, une majeure du lanceur de tous les bancs. `docs/DEPENDENCIES.md`
