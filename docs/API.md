@@ -269,7 +269,7 @@ player.init(context)
 | `limits.allow(key, max, windowSeconds)` | fail-open: a rate limiter that is down must not kill a viewer |
 | `mail.send(message)` → `{sent: true}` \| `null` | see [the message shape](#mailsendmessage) |
 | `errors.capture(error, meta)` | |
-| `legal.sourceUrl` · `legalUrl` · `privacyUrl` · `trackingNotice` | shown to readers |
+| `legal.sourceUrl` · `legalUrl` · `privacyUrl` · `trackingNotice` | shown to readers, in a collapsed pill at the bottom-left of the viewer: its label (« Lecture mesurée », or « Informations » when nothing is measured) is always visible, the full notice and the three links are one click away and always in the served HTML |
 | `legal.trackingNoticeAnonymous` | **Optional**: the notice for a link nobody sent. Absent ⇒ falls back to the first, rather than showing none. |
 | `config.supabaseUrl` · `supabasePublishableKey` · `mapsKey` · `extraFrameAncestors` | consumed as given — `supabaseUrl` **without a trailing slash**, the core no longer re-normalises |
 | `config.separateIssuer` · `hostShare` · `hostMail` | booleans echoed by the identity card: what is *configured*, next to what the code *can* do |

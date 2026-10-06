@@ -33,6 +33,17 @@ the notes there are this file's section for that version.
 
 ### Changed
 
+- **Le pied légal de la visionneuse se replie en pastille.** La barre noire pleine largeur, en bas
+  de chaque page, devient une pastille en bas à gauche : « Lecture mesurée » (ou « Informations »
+  quand rien n'est mesuré), qui se déplie au clic sur la phrase exacte et les liens Mentions
+  légales / Confidentialité / Code source. Demandé par un hôte en regardant un document ouvert par
+  son client : la barre recouvrait le document pour redire trois choses qu'on ne lit qu'une fois.
+  Rien n'est retiré du HTML servi — le résumé reste visible sans geste, la phrase complète et le
+  lien vers le source (dû par l'AGPL) restent à un clic, par `<details>` sans script. Coin gauche
+  parce que le droit porte déjà la bulle de l'assistant, celle du chat et « Propulsé par ».
+  Occurrences restantes de la barre ancrée aux deux bords sur le pied : 0 ; la garde est
+  `piedLegalReplie.test.js`.
+
 - **Chaque job de `ci.yml` déclare son délai.** Aucun ne le faisait : un banc bloqué aurait couru
   jusqu'au défaut de GitHub, 360 minutes, en tenant la file de toutes les PR — et la reprise de #551
   a montré que ce n'était pas théorique (jsdom 30.1.1, ci-dessous). Règle des valeurs, écrite à côté
