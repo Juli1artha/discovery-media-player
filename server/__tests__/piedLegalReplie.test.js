@@ -23,6 +23,19 @@ const { init, legalFooter, LEGAL_CSS } = require("../gabarit-legal.js");
 const NOTICE = "La consultation de ce document est mesurée (pages vues, temps de lecture) et transmise à son expéditeur.";
 const NOTICE_ANON = "La consultation de ce document est mesurée (pages vues, temps de lecture).";
 
+/**
+ * Le libellé de la pastille : le texte de l'unique `<span>` du `<summary>`, LU tel quel.
+ *
+ * ⚠️ PAS EN RETIRANT LES BALISES. La première écriture faisait `.replace(/<[^>]+>/g, "")` sur le
+ * résumé : CodeQL l'a classé « assainissement incomplet » (high) — à juste titre comme motif,
+ * même dans un banc. Lire la forme attendue ne nettoie rien, donc ne peut rien laisser passer :
+ * une icône ou une balise de plus dans le résumé fait simplement échouer la lecture.
+ */
+function libelle(html) {
+  const m = html.match(/<summary class=lgl-pill><svg [^>]*>[\s\S]*?<\/svg><span>([^<]*)<\/span><\/summary>/);
+  return m ? m[1] : null;
+}
+
 function avec(legal) {
   init({ legal: { sourceUrl: "https://github.com/x/player", legalUrl: "", privacyUrl: "https://exemple.fr/confidentialite",
     trackingNotice: NOTICE, trackingNoticeAnonymous: NOTICE_ANON, ...legal } });
@@ -34,8 +47,7 @@ describe("le pied légal se replie en pastille", () => {
     const html = legalFooter({ tracked: true, sansExpediteur: true });
     expect(html).toMatch(/^<details class=lgl>/);
     expect(html, "ouvert, il recouvrirait encore le document").not.toMatch(/<details[^>]*\bopen\b/);
-    const resume = (html.match(/<summary[^>]*>([\s\S]*?)<\/summary>/) || [])[1] || "";
-    expect(resume.replace(/<[^>]+>/g, "").trim()).toBe("Lecture mesurée");
+    expect(libelle(html)).toBe("Lecture mesurée");
   });
 
   it("⚠️ rien ne se perd : la phrase exacte et les trois liens sont dans la page, sous la pastille", () => {
@@ -56,8 +68,7 @@ describe("le pied légal se replie en pastille", () => {
   it("sans mesure (aperçu interne), la pastille ne prétend pas mesurer : elle dit « Informations »", () => {
     avec({});
     const html = legalFooter({ tracked: false });
-    const resume = (html.match(/<summary[^>]*>([\s\S]*?)<\/summary>/) || [])[1] || "";
-    expect(resume.replace(/<[^>]+>/g, "").trim()).toBe("Informations");
+    expect(libelle(html)).toBe("Informations");
     expect(html).not.toContain("est mesurée");
     expect(html).toContain("Code source");
   });
