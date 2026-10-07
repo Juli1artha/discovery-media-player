@@ -42,7 +42,7 @@
 # source servirait du code périmé sans que rien ne le signale, et c'est exactement le défaut que
 # la CI surveille par ailleurs.
 
-FROM node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf AS build
+FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS build
 WORKDIR /app
 COPY package*.json ./
 # ⚠️ `--ignore-scripts` : le `prepare` de ce paquet installe le hook git, et il n'a rien à faire
@@ -55,7 +55,7 @@ RUN npm ci --ignore-scripts
 COPY . .
 RUN npm run build
 
-FROM node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf
+FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
 WORKDIR /app
 ENV NODE_ENV=production
 # ⚠️ PAS D'INIT DANS CETTE IMAGE, ET C'EST UN CHOIX MESURÉ — PAS UN OUBLI. `dumb-init` a vécu ici,
