@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.173] — 2026-10-07
+
 ### Added
 
 - **`tools/gardes-appliquees.mjs` : chaque garde est appliquée à ce dépôt par quelque chose qui peut
@@ -7910,7 +7912,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.172...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.173...HEAD
+[0.1.173]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.172...v0.1.173
 [0.1.172]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.171...v0.1.172
 [0.1.171]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.170...v0.1.171
 [0.1.170]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.169...v0.1.170
