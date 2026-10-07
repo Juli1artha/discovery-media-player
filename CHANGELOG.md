@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.173] — 2026-10-07
+
 ### Added
 
 - **`tools/gardes-appliquees.mjs` : chaque garde est appliquée à ce dépôt par quelque chose qui peut
@@ -32,6 +34,24 @@ the notes there are this file's section for that version.
   règle symétrique — une exemption appliquée est refusée — qui l'a montré au premier passage.
 
 ### Changed
+
+- **Le pied légal de la visionneuse se replie en pastille.** La barre noire pleine largeur, en bas
+  de chaque page, devient une pastille en bas à gauche : « Lecture mesurée » (ou « Informations »
+  quand rien n'est mesuré), qui se déplie au clic sur la phrase exacte et les liens Mentions
+  légales / Confidentialité / Code source. Demandé par un hôte en regardant un document ouvert par
+  son client : la barre recouvrait le document pour redire trois choses qu'on ne lit qu'une fois.
+  Rien n'est retiré du HTML servi — le résumé reste visible sans geste, la phrase complète et le
+  lien vers le source (dû par l'AGPL) restent à un clic, par `<details>` sans script. Coin gauche
+  parce que le droit porte déjà la bulle de l'assistant, celle du chat et « Propulsé par ».
+  Occurrences restantes de la barre ancrée aux deux bords sur le pied : 0 ; la garde est
+  `piedLegalReplie.test.js`.
+
+- **Chaque job de `ci.yml` déclare son délai.** Aucun ne le faisait : un banc bloqué aurait couru
+  jusqu'au défaut de GitHub, 360 minutes, en tenant la file de toutes les PR — et la reprise de #551
+  a montré que ce n'était pas théorique (jsdom 30.1.1, ci-dessous). Règle des valeurs, écrite à côté
+  d'elles : 2,5 × la plus longue durée réussie relevée sur les 40 derniers runs, plancher 10 min —
+  `check` 30 min (700 s relevées), les quatre autres 10 min. `delaisDesJobs.test.js` exige un délai
+  par job, inférieur au défaut de GitHub ; il nommait les cinq jobs avant ce changement.
 
 - **pdf.js 6.2.108 → 6.3.289, et le moteur de rendu ne voyage plus caché dans un lot d'outillage.**
   La montée arrivait dans #551, une PR Dependabot intitulée « 9 updates » et groupée sous le nom
@@ -7892,7 +7912,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.172...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.173...HEAD
+[0.1.173]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.172...v0.1.173
 [0.1.172]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.171...v0.1.172
 [0.1.171]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.170...v0.1.171
 [0.1.170]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.169...v0.1.170
