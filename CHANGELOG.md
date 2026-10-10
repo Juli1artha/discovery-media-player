@@ -12,6 +12,20 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Changed
+
+- **La marque d'un client est gardée en mémoire au lieu d'être redemandée à chaque ouverture
+  (#570).** Chaque ouverture d'un lien tracé (`/doc/:slug`) et chaque aperçu attendaient un POST à
+  `PLAYER_HOST_BRAND_URL` avant d'envoyer la page — la même clé, pour chaque lecteur, à chaque fois ;
+  hôte lent ou en panne, jusqu'à 4 s par ouverture avant le repli sur le logo du lien. Le contexte
+  autonome garde désormais, PAR CONTEXTE : une marque 5 minutes, une absence (clé inconnue, erreur,
+  délai) une minute, 500 clés au plus, la plus ancienne sortant la première ; les ouvertures
+  simultanées partagent un seul appel. La marque reste résolue par l'hôte, jamais recopiée dans le
+  lien ; la chaîne de repli ne change pas. Durées écrites dans `docs/HOST-CONTRACT.md` § 2 et
+  confrontées au code par un test. Neuf essais ; quatre mutants (absence gardée 5 min, mémoire sans
+  borne, ordre de sortie non rafraîchi, promesse non partagée), quatre tués — le troisième ne l'était
+  pas par la première série, d'où l'essai « une marque redemandée repasse en dernier ».
+
 ## [0.1.173] — 2026-10-07
 
 ### Added
