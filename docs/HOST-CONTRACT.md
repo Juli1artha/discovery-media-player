@@ -842,6 +842,12 @@ The link carries a **reference**, never a copy of the logo: a tracked link lives
 inbox, and a logo frozen at send time would not follow a corrected brand. `name` is not decorative
 — it is what shows when the logo fails to load.
 
+The standalone context **keeps each answer in memory, per process**, so that opening a link does not
+wait on your route every time: a brand for **5 minutes**, an absence (unknown key, error, timeout)
+for **one minute**, at most 500 keys, oldest out first. Concurrent openings of the same link share
+one call. So a corrected brand shows within 5 minutes, and a brand created for a key that was
+unknown shows within a minute. The link still carries only the key — nothing is frozen in it.
+
 ### 3. Serving a file the player cannot reach
 
 If your documents sit behind an API key, the player must **never** hold it. Expose one route

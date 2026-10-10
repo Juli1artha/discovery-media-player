@@ -200,8 +200,113 @@ describe("les décisions de l'hôte : refus par défaut, et une réponse difform
     expect(await ctx.branding.forKey("")).toBe(null);
     expect(appels).toHaveLength(0);
     expect(await ctx.branding.forKey("acme")).toBe(null);
+    // Un contexte NEUF : celui-ci garde désormais l'absence d'« acme » une minute (#570).
     reseau(() => json({ logo: "https://cdn/l.svg", name: "Acme", dark: 1 }));
-    expect(await ctx.branding.forKey("acme")).toEqual({ logo: "https://cdn/l.svg", name: "Acme", dark: true });
+    const neuf = createStandaloneContext({ PLAYER_HOST_BRAND_URL: "https://hote.example/brand" });
+    expect(await neuf.branding.forKey("acme")).toEqual({ logo: "https://cdn/l.svg", name: "Acme", dark: true });
+  });
+});
+
+describe("branding.forKey : la marque gardée en mémoire, pas redemandée à chaque ouverture (#570)", () => {
+  // Chaque ouverture d'un lien tracé, et chaque aperçu, attendait un POST à l'hôte AVANT d'envoyer
+  // la page — le même `brand_key`, redemandé par chaque lecteur, sans rien garder. Hôte lent ou en
+  // panne : jusqu'à 4 s par ouverture (`DELAI_ROUTE_HOTE_MS`) avant de retomber sur le logo du lien.
+  // Une marque change rarement, un lien s'ouvre souvent. Signalé par l'hôte ADN Family (09/10).
+  const ENV_MARQUE = { PLAYER_HOST_BRAND_URL: "https://hote.example/brand" };
+  const ACME = { logo: "https://cdn/acme.svg", name: "Acme", dark: false };
+  let maintenant;
+  beforeEach(() => { maintenant = 1_000_000; vi.spyOn(Date, "now").mockImplementation(() => maintenant); });
+  afterEach(() => { vi.mocked(Date.now).mockRestore(); });
+
+  it("deux ouvertures du même lien : un seul appel à l'hôte", async () => {
+    reseau(() => json(ACME));
+    const ctx = createStandaloneContext(ENV_MARQUE);
+    expect(await ctx.branding.forKey("acme")).toEqual(ACME);
+    expect(await ctx.branding.forKey("acme")).toEqual(ACME);
+    expect(appels).toHaveLength(1);
+  });
+
+  it("au-delà de 5 minutes, on redemande : une charte corrigée finit par se voir", async () => {
+    reseau(() => json(ACME));
+    const ctx = createStandaloneContext(ENV_MARQUE);
+    await ctx.branding.forKey("acme");
+    maintenant += 5 * 60_000 - 1;
+    await ctx.branding.forKey("acme");
+    expect(appels).toHaveLength(1);
+    maintenant += 2;
+    reseau(() => json({ ...ACME, logo: "https://cdn/acme-v2.svg" }));
+    expect((await ctx.branding.forKey("acme")).logo).toBe("https://cdn/acme-v2.svg");
+    expect(appels).toHaveLength(1);
+  });
+
+  it("hôte en panne : null (le lien retombe sur son logo), et pas de nouvel appel avant 60 s", async () => {
+    reseau(() => json({}, 503));
+    const ctx = createStandaloneContext(ENV_MARQUE);
+    expect(await ctx.branding.forKey("acme")).toBe(null);
+    maintenant += 59_999;
+    expect(await ctx.branding.forKey("acme")).toBe(null);
+    expect(appels).toHaveLength(1);
+    maintenant += 2;
+    reseau(() => json(ACME));
+    expect(await ctx.branding.forKey("acme")).toEqual(ACME);
+    expect(appels).toHaveLength(1);
+  });
+
+  it("dix ouvertures simultanées : un seul appel", async () => {
+    let liberer;
+    const attente = new Promise((r) => { liberer = r; });
+    reseau(async () => { await attente; return json(ACME); });
+    const ctx = createStandaloneContext(ENV_MARQUE);
+    const toutes = Promise.all(Array.from({ length: 10 }, () => ctx.branding.forKey("acme")));
+    liberer();
+    expect(await toutes).toEqual(Array(10).fill(ACME));
+    expect(appels).toHaveLength(1);
+  });
+
+  it("la mémoire est bornée : au-delà de 500 clés, la plus ancienne sort la première", async () => {
+    reseau(() => json(ACME));
+    const ctx = createStandaloneContext(ENV_MARQUE);
+    for (let i = 0; i <= 500; i++) await ctx.branding.forKey(`cle-${i}`);
+    expect(appels).toHaveLength(501);
+    await ctx.branding.forKey("cle-500"); // la plus récente : toujours gardée
+    expect(appels).toHaveLength(501);
+    await ctx.branding.forKey("cle-0"); // la plus ancienne : sortie, redemandée
+    expect(appels).toHaveLength(502);
+  });
+
+  it("une marque redemandée après expiration repasse en dernier : ce n'est pas elle qui sort", async () => {
+    // Sans quoi la marque la plus ouverte de l'instance, rafraîchie toutes les 5 minutes, garderait
+    // sa place d'origine et sortirait la première dès que 500 autres clés seraient passées.
+    reseau(() => json(ACME));
+    const ctx = createStandaloneContext(ENV_MARQUE);
+    for (let i = 0; i < 500; i++) await ctx.branding.forKey(`cle-${i}`);
+    maintenant += 5 * 60_000 + 1;
+    await ctx.branding.forKey("cle-0"); // expirée, redemandée : doit repasser en dernier
+    await ctx.branding.forKey("nouvelle"); // la 501e : fait sortir la plus ancienne, cle-1
+    const avant = appels.length;
+    maintenant += 1;
+    await ctx.branding.forKey("cle-0");
+    expect(appels.length).toBe(avant);
+  });
+
+  it("ce que le contrat promet aux hôtes est ce que le code fait : 5 minutes, une minute, 500 clés", () => {
+    // Deux copies d'un même fait, CONFRONTÉES : un hôte lit le contrat pour savoir quand sa charte
+    // corrigée apparaîtra. Changer une durée sans l'autre fait rougir ce test.
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const code = fs.readFileSync(path.join(__dirname, "..", "standalone.js"), "utf8");
+    const contrat = fs.readFileSync(path.join(__dirname, "..", "..", "docs", "HOST-CONTRACT.md"), "utf8");
+    expect(code).toMatch(/const MARQUE_GARDEE_MS = 5 \* 60_000;/);
+    expect(code).toMatch(/const MARQUE_ABSENTE_MS = 60_000;/);
+    expect(code).toMatch(/const MARQUES_MAX = 500;/);
+    expect(contrat).toMatch(/a brand for \*\*5 minutes\*\*, an absence \(unknown key, error, timeout\)\s+for \*\*one minute\*\*, at most 500 keys/);
+  });
+
+  it("deux contextes ne partagent rien : la mémoire vit dans le contexte, pas dans le module", async () => {
+    reseau(() => json(ACME));
+    await createStandaloneContext(ENV_MARQUE).branding.forKey("acme");
+    await createStandaloneContext(ENV_MARQUE).branding.forKey("acme");
+    expect(appels).toHaveLength(2);
   });
 });
 
