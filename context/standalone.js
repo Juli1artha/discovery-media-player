@@ -118,6 +118,22 @@ function fetchBorne(cible, options = {}, delaiMs) {
  */
 const DELAI_AUTH_MS = 5000;
 const DELAI_ROUTE_HOTE_MS = 4000;
+
+/**
+ * La marque d'un client, GARDÉE EN MÉMOIRE (#570). Chaque ouverture d'un lien tracé attendait un
+ * POST à l'hôte avant d'envoyer la page ; hôte lent ou en panne, chaque ouverture payait jusqu'à
+ * `DELAI_ROUTE_HOTE_MS`. Une marque change rarement, un lien s'ouvre souvent.
+ *
+ * ⚠️ LES DURÉES DISENT CE QUI RESTE VRAI DE `brands.js` : la marque est toujours résolue par
+ * l'hôte, jamais recopiée dans le lien — une charte corrigée se voit en 5 minutes au plus. Une
+ * absence (clé inconnue, hôte en panne) n'est gardée qu'une minute : assez pour ne plus payer le
+ * délai à chaque ouverture, assez peu pour qu'une marque créée entre-temps apparaisse vite.
+ * ⚠️ BORNÉE : les clés viennent des liens, donc de la base ; sans plafond, une instance qui sert
+ * beaucoup de clients garderait tout pour toujours. La plus ancienne entrée sort la première.
+ */
+const MARQUE_GARDEE_MS = 5 * 60_000;
+const MARQUE_ABSENTE_MS = 60_000;
+const MARQUES_MAX = 500;
 const DELAI_STOCKAGE_MS = 15000;
 const DELAI_BASE_MS = 15000;
 
@@ -431,6 +447,8 @@ function createStandaloneContext(env = process.env) {
   const origins = () => storage.storageOrigins(env);
   const hostBase = () => storage.hostFetchBase(env);
   const root = () => storage.localRoot(env);
+  // Les marques des clients, propres à CE contexte (#570) : deux contextes ne partagent rien.
+  const marques = new Map();
 
   return {
     // Aucun greffon : l'assistant IA, l'intro de marque et les comptes visiteurs sont des produits
@@ -794,8 +812,22 @@ function createStandaloneContext(env = process.env) {
        */
       async forKey(key) {
         if (!key) return null;
-        const b = await appelHote(env.PLAYER_HOST_BRAND_URL, secret, { key: String(key) }, journal);
-        return b && b.logo ? { logo: String(b.logo), name: String(b.name || ""), dark: !!b.dark } : null;
+        const cle = String(key);
+        const gardee = marques.get(cle);
+        // Une promesse, pas une valeur : dix lecteurs qui ouvrent le même lien au même instant
+        // attendent le MÊME appel au lieu d'en lancer dix.
+        if (gardee && Date.now() - gardee.depuis < gardee.duree) return gardee.marque;
+        const entree = { depuis: Date.now(), duree: MARQUE_GARDEE_MS, marque: null };
+        entree.marque = appelHote(env.PLAYER_HOST_BRAND_URL, secret, { key: cle }, journal).then((b) => {
+          const m = b && b.logo ? { logo: String(b.logo), name: String(b.name || ""), dark: !!b.dark } : null;
+          if (!m) entree.duree = MARQUE_ABSENTE_MS;
+          return m;
+        });
+        // Réinsérée en dernier : l'ordre d'insertion de la Map est l'ordre de sortie.
+        marques.delete(cle);
+        marques.set(cle, entree);
+        if (marques.size > MARQUES_MAX) marques.delete(marques.keys().next().value);
+        return entree.marque;
       },
 
       title(base, qualificatif) {
