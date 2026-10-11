@@ -12,6 +12,25 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- **Les lectures d'un lien attesté s'attribuent à quelqu'un, et l'hôte peut les lire (#574).** Chez un
+  hôte, 70 liens attestés portaient 108 sessions mesurées, toutes avec temps par page — et aucune ne
+  disait de qui elle était : l'adresse attestée vit sur le lien, aucune lecture ne la servait, le lien
+  n'a pas d'auteur (aucun membre ne le voit sous « mes liens ») et le secret de l'hôte ne servait qu'à
+  `create`. Chaque session porte désormais `attested_recipient_email`, lu sur son lien, dans les deux
+  lectures (`docshare.sessions`, `docshare.sessionsByRecipient`) ; `recipient_email` reste nul, le
+  visiteur attesté ne devient pas expéditeur au repartage. Et `docshare.sessions` avec
+  `x-player-share-secret` répond `{ ok, sessions, scope: "host" }`, borné aux sessions des liens **sans
+  auteur et attestés** — ni lien anonyme, ni lien de membre, ni repartage ; toute autre action au
+  secret reste en 403. La borne est dans la requête (liens attestés, puis leurs seules sessions), pour
+  que les lectures anonymes d'une plaquette partagée ne repoussent pas celles du client hors de la
+  fenêtre de 500. Sans la 0001 : les lectures des membres répondent (champ à `null`), la lecture de
+  l'hôte rend 409 et nomme le fichier, jamais `[]`. Aucune migration. Limite de débit propre
+  (`hsessions:`, 600/h). Vingt essais (`lecturesAttestees.test.js`, `lienDeLHote.test.js` évolué) ;
+  neuf mutants à la main (chaque moitié de la borne, le champ retiré de chaque lecture, la sonde, la
+  portée hôte remplacée par `list.all`, la limite, le 409), neuf tués.
+
 ## [0.1.174] — 2026-10-10
 
 ### Changed

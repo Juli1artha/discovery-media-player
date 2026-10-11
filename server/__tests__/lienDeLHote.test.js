@@ -125,14 +125,31 @@ describe("ce que ce chemin ne peut PAS faire", () => {
   beforeEach(() => { lignesExistantes = []; });
 
   // Un secret de serveur ne doit pas donner à voir qui a lu quoi.
-  it.each(["docshare.list", "docshare.revoke", "docshare.overview", "docshare.sessions", "docshare.setauth"])(
+  //
+  // ⚠️ `docshare.sessions` A QUITTÉ CETTE LISTE AU #574, ET `sessionsByRecipient` Y EST ENTRÉ. L'hôte
+  // lit désormais, par son secret, les sessions des liens qu'il a lui-même créés ET attestés — il
+  // ne découvre personne, il a fourni chaque adresse (`lecturesAttestees.test.js` éprouve la borne).
+  // La fiche d'une personne, elle, traverse tous les documents et tous les liens : elle reste un
+  // acte de membre, et c'est ici qu'on le tient, à côté des quatre autres.
+  it.each(["docshare.list", "docshare.revoke", "docshare.overview", "docshare.setauth", "docshare.sessionsByRecipient"])(
     "%s reste un acte de membre",
     async (action) => {
-      const r = await appeler({ ...CREATION, action });
+      const r = await appeler({ ...CREATION, action, email: "visiteur@exemple.fr" });
       expect(r.statut, action).toBe(403);
       expect(requetes.some((q) => q.methode !== "GET"), action).toBe(false);
+      expect(requetes.some((q) => String(q.chemin).startsWith("commercial_doc_sessions")),
+        `${action} : refusé avant toute lecture de sessions`).toBe(false);
     },
   );
+
+  it("docshare.sessions au secret ne répond qu'en portée « host »", async () => {
+    const r = await appeler({ action: "docshare.sessions", docId: "programme-42" });
+    expect(r.statut).toBe(200);
+    expect(r.corps.scope, "jamais « all » : l'hôte n'a pas la portée d'un administrateur").toBe("host");
+    const lectureLiens = requetes.find((q) => String(q.chemin).startsWith("commercial_doc_shares?doc_id="));
+    expect(lectureLiens.chemin).toContain("created_by=is.null");
+    expect(lectureLiens.chemin).toContain("attested_recipient_email=not.is.null");
+  });
 
   // Le nominatif a un membre : l'admettre ici rouvrirait par la bande ce que le jeton protège.
   // ⚠️ CETTE ROUTE REFUSAIT TOUT DESTINATAIRE, ET LA DÉCISION A CHANGÉ — PAS LA RAISON.

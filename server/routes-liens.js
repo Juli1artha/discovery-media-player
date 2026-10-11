@@ -78,17 +78,60 @@ async function traiter(req, res, body, slug) {
           // lui-même avant d'écrire.
           //
           // ⚠️ TROIS VERROUS, et chacun ferme une porte différente :
-          //   1. `create` UNIQUEMENT — révoquer, lister, lire des statistiques restent des actes
-          //      de membre. Un secret de serveur ne doit pas donner à voir qui a lu quoi.
-          //   2. AUCUN destinataire — le nominatif a un membre. L'admettre ici rouvrirait par la
-          //      bande ce que le JWT protège.
+          //   1. `create`, ET LA LECTURE DES LIENS QUE L'HÔTE A LUI-MÊME ATTESTÉS — révoquer,
+          //      lister, l'aperçu, la protection et la fiche d'une personne restent des actes de
+          //      membre. Un secret de serveur ne doit pas donner à voir qui a lu quoi. (Ce verrou
+          //      disait « `create` UNIQUEMENT » jusqu'au #574 ; ce qui a changé est dit juste
+          //      dessous, à l'endroit où la porte s'ouvre.)
+          //   2. AUCUN destinataire NOMINATIF — le nominatif a un membre. L'admettre ici rouvrirait
+          //      par la bande ce que le JWT protège. (Le destinataire ATTESTÉ n'en est pas un : il
+          //      va dans sa propre colonne, voir plus bas.)
           //   3. IDEMPOTENT par `docId` — sans ça, un redéploiement, une reprise sur erreur ou un
           //      double clic donnent trois liens pour la même plaquette, donc des statistiques
           //      fragmentées en trois, découvertes en les lisant six mois plus tard.
           if (typeof PLAYER.identity.isTrustedHostCall === "function"
               && PLAYER.identity.isTrustedHostCall(req.headers)) {
+            // ⚠️ L'HÔTE LIT LES SESSIONS DES LIENS QU'IL A CRÉÉS ET ATTESTÉS — ET AUCUNE AUTRE.
+            //
+            // Ce que le verrou 1 refusait, c'est qu'un secret de serveur donne à voir QUI a lu. Ici
+            // l'hôte ne découvre personne : chaque adresse de cette réponse, il l'a fournie lui-même
+            // à la création, depuis sa base, après vérification. Il apprend COMBIEN DE TEMPS son
+            // client a lu, pas qui. Sans cette porte, un hôte de production mesurait 108 sessions
+            // complètes, temps par page compris, et affichait « 0 de lecture » à son conseiller : le
+            // lien n'a pas d'auteur, donc aucun membre ne le voit sous « mes liens », et `list.all`
+            // le voyait sans adresse (#574).
+            //
+            // La borne est double, et chaque moitié ferme une porte :
+            //   • `created_by` NUL — les liens des membres restent derrière le JWT et `list.all` ;
+            //   • adresse attestée NON NULLE — un lien anonyme (la plaquette publique lue par un
+            //     prospect sans compte) ne se lit pas par le secret.
+            // C'est le pendant exact du « mes liens » d'un membre : l'hôte lit les liens qu'il a
+            // créés. La réponse dit `scope: "host"` pour que personne ne la confonde avec `all`.
+            //
+            // ⚠️ ON A ÉCARTÉ UNE QUESTION `list.host` POSÉE À `canManageShares`. Elle passerait par
+            // le JWT d'un membre, et le `docId` se partage entre clients : un membre verrait, dans
+            // tout écran qui lit des sessions, les clients attestés de ses collègues. Lu par le
+            // secret, le tri par client se fait sur le serveur de l'hôte, avant tout affichage.
+            if (body.action === "docshare.sessions") {
+              const docId = String(body.docId || "").trim();
+              if (!docId) return jd(400, { ok: false, error: "docId requis" });
+              // Même esprit que `hshare:` — une clé à part, parce que lire et créer n'ont pas le
+              // même rythme : la création est idempotente (une fois par document et par visiteur),
+              // la lecture revient à chaque ouverture d'un espace client. Le plafond borne un secret
+              // fuité qui balaierait des `docId`, pas l'usage d'un hôte qui affiche ses lectures.
+              const ipL = adresseAppelant(req) || "hote";
+              if (!(await PLAYER.limits.allow(`hsessions:${ipL}`, 600, 3600))) return jd(429, { ok: false, error: "rate" });
+              // ⚠️ SANS LA COLONNE, UN 409 QUI NOMME LE FICHIER — PAS UN `[]`. La sonde ne distingue
+              // pas « colonne absente » de « base injoignable », et un tableau vide se lirait
+              // « votre client n'a rien lu ». Même réponse que la création attestée, plus bas.
+              if (!(await require("./schema").attendue("destinataireAtteste"))) {
+                return jd(409, { ok: false, error: "migration", message: "Destinataire attesté indisponible : appliquez supabase/migrations/0001-destinataire-atteste.sql." });
+              }
+              const sessions = await listSessionsForDoc(docId, null, { hoteAtteste: true });
+              return jd(200, { ok: true, sessions, scope: "host" });
+            }
             if (body.action !== "docshare.create") {
-              return jd(403, { ok: false, error: "L'appel serveur à serveur ne crée que des liens sans destinataire." });
+              return jd(403, { ok: false, error: "L'appel serveur à serveur ne crée que des liens, et ne lit que les sessions des liens attestés qu'il a créés." });
             }
             // ⚠️ LE DESTINATAIRE ATTESTÉ : L'HÔTE SE PORTE GARANT, IL N'AFFIRME PAS.
             //
