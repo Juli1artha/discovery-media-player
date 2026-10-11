@@ -462,6 +462,32 @@ inheritance both refuse — without either of them knowing why.
 Requires `supabase/migrations/0001-destinataire-atteste.sql`. Until it is applied the player refuses
 the attested creation and names the file; it never falls back to the other column.
 
+### Reading back the reads you vouched for
+
+Every session now carries `attested_recipient_email`, read from its link — on both session readings,
+`docshare.sessions` and `docshare.sessionsByRecipient`, for members and for you alike.
+`recipient_email` stays `null` on an attested link, for the reason above. Nothing is copied into the
+sessions table: no migration beyond `0001`.
+
+You can also read those sessions yourself, server to server: `docshare.sessions` with
+`x-player-share-secret` and a `docId` answers `{ ok: true, sessions, scope: "host" }`, holding
+**only** the sessions of links that have no author **and** an attested address — the links you
+created for a visitor you vouched for. You learn how long your visitor read, never who else did:
+
+- an **anonymous** link (no attested address) is not readable with the secret;
+- a **member's** link (`created_by` set) stays behind the member's token and `list.all`;
+- a **forwarded** link born from an attested one is not readable either — its reader was chosen by
+  your visitor, and you never vouched for them;
+- every other action with the secret — `list`, `revoke`, `overview`, `setauth`,
+  `sessionsByRecipient` — is still refused with `403`.
+
+⚠️ **The sort by client is yours, and it belongs before any display.** A `docId` is shared across
+clients, so this answer covers every visitor you attested on that document. Keep only the sessions
+whose `attested_recipient_email` belongs to the client being shown, on your server, after your own
+check that the person asking may see that client. Without `0001`, the call answers `409` and names the
+file — never an empty list, which would read as *"your client read nothing"*. Rate-limited per
+calling address, separately from creation.
+
 ## The visitor wall (`plugins.visitors`): what the player counts, and what your plugin must do
 
 A host can gate documents behind a soft wall — an e-mail code, or a Google credential — by providing

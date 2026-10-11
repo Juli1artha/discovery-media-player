@@ -147,6 +147,13 @@ a broken tracked link is a commercial relationship landing on an error page.
 carries, per table, `{ examinees, supprimees, tronque }`. An unknown `action` is rejected with
 `400 unknown-action`; a bodiless analytics POST requires an `event` of `open|page|heartbeat|session`.
 
+**Trusted host** (`identity.isTrustedHostCall`, the `x-player-share-secret` header) — two
+`docshare.*` actions and no others: `docshare.create` (a link without a nominative recipient,
+optionally attested — see [*Counting the reads of a visitor you vouch for*](HOST-CONTRACT.md)) and
+`docshare.sessions`, which then answers `{ ok, sessions, scope: "host" }` restricted to the sessions
+of links that have no author **and** an attested address. Every other `docshare.*` action with the
+secret is `403`.
+
 ### Who may manage tracked links
 
 Every `docshare.*` call asks your wiring:
@@ -189,7 +196,11 @@ skipped or served twice; a caller that stops on a short page loses the rest.
 `0.1.147` both session readings returned the row as stored. What ships now is: identifiers
 (`session_id`, `slug`, `doc_id`, `recipient_email` and the filiation), reading behaviour
 (`num_pages`, `max_page`, `total_seconds`, `pages_time`), the client as read by a human (`device`,
-`os`, `browser`), and the timestamps.
+`os`, `browser`), and the timestamps. What a session says of its **link** is added by name, from the
+link's row: `recipient_name`, the filiation, and `attested_recipient_email` — the address a trusted
+host vouched for, `null` on every other link. It is never copied into the sessions table, and on an
+attested link `recipient_email` stays `null`: that field also decides who may send in the link's name
+when it is forwarded.
 
 | withheld | why |
 |---|---|
@@ -326,7 +337,7 @@ estimated:
 
 | | |
 |---|---|
-| Call sites | **74**†, in **7**† files |
+| Call sites | **76**†, in **7**† files |
 | Tables | **11**†, plus **8**† call sites that build their path at run time — their tables are named literally by the caller, and are counted above |
 | Verbs | `GET`, `POST`, `PATCH`, one `HEAD`, and `DELETE` only in `server/retention.js` — every one bounded by an age filter (`docs/RETENTION.md`) |
 | Embedded selects (`select=*,other(*)`) | **0** |
@@ -334,7 +345,7 @@ estimated:
 | `and=()` | **0**† |
 | `offset=` | **0**† — pagination is by **keyset cursor** (`col=gt.<last>`), never by offset: a cursor is stable under concurrent writes, and `ci.yml` refuses `offset=` outright. ⚠️ Both this row and the one above were *hand-counted prose sitting in a measured table* until a probe written here reached for `offset=` and only the forge caught it — the rule lived in a workflow `grep` and nowhere a contributor could run. A table whose rows are half-guarded reads as a guarded table |
 | `offset=` | **1** — hand-counted. `server/retention.js` asks for one row past the lot it received, to learn whether anything follows it. ⚠️ It was **0** until a host measured why it could not stay so: comparing a received length against *our own* bound assumes ours is the only ceiling, and PostgREST's `db-max-rows` (1000 on Supabase) truncates upstream of it. A single row at the next offset answers *is there more* without needing to know whose ceiling stopped the first read |
-| `in.(…)` | **5**† — translates to `WHERE column IN (…)`, so it costs a port nothing |
+| `in.(…)` | **6**† — translates to `WHERE column IN (…)`, so it costs a port nothing |
 | Used beyond plain filters | `order=`, `Prefer: return=…`, `Range` for pagination |
 
 † **Recomputed from the code on every CI run** by `tools/surface-base.mjs`, which fails the build

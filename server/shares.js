@@ -672,17 +672,85 @@ function racineDuLien(slug, parParent, profondeurMax = 64) {
  *
  * `null` = toutes les sessions (le rôle qui a `list.all`), une adresse = celles dont la chaîne
  * d'origine part d'un lien que cette personne a créé.
+ *
+ * `hoteAtteste` = la portée de l'HÔTE qui lit par son secret (`scope: "host"`) : seulement les
+ * sessions des liens qu'il a créés ET attestés — voir `sessionsDesLiensAttestes`.
  */
-async function listSessionsForDoc(docId, owner = null) {
+async function listSessionsForDoc(docId, owner = null, { hoteAtteste = false } = {}) {
   const id = enc(String(docId || ""));
+  const champsLien = await champsDuLien();
+  if (hoteAtteste) return sessionsDesLiensAttestes(id, champsLien);
   const [sessions, shares] = await Promise.all([
     PLAYER.db.request(`commercial_doc_sessions?doc_id=eq.${id}&select=${SELECT_SESSION}&order=last_at.desc&limit=500`),
     // ⚠️ TOUS LES LIENS, RÉPÉTITIONS COMPRISES. La chaîne se remonte par `parent_slug` : un maillon
     // absent de cette lecture casse la remontée et fait échouer fermé une session légitime. Le
     // filtre `is_test` d'avant ne servait qu'à nommer le destinataire ; il ne peut pas servir à
     // reconstruire une filiation.
-    PLAYER.db.request(`commercial_doc_shares?doc_id=eq.${id}&select=slug,parent_slug,created_by,recipient_email,recipient_name`),
+    PLAYER.db.request(`commercial_doc_shares?doc_id=eq.${id}&select=${champsLien}`),
   ]);
+  return sessionsAvecLeurLien(sessions, shares, owner);
+}
+
+/**
+ * Les colonnes d'un LIEN qui accompagnent ses sessions — et l'adresse attestée seulement si la base
+ * la porte.
+ *
+ * ⚠️ PostgREST REJETTE UN `select=` QUI NOMME UNE COLONNE INCONNUE, et pas seulement l'écriture : un
+ * hôte qui n'a pas appliqué la 0001 verrait TOUTES ses lectures de sessions tomber en 500 le jour où
+ * il déploie ce code — pour une fonction dont il ne se sert pas. On demande donc à la sonde, comme
+ * le chemin de création le fait déjà ; un « oui » est retenu pour le processus, la question ne
+ * coûte rien après la première fois.
+ *
+ * Sans la colonne, aucun lien ne peut être attesté (la création refuse en 409 et nomme le fichier) :
+ * le `null` que portera alors chaque session est VRAI, pas une valeur par défaut.
+ */
+const CHAMPS_LIEN = "slug,parent_slug,created_by,recipient_email,recipient_name";
+async function champsDuLien(supplement = "") {
+  const atteste = await require("./schema").attendue("destinataireAtteste");
+  return CHAMPS_LIEN + supplement + (atteste ? ",attested_recipient_email" : "");
+}
+
+/**
+ * Les sessions des liens que l'HÔTE a créés et attestés : sans auteur (`created_by` nul) ET portant
+ * une adresse attestée. Rien d'autre.
+ *
+ * ⚠️ LA BORNE EST DANS LA REQUÊTE, PAS APRÈS ELLE. La lecture des membres prend les 500 sessions les
+ * plus récentes du document puis filtre par chaîne d'origine — elle ne peut pas faire autrement, la
+ * chaîne est récursive. Ici le critère est une propriété du lien lui-même, donc se pousse en base :
+ * on lit d'abord les liens attestés, puis leurs seules sessions (`slug=in.(…)`). Sans ça, une
+ * plaquette partagée — le `docId` se partage entre clients — lue par cinq cents prospects anonymes
+ * repousserait hors de la fenêtre les lectures du client attesté, et l'hôte lirait « 0 de lecture »
+ * là où il y en avait : exactement le constat du #574, reproduit par la correction.
+ *
+ * ⚠️ LA SESSION D'UN LIEN ENFANT N'EN EST PAS. Un repartage depuis un lien attesté naît avec
+ * `created_by: parent.recipient_email || parent.created_by` — nul ici — mais sans adresse attestée :
+ * son lecteur est celui que le visiteur a choisi, que l'hôte n'a jamais vérifié. Le filtre porte
+ * donc sur le lien DE LA SESSION, pas sur sa racine — l'inverse de la portée des membres, et pour
+ * la raison inverse : un membre a causé les lectures de sa descendance, l'hôte n'atteste que les
+ * adresses qu'il a fournies.
+ *
+ * ⚠️ ET SANS LA COLONNE, ON REFUSE PLUTÔT QUE DE RENDRE `[]`. La sonde ne distingue pas « colonne
+ * absente » de « base injoignable » ; un tableau vide dirait « votre client n'a rien lu » sur une
+ * base qui n'a pas répondu. La route vérifie avant d'appeler et rend le 409 de la création ; ce
+ * refus-ci ferme la porte à tout autre appelant.
+ */
+async function sessionsDesLiensAttestes(id, champsLien) {
+  if (!champsLien.includes("attested_recipient_email")) {
+    throw Object.assign(new Error("Destinataire attesté indisponible : appliquez la migration 0001-destinataire-atteste.sql."),
+      { statusCode: 409, publique: true });
+  }
+  const liens = await PLAYER.db.request(
+    `commercial_doc_shares?doc_id=eq.${id}&created_by=is.null&attested_recipient_email=not.is.null&select=${champsLien}&limit=500`);
+  const lus = Array.isArray(liens) ? liens : [];
+  if (!lus.length) return [];
+  const liste = lus.map((sh) => `"${String(sh.slug).replace(/[",()]/g, "")}"`).join(",");
+  const sessions = await PLAYER.db.request(
+    `commercial_doc_sessions?doc_id=eq.${id}&slug=in.(${enc(liste)})&select=${SELECT_SESSION}&order=last_at.desc&limit=500`);
+  return sessionsAvecLeurLien(sessions, lus, null);
+}
+
+/** Chaque session, projetée, avec ce que son lien dit d'elle — bornée à `owner` s'il est donné. */
+function sessionsAvecLeurLien(sessions, shares, owner) {
   const liste = Array.isArray(shares) ? shares : [];
   const parSlug = new Map(liste.map((sh) => [sh.slug, sh]));
   const parParent = new Map(liste.map((sh) => [sh.slug, sh.parent_slug || null]));
@@ -697,7 +765,7 @@ async function listSessionsForDoc(docId, owner = null) {
     const parent = lien && lien.parent_slug ? parSlug.get(lien.parent_slug) || null : null;
     sortie.push({
       ...sessionServie(s),
-      recipient_name: (lien && lien.recipient_name) || null,
+      ...lienServi(lien),
       // La filiation voyage avec la session : « une session, un lecteur, visible par sa chaîne
       // d'origine » ne se lit pas si la chaîne n'est pas dans la charge utile.
       parent_slug: (lien && lien.parent_slug) || null,
@@ -727,6 +795,11 @@ async function listSessionsForDoc(docId, owner = null) {
  * IP mais un `creator_ip_hash` — un HMAC salé, lié au slug pour qu'on ne puisse pas corréler une
  * adresse d'une présentation à l'autre (0.1.114). Deux décisions opposées sur la même donnée dans
  * le même produit ; celle-ci était la permissive, et personne ne les avait confrontées.
+ *
+ * ⚠️ CETTE LISTE NE PORTE QUE LES COLONNES DE LA SESSION. Ce qu'une session dit de son LIEN —
+ * `recipient_name`, la filiation, et depuis le #574 `attested_recipient_email` — est ajouté nommément
+ * par chaque lecture, depuis la ligne du lien. L'adresse attestée sort donc par décision écrite
+ * (`sessionsAvecLeurLien`), jamais parce qu'une colonne de session l'aurait emportée.
  */
 const CHAMPS_SERVIS = [
   "session_id", "slug", "doc_id", "recipient_email",
@@ -760,6 +833,31 @@ const CHAMPS_RETENUS = {
 /** La projection d'une ligne de session : ce qui sort, et rien d'autre. */
 const sessionServie = (s) => Object.fromEntries(CHAMPS_SERVIS.filter((c) => c in s).map((c) => [c, s[c]]));
 
+/**
+ * Ce qu'une session dit de son LIEN : la même liste-de-ce-qui-est-permis que `CHAMPS_SERVIS`, mais
+ * lue sur la ligne du lien. Un champ absent du lien sort `null` — jamais absent de la réponse.
+ *
+ * ⚠️ L'ADRESSE ATTESTÉE VIENT DU LIEN, ET N'ENTRE PAS DANS `CHAMPS_SERVIS`. Elle n'est pas une
+ * colonne de session et ne doit pas le devenir : la recopier dans `commercial_doc_sessions` en ferait
+ * un second exemplaire du même fait, que la révocation, la rétention et une correction d'adresse
+ * devraient chacune penser à suivre. Jusqu'au #574 elle ne sortait pas du tout : 108 sessions
+ * mesurées chez un hôte, temps par page compris, ne s'attribuaient à personne.
+ *
+ * ⚠️ ET `recipient_email` RESTE NUL pour un lien attesté — ce n'est pas un oubli de recopie. Ce champ
+ * dit aussi qui peut expédier au repartage (cf. `routes-liens.js`, « elle ne va pas dans
+ * `recipient_email` »). Servir l'adresse sous son propre nom laisse cette garde intacte.
+ *
+ * ⚠️ UNE LISTE, PAS DEUX LITTÉRAUX. Les deux lectures de sessions écrivaient chacune
+ * `recipient_name: (lien && …) || null` ; y ajouter un champ voulait dire penser aux deux, et c'est
+ * en le faisant pour l'adresse attestée que la garde `colonneMigreeConditionnelle` a tiré — elle lit
+ * toute clé `colonne:` comme une ÉCRITURE en base, or celle-ci n'en est pas une (c'est une clé de la
+ * réponse). On n'a pas desserré la garde : on a retiré le second exemplaire, et les deux lectures
+ * disent désormais la même chose d'un lien par construction. Les écritures, elles, restent sous sa
+ * surveillance entière.
+ */
+const CHAMPS_DU_LIEN_SERVIS = ["recipient_name", "attested_recipient_email"];
+const lienServi = (lien) => Object.fromEntries(CHAMPS_DU_LIEN_SERVIS.map((c) => [c, (lien && lien[c]) || null]));
+
 /** Le `select=` qui descend dans la requête — la MÊME liste, pas une seconde écriture. */
 const SELECT_SESSION = CHAMPS_SERVIS.join(",");
 
@@ -779,9 +877,12 @@ const SELECT_SESSION = CHAMPS_SERVIS.join(",");
 async function liensEtAncetres(slugs, vaguesMax = 8) {
   const parSlug = new Map();
   let aLire = [...new Set(slugs.filter(Boolean))];
+  // La même liste de colonnes que `listSessionsForDoc`, par la même fonction : les deux lectures de
+  // sessions doivent dire la même chose d'un lien, adresse attestée comprise.
+  const champsLien = await champsDuLien(",doc_id,doc_title");
   for (let vague = 0; vague < vaguesMax && aLire.length; vague += 1) {
     const liste = aLire.map((x) => `"${String(x).replace(/[",()]/g, "")}"`).join(",");
-    const lus = await PLAYER.db.request(`commercial_doc_shares?slug=in.(${enc(liste)})&select=slug,parent_slug,created_by,recipient_email,recipient_name,doc_id,doc_title`);
+    const lus = await PLAYER.db.request(`commercial_doc_shares?slug=in.(${enc(liste)})&select=${champsLien}`);
     const vus = Array.isArray(lus) ? lus : [];
     if (!vus.length) break;
     for (const sh of vus) parSlug.set(sh.slug, sh);
@@ -877,7 +978,11 @@ async function listSessionsForRecipient(email, { owner = null, depuis = null, ap
     sessions.push({
       ...sessionServie(s),
       doc_title: (lien && lien.doc_title) || null,
-      recipient_name: (lien && lien.recipient_name) || null,
+      // ⚠️ L'ADRESSE ATTESTÉE Y EST PRESQUE TOUJOURS NULLE, ET SERVIE QUAND MÊME. Cette lecture part
+      // de `recipient_email=eq.<adresse>`, que les sessions d'un lien attesté n'ont pas : elle les
+      // atteint rarement. Mais deux lectures de la même session qui ne portent pas les mêmes champs
+      // obligent l'hôte à savoir par laquelle il est passé — la même projection les en dispense.
+      ...lienServi(lien),
       parent_slug: (lien && lien.parent_slug) || null,
       parent_recipient_email: parent ? parent.recipient_email || null : null,
       parent_recipient_name: parent ? parent.recipient_name || null : null,
