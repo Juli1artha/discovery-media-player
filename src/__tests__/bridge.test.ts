@@ -180,3 +180,88 @@ describe("d'où un message a le droit de venir", () => {
     expect(recus).toHaveLength(1);
   });
 });
+
+// ── `present-attach` : l'hôte démarre côté serveur et confie la conduite à l'iframe ───────────────
+//
+// Demandé par un hôte (26/10) dont l'application et le player ne partagent pas d'origine : la page du
+// présentateur ne pouvait reprendre que par la session du membre, illisible depuis `doc.` quand elle
+// vit sur `app.`, et le jeton rendu par `present-start` n'avait aucun chemin pour entrer dans l'iframe.
+// Ce message est le seul du pont à porter un SECRET : ce qui suit tient ce que ça lui coûte.
+describe("bridge — présenter depuis l'hôte", () => {
+  const JETON = "Q1w2E3r4T5y6U7i8O9p0-_aZ";
+
+  it("le jeton voyage sur le fil, et seulement pour le message qui le porte", () => {
+    expect(toWire({ type: "present-attach", slug: "Ab3-_xYz9012", control: JETON })).toEqual({
+      type: "3dd-doc-present-attach", slug: "Ab3-_xYz9012", control: JETON,
+    });
+    expect(parseHostMessage(toWire({ type: "present-attach", slug: "Ab3-_xYz9012", control: JETON })))
+      .toEqual({ type: "present-attach", slug: "Ab3-_xYz9012", control: JETON });
+  });
+
+  it("un attachement sans jeton valide n'est pas un attachement", () => {
+    const base = { type: "3dd-doc-present-attach", slug: "Ab3-_xYz9012" };
+    for (const control of [undefined, "", "court", "a".repeat(129), "jeton avec espaces 0123", "<script>0123456789", 1234567890123456]) {
+      expect(parseHostMessage({ ...base, control }), String(control)).toBeNull();
+    }
+    expect(parseHostMessage({ type: "3dd-doc-present-attach", slug: "../x", control: JETON })).toBeNull();
+    expect(parseHostMessage({ type: "3dd-doc-present-attach", control: JETON })).toBeNull();
+  });
+
+  // ⚠️ Avant la table par sens, `parseHostMessage` lisait `embed-denied` — un message du player.
+  it("chaque sens ne lit que ses propres messages", () => {
+    expect(parsePlayerMessage({ type: "3dd-doc-present-attach", slug: "Ab3-_xYz9012", control: JETON })).toBeNull();
+    expect(parseHostMessage({ type: "3dd-doc-present-attached", slug: "Ab3-_xYz9012" })).toBeNull();
+    expect(parseHostMessage({ type: "3dd-doc-embed-denied", reason: "revoked" })).toBeNull();
+  });
+
+  // Une table en objet littéral trouverait `constructor` dans son prototype — et itérerait une fonction.
+  it("un nom tiré du prototype n'est pas un type de message", () => {
+    for (const type of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+      expect(parsePlayerMessage({ type: "3dd-doc-" + type, slug: "abc" }), type).toBeNull();
+      expect(parseHostMessage({ type: "3dd-doc-" + type, slug: "abc" }), type).toBeNull();
+    }
+  });
+
+  it("les annonces du player portent le slug, et l'échec son motif", () => {
+    for (const type of ["present-started", "present-ended", "present-attached"] as const) {
+      expect(parsePlayerMessage(toWire({ type, slug: "Ab3-_xYz9012" }))).toEqual({ type, slug: "Ab3-_xYz9012" });
+      expect(parsePlayerMessage({ type: "3dd-doc-" + type }), "sans slug, l'hôte ne saurait pas de quoi on parle").toBeNull();
+    }
+    expect(parsePlayerMessage(toWire({ type: "present-attach-failed", slug: "Ab3-_xYz9012", reason: "denied" })))
+      .toEqual({ type: "present-attach-failed", slug: "Ab3-_xYz9012", reason: "denied" });
+    expect(parsePlayerMessage({ type: "3dd-doc-present-attach-failed", slug: "Ab3-_xYz9012", reason: "<b>" }))
+      .toEqual({ type: "present-attach-failed", slug: "Ab3-_xYz9012", reason: "unknown" });
+  });
+
+  function cadre(src: string) {
+    const postMessage = vi.fn();
+    return { frame: { src, contentWindow: { postMessage } } as unknown as HTMLIFrameElement, postMessage };
+  }
+
+  it("le jeton est posté à l'ORIGINE du player, jamais à « * »", () => {
+    const { frame, postMessage } = cadre("https://doc.exemple.fr/api/doc?preview=1&embed=1&url=x");
+    expect(sendToPlayer(frame, { type: "present-attach", slug: "Ab3-_xYz9012", control: JETON })).toBe(true);
+    expect(postMessage).toHaveBeenCalledWith(
+      { type: "3dd-doc-present-attach", slug: "Ab3-_xYz9012", control: JETON },
+      "https://doc.exemple.fr",
+    );
+  });
+
+  it("sans origine connue, le jeton ne part pas — et l'hôte le sait", () => {
+    for (const src of ["", "about:blank", "data:text/html,x"]) {
+      const { frame, postMessage } = cadre(src);
+      expect(sendToPlayer(frame, { type: "present-attach", slug: "Ab3-_xYz9012", control: JETON }), src).toBe(false);
+      expect(postMessage, src).not.toHaveBeenCalled();
+    }
+    const { frame, postMessage } = cadre("https://doc.exemple.fr/api/doc");
+    expect(sendToPlayer(frame, { type: "present-attach", slug: "Ab3-_xYz9012", control: JETON }, "*"),
+      "« * » demandé explicitement reste refusé pour un secret").toBe(false);
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it("les messages sans secret partent comme avant, à « * »", () => {
+    const { frame, postMessage } = cadre("");
+    expect(sendToPlayer(frame, { type: "handover-done" })).toBe(true);
+    expect(postMessage).toHaveBeenCalledWith({ type: "3dd-doc-handover-done" }, "*");
+  });
+});

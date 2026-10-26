@@ -7,7 +7,7 @@ const { adresseAppelant, lcMembre, cleAnonyme, profilDuJeton } = require("./appe
 const { capturerSansBloquer } = require("./capture");
 const { jsonPour, etiquetteRoute } = require("./reponses.js");
 
-const { createPresentation, getPresentation, setPage, endPresentation, addMessage, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent } = require("./presentations");
+const { createPresentation, getPresentation, setPage, endPresentation, addMessage, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, adoptPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent } = require("./presentations");
 // Cadence de présence et cible de mutualisation par IP (P1 performance). L'intervalle DOIT
 // refléter celui du navigateur (gabarit-live.js) ; la cible est un vrai événement en salle.
 const ATTENDANCE_INTERVAL_MS = 25_000;
@@ -23,7 +23,7 @@ const isAllowedStorageUrl = (url) => PLAYER.storage.isAllowedUrl(url);
 // entre ici et handler (un correctif à deux exemplaires finit par diverger) — et aucun appui
 // sur res.writableEnded, absent des `res` postiches des bancs comme de certains hôtes.
 async function traiter(req, res, body, _slug) {
-      if (body.action === "present-start" || body.action === "present-page" || body.action === "present-end" || body.action === "present-touch") {
+      if (body.action === "present-start" || body.action === "present-page" || body.action === "present-end" || body.action === "present-touch" || body.action === "present-adopt") {
         const jp = jsonPour(res);
         try {
           if (body.action === "present-start") {
@@ -43,6 +43,10 @@ async function traiter(req, res, body, _slug) {
             ? await setPage(String(body.slug || ""), String(body.control || ""), body.page, body.seq, body.rotation)
             : body.action === "present-touch"
             ? await touchPresentation(String(body.slug || ""), String(body.control || ""))
+            // Le détenteur du jeton reprend le pilotage SANS le régénérer : c'est ce qu'une page
+            // encadrée reçoit de son hôte (`present-attach`), qui a démarré côté serveur.
+            : body.action === "present-adopt"
+            ? await adoptPresentation(String(body.slug || ""), String(body.control || ""))
             : await endPresentation(String(body.slug || ""), String(body.control || ""));
           return jp(r.ok ? 200 : (r.status || 400), r);
         } catch (erreur) {

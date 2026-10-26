@@ -133,7 +133,7 @@ a broken tracked link is a commercial relationship landing on an error page.
 
 **Public** — no authentication:
 `open` · `page` · `heartbeat` · `session` (analytics; internal sessions carry `internal: true`)
-· `present-start|page|end|touch` · `present-attend` · `present-chat` · `present-react` ·
+· `present-start|page|end|touch|adopt` · `present-attend` · `present-chat` · `present-react` ·
 `present-msg-edit|delete` · `present-chatlock` · `present-upload-url` · `reshare`
 
 **Authenticated** (`Authorization: Bearer <jwt>`, verified through `identity.verifyToken`):
@@ -233,9 +233,19 @@ production, and everything crossing the boundary is either harmless or re-verifi
 `slug` is bounded (`[A-Za-z0-9_-]{1,64}`), `reason` too (`[a-z-]{1,40}`, `unknown` otherwise).
 
 **player → host:** `close` · `share` · `embed-ready` · `embed-denied {reason}` · `present-left` ·
-`present-denied` · `present-invite {slug}` · `present-handover {slug}` · `present-switch {slug}`
+`present-denied` · `present-invite {slug}` · `present-handover {slug}` · `present-switch {slug}` ·
+`present-started {slug}` · `present-ended {slug}` · `present-attached {slug}` ·
+`present-attach-failed {slug, reason}`
 
-**host → player:** `handover-done`
+**host → player:** `handover-done` · `present-attach {slug, control}`
+
+`present-attach` is the one message that carries a **secret**, a presentation's control token, from
+the host to the page. It is the exception to "by type, not by origin": the page accepts it only from
+`window.parent`, whose origin `frame-ancestors` has already restricted, and `sendToPlayer` posts it
+to the frame's origin rather than `"*"`. The page then calls `present-adopt` (`{ slug, control }` →
+`{ ok, page, rotation, seq }`). It takes over piloting without regenerating the token, and continues
+from the write rank the server has already reached. The flow, the failure reasons and what attaching
+does not do are in [the host contract](HOST-CONTRACT.md#starting-a-presentation-from-the-host-present-attach).
 
 ### Refusals: `embed-denied`
 

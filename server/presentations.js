@@ -169,6 +169,54 @@ async function reclaimPresentation(slug, email) {
   return { ok: true, slug, control, page: row.current_page || 1, rotation: rot, fileUrl: row.file_url, fileName: row.file_name, docTitle: row.doc_title, docId: row.doc_id };
 }
 
+/**
+ * ADOPTER une présentation dont on détient le jeton de contrôle — sans le régénérer.
+ *
+ * L'hôte qui démarre côté serveur (`present-start` avec la session du membre) détient le jeton et le
+ * confie à la visionneuse par le pont (`present-attach`). Rien ne permettait à la page de le reprendre :
+ * `present-reclaim` exige le JWT du membre, que la page ne peut pas lire quand l'application vit sur
+ * une autre origine (`session-cles.js` le dit déjà pour `doc.` et `app.`).
+ *
+ * ⚠️ POURQUOI UN APPEL AU SERVEUR, ET PAS SEULEMENT RANGER LE JETON DANS LA PAGE. Le compteur
+ * d'écriture du navigateur repart de zéro à chaque prise de pilotage, et le serveur refuse tout rang
+ * déjà dépassé (`rangAccepte`). C'est juste après `present-reclaim`, qui remet `write_seq` à zéro avec
+ * un jeton neuf. Avec un jeton RÉUTILISÉ — un rechargement de l'iframe, un changement de document —
+ * `write_seq` vaut déjà ce que l'iframe précédente a écrit : la nouvelle repartait à 1, et chaque page
+ * tournée était déclarée périmée, refusée EN SILENCE (`setPage` répond ok). Le présentateur tournait
+ * ses pages, l'audience ne suivait pas, et rien ne le disait. On rend donc le rang atteint, et la page
+ * continue après lui au lieu de recommencer en dessous.
+ *
+ * ⚠️ ET ON REMET EN LIGNE, comme le fait une page tournée. Entre le démarrage côté serveur et l'arrivée
+ * de l'iframe, trois minutes sans battement suffisent pour que la purge marque la présentation
+ * inactive. Le jeton est intact (la péremption ne le révoque pas, cf. `CLOTURE`) : c'est une
+ * péremption CONSTATÉE, pas une fin DÉCIDÉE, et le détenteur du jeton doit pouvoir revenir. Une fin
+ * décidée a effacé le jeton — l'adoption échoue alors en 403, et c'est ce qu'on veut.
+ *
+ * Le rang, la page et l'orientation sont lus AVANT l'écriture. Un autre onglet qui écrirait avec le
+ * même jeton entre les deux ferait perdre une page à celui-ci ; deux pilotes du même jeton sont déjà
+ * incohérents (cf. `rangAccepte`), et le cas visé — l'iframe rechargée — n'en a plus qu'un.
+ */
+async function adoptPresentation(slug, control) {
+  if (!slug || !control) return { ok: false, status: 400 };
+  const row = await getPresentation(slug);
+  if (!row) return { ok: false, status: 404 };
+  if (!tokenMatches(control, row.control_hash)) return { ok: false, status: 403 };
+  // Le jeton DANS la condition : une reprise ailleurs l'a peut-être régénéré, une fin l'a annulé,
+  // entre la lecture et cette écriture. Sans lui, l'adoption rouvrirait une présentation close.
+  const ecrit = await ecrireSiEncoreVrai(
+    `doc_presentations?slug=eq.${enc(slug)}&control_hash=eq.${sha(control)}`,
+    { active: true, last_seen: new Date().toISOString(), updated_at: new Date().toISOString() },
+  );
+  if (!ecrit) return { ok: false, status: 409 };
+  // Lue sur sa propre ligne, pour la même raison que dans `reclaimPresentation` : la garde des
+  // colonnes migrées ne distingue pas une lecture en ternaire d'une clé d'écriture.
+  const brute = row.view_rotation;
+  const rot = typeof brute === "number" && ROTATIONS.includes(brute) ? brute : 0;
+  // Sans la colonne (hôte non migré), le champ est absent : 0, et le serveur ne contrôle pas le rang.
+  const rang = Math.max(0, Math.trunc(Number(row.write_seq) || 0));
+  return { ok: true, page: row.current_page || 1, rotation: rot, seq: rang };
+}
+
 // Heartbeat présentateur (control requis) : rafraîchit last_seen → distingue une présentation vivante d'une orpheline.
 async function touchPresentation(slug, control) {
   if (!slug) return { ok: false, status: 400 };
@@ -1452,4 +1500,4 @@ async function listPresentationsForDoc(docId, email, isAdmin, autoriseLarge) {
 module.exports = {
   reacteurDepuisJeton,
   purgerPerimees,
-  messagePublic, CHAMPS_PUBLICS, etatDurcissementBootstrap, etatFusionBattement, signatureAbsente, cheminPieceJointe, init, createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent , STALE_MS};
+  messagePublic, CHAMPS_PUBLICS, etatDurcissementBootstrap, etatFusionBattement, signatureAbsente, cheminPieceJointe, init, createPresentation, getPresentation, setPage, endPresentation, addMessage, listMessages, toggleReaction, editMessage, deleteMessage, setChatLock, createUploadUrl, reclaimPresentation, adoptPresentation, touchPresentation, listActivePresentations, handoverPresentation, endPresentationByOwner, recordAttendance, presentationStats, listPresentationsForDoc, switchPresentationDoc, setPresentationContent , STALE_MS};

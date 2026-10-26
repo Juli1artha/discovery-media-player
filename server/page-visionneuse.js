@@ -556,6 +556,9 @@ ${LEGAL_CSS}
           PRES=null; clearInterval(_hbIv); clearCtl(p.slug);
           var pb=document.getElementById('pbar'); if(pb)pb.style.display='none';
           try{ if(window.Live){ Live.sendState(); Live.disconnect(); } }catch(e){}
+          // Annoncée APRÈS la relecture, comme le reste : l'hôte qui clôt son rendez-vous sur ce
+          // message ne doit pas le faire sur une fin que la base ne confirme pas.
+          Player.bridge.sendToHost({type:'present-ended',slug:p.slug});
         }, function(){
           // L'échec d'une clôture ne prive de rien qu'on regarde : son succès ne produit rien,
           // donc son échec non plus. La première version le disait dans un TITLE — un tooltip que
@@ -589,6 +592,10 @@ ${LEGAL_CSS}
           if(!d||!d.ok||!d.slug) return;
           PRES={slug:d.slug,control:d.control}; saveCtl(d.slug,d.control); _seq=0;
           showBar(d.slug); liveConnect(d.slug,d.control); startHb(); pushPage();
+          // L'hôte n'apprenait le slug qu'au premier « Inviter » ou « Passer la main » — souvent
+          // jamais, et il ne pouvait donc pas rattacher la présentation à ce qu'il en sait (un
+          // rendez-vous, un dossier). Le slug est public : c'est celui du lien /present/.
+          Player.bridge.sendToHost({type:'present-started',slug:d.slug});
         }).catch(function(){ if(btn){ btn.disabled=false; btn.textContent='Présenter'; } });
     }
     // Reprise : le membre propriétaire re-génère un control_token frais (via JWT) → reprend le pilotage, la
@@ -601,26 +608,80 @@ ${LEGAL_CSS}
           if(!d||!d.ok||!d.control){ if(d&&d.status===403){ Player.bridge.sendToHost({type:'present-denied'}); } return; }
           PRES={slug:slug,control:d.control}; saveCtl(slug,d.control); _seq=0;
           showBar(slug); liveConnect(slug,d.control); startHb();
-          // ⚠️ A LA REPRISE, LA PRESENTATION L EMPORTE SUR L ETAT LOCAL — pour l orientation comme
-          // pour la page, alors qu on ne rendait que la page. Un rechargement remet la vue a son
-          // etat d origine (rot vaut 0), c est voulu ; mais l audience, elle, continuait d afficher
-          // la view_rotation de la base. Le presentateur voyait donc son document droit et son
-          // audience le voyait couche, sans que rien ne le dise a personne — et il n avait aucune
-          // raison de toucher le bouton, puisque de son cote tout allait bien.
-          //
-          // ⚠️ ON ADOPTE, ON NE POUSSE PAS. La base porte deja cette valeur : la renvoyer serait une
-          // ecriture pour rien, et pushPage() emporte AUSSI la page — or cur vaut 1 tant que le
-          // document se charge, donc pousser ici ramenerait toute l audience a la page 1. C est la
-          // raison pour laquelle la reprise ne pousse rien, et elle vaut encore.
-          //
-          // Au DEMARRAGE c est l inverse, et c est coherent : startPresent pousse la rotation
-          // courante du presentateur, parce qu il n y a encore rien a reprendre.
-          var rotPres=Player.viewer.rotationEffective(0,d.rotation);
-          if(rotPres!==rot){ rot=rotPres; if(pdfDoc||IS_IMG){ build(); if(vignOuvert) vignConstruire(); } }
-          var target=Math.max(1,d.page||1);
-          if(typeof window.__allerPage==='function'){ try{ window.__allerPage(target); }catch(e){} }
-          var tries=0; (function jump(){ var el=(document.getElementById('pages')||document).querySelector('.page[data-p="'+target+'"]'); if(el){ if(el.scrollIntoView) el.scrollIntoView({block:'start'}); } else if(tries++<40){ setTimeout(jump,150); } })();
+          adopterVue(d);
         }).catch(function(){});
+    }
+    // ⚠️ A LA REPRISE, LA PRESENTATION L EMPORTE SUR L ETAT LOCAL — pour l orientation comme
+    // pour la page, alors qu on ne rendait que la page. Un rechargement remet la vue a son
+    // etat d origine (rot vaut 0), c est voulu ; mais l audience, elle, continuait d afficher
+    // la view_rotation de la base. Le presentateur voyait donc son document droit et son
+    // audience le voyait couche, sans que rien ne le dise a personne — et il n avait aucune
+    // raison de toucher le bouton, puisque de son cote tout allait bien.
+    //
+    // ⚠️ ON ADOPTE, ON NE POUSSE PAS. La base porte deja cette valeur : la renvoyer serait une
+    // ecriture pour rien, et pushPage() emporte AUSSI la page — or cur vaut 1 tant que le
+    // document se charge, donc pousser ici ramenerait toute l audience a la page 1. C est la
+    // raison pour laquelle la reprise ne pousse rien, et elle vaut encore.
+    //
+    // Au DEMARRAGE c est l inverse, et c est coherent : startPresent pousse la rotation
+    // courante du presentateur, parce qu il n y a encore rien a reprendre.
+    //
+    // Partagée par la reprise et par l'adoption confiée par l'hôte (present-attach) : les deux
+    // prennent le pilotage d'une présentation qui existe déjà, et la règle est la même.
+    function adopterVue(d){
+      var rotPres=Player.viewer.rotationEffective(0,d.rotation);
+      if(rotPres!==rot){ rot=rotPres; if(pdfDoc||IS_IMG){ build(); if(vignOuvert) vignConstruire(); } }
+      var target=Math.max(1,d.page||1);
+      if(typeof window.__allerPage==='function'){ try{ window.__allerPage(target); }catch(e){} }
+      var tries=0; (function jump(){ var el=(document.getElementById('pages')||document).querySelector('.page[data-p="'+target+'"]'); if(el){ if(el.scrollIntoView) el.scrollIntoView({block:'start'}); } else if(tries++<40){ setTimeout(jump,150); } })();
+    }
+    // ADOPTER UNE PRÉSENTATION CONFIÉE PAR L'HÔTE (present-attach {slug, control}).
+    //
+    // L'hôte a démarré côté serveur, avec la session de son membre, et détient le jeton de contrôle.
+    // La reprise ne pouvait pas servir ici : elle lit la session du membre dans le localStorage de
+    // CETTE origine, et un hôte dont l'application vit ailleurs (app. contre doc.) n'y a rien écrit.
+    //
+    // ⚠️ LE RANG VIENT DU SERVEUR, PAS DE ZÉRO. Après une reprise, zéro est juste : le serveur vient de
+    // remettre write_seq à zéro avec un jeton neuf. Ici le jeton est RÉUTILISÉ — l'iframe a été
+    // rechargée, le document a changé — et write_seq porte ce que l'iframe précédente a écrit. Repartir
+    // de 1 faisait déclarer périmée chaque page tournée, refusée en silence : l'audience ne suivait plus
+    // et rien ne le disait. present-adopt rend le rang atteint, et on continue après lui.
+    //
+    // ⚠️ ET ON RÉPOND TOUJOURS, succès ou échec. Le silence couvrirait deux cas opposés — « je pilote »
+    // et « j'ai refusé » — exactement comme l'absence d'embed-ready. Le jeton, lui, ne repart jamais.
+    var _attache=null;
+    function echecAttache(slug,motif){ Player.bridge.sendToHost({type:'present-attach-failed',slug:slug,reason:motif}); }
+    function attachPresent(slug,control){
+      // Une adoption à la fois : deux en vol pour deux présentations, et la seconde écraserait la première.
+      if(_attache){ if(_attache!==slug) echecAttache(slug,'busy'); return; }
+      if(PRES&&PRES.slug!==slug){ echecAttache(slug,'busy'); return; }
+      if(PRES&&PRES.control===control){ Player.bridge.sendToHost({type:'present-attached',slug:slug}); return; }
+      _attache=slug;
+      Player.live.fetchBorne('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-adopt',slug:slug,control:control})})
+        .then(function(r){ return r.json().then(function(d){ return {statut:r.status,d:d}; },function(){ return {statut:r.status,d:null}; }); })
+        .then(function(x){
+          _attache=null; var d=x.d;
+          // 403 : jeton faux, ou présentation terminée (la fin efface le jeton). 409 : remplacé par une
+          // reprise ailleurs entre la lecture et l'écriture. Dans les deux cas l'hôte, propriétaire,
+          // peut reprendre (present-reclaim) et confier le jeton neuf. Le reste n'est pas un refus :
+          // l'état est inconnu, et réessayer ne coûte rien — l'adoption ne régénère rien.
+          if(!d||!d.ok){ echecAttache(slug, x.statut===403||x.statut===409?'denied':x.statut===404?'not-found':'unreachable'); return; }
+          if(PRES&&PRES.slug!==slug){ echecAttache(slug,'busy'); return; }
+          var memeSession=!!PRES;
+          PRES={slug:slug,control:control}; saveCtl(slug,control); _seq=Math.max(0,Math.trunc(Number(d.seq)||0));
+          if(memeSession){
+            // Même présentation, jeton neuf (l'hôte a repris côté serveur) : le canal temps réel
+            // porte l'ancien, il se rouvre avec celui-ci.
+            try{ if(window.Live) Live.disconnect(); }catch(e){}
+            liveConnect(slug,control);
+          } else {
+            showBar(slug); liveConnect(slug,control); startHb();
+            // Le saut de page reconstruit la vue : s'il lève, le pilotage est déjà en place, et
+            // l'hôte doit l'apprendre quand même — sinon il conclurait à un refus.
+            try{ adopterVue(d); }catch(e){}
+          }
+          Player.bridge.sendToHost({type:'present-attached',slug:slug});
+        },function(){ _attache=null; echecAttache(slug,'unreachable'); });
     }
     // Carte live : persiste le contenu (present-content) → l'audience bascule/suit via Realtime.
     // On envoie le jeton de contrôle EN PLUS de la session : une présentation démarrée sans
@@ -678,7 +739,7 @@ ${LEGAL_CSS}
       // Le transfert a réussi côté app → je cesse de piloter localement sans clôturer.
       // Transfert confirmé : on cesse de piloter ET on retire la présence (untrack) AVANT de laisser l'app fermer
       // le viewer → pas de présence fantôme. On rend la main à l'app (present-left) une fois nettoyé.
-      Player.bridge.onHostMessage(function(m){ if(m.type==='handover-done'){ stopPilotingLocally(); setTimeout(function(){ Player.bridge.sendToHost({type:'present-left'}); }, 120); } });
+      Player.bridge.onHostMessage(function(m){ if(m.type==='handover-done'){ stopPilotingLocally(); setTimeout(function(){ Player.bridge.sendToHost({type:'present-left'}); }, 120); } else if(m.type==='present-attach'){ attachPresent(m.slug,m.control); } });
     } else {
       try{ wireShare(); }catch(e){}
     }
