@@ -12,6 +12,27 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- **L'hôte démarre une présentation et en confie la conduite à l'iframe (`present-attach`).** Un hôte
+  dont l'application vit sur une autre origine que le player (`app.` et `doc.`) démarrait côté serveur
+  avec la session de son membre, mais la page du présentateur ne savait reprendre que par
+  `present-reclaim`, qui lit cette session dans le `localStorage` de SA propre origine — vide chez lui ;
+  le jeton rendu par `present-start` n'avait aucun chemin pour entrer dans l'iframe. Le pont porte
+  désormais `present-attach {slug, control}` (hôte → page), auquel la page répond toujours :
+  `present-attached {slug}` ou `present-attach-failed {slug, reason}` (`denied`, `not-found`, `busy`,
+  `unreachable`). `sendToPlayer` poste ce jeton à l'origine de l'iframe, jamais à `"*"`, et refuse
+  quand elle est inconnue. La page adopte par une nouvelle action, `present-adopt` (jeton, sans
+  session) : elle ne régénère pas le jeton, remet en ligne une présentation périmée mais jamais une
+  présentation terminée, et rend le **rang d'écriture** atteint — une iframe rechargée qui repartait
+  de 1 sous un `write_seq` avancé voyait chacune de ses pages refusée comme périmée, en silence. La
+  page annonce aussi `present-started {slug}` (démarrage par son bouton) et `present-ended {slug}`
+  (fin confirmée par relecture). Capacité `present-attach` sur la carte d'identité. Aucune migration.
+  Vingt-six essais (`adoptionParLHote.test.js`, `adoptionDansLaPage.test.js` qui exécute la page sous
+  un parent jsdom) et huit au pont ; onze mutants à la main (le rang remis à zéro, chaque annonce
+  retirée, le 409 lu comme injoignable, le refus `busy`, la reconnexion au jeton neuf, la remise en
+  ligne, le rang rendu, la route, l'origine de l'envoi, le refus de `"*"`), onze tués.
+
 ## [0.1.175] — 2026-10-11
 
 ### Added

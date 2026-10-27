@@ -143,7 +143,12 @@ describe("le navigateur numérote ses écritures", () => {
       .toContain("seq:prochainRang()");
   });
 
-  it("le compteur repart à zéro à chaque prise de pilotage", () => {
+  // ⚠️ « À CHAQUE PRISE DE PILOTAGE » ÉTAIT VRAI JUSQU'À `present-attach`. Démarrage et reprise
+  // reçoivent un jeton NEUF, donc un domaine d'ordre neuf : zéro est juste. L'adoption confiée par
+  // l'hôte reçoit un jeton RÉUTILISÉ et repart du rang que rend le serveur — repartir de zéro y
+  // ferait refuser chaque page en silence. Ce cas-là est tenu en exécutant la page, par
+  // `adoptionDansLaPage.test.js` ; ce compte-ci reste à deux, et c'est ce qu'il doit dire.
+  it("le compteur repart à zéro à chaque prise de pilotage par un jeton NEUF", () => {
     const prises = [...SRC.matchAll(/PRES=\{slug:[^}]*\}; saveCtl\([^)]*\);\s*_seq=0;/g)];
     expect(prises.length, "démarrage ET reprise : un jeton neuf, un domaine d'ordre neuf")
       .toBe(2);

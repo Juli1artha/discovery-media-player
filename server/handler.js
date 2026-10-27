@@ -746,6 +746,11 @@ async function handlerMesure(req, res) {
           // `link-protection` (0028) : un lien tracé peut porter une échéance et un mot de passe
           // (`docshare.create` / `docshare.protect`). `start-page` : `?page=N` ouvre le document à la page N.
           "link-protection", "start-page",
+          // `present-attach` : la page du présentateur accepte qu'on lui CONFIE une présentation par le
+          // pont (jeton de contrôle en postMessage), et annonce `present-started` / `present-ended`.
+          // Sans cette capacité, un hôte enverrait son jeton à une page qui ne l'écoute pas, et
+          // attendrait une réponse qui ne viendra jamais — il doit pouvoir le savoir AVANT.
+          "present-attach",
         ],
         // ⚠️ POUR QUELLES ORIGINES cette instance accepte d'être encadrée. Un booléen ne
         // suffisait pas : un hôte a besoin de voir que SON domaine manque, pas seulement que

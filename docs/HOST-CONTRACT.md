@@ -41,7 +41,7 @@ need.
   "contract": 1,
   "version": "<the running version>",
   "runtime": { "node": "<what this instance runs on>", "nodeRequired": ">=22.13.0" },
-  "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention", "link-protection", "start-page"],
+  "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention", "link-protection", "start-page", "present-attach"],
   "frameAncestors": ["'self'", "https://*.vercel.app", "https://app.example.com"],
   "separateIssuer": true,
   "internalStrict": true,
@@ -960,9 +960,82 @@ importing it is not a toll. Import it rather than copying constants: a message n
 is a contract in two copies, and the day it changes only one of them knows.
 
 **player → host:** `close` · `share` · `embed-ready` · `embed-denied {reason}` · `present-left` ·
-`present-denied` · `present-invite {slug}` · `present-handover {slug}` · `present-switch {slug}`
+`present-denied` · `present-invite {slug}` · `present-handover {slug}` · `present-switch {slug}` ·
+`present-started {slug}` · `present-ended {slug}` · `present-attached {slug}` ·
+`present-attach-failed {slug, reason}`
 
-**host → player:** `handover-done`
+**host → player:** `handover-done` · `present-attach {slug, control}`
+
+### Starting a presentation from the host (`present-attach`)
+
+Capability **`present-attach`** — test it on the identity card before sending a token. An instance
+without it ignores the message, and you would wait for an answer that never comes.
+
+This is for a host that starts a presentation **server-side**, on behalf of a member, and hands the
+driving to the framed page. Until this message existed, the page could only take over through
+`present-reclaim`, which reads the member's session from the `localStorage` of the **player's**
+origin. A host whose application lives on another origin (`app.` vs `doc.`) has written nothing
+there, and the `control` token returned by `present-start` had no way into the frame.
+
+1. **Server-side**, `POST /api/doc` `{ action: "present-start", fileUrl, fileName, docTitle, docId,
+   presenterName }` with `Authorization: Bearer <the member's JWT>` → `{ ok, slug, control }`. The
+   presentation belongs to that member. `present-stats`, `present-switch`, `present-handover` and
+   `present-reclaim` all work from your server.
+2. Open the internal preview framed, on **the same `url`**: `?preview=1&embed=1&url=…&name=…&title=…&by=…`
+   (no `autopresent`, no `resume`). Wait for `embed-ready`.
+3. `sendToPlayer(frame, { type: "present-attach", slug, control })`. The token goes over
+   `postMessage`, never in a URL, which ends up in logs and `Referer` headers. `sendToPlayer` posts
+   it to **the origin of `frame.src`**, not to `"*"`: if the frame has navigated elsewhere, the
+   browser drops the message instead of handing the token to whatever document is there now. If no
+   origin can be derived, nothing is sent and `sendToPlayer` returns `false`. The page never sends
+   the token back.
+4. Wait for **`present-attached {slug}`** or **`present-attach-failed {slug, reason}`**, with a
+   timeout. A malformed `present-attach` (slug outside `[A-Za-z0-9_-]{1,64}`, token outside
+   `[A-Za-z0-9_-]{16,128}`) is ignored like every malformed message, so it also produces silence.
+
+| `reason` | What happened | Host behaviour |
+|---|---|---|
+| `denied` | the token is not, or no longer, this presentation's: a `present-reclaim` elsewhere regenerated it, or the presentation was ended (ending erases the token) | reclaim server-side as the owner → fresh `control` → attach again |
+| `not-found` | no presentation has this slug | do not retry |
+| `busy` | this frame already drives another presentation, or another attach is in flight | open a fresh frame |
+| `unreachable` | the page could not reach its server (network, timeout, 5xx); the state is **unknown**, not refused | retry. Attaching regenerates nothing, so a retry cannot duplicate anything |
+
+**What attaching does** is what a successful reclaim does: the presenter bar, piloting, the
+heartbeat, and a jump to the presentation's current page and orientation. Two differences, both
+deliberate:
+
+- **It does not regenerate the token**, so you can hand the same one again after a reload. The
+  page asks the server (`present-adopt`) for the write rank already reached and continues after it.
+  ⚠️ Starting again from zero, as a reclaim rightly does with a fresh token, would make the server
+  discard every page turn as stale. `present-page` answers `ok` to a stale write, so the audience
+  would stop following and nothing would say so.
+- **It brings a stale presentation back online** (three minutes without a heartbeat, for example
+  between your `present-start` and the frame opening), exactly as a page turn does. An **ended**
+  presentation stays ended: its token is gone, and you get `denied`.
+
+⚠️ **The frame must show the document the presentation shows.** Attaching does not compare the two.
+After a `present-switch`, reopen the frame on the new `url`, then attach. Otherwise the presenter
+turns the pages of a document the audience is not looking at.
+
+⚠️ **When the framed page goes away, it ends the presentation.** On `pagehide` it sends
+`present-end` by `sendBeacon`. That behaviour predates this message: it keeps an abandoned
+presentation from leaving the audience watching nothing until it goes stale. Its effect is tested
+in jsdom (`finDePresentation.test.js`). Whether a browser delivers the beacon from a frame **being
+removed or reloaded** has not been measured here. Write the reopening sequence so it holds either
+way: **`present-reclaim` server-side** (fresh token, presentation back online), **then
+`present-attach`**. A reclaim succeeds on an ended presentation as well as on a live one.
+
+**`present-started {slug}`** is sent when the page's own "Présenter" button (or `autopresent=1`)
+starts a presentation. Until then a host learned the slug only from "Inviter" or "Passer la main".
+On a host whose application lives on another origin, such a presentation **has no owner**: the
+page found no session to attach it to. Reading its statistics then takes the
+`presentations.stats` right or an admin. When the presentation must belong to a member, start it
+server-side and attach.
+
+**`present-ended {slug}`** is sent when the page's "Terminer" is **confirmed**: the server answered
+and a fresh read says the presentation is closed. It is **not** sent for an end decided elsewhere
+(`present-owner-end`, an admin), nor for the `pagehide` beacon above, which has no answer to read.
+To know whether a presentation is still running, ask the server (`present-stats` → `active`).
 
 ### Refusals
 
