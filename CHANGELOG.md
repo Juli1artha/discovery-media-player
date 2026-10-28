@@ -12,9 +12,11 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.176] — 2026-10-28
+
 ### Added
 
-- **L'hôte démarre une présentation et en confie la conduite à l'iframe (`present-attach`).** Un hôte
+- **L'hôte démarre une présentation et en confie la conduite à l'iframe (`present-attach`, #579).** Un hôte
   dont l'application vit sur une autre origine que le player (`app.` et `doc.`) démarrait côté serveur
   avec la session de son membre, mais la page du présentateur ne savait reprendre que par
   `present-reclaim`, qui lit cette session dans le `localStorage` de SA propre origine — vide chez lui ;
@@ -7970,7 +7972,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.175...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.176...HEAD
+[0.1.176]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.175...v0.1.176
 [0.1.175]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.174...v0.1.175
 [0.1.174]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.173...v0.1.174
 [0.1.173]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.172...v0.1.173
