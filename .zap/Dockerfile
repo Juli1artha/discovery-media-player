@@ -14,4 +14,4 @@
 # ⚠️ L'ÉTIQUETTE RESTE À CÔTÉ DU CONDENSAT, ET ELLE EST CONFRONTÉE : le workflow zap.yml demande
 # sa version à l'image même (`zap.sh -cmd -version`) et la compare à la version écrite ici —
 # la confrontation étiquette↔condensat du Dockerfile racine, appliquée au scanner.
-FROM ghcr.io/zaproxy/zaproxy:2.17.0@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef
+FROM ghcr.io/zaproxy/zaproxy:2.17.0@sha256:030d3df57735dacbb83464854758e674dd9ad01d79d12a129a8e58b1fd384238
