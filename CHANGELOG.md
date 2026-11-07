@@ -12,6 +12,15 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Un lien d'hôte réemployé applique désormais `allowDownload` (`docshare.create`).** Le lien d'un hôte
+  est unique par document et par destinataire, et chaque ouverture repasse par `docshare.create` : le
+  réemploi réécrivait le fichier, jamais ce réglage. Un droit retiré après une première lecture laissait
+  donc le bouton Télécharger affiché. Un booléen explicite s'applique maintenant dans les deux sens ; un
+  hôte qui n'en dit rien ne change rien, le silence ne rouvre pas un téléchargement refusé. Cela reste une
+  préférence d'affichage, pas une protection : le lecteur qui voit le document en a déjà les octets.
+
 ## [0.1.176] — 2026-10-28
 
 ### Added

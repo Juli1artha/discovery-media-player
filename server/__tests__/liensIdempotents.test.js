@@ -115,6 +115,28 @@ describe("un usage, un lien — la contrainte tranche, le perdant relit", () => 
     expect(etat.lignes[0].idem_key, "sans backfill, les doublons historiques ne s'éteignent jamais").toBe(cleIdempotence("hote", ["doc-2", ""]));
   });
 
+  // Le lien de l'hôte est unique par document et par destinataire : c'est le SEUL lien de cette
+  // personne pour ce document, et chaque ouverture repasse ici. Un droit retiré par l'hôte après
+  // la première lecture ne descendait jamais : le réemploi réécrivait le fichier, pas ce réglage.
+  // Le bouton Télécharger restait donc affiché, et l'hôte devait le dire à ses utilisateurs.
+  it("le réemploi applique le téléchargement que l'hôte demande, dans les deux sens", async () => {
+    const { etat, player } = harnais();
+    etat.lignes.push({ slug: "lien-hote", doc_id: "doc-droit", created_by: null, recipient_email: null, attested_recipient_email: null, idem_key: null, allow_download: true });
+    const demande = (allowDownload) => appeler(player, { action: "docshare.create", docId: "doc-droit", fileUrl: "https://exemple.supabase.co/storage/v1/object/public/resources/d.pdf", allowDownload }, { hote: true });
+
+    await demande(false);
+    expect(etat.lignes[0].allow_download, "droit retiré : le bouton doit disparaître à l'ouverture suivante").toBe(false);
+    await demande(true);
+    expect(etat.lignes[0].allow_download, "droit rendu : le bouton doit revenir").toBe(true);
+  });
+
+  it("le réemploi ne touche pas au téléchargement quand l'hôte n'en dit rien", async () => {
+    const { etat, player } = harnais();
+    etat.lignes.push({ slug: "lien-muet", doc_id: "doc-muet", created_by: null, recipient_email: null, attested_recipient_email: null, idem_key: null, allow_download: false });
+    await appeler(player, { action: "docshare.create", docId: "doc-muet", fileUrl: "https://exemple.supabase.co/storage/v1/object/public/resources/d.pdf" }, { hote: true });
+    expect(etat.lignes[0].allow_download, "un hôte muet ne doit pas rouvrir un téléchargement refusé").toBe(false);
+  });
+
   // ⚠️ SIXIÈME AUDIT : la clé était TRONQUÉE à 300 caractères à l'écriture mais relue ENTIÈRE
   // après un 409 — sur un docId long, le perdant LÉGITIME ne trouvait pas de gagnant et notre
   // propre garde « un 409 sans gagnant remonte » le finissait en 500. Deux exemplaires du même

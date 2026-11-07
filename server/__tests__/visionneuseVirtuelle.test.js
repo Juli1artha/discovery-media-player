@@ -78,6 +78,17 @@ function poserLeChamp(el, hauteur) {
   Object.defineProperty(el, "scrollTop", { get: () => st, set: (v) => { st = Math.max(0, Number(v) || 0); }, configurable: true });
 }
 
+/**
+ * Ce que jsdom n'a pas, et ce qu'un `eval` ne partage pas d'un bloc à l'autre : `Player` reste dans le bloc qui le déclare.
+ * ⚠️ CHAQUE ESSAI LE POSE LUI-MÊME : l'essai de l'abandon héritait de ceux qui passaient avant lui. Lancé le premier, il
+ * tombait sur « Player is not defined », la page ne démarrait pas, et il n'avait rien à abandonner.
+ */
+const EXPORTER = ";try{if(typeof Player!=='undefined')window.Player=Player;}catch(e){}";
+function poserLesDoublures() {
+  window.HTMLCanvasElement.prototype.getContext = () => ({ getImageData: () => ({ data: new Uint8ClampedArray(4) }) });
+  window.IntersectionObserver = function () { this.observe = () => {}; this.unobserve = () => {}; this.disconnect = () => {}; };
+}
+
 async function monter(opts) {
   const html = await htmlVisionneuse();
   document.documentElement.innerHTML = html.replace(/^[\s\S]*?<body[^>]*>/i, "").replace(/<\/body>[\s\S]*$/i, "");
@@ -86,11 +97,9 @@ async function monter(opts) {
   const faux = fauxPdfjs(opts);
   window.pdfjsLib = faux.lib;
   window.PlayerBot = { init(v) { window.__V = v; } };            // la poignée de visionneuse, telle qu'offerte aux greffons
-  window.HTMLCanvasElement.prototype.getContext = () => ({ getImageData: () => ({ data: new Uint8ClampedArray(4) }) });
-  window.IntersectionObserver = function () { this.observe = () => {}; this.unobserve = () => {}; this.disconnect = () => {}; };
+  poserLesDoublures();
   poserLeChamp(document.getElementById("scroll"), VISIBLE_PAGES);
   poserLeChamp(document.getElementById("vignIn"), VISIBLE_VIGN);
-  const exporter = ";try{if(typeof Player!=='undefined')window.Player=Player;}catch(e){}";
   // ⚠️ LA VISIONNEUSE CHARGE pdf.js PAR UN import() DE MODULE ES, qui échoue en jsdom et conduit à
   // refuserWorker() — donc jamais à start(). On substitue le faux À CET ENDROIT, par crochet de
   // source (même technique que vignettesChat.test.js), et on VÉRIFIE que la substitution a eu lieu :
@@ -102,7 +111,7 @@ async function monter(opts) {
     const n = code.split(CROCHET_IMPORT).length - 1;
     substitutions += n;
     const prepare = n ? code.split(CROCHET_IMPORT).join("Promise.resolve(window.pdfjsLib)") : code;
-    try { window.eval(prepare + exporter); } catch (e) { echecs.push(String((e && e.message) || e)); }
+    try { window.eval(prepare + EXPORTER); } catch (e) { echecs.push(String((e && e.message) || e)); }
   }
   expect(substitutions, "le crochet de chargement de pdf.js doit exister, sinon la page ne démarre jamais ici").toBe(1);
   for (const m of echecs) expect(m, `un bloc de la page a échoué : ${m}`).not.toMatch(/is not defined|Unexpected|SyntaxError/);
@@ -250,8 +259,8 @@ describe("⚠️ la visionneuse ne matérialise qu'une fenêtre de pages", () =>
         .map((s) => s.textContent || "").filter((c) => c.trim());
       const faux = fauxPdfjs({ jamais: true });
       window.pdfjsLib = faux.lib;
-      window.IntersectionObserver = function () { this.observe = () => {}; this.unobserve = () => {}; this.disconnect = () => {}; };
-      for (const code of blocs) { try { window.eval(code.split("import(CFG.pdfjs)").join("Promise.resolve(window.pdfjsLib)")); } catch { /* dépendances absentes */ } }
+      poserLesDoublures();
+      for (const code of blocs) { try { window.eval(code.split("import(CFG.pdfjs)").join("Promise.resolve(window.pdfjsLib)") + EXPORTER); } catch { /* dépendances absentes */ } }
       await vi.advanceTimersByTimeAsync(119_000);
       expect(faux.journal.detruits, "avant l'échéance, rien n'est abandonné").toBe(0);
       await vi.advanceTimersByTimeAsync(2_000);

@@ -193,13 +193,18 @@ async function traiter(req, res, body, slug) {
               // demandes suivantes la trouveront par l'unicité, et les doublons d'avant 0011
               // s'éteignent d'eux-mêmes faute d'être resservis.
               const cleDispo = await require("./schema").attendue("liensUniques");
+              // ⚠️ LE TÉLÉCHARGEMENT SUIT L'HÔTE À CHAQUE OUVERTURE, S'IL EN PARLE. Ce lien est le seul de
+              // cette personne pour ce document : un droit retiré après une première lecture ne passe
+              // que par ici. Un hôte muet (`undefined`) ne change rien : le silence ne rouvre pas un
+              // téléchargement refusé. Préférence d'affichage, pas protection : voir `shares.js`.
+              const telechargement = typeof body.allowDownload === "boolean" ? { allow_download: body.allowDownload } : {};
               // ⚠️ MÊME RATTRAPAGE QUE LE CHEMIN DE CRÉATION (septième audit : le correctif ne
               // s'était pas appliqué à lui-même). Deux doublons d'avant 0011 en concurrence :
               // l'index refuse la seconde pose de clé — on relit le gagnant au lieu de rendre 500.
               try {
                 await PLAYER.db.request(`commercial_doc_shares?slug=eq.${encodeURIComponent(dejaLa[0].slug)}`, {
                   method: "PATCH", headers: { Prefer: "return=minimal" },
-                  body: { doc_title: body.docTitle || null, file_url: String(body.fileUrl), file_name: body.fileName || null, revoked: false, ...(cleDispo ? { idem_key: cleHote } : {}) },
+                  body: { doc_title: body.docTitle || null, file_url: String(body.fileUrl), file_name: body.fileName || null, revoked: false, ...telechargement, ...(cleDispo ? { idem_key: cleHote } : {}) },
                 });
               } catch (erreur) {
                 if (!estConflit(erreur)) throw erreur;
