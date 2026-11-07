@@ -12,9 +12,11 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.177] — 2026-11-07
+
 ### Fixed
 
-- **Un lien d'hôte réemployé applique désormais `allowDownload` (`docshare.create`).** Le lien d'un hôte
+- **Un lien d'hôte réemployé applique désormais `allowDownload` (`docshare.create`, #588).** Le lien d'un hôte
   est unique par document et par destinataire, et chaque ouverture repasse par `docshare.create` : le
   réemploi réécrivait le fichier, jamais ce réglage. Un droit retiré après une première lecture laissait
   donc le bouton Télécharger affiché. Un booléen explicite s'applique maintenant dans les deux sens ; un
@@ -7981,7 +7983,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.176...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.177...HEAD
+[0.1.177]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.176...v0.1.177
 [0.1.176]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.175...v0.1.176
 [0.1.175]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.174...v0.1.175
 [0.1.174]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.173...v0.1.174
