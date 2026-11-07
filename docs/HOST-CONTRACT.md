@@ -920,6 +920,17 @@ Four requirements, in order of what they cost when missed:
    decide. **Corollary:** when the reference itself carries a capability, signing is not enough —
    it must be encrypted. *Signed* means nobody can forge it; it has never meant nobody can read it.
 
+## `allowDownload` on a reused link
+
+The link a host creates is unique per document and per recipient, so each open comes back through
+`docshare.create`. On that reuse, an explicit `allowDownload` boolean now **applies, in both directions**:
+send `false` to hide the Download button from the next open, `true` to bring it back. **Leave it out and
+the link keeps what it has**: silence never reopens a refused download. Send it on every open if your
+rights can change after a first read.
+
+This is a display preference, not protection: a reader who sees the document already holds its bytes.
+Links reshared from this one inherited the setting when they were created and do not follow it.
+
 ## Protected links and the start page (migration `0028`)
 
 **Capabilities `link-protection` and `start-page`.** Test them by presence before offering the feature.
