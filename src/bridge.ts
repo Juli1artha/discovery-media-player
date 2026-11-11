@@ -46,6 +46,13 @@ const CONTROL_RE = /^[A-Za-z0-9_-]{16,128}$/;
 /** Motifs : bornés et sans surprise — ils traversent une frontière et finissent parfois à l'écran. */
 const REASON_RE = /^[a-z-]{1,40}$/;
 
+/** Identifiants d'onglet et d'action déclarés par l'hôte (#596) : ils reviennent dans SON code par
+ *  `host-action`, et `share` / `present` / `download` y désignent les actions du player. */
+const ID_RE = /^[a-z0-9][a-z0-9:_-]{0,39}$/;
+const MAX_ONGLETS = 8;
+const MAX_ACTIONS = 6;
+const MAX_PAGES = 10_000;
+
 /** Messages émis par le player vers l'application hôte. */
 export type PlayerMessage =
   | { type: "close" }
@@ -72,17 +79,31 @@ export type PlayerMessage =
   // Réponses à `present-attach`. ⚠️ Le silence ne suffit pas, pour la même raison qu'`embed-ready` :
   // sans réponse, l'hôte ne peut pas distinguer « le player pilote » de « le player a refusé ».
   | { type: "present-attached"; slug: string }
-  | { type: "present-attach-failed"; slug: string; reason: string };
+  | { type: "present-attach-failed"; slug: string; reason: string }
+  // #596 — un clic sur un onglet ou une action que l'HÔTE a déclarés (`chrome`). Jamais émis pour les
+  // actions du player : `share` garde son message, `present` et `download` agissent dans la page.
+  | { type: "host-action"; id: string }
+  // #596 — la page courante, à chaque changement (pas à chaque pixel). L'hôte n'en savait rien.
+  | { type: "page"; page: number; total: number };
+
+/** Un onglet de la barre déclarée par l'hôte. */
+export type ChromeTab = { id: string; label: string };
+/** Une action de la barre déclarée par l'hôte. `share`, `present` et `download` sont celles du player :
+ *  l'hôte les place et les renomme, il ne les déclenche pas. Placer n'ouvre aucun droit. */
+export type ChromeAction = { id: string; label: string; place: "primary" | "secondary" | "menu" };
 
 /** Messages émis par l'application hôte vers le player. */
 export type HostMessage =
   | { type: "handover-done" }
   // L'hôte a démarré côté serveur (`present-start` avec la session du membre) et confie la conduite
   // à la visionneuse. `control` est le jeton rendu par `present-start` ou `present-reclaim`.
-  | { type: "present-attach"; slug: string; control: string };
+  | { type: "present-attach"; slug: string; control: string }
+  // #596 — la barre du gabarit « lecture », déclarée par l'hôte. Elle REMPLACE en entier la précédente :
+  // le dernier `chrome` reçu l'emporte, et un champ absent est vide, pas « inchangé ».
+  | { type: "chrome"; subtitle?: string; tabs?: ChromeTab[]; activeTab?: string; actions?: ChromeAction[] };
 
 /** Les champs que porte chaque type, dans chaque sens. Un type absent de sa table n'existe pas. */
-type Champ = "slug" | "reason" | "control";
+type Champ = "slug" | "reason" | "control" | "id";
 // ⚠️ UNE TABLE PAR SENS, ET C'EST UNE CORRECTION. La lecture des motifs vivait dans la fonction
 // commune : `parseHostMessage` acceptait donc `embed-denied`, qu'aucun hôte n'émet. Inoffensif tant
 // que le player n'en faisait rien — mais un sens qui lit les messages de l'autre est exactement la
@@ -94,13 +115,83 @@ const FORMES_PLAYER = new Map<string, readonly Champ[]>([
   ["present-invite", ["slug"]], ["present-handover", ["slug"]], ["present-switch", ["slug"]],
   ["present-started", ["slug"]], ["present-ended", ["slug"]], ["present-attached", ["slug"]],
   ["present-attach-failed", ["slug", "reason"]],
+  ["host-action", ["id"]],
 ]);
 const FORMES_HOTE = new Map<string, readonly Champ[]>([
   ["handover-done", []],
   ["present-attach", ["slug", "control"]],
 ]);
 
-type WireMessage = { type: string; slug?: string; reason?: string; control?: string };
+type WireMessage = {
+  type: string; slug?: string; reason?: string; control?: string; id?: string;
+  page?: number; total?: number;
+  subtitle?: string; tabs?: ChromeTab[]; activeTab?: string; actions?: ChromeAction[];
+};
+
+/** Un libellé : une chaîne de 1 à `max` caractères une fois les blancs repliés. Rien d'autre n'en sort. */
+function libelle(v: unknown, max: number): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.replace(/\s+/g, " ").trim();
+  return s.length >= 1 && s.length <= max ? s : null;
+}
+
+/** Une liste bornée d'objets `{id, label, …}` aux id uniques. `null` à la moindre faute : le message entier tombe. */
+function liste<T extends { id: string }>(v: unknown, max: number, lire: (o: Record<string, unknown>) => T | null): T[] | null {
+  if (!Array.isArray(v) || v.length > max) return null;
+  const vus = new Set<string>();
+  const sortie: T[] = [];
+  for (const brut of v) {
+    if (!brut || typeof brut !== "object") return null;
+    const lu = lire(brut as Record<string, unknown>);
+    if (!lu || vus.has(lu.id)) return null;
+    vus.add(lu.id);
+    sortie.push(lu);
+  }
+  return sortie;
+}
+
+const PLACES = new Set(["primary", "secondary", "menu"]);
+
+// ⚠️ LES MESSAGES COMPOSÉS SE LISENT CHAMP PAR CHAMP, ET N'EMPORTENT QUE CE QU'ILS NOMMENT. Un champ
+// inconnu (`html`, `onclick`) n'est pas recopié : la sortie est construite, jamais filtrée à partir de
+// l'entrée. Et la moindre faute fait tomber le message ENTIER — tronquer une liste de neuf onglets à
+// huit afficherait une barre que l'hôte n'a pas déclarée.
+function lireChrome(d: Record<string, unknown>): HostMessage | null {
+  const lu: Extract<HostMessage, { type: "chrome" }> = { type: "chrome" };
+  if (d.subtitle !== undefined) { const s = libelle(d.subtitle, 80); if (!s) return null; lu.subtitle = s; }
+  if (d.tabs !== undefined) {
+    const tabs = liste(d.tabs, MAX_ONGLETS, (o) => {
+      const label = libelle(o.label, 40);
+      return typeof o.id === "string" && ID_RE.test(o.id) && label ? { id: o.id, label } : null;
+    });
+    if (!tabs) return null;
+    lu.tabs = tabs;
+  }
+  if (d.activeTab !== undefined) {
+    if (typeof d.activeTab !== "string" || !(lu.tabs || []).some((t) => t.id === d.activeTab)) return null;
+    lu.activeTab = d.activeTab;
+  }
+  if (d.actions !== undefined) {
+    const actions = liste(d.actions, MAX_ACTIONS, (o) => {
+      const label = libelle(o.label, 40);
+      return typeof o.id === "string" && ID_RE.test(o.id) && label && typeof o.place === "string" && PLACES.has(o.place)
+        ? { id: o.id, label, place: o.place as ChromeAction["place"] } : null;
+    });
+    if (!actions) return null;
+    lu.actions = actions;
+  }
+  return lu;
+}
+
+function lirePage(d: Record<string, unknown>): PlayerMessage | null {
+  const { page, total } = d;
+  if (!Number.isInteger(total) || (total as number) < 1 || (total as number) > MAX_PAGES) return null;
+  if (!Number.isInteger(page) || (page as number) < 1 || (page as number) > (total as number)) return null;
+  return { type: "page", page: page as number, total: total as number };
+}
+
+const COMPOSES_PLAYER = new Map<string, (d: Record<string, unknown>) => PlayerMessage | null>([["page", lirePage]]);
+const COMPOSES_HOTE = new Map<string, (d: Record<string, unknown>) => HostMessage | null>([["chrome", lireChrome]]);
 
 /** Forme transportée sur le fil (préfixée), pour un message typé. */
 export function toWire(msg: PlayerMessage | HostMessage): WireMessage {
@@ -108,14 +199,28 @@ export function toWire(msg: PlayerMessage | HostMessage): WireMessage {
   if ("slug" in msg && msg.slug) wire.slug = msg.slug;
   if ("reason" in msg && msg.reason) wire.reason = String(msg.reason).slice(0, 40);
   if ("control" in msg && msg.control) wire.control = msg.control;
+  if ("id" in msg && msg.id) wire.id = msg.id;
+  if (msg.type === "page") { wire.page = msg.page; wire.total = msg.total; }
+  if (msg.type === "chrome") {
+    if (msg.subtitle !== undefined) wire.subtitle = msg.subtitle;
+    if (msg.tabs) wire.tabs = msg.tabs.map((t) => ({ id: t.id, label: t.label }));
+    if (msg.activeTab !== undefined) wire.activeTab = msg.activeTab;
+    if (msg.actions) wire.actions = msg.actions.map((a) => ({ id: a.id, label: a.label, place: a.place }));
+  }
   return wire;
 }
 
-function parse<T extends { type: string }>(data: unknown, formes: ReadonlyMap<string, readonly Champ[]>): T | null {
+function parse<T extends { type: string }>(
+  data: unknown,
+  formes: ReadonlyMap<string, readonly Champ[]>,
+  composes: ReadonlyMap<string, (d: Record<string, unknown>) => T | null>,
+): T | null {
   if (!data || typeof data !== "object") return null;
   const raw = (data as { type?: unknown }).type;
   if (typeof raw !== "string" || !raw.startsWith(WIRE_PREFIX)) return null;
   const type = raw.slice(WIRE_PREFIX.length);
+  const compose = composes.get(type);
+  if (compose) return compose(data as Record<string, unknown>);
   const champs = formes.get(type);
   if (!champs) return null;
   const lu: Record<string, string> = { type };
@@ -128,7 +233,7 @@ function parse<T extends { type: string }>(data: unknown, formes: ReadonlyMap<st
     }
     // Un message à slug (ou à jeton) SANS valeur valide est rejeté : mieux vaut ne rien ouvrir
     // qu'ouvrir sur du vide.
-    const motif = champ === "slug" ? SLUG_RE : CONTROL_RE;
+    const motif = champ === "slug" ? SLUG_RE : champ === "id" ? ID_RE : CONTROL_RE;
     if (typeof valeur !== "string" || !motif.test(valeur)) return null;
     lu[champ] = valeur;
   }
@@ -137,12 +242,12 @@ function parse<T extends { type: string }>(data: unknown, formes: ReadonlyMap<st
 
 /** Côté HÔTE : lit un message reçu du player. `null` si ce n'en est pas un. */
 export function parsePlayerMessage(data: unknown): PlayerMessage | null {
-  return parse<PlayerMessage>(data, FORMES_PLAYER);
+  return parse<PlayerMessage>(data, FORMES_PLAYER, COMPOSES_PLAYER);
 }
 
 /** Côté PLAYER : lit un message reçu de l'hôte. `null` si ce n'en est pas un. */
 export function parseHostMessage(data: unknown): HostMessage | null {
-  return parse<HostMessage>(data, FORMES_HOTE);
+  return parse<HostMessage>(data, FORMES_HOTE, COMPOSES_HOTE);
 }
 
 // ── Runtime ────────────────────────────────────────────────────────────────────────────────────
