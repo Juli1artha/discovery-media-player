@@ -76,7 +76,16 @@ export interface FitInput {
   overlap?: number;
   /** Hauteur réservée à un bandeau (mode barre, lecteur guidé…). */
   reserve?: number;
+  /**
+   * Ajustement en défilement continu. `page` : chaque page tient ENTIÈRE dans la hauteur du cadre, et
+   * le zoom s'applique par-dessus (#593). Absent ou `largeur` : la page suit la largeur du cadre.
+   * Ignoré en mode « une seule page », qui a sa propre borne.
+   */
+  ajustement?: Ajustement;
 }
+
+/** Ce qu'une page remplit à l'ouverture : la largeur du cadre, ou le cadre entier. */
+export type Ajustement = "largeur" | "page";
 
 /** Respiration conservée sous et au-dessus de la page en mode « une seule page ». */
 const BREATHING = 28;
@@ -92,7 +101,21 @@ const BREATHING = 28;
 export function fitWidth(input: FitInput): number {
   const zoom = input.zoom ?? 1;
   const width = Math.max(MIN_PAGE_WIDTH, input.containerWidth || 900) * zoom;
-  if (!input.onePage) return width;
+  if (!input.onePage) {
+    if (input.ajustement !== "page") return width;
+    // ⚠️ LA HAUTEUR BORNE LA LARGEUR DE BASE, PAS LA LARGEUR ZOOMÉE — c'est toute la différence avec
+    // le mode « une seule page » ci-dessous, qui borne après le zoom : là, zoomer n'agrandit rien et
+    // le cadre ne défile plus. Un plan de lot ouvert pour en lire les cotes ne pourrait plus l'être.
+    // Ici « 100 % » veut dire « la page entière », et 200 % la double, défilable.
+    const base = Math.max(MIN_PAGE_WIDTH, input.containerWidth || 900);
+    const aspect = aspectApresRotation(input.aspect, input.rotation);
+    const available = (input.containerHeight || 600) - BREATHING - (input.overlap || 0) - (input.reserve || 0);
+    const maxByHeight = available / aspect;
+    // Même seuil d'abandon que plus bas, pour la même raison : un cadre presque fermé donnerait un
+    // timbre-poste. Et jamais sous la largeur lisible.
+    const borne = maxByHeight > 120 ? Math.max(MIN_PAGE_WIDTH, Math.min(base, maxByHeight)) : base;
+    return borne * zoom;
+  }
 
   const aspect = aspectApresRotation(input.aspect, input.rotation);
   const available = (input.containerHeight || 600) - BREATHING - (input.overlap || 0) - (input.reserve || 0);
@@ -100,6 +123,27 @@ export function fitWidth(input: FitInput): number {
   // Sous ce seuil la contrainte de hauteur produirait une page minuscule (panneau presque
   // plein écran) : on préfère une page trop haute qu'un timbre-poste illisible.
   return maxByHeight > 120 ? Math.min(width, maxByHeight) : width;
+}
+
+/**
+ * L'ajustement d'ouverture, d'après `?fit=` et la première page (#593).
+ *
+ * - `page` / `width` : la demande de l'hôte, quel que soit le document ;
+ * - `auto` : page entière pour une page paysage (proportion hauteur/largeur < 1) ou un document d'une
+ *   seule page — un plan, une image —, largeur pour un portrait de plusieurs pages, qui se lit en
+ *   faisant défiler ;
+ * - absent ou inconnu : `largeur`, le comportement d'avant.
+ *
+ * ⚠️ L'HÔTE QUI NE DEMANDE RIEN NE VOIT AUCUN CHANGEMENT, et tout ce qui n'est pas dans la liste vaut
+ * absence : c'est ce qui rend le réglage publiable sans prévenir personne. Un format inconnu (`NaN`,
+ * document pas encore mesuré) ne fait jamais basculer `auto` : dans le doute, on garde l'ancien.
+ */
+export function ajustementInitial(demande: unknown, aspect: number, numPages: number): Ajustement {
+  if (demande === "page") return "page";
+  if (demande !== "auto") return "largeur";
+  const a = Number(aspect);
+  if (!(a > 0) || !(Number(numPages) >= 1)) return "largeur";
+  return a < 1 || Number(numPages) === 1 ? "page" : "largeur";
 }
 
 /** Couleur moyenne d'une bande de pixels RGBA — sert à prolonger la page dans le fond de l'écran. */

@@ -514,6 +514,19 @@ function pageDeDepart(q) {
   return Number.isFinite(n) && n > 1 ? Math.min(n, 10_000) : 1;
 }
 
+/**
+ * L'AJUSTEMENT D'OUVERTURE (`?fit=`) — #593. Une plaquette paysage s'ouvrait coupée : la largeur
+ * suivait le cadre sans regarder la hauteur. Liste FERMÉE : `auto`, `page`, `width` ; tout le reste
+ * vaut absence (`""`), c'est-à-dire le comportement d'avant. Réglage d'AFFICHAGE seulement : il
+ * n'ouvre aucun droit, il peut donc voyager dans l'adresse comme `?page=`. La décision finale
+ * (`auto` selon le format de la première page) appartient à la visionneuse, seule à le connaître.
+ */
+const AJUSTEMENTS_ADMIS = new Set(["auto", "page", "width"]);
+function ajustementDemande(q) {
+  const v = String((q && q.fit) || "");
+  return AJUSTEMENTS_ADMIS.has(v) ? v : "";
+}
+
 function sendRefusal(res, reason, embed) {
   if (!embed) return sendHtml(res, 404, notFoundHtml());
   const nonce = crypto.randomBytes(16).toString("base64");
@@ -746,6 +759,8 @@ async function handlerMesure(req, res) {
           // `link-protection` (0028) : un lien tracé peut porter une échéance et un mot de passe
           // (`docshare.create` / `docshare.protect`). `start-page` : `?page=N` ouvre le document à la page N.
           "link-protection", "start-page",
+          // `fit` : `?fit=auto|page|width` choisit l'ajustement d'ouverture (#593). Absent : inchangé.
+          "fit",
           // `present-attach` : la page du présentateur accepte qu'on lui CONFIE une présentation par le
           // pont (jeton de contrôle en postMessage), et annonce `present-started` / `present-ended`.
           // Sans cette capacité, un hôte enverrait son jeton à une page qui ne l'écoute pas, et
@@ -1120,7 +1135,7 @@ async function handlerMesure(req, res) {
       }
       const supaUrl = (PLAYER.config && PLAYER.config.supabaseUrl) || "";
       const supaKey = (PLAYER.config && PLAYER.config.supabasePublishableKey) || "";
-      const pseudo = { preview: true, embed, page_depart: pageDeDepart(q), slug: "", file_name: String(q.name || "document.pdf"), doc_title: String(q.title || q.name || "Document"), raw_url: url, doc_id: String(q.docId || ""), presenter_name: String(q.by || ""), presenter_avatar: String(q.av || ""), internal_email: String(q.uemail || ""), internal_token: String(q.it || ""), supa_url: supaUrl, supa_key: supaKey, auto_present: String(q.autopresent || "") === "1", resume_slug: String(q.resume || ""), brand_key: String(q.brand || "") || null, stream_url: `/api/doc?preview=1&stream=1&url=${encodeURIComponent(url)}&name=${encodeURIComponent(String(q.name || ""))}` };
+      const pseudo = { preview: true, embed, page_depart: pageDeDepart(q), fit: ajustementDemande(q), slug: "", file_name: String(q.name || "document.pdf"), doc_title: String(q.title || q.name || "Document"), raw_url: url, doc_id: String(q.docId || ""), presenter_name: String(q.by || ""), presenter_avatar: String(q.av || ""), internal_email: String(q.uemail || ""), internal_token: String(q.it || ""), supa_url: supaUrl, supa_key: supaKey, auto_present: String(q.autopresent || "") === "1", resume_slug: String(q.resume || ""), brand_key: String(q.brand || "") || null, stream_url: `/api/doc?preview=1&stream=1&url=${encodeURIComponent(url)}&name=${encodeURIComponent(String(q.name || ""))}` };
       // ⚠️ LA MARQUE MANQUAIT ICI, ET SEULEMENT ICI. Toute la machinerie existe — l'hôte répond à
       // `PLAYER_HOST_BRAND_URL`, `branding.forKey` résout, les liens tracés affichent la bonne
       // marque. Ce chemin-ci ne l'appelait simplement pas, et aucun paramètre ne transportait la
@@ -1295,6 +1310,7 @@ async function handlerMesure(req, res) {
       ? embedFrameAncestors()
       : "'self'";
     share.page_depart = pageDeDepart(q);
+    share.fit = ajustementDemande(q);
     return sendHtml(res, 200, viewerHtml(share, nonce, logoUrl, pitch), `'nonce-${nonce}'`, originesImages(logoUrl, share), frameAncestors);
   } catch (error) {
     try { await PLAYER.errors.capture(error, { route: "doc", method: req.method }); } catch { /* ignore */ }

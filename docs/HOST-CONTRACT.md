@@ -41,7 +41,7 @@ need.
   "contract": 1,
   "version": "<the running version>",
   "runtime": { "node": "<what this instance runs on>", "nodeRequired": ">=22.13.0" },
-  "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention", "link-protection", "start-page", "present-attach"],
+  "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention", "link-protection", "start-page", "fit", "present-attach"],
   "frameAncestors": ["'self'", "https://*.vercel.app", "https://app.example.com"],
   "separateIssuer": true,
   "internalStrict": true,
@@ -962,6 +962,20 @@ the frame and posts `embed-denied` with `password-required`: open such links at 
 **`?page=N`** opens a PDF at page N — on a tracked link and on the internal preview alike. An integer
 above 1, capped at 10 000 by the server and at the document's real page count by the viewer; anything
 else opens page 1.
+
+**`?fit=auto|page|width`** (capability `fit`) chooses how the document fills the frame when it opens — on a
+tracked link and on the internal preview alike. `page`: every page fits **whole** in the frame's height, and
+zoom applies on top of that (200 % is twice the whole page, and scrolls). `width`: the page follows the
+frame's width, as before. `auto`: `page` for a landscape first page or a single-page document (a plan, an
+image), `width` for a portrait document of several pages. **Absent or unknown: nothing changes**, whatever
+the document. It is a display setting and grants nothing, so it may travel in the address like `?page=`.
+With `page` in effect, side arrows appear, and `Space` / `PageDown` turn a whole page; with `width`, they
+scroll one screen, as the browser would once the document has focus.
+
+Keyboard, on every viewer page whatever `fit` says: `←` / `→` previous / next page (left to native
+horizontal scrolling when the zoomed page is wider than the frame), `Home` / `End` first / last page,
+`+` / `−` zoom, `0` back to the opening fit. Nothing is captured while focus is in a text field, a
+modifier key is held, or the assistant leads in its one-page mode. The page indicator is a button: it asks for a page number.
 
 ## The postMessage bridge
 
