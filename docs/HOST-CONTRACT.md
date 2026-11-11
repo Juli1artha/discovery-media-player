@@ -41,7 +41,7 @@ need.
   "contract": 1,
   "version": "<the running version>",
   "runtime": { "node": "<what this instance runs on>", "nodeRequired": ">=22.13.0" },
-  "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention", "link-protection", "start-page", "fit", "present-attach"],
+  "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention", "link-protection", "start-page", "fit", "reading-layout", "present-attach"],
   "frameAncestors": ["'self'", "https://*.vercel.app", "https://app.example.com"],
   "separateIssuer": true,
   "internalStrict": true,
@@ -971,6 +971,22 @@ image), `width` for a portrait document of several pages. **Absent or unknown: n
 the document. It is a display setting and grants nothing, so it may travel in the address like `?page=`.
 With `page` in effect, side arrows appear, and `Space` / `PageDown` turn a whole page; with `width`, they
 scroll one screen, as the browser would once the document has focus.
+
+**`?gabarit=lecture`** (capability `reading-layout`) serves the reading layout instead of the classic
+bar: a thin light bar with **one** filled action and at most one outlined action, a floating navigation
+pill (pages, previous, page number, next, "Page entière / Largeur", zoom), and everything else in the `⋯`
+menu (download, rotate, full screen, and "about" on the internal preview). Without the parameter the
+page is served exactly as before; with an assistant enabled on the link, the classic bar is kept. With no
+`?fit=`, this layout opens in `auto`.
+
+- `primary=share|present|download` (default `share`) and `secondary=…` choose which of the player's own
+  actions are put forward; `primaryLabel=` / `secondaryLabel=` (1–40 characters) rename them, and
+  `subtitle=` (1–80) adds a line under the title. A longer label is ignored whole, never truncated, and
+  every label is shown as text. **Placing grants nothing**: an action the link forbids
+  (`allowDownload: false`) or the mode lacks (`present` outside the preview) does not appear, wherever it is placed.
+- On a tracked link, the tracking notice ("Lecture mesurée") moves **into the bar**, which never hides.
+  The pill and the side arrows fade after 3 s without a gesture, and come back on any pointer, touch or
+  key — never while the menu, the share panel or the page-number field is open.
 
 Keyboard, on every viewer page whatever `fit` says: `←` / `→` previous / next page (left to native
 horizontal scrolling when the zoomed page is wider than the frame), `Home` / `End` first / last page,

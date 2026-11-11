@@ -12,7 +12,7 @@ const fs = require("node:fs");
 
 const FICHIERS = [
   "../handler.js", "../gabarit-live.js", "../gabarit-carte.js",
-  "../gabarit-agent.js", "../gabarit-legal.js", "../tiers.js", "../texte.js",
+  "../gabarit-agent.js", "../gabarit-legal.js", "../gabarit-lecture.js", "../tiers.js", "../texte.js",
   "../session-cles.js", "../page-mur.js", "../page-visionneuse.js", "../page-audience.js",
   "../appelant.js", "../routes-visiteur.js", "../routes-direct.js", "../routes-agent.js",
   "../routes-liens.js",
