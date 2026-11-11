@@ -8,7 +8,7 @@ const { LIVE_CSS, LIVE_BAR, LIVE_PANEL, LIVE_JS } = require("./gabarit-live");
 const { MAP_CSS, MAP_MARKUP, MAP_JS } = require("./gabarit-carte");
 const { BOT_CSS, ICONS, botMarkup, voixProposable } = require("./gabarit-agent");
 const { legalFooter, LEGAL_CSS } = require("./gabarit-legal");
-const { barreLecture, LECTURE_CSS } = require("./gabarit-lecture");
+const { barreLecture, actionsDeLecture, LECTURE_CSS } = require("./gabarit-lecture");
 const { cleSessionHote, CLE_SESSION_PLAYER, CLE_INVITE } = require("./session-cles");
 
 // Le cœur navigateur (bundle committé) et les GREFFONS de l'hôte — résolus depuis le contexte,
@@ -92,7 +92,7 @@ function viewerHtml(share, nonce, logoUrl, pitch) {
   const lecture = share.lecture && !botOn ? share.lecture : null;
   const mesure = !preview && !!share.slug;
   const piedLegal = legalFooter({ tracked: mesure, sansExpediteur: !share.recipient_email && !share.created_by });
-  const cfg = jsonPourScript({ lecture: !!lecture, page: Math.max(1, Math.trunc(Number(share.page_depart) || 1)), fit: String(share.fit || ""), brand: PLAYER.branding.name, slug: preview ? "" : share.slug, fileUrl, fileName: share.file_name || "", pdfjs: PDFJS, pdfjsWorker: PDFJS_WORKER, title, preview, embed, embedded, bot: botOn, botGuided: !preview && !!share.bot_enabled && share.bot_guided !== false, botAv: (!preview && share.bot_enabled && share.bot_avatar) || "", botName: (!preview && share.bot_enabled && share.bot_name) || "", botGreet: (!preview && share.bot_enabled && share.bot_greeting) || "", botGreetDoc: (!preview && share.bot_enabled && share.bot_greeting_doc) || "", dl: share.allow_download !== false, autoPresent: !!share.auto_present, botAnim: share.bot_page_anim !== false, botVoice: !preview && !!share.bot_enabled && voixProposable(), vIcOn: ICONS.sound, vIcOff: ICONS.mute, kStyle: (!preview && share.bot_enabled && share.bot_karaoke) || "classic", vLayout: (!preview && share.bot_enabled && share.video_layout) || "", vClips: !preview && !!share.bot_vclips, botVAv: (!preview && share.bot_enabled && share.bot_vphoto) || "", resumeSlug: preview ? (share.resume_slug || "") : "", supaUrl: preview ? (share.supa_url || "") : "", supaKey: preview ? (share.supa_key || "") : "", internal: preview && share.internal_email ? { email: share.internal_email, name: share.presenter_name || "", docId: share.doc_id || "", it: share.internal_token || "" } : null, present: preview ? { url: share.raw_url || "", name: share.file_name || "", title: share.doc_title || "", docId: share.doc_id || "", by: share.presenter_name || "", email: share.internal_email || "", av: share.presenter_avatar || "" } : null });
+  const cfg = jsonPourScript({ lecture: !!lecture, actions: lecture ? actionsDeLecture(lecture, { preview, allowDownload: share.allow_download !== false }) : [], subtitle: lecture ? lecture.subtitle : "", page: Math.max(1, Math.trunc(Number(share.page_depart) || 1)), fit: String(share.fit || ""), brand: PLAYER.branding.name, slug: preview ? "" : share.slug, fileUrl, fileName: share.file_name || "", pdfjs: PDFJS, pdfjsWorker: PDFJS_WORKER, title, preview, embed, embedded, bot: botOn, botGuided: !preview && !!share.bot_enabled && share.bot_guided !== false, botAv: (!preview && share.bot_enabled && share.bot_avatar) || "", botName: (!preview && share.bot_enabled && share.bot_name) || "", botGreet: (!preview && share.bot_enabled && share.bot_greeting) || "", botGreetDoc: (!preview && share.bot_enabled && share.bot_greeting_doc) || "", dl: share.allow_download !== false, autoPresent: !!share.auto_present, botAnim: share.bot_page_anim !== false, botVoice: !preview && !!share.bot_enabled && voixProposable(), vIcOn: ICONS.sound, vIcOff: ICONS.mute, kStyle: (!preview && share.bot_enabled && share.bot_karaoke) || "classic", vLayout: (!preview && share.bot_enabled && share.video_layout) || "", vClips: !preview && !!share.bot_vclips, botVAv: (!preview && share.bot_enabled && share.bot_vphoto) || "", resumeSlug: preview ? (share.resume_slug || "") : "", supaUrl: preview ? (share.supa_url || "") : "", supaKey: preview ? (share.supa_key || "") : "", internal: preview && share.internal_email ? { email: share.internal_email, name: share.presenter_name || "", docId: share.doc_id || "", it: share.internal_token || "" } : null, present: preview ? { url: share.raw_url || "", name: share.file_name || "", title: share.doc_title || "", docId: share.doc_id || "", by: share.presenter_name || "", email: share.internal_email || "", av: share.presenter_avatar || "" } : null });
   return `<!doctype html><html lang=fr><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=3,viewport-fit=cover,interactive-widget=resizes-content">
 <meta name=robots content="noindex,nofollow">
@@ -424,7 +424,7 @@ ${LEGAL_CSS}
     var DPR_MAX=2;            // au-dela, le gain visuel est nul et le cout quadratique
     var PIXELS_MAX=4e6;       // plafond par canvas : ~4 M pixels = ~16 Mo de tampon
     var onePage=false, soloOffered=false; // mode « une seule page » (présentation guidée) + offre de découverte solo
-    function setCur(p){ if(!p||p===cur)return; cur=p; try{ evincerLoin(p); }catch(e){} T.setPage(p); try{ vignMarquer(p); }catch(e){} try{ if(window.__soloEnd)window.__soloEnd(p); }catch(e){} var pg=document.getElementById('pg'); if(pg&&numPages)pg.textContent='Page '+p+' / '+numPages; syncNav(); if(PRES) pushPage(); }
+    function setCur(p){ if(!p||p===cur)return; cur=p; try{ evincerLoin(p); }catch(e){} T.setPage(p); try{ vignMarquer(p); }catch(e){} try{ if(window.__soloEnd)window.__soloEnd(p); }catch(e){} var pg=document.getElementById('pg'); if(pg&&numPages)pg.textContent='Page '+p+' / '+numPages; syncNav(); signalerPage(p); if(PRES) pushPage(); }
     // Bouton « Partager » : re-partage tracé (forward) → crée un lien ENFANT et propose de l'envoyer par email.
     function wireShare(){
       var pop=document.getElementById('pop'), btn=document.getElementById('shareBtn'), err=document.getElementById('shErr');
@@ -743,6 +743,11 @@ ${LEGAL_CSS}
     // qu'on est là — sans cette poignée de main elle ne peut pas savoir si la croix
     // existe (visionneuse d'une version antérieure) et garde la sienne par sécurité.
     // Le format du fil, le targetOrigin et la validation vivent dans player/src/bridge.ts.
+    // ⚠️ L ECOUTE DE chrome (#596) S INSCRIT AVANT L ANNONCE. Le contrat dit a l hote d envoyer apres
+    // embed-ready ; inscrite au demarrage (une fois pdf.js charge, donc apres l annonce), elle perdait le
+    // chrome d un hote qui repondait aussitot — vu dans Chrome le 11/11, pas dans le banc, ou pdf.js
+    // arrivait instantanement. La barre est deja dans le DOM : rien n attend le document pour l appliquer.
+    if(CFG.lecture) Player.bridge.onHostMessage(function(m){ if(m.type==='chrome') appliquerChrome(m); });
     if(CFG.embedded){
       Player.bridge.sendToHost({type:'embed-ready'});
       var _xb=document.getElementById('embedCloseBtn');
@@ -1216,6 +1221,52 @@ ${LEGAL_CSS}
       else if(k==='0') setZoom(1);
       else fait=false;
       if(fait) e.preventDefault();
+    }
+    // ── CE QUE L HOTE DECLARE, CE QU ON LUI RENVOIE (#596) ─────────────────────────────────────────────────
+    // La page courante part chez l hote a chaque changement — seulement si une page nous encadre : sans
+    // hote, window.parent est la page elle-meme, et on se parlerait a soi.
+    function signalerPage(p){ try{ if(numPages&&p>=1&&p<=numPages&&window.parent&&window.parent!==window) Player.bridge.sendToHost({type:'page',page:p,total:numPages}); }catch(e){} }
+    var ELEMENT_ACTION={share:'shareBtn',present:'presentBtn',download:'dlBtn'};
+    function fermerMenu(){ var m=document.getElementById('barMenu'); if(m) m.classList.remove('open'); }
+    function relaisMenu(a,mobile){ var b=document.createElement('button'); b.type='button'; b.className='g-act'+(mobile?' g-mob':''); b.textContent=a.label;
+      if(ELEMENT_ACTION[a.id]) b.addEventListener('click',function(){ fermerMenu(); var el=document.getElementById(ELEMENT_ACTION[a.id]); if(el) el.click(); });
+      else b.addEventListener('click',function(){ fermerMenu(); Player.bridge.sendToHost({type:'host-action',id:a.id}); });
+      return b; }
+    // ⚠️ PLACER N OUVRE AUCUN DROIT. Une action du player absente de la page (telechargement interdit par le
+    // lien, Presenter hors apercu) n a pas d element : elle est sautee, ou que l hote la place. Les actions
+    // du player que l hote ne cite pas restent joignables, dans le menu.
+    function placerActions(liste){
+      var slots=document.getElementById('gSlots'), cache=document.querySelector('.gcache'), menu=document.getElementById('barMenu'); if(!slots||!cache||!menu)return;
+      var cible=liste||CFG.actions||[];
+      [].slice.call(slots.querySelectorAll('[data-host-action]')).forEach(function(n){ n.parentNode.removeChild(n); });
+      [].slice.call(menu.querySelectorAll('.g-act')).forEach(function(n){ n.parentNode.removeChild(n); });
+      Object.keys(ELEMENT_ACTION).forEach(function(k){ var el=document.getElementById(ELEMENT_ACTION[k]); if(el){ el.className='dl'; cache.appendChild(el); } });
+      var prim=null, sec=null, auMenu=[], cites=Object.create(null); // indexe par un id venu de l hote : objet nu
+      cible.forEach(function(a){
+        var el=ELEMENT_ACTION[a.id]?document.getElementById(ELEMENT_ACTION[a.id]):null;
+        if(ELEMENT_ACTION[a.id]&&!el)return;
+        cites[a.id]=true;
+        var place=a.place; if(place==='primary'&&prim)place='menu'; if(place==='secondary'&&sec)place='menu';
+        if(place==='menu'){ auMenu.push(relaisMenu(a,false)); return; }
+        var b=el; if(!b){ b=document.createElement('button'); b.type='button'; b.setAttribute('data-host-action',a.id); b.addEventListener('click',function(){ Player.bridge.sendToHost({type:'host-action',id:a.id}); }); }
+        b.textContent=a.label; b.className='gbtn '+(place==='primary'?'gprim':'gsec');
+        if(place==='primary') prim=b; else { sec=b; auMenu.push(relaisMenu(a,true)); }
+      });
+      Object.keys(ELEMENT_ACTION).forEach(function(k){ if(!cites[k]&&document.getElementById(ELEMENT_ACTION[k])){ var init=(CFG.actions||[]).filter(function(x){return x.id===k;})[0]; auMenu.push(relaisMenu({id:k,label:(init&&init.place==='menu'&&init.label)||({share:'Partager',present:'Présenter en direct',download:'Télécharger'})[k]},false)); } });
+      if(prim) slots.appendChild(prim); if(sec) slots.appendChild(sec);
+      var premier=menu.firstChild; auMenu.forEach(function(b){ menu.insertBefore(b,premier); });
+    }
+    function marquerOnglet(id){ [].slice.call(document.querySelectorAll('#gTabs .gtab')).forEach(function(b){ var on=b.getAttribute('data-id')===id; b.classList.toggle('on',on); b.setAttribute('aria-selected',on?'true':'false'); }); }
+    // ⚠️ UN CHROME REMPLACE LE PRECEDENT EN ENTIER. Un champ absent revient a l etat de l adresse (sous-titre,
+    // place des actions du player) ou a rien (onglets, actions de l hote) — jamais « inchange » : sinon l hote
+    // ne pourrait plus retirer ce qu il a pose, par exemple en passant en mode « client a cote ».
+    function appliquerChrome(m){
+      var sub=document.getElementById('gSub'); if(sub){ var t=m.subtitle!==undefined?m.subtitle:(CFG.subtitle||''); sub.textContent=t; sub.hidden=!t; }
+      var tabs=document.getElementById('gTabs');
+      if(tabs){ tabs.textContent=''; (m.tabs||[]).forEach(function(t){ var b=document.createElement('button'); b.type='button'; b.className='gtab'; b.setAttribute('role','tab'); b.setAttribute('data-id',t.id); b.textContent=t.label;
+          b.addEventListener('click',function(){ marquerOnglet(t.id); Player.bridge.sendToHost({type:'host-action',id:t.id}); }); tabs.appendChild(b); });
+        tabs.hidden=!(m.tabs&&m.tabs.length); marquerOnglet(m.activeTab||''); }
+      placerActions(m.actions||null);
     }
     // ── LES COMMANDES S EFFACENT (#595) — la pastille et les fleches, jamais la barre ─────────────────────
     // Trois secondes sans geste, et seule la page reste (et la progression, dans la barre). Un mouvement, un

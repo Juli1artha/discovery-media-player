@@ -14,6 +14,16 @@ the notes there are this file's section for that version.
 
 ### Added
 
+- **L'hôte déclare la barre « lecture », la page lui dit la page et le clic (`chrome`, `host-action`,
+  `page`, capacité `host-chrome`, #596).** Un hôte qui affiche un document au milieu de son application ne
+  pouvait ni passer d'un document du même dossier à l'autre sans fermer, ni ouvrir son propre volet depuis
+  la barre — il n'y en a plus qu'une —, ni savoir où en était le lecteur. `chrome` déclare sous-titre,
+  onglets (8 au plus) et actions (6 au plus, une pleine et une en contour au plus) ; la moindre faute fait
+  tomber le message entier, et chaque `chrome` remplace le précédent. `share`, `present` et `download`
+  restent les actions du player : l'hôte les place et les renomme, sans rien ouvrir — une action sans
+  élément dans la page est sautée. Le player renvoie `host-action {id}` au clic, et `page {page, total}` à
+  chaque changement de page, dans les deux gabarits, seulement s'il est encadré.
+
 - **Un gabarit « lecture » à côté de l'ancienne barre (`?gabarit=lecture`, capacité `reading-layout`, #595).**
   Treize commandes au même poids dans une barre noire, « Partager » en blanc comme seul repère, pivoter deux
   fois au premier rang, le pied légal posé sur la page : la nouvelle barre est fine et claire, ne porte
