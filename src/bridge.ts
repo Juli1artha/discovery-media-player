@@ -190,8 +190,15 @@ function lirePage(d: Record<string, unknown>): PlayerMessage | null {
   return { type: "page", page: page as number, total: total as number };
 }
 
-const COMPOSES_PLAYER = new Map<string, (d: Record<string, unknown>) => PlayerMessage | null>([["page", lirePage]]);
-const COMPOSES_HOTE = new Map<string, (d: Record<string, unknown>) => HostMessage | null>([["chrome", lireChrome]]);
+// Messages composés (tableaux, nombres) : chacun a son lecteur. Aiguillage écrit en clair, et non
+// une table indexée par le type reçu : aucun nom venu de l'autre fenêtre ne choisit la fonction appelée.
+// `undefined` = ce type n'est pas composé ; `null` = il l'est, mais le message est mal formé.
+function composePlayer(type: string, d: Record<string, unknown>): PlayerMessage | null | undefined {
+  return type === "page" ? lirePage(d) : undefined;
+}
+function composeHote(type: string, d: Record<string, unknown>): HostMessage | null | undefined {
+  return type === "chrome" ? lireChrome(d) : undefined;
+}
 
 /** Forme transportée sur le fil (préfixée), pour un message typé. */
 export function toWire(msg: PlayerMessage | HostMessage): WireMessage {
@@ -213,14 +220,14 @@ export function toWire(msg: PlayerMessage | HostMessage): WireMessage {
 function parse<T extends { type: string }>(
   data: unknown,
   formes: ReadonlyMap<string, readonly Champ[]>,
-  composes: ReadonlyMap<string, (d: Record<string, unknown>) => T | null>,
+  compose: (type: string, d: Record<string, unknown>) => T | null | undefined,
 ): T | null {
   if (!data || typeof data !== "object") return null;
   const raw = (data as { type?: unknown }).type;
   if (typeof raw !== "string" || !raw.startsWith(WIRE_PREFIX)) return null;
   const type = raw.slice(WIRE_PREFIX.length);
-  const compose = composes.get(type);
-  if (compose) return compose(data as Record<string, unknown>);
+  const compose_lu = compose(type, data as Record<string, unknown>);
+  if (compose_lu !== undefined) return compose_lu;
   const champs = formes.get(type);
   if (!champs) return null;
   const lu: Record<string, string> = { type };
@@ -242,12 +249,12 @@ function parse<T extends { type: string }>(
 
 /** Côté HÔTE : lit un message reçu du player. `null` si ce n'en est pas un. */
 export function parsePlayerMessage(data: unknown): PlayerMessage | null {
-  return parse<PlayerMessage>(data, FORMES_PLAYER, COMPOSES_PLAYER);
+  return parse<PlayerMessage>(data, FORMES_PLAYER, composePlayer);
 }
 
 /** Côté PLAYER : lit un message reçu de l'hôte. `null` si ce n'en est pas un. */
 export function parseHostMessage(data: unknown): HostMessage | null {
-  return parse<HostMessage>(data, FORMES_HOTE, COMPOSES_HOTE);
+  return parse<HostMessage>(data, FORMES_HOTE, composeHote);
 }
 
 // ── Runtime ────────────────────────────────────────────────────────────────────────────────────

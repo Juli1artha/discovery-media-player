@@ -153,14 +153,18 @@ describe("⚠️ #596 — le player dit la page à son hôte", () => {
   });
 
   it("sans page qui l'encadre, il ne se parle pas à lui-même", async () => {
-    const aSoi = [];
-    const ecoute = (e) => aSoi.push(e.data && e.data.type);
-    window.addEventListener("message", ecoute);
+    // Non encadrée, `window.parent` est la page elle-même : on guette ce qu'elle s'y posterait.
+    // Un espion plutôt qu'un écouteur `message` — jsdom laisse `origin` et `source` vides, si bien
+    // qu'un écouteur filtré ne verrait jamais rien, et qu'un écouteur non filtré n'a pas lieu d'être.
     const V = await monter({ query: { gabarit: "lecture" }, encadre: false });
-    V.showPage(3);
-    await vider();
-    window.removeEventListener("message", ecoute);
-    expect(aSoi).not.toContain("3dd-doc-page");
+    const poste = vi.spyOn(window, "postMessage");
+    try {
+      V.showPage(3);
+      await vider();
+      expect(poste.mock.calls.map(([m]) => m && m.type)).not.toContain("3dd-doc-page");
+    } finally {
+      poste.mockRestore();
+    }
   });
 });
 
