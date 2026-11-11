@@ -265,3 +265,75 @@ describe("bridge — présenter depuis l'hôte", () => {
     expect(postMessage).toHaveBeenCalledWith({ type: "3dd-doc-handover-done" }, "*");
   });
 });
+
+// ── #596 : l'hôte déclare la barre, le player lui dit la page et le clic ─────────────────────────────
+//
+// ⚠️ CE QUE CES MESSAGES TRANSPORTENT FINIT À L'ÉCRAN (libellés) ou DANS LE CODE DE L'HÔTE (id). Ils sont
+// donc bornés ici, une fois, comme le slug : forme stricte, ou le message est ignoré EN ENTIER — un
+// onglet de trop ne tronque pas la liste, il la refuse.
+describe("bridge — chrome (hôte → player, #596)", () => {
+  const OK = {
+    type: "3dd-doc-chrome",
+    subtitle: "Clos Belharra · Anglet",
+    tabs: [{ id: "doc:plaquette", label: "Plaquette" }, { id: "doc:notice", label: "Notice" }],
+    activeTab: "doc:plaquette",
+    actions: [{ id: "share", label: "Envoyer au client", place: "primary" }, { id: "fiche-lot", label: "Fiche du lot", place: "secondary" }],
+  };
+
+  it("lit un chrome bien formé, champ par champ", () => {
+    expect(parseHostMessage(OK)).toEqual({
+      type: "chrome",
+      subtitle: "Clos Belharra · Anglet",
+      tabs: [{ id: "doc:plaquette", label: "Plaquette" }, { id: "doc:notice", label: "Notice" }],
+      activeTab: "doc:plaquette",
+      actions: [{ id: "share", label: "Envoyer au client", place: "primary" }, { id: "fiche-lot", label: "Fiche du lot", place: "secondary" }],
+    });
+    expect(parseHostMessage({ type: "3dd-doc-chrome" }), "tout est facultatif : un chrome vide remet la barre à nu").toEqual({ type: "chrome" });
+  });
+
+  it("fait l'aller-retour sans perte", () => {
+    const msg = parseHostMessage(OK)!;
+    expect(parseHostMessage(toWire(msg))).toEqual(msg);
+  });
+
+  it("refuse le message entier sur la moindre faute", () => {
+    const fautes: Record<string, unknown>[] = [
+      { tabs: Array.from({ length: 9 }, (_, i) => ({ id: `t${i}`, label: "x" })) },
+      { actions: Array.from({ length: 7 }, (_, i) => ({ id: `a${i}`, label: "x", place: "menu" })) },
+      { tabs: [{ id: "Majuscule", label: "x" }] },
+      { tabs: [{ id: "a", label: "x".repeat(41) }] },
+      { tabs: [{ id: "a", label: "   " }] },
+      { tabs: [{ id: "a", label: "x" }, { id: "a", label: "y" }] },
+      { tabs: [{ id: "a", label: "x" }], activeTab: "b" },
+      { activeTab: "a" },
+      { actions: [{ id: "a", label: "x", place: "center" }] },
+      { actions: [{ id: "a", label: 3, place: "menu" }] },
+      { subtitle: "x".repeat(81) },
+      { subtitle: 42 },
+      { tabs: "Plaquette" },
+      { tabs: [null] },
+    ];
+    for (const f of fautes) expect(parseHostMessage({ type: "3dd-doc-chrome", ...f }), JSON.stringify(f).slice(0, 80)).toBeNull();
+  });
+
+  it("n'emporte pas de champ inconnu", () => {
+    const lu = parseHostMessage({ type: "3dd-doc-chrome", subtitle: "a", html: "<b>x</b>", tabs: [{ id: "a", label: "x", onclick: "y" }] });
+    expect(lu).toEqual({ type: "chrome", subtitle: "a", tabs: [{ id: "a", label: "x" }] });
+  });
+});
+
+describe("bridge — host-action et page (player → hôte, #596)", () => {
+  it("host-action porte un id borné", () => {
+    expect(parsePlayerMessage({ type: "3dd-doc-host-action", id: "doc:notice" })).toEqual({ type: "host-action", id: "doc:notice" });
+    for (const id of ["", "A", "a b", "x".repeat(41), "<x>", 3]) expect(parsePlayerMessage({ type: "3dd-doc-host-action", id })).toBeNull();
+    expect(parsePlayerMessage(toWire({ type: "host-action", id: "fiche-lot" }))).toEqual({ type: "host-action", id: "fiche-lot" });
+  });
+
+  it("page porte deux entiers cohérents", () => {
+    expect(parsePlayerMessage({ type: "3dd-doc-page", page: 3, total: 21 })).toEqual({ type: "page", page: 3, total: 21 });
+    for (const [page, total] of [[0, 21], [22, 21], [1.5, 21], [1, 10001], ["3", 21], [3, null]]) {
+      expect(parsePlayerMessage({ type: "3dd-doc-page", page, total }), `${page}/${total}`).toBeNull();
+    }
+    expect(parsePlayerMessage(toWire({ type: "page", page: 21, total: 21 }))).toEqual({ type: "page", page: 21, total: 21 });
+  });
+});

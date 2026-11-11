@@ -41,7 +41,7 @@ need.
   "contract": 1,
   "version": "<the running version>",
   "runtime": { "node": "<what this instance runs on>", "nodeRequired": ">=22.13.0" },
-  "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention", "link-protection", "start-page", "fit", "reading-layout", "present-attach"],
+  "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention", "link-protection", "start-page", "fit", "reading-layout", "host-chrome", "present-attach"],
   "frameAncestors": ["'self'", "https://*.vercel.app", "https://app.example.com"],
   "separateIssuer": true,
   "internalStrict": true,
@@ -1003,9 +1003,34 @@ is a contract in two copies, and the day it changes only one of them knows.
 **player → host:** `close` · `share` · `embed-ready` · `embed-denied {reason}` · `present-left` ·
 `present-denied` · `present-invite {slug}` · `present-handover {slug}` · `present-switch {slug}` ·
 `present-started {slug}` · `present-ended {slug}` · `present-attached {slug}` ·
-`present-attach-failed {slug, reason}`
+`present-attach-failed {slug, reason}` · `host-action {id}` · `page {page, total}`
 
-**host → player:** `handover-done` · `present-attach {slug, control}`
+**host → player:** `handover-done` · `present-attach {slug, control}` ·
+`chrome {subtitle?, tabs?, activeTab?, actions?}`
+
+### Declaring the reading bar (`chrome`, `host-action`, `page`)
+
+Capability **`host-chrome`**. For a host that shows a document inside its own application, in the
+`?gabarit=lecture` layout: tabs to switch to the other documents of the same file, a button that opens
+something of the host's (a side panel), and the reader's current page.
+
+- **`chrome`** (host → player, after `embed-ready`): `subtitle` (1–80 characters), `tabs` (at most 8
+  `{id, label}`), `activeTab` (one of the tabs), `actions` (at most 6 `{id, label, place}` with `place` in
+  `primary | secondary | menu`). `id` matches `^[a-z0-9][a-z0-9:_-]{0,39}$`, a `label` is 1–40
+  characters and is always shown as text. **Any fault drops the whole message** (a ninth tab does not
+  truncate the list, it refuses it), and unknown fields are never carried. Each `chrome` **replaces** the
+  previous one: an absent field goes back to what the address declared (`subtitle=`, the placement of the
+  player's actions) or to nothing (tabs, the host's actions) — so a host can take back what it placed.
+  Only the frame's `window.parent` is heard. The classic layout ignores `chrome`.
+- **`share`, `present`, `download` are the player's own actions.** The host places and renames them; it
+  never triggers them, and clicking them runs the player's behaviour (`share` still sends `share`).
+  **Placing grants nothing**: an action the link forbids or the mode lacks has no element, and is skipped
+  wherever it is placed. Those the host does not cite stay reachable in the `⋯` menu. One filled action
+  and one outlined at most: any extra goes to the menu.
+- **`host-action {id}`** (player → host): a click on a tab or on an action the host declared. To switch
+  documents, change the frame's `src` to the other document's link — the player never builds a link.
+- **`page {page, total}`** (player → host): on every change of the current page, in both layouts, and
+  only when a page frames the player.
 
 ### Starting a presentation from the host (`present-attach`)
 

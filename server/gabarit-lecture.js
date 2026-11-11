@@ -44,6 +44,22 @@ function reglagesLecture(q) {
   };
 }
 
+const ID_ELEMENT = { share: "shareBtn", present: "presentBtn", download: "dlBtn" };
+
+/**
+ * Les actions du player DISPONIBLES ici, avec leur place et leur libellé d'ouverture. Une seule source
+ * pour le balisage du serveur et pour la page, qui y revient quand l'hôte retire sa déclaration
+ * (`chrome` sans `actions`, #596). ⚠️ Une action indisponible n'y figure pas : rien ne pourra la placer.
+ */
+function actionsDeLecture(r, { preview, allowDownload }) {
+  const dispo = { share: true, present: !!preview, download: allowDownload !== false };
+  return ["share", "present", "download"].filter((a) => dispo[a]).map((a) => {
+    const place = a === r.primary ? "primary" : a === r.secondary ? "secondary" : "menu";
+    const label = (a === r.primary && r.primaryLabel) || (a === r.secondary && r.secondaryLabel) || LIBELLES[a];
+    return { id: a, label: place === "menu" ? LIBELLES_MENU[a] : label, place };
+  });
+}
+
 const SVG = (d, w = 2) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const I = {
   retour: SVG('<path d="M15 6l-6 6 6 6"/>', 2.2),
@@ -72,33 +88,31 @@ const I = {
  */
 function barreLecture(o) {
   const r = o.reglages;
-  const dispo = { share: true, present: !!o.preview, download: o.allowDownload !== false };
-  const place = (a) => (a === r.primary ? "primary" : a === r.secondary ? "secondary" : "menu");
-  const etiquette = (a) => (a === r.primary && r.primaryLabel) || (a === r.secondary && r.secondaryLabel) || LIBELLES[a];
-  const element = (a, cls) => {
-    const t = esc(etiquette(a));
+  const element = (a, cls, label) => {
+    const t = esc(label);
     if (a === "download") return `<a class="${cls}" id=dlBtn href="${o.fileUrl}" download>${t}</a>`;
     if (a === "present") return `<button type=button class="${cls}" id=presentBtn title="Présenter en direct (lien public, page synchronisée)">${t}</button>`;
     return `<button type=button class="${cls}" id=shareBtn>${t}</button>`;
   };
   const enBarre = [], enReserve = [], auMenu = [];
-  for (const a of ["share", "present", "download"]) {
-    if (!dispo[a]) continue;   // ⚠️ une action que le lien interdit n'existe pas — ni en barre, ni au menu
-    const p = place(a);
-    if (p === "primary") enBarre.unshift(element(a, "gbtn gprim"));
-    else if (p === "secondary") { enBarre.push(element(a, "gbtn gsec")); auMenu.push(`<button type=button class=g-mob data-t=${a === "download" ? "dlBtn" : a === "present" ? "presentBtn" : "shareBtn"}>${esc(etiquette(a))}</button>`); }
-    else { enReserve.push(element(a, "dl")); auMenu.push(`<button type=button data-t=${a === "download" ? "dlBtn" : a === "present" ? "presentBtn" : "shareBtn"}>${LIBELLES_MENU[a]}</button>`); }
+  // ⚠️ une action que le lien interdit n'existe pas — ni en barre, ni au menu (actionsDeLecture l'a écartée)
+  for (const a of actionsDeLecture(r, { preview: o.preview, allowDownload: o.allowDownload })) {
+    if (a.place === "primary") enBarre.unshift(element(a.id, "gbtn gprim", a.label));
+    else if (a.place === "secondary") { enBarre.push(element(a.id, "gbtn gsec", a.label)); auMenu.push(`<button type=button class="g-act g-mob" data-t=${ID_ELEMENT[a.id]}>${esc(a.label)}</button>`); }
+    else { enReserve.push(element(a.id, "dl", LIBELLES[a.id])); auMenu.push(`<button type=button class=g-act data-t=${ID_ELEMENT[a.id]}>${esc(a.label)}</button>`); }
   }
   const retour = o.preview
     ? `<button type=button class=ic id=closeBtn title="Fermer" aria-label="Fermer">${I.retour}</button>`
     : o.embed ? `<button type=button class="ic barx" id=embedCloseBtn title="Fermer" aria-label="Fermer">${I.retour}</button>` : "";
-  const sousTitre = r.subtitle ? `<span class=gsub id=gSub>${esc(r.subtitle)}</span>` : "";
+  // Le sous-titre et la rangée d'onglets existent toujours, vides s'il le faut : l'hôte peut les remplir
+  // ensuite par `chrome` (#596), sans que la page ait à inventer leur place.
+  const sousTitre = `<span class=gsub id=gSub${r.subtitle ? "" : " hidden"}>${esc(r.subtitle)}</span>`;
   // ⚠️ « LECTURE MESURÉE » RESTE À L'ÉCRAN SANS GESTE, sur un lien tracé : c'est la mention due au
   // lecteur (cf. gabarit-legal.js). Elle monte dans la barre — qui, elle, ne s'efface jamais. En aperçu
   // interne (« Informations »), rien n'est mesuré chez un tiers : elle rejoint le menu.
   const legalEnBarre = o.tracked ? o.legalHtml : "";
   const legalAuMenu = o.tracked ? "" : o.legalHtml;
-  return `<div class="bar gbar">${retour}<div class=gtitre><b>${o.title}</b>${sousTitre}</div>${o.isTest ? '<span class=testchip>🎭 Répétition — session de test</span>' : ""}${legalEnBarre}<span class=sp></span>${o.liveBar || ""}${enBarre.join("")}<button type=button class="ic barMore" id=barMore title="Plus d'actions" aria-label="Plus d'actions" aria-haspopup=menu>${I.plus}</button><div class=gprog aria-hidden=true><i id=gProg></i></div></div>
+  return `<div class="bar gbar">${retour}<div class=gtitre><b>${o.title}</b>${sousTitre}</div><div class=gtabs id=gTabs role=tablist aria-label="Documents" hidden></div>${o.isTest ? '<span class=testchip>🎭 Répétition — session de test</span>' : ""}${legalEnBarre}<span class=sp></span>${o.liveBar || ""}<span class=gslots id=gSlots>${enBarre.join("")}</span><button type=button class="ic barMore" id=barMore title="Plus d'actions" aria-label="Plus d'actions" aria-haspopup=menu>${I.plus}</button><div class=gprog aria-hidden=true><i id=gProg></i></div></div>
   <div class="barmenu gmenu" id=barMenu role=menu>${auMenu.join("")}<button type=button data-t=rotL>Pivoter à gauche</button><button type=button data-t=rotR>Pivoter à droite</button><button type=button data-t=fs>Plein écran</button>${legalAuMenu ? `<div class=gapropos>${legalAuMenu}</div>` : ""}</div>
   <div class=gcache hidden>${enReserve.join("")}<button type=button class=ic id=rotL title="Pivoter à gauche" aria-label="Pivoter le document à gauche">${I.rotL}</button><button type=button class=ic id=rotR title="Pivoter à droite" aria-label="Pivoter le document à droite">${I.rotR}</button><button type=button class=ic id=fs title="Plein écran">${I.fs}</button></div>
   <div class=gpill id=gPill role=toolbar aria-label="Navigation dans le document"><button type=button class=ic id=vignBtn title="Toutes les pages" aria-label="Afficher toutes les pages" aria-pressed=false>${I.pages}</button><span class=gsep></span><button type=button class=ic id=pillPrev title="Page précédente" aria-label="Page précédente">${I.prec}</button><button type=button class=pg id=pg title="Aller à une page" aria-label="Aller à une page"></button><button type=button class=ic id=pillNext title="Page suivante" aria-label="Page suivante">${I.suiv}</button><span class=gsep></span><button type=button class=gfit id=fitBtn aria-pressed=false>Page entière</button><span class=zoom><button type=button id=zout title="Dézoomer" aria-label="Dézoomer">−</button><span id=zlbl>100%</span><button type=button id=zin title="Zoomer" aria-label="Zoomer">+</button></span></div>`;
@@ -122,6 +136,15 @@ const LECTURE_CSS = `
   .gprim:hover{background:#33363d}
   .gsec{background:transparent;color:#1b1d22;border:1px solid #c9ced8}
   .gsec:hover{background:#f1f3f6}
+  .gslots{display:inline-flex;align-items:center;gap:8px}
+  /* LES ONGLETS DU DOSSIER (#596), déclarés par l'hôte : un clic ne change rien ici, il est RENVOYÉ
+     (host-action) — seul l'hôte sait fabriquer le lien tracé de l'autre document. */
+  .gtabs{display:flex;gap:2px;margin:0 auto;padding:3px;background:#f1f3f6;border-radius:999px;overflow-x:auto;scrollbar-width:none;max-width:44vw;flex:none}
+  .gtabs[hidden]{display:none}
+  .gtab{font:inherit;font-size:12.5px;font-weight:600;color:#5d6470;background:transparent;border:0;border-radius:999px;padding:5px 12px;cursor:pointer;white-space:nowrap}
+  .gtab:hover{color:#1b1d22}
+  .gtab.on{background:#fff;color:#1b1d22;box-shadow:0 1px 2px #0a0f2a24}
+  .gtab:focus-visible{outline:2px solid #1b1d22;outline-offset:1px}
   .gprog{position:absolute;left:0;right:0;bottom:-1px;height:3px;background:#e3e6eb;pointer-events:none}
   .gprog i{display:block;height:100%;width:0;background:#1b1d22;transition:width .25s ease}
   .gpill{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:30;display:flex;align-items:center;gap:2px;padding:4px 6px;background:#fff;color:#1b1d22;border-radius:999px;box-shadow:0 6px 22px #0a0f2a2e,0 0 0 1px #0a0f2a0f;transition:opacity .2s ease;white-space:nowrap}
@@ -173,6 +196,8 @@ const LECTURE_CSS = `
     body.g-lecture .gbar .gbtn#shareBtn,body.g-lecture .gbar .gbtn#presentBtn,body.g-lecture .gbar .gbtn#dlBtn{display:inline-flex}
   }
   @media (max-width:640px){
+    body.g-lecture .gbar{flex-wrap:wrap}
+    .gtabs{order:9;width:100%;max-width:none;margin:2px 0 0}
     body.g-lecture .gbar .gsec#shareBtn,body.g-lecture .gbar .gsec#presentBtn,body.g-lecture .gbar .gsec#dlBtn{display:none}
     body.g-lecture .gmenu .g-mob{display:block}
     body.g-lecture .gmenu{top:auto;left:0;right:0;bottom:0;border-radius:16px 16px 0 0;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
@@ -183,4 +208,4 @@ const LECTURE_CSS = `
   @media (prefers-reduced-motion:reduce){ .gpill,body.g-lecture .navp,.gprog i{transition:none} }
 `;
 
-module.exports = { reglagesLecture, barreLecture, LECTURE_CSS };
+module.exports = { reglagesLecture, barreLecture, actionsDeLecture, LECTURE_CSS };
