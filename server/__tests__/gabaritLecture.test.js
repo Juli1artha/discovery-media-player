@@ -59,8 +59,18 @@ let demandees;
 const posesSurDocument = [];
 const ajouterOrigine = document.addEventListener.bind(document);
 document.addEventListener = (type, fn, opts) => { posesSurDocument.push([type, fn, opts]); return ajouterOrigine(type, fn, opts); };
+// ⚠️ ET LEURS MINUTEURS AUSSI. Une page montée en lecture arme l'effacement à 3 s ; montée avec de vrais
+// minuteurs, elle le laissait courir après l'essai. Sous couverture (CI, 11/11), l'essai suivant durait
+// assez pour que ce minuteur fantôme efface la pastille d'une page en ANCIEN gabarit, qui n'en a pas :
+// « l'ancien gabarit ne s'efface jamais » échouait en CI et passait ici. Reproduit en ralentissant
+// l'essai de 3,2 s ; seul, il passait — la page n'y était pour rien.
+const minuteursDesPages = new Set();
+const armerOrigine = globalThis.setTimeout;
+globalThis.setTimeout = function (fn, ms, ...args) { const id = armerOrigine(fn, ms, ...args); minuteursDesPages.add(id); return id; };
 function retirerLesFantomes() {
   for (const [type, fn, opts] of posesSurDocument.splice(0)) document.removeEventListener(type, fn, opts);
+  for (const id of minuteursDesPages) clearTimeout(id);
+  minuteursDesPages.clear();
 }
 
 async function monter({ query = {}, vp = PAYSAGE, total = 21 } = {}) {
