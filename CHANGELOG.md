@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.178] — 2026-11-11
+
 ### Added
 
 - **L'hôte déclare la barre « lecture », la page lui dit la page et le clic (`chrome`, `host-action`,
@@ -8016,7 +8018,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.177...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.178...HEAD
+[0.1.178]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.177...v0.1.178
 [0.1.177]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.176...v0.1.177
 [0.1.176]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.175...v0.1.176
 [0.1.175]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.174...v0.1.175
