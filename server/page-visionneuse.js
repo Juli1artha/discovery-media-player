@@ -8,6 +8,7 @@ const { LIVE_CSS, LIVE_BAR, LIVE_PANEL, LIVE_JS } = require("./gabarit-live");
 const { MAP_CSS, MAP_MARKUP, MAP_JS } = require("./gabarit-carte");
 const { BOT_CSS, ICONS, botMarkup, voixProposable } = require("./gabarit-agent");
 const { legalFooter, LEGAL_CSS } = require("./gabarit-legal");
+const { barreLecture, LECTURE_CSS } = require("./gabarit-lecture");
 const { cleSessionHote, CLE_SESSION_PLAYER, CLE_INVITE } = require("./session-cles");
 
 // Le cœur navigateur (bundle committé) et les GREFFONS de l'hôte — résolus depuis le contexte,
@@ -86,7 +87,12 @@ function viewerHtml(share, nonce, logoUrl, pitch) {
   // En aperçu interne, on embarque de quoi démarrer une présentation live (URL Storage brute + métadonnées).
   // `fileName` : c'est LUI qui dit la nature du document côté page. L'URL publique est
   // `/api/doc?slug=…&file=1`, sans extension — sans ce champ, une image partait dans pdf.js.
-  const cfg = jsonPourScript({ page: Math.max(1, Math.trunc(Number(share.page_depart) || 1)), fit: String(share.fit || ""), brand: PLAYER.branding.name, slug: preview ? "" : share.slug, fileUrl, fileName: share.file_name || "", pdfjs: PDFJS, pdfjsWorker: PDFJS_WORKER, title, preview, embed, embedded, bot: botOn, botGuided: !preview && !!share.bot_enabled && share.bot_guided !== false, botAv: (!preview && share.bot_enabled && share.bot_avatar) || "", botName: (!preview && share.bot_enabled && share.bot_name) || "", botGreet: (!preview && share.bot_enabled && share.bot_greeting) || "", botGreetDoc: (!preview && share.bot_enabled && share.bot_greeting_doc) || "", dl: share.allow_download !== false, autoPresent: !!share.auto_present, botAnim: share.bot_page_anim !== false, botVoice: !preview && !!share.bot_enabled && voixProposable(), vIcOn: ICONS.sound, vIcOff: ICONS.mute, kStyle: (!preview && share.bot_enabled && share.bot_karaoke) || "classic", vLayout: (!preview && share.bot_enabled && share.video_layout) || "", vClips: !preview && !!share.bot_vclips, botVAv: (!preview && share.bot_enabled && share.bot_vphoto) || "", resumeSlug: preview ? (share.resume_slug || "") : "", supaUrl: preview ? (share.supa_url || "") : "", supaKey: preview ? (share.supa_key || "") : "", internal: preview && share.internal_email ? { email: share.internal_email, name: share.presenter_name || "", docId: share.doc_id || "", it: share.internal_token || "" } : null, present: preview ? { url: share.raw_url || "", name: share.file_name || "", title: share.doc_title || "", docId: share.doc_id || "", by: share.presenter_name || "", email: share.internal_email || "", av: share.presenter_avatar || "" } : null });
+  // LE GABARIT « LECTURE » (#595) : seulement s'il est demandé, et jamais avec l'assistant, dont la
+  // feuille (gabarit-agent) pose sa propre barre, ses flèches et son mode une page.
+  const lecture = share.lecture && !botOn ? share.lecture : null;
+  const mesure = !preview && !!share.slug;
+  const piedLegal = legalFooter({ tracked: mesure, sansExpediteur: !share.recipient_email && !share.created_by });
+  const cfg = jsonPourScript({ lecture: !!lecture, page: Math.max(1, Math.trunc(Number(share.page_depart) || 1)), fit: String(share.fit || ""), brand: PLAYER.branding.name, slug: preview ? "" : share.slug, fileUrl, fileName: share.file_name || "", pdfjs: PDFJS, pdfjsWorker: PDFJS_WORKER, title, preview, embed, embedded, bot: botOn, botGuided: !preview && !!share.bot_enabled && share.bot_guided !== false, botAv: (!preview && share.bot_enabled && share.bot_avatar) || "", botName: (!preview && share.bot_enabled && share.bot_name) || "", botGreet: (!preview && share.bot_enabled && share.bot_greeting) || "", botGreetDoc: (!preview && share.bot_enabled && share.bot_greeting_doc) || "", dl: share.allow_download !== false, autoPresent: !!share.auto_present, botAnim: share.bot_page_anim !== false, botVoice: !preview && !!share.bot_enabled && voixProposable(), vIcOn: ICONS.sound, vIcOff: ICONS.mute, kStyle: (!preview && share.bot_enabled && share.bot_karaoke) || "classic", vLayout: (!preview && share.bot_enabled && share.video_layout) || "", vClips: !preview && !!share.bot_vclips, botVAv: (!preview && share.bot_enabled && share.bot_vphoto) || "", resumeSlug: preview ? (share.resume_slug || "") : "", supaUrl: preview ? (share.supa_url || "") : "", supaKey: preview ? (share.supa_key || "") : "", internal: preview && share.internal_email ? { email: share.internal_email, name: share.presenter_name || "", docId: share.doc_id || "", it: share.internal_token || "" } : null, present: preview ? { url: share.raw_url || "", name: share.file_name || "", title: share.doc_title || "", docId: share.doc_id || "", by: share.presenter_name || "", email: share.internal_email || "", av: share.presenter_avatar || "" } : null });
   return `<!doctype html><html lang=fr><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=3,viewport-fit=cover,interactive-widget=resizes-content">
 <meta name=robots content="noindex,nofollow">
@@ -173,6 +179,7 @@ function viewerHtml(share, nonce, logoUrl, pitch) {
   .textLayer ::selection{background:rgba(60,120,255,.4)}
   .ph{display:grid;place-items:center;color:#999;font-size:12px}
 ${LEGAL_CSS}
+  ${lecture ? LECTURE_CSS : ""}
   /* Loader (moderne) : couvre la zone, logo + barre de progression réelle, puis fondu. */
   #load{position:absolute;inset:0;background:#fff;display:flex;align-items:center;justify-content:center;z-index:6;transition:opacity .4s ease}
   #load.hide{opacity:0;pointer-events:none}
@@ -273,7 +280,8 @@ ${LEGAL_CSS}
   ${preview ? MAP_CSS : ""}
   ${botOn ? BOT_CSS : ""}
 </style></head>
-<body>
+<body${lecture ? " class=g-lecture" : ""}>
+  ${lecture ? barreLecture({ reglages: lecture, preview, embed, title, fileUrl, allowDownload: share.allow_download !== false, isTest: !!share.is_test, liveBar: preview ? LIVE_BAR : "", legalHtml: piedLegal, tracked: mesure }) : `
   <div class=bar>${embed ? '<button class="ic barx" id=embedCloseBtn title=Fermer aria-label=Fermer><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' : ""}<b>${title}</b>${share.is_test ? '<span class=testchip>\ud83c\udfad Répétition — session de test</span>' : ""}<span class=sp></span><button type=button class=pg id=pg title="Aller à une page" aria-label="Aller à une page"></button>
     ${preview ? LIVE_BAR : ""}
     <div class=zoom><button id=zout title="Dézoomer">−</button><span id=zlbl>100%</span><button id=zin title="Zoomer">+</button></div>
@@ -294,7 +302,7 @@ ${LEGAL_CSS}
     ${preview ? '<button data-t=presentBtn>Présenter en direct</button>' : ''}
     <button data-t=shareBtn>Partager</button>
     ${share.allow_download === false ? "" : "<button data-t=dlBtn>Télécharger</button>"}
-  </div>
+  </div>`}
   ${preview ? `<div class=pbar id=pbar style="display:none">
     <button class=pbar-live id=pbarToggle title="Replier / déplier"><i></i> En direct <span class=pbar-chev>▾</span></button>
     <input class=pbar-link id=pbarLink readonly>
@@ -335,7 +343,7 @@ ${LEGAL_CSS}
     ${botOn ? botMarkup(share, pitch) : ""}
   </div>
   ${PLAYER.branding.poweredBy ? `<div class=brand>Propulsé par ${esc(PLAYER.branding.poweredBy)}</div>` : ""}
-  ${legalFooter({ tracked: !preview && !!share.slug, sansExpediteur: !share.recipient_email && !share.created_by })}
+  ${lecture ? "" : piedLegal}
   ${brandLogo || !brandIntroRuntime ? "" : `<script nonce="${nonce}">(${brandIntroRuntime.toString()})();</script>`}
   <script nonce="${nonce}">${PLAYER_BROWSER_JS}</script>
   ${preview ? `${balise(nonce, TIERS.supa)}
@@ -371,7 +379,15 @@ ${LEGAL_CSS}
     // decide d apres la premiere page (Player.viewer.ajustementInitial). Sans ?fit=, il reste 'largeur' :
     // un hote qui ne demande rien ne voit aucun changement.
     var ajust='largeur';
-    function poserAjustement(){ ajust=Player.viewer.ajustementInitial(CFG.fit,firstAspect,numPages); document.body.classList.toggle('fit-page',ajust==='page'); document.body.classList.toggle('multi',numPages>1); }
+    function poserAjustement(){ ajust=Player.viewer.ajustementInitial(CFG.fit||(CFG.lecture?'auto':''),firstAspect,numPages); majAjustement(); }
+    // Le gabarit « lecture » ouvre en auto quand l hote ne precise rien : c est lui qui a ete pense pour
+    // la page entiere. L ancien gabarit, lui, reste en largeur sans ?fit= — rien ne change pour qui ne demande rien.
+    function majAjustement(){ document.body.classList.toggle('fit-page',ajust==='page'); document.body.classList.toggle('multi',numPages>1);
+      var fb=document.getElementById('fitBtn'); if(fb){ var entiere=ajust==='page'; fb.textContent=entiere?'Largeur':'Page entière'; fb.setAttribute('aria-pressed',entiere?'true':'false'); fb.setAttribute('aria-label',entiere?'Ajuster à la largeur':'Afficher la page entière'); } }
+    // LA BASCULE EN COURS DE LECTURE (#595) : #594 ne posait l ajustement qu a l ouverture, et la touche 0
+    // revient au zoom 1 sans changer d ajustement. Le bouton de la pastille passe de l un a l autre en
+    // gardant la page.
+    function basculerAjustement(){ if(!numPages)return; ajust=ajust==='page'?'largeur':'page'; majAjustement(); var c=cur||1; if(pdfDoc||IS_IMG){ build(); restaurerPage(c); } }
     // ATTENTION : LE LECTEUR GARDAIT TOUTES LES PAGES RENDUES (P1 audit externe).
     //
     // rendered[n] n etait jamais evince, les canvas restaient dans le DOM, et un build() de refit
@@ -784,6 +800,11 @@ ${LEGAL_CSS}
       var _np=document.getElementById('navPrev'), _nn=document.getElementById('navNext');
       if(_np) _np.addEventListener('click',function(){ allerA((cur||1)-1); });
       if(_nn) _nn.addEventListener('click',function(){ allerA((cur||1)+1); });
+      var _pp=document.getElementById('pillPrev'), _pn=document.getElementById('pillNext'), _fb=document.getElementById('fitBtn');
+      if(_pp) _pp.addEventListener('click',function(){ allerA((cur||1)-1); });
+      if(_pn) _pn.addEventListener('click',function(){ allerA((cur||1)+1); });
+      if(_fb) _fb.addEventListener('click',basculerAjustement);
+      if(CFG.lecture) veiller();
       if(vignIn){
         var desarmer=function(){ vignSuivi=false; };
         vignIn.addEventListener('wheel',desarmer,{passive:true});
@@ -1011,7 +1032,12 @@ ${LEGAL_CSS}
     // page-la que le suivi enregistre. Une proportion non tournee a 90 degres fausse donc les
     // statistiques d un partage, en silence et sans rien casser a l ecran.
     function aspectEffectif(){ return Player.viewer.aspectApresRotation(firstAspect,rot); }
-    function targetWidth(){ return Player.viewer.fitWidth({containerWidth:baseWidth(),containerHeight:scrollEl.clientHeight,zoom:zoom,onePage:onePage,aspect:firstAspect,rotation:rot,overlap:botOverlap(),reserve:onePageReserve(),ajustement:ajust}); }
+    function targetWidth(){ return Player.viewer.fitWidth({containerWidth:baseWidth(),containerHeight:scrollEl.clientHeight,zoom:zoom,onePage:onePage,aspect:firstAspect,rotation:rot,overlap:botOverlap(),reserve:onePageReserve()+reservePastille(),ajustement:ajust}); }
+    // ⚠️ LA PASTILLE DU GABARIT LECTURE FLOTTE SUR LE BAS DU CADRE : sans cette reserve, la « page entiere »
+    // avait ses 50 derniers pixels sous la pastille tant qu elle etait visible — mesure dans Chrome le 11/11
+    // (page jusqu a 706 px dans un cadre de 712, pastille de 708 a 750 dans la fenetre). Hauteur reelle,
+    // pas une constante : la pastille grandit avec la police de l utilisateur.
+    function reservePastille(){ if(!CFG.lecture||ajust!=='page')return 0; var g=document.getElementById('gPill'); if(!g)return 0; var r=g.getBoundingClientRect(), sr=scrollEl.getBoundingClientRect(); return Math.max(0,Math.round(sr.bottom-r.top)); }
     // IMAGE — la visionneuse ne savait lire QUE du PDF (pdf.js). Une axonométrie en .jpg
     // partait donc dans getDocument() et échouait sur « structure invalide ».
     // Elle devient une page unique : tout le chrome — loader, zoom, plein écran, Partager,
@@ -1095,7 +1121,7 @@ ${LEGAL_CSS}
     function totalDefilable(){ return onePage?numPages:(atteignables||numPages); }
     // Ce que le defilement continu atteindrait a un autre zoom — pour dire au lecteur si reduire suffit.
     function atteignablesAuZoom(z){
-      var w=Math.round(Player.viewer.fitWidth({containerWidth:baseWidth(),containerHeight:scrollEl.clientHeight,zoom:z,onePage:false,aspect:firstAspect,rotation:rot,overlap:botOverlap(),reserve:onePageReserve(),ajustement:ajust}));
+      var w=Math.round(Player.viewer.fitWidth({containerWidth:baseWidth(),containerHeight:scrollEl.clientHeight,zoom:z,onePage:false,aspect:firstAspect,rotation:rot,overlap:botOverlap(),reserve:onePageReserve()+reservePastille(),ajustement:ajust}));
       return Player.viewer.pagesAtteignables({hauteurElement:Math.round(w*aspectEffectif()),ecart:ESPACE_PAGES,decalageHaut:HAUT_PAGES,total:numPages});
     }
     function creerPage(i,w,h){ var d=document.createElement('div'); d.className='page ph'; d.dataset.p=i; d.style.width=w+'px'; d.style.height=h+'px'; d.textContent='Page '+i; if(io)io.observe(d); if(ioCur)ioCur.observe(d); return d; }
@@ -1160,7 +1186,8 @@ ${LEGAL_CSS}
     // Avant : une seule touche ecoutee (Echap, et seulement encadree), des fleches reservees a l assistant,
     // et « Page 1 / 21 » qu on lisait sans pouvoir le cliquer. On avancait a la molette, en devinant.
     function allerA(p){ if(!numPages)return; p=Player.viewer.clampPage(p,numPages); if(onePage) showPage(p); else scrollToPage(p); }
-    function syncNav(){ var st=Player.viewer.arrowState(cur,numPages); var pv=document.getElementById('navPrev'), nx=document.getElementById('navNext'); if(pv)pv.disabled=st.prevDisabled; if(nx)nx.disabled=st.nextDisabled; }
+    function syncNav(){ var st=Player.viewer.arrowState(cur,numPages); ['navPrev','pillPrev'].forEach(function(id){ var b=document.getElementById(id); if(b)b.disabled=st.prevDisabled; }); ['navNext','pillNext'].forEach(function(id){ var b=document.getElementById(id); if(b)b.disabled=st.nextDisabled; });
+      var gp=document.getElementById('gProg'); if(gp&&numPages) gp.style.width=Player.viewer.progressPercent(cur||1,numPages)+'%'; }
     function champDeSaisie(t){ return !!(t&&(t.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName||''))); }
     // ⚠️ CE QUE LE CLAVIER NE PREND PAS. Rien dans un champ (chat, partage, recherche de la carte live), rien
     // avec Ctrl / Cmd / Alt (raccourcis du navigateur), rien pendant le mode une page de l assistant (c est
@@ -1190,6 +1217,18 @@ ${LEGAL_CSS}
       else fait=false;
       if(fait) e.preventDefault();
     }
+    // ── LES COMMANDES S EFFACENT (#595) — la pastille et les fleches, jamais la barre ─────────────────────
+    // Trois secondes sans geste, et seule la page reste (et la progression, dans la barre). Un mouvement, un
+    // toucher, une touche les ramenent. ⚠️ On ne s efface pas sous les doigts : menu ouvert, panneau de
+    // partage ouvert, saisie d une page en cours, pointeur ou focus dans la pastille.
+    var DELAI_EFFACEMENT_MS=3000, tEfface=0;
+    function occupe(){ var m=document.getElementById('barMenu'), pop=document.getElementById('pop'), pill=document.getElementById('gPill');
+      if(m&&m.classList.contains('open'))return true; if(pop&&pop.classList.contains('open'))return true; if(document.getElementById('pgIn'))return true;
+      if(pill){ try{ if(pill.matches(':hover'))return true; }catch(e){} if(pill.contains(document.activeElement))return true; }
+      return false; }
+    function effacer(){ if(occupe()){ tEfface=setTimeout(effacer,DELAI_EFFACEMENT_MS); return; } document.body.classList.add('g-off'); }
+    function reveiller(){ document.body.classList.remove('g-off'); clearTimeout(tEfface); tEfface=setTimeout(effacer,DELAI_EFFACEMENT_MS); }
+    function veiller(){ ['pointermove','pointerdown','keydown','touchstart'].forEach(function(n){ document.addEventListener(n,reveiller,{passive:true}); }); reveiller(); }
     function demanderPage(){
       var b=document.getElementById('pg'); if(!b||numPages<2||document.getElementById('pgIn'))return;
       var i=document.createElement('input'); i.id='pgIn'; i.className='pgin'; i.type='number'; i.min='1'; i.max=String(numPages); i.value=String(cur||1);

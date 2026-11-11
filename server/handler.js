@@ -527,6 +527,8 @@ function ajustementDemande(q) {
   return AJUSTEMENTS_ADMIS.has(v) ? v : "";
 }
 
+const { reglagesLecture } = require("./gabarit-lecture");
+
 function sendRefusal(res, reason, embed) {
   if (!embed) return sendHtml(res, 404, notFoundHtml());
   const nonce = crypto.randomBytes(16).toString("base64");
@@ -761,6 +763,8 @@ async function handlerMesure(req, res) {
           "link-protection", "start-page",
           // `fit` : `?fit=auto|page|width` choisit l'ajustement d'ouverture (#593). Absent : inchangé.
           "fit",
+          // `reading-layout` : `?gabarit=lecture` sert la barre fine, la pastille de navigation et le menu « ⋯ » (#595).
+          "reading-layout",
           // `present-attach` : la page du présentateur accepte qu'on lui CONFIE une présentation par le
           // pont (jeton de contrôle en postMessage), et annonce `present-started` / `present-ended`.
           // Sans cette capacité, un hôte enverrait son jeton à une page qui ne l'écoute pas, et
@@ -1135,7 +1139,7 @@ async function handlerMesure(req, res) {
       }
       const supaUrl = (PLAYER.config && PLAYER.config.supabaseUrl) || "";
       const supaKey = (PLAYER.config && PLAYER.config.supabasePublishableKey) || "";
-      const pseudo = { preview: true, embed, page_depart: pageDeDepart(q), fit: ajustementDemande(q), slug: "", file_name: String(q.name || "document.pdf"), doc_title: String(q.title || q.name || "Document"), raw_url: url, doc_id: String(q.docId || ""), presenter_name: String(q.by || ""), presenter_avatar: String(q.av || ""), internal_email: String(q.uemail || ""), internal_token: String(q.it || ""), supa_url: supaUrl, supa_key: supaKey, auto_present: String(q.autopresent || "") === "1", resume_slug: String(q.resume || ""), brand_key: String(q.brand || "") || null, stream_url: `/api/doc?preview=1&stream=1&url=${encodeURIComponent(url)}&name=${encodeURIComponent(String(q.name || ""))}` };
+      const pseudo = { preview: true, embed, page_depart: pageDeDepart(q), fit: ajustementDemande(q), lecture: reglagesLecture(q), slug: "", file_name: String(q.name || "document.pdf"), doc_title: String(q.title || q.name || "Document"), raw_url: url, doc_id: String(q.docId || ""), presenter_name: String(q.by || ""), presenter_avatar: String(q.av || ""), internal_email: String(q.uemail || ""), internal_token: String(q.it || ""), supa_url: supaUrl, supa_key: supaKey, auto_present: String(q.autopresent || "") === "1", resume_slug: String(q.resume || ""), brand_key: String(q.brand || "") || null, stream_url: `/api/doc?preview=1&stream=1&url=${encodeURIComponent(url)}&name=${encodeURIComponent(String(q.name || ""))}` };
       // ⚠️ LA MARQUE MANQUAIT ICI, ET SEULEMENT ICI. Toute la machinerie existe — l'hôte répond à
       // `PLAYER_HOST_BRAND_URL`, `branding.forKey` résout, les liens tracés affichent la bonne
       // marque. Ce chemin-ci ne l'appelait simplement pas, et aucun paramètre ne transportait la
@@ -1311,6 +1315,8 @@ async function handlerMesure(req, res) {
       : "'self'";
     share.page_depart = pageDeDepart(q);
     share.fit = ajustementDemande(q);
+    // Le gabarit « lecture » (#595) : réglages d'AFFICHAGE, comme `fit` — un droit vient du lien, jamais d'ici.
+    share.lecture = reglagesLecture(q);
     return sendHtml(res, 200, viewerHtml(share, nonce, logoUrl, pitch), `'nonce-${nonce}'`, originesImages(logoUrl, share), frameAncestors);
   } catch (error) {
     try { await PLAYER.errors.capture(error, { route: "doc", method: req.method }); } catch { /* ignore */ }

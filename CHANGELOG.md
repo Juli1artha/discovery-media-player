@@ -14,6 +14,16 @@ the notes there are this file's section for that version.
 
 ### Added
 
+- **Un gabarit « lecture » à côté de l'ancienne barre (`?gabarit=lecture`, capacité `reading-layout`, #595).**
+  Treize commandes au même poids dans une barre noire, « Partager » en blanc comme seul repère, pivoter deux
+  fois au premier rang, le pied légal posé sur la page : la nouvelle barre est fine et claire, ne porte
+  qu'**une** action pleine et au plus une en contour (`primary=`, `secondary=`, libellés de 40 caractères au
+  plus, refusés entiers au-delà), et range le reste dans « ⋯ ». La navigation passe dans une pastille
+  flottante (pages, précédente, numéro, suivante, page entière / largeur, zoom), qui s'efface avec les flèches
+  après trois secondes sans geste — jamais sous les doigts. La barre, elle, reste : elle porte « Lecture
+  mesurée » sur un lien tracé. Placer une action n'ouvre aucun droit : un téléchargement interdit reste
+  absent. Sans le paramètre, ou avec l'assistant, la page est servie à l'identique.
+
 - **Une page s'ouvre entière, et se tourne au clavier, aux flèches ou par son numéro (`?fit=`, #593).** Une
   plaquette paysage ouverte en surimpression était coupée à mi-hauteur : en défilement, la largeur suivait le
   cadre sans regarder sa hauteur, sous une étiquette « 100 % » qui disait le contraire. `?fit=page` borne la
