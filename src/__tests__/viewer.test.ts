@@ -16,6 +16,7 @@ import {
   positionDe,
   pagesAtteignables,
   PLAFOND_DEFILEMENT_PX,
+  ajustementInitial,
   aspectApresRotation,
   averageColor,
   clampPage,
@@ -490,5 +491,73 @@ describe("⚠️ pagesAtteignables — ce que le plafond de défilement du navig
     expect(pagesAtteignables({ ...G, total: 1000 }, 100), "même la première déborde : elle reste la seule").toBe(1);
     expect(pagesAtteignables({ hauteurElement: NaN, ecart: NaN, decalageHaut: NaN, total: 5 })).toBe(5);
     expect(pagesAtteignables({ ...G, total: 0 })).toBe(0);
+  });
+});
+
+// ⚠️ UNE PAGE PAYSAGE NE TENAIT JAMAIS DANS LE CADRE (issue #593). En défilement, la largeur suivait le
+// cadre sans regarder la hauteur : une plaquette paysage ouverte en surimpression (≈ 1 250 × 760 px)
+// recevait 1 250 px de large, donc ≈ 880 de haut, et le lecteur arrivait sur une couverture coupée
+// sous une étiquette « 100 % » qui lui disait le contraire.
+describe("⚠️ ajustement « page entière » — #593", () => {
+  const CADRE = { containerWidth: 1250, containerHeight: 760 };
+  const PAYSAGE = 1 / 1.414;
+
+  it("borne la page par la hauteur, en défilement continu", () => {
+    const w = fitWidth({ ...CADRE, aspect: PAYSAGE, ajustement: "page" });
+    expect(w * PAYSAGE, "la page tient dans la hauteur, respiration comprise").toBeLessThanOrEqual(760 - 28 + 1e-9);
+    expect(w).toBeLessThan(1250);
+    // Le comportement d'avant, gardé quand on ne demande rien : c'est lui qui coupait la page.
+    expect(fitWidth({ ...CADRE, aspect: PAYSAGE }) * PAYSAGE).toBeGreaterThan(760);
+  });
+
+  // ⚠️ C'EST LA RAISON POUR LAQUELLE CE N'EST PAS LE MODE « UNE SEULE PAGE ». Là, la hauteur borne la
+  // largeur DÉJÀ multipliée par le zoom : zoomer n'agrandit rien, et le cadre ne défile plus. Un plan
+  // de lot, qu'on ouvre pour en lire les cotes, ne pourrait plus être zoomé.
+  it("le zoom s'applique PAR-DESSUS la page entière, sans plafond de hauteur", () => {
+    const base = fitWidth({ ...CADRE, aspect: PAYSAGE, ajustement: "page" });
+    expect(fitWidth({ ...CADRE, aspect: PAYSAGE, ajustement: "page", zoom: 2 })).toBeCloseTo(base * 2, 6);
+    const unePage = fitWidth({ ...CADRE, aspect: PAYSAGE, onePage: true });
+    expect(fitWidth({ ...CADRE, aspect: PAYSAGE, onePage: true, zoom: 2 }), "le mode une seule page, lui, plafonne").toBe(unePage);
+  });
+
+  it("une page étroite n'est jamais agrandie au-delà du cadre", () => {
+    expect(fitWidth({ containerWidth: 600, containerHeight: 5000, aspect: 1.414, ajustement: "page" })).toBe(600);
+  });
+
+  it("garde le seuil d'abandon : mieux vaut une page haute qu'un timbre-poste", () => {
+    expect(fitWidth({ containerWidth: 800, containerHeight: 140, aspect: 1.414, ajustement: "page" })).toBe(800);
+  });
+
+  it("tourne la proportion avec la rotation du lecteur", () => {
+    const droit = fitWidth({ ...CADRE, aspect: 1.414, ajustement: "page" });
+    const couche = fitWidth({ ...CADRE, aspect: 1.414, rotation: 90, ajustement: "page" });
+    expect(couche).toBeGreaterThan(droit);
+  });
+});
+
+describe("⚠️ ajustementInitial — ce que `?fit=` décide à l'ouverture (#593)", () => {
+  it("auto : page entière pour un paysage ou une page seule, largeur pour un portrait de plusieurs pages", () => {
+    expect(ajustementInitial("auto", 1 / 1.414, 21)).toBe("page");
+    expect(ajustementInitial("auto", 1.414, 1)).toBe("page");
+    expect(ajustementInitial("auto", 1.414, 38)).toBe("largeur");
+  });
+
+  it("une demande explicite l'emporte sur le format", () => {
+    expect(ajustementInitial("page", 1.414, 38)).toBe("page");
+    expect(ajustementInitial("width", 1 / 1.414, 21)).toBe("largeur");
+  });
+
+  // ⚠️ L'HÔTE QUI NE DEMANDE RIEN NE VOIT AUCUN CHANGEMENT : c'est la condition pour que le réglage
+  // soit sans risque à la publication. Et tout ce qui n'est pas dans la liste vaut absence.
+  it("absent ou inconnu : le comportement d'avant, quel que soit le format", () => {
+    for (const d of [null, undefined, "", "PAGE", "fit", "1", 2, {}]) {
+      expect(ajustementInitial(d, 1 / 1.414, 21), String(d)).toBe("largeur");
+    }
+  });
+
+  it("un format inconnu (NaN, 0) ne fait jamais basculer « auto »", () => {
+    expect(ajustementInitial("auto", NaN, 21)).toBe("largeur");
+    expect(ajustementInitial("auto", 0, 21)).toBe("largeur");
+    expect(ajustementInitial("auto", NaN, 0)).toBe("largeur");
   });
 });
