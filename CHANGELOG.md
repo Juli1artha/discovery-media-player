@@ -12,6 +12,19 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- **Une page s'ouvre entière, et se tourne au clavier, aux flèches ou par son numéro (`?fit=`, #593).** Une
+  plaquette paysage ouverte en surimpression était coupée à mi-hauteur : en défilement, la largeur suivait le
+  cadre sans regarder sa hauteur, sous une étiquette « 100 % » qui disait le contraire. `?fit=page` borne la
+  largeur DE BASE par la hauteur du cadre et applique le zoom par-dessus — un plan reste zoomable et défilable,
+  ce que le mode « une seule page » de l'assistant ne permet pas (il borne après le zoom). `?fit=auto` choisit
+  `page` pour une première page paysage ou un document d'une page ; absent ou inconnu, rien ne change
+  (capacité `fit`). Pour toutes les pages : ← / →, Début / Fin, + / −, 0 ; Espace et Page suivante tournent
+  la page en `page` et font défiler d'un écran en `width` — ce qui ne faisait rien tant que le document
+  n'avait pas le focus. Flèches latérales hors assistant, et « Page 1 / 21 » devient un bouton qui demande
+  un numéro.
+
 ## [0.1.177] — 2026-11-07
 
 ### Fixed
