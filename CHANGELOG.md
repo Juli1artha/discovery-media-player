@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.181] — 2026-11-12
+
 ### Added
 
 - **Chercher dans le document, dans le gabarit « lecture » (capacité `reading-search`, #612).** Les pages sont
@@ -30,6 +32,10 @@ the notes there are this file's section for that version.
 
 ### Fixed
 
+- **La sélection du texte tombait à côté du texte depuis pdf.js 6, dans les deux gabarits (#613).** La feuille de la
+  couche texte datait de pdf.js 3 ; pdf.js 6 dimensionne ses `span` par variables CSS (`--total-scale-factor`,
+  `--font-height`, `--scale-x`). Sans elles, chaque `span` restait à 14 px dans la police par défaut sous une page dessinée à
+  33 px. Les règles de `pdf_viewer.css` 6.3 sont reprises, et la page pose `--total-scale-factor`.
 - **La loupe faisait passer « ⋯ » à la ligne sur téléphone (#613).** À 375 px, la barre « lecture » demandait 382 px
   et passait de 56 à 95 px de haut. Sous 420 px, le titre cède la place (30 vw), coupé net.
 
@@ -8060,7 +8066,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.180...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.181...HEAD
+[0.1.181]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.180...v0.1.181
 [0.1.180]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.179...v0.1.180
 [0.1.179]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.178...v0.1.179
 [0.1.178]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.177...v0.1.178
