@@ -217,6 +217,46 @@ describe("tracking — forme des charges utiles", () => {
   });
 });
 
+describe("tracking — le mode d'affichage (#617)", () => {
+  it("joint au résumé de session, lu à chaque envoi (les compteurs ont bougé entre-temps)", () => {
+    const gestes = { clavier: 0 };
+    const h = harness({ slug: "s", modeAffichage: () => ({ gabarit: "lecture", gestes: { ...gestes } }) });
+    h.tracker.start();
+    h.tracker.setPageCount(4);
+    h.advance(2000);
+    h.tracker.flush();
+    expect(h.sent[h.sent.length - 1]).toMatchObject({ event: "session", modeAffichage: { gabarit: "lecture", gestes: { clavier: 0 } } });
+    gestes.clavier = 3;
+    h.tracker.setPage(2);
+    h.advance(2000);
+    h.tracker.flush();
+    expect(h.sent[h.sent.length - 1]).toMatchObject({ event: "session", modeAffichage: { gestes: { clavier: 3 } } });
+  });
+  it("seulement sur la session : ni `open` ni `page` ne le portent", () => {
+    const h = harness({ slug: "s", modeAffichage: () => ({ gabarit: "ancien" }) });
+    h.tracker.start();
+    h.tracker.setPage(2);
+    expect(h.sent.filter((m) => m.event !== "session").every((m) => !("modeAffichage" in m))).toBe(true);
+  });
+  it("une exception du lecteur de mode ne coûte que ce champ, jamais la session", () => {
+    const h = harness({ slug: "s", modeAffichage: () => { throw new Error("boum"); } });
+    h.tracker.start();
+    h.tracker.setPageCount(3);
+    h.advance(1000);
+    expect(() => h.tracker.flush()).not.toThrow();
+    const p = h.sent[h.sent.length - 1];
+    expect(p.event).toBe("session");
+    expect(p.modeAffichage).toBeUndefined();
+  });
+  it("sans option : rien de plus qu'avant", () => {
+    const h = harness({ slug: "s" });
+    h.tracker.start();
+    h.tracker.setPageCount(3);
+    h.tracker.flush();
+    expect(h.sent[h.sent.length - 1].modeAffichage).toBeUndefined();
+  });
+});
+
 describe("tracking — cycle de vie", () => {
   it("persiste périodiquement, puis plus rien après stop()", () => {
     const h = harness({ slug: "s", sessionEveryMs: 12_000 });

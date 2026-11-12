@@ -41,6 +41,7 @@ Purpose: reading statistics for a document that was sent out. **Purge: 13 months
 | `commercial_doc_sessions.ip` | **emptied from `0.1.147`** | ⚠️ It held the reader's IP address in the clear and was the most sensitive datum in this schema. **`0.1.147`** stops **serving** it, stops **writing** it, and ships migration **0026**, which erases what thirteen months of journal still carry. ⚠️ **On `0.1.145` and earlier it is still written and still served** — upgrading is what stops it. The column itself survives for now — dropping it would break a host that applies migrations before deploying (see *Purging the reader IP* below); its removal is a later release. The asymmetry this table used to note ends here, upward: a presentation attendee's address is a salted HMAC, a reader's is now nothing at all |
 | `commercial_doc_sessions.ua` | **emptied from `0.1.147`** | ⚠️ **`0.1.147`** stops serving it, stops writing it, and ships migration **0027**, which erases what is there. ⚠️ **On `0.1.145` and earlier it is still written.** `device`, `os` and `browser` are derived from it *at write time* and are what a reading record carries — so the raw string had no reader left, and "we might re-parse it one day" does not justify thirteen months of a fingerprint kept for nobody. Same treatment and same reason as `ip`: emptied now, column removed in a later release |
 | `commercial_doc_sessions.num_pages` / `commercial_doc_sessions.pages_time` | page-by-page reading behaviour | same |
+| `commercial_doc_sessions.affichage` | how the document was displayed (migration 0029): layout, fit, page format, one-page mode, and gesture **counters** — enumerations and integers only, bounded by the server; never what was searched | same |
 
 ## Reading logs (internal team)
 
@@ -51,6 +52,7 @@ Same purpose, internal audience. **Purge: 13 months** after `last_at`.
 | `commercial_doc_internal_sessions.user_email` / `commercial_doc_internal_sessions.user_name` | purged with the row |
 | `commercial_doc_internal_sessions.session_id` | same |
 | `commercial_doc_internal_sessions.num_pages` / `commercial_doc_internal_sessions.pages_time` | same |
+| `commercial_doc_internal_sessions.affichage` | same (migration 0029) |
 
 ## Sending links (`commercial_doc_shares`)
 

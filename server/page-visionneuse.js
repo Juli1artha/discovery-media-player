@@ -368,7 +368,16 @@ ${LEGAL_CSS}
     var scrollEl=document.getElementById('scroll'), pagesEl=document.getElementById('pages'), vignIn=document.getElementById('vignIn');
     // Suivi de lecture (temps réel à l'écran par page, page la plus loin atteinte, session) :
     // player/src/tracking.ts — typé et testé, y compris la séparation prospect / aperçu interne.
-    var T=Player.tracking.createTracker({ slug:CFG.slug||'', internal:CFG.internal||null, scrollElement:scrollEl });
+    // ── LE MODE D AFFICHAGE DE LA SESSION (#617) ─────────────────────────────────────────────────────────────
+    // Lu a chaque envoi du resume de session, et joint a lui : pas de requete de plus. Des enumerations et des
+    // COMPTEURS de gestes, rien d autre — on compte qu on a cherche, jamais ce qu on a cherche. Le serveur borne
+    // l objet (server/affichage.js) et ne l ecrit que si la base a la colonne (0029).
+    var gestes={clavier:0,fleches:0,vignettes:0,zoom:0,rotation:0,ajustement:0,recherche:0,resultats:0,sommaire:0};
+    function compter(nom){ if(gestes[nom]<9999) gestes[nom]++; }
+    function affichageSession(){
+      return {gabarit:CFG.lecture?'lecture':'ancien',ajustement:ajust==='page'?'page':'largeur',format:firstAspect<1?'paysage':'portrait',une_page:!!onePage,gestes:gestes};
+    }
+    var T=Player.tracking.createTracker({ slug:CFG.slug||'', internal:CFG.internal||null, scrollElement:scrollEl, modeAffichage:affichageSession });
     // POIGNÉE DE VISIONNEUSE : le contrat offert aux greffons — et la seule chose qu'ils
     // connaissent du lecteur. Les fonctions et éléments sont STABLES ; la page courante, le nombre
     // de pages, le document et le mode une-page sont des ACCESSEURS (ils changent pendant la
@@ -395,7 +404,7 @@ ${LEGAL_CSS}
     // LA BASCULE EN COURS DE LECTURE (#595) : #594 ne posait l ajustement qu a l ouverture, et la touche 0
     // revient au zoom 1 sans changer d ajustement. Le bouton de la pastille passe de l un a l autre en
     // gardant la page.
-    function basculerAjustement(){ if(!numPages)return; ajust=ajust==='page'?'largeur':'page'; majAjustement(); var c=cur||1; if(pdfDoc||IS_IMG){ build(); restaurerPage(c); } }
+    function basculerAjustement(){ if(!numPages)return; compter('ajustement'); ajust=ajust==='page'?'largeur':'page'; majAjustement(); var c=cur||1; if(pdfDoc||IS_IMG){ build(); restaurerPage(c); } }
     // ATTENTION : LE LECTEUR GARDAIT TOUTES LES PAGES RENDUES (P1 audit externe).
     //
     // rendered[n] n etait jamais evince, les canvas restaient dans le DOM, et un build() de refit
@@ -831,11 +840,11 @@ ${LEGAL_CSS}
       document.addEventListener('keydown',clavierDeLecture);
       var _pgb=document.getElementById('pg'); if(_pgb) _pgb.addEventListener('click',demanderPage);
       var _np=document.getElementById('navPrev'), _nn=document.getElementById('navNext');
-      if(_np) _np.addEventListener('click',function(){ allerA((cur||1)-1); });
-      if(_nn) _nn.addEventListener('click',function(){ allerA((cur||1)+1); });
+      if(_np) _np.addEventListener('click',function(){ compter('fleches'); allerA((cur||1)-1); });
+      if(_nn) _nn.addEventListener('click',function(){ compter('fleches'); allerA((cur||1)+1); });
       var _pp=document.getElementById('pillPrev'), _pn=document.getElementById('pillNext'), _fb=document.getElementById('fitBtn');
-      if(_pp) _pp.addEventListener('click',function(){ allerA((cur||1)-1); });
-      if(_pn) _pn.addEventListener('click',function(){ allerA((cur||1)+1); });
+      if(_pp) _pp.addEventListener('click',function(){ compter('fleches'); allerA((cur||1)-1); });
+      if(_pn) _pn.addEventListener('click',function(){ compter('fleches'); allerA((cur||1)+1); });
       if(_fb) _fb.addEventListener('click',basculerAjustement);
       if(CFG.lecture) veiller();
       if(CFG.lecture) initRecherche();
@@ -907,7 +916,7 @@ ${LEGAL_CSS}
     function teteFixeDuContenu(){ return { largeur:14, hauteur:22 }; }
 
     // Le point de passage unique : boutons, molette, trackpad et doigts finissent tous ici.
-    function confirmerZoom(z,cx,cy){
+    function confirmerZoom(z,cx,cy){ compter('zoom');
       clearTimeout(tGeste); tGeste=null; geste=null;
       retirerApercu();
       var avant=zoom, apres=Player.viewer.clampZoom(z);
@@ -1268,7 +1277,7 @@ ${LEGAL_CSS}
           el.type='button';
           var n=document.createElement('span'); n.className='gtoc-p'; n.textContent=String(p); el.appendChild(n);
           el.addEventListener('click',function(){
-            somm.choisie=i; allerA(p);
+            somm.choisie=i; compter('sommaire'); allerA(p);
             // Sur un ecran etroit, le tiroir couvre la page : on le replie pour la montrer. Sinon il reste, pour enchainer.
             if(window.innerWidth<=860) fermerSommaire(); else dessinerSommaire();
           });
@@ -1345,12 +1354,14 @@ ${LEGAL_CSS}
         var r=Player.viewer.chercherDansPages(pages,q);
         rech.occ=r.occurrences; rech.sansTexte=r.pagesSansTexte; rech.tronque=r.tronque;
         rech.i=Player.viewer.premiereOccurrenceDepuis(rech.occ,cur||1);
+        compter('recherche');
         if(rech.i>=0) allerA(rech.occ[rech.i].page);
         rechDire(); surligner();
       });
     }
     function rechAller(sens){
       if(!rech.occ.length) return;
+      compter('resultats');
       rech.i=(rech.i+sens+rech.occ.length)%rech.occ.length;
       allerA(rech.occ[rech.i].page); rechDire(); surligner();
     }
@@ -1458,7 +1469,7 @@ ${LEGAL_CSS}
       else if(k==='-') setZoom(zoom-0.2);
       else if(k==='0') setZoom(1);
       else fait=false;
-      if(fait) e.preventDefault();
+      if(fait){ e.preventDefault(); compter('clavier'); }
     }
     // ── CE QUE L HOTE DECLARE, CE QU ON LUI RENVOIE (#596) ─────────────────────────────────────────────────
     // La page courante part chez l hote a chaque changement — seulement si une page nous encadre : sans
@@ -1716,6 +1727,7 @@ ${LEGAL_CSS}
     }
     function basculerVignettes(){
       vignOuvert=!vignOuvert;
+      if(vignOuvert) compter('vignettes');
       document.body.classList.toggle('vign-on',vignOuvert);
       var b=document.getElementById('vignBtn'); if(b) b.setAttribute('aria-pressed',vignOuvert?'true':'false');
       var v=document.getElementById('vign'); if(v) v.setAttribute('aria-hidden',vignOuvert?'false':'true');
@@ -1727,6 +1739,7 @@ ${LEGAL_CSS}
     }
 
     function tournerDe(quarts){
+      compter('rotation');
       rot=Player.viewer.rotationEffective(rot,quarts*90);
       // En presentation, l audience suit : le meme message que la page, donc le meme ordre.
       try{ if(PRES) pushPage(); }catch(e){}

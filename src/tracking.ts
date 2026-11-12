@@ -76,6 +76,12 @@ export interface TrackerOptions {
   win?: Window;
   send?: TrackerTransport;
   sessionId?: string;
+  /**
+   * LE MODE D'AFFICHAGE (#617) : lu à chaque envoi de session, et joint au résumé — pas de requête de plus. Le
+   * serveur le borne (server/affichage.js) et ne l'écrit que si la base a la colonne (0029). Une exception ici
+   * ne coûte que ce champ, jamais la session.
+   */
+  modeAffichage?: () => unknown;
 }
 
 export interface Tracker {
@@ -278,6 +284,12 @@ export function createTracker(options: TrackerOptions = {}): Tracker {
       totalSeconds: totalActuel,
       pagesTime: roundedPageTimes(),
     };
+    if (options.modeAffichage) {
+      try {
+        const a = options.modeAffichage();
+        if (a && typeof a === "object") payload.modeAffichage = a;
+      } catch { /* une mesure annexe ne casse pas la mesure principale */ }
+    }
     if (internal) {
       payload.internal = true;
       payload.docId = internal.docId;

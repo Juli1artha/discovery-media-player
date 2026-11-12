@@ -558,6 +558,7 @@ async function traiter(req, res, body, slug) {
             userEmail: jeton ? jeton.email : body.email,
             userName: jeton ? (jeton.name || body.name) : body.name,
             numPages: body.numPages, maxPage: body.maxPage, totalSeconds: body.totalSeconds, pagesTime: body.pagesTime,
+            modeAffichage: body.modeAffichage,
           }, { ip: ip0, ua: ua0 });
         } catch (e) {
           // ⚠️ CE `catch` A COÛTÉ UNE JOURNÉE À UN HÔTE, ET IL ÉTAIT À TROIS LIGNES DU COMMENTAIRE
@@ -615,7 +616,7 @@ async function traiter(req, res, body, slug) {
       if (share && !share.is_test) { // répétition générale : la lecture de test ne compte pas dans les stats
         try {
           // 'session' = résumé riche (temps par page, appareil) → upsert ; open/page/heartbeat → journal léger (funnel/overview).
-          if (estSession) await upsertSession(share, { sessionId: body.sessionId, numPages: body.numPages, maxPage: body.maxPage, totalSeconds: body.totalSeconds, pagesTime: body.pagesTime }, { ip: ip0, ua: ua0 });
+          if (estSession) await upsertSession(share, { sessionId: body.sessionId, numPages: body.numPages, maxPage: body.maxPage, totalSeconds: body.totalSeconds, pagesTime: body.pagesTime, modeAffichage: body.modeAffichage }, { ip: ip0, ua: ua0 });
           else await logView(share, { event: body.event, page: body.page, maxPage: body.maxPage, seconds: body.seconds, sessionId: body.sessionId, ua: ua0 });
         } catch (e) {
           // ⚠️ LE MÊME `catch` MUET, SUR LE CHEMIN EXTERNE. Trouvé par la garde écrite pour
