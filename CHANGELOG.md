@@ -12,6 +12,15 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- **« Contacter l'expéditeur » dans la barre « lecture » d'un lien tracé ouvert seul (`primary=contact`, capacité
+  `reading-contact`, #608).** Un lien ouvert depuis un e-mail n'a pas d'hôte pour remplir l'action pleine ; son
+  lecteur voulait surtout répondre à qui le lui avait envoyé. `contact` est un `mailto:` vers le `created_by` du lien,
+  avec le titre du document en objet. Il n'existe pas sur un re-partage (le `created_by` y est celui qui a transféré,
+  un destinataire), ni en aperçu, ni dans un cadre (l'hôte y déclare sa propre action), ni sans adresse. Sans
+  `gabarit=lecture`, rien ne change ; une instance antérieure retombe sur `share`.
+
 ## [0.1.179] — 2026-11-12
 
 ### Fixed

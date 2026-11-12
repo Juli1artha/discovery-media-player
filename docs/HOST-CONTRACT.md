@@ -41,7 +41,7 @@ need.
   "contract": 1,
   "version": "<the running version>",
   "runtime": { "node": "<what this instance runs on>", "nodeRequired": ">=22.13.0" },
-  "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention", "link-protection", "start-page", "fit", "reading-layout", "host-chrome", "present-attach"],
+  "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention", "link-protection", "start-page", "fit", "reading-layout", "host-chrome", "reading-contact", "present-attach"],
   "frameAncestors": ["'self'", "https://*.vercel.app", "https://app.example.com"],
   "separateIssuer": true,
   "internalStrict": true,
@@ -979,11 +979,17 @@ menu (download, rotate, full screen, and "about" on the internal preview). Witho
 page is served exactly as before; with an assistant enabled on the link, the classic bar is kept. With no
 `?fit=`, this layout opens in `auto`.
 
-- `primary=share|present|download` (default `share`) and `secondary=…` choose which of the player's own
+- `primary=contact|share|present|download` (default `share`) and `secondary=…` choose which of the player's own
   actions are put forward; `primaryLabel=` / `secondaryLabel=` (1–40 characters) rename them, and
   `subtitle=` (1–80) adds a line under the title. A longer label is ignored whole, never truncated, and
   every label is shown as text. **Placing grants nothing**: an action the link forbids
   (`allowDownload: false`) or the mode lacks (`present` outside the preview) does not appear, wherever it is placed.
+- **`contact`** (capability `reading-contact`, #608): "Contacter l'expéditeur", a `mailto:` to the link's
+  `created_by`, with the document title as subject. It exists **only on a tracked link opened on its own**:
+  not on a re-share (there `created_by` is whoever forwarded it — a recipient, not the sender), not on the
+  preview (no link), not in a frame (`embed=1`: the host declares its own action through `chrome`), and not
+  without a sender address. Absent, it is skipped like a forbidden download. An instance without the
+  capability ignores `primary=contact` and falls back to `share`.
 - On a tracked link, the tracking notice ("Lecture mesurée") moves **into the bar**, which never hides.
   The pill and the side arrows fade after 3 s without a gesture, and come back on any pointer, touch or
   key — never while the menu, the share panel or the page-number field is open.
@@ -1022,7 +1028,7 @@ something of the host's (a side panel), and the reader's current page.
   previous one: an absent field goes back to what the address declared (`subtitle=`, the placement of the
   player's actions) or to nothing (tabs, the host's actions) — so a host can take back what it placed.
   Only the frame's `window.parent` is heard. The classic layout ignores `chrome`.
-- **`share`, `present`, `download` are the player's own actions.** The host places and renames them; it
+- **`contact`, `share`, `present`, `download` are the player's own actions.** The host places and renames them; it
   never triggers them, and clicking them runs the player's behaviour (`share` still sends `share`).
   **Placing grants nothing**: an action the link forbids or the mode lacks has no element, and is skipped
   wherever it is placed. Those the host does not cite stay reachable in the `⋯` menu. One filled action

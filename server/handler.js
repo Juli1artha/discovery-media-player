@@ -768,6 +768,9 @@ async function handlerMesure(req, res) {
           // `host-chrome` : l'hôte déclare onglets, actions et sous-titre de la barre « lecture » (`chrome`), la page
           // lui renvoie `host-action` et `page` (#596).
           "host-chrome",
+          // `reading-contact` : `primary=contact` (ou `chrome`) place « Contacter l'expéditeur », un `mailto:` vers celui
+          // qui a créé un lien tracé ouvert seul — ni re-partage, ni aperçu, ni cadre (#608).
+          "reading-contact",
           // `present-attach` : la page du présentateur accepte qu'on lui CONFIE une présentation par le
           // pont (jeton de contrôle en postMessage), et annonce `present-started` / `present-ended`.
           // Sans cette capacité, un hôte enverrait son jeton à une page qui ne l'écoute pas, et
