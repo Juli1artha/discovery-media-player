@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.179] — 2026-11-12
+
 ### Fixed
 
 - **Échap referme d'abord le menu « ⋯ » (ou le panneau de partage), puis le lecteur.** Encadré, le player
@@ -8026,7 +8028,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.178...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.179...HEAD
+[0.1.179]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.178...v0.1.179
 [0.1.178]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.177...v0.1.178
 [0.1.177]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.176...v0.1.177
 [0.1.176]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.175...v0.1.176
