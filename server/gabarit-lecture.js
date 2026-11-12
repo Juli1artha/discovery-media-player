@@ -16,10 +16,37 @@
 
 const { esc } = require("./texte");
 
-/** Les actions du player qu'un hôte peut mettre en avant. Il les place et les renomme, il n'en invente pas. */
-const ACTIONS = new Set(["share", "present", "download"]);
-const LIBELLES = { share: "Partager", present: "Présenter", download: "Télécharger" };
-const LIBELLES_MENU = { share: "Partager", present: "Présenter en direct", download: "Télécharger" };
+/** Les actions du player qu'un hôte peut mettre en avant. Il les place et les renomme, il n'en invente pas.
+ *  `contact` (#608) : écrire à l'expéditeur d'un lien tracé ouvert seul — voir `contactDuLien`. */
+const ACTIONS = new Set(["contact", "share", "present", "download"]);
+const LIBELLES = { contact: "Contacter l'expéditeur", share: "Partager", present: "Présenter", download: "Télécharger" };
+const LIBELLES_MENU = { contact: "Contacter l'expéditeur", share: "Partager", present: "Présenter en direct", download: "Télécharger" };
+
+// Une adresse qu'on peut mettre telle quelle dans un `mailto:` : ni espace, ni guillemet, ni chevron, ni `?`,
+// `&` ou `#` qui ouvriraient d'autres paramètres. `created_by` est déjà mis en minuscules à la création.
+const ADRESSE_SIMPLE = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
+
+/**
+ * L'ADRESSE À ÉCRIRE POUR « CONTACTER » (#608), ou `null` : l'action n'existe alors pas, ni en barre ni au menu.
+ *
+ * ⚠️ PAS SUR UN RE-PARTAGE. Un lien transféré porte en `created_by` l'adresse de CELUI QUI A TRANSFÉRÉ
+ * (`createReshare` : `created_by: parent.recipient_email || …`) — un client, pas l'expéditeur d'origine.
+ * « Contacter » lui écrirait, et donnerait son adresse au destinataire suivant.
+ *
+ * ⚠️ NI EN APERÇU (pas de lien), NI DANS UN CADRE : là, l'hôte a sa propre action, déclarée par `chrome`, et un
+ * second « Contacter » dans « ⋯ » ferait doublon.
+ */
+function contactDuLien(share, { preview, embedded }) {
+  if (!share || preview || embedded || share.parent_slug) return null;
+  const a = String(share.created_by || "").trim();
+  return ADRESSE_SIMPLE.test(a) ? a : null;
+}
+
+/** Le `mailto:` de « Contacter » : l'adresse, et le titre du document en objet. */
+function mailtoContact(adresse, titre) {
+  const objet = String(titre || "").replace(/\s+/g, " ").trim().slice(0, 140);
+  return `mailto:${adresse}${objet ? `?subject=${encodeURIComponent(objet)}` : ""}`;
+}
 
 /** Un libellé est accepté entier ou pas du tout : tronquer le ferait mentir sur ce que fait le bouton. */
 function libelle(v, max) {
@@ -44,16 +71,16 @@ function reglagesLecture(q) {
   };
 }
 
-const ID_ELEMENT = { share: "shareBtn", present: "presentBtn", download: "dlBtn" };
+const ID_ELEMENT = { contact: "contactBtn", share: "shareBtn", present: "presentBtn", download: "dlBtn" };
 
 /**
  * Les actions du player DISPONIBLES ici, avec leur place et leur libellé d'ouverture. Une seule source
  * pour le balisage du serveur et pour la page, qui y revient quand l'hôte retire sa déclaration
  * (`chrome` sans `actions`, #596). ⚠️ Une action indisponible n'y figure pas : rien ne pourra la placer.
  */
-function actionsDeLecture(r, { preview, allowDownload }) {
-  const dispo = { share: true, present: !!preview, download: allowDownload !== false };
-  return ["share", "present", "download"].filter((a) => dispo[a]).map((a) => {
+function actionsDeLecture(r, { preview, allowDownload, contact = null }) {
+  const dispo = { contact: !!contact, share: true, present: !!preview, download: allowDownload !== false };
+  return ["contact", "share", "present", "download"].filter((a) => dispo[a]).map((a) => {
     const place = a === r.primary ? "primary" : a === r.secondary ? "secondary" : "menu";
     const label = (a === r.primary && r.primaryLabel) || (a === r.secondary && r.secondaryLabel) || LIBELLES[a];
     return { id: a, label: place === "menu" ? LIBELLES_MENU[a] : label, place };
@@ -85,18 +112,20 @@ const I = {
  * @param {string} o.liveBar    boutons de présence et de discussion (aperçu)
  * @param {string} o.legalHtml  le pied légal (`legalFooter`)
  * @param {boolean} o.tracked   lien tracé : « Lecture mesurée » doit rester VISIBLE
+ * @param {string|null} [o.contactHref]  le `mailto:` de « Contacter » (#608), ou `null` : l'action n'existe pas
  */
 function barreLecture(o) {
   const r = o.reglages;
   const element = (a, cls, label) => {
     const t = esc(label);
     if (a === "download") return `<a class="${cls}" id=dlBtn href="${o.fileUrl}" download>${t}</a>`;
+    if (a === "contact") return `<a class="${cls}" id=contactBtn href="${esc(o.contactHref)}">${t}</a>`;
     if (a === "present") return `<button type=button class="${cls}" id=presentBtn title="Présenter en direct (lien public, page synchronisée)">${t}</button>`;
     return `<button type=button class="${cls}" id=shareBtn>${t}</button>`;
   };
   const enBarre = [], enReserve = [], auMenu = [];
   // ⚠️ une action que le lien interdit n'existe pas — ni en barre, ni au menu (actionsDeLecture l'a écartée)
-  for (const a of actionsDeLecture(r, { preview: o.preview, allowDownload: o.allowDownload })) {
+  for (const a of actionsDeLecture(r, { preview: o.preview, allowDownload: o.allowDownload, contact: o.contactHref || null })) {
     if (a.place === "primary") enBarre.unshift(element(a.id, "gbtn gprim", a.label));
     else if (a.place === "secondary") { enBarre.push(element(a.id, "gbtn gsec", a.label)); auMenu.push(`<button type=button class="g-act g-mob" data-t=${ID_ELEMENT[a.id]}>${esc(a.label)}</button>`); }
     else { enReserve.push(element(a.id, "dl", LIBELLES[a.id])); auMenu.push(`<button type=button class=g-act data-t=${ID_ELEMENT[a.id]}>${esc(a.label)}</button>`); }
@@ -208,4 +237,4 @@ const LECTURE_CSS = `
   @media (prefers-reduced-motion:reduce){ .gpill,body.g-lecture .navp,.gprog i{transition:none} }
 `;
 
-module.exports = { reglagesLecture, barreLecture, actionsDeLecture, LECTURE_CSS };
+module.exports = { reglagesLecture, barreLecture, actionsDeLecture, contactDuLien, mailtoContact, LECTURE_CSS };

@@ -8,7 +8,7 @@ const { LIVE_CSS, LIVE_BAR, LIVE_PANEL, LIVE_JS } = require("./gabarit-live");
 const { MAP_CSS, MAP_MARKUP, MAP_JS } = require("./gabarit-carte");
 const { BOT_CSS, ICONS, botMarkup, voixProposable } = require("./gabarit-agent");
 const { legalFooter, LEGAL_CSS } = require("./gabarit-legal");
-const { barreLecture, actionsDeLecture, LECTURE_CSS } = require("./gabarit-lecture");
+const { barreLecture, actionsDeLecture, contactDuLien, mailtoContact, LECTURE_CSS } = require("./gabarit-lecture");
 const { cleSessionHote, CLE_SESSION_PLAYER, CLE_INVITE } = require("./session-cles");
 
 // Le cœur navigateur (bundle committé) et les GREFFONS de l'hôte — résolus depuis le contexte,
@@ -92,7 +92,10 @@ function viewerHtml(share, nonce, logoUrl, pitch) {
   const lecture = share.lecture && !botOn ? share.lecture : null;
   const mesure = !preview && !!share.slug;
   const piedLegal = legalFooter({ tracked: mesure, sansExpediteur: !share.recipient_email && !share.created_by });
-  const cfg = jsonPourScript({ lecture: !!lecture, actions: lecture ? actionsDeLecture(lecture, { preview, allowDownload: share.allow_download !== false }) : [], subtitle: lecture ? lecture.subtitle : "", page: Math.max(1, Math.trunc(Number(share.page_depart) || 1)), fit: String(share.fit || ""), brand: PLAYER.branding.name, slug: preview ? "" : share.slug, fileUrl, fileName: share.file_name || "", pdfjs: PDFJS, pdfjsWorker: PDFJS_WORKER, title, preview, embed, embedded, bot: botOn, botGuided: !preview && !!share.bot_enabled && share.bot_guided !== false, botAv: (!preview && share.bot_enabled && share.bot_avatar) || "", botName: (!preview && share.bot_enabled && share.bot_name) || "", botGreet: (!preview && share.bot_enabled && share.bot_greeting) || "", botGreetDoc: (!preview && share.bot_enabled && share.bot_greeting_doc) || "", dl: share.allow_download !== false, autoPresent: !!share.auto_present, botAnim: share.bot_page_anim !== false, botVoice: !preview && !!share.bot_enabled && voixProposable(), vIcOn: ICONS.sound, vIcOff: ICONS.mute, kStyle: (!preview && share.bot_enabled && share.bot_karaoke) || "classic", vLayout: (!preview && share.bot_enabled && share.video_layout) || "", vClips: !preview && !!share.bot_vclips, botVAv: (!preview && share.bot_enabled && share.bot_vphoto) || "", resumeSlug: preview ? (share.resume_slug || "") : "", supaUrl: preview ? (share.supa_url || "") : "", supaKey: preview ? (share.supa_key || "") : "", internal: preview && share.internal_email ? { email: share.internal_email, name: share.presenter_name || "", docId: share.doc_id || "", it: share.internal_token || "" } : null, present: preview ? { url: share.raw_url || "", name: share.file_name || "", title: share.doc_title || "", docId: share.doc_id || "", by: share.presenter_name || "", email: share.internal_email || "", av: share.presenter_avatar || "" } : null });
+  // « Contacter » (#608) : l'expéditeur d'un lien tracé ouvert seul — jamais sur un re-partage, en aperçu ni dans un cadre.
+  const adresseContact = lecture ? contactDuLien(share, { preview, embedded }) : null;
+  const contactHref = adresseContact ? mailtoContact(adresseContact, share.doc_title || share.file_name || "") : null;
+  const cfg = jsonPourScript({ lecture: !!lecture, actions: lecture ? actionsDeLecture(lecture, { preview, allowDownload: share.allow_download !== false, contact: contactHref }) : [], subtitle: lecture ? lecture.subtitle : "", page: Math.max(1, Math.trunc(Number(share.page_depart) || 1)), fit: String(share.fit || ""), brand: PLAYER.branding.name, slug: preview ? "" : share.slug, fileUrl, fileName: share.file_name || "", pdfjs: PDFJS, pdfjsWorker: PDFJS_WORKER, title, preview, embed, embedded, bot: botOn, botGuided: !preview && !!share.bot_enabled && share.bot_guided !== false, botAv: (!preview && share.bot_enabled && share.bot_avatar) || "", botName: (!preview && share.bot_enabled && share.bot_name) || "", botGreet: (!preview && share.bot_enabled && share.bot_greeting) || "", botGreetDoc: (!preview && share.bot_enabled && share.bot_greeting_doc) || "", dl: share.allow_download !== false, autoPresent: !!share.auto_present, botAnim: share.bot_page_anim !== false, botVoice: !preview && !!share.bot_enabled && voixProposable(), vIcOn: ICONS.sound, vIcOff: ICONS.mute, kStyle: (!preview && share.bot_enabled && share.bot_karaoke) || "classic", vLayout: (!preview && share.bot_enabled && share.video_layout) || "", vClips: !preview && !!share.bot_vclips, botVAv: (!preview && share.bot_enabled && share.bot_vphoto) || "", resumeSlug: preview ? (share.resume_slug || "") : "", supaUrl: preview ? (share.supa_url || "") : "", supaKey: preview ? (share.supa_key || "") : "", internal: preview && share.internal_email ? { email: share.internal_email, name: share.presenter_name || "", docId: share.doc_id || "", it: share.internal_token || "" } : null, present: preview ? { url: share.raw_url || "", name: share.file_name || "", title: share.doc_title || "", docId: share.doc_id || "", by: share.presenter_name || "", email: share.internal_email || "", av: share.presenter_avatar || "" } : null });
   return `<!doctype html><html lang=fr><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=3,viewport-fit=cover,interactive-widget=resizes-content">
 <meta name=robots content="noindex,nofollow">
@@ -281,7 +284,7 @@ ${LEGAL_CSS}
   ${botOn ? BOT_CSS : ""}
 </style></head>
 <body${lecture ? " class=g-lecture" : ""}>
-  ${lecture ? barreLecture({ reglages: lecture, preview, embed, title, fileUrl, allowDownload: share.allow_download !== false, isTest: !!share.is_test, liveBar: preview ? LIVE_BAR : "", legalHtml: piedLegal, tracked: mesure }) : `
+  ${lecture ? barreLecture({ reglages: lecture, preview, embed, title, fileUrl, allowDownload: share.allow_download !== false, isTest: !!share.is_test, liveBar: preview ? LIVE_BAR : "", legalHtml: piedLegal, tracked: mesure, contactHref }) : `
   <div class=bar>${embed ? '<button class="ic barx" id=embedCloseBtn title=Fermer aria-label=Fermer><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' : ""}<b>${title}</b>${share.is_test ? '<span class=testchip>\ud83c\udfad Répétition — session de test</span>' : ""}<span class=sp></span><button type=button class=pg id=pg title="Aller à une page" aria-label="Aller à une page"></button>
     ${preview ? LIVE_BAR : ""}
     <div class=zoom><button id=zout title="Dézoomer">−</button><span id=zlbl>100%</span><button id=zin title="Zoomer">+</button></div>
@@ -1240,7 +1243,7 @@ ${LEGAL_CSS}
     // La page courante part chez l hote a chaque changement — seulement si une page nous encadre : sans
     // hote, window.parent est la page elle-meme, et on se parlerait a soi.
     function signalerPage(p){ try{ if(numPages&&p>=1&&p<=numPages&&window.parent&&window.parent!==window) Player.bridge.sendToHost({type:'page',page:p,total:numPages}); }catch(e){} }
-    var ELEMENT_ACTION={share:'shareBtn',present:'presentBtn',download:'dlBtn'};
+    var ELEMENT_ACTION={contact:'contactBtn',share:'shareBtn',present:'presentBtn',download:'dlBtn'};
     function fermerMenu(){ var m=document.getElementById('barMenu'); if(m) m.classList.remove('open'); }
     function relaisMenu(a,mobile){ var b=document.createElement('button'); b.type='button'; b.className='g-act'+(mobile?' g-mob':''); b.textContent=a.label;
       if(ELEMENT_ACTION[a.id]) b.addEventListener('click',function(){ fermerMenu(); var el=document.getElementById(ELEMENT_ACTION[a.id]); if(el) el.click(); });

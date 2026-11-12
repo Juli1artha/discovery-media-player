@@ -47,7 +47,7 @@ const CONTROL_RE = /^[A-Za-z0-9_-]{16,128}$/;
 const REASON_RE = /^[a-z-]{1,40}$/;
 
 /** Identifiants d'onglet et d'action déclarés par l'hôte (#596) : ils reviennent dans SON code par
- *  `host-action`, et `share` / `present` / `download` y désignent les actions du player. */
+ *  `host-action`, et `contact` / `share` / `present` / `download` y désignent les actions du player. */
 const ID_RE = /^[a-z0-9][a-z0-9:_-]{0,39}$/;
 const MAX_ONGLETS = 8;
 const MAX_ACTIONS = 6;
@@ -88,7 +88,7 @@ export type PlayerMessage =
 
 /** Un onglet de la barre déclarée par l'hôte. */
 export type ChromeTab = { id: string; label: string };
-/** Une action de la barre déclarée par l'hôte. `share`, `present` et `download` sont celles du player :
+/** Une action de la barre déclarée par l'hôte. `contact`, `share`, `present` et `download` sont celles du player :
  *  l'hôte les place et les renomme, il ne les déclenche pas. Placer n'ouvre aucun droit. */
 export type ChromeAction = { id: string; label: string; place: "primary" | "secondary" | "menu" };
 
