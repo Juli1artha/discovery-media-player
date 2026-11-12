@@ -41,7 +41,7 @@ need.
   "contract": 1,
   "version": "<the running version>",
   "runtime": { "node": "<what this instance runs on>", "nodeRequired": ">=22.13.0" },
-  "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention", "link-protection", "start-page", "fit", "reading-layout", "host-chrome", "reading-contact", "present-attach"],
+  "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention", "link-protection", "start-page", "fit", "reading-layout", "host-chrome", "reading-contact", "reading-search", "present-attach"],
   "frameAncestors": ["'self'", "https://*.vercel.app", "https://app.example.com"],
   "separateIssuer": true,
   "internalStrict": true,
@@ -990,6 +990,14 @@ page is served exactly as before; with an assistant enabled on the link, the cla
   preview (no link), not in a frame (`embed=1`: the host declares its own action through `chrome`), and not
   without a sender address. Absent, it is skipped like a forbidden download. An instance without the
   capability ignores `primary=contact` and falls back to `share`.
+- **Search** (capability `reading-search`, #612): a magnifier in the bar, and `Ctrl`/`⌘` + `F` or `/` (outside a
+  text field), open a search field over the bar. It searches the **whole** document, not only the rendered pages:
+  the text of every page is read once, on the first search — never on load, and reading it is not a read (the
+  tracker never moves). Case and accents are ignored, and a word split across two text items of a line is found.
+  `Enter` / `Shift` + `Enter` go to the next / previous result, with a counter ("3 / 12 · page 7", `aria-live`).
+  Results are highlighted on rendered pages, by the CSS Custom Highlight API where it exists (the whole text item
+  otherwise). A document whose pages have no text says so ("Document numérisé…") instead of "no result". `Escape`
+  closes the search first, then the reader. Hidden for an image document.
 - On a tracked link, the tracking notice ("Lecture mesurée") moves **into the bar**, which never hides.
   The pill and the side arrows fade after 3 s without a gesture, and come back on any pointer, touch or
   key — never while the menu, the share panel or the page-number field is open.

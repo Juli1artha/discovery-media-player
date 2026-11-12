@@ -12,6 +12,17 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- **Chercher dans le document, dans le gabarit « lecture » (capacité `reading-search`, #612).** Les pages sont
+  virtualisées : le « Rechercher » du navigateur ne voyait que les deux ou trois pages rendues. Une loupe dans la
+  barre (et `Ctrl`/`⌘` + `F`, `/`) ouvre un champ qui cherche dans TOUT le document : le texte de chaque page est lu
+  une fois, à la première recherche — jamais au chargement, et sans compter de lecture. Casse et accents ignorés, mot
+  coupé entre deux éléments trouvé, `Entrée` / `Maj` + `Entrée` d'un résultat à l'autre, compteur annoncé, résultats
+  surlignés (API CSS Custom Highlight, l'élément entier sinon). Un document numérisé le dit au lieu de « Aucun
+  résultat ». Échap referme la recherche, puis le lecteur. La logique vit dans `src/viewer.ts`
+  (`chercherDansPages`).
+
 ## [0.1.180] — 2026-11-12
 
 ### Added

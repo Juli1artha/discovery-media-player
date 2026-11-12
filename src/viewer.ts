@@ -441,3 +441,111 @@ export function pagesAtteignables(
   if (place < 0) return 1;                                   // même la première déborde : elle reste la seule
   return Math.max(1, Math.min(total, Math.floor(place / pas) + 1));
 }
+
+// ── RECHERCHER DANS LE DOCUMENT (#612, L6a) ─────────────────────────────────────────────────────────────
+//
+// Les pages sont virtualisées : seules deux ou trois autour de la page courante ont une couche texte, et le
+// « Rechercher » du navigateur ne voit qu'elles. On lit donc le texte de CHAQUE page une fois (`getTextContent`),
+// et on cherche ici, sur les éléments de texte que pdf.js rend — les mêmes, dans le même ordre, que les `span` de
+// sa couche texte (`TextLayer.textContentItemsStr`), pour que le surlignage retombe exactement.
+
+/** Un élément de texte d'une page, tel que pdf.js le rend : sa chaîne, et s'il finit une ligne. */
+export type ElementTexte = { str: string; eol?: boolean };
+/** Une position dans les éléments d'une page : le rang de l'élément, et le décalage dans sa chaîne. */
+export type PositionTexte = { element: number; decalage: number };
+/** Une occurrence : sa page (à partir de 1), son début, et sa fin (exclue). */
+export type Occurrence = { page: number; debut: PositionTexte; fin: PositionTexte };
+export type ResultatRecherche = { occurrences: Occurrence[]; pagesSansTexte: number[]; tronque: boolean };
+
+/** Le nombre d'occurrences au-delà duquel on s'arrête (et le dit) : un mot de deux lettres dans 400 pages. */
+export const MAX_OCCURRENCES = 2000;
+
+/**
+ * La forme qu'on compare : minuscules, sans accents (« équipement » = « equipement »), ligatures dépliées
+ * (« ﬁ » = « fi », fréquent dans les PDF), blancs repliés en un espace. `origine[i]` est l'indice, dans la
+ * chaîne d'entrée, du caractère qui a produit le i-ième caractère de la sortie.
+ */
+export function normaliserRecherche(s: string): { texte: string; origine: number[] } {
+  let texte = "";
+  const origine: number[] = [];
+  let blanc = false;
+  const brut = String(s ?? "");
+  for (let i = 0; i < brut.length; i++) {
+    const c = brut[i];
+    if (/\s/.test(c)) {
+      if (!blanc) { texte += " "; origine.push(i); }
+      blanc = true;
+      continue;
+    }
+    blanc = false;
+    const n = c.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
+    for (const d of n) { texte += d; origine.push(i); }
+  }
+  return { texte, origine };
+}
+
+/** Une page sans un caractère visible : une image, le plus souvent (document numérisé). */
+export function pageSansTexte(elements: readonly ElementTexte[]): boolean {
+  return !elements.some((e) => /\S/.test(String(e?.str ?? "")));
+}
+
+/**
+ * Cherche `requete` dans les pages (`pages[0]` = page 1). Les éléments d'une page sont mis bout à bout, un espace
+ * après un élément qui finit une ligne : un mot coupé en deux éléments (« chauf » + « fage ») est trouvé, deux
+ * lignes ne se collent pas. Une requête de moins de deux caractères ne cherche rien.
+ */
+export function chercherDansPages(pages: readonly (readonly ElementTexte[])[], requete: string, max: number = MAX_OCCURRENCES): ResultatRecherche {
+  const pagesSansTexte: number[] = [];
+  const occurrences: Occurrence[] = [];
+  const q = normaliserRecherche(requete).texte.trim();
+  let tronque = false;
+  pages.forEach((elements, i) => {
+    if (pageSansTexte(elements ?? [])) pagesSansTexte.push(i + 1);
+  });
+  if (q.length < 2) return { occurrences, pagesSansTexte, tronque };
+  for (let i = 0; i < pages.length && !tronque; i++) {
+    const elements = pages[i] ?? [];
+    // La page à plat, et pour chaque caractère : son élément et son décalage dans la chaîne de l'élément.
+    let plat = "";
+    const ou: PositionTexte[] = [];
+    elements.forEach((e, k) => {
+      const str = String(e?.str ?? "");
+      for (let d = 0; d < str.length; d++) { plat += str[d]; ou.push({ element: k, decalage: d }); }
+      if (e?.eol) { plat += " "; ou.push({ element: k, decalage: str.length }); }
+    });
+    const { texte, origine } = normaliserRecherche(plat);
+    let depuis = 0;
+    for (;;) {
+      const a = texte.indexOf(q, depuis);
+      if (a < 0) break;
+      const z = a + q.length - 1;                              // dernier caractère de l'occurrence
+      const debut = ou[origine[a]];
+      const dernier = ou[origine[z]];
+      // La fin est EXCLUE : juste après le dernier caractère, dans le même élément.
+      occurrences.push({ page: i + 1, debut: { ...debut }, fin: { element: dernier.element, decalage: dernier.decalage + 1 } });
+      if (occurrences.length >= max) { tronque = true; break; }
+      depuis = a + Math.max(1, q.length);
+    }
+  }
+  return { occurrences, pagesSansTexte, tronque };
+}
+
+/** L'occurrence où commencer : la première à la page courante ou après, sinon la première du document. */
+export function premiereOccurrenceDepuis(occurrences: readonly Occurrence[], page: number): number {
+  if (!occurrences.length) return -1;
+  const i = occurrences.findIndex((o) => o.page >= page);
+  return i < 0 ? 0 : i;
+}
+
+/** « 3 à 9, 12 » : des numéros de page en plages, pour le dire en une ligne. */
+export function plagesDePages(pages: readonly number[]): string {
+  const tri = [...new Set(pages.filter((p) => Number.isInteger(p) && p > 0))].sort((a, b) => a - b);
+  const morceaux: string[] = [];
+  for (let i = 0; i < tri.length; i++) {
+    let j = i;
+    while (j + 1 < tri.length && tri[j + 1] === tri[j] + 1) j++;
+    morceaux.push(j > i ? `${tri[i]} à ${tri[j]}` : String(tri[i]));
+    i = j;
+  }
+  return morceaux.join(", ");
+}

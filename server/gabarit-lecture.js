@@ -97,12 +97,17 @@ const I = {
   rotL: SVG('<path d="M3 8h11a5 5 0 0 1 5 5v1M3 8l4-4M3 8l4 4"/>'),
   rotR: SVG('<path d="M21 8H10a5 5 0 0 0-5 5v1M21 8l-4-4M21 8l-4 4"/>'),
   fs: SVG('<path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/>'),
+  loupe: SVG('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>', 2.2),
+  haut: SVG('<path d="M6 15l6-6 6 6"/>', 2.2),
+  bas: SVG('<path d="M6 9l6 6 6-6"/>', 2.2),
+  croix: SVG('<path d="M6 6l12 12M18 6L6 18"/>', 2.2),
 };
 
 /**
  * La barre, la pastille, le menu et la réserve.
  * @param {object} o
  * @param {object} o.reglages   sortie de `reglagesLecture`
+ * @param {boolean} [o.recherche]  la loupe et le champ de recherche (#612) — un PDF, pas une image
  * @param {boolean} o.preview   aperçu interne (Présenter n'existe qu'ici)
  * @param {boolean} o.embed     lien tracé encadré (croix de l'hôte)
  * @param {string} o.title      titre DÉJÀ échappé
@@ -141,13 +146,21 @@ function barreLecture(o) {
   // interne (« Informations »), rien n'est mesuré chez un tiers : elle rejoint le menu.
   const legalEnBarre = o.tracked ? o.legalHtml : "";
   const legalAuMenu = o.tracked ? "" : o.legalHtml;
-  return `<div class="bar gbar">${retour}<div class=gtitre><b>${o.title}</b>${sousTitre}</div><div class=gtabs id=gTabs role=tablist aria-label="Documents" hidden></div>${o.isTest ? '<span class=testchip>🎭 Répétition — session de test</span>' : ""}${legalEnBarre}<span class=sp></span>${o.liveBar || ""}<span class=gslots id=gSlots>${enBarre.join("")}</span><button type=button class="ic barMore" id=barMore title="Plus d'actions" aria-label="Plus d'actions" aria-haspopup=menu>${I.plus}</button><div class=gprog aria-hidden=true><i id=gProg></i></div></div>
+  return `<div class="bar gbar">${retour}<div class=gtitre><b>${o.title}</b>${sousTitre}</div><div class=gtabs id=gTabs role=tablist aria-label="Documents" hidden></div>${o.isTest ? '<span class=testchip>🎭 Répétition — session de test</span>' : ""}${legalEnBarre}<span class=sp></span>${o.liveBar || ""}<span class=gslots id=gSlots>${enBarre.join("")}</span>${o.recherche ? `<button type=button class=ic id=gFindBtn title="Rechercher dans le document (Ctrl+F)" aria-label="Rechercher dans le document" aria-expanded=false aria-controls=gFind>${I.loupe}</button>` : ""}<button type=button class="ic barMore" id=barMore title="Plus d'actions" aria-label="Plus d'actions" aria-haspopup=menu>${I.plus}</button><div class=gprog aria-hidden=true><i id=gProg></i></div>${o.recherche ? rechercheHtml() : ""}</div>
   <div class="barmenu gmenu" id=barMenu role=menu>${auMenu.join("")}<button type=button data-t=rotL>Pivoter à gauche</button><button type=button data-t=rotR>Pivoter à droite</button><button type=button data-t=fs>Plein écran</button>${legalAuMenu ? `<div class=gapropos>${legalAuMenu}</div>` : ""}</div>
   <div class=gcache hidden>${enReserve.join("")}<button type=button class=ic id=rotL title="Pivoter à gauche" aria-label="Pivoter le document à gauche">${I.rotL}</button><button type=button class=ic id=rotR title="Pivoter à droite" aria-label="Pivoter le document à droite">${I.rotR}</button><button type=button class=ic id=fs title="Plein écran">${I.fs}</button></div>
   <div class=gpill id=gPill role=toolbar aria-label="Navigation dans le document"><button type=button class=ic id=vignBtn title="Toutes les pages" aria-label="Afficher toutes les pages" aria-pressed=false>${I.pages}</button><span class=gsep></span><button type=button class=ic id=pillPrev title="Page précédente" aria-label="Page précédente">${I.prec}</button><button type=button class=pg id=pg title="Aller à une page" aria-label="Aller à une page"></button><button type=button class=ic id=pillNext title="Page suivante" aria-label="Page suivante">${I.suiv}</button><span class=gsep></span><button type=button class=gfit id=fitBtn aria-pressed=false>Page entière</button><span class=zoom><button type=button id=zout title="Dézoomer" aria-label="Dézoomer">−</button><span id=zlbl>100%</span><button type=button id=zin title="Zoomer" aria-label="Zoomer">+</button></span></div>`;
 }
 
 // Encre : #1b1d22 sur blanc = 16,9:1 ; #5d6470 sur blanc = 6,0:1 ; sur #f1f3f6 = 5,4:1. Rien sous 4,5:1.
+/**
+ * LE CHAMP DE RECHERCHE (#612, L6a) : il s'ouvre PAR-DESSUS la barre, sans recouvrir la page. Le compteur est
+ * annoncé (`aria-live`). Le script de la page (page-visionneuse.js) le remplit et le pilote.
+ */
+function rechercheHtml() {
+  return `<div class=gfind id=gFind role=search aria-label="Rechercher dans le document">${I.loupe}<input id=gFindIn type=search enterkeyhint=search autocomplete=off spellcheck=false placeholder="Rechercher dans le document" aria-label="Rechercher dans le document" aria-describedby=gFindN><span class=gfindn id=gFindN aria-live=polite></span><button type=button class=ic id=gFindPrev title="Résultat précédent (Maj+Entrée)" aria-label="Résultat précédent">${I.haut}</button><button type=button class=ic id=gFindNext title="Résultat suivant (Entrée)" aria-label="Résultat suivant">${I.bas}</button><button type=button class=ic id=gFindX title="Fermer la recherche (Échap)" aria-label="Fermer la recherche">${I.croix}</button></div>`;
+}
+
 const LECTURE_CSS = `
   body.g-lecture{--bg:#e9ebef;--bar:#fff;color:#1b1d22}
   html:fullscreen body.g-lecture{--bg:#15171c}
@@ -235,6 +248,19 @@ const LECTURE_CSS = `
   }
   @media (max-width:520px){ body.g-lecture .gbar>.gtitre{display:flex} }
   @media (prefers-reduced-motion:reduce){ .gpill,body.g-lecture .navp,.gprog i{transition:none} }
+  /* LA RECHERCHE (#612). Le champ couvre la barre le temps de chercher ; Échap la rend. Encre #1b1d22 / #5d6470 sur blanc. */
+  .gfind{position:absolute;inset:0;z-index:4;display:none;align-items:center;gap:6px;padding:0 10px;padding-top:env(safe-area-inset-top);background:#fff;color:#1b1d22}
+  .gfind.open{display:flex}
+  .gfind>svg{width:18px;height:18px;flex:none;color:#5d6470}
+  .gfind input{flex:1;min-width:0;font:inherit;font-size:15px;border:0;outline:0;background:transparent;color:#1b1d22;padding:8px 2px}
+  .gfind input::placeholder{color:#5d6470}
+  .gfind input::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none;display:none}
+  .gfindn{font-size:12.5px;color:#5d6470;white-space:nowrap;max-width:46vw;overflow:hidden;text-overflow:ellipsis}
+  .gfindn.vide{color:#9b1c1c}
+  ::highlight(pdf-trouve){background-color:rgba(255,196,0,.42)}
+  ::highlight(pdf-courant){background-color:rgba(255,128,0,.72)}
+  .textLayer .g-trouve{background-color:rgba(255,196,0,.42)}
+  .textLayer .g-courant{background-color:rgba(255,128,0,.72)}
 `;
 
 module.exports = { reglagesLecture, barreLecture, actionsDeLecture, contactDuLien, mailtoContact, LECTURE_CSS };
