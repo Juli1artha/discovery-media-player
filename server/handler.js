@@ -771,6 +771,9 @@ async function handlerMesure(req, res) {
           // `reading-contact` : `primary=contact` (ou `chrome`) place « Contacter l'expéditeur », un `mailto:` vers celui
           // qui a créé un lien tracé ouvert seul — ni re-partage, ni aperçu, ni cadre (#608).
           "reading-contact",
+          // `reading-search` : dans le gabarit « lecture », une loupe (et Ctrl+F, /) cherche dans TOUT le document — pas
+          // seulement dans les pages rendues —, surligne, et dit quand un document numérisé n'a pas de texte (#612).
+          "reading-search",
           // `present-attach` : la page du présentateur accepte qu'on lui CONFIE une présentation par le
           // pont (jeton de contrôle en postMessage), et annonce `present-started` / `present-ended`.
           // Sans cette capacité, un hôte enverrait son jeton à une page qui ne l'écoute pas, et

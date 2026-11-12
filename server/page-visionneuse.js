@@ -177,8 +177,13 @@ function viewerHtml(share, nonce, logoUrl, pitch) {
   .plafond{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);max-width:min(92vw,560px);background:#111d;color:#fff;border:1px solid #fff3;border-radius:8px;padding:8px 12px;font-size:13px;line-height:1.4;text-align:center;z-index:40;box-shadow:0 6px 22px #0006}
   .page canvas{display:block;border-radius:3px}
   /* Couche texte pdf.js : invisible, superposée au canvas → sélection du texte possible (requiert --scale-factor). */
-  .textLayer{position:absolute;inset:0;overflow:hidden;line-height:1;opacity:1;z-index:2;forced-color-adjust:none}
+  /* ⚠️ LA COUCHE TEXTE DE PDF.JS 6 SE DIMENSIONNE PAR VARIABLES CSS, et cette feuille datait de pdf.js 3 : les span
+     restaient a 14 px dans la police par defaut, sous une page dessinee a 33 px — la selection tombait a cote, et la
+     recherche (#612) surlignait « CHA » sous « CHAUFFAGE ». Regles reprises de pdf_viewer.css (6.3), a plat. */
+  .textLayer{position:absolute;inset:0;overflow:hidden;line-height:1;opacity:1;z-index:2;forced-color-adjust:none;text-align:initial;letter-spacing:normal;word-spacing:normal;-webkit-text-size-adjust:none;text-size-adjust:none;transform-origin:0 0;--min-font-size:1;--text-scale-factor:calc(var(--total-scale-factor) * var(--min-font-size));--min-font-size-inv:calc(1 / var(--min-font-size));--scale-round-x:1px;--scale-round-y:1px}
   .textLayer span,.textLayer br{color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0 0}
+  .textLayer>:not(.markedContent),.textLayer .markedContent span:not(.markedContent){--font-height:0;font-size:calc(var(--text-scale-factor) * var(--font-height));--scale-x:1;--rotate:0deg;transform:rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv))}
+  .textLayer .markedContent{display:contents}
   .textLayer ::selection{background:rgba(60,120,255,.4)}
   .ph{display:grid;place-items:center;color:#999;font-size:12px}
 ${LEGAL_CSS}
@@ -284,7 +289,7 @@ ${LEGAL_CSS}
   ${botOn ? BOT_CSS : ""}
 </style></head>
 <body${lecture ? " class=g-lecture" : ""}>
-  ${lecture ? barreLecture({ reglages: lecture, preview, embed, title, fileUrl, allowDownload: share.allow_download !== false, isTest: !!share.is_test, liveBar: preview ? LIVE_BAR : "", legalHtml: piedLegal, tracked: mesure, contactHref }) : `
+  ${lecture ? barreLecture({ reglages: lecture, preview, embed, title, fileUrl, allowDownload: share.allow_download !== false, isTest: !!share.is_test, liveBar: preview ? LIVE_BAR : "", legalHtml: piedLegal, tracked: mesure, contactHref, recherche: true }) : `
   <div class=bar>${embed ? '<button class="ic barx" id=embedCloseBtn title=Fermer aria-label=Fermer><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' : ""}<b>${title}</b>${share.is_test ? '<span class=testchip>\ud83c\udfad Répétition — session de test</span>' : ""}<span class=sp></span><button type=button class=pg id=pg title="Aller à une page" aria-label="Aller à une page"></button>
     ${preview ? LIVE_BAR : ""}
     <div class=zoom><button id=zout title="Dézoomer">−</button><span id=zlbl>100%</span><button id=zin title="Zoomer">+</button></div>
@@ -770,7 +775,10 @@ ${LEGAL_CSS}
     function fermerCeQuiEstOuvert(){
       var ouverts=document.querySelectorAll('#barMenu.open,#pop.open');
       for(var i=0;i<ouverts.length;i++) ouverts[i].classList.remove('open');
-      return ouverts.length>0;
+      // La recherche (#612) se referme comme le menu : une frappe pour elle, la suivante pour le lecteur.
+      var fr=document.getElementById('gFind'), rechOuverte=!!(fr&&fr.classList.contains('open'));
+      if(rechOuverte) fermerRecherche();
+      return ouverts.length>0||rechOuverte;
     }
     if(CFG.preview){
       // « Partager » et « Fermer » délégués à l'app (postMessage). « Présenter » géré localement.
@@ -827,6 +835,7 @@ ${LEGAL_CSS}
       if(_pn) _pn.addEventListener('click',function(){ allerA((cur||1)+1); });
       if(_fb) _fb.addEventListener('click',basculerAjustement);
       if(CFG.lecture) veiller();
+      if(CFG.lecture) initRecherche();
       if(vignIn){
         var desarmer=function(){ vignSuivi=false; };
         vignIn.addEventListener('wheel',desarmer,{passive:true});
@@ -1208,6 +1217,138 @@ ${LEGAL_CSS}
     // Avant : une seule touche ecoutee (Echap, et seulement encadree), des fleches reservees a l assistant,
     // et « Page 1 / 21 » qu on lisait sans pouvoir le cliquer. On avancait a la molette, en devinant.
     function allerA(p){ if(!numPages)return; p=Player.viewer.clampPage(p,numPages); if(onePage) showPage(p); else scrollToPage(p); }
+    // ── RECHERCHER DANS LE DOCUMENT (#612, L6a) ─────────────────────────────────────────────────────────────
+    // ATTENTION : LES PAGES SONT VIRTUALISEES. Seules deux ou trois ont une couche texte, et le « Rechercher » du
+    // navigateur ne voit qu elles. On lit donc le texte de CHAQUE page, une seule fois, a la PREMIERE recherche —
+    // jamais au chargement. Lire le texte d une page n est pas la lire : T.setPage n est jamais appele ici.
+    // La comparaison vit dans src/viewer.ts (chercherDansPages), ou elle est eprouvee ; les elements lus sont ceux
+    // que la couche texte de pdf.js rend, dans le meme ordre (un element = un span, marked content exclu).
+    var rech={ouvert:false,pages:null,promesse:null,occ:[],i:-1,req:'',sansTexte:[],tronque:false,minuteur:0};
+    function rechDispo(){ return !!CFG.lecture && !IS_IMG && !!pdfDoc && numPages>0 && !!document.getElementById('gFind'); }
+    function rechCompteur(t,vide){ var n=document.getElementById('gFindN'); if(n){ n.textContent=t||''; n.classList.toggle('vide',!!vide); } }
+    function lireLesTextes(){
+      if(rech.pages) return Promise.resolve(rech.pages);
+      if(rech.promesse) return rech.promesse;
+      var pages=new Array(numPages), lus=0, suite=Promise.resolve();
+      function une(n){
+        return pdfDoc.getPage(n).then(function(pg){ return pg.getTextContent(); }).then(function(tc){
+          pages[n-1]=((tc&&tc.items)||[]).filter(function(it){ return it&&it.str!==undefined; }).map(function(it){ return {str:String(it.str),eol:!!it.hasEOL}; });
+        },function(){ pages[n-1]=[]; }).then(function(){
+          lus++;
+          if(rech.ouvert&&numPages>8&&lus<numPages) rechCompteur('Lecture du texte… '+lus+' / '+numPages);
+        });
+      }
+      // Une page apres l autre : un long document ne doit pas reclamer quarante pages d un coup a pdf.js.
+      for(var n=1;n<=numPages;n++) (function(n){ suite=suite.then(function(){ return une(n); }); })(n);
+      rech.promesse=suite.then(function(){ rech.pages=pages; return pages; });
+      return rech.promesse;
+    }
+    // ATTENTION : UN DOCUMENT NUMERISE N EST PAS UN DOCUMENT OU LE MOT N EST PAS. « Aucun résultat » sur une image
+    // dirait au lecteur que le chauffage n est pas decrit ; c est la recherche qui ne voit rien. On le dit.
+    function rechDire(){
+      if(rech.req.trim().length<2){ rechCompteur(''); return; }
+      if(rech.pages&&rech.sansTexte.length===numPages){ rechCompteur('Document numérisé : il ne contient pas de texte à chercher',true); return; }
+      if(!rech.occ.length){
+        var r='Aucun résultat';
+        if(rech.sansTexte.length) r+=' · pages '+Player.viewer.plagesDePages(rech.sansTexte)+' en image, non lues';
+        rechCompteur(r,true); return;
+      }
+      var o=rech.occ[rech.i];
+      rechCompteur((rech.i+1)+' / '+rech.occ.length+(rech.tronque?'+':'')+' · page '+o.page);
+    }
+    function chercher(){
+      var champ=document.getElementById('gFindIn'), q=champ?champ.value:'';
+      rech.req=q;
+      if(q.trim().length<2){ rech.occ=[]; rech.i=-1; rechDire(); surligner(); return; }
+      lireLesTextes().then(function(pages){
+        if(!rech.ouvert||q!==rech.req) return;              // une frappe plus recente l emporte
+        var r=Player.viewer.chercherDansPages(pages,q);
+        rech.occ=r.occurrences; rech.sansTexte=r.pagesSansTexte; rech.tronque=r.tronque;
+        rech.i=Player.viewer.premiereOccurrenceDepuis(rech.occ,cur||1);
+        if(rech.i>=0) allerA(rech.occ[rech.i].page);
+        rechDire(); surligner();
+      });
+    }
+    function rechAller(sens){
+      if(!rech.occ.length) return;
+      rech.i=(rech.i+sens+rech.occ.length)%rech.occ.length;
+      allerA(rech.occ[rech.i].page); rechDire(); surligner();
+    }
+    // LE SURLIGNAGE, sur les pages rendues seulement (les autres n ont pas de couche texte), et de nouveau quand une
+    // couche texte arrive. L API CSS Custom Highlight surligne la plage exacte sans toucher au DOM de pdf.js ; sans
+    // elle, on surligne l element de texte entier.
+    function surligner(){
+      var reg=window.CSS&&CSS.highlights, H=window.Highlight;
+      if(reg){ try{ reg.delete('pdf-trouve'); reg.delete('pdf-courant'); }catch(e){} }
+      var anciens=document.querySelectorAll('.textLayer .g-trouve,.textLayer .g-courant');
+      for(var a=0;a<anciens.length;a++) anciens[a].classList.remove('g-trouve','g-courant');
+      if(!rech.ouvert||!rech.occ.length) return;
+      var parPage=Object.create(null);                     // indexe par un numero de page : objet nu
+      rech.occ.forEach(function(o,i){ (parPage[o.page]=parPage[o.page]||[]).push(i); });
+      var tous=[], courant=[];
+      var couches=document.querySelectorAll('.textLayer[data-p]');
+      for(var c=0;c<couches.length;c++){
+        var tl=couches[c], liste=parPage[tl.getAttribute('data-p')], divs=tl.__couche&&tl.__couche.textDivs;
+        if(!liste||!divs) continue;
+        liste.forEach(function(i){
+          var o=rech.occ[i], da=divs[o.debut.element], db=divs[o.fin.element];
+          if(!da||!db) return;
+          if(reg&&H){
+            try{
+              var ta=da.firstChild||da, tb=db.firstChild||db, rg=document.createRange();
+              rg.setStart(ta,Math.min(o.debut.decalage,(ta.length||0)));
+              rg.setEnd(tb,Math.min(o.fin.decalage,(tb.length||0)));
+              (i===rech.i?courant:tous).push(rg);
+            }catch(e){}
+          } else {
+            for(var k=o.debut.element;k<=o.fin.element;k++){ if(divs[k]) divs[k].classList.add(i===rech.i?'g-courant':'g-trouve'); }
+          }
+        });
+      }
+      if(reg&&H){
+        try{
+          if(tous.length){ var h1=new H(); tous.forEach(function(r){ h1.add(r); }); reg.set('pdf-trouve',h1); }
+          if(courant.length){ var h2=new H(); courant.forEach(function(r){ h2.add(r); }); reg.set('pdf-courant',h2); }
+        }catch(e){}
+      }
+    }
+    function ouvrirRecherche(){
+      if(!rechDispo()) return;
+      var f=document.getElementById('gFind'), b=document.getElementById('gFindBtn'), c=document.getElementById('gFindIn');
+      f.classList.add('open'); rech.ouvert=true;
+      if(b) b.setAttribute('aria-expanded','true');
+      try{ c.focus(); c.select(); }catch(e){}
+      if(c&&c.value) chercher();
+    }
+    function fermerRecherche(){
+      var f=document.getElementById('gFind'), b=document.getElementById('gFindBtn');
+      if(f) f.classList.remove('open');
+      rech.ouvert=false; clearTimeout(rech.minuteur);
+      if(b){ b.setAttribute('aria-expanded','false'); try{ b.focus(); }catch(e){} }
+      surligner();
+    }
+    function initRecherche(){
+      var b=document.getElementById('gFindBtn'), c=document.getElementById('gFindIn');
+      if(!b||!c) return;
+      // Une image n a pas de texte : pas de loupe, plutot qu une recherche qui ne trouverait jamais rien.
+      if(IS_IMG){ b.style.display='none'; return; }
+      b.addEventListener('click',function(){ if(rech.ouvert) fermerRecherche(); else ouvrirRecherche(); });
+      document.getElementById('gFindX').addEventListener('click',fermerRecherche);
+      document.getElementById('gFindNext').addEventListener('click',function(){ rechAller(1); });
+      document.getElementById('gFindPrev').addEventListener('click',function(){ rechAller(-1); });
+      c.addEventListener('input',function(){ clearTimeout(rech.minuteur); rech.minuteur=setTimeout(chercher,220); });
+      // ECHAP REFERME LA RECHERCHE, PAS LE LECTEUR : sans stopPropagation, la touche remonterait au document, ou
+      // l ecoute du mode encadre renvoie close a l hote (#603).
+      c.addEventListener('keydown',function(e){
+        if(e.key==='Enter'){ e.preventDefault(); clearTimeout(rech.minuteur); if(rech.req!==c.value) chercher(); else rechAller(e.shiftKey?-1:1); }
+        else if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); fermerRecherche(); }
+      });
+      document.addEventListener('keydown',function(e){
+        var ctrlF=(e.ctrlKey||e.metaKey)&&!e.altKey&&(e.key==='f'||e.key==='F');
+        var barre=e.key==='/'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!champDeSaisie(e.target);
+        if((ctrlF||barre)&&rechDispo()){ e.preventDefault(); ouvrirRecherche(); }
+      });
+    }
     function syncNav(){ var st=Player.viewer.arrowState(cur,numPages); ['navPrev','pillPrev'].forEach(function(id){ var b=document.getElementById(id); if(b)b.disabled=st.prevDisabled; }); ['navNext','pillNext'].forEach(function(id){ var b=document.getElementById(id); if(b)b.disabled=st.nextDisabled; });
       var gp=document.getElementById('gProg'); if(gp&&numPages) gp.style.width=Player.viewer.progressPercent(cur||1,numPages)+'%'; }
     function champDeSaisie(t){ return !!(t&&(t.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName||''))); }
@@ -1654,10 +1795,12 @@ ${LEGAL_CSS}
         // ressuscitait alors une page remise en reserve — visible comme un bloc de texte
         // selectionnable flottant sur un cadre vide.
         if(gen!==renderGen || monGenPage!==(genPage[n]||0)) return;
-        var tl=document.createElement('div'); tl.className='textLayer';
-        tl.style.width=v.width+'px'; tl.style.height=v.height+'px'; tl.style.setProperty('--scale-factor', scale);
+        var tl=document.createElement('div'); tl.className='textLayer'; tl.setAttribute('data-p',String(n));
+        tl.style.width=v.width+'px'; tl.style.height=v.height+'px'; tl.style.setProperty('--scale-factor', scale); tl.style.setProperty('--total-scale-factor', scale);
         el.appendChild(tl);
-        try{ new pdfjsLib.TextLayer({textContentSource:tc,container:tl,viewport:v}).render(); }
+        // La couche est gardee sur son conteneur : la recherche (#612) y retrouve ses span (textDivs), et surligne de
+        // nouveau quand elle a fini de se poser.
+        try{ var couche=new pdfjsLib.TextLayer({textContentSource:tc,container:tl,viewport:v}); tl.__couche=couche; var posee=couche.render(); if(posee&&posee.then) posee.then(function(){ if(rech.ouvert) surligner(); },function(){}); }
         catch(e){ try{ pdfjsLib.renderTextLayer({textContentSource:tc,container:tl,viewport:v}); }
         catch(e2){ try{ pdfjsLib.renderTextLayer({textContent:tc,container:tl,viewport:v}); }catch(e3){} } }
       }); }catch(e){}
