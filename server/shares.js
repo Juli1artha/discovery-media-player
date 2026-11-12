@@ -6,6 +6,19 @@ const crypto = require("crypto");
 const { capturerSansBloquer } = require("./capture");
 const { signatureAbsente } = require("./erreurs-base.js");
 const protection = require("./lien-protege.js");
+const { bornerAffichage } = require("./affichage.js");
+
+/**
+ * Le mode d'affichage à écrire avec une session (#617, 0029), ou rien. Borné d'abord (un objet du dehors), écrit
+ * ensuite SEULEMENT si la colonne existe : PostgREST refuserait toute la ligne pour une colonne inconnue, et la
+ * session elle-même serait perdue — la mesure qu'on voulait enrichir. Sans la 0029, la sonde nomme le fichier.
+ */
+async function affichageAEcrire(brut) {
+  const affichage = bornerAffichage(brut);
+  if (!affichage) return null;
+  if (!(await require("./schema").attendue("affichageSessions"))) return null;
+  return affichage;
+}
 // Tout ce qui vient de l'hôte passe par le contexte injecté — base, email, marque. C'est ce qui
 // permettra à ce fichier de partir dans le dépôt du player sans emporter le studio avec lui.
 // ⚠️ Le contexte est REÇU, pas construit. Ce module ne doit pas savoir d'où il vient : c'est ce
@@ -627,8 +640,10 @@ async function upsertSession(share, p, { ip: _ip, ua }) {
     total_seconds: bornerNombre(p.totalSeconds, BORNES.secondes) || 0, pages_time: bornerPagesTime(p.pagesTime),
     device, os, browser, last_at: new Date().toISOString(),
   };
+  // Le mode d'affichage (0029) : seulement si la colonne existe — sinon PostgREST refuserait TOUTE la ligne.
+  const affichage = await affichageAEcrire(p.modeAffichage);
   // started_at non touché par l'upsert (default à l'insert ; merge ne l'écrase pas car absent du body).
-  await PLAYER.db.request("commercial_doc_sessions?on_conflict=session_id", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: [row] });
+  await PLAYER.db.request("commercial_doc_sessions?on_conflict=session_id", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: [{ ...row, ...(affichage ? { affichage } : {}) }] });
 }
 
 /**
@@ -815,6 +830,10 @@ const CHAMPS_SERVIS = [
  * revient au bout de six mois, parce que personne ne sait pourquoi elle n'était pas là.
  */
 const CHAMPS_RETENUS = {
+  // Clé entre guillemets : ce n'est pas une écriture de la colonne (cf. colonneMigreeConditionnelle.test.js).
+  "affichage": "mode d'affichage de la session (0029, #617) : énumérations et compteurs de gestes, bornés par le serveur. "
+    + "Écrit pour la MESURE (comparer la lecture avant et après le gabarit « lecture »), lu par une requête de relevé ; "
+    + "pas servi aux hôtes, qui n'en ont pas l'usage et dont le contrat ne change pas",
   ip: "adresse IP en clair — VIDÉE par la 0026 et plus jamais écrite (arbitrage ADV du "
     + "01/09/2026). La colonne demeure le temps qu'aucune version supportée ne l'écrive : "
     + "`docs/MIGRATIONS.md` exige qu'une migration soit sûre pendant que la version PRÉCÉDENTE "
@@ -1142,7 +1161,8 @@ async function upsertInternalSession(p, { ip: _ip, ua }) {
     // Trouvé par le second hôte, vérifié en rejouant l'insertion.
     device, os, browser, last_at: new Date().toISOString(),
   };
-  await PLAYER.db.request("commercial_doc_internal_sessions?on_conflict=session_id", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: [row] });
+  const affichage = await affichageAEcrire(p.modeAffichage);
+  await PLAYER.db.request("commercial_doc_internal_sessions?on_conflict=session_id", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: [{ ...row, ...(affichage ? { affichage } : {}) }] });
 }
 
 // Agrégat interne d'un document : nb de consultations (sessions), lecteurs distincts, détail par membre.

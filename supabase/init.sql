@@ -150,6 +150,8 @@ create table if not exists public.commercial_doc_sessions (
   device          text,
   os              text,
   browser         text,
+  -- Le mode d'affichage de la session (0029, #617) : borné par le serveur, aucune donnée personnelle.
+  affichage       jsonb,
   started_at      timestamptz not null default now(),
   last_at         timestamptz not null default now()
 );
@@ -175,6 +177,7 @@ create table if not exists public.commercial_doc_internal_sessions (
   device        text,
   os            text,
   browser       text,
+  affichage     jsonb,
   started_at    timestamptz not null default now(),
   last_at       timestamptz not null default now()
 );
@@ -820,6 +823,18 @@ comment on column public.commercial_doc_shares.expires_at is
 comment on column public.commercial_doc_shares.password_hash is
   'Empreinte du mot de passe du lien (sel:hash, scrypt, hex). Nulle = sans mot de passe. '
   'Jamais servie : un hote n''en voit qu''un booleen.';
+-- 0029 — même rattrapage : une base installée avant aujourd'hui n'aurait jamais `affichage` en rejouant ce
+-- fichier, et ses sessions ne diraient jamais leur mode d'affichage (le player n'écrirait pas le champ).
+alter table public.commercial_doc_sessions
+  add column if not exists affichage jsonb;
+alter table public.commercial_doc_internal_sessions
+  add column if not exists affichage jsonb;
+comment on column public.commercial_doc_sessions.affichage is
+  'Mode d''affichage de la session (0029) : gabarit, ajustement, format, une_page, compteurs de gestes. '
+  'Borne par le serveur ; aucune donnee personnelle. Nul = ecrite avant la 0029, ou par un player anterieur.';
+comment on column public.commercial_doc_internal_sessions.affichage is
+  'Mode d''affichage de la session (0029) : gabarit, ajustement, format, une_page, compteurs de gestes. '
+  'Borne par le serveur ; aucune donnee personnelle. Nul = ecrite avant la 0029, ou par un player anterieur.';
 
 -- ⚠️ ET LE RATTRAPAGE VAUT AUSSI POUR CE QU'ON EFFACE (0026). Une base installée avant aujourd'hui
 -- porte treize mois d'adresses ; `create table if not exists` ne touche pas une table déjà là, donc

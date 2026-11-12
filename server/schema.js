@@ -91,6 +91,13 @@ const ATTENDUES = {
     migration: "0028-liens-proteges.sql",
     fonction: "faire expirer un lien tracé et le protéger par un mot de passe",
   },
+  // Mode d'affichage des sessions (0029, #617). La migration ajoute la colonne aux DEUX tables de session : une sonde
+  // sur l'externe suffit, comme pour `lienProtege`. Sans elle, la session s'écrit comme avant, sans ce champ.
+  affichageSessions: {
+    table: "commercial_doc_sessions", colonne: "affichage",
+    migration: "0029-affichage-des-sessions.sql",
+    fonction: "dire, dans chaque session, comment le document était affiché (gabarit, ajustement, gestes)",
+  },
   revocationDatee: {
     table: "commercial_doc_shares", colonne: "revoked_at",
     migration: "0013-revocation-datee.sql",

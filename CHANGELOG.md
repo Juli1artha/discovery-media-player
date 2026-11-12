@@ -12,6 +12,17 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- **Chaque session de lecture dit comment le document était affiché (migration `0029`, #617).** Le relevé L0 (#593) a
+  mesuré la lecture d'avant le gabarit « lecture » ; sans le mode, on ne pouvait pas la comparer à celle d'après — et le
+  diaporama, qui fait baisser les « pages vues » sans que la lecture recule, se serait lu comme un recul. Le résumé de
+  session (externe comme interne) porte désormais `affichage` : gabarit (`lecture` / `ancien`), ajustement, format de la
+  première page, mode une page, et des **compteurs** de gestes (clavier, flèches, vignettes, zoom, rotation,
+  ajustement, recherche, résultats, sommaire). Aucune donnée personnelle — on compte qu'on a cherché, jamais ce qu'on a
+  cherché ; le serveur borne l'objet (`server/affichage.js`). Envoyé avec le résumé existant : pas de requête de plus.
+  **Sans la 0029**, la session s'écrit exactement comme avant, et la sonde de schéma nomme le fichier.
+
 ## [0.1.181] — 2026-11-12
 
 ### Added
