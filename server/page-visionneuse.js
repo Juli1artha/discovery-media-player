@@ -8,7 +8,7 @@ const { LIVE_CSS, LIVE_BAR, LIVE_PANEL, LIVE_JS } = require("./gabarit-live");
 const { MAP_CSS, MAP_MARKUP, MAP_JS } = require("./gabarit-carte");
 const { BOT_CSS, ICONS, botMarkup, voixProposable } = require("./gabarit-agent");
 const { legalFooter, LEGAL_CSS } = require("./gabarit-legal");
-const { barreLecture, actionsDeLecture, contactDuLien, mailtoContact, LECTURE_CSS } = require("./gabarit-lecture");
+const { barreLecture, actionsDeLecture, contactDuLien, mailtoContact, sommaireHtml, LECTURE_CSS } = require("./gabarit-lecture");
 const { cleSessionHote, CLE_SESSION_PLAYER, CLE_INVITE } = require("./session-cles");
 
 // Le cœur navigateur (bundle committé) et les GREFFONS de l'hôte — résolus depuis le contexte,
@@ -338,7 +338,7 @@ ${LEGAL_CSS}
   </div>
   <div class=lrow>
     <div class=vign id=vign aria-hidden=true><div class=vign-in id=vignIn role=list aria-label="Vignettes des pages"></div></div>
-    <div class=lmain>
+    <div class=lmain>${lecture ? sommaireHtml() : ""}
       <div class=scroll id=scroll tabindex=0 role=region aria-label="Document">
         <div id=pages></div>
         <div id=load class="${brandDark ? "ldark" : ""}${brandLogo ? "" : " has-intro"}">${brandLogo || !PLAYER.branding.loaderName ? "" : `<div class=lintro id=lintro data-theme="${brandDark ? "dark" : "light"}"><div class=lword>${esc(PLAYER.branding.loaderName)}</div></div>`}<div class=lbox>${brandLogo ? `<img class=lbrand src="${brandLogo}" alt="${brandName}">${PLAYER.branding.poweredBy ? `<div class=lpowered>Powered by ${esc(PLAYER.branding.poweredBy)}</div>` : ""}` : ""}<div class="lbar idle" id=lbar><i id=lbarFill></i></div><div class=lpct id=lpct>Chargement…</div></div></div>
@@ -778,7 +778,10 @@ ${LEGAL_CSS}
       // La recherche (#612) se referme comme le menu : une frappe pour elle, la suivante pour le lecteur.
       var fr=document.getElementById('gFind'), rechOuverte=!!(fr&&fr.classList.contains('open'));
       if(rechOuverte) fermerRecherche();
-      return ouverts.length>0||rechOuverte;
+      // Le sommaire (#612, L6b), de meme : une frappe pour lui, la suivante pour le lecteur.
+      var sommOuvert=!!somm.ouvert;
+      if(sommOuvert) fermerSommaire();
+      return ouverts.length>0||rechOuverte||sommOuvert;
     }
     if(CFG.preview){
       // « Partager » et « Fermer » délégués à l'app (postMessage). « Présenter » géré localement.
@@ -836,6 +839,7 @@ ${LEGAL_CSS}
       if(_fb) _fb.addEventListener('click',basculerAjustement);
       if(CFG.lecture) veiller();
       if(CFG.lecture) initRecherche();
+      if(CFG.lecture) initSommaire();
       if(vignIn){
         var desarmer=function(){ vignSuivi=false; };
         vignIn.addEventListener('wheel',desarmer,{passive:true});
@@ -1103,6 +1107,7 @@ ${LEGAL_CSS}
         if(genDoc!==docGen)return;      // une tache plus recente a pris la place
         clearTimeout(tChargement);
         pdfDoc=pdf; numPages=pdf.numPages; window.__n=pdf.numPages; T.setPageCount(pdf.numPages);
+        try{ chargerSommaire(); }catch(e){}
         // Un document d une seule page : le panneau de vignettes n aurait rien a montrer.
         if(numPages<2){ var vb1=document.getElementById('vignBtn'); if(vb1) vb1.style.display='none'; }
         document.getElementById('pg').textContent='Page 1 / '+pdf.numPages;
@@ -1217,6 +1222,81 @@ ${LEGAL_CSS}
     // Avant : une seule touche ecoutee (Echap, et seulement encadree), des fleches reservees a l assistant,
     // et « Page 1 / 21 » qu on lisait sans pouvoir le cliquer. On avancait a la molette, en devinant.
     function allerA(p){ if(!numPages)return; p=Player.viewer.clampPage(p,numPages); if(onePage) showPage(p); else scrollToPage(p); }
+    // ── LE SOMMAIRE (#612, L6b) ─────────────────────────────────────────────────────────────────────────────
+    // Les signets du PDF, lus une fois le document charge (getOutline ne lit aucune page). Leurs PAGES ne se resolvent
+    // qu a la premiere ouverture du tiroir : une destination nommee demande getDestination, une reference getPageIndex.
+    // Un signet dont la destination ne se resout pas reste AFFICHE, sans lien : le lecteur voit la structure du
+    // document, et rien ne disparait sans un mot.
+    var somm={entrees:null,pages:null,promesse:null,ouvert:false,choisie:-1};
+    function chargerSommaire(){
+      if(!CFG.lecture||IS_IMG||!pdfDoc||typeof pdfDoc.getOutline!=='function') return;
+      pdfDoc.getOutline().then(function(o){
+        somm.entrees=Player.viewer.aplatirSommaire(o);
+        var m=document.getElementById('gTocMenu'); if(m) m.hidden=!somm.entrees.length;
+      },function(){});
+    }
+    function pageDeDestination(dest){
+      var d=typeof dest==='string'?pdfDoc.getDestination(dest):Promise.resolve(dest);
+      return d.then(function(a){
+        if(!a||!a.length) return null;
+        var ref=a[0];
+        if(typeof ref==='number') return ref+1;
+        if(ref&&typeof ref==='object') return pdfDoc.getPageIndex(ref).then(function(i){ return i+1; });
+        return null;
+      }).then(function(p){ return Player.viewer.pageValide(p,numPages); },function(){ return null; });
+    }
+    function resoudreSommaire(){
+      if(somm.pages) return Promise.resolve(somm.pages);
+      if(somm.promesse) return somm.promesse;
+      somm.promesse=Promise.all(somm.entrees.map(function(e){ return pageDeDestination(e.dest); })).then(function(p){ somm.pages=p; return p; });
+      return somm.promesse;
+    }
+    function dessinerSommaire(){
+      var liste=document.getElementById('gTocIn'); if(!liste) return;
+      liste.textContent='';
+      if(!somm.pages){ var m=document.createElement('p'); m.className='gtoc-msg'; m.textContent='Lecture du sommaire…'; liste.appendChild(m); return; }
+      var actuelle=somm.choisie>=0?somm.choisie:Player.viewer.entreeCourante(somm.pages,cur||1);
+      somm.entrees.forEach(function(e,i){
+        var p=somm.pages[i];
+        var el=document.createElement(p?'button':'span');
+        el.className='gtoc-e'+(p?'':' sans')+(i===actuelle?' on':'');
+        el.setAttribute('role','listitem');
+        if(i===actuelle) el.setAttribute('aria-current','true');
+        el.style.paddingLeft=(12+16*e.niveau)+'px';
+        var t=document.createElement('span'); t.className='gtoc-titre'; t.textContent=e.titre; el.appendChild(t);
+        if(p){
+          el.type='button';
+          var n=document.createElement('span'); n.className='gtoc-p'; n.textContent=String(p); el.appendChild(n);
+          el.addEventListener('click',function(){
+            somm.choisie=i; allerA(p);
+            // Sur un ecran etroit, le tiroir couvre la page : on le replie pour la montrer. Sinon il reste, pour enchainer.
+            if(window.innerWidth<=860) fermerSommaire(); else dessinerSommaire();
+          });
+        }
+        liste.appendChild(el);
+      });
+    }
+    function ouvrirSommaire(){
+      var t=document.getElementById('gToc'), b=document.getElementById('gTocBtn');
+      if(!t||!somm.entrees||!somm.entrees.length) return;
+      t.classList.add('open'); t.setAttribute('aria-hidden','false'); somm.ouvert=true; somm.choisie=-1;
+      if(b) b.setAttribute('aria-expanded','true');
+      dessinerSommaire();
+      resoudreSommaire().then(function(){ if(somm.ouvert) dessinerSommaire(); });
+      try{ var x=document.getElementById('gTocX'); if(x) x.focus(); }catch(e){}
+    }
+    function fermerSommaire(){
+      var t=document.getElementById('gToc'), b=document.getElementById('gTocBtn');
+      if(t){ t.classList.remove('open'); t.setAttribute('aria-hidden','true'); }
+      somm.ouvert=false;
+      if(b) b.setAttribute('aria-expanded','false');
+    }
+    function initSommaire(){
+      var b=document.getElementById('gTocBtn'), x=document.getElementById('gTocX');
+      if(!b) return;
+      b.addEventListener('click',function(){ if(somm.ouvert) fermerSommaire(); else ouvrirSommaire(); });
+      if(x) x.addEventListener('click',fermerSommaire);
+    }
     // ── RECHERCHER DANS LE DOCUMENT (#612, L6a) ─────────────────────────────────────────────────────────────
     // ATTENTION : LES PAGES SONT VIRTUALISEES. Seules deux ou trois ont une couche texte, et le « Rechercher » du
     // navigateur ne voit qu elles. On lit donc le texte de CHAQUE page, une seule fois, a la PREMIERE recherche —

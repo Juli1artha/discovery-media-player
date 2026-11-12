@@ -22,6 +22,16 @@ the notes there are this file's section for that version.
   surlignés (API CSS Custom Highlight, l'élément entier sinon). Un document numérisé le dit au lieu de « Aucun
   résultat ». Échap referme la recherche, puis le lecteur. La logique vit dans `src/viewer.ts`
   (`chercherDansPages`).
+- **Le sommaire du document, dans le gabarit « lecture » (capacité `reading-outline`, #612).** Les signets du PDF
+  (`getOutline`) : une entrée « Sommaire » dans `⋯` — seulement s'il y en a — ouvre un tiroir à gauche, par-dessus la
+  page, avec les titres par niveau, leur page et l'entrée courante. Un clic mène à la page (le tiroir se replie sur un
+  écran étroit). Un signet qui ne se résout pas reste affiché, sans lien. Échap referme le tiroir, puis le lecteur.
+  La forme vit dans `src/viewer.ts` (`aplatirSommaire`, `pageValide`, `entreeCourante`).
+
+### Fixed
+
+- **La loupe faisait passer « ⋯ » à la ligne sur téléphone (#613).** À 375 px, la barre « lecture » demandait 382 px
+  et passait de 56 à 95 px de haut. Sous 420 px, le titre cède la place (30 vw), coupé net.
 
 ## [0.1.180] — 2026-11-12
 
