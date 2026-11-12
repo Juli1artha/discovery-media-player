@@ -147,8 +147,8 @@ function barreLecture(o) {
   const legalEnBarre = o.tracked ? o.legalHtml : "";
   const legalAuMenu = o.tracked ? "" : o.legalHtml;
   return `<div class="bar gbar">${retour}<div class=gtitre><b>${o.title}</b>${sousTitre}</div><div class=gtabs id=gTabs role=tablist aria-label="Documents" hidden></div>${o.isTest ? '<span class=testchip>🎭 Répétition — session de test</span>' : ""}${legalEnBarre}<span class=sp></span>${o.liveBar || ""}<span class=gslots id=gSlots>${enBarre.join("")}</span>${o.recherche ? `<button type=button class=ic id=gFindBtn title="Rechercher dans le document (Ctrl+F)" aria-label="Rechercher dans le document" aria-expanded=false aria-controls=gFind>${I.loupe}</button>` : ""}<button type=button class="ic barMore" id=barMore title="Plus d'actions" aria-label="Plus d'actions" aria-haspopup=menu>${I.plus}</button><div class=gprog aria-hidden=true><i id=gProg></i></div>${o.recherche ? rechercheHtml() : ""}</div>
-  <div class="barmenu gmenu" id=barMenu role=menu>${auMenu.join("")}<button type=button data-t=rotL>Pivoter à gauche</button><button type=button data-t=rotR>Pivoter à droite</button><button type=button data-t=fs>Plein écran</button>${legalAuMenu ? `<div class=gapropos>${legalAuMenu}</div>` : ""}</div>
-  <div class=gcache hidden>${enReserve.join("")}<button type=button class=ic id=rotL title="Pivoter à gauche" aria-label="Pivoter le document à gauche">${I.rotL}</button><button type=button class=ic id=rotR title="Pivoter à droite" aria-label="Pivoter le document à droite">${I.rotR}</button><button type=button class=ic id=fs title="Plein écran">${I.fs}</button></div>
+  <div class="barmenu gmenu" id=barMenu role=menu>${auMenu.join("")}<button type=button id=gTocMenu data-t=gTocBtn hidden>Sommaire</button><button type=button data-t=rotL>Pivoter à gauche</button><button type=button data-t=rotR>Pivoter à droite</button><button type=button data-t=fs>Plein écran</button>${legalAuMenu ? `<div class=gapropos>${legalAuMenu}</div>` : ""}</div>
+  <div class=gcache hidden>${enReserve.join("")}<button type=button id=gTocBtn aria-controls=gToc aria-expanded=false>Sommaire</button><button type=button class=ic id=rotL title="Pivoter à gauche" aria-label="Pivoter le document à gauche">${I.rotL}</button><button type=button class=ic id=rotR title="Pivoter à droite" aria-label="Pivoter le document à droite">${I.rotR}</button><button type=button class=ic id=fs title="Plein écran">${I.fs}</button></div>
   <div class=gpill id=gPill role=toolbar aria-label="Navigation dans le document"><button type=button class=ic id=vignBtn title="Toutes les pages" aria-label="Afficher toutes les pages" aria-pressed=false>${I.pages}</button><span class=gsep></span><button type=button class=ic id=pillPrev title="Page précédente" aria-label="Page précédente">${I.prec}</button><button type=button class=pg id=pg title="Aller à une page" aria-label="Aller à une page"></button><button type=button class=ic id=pillNext title="Page suivante" aria-label="Page suivante">${I.suiv}</button><span class=gsep></span><button type=button class=gfit id=fitBtn aria-pressed=false>Page entière</button><span class=zoom><button type=button id=zout title="Dézoomer" aria-label="Dézoomer">−</button><span id=zlbl>100%</span><button type=button id=zin title="Zoomer" aria-label="Zoomer">+</button></span></div>`;
 }
 
@@ -159,6 +159,15 @@ function barreLecture(o) {
  */
 function rechercheHtml() {
   return `<div class=gfind id=gFind role=search aria-label="Rechercher dans le document">${I.loupe}<input id=gFindIn type=search enterkeyhint=search autocomplete=off spellcheck=false placeholder="Rechercher dans le document" aria-label="Rechercher dans le document" aria-describedby=gFindN><span class=gfindn id=gFindN aria-live=polite></span><button type=button class=ic id=gFindPrev title="Résultat précédent (Maj+Entrée)" aria-label="Résultat précédent">${I.haut}</button><button type=button class=ic id=gFindNext title="Résultat suivant (Entrée)" aria-label="Résultat suivant">${I.bas}</button><button type=button class=ic id=gFindX title="Fermer la recherche (Échap)" aria-label="Fermer la recherche">${I.croix}</button></div>`;
+}
+
+/**
+ * LE SOMMAIRE (#612, L6b) : un tiroir PAR-DESSUS la page, à gauche — pas une colonne : une colonne changerait la
+ * largeur du cadre, donc reconstruirait le document. L'entrée « Sommaire » du menu n'apparaît que si le PDF a des
+ * signets ; le script de la page (page-visionneuse.js) remplit la liste.
+ */
+function sommaireHtml() {
+  return `<nav class=gtoc id=gToc aria-label="Sommaire du document" aria-hidden=true><div class=gtoc-t><b>Sommaire</b><button type=button class=ic id=gTocX title="Fermer le sommaire (Échap)" aria-label="Fermer le sommaire">${I.croix}</button></div><div class=gtoc-in id=gTocIn role=list></div></nav>`;
 }
 
 const LECTURE_CSS = `
@@ -257,10 +266,29 @@ const LECTURE_CSS = `
   .gfind input::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none;display:none}
   .gfindn{font-size:12.5px;color:#5d6470;white-space:nowrap;max-width:46vw;overflow:hidden;text-overflow:ellipsis}
   .gfindn.vide{color:#9b1c1c}
+  /* ⚠️ LA LOUPE (#612) A FAIT PASSER « ⋯ » À LA LIGNE SUR TÉLÉPHONE : à 375 px, retour + titre (150 px) + bouton plein
+     + loupe + ⋯ demandaient 382 px — la barre passait de 56 à 95 px. Le titre cède la place, il reste coupé net. */
+  @media(max-width:420px){ .gtitre b,.gsub{max-width:30vw} }
   ::highlight(pdf-trouve){background-color:rgba(255,196,0,.42)}
   ::highlight(pdf-courant){background-color:rgba(255,128,0,.72)}
   .textLayer .g-trouve{background-color:rgba(255,196,0,.42)}
   .textLayer .g-courant{background-color:rgba(255,128,0,.72)}
+  /* LE SOMMAIRE (#612, L6b). Encre #1b1d22 / #5d6470 sur blanc (16,9:1 / 6,0:1) ; l'entrée courante sur #eef1f6. */
+  .gtoc{position:absolute;left:0;top:0;bottom:0;z-index:8;width:min(320px,86vw);display:none;flex-direction:column;background:#fff;color:#1b1d22;border-right:1px solid #e3e6eb;box-shadow:0 0 24px rgba(0,0,0,.18)}
+  .gtoc.open{display:flex}
+  .gtoc-t{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 8px 6px 14px;font-size:14px;border-bottom:1px solid #eef0f3}
+  .gtoc-t .ic{color:#1b1d22;border:0;background:transparent;border-radius:999px;width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+  .gtoc-t .ic svg{width:18px;height:18px}
+  .gtoc-in{flex:1;overflow-y:auto;padding:4px 0 16px}
+  .gtoc-e{display:flex;align-items:baseline;gap:8px;width:100%;text-align:left;font:inherit;font-size:13.5px;line-height:1.35;color:#1b1d22;background:transparent;border:0;padding:7px 12px;cursor:pointer}
+  .gtoc-e:hover{background:#f1f3f6}
+  .gtoc-e.on{background:#eef1f6;font-weight:650}
+  .gtoc-e.sans{color:#5d6470;cursor:default}
+  .gtoc-e.sans:hover{background:transparent}
+  .gtoc-e:focus-visible{outline:2px solid #1b1d22;outline-offset:-2px}
+  .gtoc-titre{flex:1;min-width:0}
+  .gtoc-p{flex:none;color:#5d6470;font-size:12px;font-variant-numeric:tabular-nums}
+  .gtoc-msg{padding:10px 14px;color:#5d6470;font-size:13px}
 `;
 
-module.exports = { reglagesLecture, barreLecture, actionsDeLecture, contactDuLien, mailtoContact, LECTURE_CSS };
+module.exports = { reglagesLecture, barreLecture, actionsDeLecture, contactDuLien, mailtoContact, sommaireHtml, LECTURE_CSS };

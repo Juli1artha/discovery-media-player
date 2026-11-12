@@ -774,6 +774,9 @@ async function handlerMesure(req, res) {
           // `reading-search` : dans le gabarit « lecture », une loupe (et Ctrl+F, /) cherche dans TOUT le document — pas
           // seulement dans les pages rendues —, surligne, et dit quand un document numérisé n'a pas de texte (#612).
           "reading-search",
+          // `reading-outline` : dans le gabarit « lecture », « Sommaire » (menu ⋯) ouvre les signets du PDF, chacun menant
+          // à sa page ; sans signets, pas d'entrée (#612, L6b).
+          "reading-outline",
           // `present-attach` : la page du présentateur accepte qu'on lui CONFIE une présentation par le
           // pont (jeton de contrôle en postMessage), et annonce `present-started` / `present-ended`.
           // Sans cette capacité, un hôte enverrait son jeton à une page qui ne l'écoute pas, et

@@ -41,7 +41,7 @@ need.
   "contract": 1,
   "version": "<the running version>",
   "runtime": { "node": "<what this instance runs on>", "nodeRequired": ">=22.13.0" },
-  "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention", "link-protection", "start-page", "fit", "reading-layout", "host-chrome", "reading-contact", "reading-search", "present-attach"],
+  "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention", "link-protection", "start-page", "fit", "reading-layout", "host-chrome", "reading-contact", "reading-search", "reading-outline", "present-attach"],
   "frameAncestors": ["'self'", "https://*.vercel.app", "https://app.example.com"],
   "separateIssuer": true,
   "internalStrict": true,
@@ -998,6 +998,11 @@ page is served exactly as before; with an assistant enabled on the link, the cla
   Results are highlighted on rendered pages, by the CSS Custom Highlight API where it exists (the whole text item
   otherwise). A document whose pages have no text says so ("Document numérisé…") instead of "no result". `Escape`
   closes the search first, then the reader. Hidden for an image document.
+- **Outline** (capability `reading-outline`, #612): when the PDF has bookmarks (`getOutline`), a "Sommaire" entry
+  appears in the `⋯` menu; without bookmarks, no entry. It opens a drawer over the page (left, never a column: the
+  frame keeps its width) listing the titles by level with their page, the current one marked. A click goes to the
+  page; on a narrow screen the drawer folds away. A bookmark whose destination does not resolve stays listed,
+  without a link. Pages are resolved on first opening; no page text is read. `Escape` closes the drawer first.
 - On a tracked link, the tracking notice ("Lecture mesurée") moves **into the bar**, which never hides.
   The pill and the side arrows fade after 3 s without a gesture, and come back on any pointer, touch or
   key — never while the menu, the share panel or the page-number field is open.

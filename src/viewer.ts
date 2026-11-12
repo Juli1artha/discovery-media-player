@@ -549,3 +549,66 @@ export function plagesDePages(pages: readonly number[]): string {
   }
   return morceaux.join(", ");
 }
+
+// ── LE SOMMAIRE DU DOCUMENT (#612, L6b) ─────────────────────────────────────────────────────────────────
+//
+// Les signets du PDF (`getOutline`) : un arbre de titres, chacun avec une destination que la page résout en numéro de
+// page (`getDestination` / `getPageIndex`). Ici, la forme : l'arbre mis à plat, avec son niveau ; et ce qu'on montre
+// comme entrée « courante ».
+
+/** Un signet tel que pdf.js le rend (champs non garantis : le fichier peut être n'importe quoi). */
+export type SignetBrut = { title?: unknown; dest?: unknown; items?: unknown };
+/** Une entrée du sommaire à plat : son titre, son niveau (0 = racine), sa destination à résoudre. */
+export type EntreeSommaire = { titre: string; niveau: number; dest: unknown };
+
+/** Au-delà, on s'arrête : un sommaire de mille lignes n'aide plus personne, et le panneau doit s'ouvrir vite. */
+export const MAX_ENTREES_SOMMAIRE = 500;
+/** Le niveau le plus profond montré (0 = racine) : au-delà, les sous-sous-titres ne guident plus. */
+export const NIVEAU_MAX_SOMMAIRE = 3;
+const MAX_TITRE = 160;
+
+/** Un titre lisible : caractères de contrôle retirés, blancs repliés, borné. Vide → « (sans titre) ». */
+function titreDeSignet(t: unknown): string {
+  // Les caractères de contrôle (un PDF en porte parfois dans ses titres) deviennent des espaces : par leur code, pas par
+  // une expression rationnelle qui les contiendrait (no-control-regex).
+  const brut = Array.from(String(t ?? ""), (c) => { const n = c.charCodeAt(0); return n < 32 || n === 127 ? " " : c; }).join("");
+  const s = brut.replace(/\s+/g, " ").trim();
+  if (!s) return "(sans titre)";
+  return s.length > MAX_TITRE ? `${s.slice(0, MAX_TITRE - 1).trimEnd()}…` : s;
+}
+
+/** L'arbre des signets, à plat et dans l'ordre de lecture (parent avant ses enfants). Vide si le fichier n'en a pas. */
+export function aplatirSommaire(
+  signets: unknown,
+  niveauMax: number = NIVEAU_MAX_SOMMAIRE,
+  max: number = MAX_ENTREES_SOMMAIRE,
+): EntreeSommaire[] {
+  const sortie: EntreeSommaire[] = [];
+  const parcourir = (liste: unknown, niveau: number) => {
+    if (!Array.isArray(liste)) return;
+    for (const s of liste as SignetBrut[]) {
+      if (sortie.length >= max) return;
+      if (!s || typeof s !== "object") continue;
+      sortie.push({ titre: titreDeSignet(s.title), niveau, dest: s.dest ?? null });
+      if (niveau < niveauMax) parcourir(s.items, niveau + 1);
+    }
+  };
+  parcourir(signets, 0);
+  return sortie;
+}
+
+/** Un numéro de page utilisable, ou `null` : entier, entre 1 et `total`. */
+export function pageValide(p: unknown, total: number): number | null {
+  const n = Number(p);
+  return Number.isInteger(n) && n >= 1 && n <= Math.max(0, Math.trunc(Number(total) || 0)) ? n : null;
+}
+
+/**
+ * L'entrée « où l'on est » : la DERNIÈRE dont la page est au plus la page courante — le titre sous lequel on lit.
+ * `-1` avant le premier titre résolu.
+ */
+export function entreeCourante(pages: readonly (number | null)[], courante: number): number {
+  let i = -1;
+  pages.forEach((p, k) => { if (typeof p === "number" && p <= courante && (i < 0 || p >= (pages[i] as number))) i = k; });
+  return i;
+}
