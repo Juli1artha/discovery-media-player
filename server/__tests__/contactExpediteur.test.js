@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright © 2026 3D Discovery
 // « CONTACTER L'EXPÉDITEUR » (#608) : l'action pleine d'un lien tracé ouvert seul, un `mailto:` vers `created_by`.
@@ -103,8 +104,12 @@ describe("la vraie page", () => {
   });
   it("le script de la page compile, et connaît l'élément de l'action (pour `chrome` et le menu)", () => {
     const html = rendre(lien());
-    const blocs = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]).filter((c) => c.trim());
-    for (const c of blocs) expect(() => new vm.Script(c)).not.toThrow();
+    // Le parseur du navigateur (jsdom), pas une expression rationnelle : c'est lui qui découpe la page chez le
+    // lecteur (même façon de faire que audienceEtat.test.js).
+    const doc = new window.DOMParser().parseFromString(html, "text/html");
+    const blocs = [...doc.querySelectorAll("script")].map((n) => n.textContent || "").filter((c) => c.trim());
+    expect(blocs.length).toBeGreaterThan(0);
+    for (const code of blocs) expect(() => new vm.Script(code)).not.toThrow();
     expect(html).toContain("contact:'contactBtn'");
   });
 });
