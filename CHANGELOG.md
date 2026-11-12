@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.182] — 2026-11-12
+
 ### Added
 
 - **Chaque session de lecture dit comment le document était affiché (migration `0029`, #617).** Le relevé L0 (#593) a
@@ -8077,7 +8079,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.181...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.182...HEAD
+[0.1.182]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.181...v0.1.182
 [0.1.181]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.180...v0.1.181
 [0.1.180]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.179...v0.1.180
 [0.1.179]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.178...v0.1.179
