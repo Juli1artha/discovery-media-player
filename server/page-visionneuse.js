@@ -753,7 +753,21 @@ ${LEGAL_CSS}
       var _xb=document.getElementById('embedCloseBtn');
       if(_xb) _xb.addEventListener('click',function(){ Player.bridge.sendToHost({type:'close'}); });
       // Échap ferme aussi : dans une surimpression, c'est le geste attendu.
-      document.addEventListener('keydown',function(e){ if(e.key==='Escape'){ Player.bridge.sendToHost({type:'close'}); } });
+      // ⚠️ MAIS D'ABORD CE QUI EST OUVERT PAR-DESSUS LA PAGE. Avec le menu « ⋯ » ou le panneau de partage
+      // ouvert, Échap fermait le LECTEUR entier : l'hôte recevait close et retirait le cadre (constaté
+      // le 11/11/2026 chez un hôte dont le menu porte désormais ses propres actions, #596). Comme partout,
+      // une première frappe referme le menu, la suivante le lecteur.
+      document.addEventListener('keydown',function(e){ if(e.key==='Escape'){ if(fermerCeQuiEstOuvert()) return; Player.bridge.sendToHost({type:'close'}); } });
+    } else {
+      // Hors cadre, rien à fermer d'autre : Échap referme seulement le menu ou le panneau ouvert.
+      document.addEventListener('keydown',function(e){ if(e.key==='Escape') fermerCeQuiEstOuvert(); });
+    }
+    // Le menu « ⋯ » (les deux gabarits, et sa feuille du bas sur mobile) et le panneau de partage d'un lien
+    // tracé : les deux seuls éléments qui se posent PAR-DESSUS la page et se referment d'un clic dehors.
+    function fermerCeQuiEstOuvert(){
+      var ouverts=document.querySelectorAll('#barMenu.open,#pop.open');
+      for(var i=0;i<ouverts.length;i++) ouverts[i].classList.remove('open');
+      return ouverts.length>0;
     }
     if(CFG.preview){
       // « Partager » et « Fermer » délégués à l'app (postMessage). « Présenter » géré localement.

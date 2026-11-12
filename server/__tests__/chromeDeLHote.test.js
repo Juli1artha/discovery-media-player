@@ -284,3 +284,40 @@ describe("⚠️ #596 — les actions : celles de l'hôte, et celles du player q
     expect(document.getElementById("gTabs").hidden).toBe(true);
   });
 });
+
+// ÉCHAP REFERME D'ABORD CE QUI EST OUVERT. Constaté chez un hôte le 11/11/2026 : le menu « ⋯ » ouvert (il porte
+// désormais les actions de l'hôte), Échap fermait le lecteur entier — l'hôte recevait `close` et retirait le cadre.
+describe("Échap referme le menu « ⋯ » avant le lecteur", () => {
+  const echap = () => document.body.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  const types = () => recus.map((m) => m && m.type);
+  for (const gabarit of ["lecture", ""]) {
+    it(`encadré, ${gabarit ? "gabarit lecture" : "ancien gabarit"} : une frappe pour le menu, la suivante pour le lecteur`, async () => {
+      await monter({ query: { ...(gabarit ? { gabarit } : {}), embed: "1" } });
+      await vider(); recus.length = 0;
+      document.getElementById("barMore").click();
+      const menu = document.getElementById("barMenu");
+      expect(menu.classList.contains("open"), "le menu s'ouvre").toBe(true);
+      echap(); await vider();
+      expect(menu.classList.contains("open")).toBe(false);
+      expect(types()).not.toContain("3dd-doc-close");
+      echap(); await vider();
+      expect(types()).toContain("3dd-doc-close");
+    });
+  }
+  it("sans menu ouvert, Échap ferme le lecteur comme avant", async () => {
+    await monter({ query: { gabarit: "lecture", embed: "1" } });
+    await vider(); recus.length = 0;
+    echap(); await vider();
+    expect(types()).toContain("3dd-doc-close");
+  });
+  it("hors cadre, Échap referme le menu et n'envoie rien", async () => {
+    await monter({ query: { gabarit: "lecture" }, encadre: false });
+    const poste = vi.spyOn(window, "postMessage");
+    try {
+      document.getElementById("barMore").click();
+      echap(); await vider();
+      expect(document.getElementById("barMenu").classList.contains("open")).toBe(false);
+      expect(poste.mock.calls.map(([m]) => m && m.type)).not.toContain("3dd-doc-close");
+    } finally { poste.mockRestore(); }
+  });
+});

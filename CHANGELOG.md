@@ -12,6 +12,14 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Échap referme d'abord le menu « ⋯ » (ou le panneau de partage), puis le lecteur.** Encadré, le player
+  envoyait `close` à la première frappe, menu ouvert ou non : l'hôte retirait le cadre au lieu de laisser
+  refermer le menu. C'est devenu sensible avec `chrome` (#596), qui range les actions de l'hôte dans ce
+  menu. Constaté chez un hôte le 11/11/2026. Une première frappe referme ce qui est ouvert, la suivante
+  le lecteur, comme avant. Hors cadre, Échap referme désormais aussi le menu. Le contrat ne change pas.
+
 ## [0.1.178] — 2026-11-11
 
 ### Added
