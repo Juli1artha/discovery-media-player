@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.184] — 2026-11-13
+
 ### Changed
 
 - **Le panneau « En direct » du gabarit « lecture », revu après le premier essai réel (13/11).** « Changer de document »
@@ -8104,7 +8106,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.183...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.184...HEAD
+[0.1.184]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.183...v0.1.184
 [0.1.183]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.182...v0.1.183
 [0.1.182]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.181...v0.1.182
 [0.1.181]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.180...v0.1.181
