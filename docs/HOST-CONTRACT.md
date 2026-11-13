@@ -41,7 +41,7 @@ need.
   "contract": 1,
   "version": "<the running version>",
   "runtime": { "node": "<what this instance runs on>", "nodeRequired": ">=22.13.0" },
-  "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention", "link-protection", "start-page", "fit", "reading-layout", "host-chrome", "reading-contact", "reading-search", "reading-outline", "present-attach"],
+  "capabilities": ["docshare", "presentations", "embed-denied", "host-fetch", "brand-reference", "host-auth", "host-share", "host-mail", "retention", "link-protection", "start-page", "fit", "reading-layout", "host-chrome", "reading-contact", "reading-search", "reading-outline", "reading-live-panel", "present-attach"],
   "frameAncestors": ["'self'", "https://*.vercel.app", "https://app.example.com"],
   "separateIssuer": true,
   "internalStrict": true,
@@ -1022,10 +1022,10 @@ is a contract in two copies, and the day it changes only one of them knows.
 **player → host:** `close` · `share` · `embed-ready` · `embed-denied {reason}` · `present-left` ·
 `present-denied` · `present-invite {slug}` · `present-handover {slug}` · `present-switch {slug}` ·
 `present-started {slug}` · `present-ended {slug}` · `present-attached {slug}` ·
-`present-attach-failed {slug, reason}` · `host-action {id}` · `page {page, total}`
+`present-attach-failed {slug, reason}` · `present-request` · `host-action {id}` · `page {page, total}`
 
 **host → player:** `handover-done` · `present-attach {slug, control}` ·
-`chrome {subtitle?, tabs?, activeTab?, actions?}`
+`chrome {subtitle?, tabs?, activeTab?, actions?, presenter?}`
 
 ### Declaring the reading bar (`chrome`, `host-action`, `page`)
 
@@ -1048,6 +1048,23 @@ something of the host's (a side panel), and the reader's current page.
   and one outlined at most: any extra goes to the menu.
 - **`host-action {id}`** (player → host): a click on a tab or on an action the host declared. To switch
   documents, change the frame's `src` to the other document's link — the player never builds a link.
+- **`presenter`** (capability **`reading-live-panel`**): the presenter gestures the host knows how to handle,
+  a list of `start`, `switch`, `invite`, `handover` without repeats (any other value drops the whole message).
+  The player turns each of them into a message only (`present-request`, `present-switch`, `present-invite`,
+  `present-handover`): without a host listening, they were dead buttons.
+  **`start`**: in a framed `lecture` page, "Présenter" no longer starts anything itself; it sends
+  `present-request` and waits (fifteen seconds, or until `present-attach` succeeds or fails) for the host to
+  start the presentation server-side on behalf of the member and attach it (below). Started from a frame on
+  another origin, a presentation has no owner, and nobody can switch its document; started by the host, it
+  belongs to the member. In the live panel, "Changer de document" leads to the tabs when there are any,
+  instead of asking the host for a picker. In the `lecture` layout, **only the gestures named here
+  have a button**, and while a presentation is live **the tabs wait for its end unless `switch` is named** —
+  changing the frame's `src` unloads the page, which ends the presentation for the audience. A host that
+  names `switch` takes that on: switch server-side (`present-switch`), reclaim, reopen, attach (below).
+- **While live, in the `lecture` layout**, "Présenter" gives way to an "En direct" button in the bar. It
+  opens the presenter's commands in a panel under the bar (link, Copier, Afficher une carte, the declared
+  gestures, Terminer): nothing sits on the page any more. The classic layout keeps its bottom bar and its
+  seven buttons, unchanged.
 - **`page {page, total}`** (player → host): on every change of the current page, in both layouts, and
   only when a page frames the player.
 

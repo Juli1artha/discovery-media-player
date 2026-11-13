@@ -119,6 +119,13 @@ const I = {
  * @param {boolean} o.tracked   lien tracé : « Lecture mesurée » doit rester VISIBLE
  * @param {string|null} [o.contactHref]  le `mailto:` de « Contacter » (#608), ou `null` : l'action n'existe pas
  */
+// LE DIRECT MONTE DANS LA BARRE (13/11/2026). Pendant une présentation, l'ancien gabarit pose une pilule
+// en bas de page : lien, Copier, Changer de document, Afficher une carte, Inviter l'équipe, Passer la
+// main, Terminer. Dans le gabarit « lecture », elle couvrait la page, débordait de l'écran (« Terminer »
+// coupé dans un cadre de 1 350 px) et doublait « Présenter », resté dans la barre. Ici, « Présenter »
+// devient « En direct », et ce bouton ouvre ces commandes en panneau sous la barre : la page reste nue.
+const DIRECT_BTN = `<button type=button class="gbtn gdirect" id=gDirectBtn aria-haspopup=dialog aria-expanded=false aria-controls=pbar hidden><i aria-hidden=true></i>En direct</button>`;
+
 function barreLecture(o) {
   const r = o.reglages;
   const element = (a, cls, label) => {
@@ -146,7 +153,7 @@ function barreLecture(o) {
   // interne (« Informations »), rien n'est mesuré chez un tiers : elle rejoint le menu.
   const legalEnBarre = o.tracked ? o.legalHtml : "";
   const legalAuMenu = o.tracked ? "" : o.legalHtml;
-  return `<div class="bar gbar">${retour}<div class=gtitre><b>${o.title}</b>${sousTitre}</div><div class=gtabs id=gTabs role=tablist aria-label="Documents" hidden></div>${o.isTest ? '<span class=testchip>🎭 Répétition — session de test</span>' : ""}${legalEnBarre}<span class=sp></span>${o.liveBar || ""}<span class=gslots id=gSlots>${enBarre.join("")}</span>${o.recherche ? `<button type=button class=ic id=gFindBtn title="Rechercher dans le document (Ctrl+F)" aria-label="Rechercher dans le document" aria-expanded=false aria-controls=gFind>${I.loupe}</button>` : ""}<button type=button class="ic barMore" id=barMore title="Plus d'actions" aria-label="Plus d'actions" aria-haspopup=menu>${I.plus}</button><div class=gprog aria-hidden=true><i id=gProg></i></div>${o.recherche ? rechercheHtml() : ""}</div>
+  return `<div class="bar gbar">${retour}<div class=gtitre><b>${o.title}</b>${sousTitre}</div><div class=gtabs id=gTabs role=tablist aria-label="Documents" hidden></div>${o.isTest ? '<span class=testchip>🎭 Répétition — session de test</span>' : ""}${legalEnBarre}<span class=sp></span>${o.liveBar || ""}${o.preview ? DIRECT_BTN : ""}<span class=gslots id=gSlots>${enBarre.join("")}</span>${o.recherche ? `<button type=button class=ic id=gFindBtn title="Rechercher dans le document (Ctrl+F)" aria-label="Rechercher dans le document" aria-expanded=false aria-controls=gFind>${I.loupe}</button>` : ""}<button type=button class="ic barMore" id=barMore title="Plus d'actions" aria-label="Plus d'actions" aria-haspopup=menu>${I.plus}</button><div class=gprog aria-hidden=true><i id=gProg></i></div>${o.recherche ? rechercheHtml() : ""}</div>
   <div class="barmenu gmenu" id=barMenu role=menu>${auMenu.join("")}<button type=button id=gTocMenu data-t=gTocBtn hidden>Sommaire</button><button type=button data-t=rotL>Pivoter à gauche</button><button type=button data-t=rotR>Pivoter à droite</button><button type=button data-t=fs>Plein écran</button>${legalAuMenu ? `<div class=gapropos>${legalAuMenu}</div>` : ""}</div>
   <div class=gcache hidden>${enReserve.join("")}<button type=button id=gTocBtn aria-controls=gToc aria-expanded=false>Sommaire</button><button type=button class=ic id=rotL title="Pivoter à gauche" aria-label="Pivoter le document à gauche">${I.rotL}</button><button type=button class=ic id=rotR title="Pivoter à droite" aria-label="Pivoter le document à droite">${I.rotR}</button><button type=button class=ic id=fs title="Plein écran">${I.fs}</button></div>
   <div class=gpill id=gPill role=toolbar aria-label="Navigation dans le document"><button type=button class=ic id=vignBtn title="Toutes les pages" aria-label="Afficher toutes les pages" aria-pressed=false>${I.pages}</button><span class=gsep></span><button type=button class=ic id=pillPrev title="Page précédente" aria-label="Page précédente">${I.prec}</button><button type=button class=pg id=pg title="Aller à une page" aria-label="Aller à une page"></button><button type=button class=ic id=pillNext title="Page suivante" aria-label="Page suivante">${I.suiv}</button><span class=gsep></span><button type=button class=gfit id=fitBtn aria-pressed=false>Page entière</button><span class=zoom><button type=button id=zout title="Dézoomer" aria-label="Dézoomer">−</button><span id=zlbl>100%</span><button type=button id=zin title="Zoomer" aria-label="Zoomer">+</button></span></div>`;
@@ -257,6 +264,28 @@ const LECTURE_CSS = `
   }
   @media (max-width:520px){ body.g-lecture .gbar>.gtitre{display:flex} }
   @media (prefers-reduced-motion:reduce){ .gpill,body.g-lecture .navp,.gprog i{transition:none} }
+  /* LE DIRECT (13/11). Pendant la présentation, « Présenter » laisse la place à « En direct » ; ses commandes
+     vivent dans un panneau sous la barre, ouvert à la demande — plus rien de posé sur la page. Le rouge du
+     point est un signal, pas un texte : le libellé reste en encre #1b1d22. */
+  .gdirect{background:#fff;color:#1b1d22;border:1px solid #e5384d}
+  .gdirect[hidden]{display:none}
+  .gdirect:hover,.gdirect[aria-expanded=true]{background:#fdeef0}
+  .gdirect i{width:8px;height:8px;border-radius:50%;background:#e5384d;animation:blink 1.4s infinite}
+  body.g-direct #presentBtn,body.g-direct [data-t=presentBtn],body.g-direct .g-act-present{display:none!important}
+  body.g-lecture .pbar{left:auto;right:12px;bottom:auto;transform:none;flex-direction:column;align-items:stretch;gap:6px;width:min(340px,calc(100vw - 24px));max-width:none;padding:12px;border-radius:14px;box-shadow:0 18px 54px #0a0f2a40,0 0 0 1px #0a0f2a0f;color:#1b1d22;z-index:46}
+  body.g-lecture .pbar-live{display:none}
+  body.g-lecture .pbar-h{display:block;font-size:12px;font-weight:700;color:#5d6470;text-transform:uppercase;letter-spacing:.04em;margin:0 2px 2px}
+  body.g-lecture .pbar-link{width:100%;max-width:none;box-sizing:border-box;color:#1b1d22;border-color:#c9ced8;background:#f6f7f9;font-size:12.5px}
+  body.g-lecture .pbar-btn{text-align:left;border:0;background:transparent;color:#1b1d22;border-radius:8px;padding:9px 10px;font-size:13.5px}
+  body.g-lecture .pbar-btn:hover{background:#f1f3f6}
+  body.g-lecture .pbar-btn:focus-visible{outline:2px solid #1b1d22;outline-offset:1px}
+  body.g-lecture #pbarCopy{text-align:center;border:1px solid #c9ced8}
+  body.g-lecture #pbarEnd{border-top:1px solid #e3e6eb;border-radius:0 0 8px 8px;margin-top:2px;padding-top:11px;color:#b3261e}
+  body.g-lecture .pbar-err{max-width:none}
+  /* Les gestes qui dépendent de l'hôte n'existent que s'il dit savoir les traiter (« presenter » dans chrome). */
+  body.g-lecture .pbar-btn[hidden]{display:none}
+  .gtab[aria-disabled=true]{opacity:.45;cursor:not-allowed}
+  @media (prefers-reduced-motion:reduce){ .gdirect i{animation:none} }
   /* LA RECHERCHE (#612). Le champ couvre la barre le temps de chercher ; Échap la rend. Encre #1b1d22 / #5d6470 sur blanc. */
   .gfind{position:absolute;inset:0;z-index:4;display:none;align-items:center;gap:6px;padding:0 10px;padding-top:env(safe-area-inset-top);background:#fff;color:#1b1d22}
   .gfind.open{display:flex}

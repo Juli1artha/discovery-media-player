@@ -69,6 +69,11 @@ export type PlayerMessage =
   | { type: "present-invite"; slug: string }
   | { type: "present-handover"; slug: string }
   | { type: "present-switch"; slug: string }
+  // 13/11 — « Présenter » cliqué, et l'hôte a dit savoir démarrer lui-même (`presenter: ["start"]`) : il démarre côté
+  // serveur, au nom du membre, et confie la conduite par `present-attach`. La présentation a alors un propriétaire,
+  // seul à pouvoir en changer le document (`present-switch`) — ce qu'une présentation lancée depuis un cadre d'une
+  // autre origine n'a pas.
+  | { type: "present-request" }
   // Démarrée par le bouton « Présenter » du player (ou `autopresent=1`) : sans ce message, l'hôte
   // n'apprenait le slug qu'au premier « Inviter » ou « Passer la main » — souvent jamais.
   | { type: "present-started"; slug: string }
@@ -91,6 +96,9 @@ export type ChromeTab = { id: string; label: string };
 /** Une action de la barre déclarée par l'hôte. `contact`, `share`, `present` et `download` sont celles du player :
  *  l'hôte les place et les renomme, il ne les déclenche pas. Placer n'ouvre aucun droit. */
 export type ChromeAction = { id: string; label: string; place: "primary" | "secondary" | "menu" };
+/** Un geste du présentateur que l'HÔTE sait traiter : le player n'en fait qu'un message (`present-switch`,
+ *  `present-invite`, `present-handover`). Dans le gabarit « lecture », seuls ceux que l'hôte nomme ont un bouton. */
+export type PresenterGesture = "start" | "switch" | "invite" | "handover";
 
 /** Messages émis par l'application hôte vers le player. */
 export type HostMessage =
@@ -100,7 +108,7 @@ export type HostMessage =
   | { type: "present-attach"; slug: string; control: string }
   // #596 — la barre du gabarit « lecture », déclarée par l'hôte. Elle REMPLACE en entier la précédente :
   // le dernier `chrome` reçu l'emporte, et un champ absent est vide, pas « inchangé ».
-  | { type: "chrome"; subtitle?: string; tabs?: ChromeTab[]; activeTab?: string; actions?: ChromeAction[] };
+  | { type: "chrome"; subtitle?: string; tabs?: ChromeTab[]; activeTab?: string; actions?: ChromeAction[]; presenter?: PresenterGesture[] };
 
 /** Les champs que porte chaque type, dans chaque sens. Un type absent de sa table n'existe pas. */
 type Champ = "slug" | "reason" | "control" | "id";
@@ -110,7 +118,7 @@ type Champ = "slug" | "reason" | "control" | "id";
 // confusion qu'un jeton de contrôle ne doit pas pouvoir emprunter.
 // ⚠️ ET UNE `Map`, PAS UN OBJET : `"3dd-doc-constructor"` trouverait sinon une entrée dans le prototype.
 const FORMES_PLAYER = new Map<string, readonly Champ[]>([
-  ["close", []], ["share", []], ["embed-ready", []], ["present-left", []], ["present-denied", []],
+  ["close", []], ["share", []], ["embed-ready", []], ["present-left", []], ["present-denied", []], ["present-request", []],
   ["embed-denied", ["reason"]],
   ["present-invite", ["slug"]], ["present-handover", ["slug"]], ["present-switch", ["slug"]],
   ["present-started", ["slug"]], ["present-ended", ["slug"]], ["present-attached", ["slug"]],
@@ -125,7 +133,7 @@ const FORMES_HOTE = new Map<string, readonly Champ[]>([
 type WireMessage = {
   type: string; slug?: string; reason?: string; control?: string; id?: string;
   page?: number; total?: number;
-  subtitle?: string; tabs?: ChromeTab[]; activeTab?: string; actions?: ChromeAction[];
+  subtitle?: string; tabs?: ChromeTab[]; activeTab?: string; actions?: ChromeAction[]; presenter?: PresenterGesture[];
 };
 
 /** Un libellé : une chaîne de 1 à `max` caractères une fois les blancs repliés. Rien d'autre n'en sort. */
@@ -151,6 +159,7 @@ function liste<T extends { id: string }>(v: unknown, max: number, lire: (o: Reco
 }
 
 const PLACES = new Set(["primary", "secondary", "menu"]);
+const GESTES = new Set<string>(["start", "switch", "invite", "handover"]);
 
 // ⚠️ LES MESSAGES COMPOSÉS SE LISENT CHAMP PAR CHAMP, ET N'EMPORTENT QUE CE QU'ILS NOMMENT. Un champ
 // inconnu (`html`, `onclick`) n'est pas recopié : la sortie est construite, jamais filtrée à partir de
@@ -179,6 +188,15 @@ function lireChrome(d: Record<string, unknown>): HostMessage | null {
     });
     if (!actions) return null;
     lu.actions = actions;
+  }
+  // Les gestes du présentateur : une liste de noms connus, sans doublon. Un nom inconnu fait tomber le
+  // message entier, comme partout — un hôte d'une version suivante le saura par la capacité, pas par le silence.
+  if (d.presenter !== undefined) {
+    const p = d.presenter;
+    if (!Array.isArray(p) || p.length > GESTES.size) return null;
+    const vus = new Set<string>();
+    for (const g of p) { if (typeof g !== "string" || !GESTES.has(g) || vus.has(g)) return null; vus.add(g); }
+    lu.presenter = [...vus] as PresenterGesture[];
   }
   return lu;
 }
@@ -213,6 +231,7 @@ export function toWire(msg: PlayerMessage | HostMessage): WireMessage {
     if (msg.tabs) wire.tabs = msg.tabs.map((t) => ({ id: t.id, label: t.label }));
     if (msg.activeTab !== undefined) wire.activeTab = msg.activeTab;
     if (msg.actions) wire.actions = msg.actions.map((a) => ({ id: a.id, label: a.label, place: a.place }));
+    if (msg.presenter) wire.presenter = [...msg.presenter];
   }
   return wire;
 }
