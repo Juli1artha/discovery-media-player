@@ -12,6 +12,8 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.183] — 2026-11-13
+
 ### Added
 
 - **Dans le gabarit « lecture », le direct monte dans la barre (`reading-live-panel`).** Pendant une présentation, la
@@ -8094,7 +8096,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.182...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.183...HEAD
+[0.1.183]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.182...v0.1.183
 [0.1.182]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.181...v0.1.182
 [0.1.181]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.180...v0.1.181
 [0.1.180]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.179...v0.1.180
