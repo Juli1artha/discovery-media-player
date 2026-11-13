@@ -1057,7 +1057,9 @@ something of the host's (a side panel), and the reader's current page.
   start the presentation server-side on behalf of the member and attach it (below). Started from a frame on
   another origin, a presentation has no owner, and nobody can switch its document; started by the host, it
   belongs to the member. In the live panel, "Changer de document" leads to the tabs when there are any,
-  instead of asking the host for a picker. In the `lecture` layout, **only the gestures named here
+  instead of asking the host for a picker: the panel lists the host's tabs, the displayed one marked, and choosing one
+  does exactly what the tab does. The panel also shows who presents, from the preview's `by` (name) and `av` (photo,
+  `https` only). In the `lecture` layout, **only the gestures named here
   have a button**, and while a presentation is live **the tabs wait for its end unless `switch` is named** —
   changing the frame's `src` unloads the page, which ends the presentation for the audience. A host that
   names `switch` takes that on: switch server-side (`present-switch`), reclaim, reopen, attach (below).
