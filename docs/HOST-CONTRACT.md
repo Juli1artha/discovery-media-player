@@ -1025,7 +1025,7 @@ is a contract in two copies, and the day it changes only one of them knows.
 `present-attach-failed {slug, reason}` · `host-action {id}` · `page {page, total}`
 
 **host → player:** `handover-done` · `present-attach {slug, control}` ·
-`chrome {subtitle?, tabs?, activeTab?, actions?}`
+`chrome {subtitle?, tabs?, activeTab?, actions?, presenter?}`
 
 ### Declaring the reading bar (`chrome`, `host-action`, `page`)
 
@@ -1048,6 +1048,17 @@ something of the host's (a side panel), and the reader's current page.
   and one outlined at most: any extra goes to the menu.
 - **`host-action {id}`** (player → host): a click on a tab or on an action the host declared. To switch
   documents, change the frame's `src` to the other document's link — the player never builds a link.
+- **`presenter`** (capability **`reading-live-panel`**): the presenter gestures the host knows how to handle,
+  a list of `switch`, `invite`, `handover` without repeats (any other value drops the whole message). The
+  player turns each of them into a message only (`present-switch`, `present-invite`, `present-handover`):
+  without a host listening, they were dead buttons. In the `lecture` layout, **only the gestures named here
+  have a button**, and while a presentation is live **the tabs wait for its end unless `switch` is named** —
+  changing the frame's `src` unloads the page, which ends the presentation for the audience. A host that
+  names `switch` takes that on: switch server-side (`present-switch`), reclaim, reopen, attach (below).
+- **While live, in the `lecture` layout**, "Présenter" gives way to an "En direct" button in the bar. It
+  opens the presenter's commands in a panel under the bar (link, Copier, Afficher une carte, the declared
+  gestures, Terminer): nothing sits on the page any more. The classic layout keeps its bottom bar and its
+  seven buttons, unchanged.
 - **`page {page, total}`** (player → host): on every change of the current page, in both layouts, and
   only when a page frames the player.
 

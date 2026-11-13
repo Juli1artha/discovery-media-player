@@ -251,6 +251,7 @@ ${LEGAL_CSS}
   .pbar-err{display:none;color:#b3261e;font-size:12px;font-weight:600;max-width:260px;line-height:1.25}
   .pbar-err.on{display:inline-block}
   #pbarEnd{color:#c0392b}
+  .pbar-h{display:none}
   /* Barre d'outils responsive : sous 860px, zoom/plein écran/Présenter/Partager/Télécharger passent dans le
      menu « ⋯ » ; le titre se tronque puis disparaît. */
   .bar>b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;max-width:40vw}
@@ -311,8 +312,9 @@ ${LEGAL_CSS}
     <button data-t=shareBtn>Partager</button>
     ${share.allow_download === false ? "" : "<button data-t=dlBtn>Télécharger</button>"}
   </div>`}
-  ${preview ? `<div class=pbar id=pbar style="display:none">
+  ${preview ? `<div class=pbar id=pbar role=group aria-label="Présentation en direct" style="display:none">
     <button class=pbar-live id=pbarToggle title="Replier / déplier"><i></i> En direct <span class=pbar-chev>▾</span></button>
+    <div class=pbar-h>Présentation en direct</div>
     <input class=pbar-link id=pbarLink readonly>
     <button class=pbar-btn id=pbarCopy>Copier</button>
     <button class=pbar-btn id=pbarSwitch>Changer de document</button>
@@ -496,7 +498,19 @@ ${LEGAL_CSS}
     function clearCtl(slug){ try{ localStorage.removeItem(ctlKey(slug)); }catch(e){} }
     // Heartbeat : signale que la présentation est vivante (sinon marquée « orpheline » côté serveur au bout de 3 min).
     function startHb(){ clearInterval(_hbIv); _hbIv=setInterval(function(){ if(!PRES){ clearInterval(_hbIv); return; } fetch('/api/doc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'present-touch',slug:PRES.slug,control:PRES.control})}).catch(function(){}); },30000); }
-    function showBar(slug){ var lk=document.getElementById('pbarLink'); if(lk) lk.value=location.origin+'/present/'+slug; var pb=document.getElementById('pbar'); if(pb) pb.style.display='flex'; }
+    function showBar(slug){ var lk=document.getElementById('pbarLink'); if(lk) lk.value=location.origin+'/present/'+slug; var pb=document.getElementById('pbar');
+      // Dans le gabarit « lecture », rien ne se pose sur la page : « En direct » prend la place de « Présenter »
+      // dans la barre, et le panneau ne s ouvre que sur demande.
+      if(CFG.lecture){ document.body.classList.add('g-direct'); var db=document.getElementById('gDirectBtn'); if(db) db.hidden=false; marquerOngletsDirect(); return; }
+      if(pb) pb.style.display='flex'; }
+    function hideBar(){ var pb=document.getElementById('pbar'); if(pb) pb.style.display='none';
+      if(CFG.lecture){ document.body.classList.remove('g-direct'); var db=document.getElementById('gDirectBtn'); if(db){ db.hidden=true; db.setAttribute('aria-expanded','false'); } marquerOngletsDirect(); } }
+    function panneauDirectOuvert(){ var pb=document.getElementById('pbar'); return !!(CFG.lecture&&pb&&pb.style.display!=='none'); }
+    function fermerPanneauDirect(){ var pb=document.getElementById('pbar'), db=document.getElementById('gDirectBtn'); if(pb) pb.style.display='none'; if(db) db.setAttribute('aria-expanded','false'); }
+    // Le panneau se pose SOUS la barre, quelle que soit sa hauteur (elle passe sur deux lignes sous 640 px).
+    function ouvrirPanneauDirect(){ var pb=document.getElementById('pbar'), db=document.getElementById('gDirectBtn'), bar=document.querySelector('.gbar'); if(!pb||!PRES)return;
+      var bas=bar?bar.getBoundingClientRect().bottom:56; pb.style.top=Math.round(bas+6)+'px'; pb.style.display='flex'; if(db) db.setAttribute('aria-expanded','true');
+      var co=document.getElementById('pbarCopy'); try{ if(co) co.focus(); }catch(e){} }
     // Le présentateur DIFFUSE l'état qu'il vient de persister. La base reste la vérité (les
     // arrivants tardifs la relisent) ; la diffusion évite à l'audience de lire la table.
     // ⚠️ ÉCRIRE, PUIS SIGNALER — ET PAS L'INVERSE.
@@ -609,7 +623,7 @@ ${LEGAL_CSS}
             return;
           }
           PRES=null; clearInterval(_hbIv); clearCtl(p.slug);
-          var pb=document.getElementById('pbar'); if(pb)pb.style.display='none';
+          hideBar();
           try{ if(window.Live){ Live.sendState(); Live.disconnect(); } }catch(e){}
           // Annoncée APRÈS la relecture, comme le reste : l'hôte qui clôt son rendez-vous sur ce
           // message ne doit pas le faire sur une fin que la base ne confirme pas.
@@ -635,7 +649,7 @@ ${LEGAL_CSS}
       }catch(e){}
     });
     // Transfert : je passe la main → je cesse de piloter SANS clôturer la présentation (le nouvel owner reprendra).
-    function stopPilotingLocally(){ if(!PRES)return; var s=PRES.slug; PRES=null; clearInterval(_hbIv); clearCtl(s); var pb=document.getElementById('pbar'); if(pb)pb.style.display='none'; try{ if(window.Live) Live.disconnect(); }catch(e){} }
+    function stopPilotingLocally(){ if(!PRES)return; var s=PRES.slug; PRES=null; clearInterval(_hbIv); clearCtl(s); hideBar(); try{ if(window.Live) Live.disconnect(); }catch(e){} }
     function liveConnect(slug,control){ try{ if(window.Live){ var P=CFG.present||{}; Live.connect(slug,{name:P.by||'Présentateur',email:P.email||'',avatar:P.av||'',role:'presenter',member:true},control); } }catch(e){} }
     function startPresent(){
       if(PRES) return; var b=CFG.present; if(!b||!b.url) return;
@@ -790,7 +804,10 @@ ${LEGAL_CSS}
       // Le sommaire (#612, L6b), de meme : une frappe pour lui, la suivante pour le lecteur.
       var sommOuvert=!!somm.ouvert;
       if(sommOuvert) fermerSommaire();
-      return ouverts.length>0||rechOuverte||sommOuvert;
+      // Le panneau du direct (13/11), de même — et le focus revient à « En direct », d où il était parti.
+      var directOuvert=panneauDirectOuvert();
+      if(directOuvert){ fermerPanneauDirect(); var _dbf=document.getElementById('gDirectBtn'); try{ if(_dbf) _dbf.focus(); }catch(e){} }
+      return ouverts.length>0||rechOuverte||sommOuvert||directOuvert;
     }
     if(CFG.preview){
       // « Partager » et « Fermer » délégués à l'app (postMessage). « Présenter » géré localement.
@@ -804,7 +821,12 @@ ${LEGAL_CSS}
       var _en=document.getElementById('pbarEnd'); if(_en) _en.addEventListener('click',endPresent);
       // Bandeau Présenter : repli manuel (clic « En direct ») + repli AUTO au scroll du document (s'il est déplié).
       var _pt=document.getElementById('pbarToggle'); if(_pt) _pt.addEventListener('click',function(e){ e.stopPropagation(); var pb=document.getElementById('pbar'); if(pb)pb.classList.toggle('min'); });
-      if(scrollEl) scrollEl.addEventListener('scroll',function(){ var pb=document.getElementById('pbar'); if(pb&&pb.style.display!=='none'&&!pb.classList.contains('min')) pb.classList.add('min'); },{passive:true});
+      // Le repli au défilement est celui de la pilule du bas ; le panneau du gabarit « lecture » ne couvre pas la
+      // page qu'on fait défiler — et replié, il cacherait jusqu'à « Terminer ».
+      if(scrollEl&&!CFG.lecture) scrollEl.addEventListener('scroll',function(){ var pb=document.getElementById('pbar'); if(pb&&pb.style.display!=='none'&&!pb.classList.contains('min')) pb.classList.add('min'); },{passive:true});
+      var _db=document.getElementById('gDirectBtn'); if(_db) _db.addEventListener('click',function(e){ e.stopPropagation(); if(panneauDirectOuvert()) fermerPanneauDirect(); else ouvrirPanneauDirect(); });
+      if(CFG.lecture){ marquerGestesHote(); var _pbp=document.getElementById('pbar'); if(_pbp) _pbp.addEventListener('click',function(e){ e.stopPropagation(); });
+        document.addEventListener('click',function(){ if(panneauDirectOuvert()) fermerPanneauDirect(); }); }
       // Passer la main : le bandeau demande à l'app d'ouvrir le sélecteur de membre (le transfert exige le JWT).
       var _ho=document.getElementById('pbarHandover'); if(_ho) _ho.addEventListener('click',function(){ if(PRES){ Player.bridge.sendToHost({type:'present-handover',slug:PRES.slug}); } });
       // Changer de document : l'app ouvre le sélecteur (bibliothèque Documents, réservé aux membres) sans couper la session.
@@ -1477,7 +1499,7 @@ ${LEGAL_CSS}
     function signalerPage(p){ try{ if(numPages&&p>=1&&p<=numPages&&window.parent&&window.parent!==window) Player.bridge.sendToHost({type:'page',page:p,total:numPages}); }catch(e){} }
     var ELEMENT_ACTION={contact:'contactBtn',share:'shareBtn',present:'presentBtn',download:'dlBtn'};
     function fermerMenu(){ var m=document.getElementById('barMenu'); if(m) m.classList.remove('open'); }
-    function relaisMenu(a,mobile){ var b=document.createElement('button'); b.type='button'; b.className='g-act'+(mobile?' g-mob':''); b.textContent=a.label;
+    function relaisMenu(a,mobile){ var b=document.createElement('button'); b.type='button'; b.className='g-act'+(mobile?' g-mob':'')+(a.id==='present'?' g-act-present':''); b.textContent=a.label;
       if(ELEMENT_ACTION[a.id]) b.addEventListener('click',function(){ fermerMenu(); var el=document.getElementById(ELEMENT_ACTION[a.id]); if(el) el.click(); });
       else b.addEventListener('click',function(){ fermerMenu(); Player.bridge.sendToHost({type:'host-action',id:a.id}); });
       return b; }
@@ -1509,12 +1531,25 @@ ${LEGAL_CSS}
     // ⚠️ UN CHROME REMPLACE LE PRECEDENT EN ENTIER. Un champ absent revient a l etat de l adresse (sous-titre,
     // place des actions du player) ou a rien (onglets, actions de l hote) — jamais « inchange » : sinon l hote
     // ne pourrait plus retirer ce qu il a pose, par exemple en passant en mode « client a cote ».
+    // LES GESTES DU PRESENTATEUR QUI DEPENDENT DE L HOTE (13/11). « Changer de document », « Inviter l equipe » et
+    // « Passer la main » ne font qu ENVOYER un message : sans hote qui l ecoute, ce sont des boutons morts — c etait
+    // le cas chez ADN Family, les trois. Dans le gabarit « lecture », ils n existent que si le dernier chrome les
+    // nomme (presenter). Et changer d onglet pendant le direct recharge le cadre, ce qui coupe la presentation au
+    // client : sans switch declare, les onglets attendent la fin du direct.
+    var GESTES_HOTE=Object.create(null);
+    function marquerOngletsDirect(){ var bloque=!!PRES&&!(GESTES_HOTE&&GESTES_HOTE['switch']);
+      [].slice.call(document.querySelectorAll('#gTabs .gtab')).forEach(function(b){ if(bloque){ b.setAttribute('aria-disabled','true'); b.title='Terminez la présentation en direct pour changer de document'; } else { b.removeAttribute('aria-disabled'); b.removeAttribute('title'); } }); }
+    function marquerGestesHote(){ var ids={'switch':'pbarSwitch',invite:'pbarInvite',handover:'pbarHandover'};
+      Object.keys(ids).forEach(function(g){ var b=document.getElementById(ids[g]); if(b) b.hidden=!(GESTES_HOTE&&GESTES_HOTE[g]); }); }
     function appliquerChrome(m){
       var sub=document.getElementById('gSub'); if(sub){ var t=m.subtitle!==undefined?m.subtitle:(CFG.subtitle||''); sub.textContent=t; sub.hidden=!t; }
       var tabs=document.getElementById('gTabs');
       if(tabs){ tabs.textContent=''; (m.tabs||[]).forEach(function(t){ var b=document.createElement('button'); b.type='button'; b.className='gtab'; b.setAttribute('role','tab'); b.setAttribute('data-id',t.id); b.textContent=t.label;
-          b.addEventListener('click',function(){ marquerOnglet(t.id); Player.bridge.sendToHost({type:'host-action',id:t.id}); }); tabs.appendChild(b); });
+          b.addEventListener('click',function(){ if(b.getAttribute('aria-disabled')==='true')return; marquerOnglet(t.id); Player.bridge.sendToHost({type:'host-action',id:t.id}); }); tabs.appendChild(b); });
         tabs.hidden=!(m.tabs&&m.tabs.length); marquerOnglet(m.activeTab||''); }
+      GESTES_HOTE=Object.create(null); (m.presenter||[]).forEach(function(g){ GESTES_HOTE[g]=true; });
+      marquerGestesHote();
+      marquerOngletsDirect();
       placerActions(m.actions||null);
     }
     // ── LES COMMANDES S EFFACENT (#595) — la pastille et les fleches, jamais la barre ─────────────────────

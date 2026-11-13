@@ -321,3 +321,105 @@ describe("Échap referme le menu « ⋯ » avant le lecteur", () => {
     } finally { poste.mockRestore(); }
   });
 });
+
+// LE DIRECT MONTE DANS LA BARRE (13/11/2026). Vu chez ADN Family, sur une fiche de programme : pendant une
+// présentation, la pilule du bas couvrait la page, débordait du cadre (« Terminer » coupé), et trois de ses
+// boutons — Changer de document, Inviter l'équipe, Passer la main — n'envoyaient qu'un message que l'hôte
+// n'écoutait pas. Et un clic sur un onglet rechargeait le cadre : la présentation s'arrêtait chez le client.
+// Dimensions VARIÉES : gabarit (lecture, ancien), gestes déclarés (aucun, switch, les trois), panneau (ouvert,
+// fermé). TENUES FIXES : l'aperçu encadré, et un serveur doublé qui accepte toute présentation.
+describe("⚠️ 13/11 — dans le gabarit lecture, le direct vit dans la barre", () => {
+  let fetchOrigine;
+  beforeEach(() => {
+    fetchOrigine = window.fetch;
+    window.fetch = (url, init) => {
+      const corps = init && init.body ? JSON.parse(init.body) : {};
+      const rep = corps.action === "present-start" ? { ok: true, slug: "abc123", control: "c".repeat(32) } : { ok: true };
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(rep) });
+    };
+  });
+  afterEach(() => { window.fetch = fetchOrigine; });
+
+  const presenter = async () => { document.getElementById("presentBtn").click(); await vider(); await vider(); };
+  // Le banc ne charge pas la feuille de style (la tête de la page est retirée) : ce qui se cache se cache
+  // donc par l'attribut `hidden`, que le banc lit — pas par une règle qu'il ne verrait pas.
+  const visible = (id) => !document.getElementById(id).hidden;
+
+  it("« Présenter » devient « En direct », et rien ne se pose sur la page tant qu'on ne l'ouvre pas", async () => {
+    await monter({ query: { gabarit: "lecture", embed: "1" } });
+    const direct = document.getElementById("gDirectBtn");
+    expect(direct.hidden, "pas de « En direct » avant le direct").toBe(true);
+    await presenter();
+    expect(direct.hidden).toBe(false);
+    expect(document.body.classList.contains("g-direct")).toBe(true);
+    expect(document.getElementById("pbar").style.display, "la pilule du bas ne s'affiche plus").toBe("none");
+    direct.click();
+    expect(document.getElementById("pbar").style.display).toBe("flex");
+    expect(direct.getAttribute("aria-expanded")).toBe("true");
+    expect(document.getElementById("pbarLink").value).toMatch(/\/present\/abc123$/);
+  });
+
+  it("sans geste déclaré, ni « Changer de document », ni « Inviter l'équipe », ni « Passer la main »", async () => {
+    await monter({ query: { gabarit: "lecture", embed: "1" } });
+    await presenter();
+    document.getElementById("gDirectBtn").click();
+    for (const id of ["pbarSwitch", "pbarInvite", "pbarHandover"]) expect(visible(id), id).toBe(false);
+    for (const id of ["pbarCopy", "pbarMap", "pbarEnd"]) expect(visible(id), id).toBe(true);
+  });
+
+  it("un geste nommé par l'hôte apparaît, et part chez lui", async () => {
+    await monter({ query: { gabarit: "lecture", embed: "1" } });
+    await envoyer({ type: "chrome", presenter: ["switch"] });
+    await presenter();
+    document.getElementById("gDirectBtn").click();
+    expect(visible("pbarSwitch")).toBe(true);
+    expect(visible("pbarInvite")).toBe(false);
+    recus.length = 0;
+    document.getElementById("pbarSwitch").click();
+    await vider();
+    expect(recus).toContainEqual({ type: "3dd-doc-present-switch", slug: "abc123" });
+    // Un chrome suivant REMPLACE le précédent : sans `presenter`, le geste repart.
+    await envoyer({ type: "chrome" });
+    expect(visible("pbarSwitch")).toBe(false);
+  });
+
+  it("pendant le direct, un onglet ne recharge pas le cadre tant que l'hôte ne sait pas changer de document", async () => {
+    await monter({ query: { gabarit: "lecture", embed: "1" } });
+    await envoyer({ type: "chrome", tabs: [{ id: "doc:a", label: "Plaquette" }, { id: "doc:b", label: "Notice" }], activeTab: "doc:a" });
+    await presenter();
+    recus.length = 0;
+    const notice = [...document.querySelectorAll("#gTabs .gtab")][1];
+    expect(notice.getAttribute("aria-disabled")).toBe("true");
+    notice.click(); await vider();
+    expect(recus.map((m) => m && m.type)).not.toContain("3dd-doc-host-action");
+    // L'hôte qui sait changer de document le dit : l'onglet redevient un geste.
+    await envoyer({ type: "chrome", tabs: [{ id: "doc:a", label: "Plaquette" }, { id: "doc:b", label: "Notice" }], activeTab: "doc:a", presenter: ["switch"] });
+    const notice2 = [...document.querySelectorAll("#gTabs .gtab")][1];
+    expect(notice2.hasAttribute("aria-disabled")).toBe(false);
+    notice2.click(); await vider();
+    expect(recus).toContainEqual({ type: "3dd-doc-host-action", id: "doc:b" });
+  });
+
+  it("Échap referme le panneau avant le lecteur, et un clic dehors aussi", async () => {
+    await monter({ query: { gabarit: "lecture", embed: "1" } });
+    await presenter();
+    const pb = document.getElementById("pbar");
+    document.getElementById("gDirectBtn").click();
+    recus.length = 0;
+    document.body.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); await vider();
+    expect(pb.style.display).toBe("none");
+    expect(recus.map((m) => m && m.type)).not.toContain("3dd-doc-close");
+    document.getElementById("gDirectBtn").click();
+    document.getElementById("pbarLink").click();
+    expect(pb.style.display, "un clic DANS le panneau le laisse ouvert").toBe("flex");
+    document.getElementById("scroll").click();
+    expect(pb.style.display).toBe("none");
+  });
+
+  it("l'ancien gabarit garde sa pilule et ses sept boutons", async () => {
+    await monter({ query: { embed: "1" } });
+    await presenter();
+    expect(document.getElementById("pbar").style.display).toBe("flex");
+    for (const id of ["pbarSwitch", "pbarInvite", "pbarHandover", "pbarEnd"]) expect(visible(id), id).toBe(true);
+  });
+});

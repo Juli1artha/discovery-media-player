@@ -12,6 +12,16 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Added
+
+- **Dans le gabarit « lecture », le direct monte dans la barre (`reading-live-panel`).** Pendant une présentation, la
+  pilule du bas couvrait la page, débordait d'un cadre de 1 350 px (« Terminer » coupé) et laissait « Présenter » dans
+  la barre. Désormais « Présenter » laisse place à « En direct », qui ouvre les commandes du présentateur en panneau
+  sous la barre ; Échap ou un clic dehors le referment. « Changer de document », « Inviter l'équipe » et « Passer la
+  main » n'existent que si l'hôte les nomme (`chrome.presenter`) : ils ne font qu'envoyer un message, et sans hôte qui
+  l'écoute c'étaient des boutons morts. Pendant le direct, un onglet attend la fin de la présentation tant que l'hôte
+  n'a pas nommé `switch` — changer le `src` du cadre la coupait chez le client. L'ancien gabarit ne change pas.
+
 ## [0.1.182] — 2026-11-12
 
 ### Added
