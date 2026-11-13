@@ -354,7 +354,7 @@ describe("⚠️ 13/11 — dans le gabarit lecture, le direct vit dans la barre"
     expect(document.body.classList.contains("g-direct")).toBe(true);
     expect(document.getElementById("pbar").style.display, "la pilule du bas ne s'affiche plus").toBe("none");
     direct.click();
-    expect(document.getElementById("pbar").style.display).toBe("flex");
+    expect(document.getElementById("pbar").style.display).toBe("grid");
     expect(direct.getAttribute("aria-expanded")).toBe("true");
     expect(document.getElementById("pbarLink").value).toMatch(/\/present\/abc123$/);
   });
@@ -411,7 +411,7 @@ describe("⚠️ 13/11 — dans le gabarit lecture, le direct vit dans la barre"
     expect(recus.map((m) => m && m.type)).not.toContain("3dd-doc-close");
     document.getElementById("gDirectBtn").click();
     document.getElementById("pbarLink").click();
-    expect(pb.style.display, "un clic DANS le panneau le laisse ouvert").toBe("flex");
+    expect(pb.style.display, "un clic DANS le panneau le laisse ouvert").toBe("grid");
     document.getElementById("scroll").click();
     expect(pb.style.display).toBe("none");
   });
@@ -476,15 +476,67 @@ describe("⚠️ 13/11 — « Présenter » confié à l'hôte qui nomme start",
     expect(actions).toContain("present-start");
   });
 
-  it("« Changer de document » mène aux onglets quand l'hôte en a déclaré", async () => {
+  // 13/11, essai de Julien : « le bouton ne propose rien » — il menait aux onglets sans rien montrer.
+  it("« Changer de document » déplie la liste des documents de l'hôte, et un choix fait ce que ferait l'onglet", async () => {
     await monter({ query: { gabarit: "lecture", embed: "1" } });
-    await envoyer({ type: "chrome", tabs: [{ id: "doc:a", label: "Plaquette" }, { id: "doc:b", label: "Notice" }], activeTab: "doc:a", presenter: ["switch"] });
+    await envoyer({ type: "chrome", tabs: [{ id: "doc:a", label: "Plaquette" }, { id: "doc:b", label: "Notice" }, { id: "plans", label: "Plans · 18" }], activeTab: "doc:a", presenter: ["switch"] });
     document.getElementById("presentBtn").click(); await vider(); await vider();
     document.getElementById("gDirectBtn").click();
     recus.length = 0;
-    document.getElementById("pbarSwitch").click(); await vider();
-    expect(document.getElementById("pbar").style.display).toBe("none");
-    expect(document.activeElement && document.activeElement.textContent).toBe("Notice");
-    expect(recus.map((m) => m && m.type)).not.toContain("3dd-doc-present-switch");
+    const sw = document.getElementById("pbarSwitch");
+    sw.click(); await vider();
+    const docs = [...document.querySelectorAll("#pbarDocs .pbar-doc")];
+    expect(docs.map((b) => b.textContent)).toEqual(["Plaquette", "Notice", "Plans · 18"]);
+    expect(docs[0].disabled, "le document affiché est marqué, pas proposé").toBe(true);
+    expect(sw.getAttribute("aria-expanded")).toBe("true");
+    expect(recus.map((m) => m && m.type), "aucun sélecteur demandé à l'hôte").not.toContain("3dd-doc-present-switch");
+    docs[1].click(); await vider();
+    expect(recus).toContainEqual({ type: "3dd-doc-host-action", id: "doc:b" });
+    expect(document.getElementById("pbar").style.display, "le panneau se referme").toBe("none");
+  });
+
+  it("le panneau dit qui présente : le nom, et la photo seulement en https", async () => {
+    await monter({ query: { gabarit: "lecture", embed: "1", by: "Julien Arthapignet", av: "https://exemple.supabase.co/storage/v1/object/public/photos/j.jpg" } });
+    document.getElementById("presentBtn").click(); await vider(); await vider();
+    const qui = document.getElementById("pbarQui");
+    expect(qui.textContent).toBe("Julien Arthapignet");
+    expect(qui.querySelector("img").getAttribute("src")).toMatch(/^https:\/\/exemple\.supabase\.co\//);
+    await monter({ query: { gabarit: "lecture", embed: "1", by: "Julien", av: "javascript:alert(1)" } });
+    document.getElementById("presentBtn").click(); await vider(); await vider();
+    expect(document.getElementById("pbarQui").querySelector("img")).toBeNull();
+  });
+});
+
+// « TERMINER » APRÈS UNE CONDUITE CONFIÉE (13/11/2026, essai de Julien) : « ça n'a pas coupé côté client, et ça laisse
+// direct de mon côté ». Ce banc rejoue le chemin exact : start nommé, présentation confiée par l'hôte, puis Terminer.
+describe("⚠️ 13/11 — Terminer une présentation confiée par l'hôte", () => {
+  let fetchOrigine, appels;
+  beforeEach(() => {
+    fetchOrigine = window.fetch; appels = [];
+    window.fetch = (url, init) => {
+      const corps = init && init.body ? JSON.parse(init.body) : {};
+      appels.push(corps.action || String(url));
+      const rep = String(url).includes("state=1") ? { ok: true, state: { active: false } } : { ok: true, seq: 0 };
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(rep) });
+    };
+  });
+  afterEach(() => { window.fetch = fetchOrigine; });
+
+  it("la fin part avec le jeton confié, la barre se range, et l'hôte l'apprend", async () => {
+    await monter({ query: { gabarit: "lecture", embed: "1" } });
+    await envoyer({ type: "chrome", presenter: ["start", "switch"] });
+    document.getElementById("presentBtn").click(); await vider();
+    await envoyer({ type: "present-attach", slug: "srv123", control: "k".repeat(32) });
+    await vider();
+    expect(document.getElementById("gDirectBtn").hidden).toBe(false);
+    document.getElementById("gDirectBtn").click();
+    recus.length = 0;
+    document.getElementById("pbarEnd").click();
+    for (let i = 0; i < 6; i += 1) await vider();
+    expect(appels).toContain("present-end");
+    expect(document.getElementById("pbarErr").textContent).toBe("");
+    expect(document.getElementById("gDirectBtn").hidden, "« En direct » disparaît").toBe(true);
+    expect(document.body.classList.contains("g-direct")).toBe(false);
+    expect(recus).toContainEqual({ type: "3dd-doc-present-ended", slug: "srv123" });
   });
 });

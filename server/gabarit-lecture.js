@@ -272,16 +272,36 @@ const LECTURE_CSS = `
   .gdirect:hover,.gdirect[aria-expanded=true]{background:#fdeef0}
   .gdirect i{width:8px;height:8px;border-radius:50%;background:#e5384d;animation:blink 1.4s infinite}
   body.g-direct #presentBtn,body.g-direct [data-t=presentBtn],body.g-direct .g-act-present{display:none!important}
-  body.g-lecture .pbar{left:auto;right:12px;bottom:auto;transform:none;flex-direction:column;align-items:stretch;gap:6px;width:min(340px,calc(100vw - 24px));max-width:none;padding:12px;border-radius:14px;box-shadow:0 18px 54px #0a0f2a40,0 0 0 1px #0a0f2a0f;color:#1b1d22;z-index:46}
+  /* LE PANNEAU DU DIRECT, revu le 13/11 : qui présente en tête, le lien et « Copier » sur une ligne, les gestes en
+     liste, « Terminer la présentation » en bouton à part. Une grille à deux colonnes : seuls le lien et Copier les
+     partagent. Encres #1b1d22 / #5d6470 sur blanc, le rouge réservé au point et à la fin. */
+  body.g-lecture .pbar{left:auto;right:12px;bottom:auto;transform:none;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;width:min(360px,calc(100vw - 24px));max-width:none;padding:14px;border-radius:16px;box-shadow:0 18px 54px #0a0f2a40,0 0 0 1px #0a0f2a0f;color:#1b1d22;z-index:46}
+  body.g-lecture .pbar>*{grid-column:1/-1}
   body.g-lecture .pbar-live{display:none}
-  body.g-lecture .pbar-h{display:block;font-size:12px;font-weight:700;color:#5d6470;text-transform:uppercase;letter-spacing:.04em;margin:0 2px 2px}
-  body.g-lecture .pbar-link{width:100%;max-width:none;box-sizing:border-box;color:#1b1d22;border-color:#c9ced8;background:#f6f7f9;font-size:12.5px}
-  body.g-lecture .pbar-btn{text-align:left;border:0;background:transparent;color:#1b1d22;border-radius:8px;padding:9px 10px;font-size:13.5px}
+  body.g-lecture .pbar-h{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:750;color:#1b1d22;margin:0 2px 4px}
+  .pbar-dot{width:8px;height:8px;border-radius:50%;background:#e5384d;flex:none;animation:blink 1.4s infinite}
+  .pbar-qui{margin-left:auto;display:inline-flex;align-items:center;gap:7px;font-weight:600;color:#5d6470;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pbar-av{width:24px;height:24px;border-radius:50%;object-fit:cover;flex:none;box-shadow:0 0 0 1px #0a0f2a14}
+  body.g-lecture .pbar-l{display:block;font-size:12px;font-weight:600;color:#5d6470;margin:2px 2px -2px}
+  body.g-lecture .pbar>.pbar-link{grid-column:1;width:100%;max-width:none;box-sizing:border-box;color:#1b1d22;border:1px solid #c9ced8;background:#f6f7f9;font-size:12.5px;border-radius:10px;padding:8px 10px;text-overflow:ellipsis}
+  body.g-lecture .pbar>#pbarCopy{grid-column:2;text-align:center;border:1px solid #1b1d22;background:#1b1d22;color:#fff;border-radius:10px;padding:8px 14px}
+  body.g-lecture .pbar>#pbarCopy:hover{background:#33363d}
+  body.g-lecture .pbar-btn{text-align:left;border:0;background:transparent;color:#1b1d22;border-radius:10px;padding:10px;font-size:13.5px;font-weight:600}
   body.g-lecture .pbar-btn:hover{background:#f1f3f6}
-  body.g-lecture .pbar-btn:focus-visible{outline:2px solid #1b1d22;outline-offset:1px}
-  body.g-lecture #pbarCopy{text-align:center;border:1px solid #c9ced8}
-  body.g-lecture #pbarEnd{border-top:1px solid #e3e6eb;border-radius:0 0 8px 8px;margin-top:2px;padding-top:11px;color:#b3261e}
+  body.g-lecture .pbar-btn:focus-visible,body.g-lecture .pbar-doc:focus-visible{outline:2px solid #1b1d22;outline-offset:1px}
+  body.g-lecture #pbarSwitch{display:flex;justify-content:space-between;align-items:center}
+  body.g-lecture #pbarSwitch[hidden]{display:none}
+  body.g-lecture #pbarSwitch::after{content:"›";font-size:18px;line-height:1;color:#5d6470;transition:transform .15s}
+  body.g-lecture #pbarSwitch[aria-expanded=true]::after{transform:rotate(90deg)}
+  body.g-lecture .pbar-docs:not([hidden]){display:flex;flex-direction:column;gap:2px;margin:-4px 0 2px;padding:4px;border-radius:10px;background:#f6f7f9}
+  .pbar-doc{font:inherit;font-size:13px;font-weight:600;text-align:left;color:#1b1d22;background:transparent;border:0;border-radius:8px;padding:8px 10px;cursor:pointer}
+  .pbar-doc:hover{background:#e9ecf1}
+  .pbar-doc.on{cursor:default;background:#fff;box-shadow:0 1px 2px #0a0f2a24}
+  .pbar-doc.on::after{content:" · affiché";font-weight:500;color:#5d6470}
+  body.g-lecture #pbarEnd{margin-top:4px;text-align:center;border:1px solid #f3c1c7;background:#fdeef0;color:#b3261e;padding:10px}
+  body.g-lecture #pbarEnd:hover{background:#fbdfe3}
   body.g-lecture .pbar-err{max-width:none}
+  @media (prefers-reduced-motion:reduce){ .pbar-dot{animation:none} body.g-lecture #pbarSwitch::after{transition:none} }
   /* Les gestes qui dépendent de l'hôte n'existent que s'il dit savoir les traiter (« presenter » dans chrome). */
   body.g-lecture .pbar-btn[hidden]{display:none}
   .gtab[aria-disabled=true]{opacity:.45;cursor:not-allowed}

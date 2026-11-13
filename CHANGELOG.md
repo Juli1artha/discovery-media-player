@@ -12,6 +12,14 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Changed
+
+- **Le panneau « En direct » du gabarit « lecture », revu après le premier essai réel (13/11).** « Changer de document »
+  ne proposait rien : il menait aux onglets du haut sans les montrer. Il déplie désormais, dans le panneau, la liste des
+  documents que l'hôte a déclarés (ses onglets), le document affiché marqué ; un choix fait exactement ce que ferait
+  l'onglet. Le panneau dit qui présente — le nom et la photo passés par `by` et `av`, la photo seulement en `https` —,
+  pose le lien et « Copier » sur une ligne, et isole « Terminer la présentation ».
+
 ## [0.1.183] — 2026-11-13
 
 ### Added

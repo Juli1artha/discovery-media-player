@@ -251,7 +251,7 @@ ${LEGAL_CSS}
   .pbar-err{display:none;color:#b3261e;font-size:12px;font-weight:600;max-width:260px;line-height:1.25}
   .pbar-err.on{display:inline-block}
   #pbarEnd{color:#c0392b}
-  .pbar-h{display:none}
+  .pbar-h,.pbar-l,.pbar-docs{display:none}
   /* Barre d'outils responsive : sous 860px, zoom/plein écran/Présenter/Partager/Télécharger passent dans le
      menu « ⋯ » ; le titre se tronque puis disparaît. */
   .bar>b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;max-width:40vw}
@@ -314,10 +314,12 @@ ${LEGAL_CSS}
   </div>`}
   ${preview ? `<div class=pbar id=pbar role=group aria-label="Présentation en direct" style="display:none">
     <button class=pbar-live id=pbarToggle title="Replier / déplier"><i></i> En direct <span class=pbar-chev>▾</span></button>
-    <div class=pbar-h>Présentation en direct</div>
+    <div class=pbar-h><span class=pbar-dot aria-hidden=true></span>En direct<span class=pbar-qui id=pbarQui></span></div>
+    <label class=pbar-l for=pbarLink>Lien du client</label>
     <input class=pbar-link id=pbarLink readonly>
     <button class=pbar-btn id=pbarCopy>Copier</button>
-    <button class=pbar-btn id=pbarSwitch>Changer de document</button>
+    <button class=pbar-btn id=pbarSwitch aria-expanded=false aria-controls=pbarDocs>Changer de document</button>
+    <div class=pbar-docs id=pbarDocs role=list aria-label="Documents à présenter" hidden></div>
     <button class=pbar-btn id=pbarMap>Afficher une carte</button>
     <button class=pbar-btn id=pbarInvite>Inviter l'équipe</button>
     <button class=pbar-btn id=pbarHandover>Passer la main</button>
@@ -501,15 +503,20 @@ ${LEGAL_CSS}
     function showBar(slug){ var lk=document.getElementById('pbarLink'); if(lk) lk.value=location.origin+'/present/'+slug; var pb=document.getElementById('pbar');
       // Dans le gabarit « lecture », rien ne se pose sur la page : « En direct » prend la place de « Présenter »
       // dans la barre, et le panneau ne s ouvre que sur demande.
-      if(CFG.lecture){ document.body.classList.add('g-direct'); var db=document.getElementById('gDirectBtn'); if(db) db.hidden=false; marquerOngletsDirect(); if(_demande) rendrePresenter(); return; }
+      if(CFG.lecture){ document.body.classList.add('g-direct'); var db=document.getElementById('gDirectBtn'); if(db) db.hidden=false; marquerOngletsDirect(); marquerPresentateur(); if(_demande) rendrePresenter(); return; }
       if(pb) pb.style.display='flex'; }
+    // QUI PRESENTE (13/11) : le nom et la photo que l hote a passes (by, av) — le presentateur se voit tel que
+    // l audience le voit. Une photo qui n est pas en https n est pas posee.
+    function marquerPresentateur(){ var q=document.getElementById('pbarQui'), P=CFG.present||{}; if(!q||q.childNodes.length||!P.by)return;
+      if(String(P.av||'').indexOf('https://')===0){ var im=document.createElement('img'); im.src=P.av; im.alt=''; im.className='pbar-av'; im.referrerPolicy='no-referrer'; q.appendChild(im); }
+      q.appendChild(document.createTextNode(P.by)); }
     function hideBar(){ var pb=document.getElementById('pbar'); if(pb) pb.style.display='none';
       if(CFG.lecture){ document.body.classList.remove('g-direct'); var db=document.getElementById('gDirectBtn'); if(db){ db.hidden=true; db.setAttribute('aria-expanded','false'); } marquerOngletsDirect(); } }
     function panneauDirectOuvert(){ var pb=document.getElementById('pbar'); return !!(CFG.lecture&&pb&&pb.style.display!=='none'); }
     function fermerPanneauDirect(){ var pb=document.getElementById('pbar'), db=document.getElementById('gDirectBtn'); if(pb) pb.style.display='none'; if(db) db.setAttribute('aria-expanded','false'); }
     // Le panneau se pose SOUS la barre, quelle que soit sa hauteur (elle passe sur deux lignes sous 640 px).
     function ouvrirPanneauDirect(){ var pb=document.getElementById('pbar'), db=document.getElementById('gDirectBtn'), bar=document.querySelector('.gbar'); if(!pb||!PRES)return;
-      var bas=bar?bar.getBoundingClientRect().bottom:56; pb.style.top=Math.round(bas+6)+'px'; pb.style.display='flex'; if(db) db.setAttribute('aria-expanded','true');
+      var bas=bar?bar.getBoundingClientRect().bottom:56; pb.style.top=Math.round(bas+6)+'px'; fermerDocuments(); pb.style.display='grid'; if(db) db.setAttribute('aria-expanded','true');
       var co=document.getElementById('pbarCopy'); try{ if(co) co.focus(); }catch(e){} }
     // Le présentateur DIFFUSE l'état qu'il vient de persister. La base reste la vérité (les
     // arrivants tardifs la relisent) ; la diffusion évite à l'audience de lire la table.
@@ -825,7 +832,7 @@ ${LEGAL_CSS}
       // page qu'on fait défiler — et replié, il cacherait jusqu'à « Terminer ».
       if(scrollEl&&!CFG.lecture) scrollEl.addEventListener('scroll',function(){ var pb=document.getElementById('pbar'); if(pb&&pb.style.display!=='none'&&!pb.classList.contains('min')) pb.classList.add('min'); },{passive:true});
       var _db=document.getElementById('gDirectBtn'); if(_db) _db.addEventListener('click',function(e){ e.stopPropagation(); if(panneauDirectOuvert()) fermerPanneauDirect(); else ouvrirPanneauDirect(); });
-      if(CFG.lecture){ marquerGestesHote(); var _pbp=document.getElementById('pbar'); if(_pbp) _pbp.addEventListener('click',function(e){ e.stopPropagation(); });
+      if(CFG.lecture){ marquerGestesHote(); if(_en) _en.textContent='Terminer la présentation'; var _pbp=document.getElementById('pbar'); if(_pbp) _pbp.addEventListener('click',function(e){ e.stopPropagation(); });
         document.addEventListener('click',function(){ if(panneauDirectOuvert()) fermerPanneauDirect(); }); }
       // Passer la main : le bandeau demande à l'app d'ouvrir le sélecteur de membre (le transfert exige le JWT).
       var _ho=document.getElementById('pbarHandover'); if(_ho) _ho.addEventListener('click',function(){ if(PRES){ Player.bridge.sendToHost({type:'present-handover',slug:PRES.slug}); } });
@@ -833,8 +840,7 @@ ${LEGAL_CSS}
       // Dans le gabarit « lecture », quand l hote a declare des onglets, ce sont eux, les documents : le bouton y mene
       // (le panneau se ferme, le focus va au premier onglet qui n est pas l ouvert) plutot que de demander un selecteur.
       var _sw=document.getElementById('pbarSwitch'); if(_sw) _sw.addEventListener('click',function(){ if(!PRES)return;
-        var tabs=document.getElementById('gTabs'), autre=tabs&&!tabs.hidden?tabs.querySelector('.gtab:not(.on)'):null;
-        if(CFG.lecture&&autre){ fermerPanneauDirect(); try{ autre.focus(); }catch(e){} return; }
+        if(CFG.lecture&&ongletsDeLHote().length){ basculerDocuments(); return; }
         Player.bridge.sendToHost({type:'present-switch',slug:PRES.slug}); });
       // Carte live : afficher une carte (recherche + pan/zoom synchronisés) / revenir au document.
       var _mp=document.getElementById('pbarMap'); if(_mp) _mp.addEventListener('click',showMap);
@@ -1557,6 +1563,19 @@ ${LEGAL_CSS}
       _demande=setTimeout(rendrePresenter,15000);
     }
     function rendrePresenter(){ clearTimeout(_demande); _demande=0; var btn=document.getElementById('presentBtn'); if(btn&&btn.disabled){ btn.disabled=false; btn.textContent=_libPresent||'Présenter'; } }
+    // CHANGER DE DOCUMENT, DANS LE PANNEAU (13/11, essai de Julien : « le bouton ne propose rien »). Le bouton menait
+    // aux onglets du haut sans rien montrer ; il deplie desormais la liste des documents que l hote a declares — ses
+    // onglets — et un choix fait exactement ce que ferait l onglet.
+    function ongletsDeLHote(){ var t=document.getElementById('gTabs'); return t&&!t.hidden?[].slice.call(t.querySelectorAll('.gtab')):[]; }
+    function fermerDocuments(){ var box=document.getElementById('pbarDocs'), sw=document.getElementById('pbarSwitch'); if(box){ box.hidden=true; box.textContent=''; } if(sw) sw.setAttribute('aria-expanded','false'); }
+    function basculerDocuments(){ var box=document.getElementById('pbarDocs'), sw=document.getElementById('pbarSwitch'); if(!box)return;
+      if(!box.hidden){ fermerDocuments(); return; }
+      box.textContent='';
+      ongletsDeLHote().forEach(function(t){ var b=document.createElement('button'); b.type='button'; b.className='pbar-doc'; b.setAttribute('role','listitem'); b.textContent=t.textContent;
+        if(t.classList.contains('on')){ b.classList.add('on'); b.setAttribute('aria-current','true'); b.disabled=true; }
+        b.addEventListener('click',function(){ fermerPanneauDirect(); t.click(); }); box.appendChild(b); });
+      box.hidden=false; if(sw) sw.setAttribute('aria-expanded','true');
+      var premier=box.querySelector('.pbar-doc:not(.on)'); try{ if(premier) premier.focus(); }catch(e){} }
     function marquerGestesHote(){ var ids={'switch':'pbarSwitch',invite:'pbarInvite',handover:'pbarHandover'};
       Object.keys(ids).forEach(function(g){ var b=document.getElementById(ids[g]); if(b) b.hidden=!(GESTES_HOTE&&GESTES_HOTE[g]); }); }
     function appliquerChrome(m){
