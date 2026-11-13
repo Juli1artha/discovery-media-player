@@ -69,6 +69,11 @@ export type PlayerMessage =
   | { type: "present-invite"; slug: string }
   | { type: "present-handover"; slug: string }
   | { type: "present-switch"; slug: string }
+  // 13/11 — « Présenter » cliqué, et l'hôte a dit savoir démarrer lui-même (`presenter: ["start"]`) : il démarre côté
+  // serveur, au nom du membre, et confie la conduite par `present-attach`. La présentation a alors un propriétaire,
+  // seul à pouvoir en changer le document (`present-switch`) — ce qu'une présentation lancée depuis un cadre d'une
+  // autre origine n'a pas.
+  | { type: "present-request" }
   // Démarrée par le bouton « Présenter » du player (ou `autopresent=1`) : sans ce message, l'hôte
   // n'apprenait le slug qu'au premier « Inviter » ou « Passer la main » — souvent jamais.
   | { type: "present-started"; slug: string }
@@ -93,7 +98,7 @@ export type ChromeTab = { id: string; label: string };
 export type ChromeAction = { id: string; label: string; place: "primary" | "secondary" | "menu" };
 /** Un geste du présentateur que l'HÔTE sait traiter : le player n'en fait qu'un message (`present-switch`,
  *  `present-invite`, `present-handover`). Dans le gabarit « lecture », seuls ceux que l'hôte nomme ont un bouton. */
-export type PresenterGesture = "switch" | "invite" | "handover";
+export type PresenterGesture = "start" | "switch" | "invite" | "handover";
 
 /** Messages émis par l'application hôte vers le player. */
 export type HostMessage =
@@ -113,7 +118,7 @@ type Champ = "slug" | "reason" | "control" | "id";
 // confusion qu'un jeton de contrôle ne doit pas pouvoir emprunter.
 // ⚠️ ET UNE `Map`, PAS UN OBJET : `"3dd-doc-constructor"` trouverait sinon une entrée dans le prototype.
 const FORMES_PLAYER = new Map<string, readonly Champ[]>([
-  ["close", []], ["share", []], ["embed-ready", []], ["present-left", []], ["present-denied", []],
+  ["close", []], ["share", []], ["embed-ready", []], ["present-left", []], ["present-denied", []], ["present-request", []],
   ["embed-denied", ["reason"]],
   ["present-invite", ["slug"]], ["present-handover", ["slug"]], ["present-switch", ["slug"]],
   ["present-started", ["slug"]], ["present-ended", ["slug"]], ["present-attached", ["slug"]],
@@ -154,7 +159,7 @@ function liste<T extends { id: string }>(v: unknown, max: number, lire: (o: Reco
 }
 
 const PLACES = new Set(["primary", "secondary", "menu"]);
-const GESTES = new Set<string>(["switch", "invite", "handover"]);
+const GESTES = new Set<string>(["start", "switch", "invite", "handover"]);
 
 // ⚠️ LES MESSAGES COMPOSÉS SE LISENT CHAMP PAR CHAMP, ET N'EMPORTENT QUE CE QU'ILS NOMMENT. Un champ
 // inconnu (`html`, `onclick`) n'est pas recopié : la sortie est construite, jamais filtrée à partir de

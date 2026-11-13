@@ -501,7 +501,7 @@ ${LEGAL_CSS}
     function showBar(slug){ var lk=document.getElementById('pbarLink'); if(lk) lk.value=location.origin+'/present/'+slug; var pb=document.getElementById('pbar');
       // Dans le gabarit « lecture », rien ne se pose sur la page : « En direct » prend la place de « Présenter »
       // dans la barre, et le panneau ne s ouvre que sur demande.
-      if(CFG.lecture){ document.body.classList.add('g-direct'); var db=document.getElementById('gDirectBtn'); if(db) db.hidden=false; marquerOngletsDirect(); return; }
+      if(CFG.lecture){ document.body.classList.add('g-direct'); var db=document.getElementById('gDirectBtn'); if(db) db.hidden=false; marquerOngletsDirect(); if(_demande) rendrePresenter(); return; }
       if(pb) pb.style.display='flex'; }
     function hideBar(){ var pb=document.getElementById('pbar'); if(pb) pb.style.display='none';
       if(CFG.lecture){ document.body.classList.remove('g-direct'); var db=document.getElementById('gDirectBtn'); if(db){ db.hidden=true; db.setAttribute('aria-expanded','false'); } marquerOngletsDirect(); } }
@@ -719,7 +719,7 @@ ${LEGAL_CSS}
     // ⚠️ ET ON RÉPOND TOUJOURS, succès ou échec. Le silence couvrirait deux cas opposés — « je pilote »
     // et « j'ai refusé » — exactement comme l'absence d'embed-ready. Le jeton, lui, ne repart jamais.
     var _attache=null;
-    function echecAttache(slug,motif){ Player.bridge.sendToHost({type:'present-attach-failed',slug:slug,reason:motif}); }
+    function echecAttache(slug,motif){ if(_demande) rendrePresenter(); Player.bridge.sendToHost({type:'present-attach-failed',slug:slug,reason:motif}); }
     function attachPresent(slug,control){
       // Une adoption à la fois : deux en vol pour deux présentations, et la seconde écraserait la première.
       if(_attache){ if(_attache!==slug) echecAttache(slug,'busy'); return; }
@@ -815,7 +815,7 @@ ${LEGAL_CSS}
       // Fermer le viewer NE clôture PAS la présentation (elle reste reprenable via le panneau « Présentations
       // en direct »). Seul « Terminer » (pbarEnd) coupe la vue de l'audience. Sans reprise sous 3 min → auto-purge.
       var _cb=document.getElementById('closeBtn'); if(_cb) _cb.addEventListener('click',function(){ Player.bridge.sendToHost({type:'close'}); });
-      var _pb=document.getElementById('presentBtn'); if(_pb) _pb.addEventListener('click',startPresent);
+      var _pb=document.getElementById('presentBtn'); if(_pb) _pb.addEventListener('click',surPresenter);
       var _co=document.getElementById('pbarCopy'); if(_co) _co.addEventListener('click',function(){ var l=document.getElementById('pbarLink'); try{ l.select(); }catch(e){} try{ navigator.clipboard.writeText(l.value); _co.textContent='Copié !'; setTimeout(function(){_co.textContent='Copier';},1400); }catch(e){} });
       var _iv=document.getElementById('pbarInvite'); if(_iv) _iv.addEventListener('click',function(){ if(PRES){ Player.bridge.sendToHost({type:'present-invite',slug:PRES.slug}); } });
       var _en=document.getElementById('pbarEnd'); if(_en) _en.addEventListener('click',endPresent);
@@ -830,7 +830,12 @@ ${LEGAL_CSS}
       // Passer la main : le bandeau demande à l'app d'ouvrir le sélecteur de membre (le transfert exige le JWT).
       var _ho=document.getElementById('pbarHandover'); if(_ho) _ho.addEventListener('click',function(){ if(PRES){ Player.bridge.sendToHost({type:'present-handover',slug:PRES.slug}); } });
       // Changer de document : l'app ouvre le sélecteur (bibliothèque Documents, réservé aux membres) sans couper la session.
-      var _sw=document.getElementById('pbarSwitch'); if(_sw) _sw.addEventListener('click',function(){ if(PRES){ Player.bridge.sendToHost({type:'present-switch',slug:PRES.slug}); } });
+      // Dans le gabarit « lecture », quand l hote a declare des onglets, ce sont eux, les documents : le bouton y mene
+      // (le panneau se ferme, le focus va au premier onglet qui n est pas l ouvert) plutot que de demander un selecteur.
+      var _sw=document.getElementById('pbarSwitch'); if(_sw) _sw.addEventListener('click',function(){ if(!PRES)return;
+        var tabs=document.getElementById('gTabs'), autre=tabs&&!tabs.hidden?tabs.querySelector('.gtab:not(.on)'):null;
+        if(CFG.lecture&&autre){ fermerPanneauDirect(); try{ autre.focus(); }catch(e){} return; }
+        Player.bridge.sendToHost({type:'present-switch',slug:PRES.slug}); });
       // Carte live : afficher une carte (recherche + pan/zoom synchronisés) / revenir au document.
       var _mp=document.getElementById('pbarMap'); if(_mp) _mp.addEventListener('click',showMap);
       var _mb=document.getElementById('mapBack'); if(_mb) _mb.addEventListener('click',hideMap);
@@ -1539,6 +1544,19 @@ ${LEGAL_CSS}
     var GESTES_HOTE=Object.create(null);
     function marquerOngletsDirect(){ var bloque=!!PRES&&!(GESTES_HOTE&&GESTES_HOTE['switch']);
       [].slice.call(document.querySelectorAll('#gTabs .gtab')).forEach(function(b){ if(bloque){ b.setAttribute('aria-disabled','true'); b.title='Terminez la présentation en direct pour changer de document'; } else { b.removeAttribute('aria-disabled'); b.removeAttribute('title'); } }); }
+    // « PRESENTER » CONFIE A L HOTE (13/11). Lancee depuis ce cadre, une presentation n a pas de proprietaire quand
+    // l hote vit sur une autre origine (aucune session ici) : personne ne peut alors en changer le document. L hote qui
+    // nomme start la demarre cote serveur, au nom du membre, et nous la confie (present-attach). On attend quinze
+    // secondes ; sans conduite, le bouton revient — l hote dit lui-meme ce qui a echoue.
+    var _demande=0, _libPresent='';
+    function surPresenter(){
+      if(!(CFG.lecture&&CFG.embedded&&GESTES_HOTE&&GESTES_HOTE.start)) return startPresent();
+      if(PRES||_demande) return;
+      var btn=document.getElementById('presentBtn'); if(btn){ _libPresent=btn.textContent; btn.disabled=true; btn.textContent='…'; }
+      Player.bridge.sendToHost({type:'present-request'});
+      _demande=setTimeout(rendrePresenter,15000);
+    }
+    function rendrePresenter(){ clearTimeout(_demande); _demande=0; var btn=document.getElementById('presentBtn'); if(btn&&btn.disabled){ btn.disabled=false; btn.textContent=_libPresent||'Présenter'; } }
     function marquerGestesHote(){ var ids={'switch':'pbarSwitch',invite:'pbarInvite',handover:'pbarHandover'};
       Object.keys(ids).forEach(function(g){ var b=document.getElementById(ids[g]); if(b) b.hidden=!(GESTES_HOTE&&GESTES_HOTE[g]); }); }
     function appliquerChrome(m){

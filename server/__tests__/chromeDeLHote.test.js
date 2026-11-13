@@ -423,3 +423,68 @@ describe("⚠️ 13/11 — dans le gabarit lecture, le direct vit dans la barre"
     for (const id of ["pbarSwitch", "pbarInvite", "pbarHandover", "pbarEnd"]) expect(visible(id), id).toBe(true);
   });
 });
+
+// « PRÉSENTER » CONFIÉ À L'HÔTE (13/11/2026). Lancée depuis un cadre d'une autre origine, une présentation n'a pas de
+// propriétaire, et personne ne peut en changer le document. L'hôte qui nomme `start` la démarre côté serveur, au nom du
+// membre, et la confie par `present-attach`.
+describe("⚠️ 13/11 — « Présenter » confié à l'hôte qui nomme start", () => {
+  let fetchOrigine, actions;
+  beforeEach(() => {
+    fetchOrigine = window.fetch; actions = [];
+    window.fetch = (url, init) => {
+      const corps = init && init.body ? JSON.parse(init.body) : {};
+      actions.push(corps.action);
+      const rep = corps.action === "present-start" ? { ok: true, slug: "local1", control: "c".repeat(32) } : { ok: true, seq: 0 };
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(rep) });
+    };
+  });
+  afterEach(() => { window.fetch = fetchOrigine; });
+
+  it("le clic demande à l'hôte, ne démarre rien ici, et la conduite confiée allume « En direct »", async () => {
+    await monter({ query: { gabarit: "lecture", embed: "1" } });
+    await envoyer({ type: "chrome", presenter: ["start", "switch"] });
+    recus.length = 0;
+    const btn = document.getElementById("presentBtn");
+    btn.click(); await vider();
+    expect(recus).toContainEqual({ type: "3dd-doc-present-request" });
+    expect(actions, "aucune présentation sans propriétaire").not.toContain("present-start");
+    expect(btn.disabled).toBe(true);
+    btn.click(); await vider();
+    expect(recus.filter((m) => m && m.type === "3dd-doc-present-request").length, "un second clic ne redemande pas").toBe(1);
+    await envoyer({ type: "present-attach", slug: "srv123", control: "k".repeat(32) });
+    await vider();
+    expect(recus).toContainEqual({ type: "3dd-doc-present-attached", slug: "srv123" });
+    expect(document.getElementById("gDirectBtn").hidden).toBe(false);
+    expect(btn.disabled, "le bouton revient intact pour après « Terminer »").toBe(false);
+  });
+
+  it("une conduite refusée rend le bouton", async () => {
+    await monter({ query: { gabarit: "lecture", embed: "1" } });
+    await envoyer({ type: "chrome", presenter: ["start"] });
+    window.fetch = () => Promise.resolve({ ok: false, status: 403, json: () => Promise.resolve({ ok: false }) });
+    const btn = document.getElementById("presentBtn");
+    btn.click(); await vider();
+    await envoyer({ type: "present-attach", slug: "srv123", control: "k".repeat(32) });
+    await vider();
+    expect(btn.disabled).toBe(false);
+  });
+
+  it("sans start, « Présenter » démarre ici, comme avant", async () => {
+    await monter({ query: { gabarit: "lecture", embed: "1" } });
+    await envoyer({ type: "chrome", presenter: ["switch"] });
+    document.getElementById("presentBtn").click(); await vider(); await vider();
+    expect(actions).toContain("present-start");
+  });
+
+  it("« Changer de document » mène aux onglets quand l'hôte en a déclaré", async () => {
+    await monter({ query: { gabarit: "lecture", embed: "1" } });
+    await envoyer({ type: "chrome", tabs: [{ id: "doc:a", label: "Plaquette" }, { id: "doc:b", label: "Notice" }], activeTab: "doc:a", presenter: ["switch"] });
+    document.getElementById("presentBtn").click(); await vider(); await vider();
+    document.getElementById("gDirectBtn").click();
+    recus.length = 0;
+    document.getElementById("pbarSwitch").click(); await vider();
+    expect(document.getElementById("pbar").style.display).toBe("none");
+    expect(document.activeElement && document.activeElement.textContent).toBe("Notice");
+    expect(recus.map((m) => m && m.type)).not.toContain("3dd-doc-present-switch");
+  });
+});

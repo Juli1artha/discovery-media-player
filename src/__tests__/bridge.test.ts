@@ -297,8 +297,9 @@ describe("bridge — chrome (hôte → player, #596)", () => {
   });
 
   it("lit les gestes du présentateur que l'hôte sait traiter (13/11)", () => {
-    const lu = parseHostMessage({ type: "3dd-doc-chrome", presenter: ["switch", "handover"] });
-    expect(lu).toEqual({ type: "chrome", presenter: ["switch", "handover"] });
+    const lu = parseHostMessage({ type: "3dd-doc-chrome", presenter: ["start", "switch", "handover"] });
+    expect(lu).toEqual({ type: "chrome", presenter: ["start", "switch", "handover"] });
+    expect(parsePlayerMessage({ type: "3dd-doc-present-request" }), "« Présenter » demandé à l'hôte").toEqual({ type: "present-request" });
     expect(parseHostMessage(toWire(lu!))).toEqual(lu);
     expect(parseHostMessage({ type: "3dd-doc-chrome", presenter: [] }), "une liste vide : aucun geste").toEqual({ type: "chrome", presenter: [] });
   });
@@ -322,7 +323,7 @@ describe("bridge — chrome (hôte → player, #596)", () => {
       { presenter: ["switch", "switch"] },
       { presenter: ["dance"] },
       { presenter: "switch" },
-      { presenter: ["switch", "invite", "handover", "switch"] },
+      { presenter: ["start", "switch", "invite", "handover", "switch"] },
     ];
     for (const f of fautes) expect(parseHostMessage({ type: "3dd-doc-chrome", ...f }), JSON.stringify(f).slice(0, 80)).toBeNull();
   });

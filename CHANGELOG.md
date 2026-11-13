@@ -21,6 +21,11 @@ the notes there are this file's section for that version.
   main » n'existent que si l'hôte les nomme (`chrome.presenter`) : ils ne font qu'envoyer un message, et sans hôte qui
   l'écoute c'étaient des boutons morts. Pendant le direct, un onglet attend la fin de la présentation tant que l'hôte
   n'a pas nommé `switch` — changer le `src` du cadre la coupait chez le client. L'ancien gabarit ne change pas.
+- **« Présenter » confié à l'hôte (`presenter: ["start"]`, message `present-request`).** Lancée depuis un cadre d'une
+  autre origine, une présentation n'a pas de propriétaire : personne ne peut en changer le document. L'hôte qui nomme
+  `start` reçoit `present-request`, démarre la présentation côté serveur au nom du membre et la confie par
+  `present-attach` ; le bouton attend quinze secondes, ou l'issue de l'attache. Dans le panneau, « Changer de
+  document » mène aux onglets quand l'hôte en a déclaré.
 
 ## [0.1.182] — 2026-11-12
 
