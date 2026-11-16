@@ -12,14 +12,7 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
-### Fixed
-
-- **Un document enregistré depuis le lecteur porte une extension.** Le relais nommait le fichier d'après `name`, que
-  l'hôte remplit souvent avec le titre affiché (« Lot 01A023 ») : le navigateur enregistrait un PDF sans extension, que
-  le système ne savait plus ouvrir. Le nom reçoit désormais l'extension du type relayé (PDF, images, vidéo, audio,
-  texte) quand il ne finit pas déjà par une extension connue ; un type inconnu laisse le nom tel quel.
-
-## [0.1.184] — 2026-11-13
+## [0.1.184] — 2026-11-16
 
 ### Changed
 
@@ -28,6 +21,13 @@ the notes there are this file's section for that version.
   documents que l'hôte a déclarés (ses onglets), le document affiché marqué ; un choix fait exactement ce que ferait
   l'onglet. Le panneau dit qui présente — le nom et la photo passés par `by` et `av`, la photo seulement en `https` —,
   pose le lien et « Copier » sur une ligne, et isole « Terminer la présentation ».
+
+### Fixed
+
+- **Un document enregistré depuis le lecteur porte une extension.** Le relais nommait le fichier d'après `name`, que
+  l'hôte remplit souvent avec le titre affiché (« Lot 01A023 ») : le navigateur enregistrait un PDF sans extension, que
+  le système ne savait plus ouvrir. Le nom reçoit désormais l'extension du type relayé (PDF, images, vidéo, audio,
+  texte) quand il ne finit pas déjà par une extension connue ; un type inconnu laisse le nom tel quel.
 
 ## [0.1.183] — 2026-11-13
 
