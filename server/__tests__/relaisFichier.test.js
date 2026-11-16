@@ -36,7 +36,7 @@ function amont(type, corps = "contenu") {
   };
 }
 
-async function servir(type, corps) {
+async function servir(type, corps, name = "fichier") {
   player.init({
     plugins: {}, has: () => false,
     storage: {
@@ -60,7 +60,7 @@ async function servir(type, corps) {
     end(b) { this.body = String(b == null ? "" : b); },
   };
   await player.handler(
-    { method: "GET", headers: {}, socket: {}, query: { preview: "1", url: URL_OK, stream: "1", name: "fichier" } },
+    { method: "GET", headers: {}, socket: {}, query: { preview: "1", url: URL_OK, stream: "1", name } },
     res,
   );
   return res;
@@ -113,4 +113,38 @@ describe("un fichier relayé ne peut pas s'exécuter sur notre origine", () => {
       expect(res.headers["content-disposition"], type).toMatch(/^inline/);
     },
   );
+});
+
+// ⚠️ L'HÔTE PASSE UN TITRE, LE NAVIGATEUR EN FAIT UN NOM DE FICHIER. « Lot 01A023 » s'enregistrait
+// tel quel : un PDF sans extension, que le système ne sait plus ouvrir (constaté le 16/11 sur un
+// plan de lot). Le type relayé connaît l'extension — le nom la reçoit s'il ne la porte pas.
+describe("le fichier enregistré porte une extension", () => {
+  it("un titre sans extension reçoit celle du type relayé", async () => {
+    const res = await servir("application/pdf", "contenu", "Lot 01A023");
+    expect(res.headers["content-disposition"]).toBe(`inline; filename="Lot 01A023.pdf"; filename*=UTF-8''Lot%2001A023.pdf`);
+  });
+
+  it("le type peut porter un paramètre", async () => {
+    const res = await servir("image/jpeg; charset=binary", "contenu", "Façade");
+    expect(res.headers["content-disposition"]).toBe(`inline; filename="Fa_ade.jpg"; filename*=UTF-8''Fa%C3%A7ade.jpg`);
+  });
+
+  it.each([["plan-lot-01A023.pdf", "application/pdf"], ["Notice.PDF", "application/pdf"], ["photo.jpeg", "image/jpeg"]])(
+    "%s garde son nom — pas de double extension",
+    async (name, type) => {
+      const res = await servir(type, "contenu", name);
+      expect(res.headers["content-disposition"]).toContain(`filename="${name}"`);
+    },
+  );
+
+  // Un point dans un titre n'est pas une extension : « v1.2 » doit recevoir la sienne.
+  it("un point dans le titre n'est pas pris pour une extension", async () => {
+    const res = await servir("application/pdf", "contenu", "Plan v1.2");
+    expect(res.headers["content-disposition"]).toContain(`filename="Plan v1.2.pdf"`);
+  });
+
+  it("un type inconnu laisse le nom tel quel — on n'invente pas d'extension", async () => {
+    const res = await servir("application/zip", "contenu", "Archive");
+    expect(res.headers["content-disposition"]).toContain(`filename="Archive"`);
+  });
 });

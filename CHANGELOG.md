@@ -12,6 +12,13 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Un document enregistré depuis le lecteur porte une extension.** Le relais nommait le fichier d'après `name`, que
+  l'hôte remplit souvent avec le titre affiché (« Lot 01A023 ») : le navigateur enregistrait un PDF sans extension, que
+  le système ne savait plus ouvrir. Le nom reçoit désormais l'extension du type relayé (PDF, images, vidéo, audio,
+  texte) quand il ne finit pas déjà par une extension connue ; un type inconnu laisse le nom tel quel.
+
 ## [0.1.184] — 2026-11-13
 
 ### Changed

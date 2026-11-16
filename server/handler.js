@@ -142,8 +142,24 @@ const { jsonPourScript } = require("./texte");
 // Content-Disposition sûr : un en-tête HTTP ne tolère QUE de l'ASCII imprimable (un accent/emoji dans le nom de
 // fichier → TypeError ERR_INVALID_CHAR qui casse tout le stream). Repli ASCII pour filename= + RFC 5987 filename*
 // pour conserver le nom unicode exact. (esc() = échappement HTML, inadapté à un en-tête → ne plus l'utiliser ici.)
-const dispositionInline = (name) => {
-  const raw = String(name || "document.pdf");
+//
+// ⚠️ LE NOM QU'ON REÇOIT EST SOUVENT UN TITRE, PAS UN NOM DE FICHIER. L'hôte passe dans `name` ce
+// qu'il affiche (« Lot 01A023 ») : le navigateur enregistrait alors un fichier SANS extension, que
+// le système ne sait plus ouvrir — c'était pourtant un PDF, l'amont le disait. On complète donc
+// d'après le type RELAYÉ, et seulement si le nom ne finit pas déjà par une extension connue :
+// « plan.pdf » reste « plan.pdf », et un « Plan v1.2 » n'est pas pris pour un fichier « .2 ».
+const EXTENSION_DU_TYPE = {
+  "application/pdf": "pdf", "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp",
+  "image/avif": "avif", "image/gif": "gif", "video/mp4": "mp4", "video/webm": "webm",
+  "video/quicktime": "mov", "audio/mpeg": "mp3", "audio/mp4": "m4a", "text/plain": "txt",
+};
+const EXTENSION_CONNUE = new RegExp(`\\.(?:${[...new Set(Object.values(EXTENSION_DU_TYPE)), "jpeg"].join("|")})$`, "i");
+const avecExtension = (nom, type) => {
+  const ext = EXTENSION_DU_TYPE[String(type || "").split(";")[0].trim().toLowerCase()];
+  return !ext || EXTENSION_CONNUE.test(nom) ? nom : `${nom}.${ext}`;
+};
+const dispositionInline = (name, type) => {
+  const raw = avecExtension(String(name || "document.pdf").trim() || "document.pdf", type);
   const ascii = raw.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "").trim() || "document.pdf";
   return `inline; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(raw)}`;
 };
@@ -326,6 +342,8 @@ async function relayerFichier(res, r, disposition, bornes = { stallMs: relaisSta
   // ⚠️ On ÉCRASE la disposition, on ne la complète pas : les chemins de streaming passent
   // `inline; filename=…` pour que la visionneuse affiche le document. Sur un type exécutable,
   // `inline` est précisément ce qu'il ne faut pas — et un `|| "attachment"` n'aurait jamais servi.
+  // Une disposition donnée en FONCTION attend le type relayé : c'est lui qui dit l'extension du nom.
+  if (typeof disposition === "function") disposition = disposition(typeAmont);
   if (executable) disposition = "attachment";
   // `nosniff` : sans lui, un `text/plain` contenant du HTML peut être requalifié par le
   // navigateur — la garde ci-dessus porterait alors sur un type qui n'est pas celui qui s'ouvre.
@@ -1150,7 +1168,7 @@ async function handlerMesure(req, res) {
         const range = req.headers["range"];
         await relayerSousAdmission(res, async (bornes) => {
           const r = await PLAYER.storage.fetchFile(url, { range });
-          await relayerFichier(res, r, dispositionInline(q.name), bornes);
+          await relayerFichier(res, r, (type) => dispositionInline(q.name, type), bornes);
         });
         return;
       }
@@ -1250,7 +1268,7 @@ async function handlerMesure(req, res) {
       const range = req.headers["range"];
       await relayerSousAdmission(res, async (bornes) => {
         const r = await PLAYER.storage.fetchFile(share.file_url, { range });
-        await relayerFichier(res, r, dispositionInline(share.file_name), bornes);
+        await relayerFichier(res, r, (type) => dispositionInline(share.file_name, type), bornes);
       });
       return;
     }
