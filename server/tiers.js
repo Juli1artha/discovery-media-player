@@ -84,14 +84,15 @@ const PDFJS_VERSION = require("pdfjs-dist/package.json").version;
 // octets sur la page (458 705 → 518 555) et 51 621 sur le worker (1 265 413 → 1 317 034).
 //
 // ⚠️ LE BUILD FAIT PARTIE DE L'URL. La route sert ces actifs en `immutable` pour un an : sous la même
-// URL `v=<version>`, un navigateur qui a déjà le build moderne en cache le garderait. Le build et
-// l'URL sont donc tirés de la même constante, et changer l'un change l'autre.
+// URL `v=<version>`, un navigateur qui a déjà le build moderne en cache le garderait.
+//
+// ⚠️ MAIS LES CHEMINS DES FICHIERS NE SONT PAS TIRÉS D'ICI (18/11/2026). La 0.1.185 les construisait
+// à partir de cette constante : le traceur de Vercel ne voit qu'un chemin écrit en toutes lettres,
+// `legacy/build` n'a pas été embarqué, et la route a répondu 404 à tous les visiteurs. Les deux
+// chemins sont donc écrits littéralement dans server/handler.js (`?asset=…`), et c'est un test
+// (`actifsPdfjs.test.js`) qui les confronte à `PDFJS_BUILD`, pas une interpolation.
 const PDFJS_BUILD = "legacy";
-const PDFJS_FICHIERS = {
-  pdf: `pdfjs-dist/${PDFJS_BUILD}/build/pdf.min.mjs`,
-  pdfworker: `pdfjs-dist/${PDFJS_BUILD}/build/pdf.worker.min.mjs`,
-};
 const PDFJS = "/api/doc?asset=pdf&v=" + PDFJS_VERSION + "-" + PDFJS_BUILD;
 const PDFJS_WORKER = "/api/doc?asset=pdfworker&v=" + PDFJS_VERSION + "-" + PDFJS_BUILD;
 
-module.exports = { SUPAJS, LEAFLET, MAPS_VERSION, TIERS, balise, PDFJS_VERSION, PDFJS_BUILD, PDFJS_FICHIERS, PDFJS, PDFJS_WORKER };
+module.exports = { SUPAJS, LEAFLET, MAPS_VERSION, TIERS, balise, PDFJS_VERSION, PDFJS_BUILD, PDFJS, PDFJS_WORKER };
