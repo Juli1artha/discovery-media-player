@@ -185,7 +185,7 @@ const originOf = (u) => { try { return new URL(u).origin; } catch { return ""; }
 // Actifs pdf.js : URLs extraites dans server/tiers.js.
 
 // Tiers épinglés (SUPAJS, TIERS, balise…) : extraits dans server/tiers.js.
-const { TIERS } = require("./tiers");
+const { TIERS, PDFJS_FICHIERS } = require("./tiers");
 
 const { notFoundHtml, softWallHtml, motDePasseHtml, lienExpireHtml } = require("./page-mur");
 const { viewerHtml } = require("./page-visionneuse");
@@ -712,7 +712,9 @@ async function handlerMesure(req, res) {
     // origine EST nos octets. Public et sans base, comme la carte : un actif qui exigerait une
     // session casserait la page avant qu'elle existe. L'URL porte la version → cache immuable.
     if (req.method === "GET" && (String(q.asset || "") === "pdf" || String(q.asset || "") === "pdfworker")) {
-      const fichier = q.asset === "pdf" ? "pdfjs-dist/build/pdf.min.mjs" : "pdfjs-dist/build/pdf.worker.min.mjs";
+      // Le build (legacy, pour les navigateurs anciens) et l'URL viennent de la même source :
+      // cf. `PDFJS_FICHIERS` dans server/tiers.js.
+      const fichier = PDFJS_FICHIERS[q.asset === "pdf" ? "pdf" : "pdfworker"];
       // Lu UNE fois par processus : la dépendance est épinglée exacte, les octets ne changent
       // qu'avec un déploiement — relire 1,7 Mo sur disque à chaque requête ne prouvait rien.
       if (!global.__actifsPdfjs) global.__actifsPdfjs = Object.create(null);

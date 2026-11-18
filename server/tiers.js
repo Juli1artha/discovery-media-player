@@ -74,7 +74,24 @@ const balise = (nonce, tiers) =>
 // « enableScripting:false » ici serait un placebo — elle appartient au viewer de Mozilla, pas à
 // getDocument. `isEvalSupported:false` reste sur chaque appel : lui est réel (CVE-2024-4367).
 const PDFJS_VERSION = require("pdfjs-dist/package.json").version;
-const PDFJS = "/api/doc?asset=pdf&v=" + PDFJS_VERSION;
-const PDFJS_WORKER = "/api/doc?asset=pdfworker&v=" + PDFJS_VERSION;
 
-module.exports = { SUPAJS, LEAFLET, MAPS_VERSION, TIERS, balise, PDFJS_VERSION, PDFJS, PDFJS_WORKER };
+// ⚠️ LE BUILD `legacy/`, PAS `build/` (18/11/2026). Le build moderne appelle `Promise.try` et
+// `Map.prototype.getOrInsertComputed` sans les compléter : sur un iPhone resté sous iOS 18.1, ou sur
+// un Chrome antérieur au 128, `getDocument` rejette, et le spectateur d'une présentation ne lit que
+// « Document indisponible. ». Constaté sur le R0 d'un hôte, alors que le fichier lui était parvenu
+// entier. Le build legacy pose ces compléments (core-js) seulement s'ils manquent : un navigateur
+// récent garde ses implémentations natives. Le surcoût, mesuré le 18/11/2026 sur 6.3.289 : 59 850
+// octets sur la page (458 705 → 518 555) et 51 621 sur le worker (1 265 413 → 1 317 034).
+//
+// ⚠️ LE BUILD FAIT PARTIE DE L'URL. La route sert ces actifs en `immutable` pour un an : sous la même
+// URL `v=<version>`, un navigateur qui a déjà le build moderne en cache le garderait. Le build et
+// l'URL sont donc tirés de la même constante, et changer l'un change l'autre.
+const PDFJS_BUILD = "legacy";
+const PDFJS_FICHIERS = {
+  pdf: `pdfjs-dist/${PDFJS_BUILD}/build/pdf.min.mjs`,
+  pdfworker: `pdfjs-dist/${PDFJS_BUILD}/build/pdf.worker.min.mjs`,
+};
+const PDFJS = "/api/doc?asset=pdf&v=" + PDFJS_VERSION + "-" + PDFJS_BUILD;
+const PDFJS_WORKER = "/api/doc?asset=pdfworker&v=" + PDFJS_VERSION + "-" + PDFJS_BUILD;
+
+module.exports = { SUPAJS, LEAFLET, MAPS_VERSION, TIERS, balise, PDFJS_VERSION, PDFJS_BUILD, PDFJS_FICHIERS, PDFJS, PDFJS_WORKER };
