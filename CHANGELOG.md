@@ -12,6 +12,19 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.185] — 2026-11-18
+
+### Fixed
+
+- **Un document présenté s'ouvre aussi sur un navigateur ancien.** Les pages servaient le build MODERNE de pdf.js, qui
+  appelle `Promise.try` (Safari 18.2+, Chrome 128+, Firefox 134+) et `Map.prototype.getOrInsertComputed` sans les
+  compléter : sur un iPhone resté sous iOS 18.1, `getDocument` rejetait (`Promise.try is not a function`) et le
+  spectateur ne lisait que « Document indisponible. ». Constaté sur une présentation en direct d'un hôte, dont le fichier
+  était pourtant arrivé entier. Les actifs `?asset=pdf` et `?asset=pdfworker` servent désormais `legacy/build`, qui pose
+  ces compléments seulement s'ils manquent, sous une URL qui porte le build (`v=6.3.289-legacy`) : servis `immutable`
+  pour un an, les mêmes octets sous l'ancienne URL n'auraient pas atteint un navigateur qui l'avait en cache. Surcoût :
+  +59 850 octets sur la page, +51 621 sur le worker. Vaut pour la page de présentation et pour la visionneuse.
+
 ## [0.1.184] — 2026-11-16
 
 ### Changed
@@ -8113,7 +8126,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.184...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.185...HEAD
+[0.1.185]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.184...v0.1.185
 [0.1.184]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.183...v0.1.184
 [0.1.183]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.182...v0.1.183
 [0.1.182]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.181...v0.1.182
