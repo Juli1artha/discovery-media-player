@@ -185,7 +185,7 @@ const originOf = (u) => { try { return new URL(u).origin; } catch { return ""; }
 // Actifs pdf.js : URLs extraites dans server/tiers.js.
 
 // Tiers épinglés (SUPAJS, TIERS, balise…) : extraits dans server/tiers.js.
-const { TIERS, PDFJS_FICHIERS } = require("./tiers");
+const { TIERS } = require("./tiers");
 
 const { notFoundHtml, softWallHtml, motDePasseHtml, lienExpireHtml } = require("./page-mur");
 const { viewerHtml } = require("./page-visionneuse");
@@ -712,15 +712,25 @@ async function handlerMesure(req, res) {
     // origine EST nos octets. Public et sans base, comme la carte : un actif qui exigerait une
     // session casserait la page avant qu'elle existe. L'URL porte la version → cache immuable.
     if (req.method === "GET" && (String(q.asset || "") === "pdf" || String(q.asset || "") === "pdfworker")) {
-      // Le build (legacy, pour les navigateurs anciens) et l'URL viennent de la même source :
-      // cf. `PDFJS_FICHIERS` dans server/tiers.js.
-      const fichier = PDFJS_FICHIERS[q.asset === "pdf" ? "pdf" : "pdfworker"];
+      // ⚠️ LES DEUX CHEMINS EN TOUTES LETTRES, DANS L'APPEL MÊME (18/11/2026). Un hôte sans serveur
+      // n'embarque que les fichiers que son traceur voit nommés. La 0.1.185 lisait le chemin dans une
+      // table de `tiers.js` : Vercel n'a pas embarqué `legacy/build`, et cette route a répondu 404 à
+      // tous les visiteurs. Le build est le legacy (navigateurs sans `Promise.try`, cf. `PDFJS_BUILD`
+      // dans tiers.js, qui fait l'URL). `actifsPdfjs.test.js` refuse un chemin construit et vérifie que
+      // ces littéraux nomment le build que l'URL annonce.
+      const pdf = q.asset === "pdf";
       // Lu UNE fois par processus : la dépendance est épinglée exacte, les octets ne changent
       // qu'avec un déploiement — relire 1,7 Mo sur disque à chaque requête ne prouvait rien.
       if (!global.__actifsPdfjs) global.__actifsPdfjs = Object.create(null);
-      let octets = global.__actifsPdfjs[fichier] || null;
+      const cle = pdf ? "pdf" : "pdfworker";
+      let octets = global.__actifsPdfjs[cle] || null;
       if (!octets) {
-        try { octets = global.__actifsPdfjs[fichier] = require("node:fs").readFileSync(require.resolve(fichier)); } catch { /* dépendance absente */ }
+        try {
+          const fichier = pdf
+            ? require.resolve("pdfjs-dist/legacy/build/pdf.min.mjs")
+            : require.resolve("pdfjs-dist/legacy/build/pdf.worker.min.mjs");
+          octets = global.__actifsPdfjs[cle] = require("node:fs").readFileSync(fichier);
+        } catch { /* dépendance absente, ou non embarquée par l'hôte */ }
       }
       if (!octets) { refuserEnTexte(res, 404, "actif indisponible"); return; }
       res.statusCode = 200;

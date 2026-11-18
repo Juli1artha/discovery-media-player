@@ -33,8 +33,8 @@ async function servir(asset) {
 }
 
 describe("les actifs pdf.js sortent de notre origine, octet pour octet", () => {
-  // Les chemins sont écrits en clair ici, et non relus dans `PDFJS_FICHIERS` : un banc qui lirait
-  // la constante de la route ne verrait jamais la route revenir à `build/`.
+  // Les chemins sont écrits en clair ici, et non relus dans la route : un banc qui lirait la
+  // constante de la route ne verrait jamais la route revenir à `build/`.
   it.each([["pdf", "pdfjs-dist/legacy/build/pdf.min.mjs"], ["pdfworker", "pdfjs-dist/legacy/build/pdf.worker.min.mjs"]])(
     "?asset=%s sert exactement le fichier du paquet épinglé", async (asset, fichier) => {
       const res = await servir(asset);
@@ -123,6 +123,40 @@ describe("un navigateur sans Promise.try ouvre quand même le document", () => {
     const { PDFJS, PDFJS_WORKER, PDFJS_VERSION } = require("../tiers.js");
     expect(PDFJS).not.toBe("/api/doc?asset=pdf&v=" + PDFJS_VERSION);
     expect(PDFJS_WORKER).not.toBe("/api/doc?asset=pdfworker&v=" + PDFJS_VERSION);
+  });
+});
+
+// ⚠️ UN HÔTE SANS SERVEUR N'EMBARQUE QUE CE QU'IL VOIT NOMMÉ (18/11/2026, 0.1.185 retirée de
+// l'instance dans l'heure). La 0.1.185 construisait le chemin des actifs à partir d'une constante
+// (`pdfjs-dist/${PDFJS_BUILD}/build/…`, lu dans `tiers.js`). Le traceur de fichiers de Vercel
+// (`@vercel/nft`) ne suit qu'un chemin écrit en toutes lettres. Il n'a donc pas embarqué
+// `legacy/build`, et `?asset=pdf` a répondu 404 « actif indisponible » à TOUS les visiteurs. La
+// présentation et la visionneuse ne pouvaient plus afficher aucun document. La 0.1.184 écrivait les
+// deux chemins littéralement, et le traceur les voyait.
+//
+// Mesuré avec `@vercel/nft` 1.11.7 sur l'instance réelle : 0.1.185 → AUCUN fichier pdf.js tracé ;
+// 0.1.184 → les deux fichiers de `build/`.
+//
+// Ce banc lit la FORME du code, pas le traceur : il n'a aucune dépendance, et il refuse précisément
+// le geste qui a cassé. Dimension FIXE : un traceur futur qui cesserait de suivre même un littéral ne
+// le ferait pas rougir. Seule une trace réelle le dirait.
+describe("les actifs pdf.js sont nommés en toutes lettres, pour qu'un hôte les embarque", () => {
+  const source = fs.readFileSync(require.resolve("../handler.js"), "utf8")
+    .split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+  const appels = [...source.matchAll(/require\.resolve\(([^)]*)\)/g)].map((m) => m[1].trim());
+
+  it("chaque require.resolve de la route reçoit un chemin littéral, jamais une expression", () => {
+    const construits = appels.filter((a) => !/^(["'])[^"'`$+]+\1$/.test(a));
+    expect(construits, `chemin(s) construit(s), invisibles au traceur : ${construits.join(" | ")}`).toEqual([]);
+  });
+
+  it("et ces littéraux nomment les deux fichiers du build que l'URL annonce", () => {
+    const { PDFJS_BUILD } = require("../tiers.js");
+    const litteraux = appels.map((a) => a.slice(1, -1));
+    // Sans cette ligne, l'URL pourrait dire `-legacy` pendant que la route sert `build/` : un
+    // navigateur en cache garderait les octets d'un autre build sous un nom qui ment.
+    expect(litteraux).toContain(`pdfjs-dist/${PDFJS_BUILD}/build/pdf.min.mjs`);
+    expect(litteraux).toContain(`pdfjs-dist/${PDFJS_BUILD}/build/pdf.worker.min.mjs`);
   });
 });
 
