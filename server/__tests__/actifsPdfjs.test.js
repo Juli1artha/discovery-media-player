@@ -33,7 +33,9 @@ async function servir(asset) {
 }
 
 describe("les actifs pdf.js sortent de notre origine, octet pour octet", () => {
-  it.each([["pdf", "pdfjs-dist/build/pdf.min.mjs"], ["pdfworker", "pdfjs-dist/build/pdf.worker.min.mjs"]])(
+  // Les chemins sont écrits en clair ici, et non relus dans `PDFJS_FICHIERS` : un banc qui lirait
+  // la constante de la route ne verrait jamais la route revenir à `build/`.
+  it.each([["pdf", "pdfjs-dist/legacy/build/pdf.min.mjs"], ["pdfworker", "pdfjs-dist/legacy/build/pdf.worker.min.mjs"]])(
     "?asset=%s sert exactement le fichier du paquet épinglé", async (asset, fichier) => {
       const res = await servir(asset);
       expect(res.statusCode).toBe(200);
@@ -56,6 +58,71 @@ describe("les actifs pdf.js sortent de notre origine, octet pour octet", () => {
     const declaree = require("../../package.json").dependencies["pdfjs-dist"];
     expect(declaree, "épingler une version exacte, pas une plage").toBe(version);
     expect(version >= "6.2.108", "en dessous de 6.2.108, la vulnérabilité de juillet 2026 est ouverte (avis Mozilla)").toBe(true);
+  });
+});
+
+// ⚠️ LE SPECTATEUR N'A PAS LE NAVIGATEUR DU DÉVELOPPEUR (18/11/2026, R0 d'un hôte). Un client a
+// rejoint une présentation, a vu « Document indisponible. » et il est reparti au bout de deux minutes.
+// Côté hôte, le fichier était parti entier, avec la même signature qu'au R0 réussi deux heures plus tôt.
+// La cause était le build : on servait `build/`, le build MODERNE de pdf.js, qui appelle
+// `Promise.try` (Safari 18.2+, Chrome 128+, Firefox 134+) et `Map.prototype.getOrInsertComputed`
+// SANS les compléter. Un iPhone resté sous iOS 18.1 lève `Promise.try is not a function` dans le
+// MessageHandler, `getDocument` rejette, et la page n'a rien d'autre à dire que « indisponible ».
+// Le build `legacy/` porte ces compléments (core-js), posés seulement là où il en manque.
+//
+// Le banc retire au processus ce qui manque à ces navigateurs, puis charge un PDF avec LES OCTETS
+// QUE LA ROUTE SERT, pas un chemin du paquet. Un build moderne y lève exactement l'erreur du terrain.
+//
+// Dimensions FIXES : le moteur (Node, pas WebKit) et la liste des API retirées (les trois relevées
+// dans le build 6.3.289). Une API absente d'un vieux navigateur mais présente dans Node passe donc
+// ce banc sans être vue. L'e2e en vrai Chrome ne la verrait pas davantage : il tourne sur un Chrome récent.
+describe("un navigateur sans Promise.try ouvre quand même le document", () => {
+  it("les octets servis chargent un PDF une fois Promise.try et getOrInsertComputed retirés", async () => {
+    const os = require("node:os");
+    const path = require("node:path");
+    const { spawnSync } = require("node:child_process");
+    const dossier = fs.mkdtempSync(path.join(os.tmpdir(), "pdfjs-ancien-navigateur-"));
+    try {
+      for (const [asset, nom] of [["pdf", "pdf.mjs"], ["pdfworker", "pdf.worker.mjs"]]) {
+        const res = await servir(asset);
+        expect(res.statusCode).toBe(200);
+        fs.writeFileSync(path.join(dossier, nom), Buffer.from(res.corps));
+      }
+      // Un PDF d'une page, écrit à la main : aucune fixture, aucun réseau.
+      // ⚠️ L'ERREUR EST ÉCRITE PAR LE SCRIPT, DE FAÇON SYNCHRONE. Laissée à Node, la trace d'une
+      // exception non rattrapée recopie d'abord la ligne minifiée (des centaines de Ko), et le tube
+      // est coupé à 64 Ko quand le processus meurt : le message utile n'arrivait jamais.
+      const script = `
+        import { writeSync } from "node:fs";
+        const dire = (e) => { writeSync(1, "ERREUR=" + (e && e.name) + ": " + (e && e.message) + "\\n"); process.exit(2); };
+        process.on("uncaughtException", dire);
+        process.on("unhandledRejection", dire);
+        delete Promise.try;
+        for (const C of [Map, WeakMap]) { delete C.prototype.getOrInsertComputed; delete C.prototype.getOrInsert; }
+        const pdfjs = await import(${JSON.stringify(path.join(dossier, "pdf.mjs"))});
+        pdfjs.GlobalWorkerOptions.workerSrc = ${JSON.stringify(path.join(dossier, "pdf.worker.mjs"))};
+        const pdf = "%PDF-1.4\\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 10 10]>>endobj\\ntrailer<</Root 1 0 R>>\\n%%EOF";
+        const tache = pdfjs.getDocument({ data: new TextEncoder().encode(pdf), isEvalSupported: false });
+        const doc = await tache.promise;
+        process.stdout.write("PAGES=" + doc.numPages + "\\n");
+        await tache.destroy();
+      `;
+      const r = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 60_000 });
+      // ⚠️ ON LIT LA SORTIE, PAS SEULEMENT LE CODE DE SORTIE : un script qui n'aurait rien chargé
+      // et fini proprement rendrait 0 lui aussi.
+      const erreur = (r.stdout.match(/^ERREUR=.*$/m) || [r.error ? String(r.error) : `code ${r.status}`])[0];
+      expect(r.stdout, `le PDF ne s'ouvre pas sans Promise.try — ${erreur}`).toContain("PAGES=1");
+    } finally {
+      fs.rmSync(dossier, { recursive: true, force: true });
+    }
+  }, 90_000);
+
+  it("⚠️ et l'URL n'est plus celle sous laquelle le build moderne est déjà en cache", () => {
+    // La route répond `immutable` pour un an. Changer les octets sous l'URL d'avant n'atteindrait
+    // pas les navigateurs qui l'ont déjà chargée : ce sont ceux des spectateurs réguliers d'un hôte.
+    const { PDFJS, PDFJS_WORKER, PDFJS_VERSION } = require("../tiers.js");
+    expect(PDFJS).not.toBe("/api/doc?asset=pdf&v=" + PDFJS_VERSION);
+    expect(PDFJS_WORKER).not.toBe("/api/doc?asset=pdfworker&v=" + PDFJS_VERSION);
   });
 });
 
@@ -136,8 +203,8 @@ describe("pdf.js ne sort plus de notre origine", () => {
   });
 
   it("les deux pages donnent au navigateur l'URL de NOS actifs", () => {
-    expect(src).toContain('PDFJS = "/api/doc?asset=pdf&v=" + PDFJS_VERSION');
-    expect(src).toContain('PDFJS_WORKER = "/api/doc?asset=pdfworker&v=" + PDFJS_VERSION');
+    expect(src).toContain('PDFJS = "/api/doc?asset=pdf&v=" + PDFJS_VERSION + "-" + PDFJS_BUILD');
+    expect(src).toContain('PDFJS_WORKER = "/api/doc?asset=pdfworker&v=" + PDFJS_VERSION + "-" + PDFJS_BUILD');
     // les deux cfg les transportent
     expect((src.match(/pdfjsWorker: PDFJS_WORKER/g) || []).length).toBe(2);
     // et les deux boots importent depuis CFG — plus aucune balise, plus aucun ballet d'empreintes
