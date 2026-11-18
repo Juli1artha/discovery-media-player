@@ -12,6 +12,20 @@ the notes there are this file's section for that version.
 
 ## [Unreleased]
 
+## [0.1.186] — 2026-11-18
+
+### Fixed
+
+- **La 0.1.185 ne servait pas pdf.js chez un hôte sans serveur : à ne pas installer.** Elle construisait le chemin
+  des actifs à partir d'une constante (`pdfjs-dist/${PDFJS_BUILD}/build/…`). Le traceur de fichiers de Vercel ne
+  suit qu'un chemin écrit en toutes lettres : il n'a pas embarqué `legacy/build`, et `?asset=pdf` comme
+  `?asset=pdfworker` répondaient 404 « actif indisponible » à tous les visiteurs. Aucune présentation ni visionneuse
+  n'affichait plus de document. L'instance d'un hôte est revenue à 0.1.184 dans l'heure. Les deux chemins sont
+  désormais des littéraux dans `require.resolve`. Un banc refuse un chemin construit dans la route, et vérifie que
+  ces littéraux nomment le build annoncé par l'URL. Mesuré avec `@vercel/nft` 1.11.7 sur l'instance réelle : 0.1.185
+  ne trace aucun fichier pdf.js, cette version trace les deux fichiers de `legacy/build`. Le correctif de 0.1.185 pour
+  les navigateurs anciens (build legacy de pdf.js) arrive donc chez les hôtes avec cette version.
+
 ## [0.1.185] — 2026-11-18
 
 ### Fixed
@@ -8126,7 +8140,8 @@ its own.
 - `branding.forKey` dropped the `name` it promised — the fallback shown when a logo fails to
   load. It now reaches the page as the image's alternative text.
 
-[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.185...HEAD
+[Unreleased]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.186...HEAD
+[0.1.186]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.185...v0.1.186
 [0.1.185]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.184...v0.1.185
 [0.1.184]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.183...v0.1.184
 [0.1.183]: https://github.com/Juli1artha/discovery-media-player/compare/v0.1.182...v0.1.183
